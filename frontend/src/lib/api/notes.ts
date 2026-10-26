@@ -1,5 +1,6 @@
 import type {
   NoteAttachment,
+  NoteFileRemoval,
   RecordingId,
   TimelineNote,
   TimelineNoteCreate,
@@ -120,6 +121,21 @@ export const setNoteFileUseInNotes = async (
   const response = await api.patch<NoteAttachment>(
     `${timelineNotesPath(recordingId)}/${noteId}/attachment`,
     { use_in_notes: useInNotes },
+  );
+  return response.data;
+};
+
+/**
+ * Removes a note's file. A capture's note whose text is still only "Screen
+ * capture" goes with it (`note` is null); any other note stays without it and
+ * takes no other. 404 or 410 when the file or its note is gone already.
+ */
+export const removeNoteFile = async (
+  recordingId: RecordingId,
+  noteId: string,
+): Promise<NoteFileRemoval> => {
+  const response = await api.delete<NoteFileRemoval>(
+    `${timelineNotesPath(recordingId)}/${noteId}/attachment`,
   );
   return response.data;
 };

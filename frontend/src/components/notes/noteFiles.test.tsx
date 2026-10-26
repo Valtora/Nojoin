@@ -3,15 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
-import { NO_ANSWER, resetNotesServer, server } from "@/test/fakeNotesServer";
-import type { NoteAttachment, TimelineNote } from "@/types";
+import { useNotificationStore } from "@/lib/notificationStore";
+import { coded, NO_ANSWER, resetNotesServer, server } from "@/test/fakeNotesServer";
+import type { NoteAttachment, NoteFileRemoval, TimelineNote } from "@/types";
 
 const setNoteFileUseInNotes = vi.fn(async () => ({}));
+const removeNoteFile = vi.fn<(recordingId: string, noteId: string) => Promise<NoteFileRemoval>>(
+  async () => ({ note: null }),
+);
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   ...(await import("@/test/fakeNotesServer")).fakeNotesApi,
   setNoteFileUseInNotes: (...args: unknown[]) => setNoteFileUseInNotes(...(args as [])),
+  removeNoteFile: (recordingId: string, noteId: string) => removeNoteFile(recordingId, noteId),
 }));
 
 const { default: CapturesGallery } = await import("./CapturesGallery");
@@ -45,10 +50,39 @@ const note = (id: string, anchorMs: number, attachment: NoteAttachment | null): 
 
 const noteEdits = { apply: <N,>(notes: readonly N[]) => [...notes] } as unknown as NoteEdits;
 
+const lastNotice = () => useNotificationStore.getState().activeNotifications.at(-1)?.message;
+
+/** The viewer for one note, opened, with the page's refresh and Play. */
+const openViewer = async (
+  shown: TimelineNote,
+  { onChanged = vi.fn(), onPlay }: { onChanged?: () => void; onPlay?: (s: number) => void } = {},
+) => {
+  const Opener = () => {
+    const open = useOpenNoteFile();
+    return <button onClick={() => open?.(shown.id)}>Open</button>;
+  };
+  render(
+    <NoteFilesProvider
+      recordingId={RECORDING}
+      notes={[shown]}
+      noteEdits={noteEdits}
+      onChanged={onChanged}
+      onPlay={onPlay}
+    >
+      <Opener />
+    </NoteFilesProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  return screen.findByRole("dialog");
+};
+
 describe("a note's file", () => {
   beforeEach(() => {
     resetNotesServer();
     setNoteFileUseInNotes.mockClear();
+    removeNoteFile.mockReset();
+    removeNoteFile.mockResolvedValue({ note: null });
+    useNotificationStore.setState({ activeNotifications: [] });
   });
   afterEach(() => forgetNoteOutboxes());
 
@@ -195,5 +229,99 @@ describe("a note's file", () => {
     expect(preview).toHaveAttribute("data-ui", "surface");
     expect(preview).toHaveAttribute("data-ui-surface", "inset");
     expect(within(viewer).getByRole("button", { name: "Download" })).toBeEnabled();
+  });
+
+  it("removes a captioned note's file after asking, and keeps the note", async () => {
+    const onChanged = vi.fn();
+    const captioned = { ...note("slide", 65_000, file()), body: "Budget slide" };
+    removeNoteFile.mockResolvedValue({ note: { ...captioned, attachment: null } });
+    const listAgain = vi.fn();
+    noteOutboxFor(RECORDING).subscribeWrites(listAgain);
+    const viewer = await openViewer(captioned, { onChanged });
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove" }));
+
+    const question = within(viewer).getByRole("group", {
+      name: "Remove this file? Its note at 01:05 stays, with its text. This cannot be undone.",
+    });
+    expect(within(question).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(removeNoteFile).not.toHaveBeenCalled();
+    fireEvent.click(within(question).getByRole("button", { name: "Remove file" }));
+
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(removeNoteFile).toHaveBeenCalledTimes(1);
+    expect(removeNoteFile).toHaveBeenCalledWith(RECORDING, "slide");
+    // The page reads the recording again, and a page that doesn't poll fetches
+    // the list, so the note's line loses its file without a reload.
+    expect(onChanged).toHaveBeenCalled();
+    expect(listAgain).toHaveBeenCalled();
+    expect(lastNotice()).toBe("File removed. Its note stays.");
+  });
+
+  it("says a capture nobody captioned goes with its file, and Cancel keeps both", async () => {
+    const capture = {
+      ...note("still", 65_000, file({ use_in_notes: true, status: "READY" })),
+      body: "Screen capture",
+    };
+    const viewer = await openViewer(capture);
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove" }));
+    const question = within(viewer).getByTestId("note-file-remove-confirm");
+    expect(question).toHaveTextContent(
+      "Remove this file and its note? The note at 01:05 has only the automatic text “Screen capture”, so it goes too. The file is used in notes, so notes already written are marked to regenerate. This cannot be undone.",
+    );
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+
+    expect(within(viewer).queryByTestId("note-file-remove-confirm")).toBeNull();
+    expect(within(viewer).getByRole("button", { name: "Remove" })).toHaveFocus();
+    expect(removeNoteFile).not.toHaveBeenCalled();
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove" }));
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove file and note" }));
+
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(lastNotice()).toBe("File and note removed.");
+  });
+
+  it("counts a file already gone as removed, and keeps the viewer on any other failure", async () => {
+    removeNoteFile.mockRejectedValueOnce(NO_ANSWER).mockRejectedValueOnce(coded(410, "note_deleted_elsewhere"));
+    const onChanged = vi.fn();
+    const viewer = await openViewer(note("gone", 65_000, file()), { onChanged });
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove" }));
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove file" }));
+    await vi.waitFor(() => expect(lastNotice()).toBe("The file could not be removed."));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(onChanged).not.toHaveBeenCalled();
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove file" }));
+
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(lastNotice()).toBe("This file was already removed.");
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("forgets the file's upload held for its note, so Retry can't bring it back", async () => {
+    const outbox = noteOutboxFor(RECORDING);
+    server.uploadFailures.push(NO_ANSWER);
+    outbox.submit(
+      { kind: "point", body: "Budget slide", anchorMs: 65_000 },
+      { file: new File([new Uint8Array(8)], "screen-capture.png", { type: "image/png" }) },
+    );
+    const [entry] = outbox.getSnapshot().entries;
+    await vi.waitFor(() =>
+      expect(outbox.getSnapshot().uploads.get(entry.id)?.status).toBe("failed"),
+    );
+    // Its answer was lost, but the file landed: the list shows it on its note.
+    const landed = { ...note(entry.id, 65_000, file()), body: "Budget slide" };
+    removeNoteFile.mockResolvedValue({ note: { ...landed, attachment: null } });
+    const viewer = await openViewer(landed);
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove" }));
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove file" }));
+
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(outbox.getSnapshot().uploads.size).toBe(0);
+    expect(outbox.hasUnsaved()).toBe(false);
   });
 });

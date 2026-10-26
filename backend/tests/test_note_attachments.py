@@ -254,6 +254,254 @@ async def test_deleting_the_note_deletes_its_file(
         assert (await session.execute(select(Document))).first() is None
 
 
+# --- Removing a note's file (#734) -------------------------------------------
+
+
+async def _written_notes(session_maker) -> None:
+    async with session_maker() as session:
+        session.add(
+            Transcript(recording_id=10, notes="## Summary", notes_status="completed")
+        )
+        await session.commit()
+
+
+async def _notes_stale(session_maker) -> bool:
+    async with session_maker() as session:
+        transcript = (await session.execute(select(Transcript))).scalar_one()
+        return bool(transcript.notes_stale_documents)
+
+
+async def _signature(session_maker) -> str:
+    from backend.services.timeline_note_service import (
+        load_timeline_notes_list_signature_async,
+    )
+
+    async with session_maker() as session:
+        return await load_timeline_notes_list_signature_async(session, 10)
+
+
+@pytest.mark.anyio
+async def test_removing_a_captioned_notes_file_keeps_the_note_as_text(
+    client: AsyncClient,
+    uploads: list[tuple],
+    session_maker,
+    tmp_path: Path,
+    edge_refreshes: list[int],
+) -> None:
+    note = await _note(client, body="Budget slide")
+    await _attach(client, note["id"])
+    before = await _signature(session_maker)
+
+    response = await client.delete(f"{BASE}/{note['id']}/attachment")
+
+    assert response.status_code == 200, response.text
+    kept = response.json()["note"]
+    assert (kept["id"], kept["body"], kept["attachment"]) == (
+        note["id"],
+        "Budget slide",
+        None,
+    )
+    assert kept["revision"] == note["revision"]
+    assert list(tmp_path.iterdir()) == []
+    async with session_maker() as session:
+        assert (await session.execute(select(Document))).first() is None
+    listed = (await client.get(BASE)).json()
+    assert [(n["id"], n["attachment"]) for n in listed] == [(note["id"], None)]
+    # Other viewers' polls see the list change; Meeting Edge reads no files.
+    assert await _signature(session_maker) != before
+    assert edge_refreshes == [10]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("payload", "note_goes"),
+    [
+        ({}, True),
+        ({"body": "Screen capture of the budget"}, False),
+        ({"kind": "head", "anchor_ms": None}, False),
+    ],
+    ids=["capture-text", "captioned", "head-note"],
+)
+async def test_only_a_capture_nobody_captioned_goes_with_its_file(
+    client: AsyncClient,
+    uploads: list[tuple],
+    edge_refreshes: list[int],
+    payload: dict,
+    note_goes: bool,
+) -> None:
+    note = await _note(client, **payload)
+    assert note["body"].startswith("Screen capture")
+    await _attach(client, note["id"])
+
+    response = await client.delete(f"{BASE}/{note['id']}/attachment")
+
+    assert response.status_code == 200, response.text
+    assert (response.json()["note"] is None) is note_goes
+    listed = [n["id"] for n in (await client.get(BASE)).json()]
+    assert listed == ([] if note_goes else [note["id"]])
+    assert edge_refreshes == ([10, 10] if note_goes else [10])
+    if note_goes:
+        # Gone as the note's own delete leaves it: an edit in flight hears so.
+        edit = await client.patch(
+            f"{BASE}/{note['id']}", json={"expected_revision": 1, "body": "Late"}
+        )
+        assert edit.status_code == 410
+        assert edit.json()["detail"]["code"] == "note_deleted_elsewhere"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("Screen capture", True, True),
+        ("Budget slide", True, True),
+        ("Budget slide", False, False),
+    ],
+    ids=["capture-on", "captioned-on", "captioned-off"],
+)
+async def test_removing_a_file_used_in_notes_marks_them_stale(
+    client: AsyncClient,
+    uploads: list[tuple],
+    session_maker,
+    case: tuple[str, bool, bool],
+) -> None:
+    body, use_in_notes, stale = case
+    note = await _note(client, body=body)
+    await _attach(client, note["id"])
+    await _written_notes(session_maker)
+    if use_in_notes:
+        await client.patch(
+            f"{BASE}/{note['id']}/attachment", json={"use_in_notes": True}
+        )
+        async with session_maker() as session:
+            await session.execute(
+                text("UPDATE transcripts SET notes_stale_documents = 0")
+            )
+            await session.commit()
+
+    response = await client.delete(f"{BASE}/{note['id']}/attachment")
+
+    assert response.status_code == 200, response.text
+    assert await _notes_stale(session_maker) is stale
+
+
+@pytest.mark.anyio
+async def test_deleting_a_note_whose_file_is_in_notes_marks_them_stale(
+    client: AsyncClient, uploads: list[tuple], session_maker
+) -> None:
+    note = await _note(client, body="Budget slide")
+    await _attach(client, note["id"])
+    await _written_notes(session_maker)
+    await client.patch(f"{BASE}/{note['id']}/attachment", json={"use_in_notes": True})
+    async with session_maker() as session:
+        await session.execute(text("UPDATE transcripts SET notes_stale_documents = 0"))
+        await session.commit()
+
+    response = await client.delete(f"{BASE}/{note['id']}")
+
+    assert response.status_code == 204
+    assert await _notes_stale(session_maker) is True
+
+
+@pytest.mark.anyio
+async def test_removing_refuses_what_has_no_file_to_remove(
+    client: AsyncClient, uploads: list[tuple]
+) -> None:
+    bare = await _note(client, body="No file here")
+    capture = await _note(client, anchor_ms=70_000)
+    await _attach(client, capture["id"])
+
+    none = await client.delete(f"{BASE}/{bare['id']}/attachment")
+    unknown = await client.delete(
+        f"{BASE}/00000000-0000-4000-8000-000000000000/attachment"
+    )
+    foreign = await client.delete(
+        f"/api/v1/transcripts/{notes_api.FOREIGN_REC}/timeline-notes/{capture['id']}/attachment"
+    )
+    first = await client.delete(f"{BASE}/{capture['id']}/attachment")
+    again = await client.delete(f"{BASE}/{capture['id']}/attachment")
+
+    assert none.status_code == 404
+    assert none.json()["detail"] == attachment_routes.NO_ATTACHMENT_DETAIL
+    assert unknown.status_code == 404
+    assert foreign.status_code == 404
+    assert foreign.json()["detail"]["code"] == "recording_not_found"
+    assert first.status_code == 200
+    # Its note went with it, so a repeat finds the tombstone.
+    assert again.status_code == 410
+
+
+@pytest.mark.anyio
+async def test_a_note_whose_file_was_removed_takes_no_other(
+    client: AsyncClient, uploads: list[tuple], session_maker, tmp_path: Path
+) -> None:
+    note = await _note(client, body="Budget slide")
+    await _attach(client, note["id"])
+    await client.delete(f"{BASE}/{note['id']}/attachment")
+
+    # A retry of the first upload, whose first attempt had landed.
+    late = await _attach(client, note["id"])
+
+    assert late.status_code == 410
+    assert late.json()["detail"] == attachment_routes.FILE_REMOVED_DETAIL
+    assert list(tmp_path.iterdir()) == []
+    async with session_maker() as session:
+        assert (await session.execute(select(Document))).first() is None
+
+
+@pytest.mark.anyio
+async def test_an_upload_stored_while_its_file_was_removed_is_refused(
+    client: AsyncClient,
+    uploads: list[tuple],
+    session_maker,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    note = await _note(client, body="Budget slide")
+    store_upload = documents_ep.store_upload
+
+    async def store_then_removed(*args, **kwargs):
+        stored = await store_upload(*args, **kwargs)
+        # The removal commits while this upload is being stored.
+        async with session_maker() as session:
+            await session.execute(text("UPDATE timeline_notes SET file_removed = 1"))
+            await session.commit()
+        return stored
+
+    monkeypatch.setattr(documents_ep, "store_upload", store_then_removed)
+
+    late = await _attach(client, note["id"])
+
+    assert late.status_code == 410
+    assert list(tmp_path.iterdir()) == []
+    async with session_maker() as session:
+        assert (await session.execute(select(Document))).first() is None
+
+
+@pytest.mark.anyio
+async def test_a_notes_file_is_removed_through_its_note_only(
+    client: AsyncClient, uploads: list[tuple], tmp_path: Path
+) -> None:
+    note = await _note(client)
+    attachment = (await _attach(client, note["id"])).json()
+
+    response = await client.delete(f"/api/v1/documents/{attachment['id']}")
+
+    assert response.status_code == 409
+    assert len(list(tmp_path.iterdir())) == 1
+    assert (await client.get(BASE)).json()[0]["attachment"]["id"] == attachment["id"]
+
+
+def test_the_capture_text_is_the_one_the_browser_writes() -> None:
+    from backend.utils.note_attachments import CAPTURE_NOTE_BODY
+
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "frontend/src/lib/captures/useCaptureActions.ts"
+    ).read_text()
+    assert f'export const CAPTURE_NOTE_BODY = "{CAPTURE_NOTE_BODY}";' in source
+
+
 @pytest.mark.anyio
 async def test_an_image_has_a_small_preview_and_another_file_none(
     client: AsyncClient, uploads: list[tuple]

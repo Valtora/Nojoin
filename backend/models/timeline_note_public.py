@@ -105,6 +105,12 @@ class TimelineNoteRead(BaseModel):
     updated_at: datetime
 
 
+class NoteFileRemovedRead(BaseModel):
+    """What removing a note's file left: the note without it, or null when it went too."""
+
+    note: Optional[TimelineNoteRead] = None
+
+
 class TimelineNoteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
