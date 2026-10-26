@@ -97,16 +97,26 @@ vi.mock("./MeetingControls", () => ({ default: () => null }));
 vi.mock("./MonthCalendar", () => ({ default: () => null }));
 vi.mock("./RecordingInfoModal", () => ({ default: () => null }));
 vi.mock("./BatchTagModal", () => ({ default: () => null }));
+interface MenuProps {
+  items: { label: string; onClick: () => void }[];
+  label?: string;
+  anchor?: HTMLElement | null;
+  returnFocusTo?: HTMLElement | null;
+}
+let lastMenu: MenuProps | null = null;
 vi.mock("./ContextMenu", () => ({
-  default: ({ items }: { items: { label: string; onClick: () => void }[] }) => (
-    <div role="menu">
-      {items.map((item) => (
-        <button key={item.label} type="button" role="menuitem" onClick={item.onClick}>
-          {item.label}
-        </button>
-      ))}
-    </div>
-  ),
+  default: (props: MenuProps) => {
+    lastMenu = props;
+    return (
+      <div role="menu" aria-label={props.label}>
+        {props.items.map((item) => (
+          <button key={item.label} type="button" role="menuitem" onClick={item.onClick}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+    );
+  },
 }));
 vi.mock("./ConfirmationModal", () => ({
   default: ({
@@ -391,5 +401,124 @@ describe("recordings list selection", () => {
     expect(checkbox("Alpha review")).toBeChecked();
     expect(checkbox("Bravo planning")).not.toBeChecked();
     expect(screen.getByRole("list", { name: "Recordings list" })).toBeInTheDocument();
+  });
+
+  // A long press selects on touch, so the row menu needs a way in there too.
+  describe("the row's actions button", () => {
+    const actionsButton = (name: string) =>
+      screen.getByRole("button", { name: `Actions for ${name}` });
+    const menuLabels = () =>
+      within(screen.getByRole("menu"))
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent);
+
+    beforeEach(() => {
+      lastMenu = null;
+    });
+
+    it.each([
+      ["recordings", ALPHA],
+      ["archived", { ...ALPHA, is_archived: true }],
+      ["deleted", { ...ALPHA, is_deleted: true }],
+    ] as const)(
+      "opens the row menu right-click opens, in %s, against the button",
+      async (view, recording) => {
+        await showList(view, [recording, BRAVO]);
+        fireEvent.contextMenu(row("Alpha review"));
+        const rightClicked = menuLabels();
+        // Right-click opens at the pointer, and gives focus back to the row.
+        expect(lastMenu?.anchor ?? null).toBeNull();
+        expect(lastMenu?.returnFocusTo).toBe(row("Alpha review"));
+
+        const button = actionsButton("Alpha review");
+        fireEvent.click(button);
+
+        expect(screen.getByRole("menu", { name: "Actions for Alpha review" })).toBeInTheDocument();
+        expect(menuLabels()).toEqual(rightClicked);
+        expect(lastMenu?.anchor).toBe(button);
+        expect(lastMenu?.returnFocusTo).toBe(button);
+      },
+    );
+
+    it("is named for its row and says it opens a menu", async () => {
+      await showList("recordings", [ALPHA, BRAVO]);
+
+      const button = actionsButton("Bravo planning");
+      expect(button).toHaveAttribute("aria-haspopup", "menu");
+      expect(button).toHaveAttribute("aria-expanded", "false");
+
+      fireEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "true");
+
+      // A second press closes it again.
+      fireEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("opens from the keyboard with the down arrow", async () => {
+      await showList("recordings", [ALPHA, BRAVO]);
+
+      fireEvent.keyDown(actionsButton("Alpha review"), { key: "ArrowDown" });
+
+      expect(screen.getByRole("menu", { name: "Actions for Alpha review" })).toBeInTheDocument();
+    });
+
+    it("never selects the row or opens the recording, and acts on its own row while selecting", async () => {
+      await showList("recordings", [ALPHA, BRAVO, CHARLIE]);
+      api.batchSoftDeleteRecordings.mockResolvedValue({
+        count: 1,
+        skipped: 0,
+        recording_ids: ["b"],
+      });
+
+      // Nothing selected: the press opens the menu and nothing else.
+      expect(fireEvent.click(actionsButton("Alpha review"))).toBe(true);
+      expect(selected()).toEqual([]);
+      fireEvent.keyDown(actionsButton("Alpha review"), { key: " " });
+      expect(selected()).toEqual([]);
+      fireEvent.click(actionsButton("Alpha review"));
+
+      // Selecting: a click on a row would toggle it, a click on its button does not.
+      fireEvent.click(checkbox("Alpha review"));
+      fireEvent.click(actionsButton("Bravo planning"));
+      expect(selected()).toEqual(["Alpha review"]);
+      expect(routerPush).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("menuitem", { name: "Move to Bin" }));
+      expect(api.batchSoftDeleteRecordings).toHaveBeenCalledWith(["b"]);
+      expect(selected()).toEqual(["Alpha review"]);
+    });
+
+    it("does not start a selection on a touch held on it", async () => {
+      await showList("recordings", [ALPHA, BRAVO]);
+      vi.useFakeTimers();
+
+      fireEvent.pointerDown(actionsButton("Alpha review"), { pointerType: "touch" });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+
+      expect(selected()).toEqual([]);
+    });
+
+    it("shows on touch always, and on desktop on hover or focus in the row", async () => {
+      await showList("recordings", [ALPHA]);
+
+      const button = actionsButton("Alpha review");
+      expect(button).toHaveClass(
+        "opacity-0",
+        "group-hover:opacity-100",
+        "group-focus-within:opacity-100",
+        "pointer-coarse:opacity-100",
+        // The full touch target on a touch screen.
+        "pointer-coarse:h-[44px]",
+        "pointer-coarse:w-[44px]",
+      );
+
+      fireEvent.click(button);
+      expect(button).toHaveClass("opacity-100");
+      expect(button).not.toHaveClass("opacity-0");
+    });
   });
 });

@@ -21,8 +21,11 @@ import {
   PanelLeftOpen,
   Trash2,
   NotebookPen,
+  MoreHorizontal,
 } from "lucide-react";
+import { cn } from "@/lib/cn";
 import IconButton from "./ui/IconButton";
+import { TOUCH_TARGET_SQUARE } from "./ui/touchTarget";
 import ImportAudioButton from "./importAudio/ImportAudioButton";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
@@ -162,12 +165,19 @@ export default function Sidebar() {
   const mounted = useHydrated();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [hasLoadedRecordings, setHasLoadedRecordings] = useState(false);
-  // The menu's items are built when it opens, as they act on the list.
+  // The menu's items are built when it opens, as they act on the list. A
+  // right-click opens it at the pointer; a row's actions button anchors it.
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     items: RowMenuItem[];
+    label: string;
+    returnFocusTo: HTMLElement;
+    /** The row whose actions button holds the menu, when one does. */
+    buttonFor?: RecordingId;
+    anchor?: HTMLElement;
   } | null>(null);
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const [renamingId, setRenamingId] = useState<RecordingId | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -420,11 +430,41 @@ export default function Sidebar() {
     clearSelection();
   }, [currentView, clearSelection]);
 
-  const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
+  const rowMenuLabel = (recording: Recording) => `Actions for ${recording.name}`;
+
+  const handleContextMenu = (e: React.MouseEvent<HTMLElement>, recording: Recording) => {
     e.preventDefault();
     // A touch held on a row selects it; Android raises contextmenu for it.
     if (longPress.claimContextMenu(recording.id)) return;
-    setContextMenu({ x: e.clientX, y: e.clientY, items: getContextMenuItems(recording) });
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: getContextMenuItems(recording),
+      label: rowMenuLabel(recording),
+      returnFocusTo: e.currentTarget,
+    });
+  };
+
+  /**
+   * The row's actions button: the way to the row menu on a touch screen,
+   * where a long press selects. It opens the menu right-click opens, against
+   * the button, and a second press closes it.
+   */
+  const toggleRowMenu = (button: HTMLButtonElement, recording: Recording) => {
+    if (contextMenu?.buttonFor === recording.id) {
+      setContextMenu(null);
+      return;
+    }
+    const box = button.getBoundingClientRect();
+    setContextMenu({
+      x: box.right,
+      y: box.bottom,
+      items: getContextMenuItems(recording),
+      label: rowMenuLabel(recording),
+      returnFocusTo: button,
+      buttonFor: recording.id,
+      anchor: button,
+    });
   };
 
   const listRef = useRef<HTMLUListElement>(null);
@@ -1074,6 +1114,7 @@ export default function Sidebar() {
               const isRenaming = renamingId === recording.id;
               const isSelected = selection.isSelected(recording.id);
               const isHighlighted = isSelected || (isActive && !selection.isSelecting);
+              const isMenuOpen = contextMenu?.buttonFor === recording.id;
 
               return (
                 <li key={recording.id} className="relative group">
@@ -1139,14 +1180,15 @@ export default function Sidebar() {
                         }}
                         onContextMenu={(e) => handleContextMenu(e, recording)}
                         {...longPress.bind(recording.id)}
-                        className={`block py-3 pr-3 rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
+                        // The right padding keeps the text clear of the actions button.
+                        className={`block py-3 pr-9 pointer-coarse:pr-[52px] rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
                           selection.isSelecting ? "pl-9" : "pl-3 pointer-fine:pl-9"
                         } ${
                           isHighlighted
                             ? isSelected
                               ? "bg-action-tint border-action-border"
                               : "bg-action-tint border-action"
-                            : "bg-surface-card border-surface-border hover:border-action-border hover:bg-action-tint"
+                            : "bg-surface-card border-surface-border group-hover:border-action-border group-hover:bg-action-tint"
                         }`}
                       >
                         <div className="flex justify-between items-start mb-1">
@@ -1195,6 +1237,31 @@ export default function Sidebar() {
                           </Badge>
                         )}
                       </Link>
+                      {/* Beside the link, not in it, so a press here never
+                          opens, selects or long-presses the row. Shown on hover
+                          or focus where the pointer hovers, and always on touch. */}
+                      <IconButton
+                        size="sm"
+                        icon={<MoreHorizontal aria-hidden="true" />}
+                        aria-label={rowMenuLabel(recording)}
+                        title="Recording actions"
+                        aria-haspopup="menu"
+                        aria-expanded={isMenuOpen}
+                        onClick={(e) => toggleRowMenu(e.currentTarget, recording)}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowDown" && !isMenuOpen) {
+                            e.preventDefault();
+                            toggleRowMenu(e.currentTarget, recording);
+                          }
+                        }}
+                        className={cn(
+                          "absolute right-1 top-1/2 z-10 h-7 w-7 -translate-y-1/2",
+                          TOUCH_TARGET_SQUARE,
+                          isMenuOpen
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+                        )}
+                      />
                     </>
                   )}
                 </li>
@@ -1216,8 +1283,11 @@ export default function Sidebar() {
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          onClose={() => setContextMenu(null)}
+          onClose={closeContextMenu}
           items={contextMenu.items}
+          label={contextMenu.label}
+          anchor={contextMenu.anchor}
+          returnFocusTo={contextMenu.returnFocusTo}
         />
       )}
 
