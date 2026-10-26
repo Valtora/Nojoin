@@ -44,7 +44,7 @@ html[data-style="depth"] :is([data-ui-input="field"], [data-ui="textarea"])::pla
    once, and the 1px highlight preserves every shadow and focus slot. */
 html[data-style="depth"]:not(.dark) :is(
   [data-ui-surface="card"], [data-ui-surface="pane"], [data-ui-surface="float"],
-  #speaker-panel, [role="tablist"][aria-label="Meeting panels"],
+  #speaker-panel,
   .react-datepicker:not(.task-deadline-calendar), .react-datepicker__time
 ):not([role="tooltip"]):not([data-ui-chrome="action"]):not(
   [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field]
@@ -57,7 +57,7 @@ html[data-style="depth"]:not(.dark) :is(
 ) {
   --depth-light-fill: initial;
   --depth-light-shade: var(--depth-light-card);
-  &:is([data-ui-surface="pane"], #speaker-panel, [role="tablist"][aria-label="Meeting panels"]) {
+  &:is([data-ui-surface="pane"], #speaker-panel) {
     --depth-light-shade: var(--depth-light-pane);
   }
   &:is([data-ui-surface="float"], .react-datepicker, .react-datepicker__time) {
@@ -91,6 +91,18 @@ html[data-style="depth"]:not(.dark) :is(
   background-size: 100% 1px, 100% 100%;
   background-repeat: no-repeat;
 
+  /* Search targets stay flat while marked; let the cue fade back to their
+     local fill rather than retaining the animation's transparent endpoint. */
+  &.settings-target {
+    background-image: none;
+    background-color: var(--depth-light-fill);
+    animation-fill-mode: none;
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+      background-color: var(--settings-tab-active-bg);
+    }
+  }
+
   @media (hover: hover) {
     &[class~="hover:bg-surface-inset"]:hover { --depth-light-fill: var(--surface-inset); }
     &:is([class~="hover:bg-action-tint"], [class~="hover:bg-status-info-bg"],
@@ -103,7 +115,7 @@ html[data-style="depth"]:not(.dark) :is(
 
 html[data-style="depth"].dark :is(
   [data-ui-surface="card"], [data-ui-surface="pane"], [data-ui-surface="float"],
-  #speaker-panel, [role="tablist"][aria-label="Meeting panels"],
+  #speaker-panel,
   .react-datepicker:not(.task-deadline-calendar), .react-datepicker__time
 ):not([role="tooltip"]):not([data-ui-chrome="action"]):not(
   [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field]
@@ -115,8 +127,19 @@ html[data-style="depth"].dark :is(
   .bg-surface-float, .bg-control-bg, .react-datepicker, .react-datepicker__time
 ) {
   background-image: var(--depth-gradient-paint);
-  &:is([data-ui-surface="pane"], #speaker-panel, [role="tablist"][aria-label="Meeting panels"]) {
+  &:is([data-ui-surface="pane"], #speaker-panel) {
     background-image: var(--depth-gradient-pane-paint);
+    &.settings-target { background-image: none; }
+  }
+  &.settings-target {
+    background-image: none;
+    background-color: color-mix(in oklab, var(--depth-fill-base) calc(100% - var(--depth-role-mix)),
+      var(--foreground) var(--depth-role-mix));
+    animation-fill-mode: none;
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+      background-color: var(--settings-tab-active-bg);
+    }
   }
   @media (hover: hover) {
     &:is([class~="hover:bg-action-tint"], [class~="hover:bg-status-info-bg"],
@@ -163,7 +186,7 @@ html[data-style="depth"] [data-panel-group-direction="vertical"]:has(
 ) > [data-panel-resize-handle-id] {
   --depth-split-fill: var(--surface-inset);
 }
-html[data-style="depth"] [data-panel-resize-handle-id]:hover {
+html[data-style="depth"] [data-panel-resize-handle-id][data-panel-group-direction]:hover {
   background-color: var(--action);
 }
 html[data-style="depth"] [data-panel-resize-handle-id]:hover > div {

@@ -81,9 +81,9 @@ storage falls back to Default. These choices change immediately and never reach 
 
 ### Style
 
-[styles.css](../frontend/src/app/styles.css), [classic.css](../frontend/src/app/classic.css)
-and [depth-dark.css](../frontend/src/app/depth-dark.css), followed by
-[depth-gradient.css](../frontend/src/app/depth-gradient.css),
+[styles.css](../frontend/src/app/styles.css), [depth-dark.css](../frontend/src/app/depth-dark.css),
+[depth-gradient.css](../frontend/src/app/depth-gradient.css), followed by
+[classic.css](../frontend/src/app/classic.css),
 are app-only and import after the palettes. Every rule is scoped to Classic or Depth, so
 Default retains the flat canon above. Style changes
 shape and elevation and derives dark Depth's lighter fills and contrast support from the
@@ -646,7 +646,7 @@ A heading that must fit its own content, such as the meeting title, uses `FitTex
 
 The contrast target is WCAG 2.2 AA, enforced by
 [frontend/scripts/check-contrast.mjs](../frontend/scripts/check-contrast.mjs). It parses the token
-blocks in `tokens.css`, `palettes.css`, `styles.css`, `depth-dark.css` and the
+blocks in `tokens.css`, `palettes.css`, `styles.css`, `depth-dark.css`, `depth-gradient.css` and the
 marketing site's `site-tokens.css`. It resolves `var()`, Classic's nested sRGB colour mixes
 and Depth's effective dark Oklab role mixes, composites translucent values over their backdrop
 stack, and measures a declared list of
@@ -668,6 +668,11 @@ The thresholds:
 - **1.15:1**, a house floor rather than a WCAG requirement, for decorative separators, chart and
   speaker colours (every series is directly labelled), and a float against the scrimmed content
   behind it. It stops a hairline drifting to invisible.
+
+Depth's decorative borders on gradient-painted surfaces are exempt from the house floor:
+their existing palette values remain unchanged. Flat rail separators, chart series and
+speaker colours retain their existing checks; identifying grips, controls and focus indicators
+still require 3:1.
 
 Beyond contrast, conformance is checked by hand. There is no `axe` or Playwright check, and the
 few `jsx-a11y` rules in Next's ESLint config only warn, so verify keyboard reachability and

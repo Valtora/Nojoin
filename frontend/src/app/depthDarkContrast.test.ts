@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
 import postcss from "postcss";
+import selectorParser from "postcss-selector-parser";
 import { describe, expect, it } from "vitest";
 import { colour, composite, measurePairing, mixOklab, mixPercent, parseBlock } from "../../scripts/contrast-colour.mjs";
-import { addDepthGradientThemes, addDepthThemes } from "../../scripts/depth-contrast.mjs";
+import { addDepthGradientThemes, addDepthThemes, splitterPairings } from "../../scripts/depth-contrast.mjs";
 import { addStyleThemes } from "../../scripts/style-contrast.mjs";
+import { depthFixture, paintSelectors } from "../test/depthSelectors";
+import { gradientStops, paintColour } from "../../scripts/depth-paint.mjs";
 
 type Pairing = { label: string; fg: string; bg: string[]; min: number };
 type Theme = { name: string; tokens: Record<string, string>; base: Record<string, string>;
@@ -26,6 +29,9 @@ function themes(): Theme[] {
         { label: "body", fg: "foreground", bg: ["surface-page", "surface-card"], min: 4.5 },
         { label: "primary label", fg: "action-on", bg: ["action"], min: 4.5 },
         { label: "primary boundary", fg: "action", bg: ["surface-page", "surface-card"], min: 3 },
+        { label: "rail border vs rail", fg: "rail-border", bg: ["rail-bg"], min: 1.15 },
+        { label: "chart series 1 vs card", fg: "chart-1", bg: ["surface-page", "surface-card"], min: 1.15 },
+        { label: "speaker red vs card", fg: "speaker-red", bg: ["surface-page", "surface-card"], min: 1.15 },
       ],
     })));
   result.push({ name: "site-dark", tokens: dark, base: root, floats: false, pairings: [] });
@@ -141,10 +147,8 @@ function gradientThemes(source = gradientCss): Theme[] {
 }
 
 function gradientTargets(source: string, style: string, darkMode: boolean): string[] {
-  const fixture = document.implementation.createHTMLDocument();
-  fixture.documentElement.dataset.style = style;
-  fixture.documentElement.className = darkMode ? "dark" : "";
-  fixture.body.innerHTML = '<section data-ui-surface="pane" class="bg-surface-card" id="pane"></section>'
+  const fixture = depthFixture(darkMode, style);
+  fixture.body.insertAdjacentHTML("beforeend", '<section data-ui-surface="pane" class="bg-surface-card" id="pane"></section>'
     + '<section data-ui-surface="float" class="bg-surface-float" id="float"></section>'
     + '<section data-ui-surface="card" class="bg-surface-card" id="card"></section>'
     + '<section data-ui-surface="pane" id="unfilled"></section>'
@@ -154,23 +158,17 @@ function gradientTargets(source: string, style: string, darkMode: boolean): stri
     + '<button data-ui-chrome="action" class="bg-action" id="primary"></button>'
     + '<button data-ui-chrome="action" class="bg-danger" id="danger"></button>'
     + '<section data-ui-surface="pane" class="bg-status-info-bg" id="status"></section>'
-    + '<div data-ui-surface="float" role="tooltip" class="bg-surface-card" id="tooltip"></div>'
-    + '<div class="react-datepicker task-deadline-calendar" id="inline-calendar"></div>';
-  const selectors: string[] = [];
-  postcss.parse(source).walkRules((rule) => {
-    if (rule.parent?.type === "root" && rule.nodes.some((node) => node.type === "decl"
-      && node.prop === "background-image" && /gradient\(|var\(--depth-(?:light-neutral|gradient)-paint\)/.test(node.value))) {
-      selectors.push(rule.selector);
-    }
-  });
-  return [...fixture.querySelectorAll("[id]")].filter((element) =>
-    selectors.some((selector) => element.matches(selector))).map((element) => element.id);
+    + '<div data-ui-surface="float" role="tooltip" class="bg-surface-card" id="tooltip"></div>');
+  const selectors = paintSelectors(source);
+  return [...fixture.querySelectorAll("[id]")]
+    .filter((element) => selectors.some((selector) => element.matches(selector))).map((element) => element.id);
 }
 
 describe("Depth production gradients", () => {
   it("paints filled raised roles automatically, excluding fields, bubbles and semantic fills in both modes", () => {
     for (const darkMode of [false, true]) {
-      expect(gradientTargets(gradientCss, "depth", darkMode)).toEqual(["pane", "float", "card", ...(darkMode ? ["primary"] : [])]);
+      expect(gradientTargets(gradientCss, "depth", darkMode)).toEqual(["speaker-panel", "calendar", "time",
+        "pane", "float", "card", ...(darkMode ? ["primary"] : [])]);
       expect(gradientTargets(gradientCss, "classic", darkMode)).toEqual([]);
       expect(gradientTargets(gradientCss, "default", darkMode)).toEqual([]);
     }
@@ -188,20 +186,103 @@ describe("Depth production gradients", () => {
           .toBeGreaterThanOrEqual(pair.min);
       }
     }
-    const light = entries.find((entry) => entry.name === "light-style-depth")!;
-    const nested = light.pairings.find((pair) => pair.label === "depth gradient chat pane foreground [gradient 28]")!;
-    expect(nested.bg).toEqual(["depth-gradient-pane-surface-card-4", "depth-gradient-pane-surface-inset-4"]);
-    const placeholder = light.pairings.find((pair) => pair.label === "depth gradient chat placeholder control-placeholder [gradient 4]")!;
-    expect(placeholder.bg.at(-1)).toBe("surface-inset");
-    expect(light.pairings.find((pair) => pair.label === "primary label [gradient 0]")?.bg).toEqual(["action"]);
   });
 
-  it("fails real contrast measurements when a necessary safeguard or the lighter nested stop is removed", () => {
+  it("fails measurements when production safeguards, endpoints or the host's inset shade change", () => {
     for (const source of [gradientCss.replace("--control-border: var(--contrast-icon-muted);", ""),
-      gradientCss.replace("--depth-light-pane-inset: 7.5%;", "--depth-light-pane-inset: 10%;")]) {
+      gradientCss.replace("--depth-light-pane-inset: 7.5%;", "--depth-light-pane-inset: 10%;"),
+      gradientCss.replace("var(--depth-light-bottom) 100%", "var(--foreground) 100%"),
+      gradientCss.replace("--depth-light-shade: var(--depth-light-pane-inset)", "--depth-light-shade: var(--depth-light-pane)")]) {
       const entries = gradientThemes(source).filter((entry) => entry.name.endsWith("-style-depth"));
       expect(entries.some((entry) => entry.pairings.some((pair) =>
         measurePairing(pair, entry.tokens, entry.base).ratio < pair.min))).toBe(true);
     }
+  });
+
+  it("rejects disconnected special production hosts and retains the light paint guard", () => {
+    for (const host of ["#speaker-panel", ".react-datepicker", ".react-datepicker__time"]) {
+      const broken = gradientCss.replaceAll(host, `.missing-${host.replace(/[^a-z]/g, "")}`);
+      expect(gradientTargets(broken, "depth", false)).not.toEqual(gradientTargets(gradientCss, "depth", false));
+    }
+    expect(gradientTargets(gradientCss.replaceAll('html[data-style="depth"]:not(.dark)', "html"), "classic", false))
+      .not.toEqual([]);
+  });
+
+  it("preserves the house floor for flat rails, charts and speaker colours", () => {
+    for (const [foreground, background] of [["rail-border", "rail-bg"], ["chart-1", "surface-card"], ["speaker-red", "surface-card"]]) {
+      const entries = themes();
+      for (const entry of entries.filter((item) => item.name.endsWith("-style-depth"))) entry.tokens[foreground] = `var(--${background})`;
+      addDepthThemes(entries, css);
+      addDepthGradientThemes(entries, gradientCss);
+      expect(entries.some((entry) => entry.pairings.some((pair) => pair.fg === foreground
+        && measurePairing(pair, entry.tokens, entry.base).ratio < pair.min))).toBe(true);
+    }
+  });
+
+  it("measures splitter strip and grip values in every state", () => {
+    const entries = themes();
+    addDepthThemes(entries, css);
+    for (const entry of entries.filter((item) => item.name.endsWith("-style-depth"))) {
+      const pairs = splitterPairings(entry, gradientCss);
+      expect(pairs).toHaveLength(8);
+      expect(pairs.every((pair: Pairing) => measurePairing(pair, entry.tokens, entry.base).ratio >= pair.min)).toBe(true);
+    }
+  });
+
+  // CSS Selectors 4 specificity as [ids, classes, types]; :is/:not/:has take their most specific argument.
+  const specificity = (node: selectorParser.Container | selectorParser.Node): number[] => {
+    const total = [0, 0, 0];
+    const add = (s: number[]) => s.forEach((value, index) => { total[index] += value; });
+    const max = (list: selectorParser.Container) => list.nodes.map(specificity)
+      .reduce((a, b) => (compare(a, b) >= 0 ? a : b), [0, 0, 0]);
+    if (node.type === "id") total[0] += 1;
+    else if (node.type === "class" || node.type === "attribute") total[1] += 1;
+    else if (node.type === "tag") total[2] += 1;
+    else if (node.type === "pseudo") {
+      if ([":is", ":not", ":has"].includes(node.value)) add(max(node));
+      else if (node.value !== ":where") total[node.value.startsWith("::") ? 2 : 1] += 1;
+      return total;
+    }
+    if ("nodes" in node && node.type === "selector") node.nodes.forEach((child) => add(specificity(child)));
+    return total;
+  };
+  const selectorSpecificity = (selector: string) => {
+    let result = [0, 0, 0];
+    selectorParser((root) => { result = specificity(root.nodes[0]); }).processSync(selector);
+    return result;
+  };
+  const compare = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+
+  it("keeps the strip hover specificity tie and matches both resize orientations", () => {
+    const tree = postcss.parse(gradientCss);
+    const strip = tree.nodes.find((node) => node.type === "rule"
+      && node.selector.includes("[data-panel-resize-handle-id]") && node.selector.endsWith(":hover"));
+    if (strip?.type !== "rule") throw new Error("missing strip hover rule");
+    // Hover must win over the vertical base fill: equal or higher specificity, later in source.
+    const bases = tree.nodes.filter((node): node is postcss.Rule => node.type === "rule"
+      && node.selector.includes('[data-panel-group-direction="vertical"]') && !node.selector.includes(":has("));
+    expect(bases.length).toBeGreaterThan(0);
+    for (const base of bases) {
+      expect(compare(selectorSpecificity(strip.selector), selectorSpecificity(base.selector))).toBeGreaterThanOrEqual(0);
+      expect(tree.nodes.indexOf(strip)).toBeGreaterThan(tree.nodes.indexOf(base));
+    }
+    for (const darkMode of [false, true]) {
+      const fixture = depthFixture(darkMode);
+      const handle = fixture.querySelector("[data-panel-resize-handle-id]")!;
+      for (const direction of ["vertical", "horizontal"]) {
+        handle.setAttribute("data-panel-group-direction", direction);
+        expect(handle.matches(strip.selector.replace(":hover", ""))).toBe(true);
+      }
+      const grip = tree.nodes.find((node) => node.type === "rule"
+        && node.selector.includes("[data-panel-resize-handle-id]:hover > div"));
+      expect(grip?.type === "rule" && handle.firstElementChild!.matches(grip.selector.replace(":hover", ""))).toBe(true);
+    }
+  });
+
+  it("reads real gradient stop declarations and rejects unsupported paint rather than assuming the recipe", () => {
+    expect(gradientStops("linear-gradient(in oklab, #fff 0%, #000 100%)", {}).map((stop: { position: number }) => stop.position))
+      .toEqual([0, 1]);
+    expect(() => gradientStops("radial-gradient(#fff, #000)", {})).toThrow("unsupported");
+    expect(() => paintColour("color-mix(in unknown, #fff 50%, #000)")).toThrow("cannot parse");
   });
 });

@@ -1,5 +1,6 @@
 /** Actual Depth role/fill combinations, without an intermediate overlay representation. */
 import { colour, flattenStack, mixOklab, mixPercent, parseBlock, rgb } from "./contrast-colour.mjs";
+import { gradientStops, paintColour } from "./depth-paint.mjs";
 
 const ROLES = ["inset", "card", "pane", "float"];
 const FILLS = ["surface-card", "surface-inset", "surface-float", "control-bg", "control-disabled-bg", "rail-bg",
@@ -125,38 +126,57 @@ export function addDepthThemes(themes, css) {
   }
 }
 
-const STOPS = [0, .4, .75, .94, 1];
 const GRADIENT_FILLS = new Set(["surface-card", "surface-inset", "surface-inset-80", "surface-float", "control-bg"]);
 
 function gradientModel(theme, css, dark) {
   const settings = parseBlock(css, `html[data-style="depth"]${dark ? ".dark" : ":not(.dark)"}`);
   const tokens = { ...theme.tokens, ...Object.fromEntries(Object.entries(settings)
     .filter(([name]) => !name.startsWith("depth-"))) };
-  const read = (name) => colour(name, tokens, theme.base);
-  const percent = (name) => mixPercent(settings[name], name);
   const put = (name, value) => {
     const token = `depth-gradient-${name}`;
     tokens[token] = rgb(value);
     return token;
   };
-  const foreground = read("foreground");
-  const alpha = (value, strength) => [...value.slice(0, 3), value[3] * strength];
-  const darkTop = dark ? alpha(foreground, percent("depth-gradient-light")) : null;
-  const darkBottom = dark ? alpha(foreground, percent("depth-gradient-shade")) : null;
+  // Values only: selector eligibility and state contracts live in Vitest.
+  const variables = { ...theme.base, ...tokens, ...Object.fromEntries(
+    [...css.matchAll(/--(depth-[\w-]+)\s*:\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()])) };
+  const shades = [...css.matchAll(/--depth-light-shade:\s*([^;]+);/g)].map((match) => match[1]);
+  const cache = new Map();
+
+  function painted(paint, label, original, local = {}) {
+    const values = { ...variables, ...local };
+    const stops = gradientStops(paint, values);
+    const options = stops.map((stop, index) => [...(dark ? original : []), put(`${label}-${index}`, stop.colour)]);
+    if (!dark) {
+      options.push([...options[0], put(`${label}-highlight`, paintColour("var(--depth-light-highlight)", values))]);
+    }
+    return options;
+  }
 
   function raised(role, fill, original) {
-    if (dark) {
-      const first = role === "pane" ? mixOklab(darkTop, read("action"), .035) : darkTop;
-      return STOPS.map((weight, index) => [...original,
-        put(`${role}-wash-${index}`, mixOklab(first, darkBottom, weight))]);
+    const name = `${role}-${fill}`;
+    const identity = dark ? `${name}:${original.join(",")}` : name;
+    if (!cache.has(identity)) {
+      const shade = role === "pane" && fill.startsWith("surface-inset") ? shades[3]
+        : shades[{ card: 0, pane: 1, float: 2 }[role]];
+      const local = { "depth-light-fill": fill === "surface-inset-80"
+        ? "color-mix(in oklab, var(--surface-inset) 80%, transparent)" : `var(--${fill})`,
+      "depth-light-shade": shade };
+      const paint = dark ? `var(--depth-gradient-${role === "pane" ? "pane-" : ""}paint)`
+        : "var(--depth-light-neutral-paint)";
+      cache.set(identity, painted(paint, name, original, local));
     }
-    const raw = read(fill === "surface-inset-80" ? "surface-inset" : fill);
-    if (fill === "surface-inset-80") raw[3] *= .8;
-    const shade = role === "pane" && fill.startsWith("surface-inset") ? "pane-inset" : role;
-    const bottom = mixOklab(raw, foreground, percent(`depth-light-${shade}`));
-    const stops = STOPS.map((weight, index) => [put(`${role}-${fill}-${index}`, mixOklab(raw, bottom, weight))]);
-    // The highlight occupies only the first pixel, at the top stop.
-    return [...stops, [...stops[0], put("highlight", alpha(read("action-on"), .65))]];
+    return cache.get(identity);
+  }
+
+  function actionPaint(token) {
+    if (!cache.has(token)) {
+      const actionRule = css.slice(css.indexOf("--depth-gradient-action:"));
+      const paint = /background-image:\s*([^;]+);/.exec(actionRule)?.[1];
+      if (!paint) throw new Error("missing action gradient");
+      cache.set(token, painted(paint, token, [], { "depth-gradient-action": `var(--${token})` }));
+    }
+    return cache.get(token);
   }
 
   function choices(pair) {
@@ -171,8 +191,7 @@ function gradientModel(theme, css, dark) {
         options = raised(role, fill, [token]);
       } else if (dark && ["action", "action-hover", "action-active"].includes(token)
         && !/(disabled|pressed) primary/.test(pair.label)) {
-        const own = read(token), first = mixOklab(own, read("action-hover"), .03);
-        options = STOPS.map((weight, index) => [put(`${token}-${index}`, mixOklab(first, own, weight))]);
+        options = actionPaint(token);
       }
       result = result.flatMap((stack) => options.map((option) => [...stack, ...option]));
     }
@@ -212,16 +231,52 @@ function lightGradientPairings(theme) {
     .concat(pairs("gradient chat placeholder", [pane, "surface-inset"], [["control-placeholder", 4.5]]));
 }
 
-/** Replace only Depth's measurements with all independently positioned gradient stops.
- * Decorative borders retain palette values and have no gradient contrast requirement.
- */
+/** Only decorative surface edges against a gradient are exempt, never flat rails or series. */
+function decorativeGradientEdge(pair) {
+  return ["surface-card-border", "surface-float-border", "surface-divider"].includes(pair.fg)
+    && pair.bg.some((token) => /^(?:depth-(?:card|pane|float)-)?surface-(?:card|float|inset(?:-80)?)$/.test(token));
+}
+
+/** Measure strip/grip paint values together; Vitest checks their state selectors. */
+export function splitterPairings(theme, css) {
+  const dark = /(?:^|-)dark-style-depth$/.test(theme.name);
+  const result = [];
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((match) => match[1].includes("[data-panel-resize-handle-id]"));
+  const value = (predicate, property) => {
+    const rule = rules.find((match) => predicate(match[1]));
+    const raw = rule && new RegExp(`${property}:\\s*([^;]+);`).exec(rule[2])?.[1];
+    if (!raw) throw new Error(`missing splitter ${property}`);
+    return raw;
+  };
+  const vertical = value((selector) => selector.includes(dark ? '].dark ' : ']:not(.dark) '), "--depth-split-fill");
+  const variables = { ...theme.base, ...theme.tokens,
+    ...parseBlock(css, `html[data-style="depth"]${dark ? ".dark" : ":not(.dark)"}`) };
+  for (const direction of ["vertical", "horizontal"]) {
+    for (const notes of [false, true]) {
+      for (const hover of [false, true]) {
+        const label = `splitter ${direction} ${notes ? "notes" : "speakers"} ${hover ? "hover" : "rest"}`;
+        const bg = `${label}-background`, fg = `${label}-grip`;
+        const strip = hover ? value((s) => s.includes(":hover") && !s.includes("> div"), "background-color")
+          : direction === "vertical" && !notes ? vertical : "var(--surface-inset)";
+        const grip = value((s) => s.includes("> div") && s.includes(":hover") === hover, "background-color");
+        theme.tokens[bg] = rgb(paintColour(strip, variables));
+        theme.tokens[fg] = rgb(paintColour(grip, variables));
+        result.push({ label, fg, bg: ["surface-page", bg], min: 3 });
+      }
+    }
+  }
+  return result;
+}
+
+/** Sample production stops, combining independently positioned nested surfaces. */
 export function addDepthGradientThemes(themes, css) {
   for (const theme of themes.filter((entry) => entry.name.endsWith("-style-depth"))) {
     const dark = /(?:^|-)dark-style-depth$/.test(theme.name);
     const original = [...theme.pairings, ...(dark ? [] : lightGradientPairings(theme))];
     const model = gradientModel(theme, css, dark);
     theme.tokens = model.tokens;
-    theme.pairings = original.filter((pair) => pair.min >= 3).flatMap((pair) =>
+    theme.pairings = original.filter((pair) => !decorativeGradientEdge(pair)).flatMap((pair) =>
       model.choices(pair).map((bg, index) => ({ ...pair, bg, label: `${pair.label} [gradient ${index}]` })));
     const behind = model.choices({ label: "scrim", bg: theme.behindStack ?? ["surface-page", "surface-card", "scrim"] });
     const floats = model.choices({ label: "float", bg: theme.floatStack ?? ["surface-float"] });
@@ -231,10 +286,7 @@ export function addDepthGradientThemes(themes, css) {
         label: `gradient float separation ${index}:${back}`, fg, bg, min: 1.15,
       })));
     }
-    // The splitter's grip carries identification; the strip and pane edges are decorative.
-    const split = dark ? key("pane", "surface-inset") : "depth-gradient-pane-surface-inset-4";
-    theme.pairings.push(...pairs("splitter grip", ["surface-page", split], [["control-border", 3]]),
-      ...pairs("splitter hover grip", ["action"], [["action-on", 3]]));
+    theme.pairings.push(...splitterPairings(theme, css));
     theme.floats = false;
   }
 }
