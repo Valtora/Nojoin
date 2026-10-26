@@ -435,6 +435,11 @@ export interface TimelineNote {
   updated_at: string;
 }
 
+/** What removing a note's file left: the note without it, or null when it went too. */
+export interface NoteFileRemoval {
+  note: TimelineNote | null;
+}
+
 export interface TimelineNoteCreate {
   /** Chosen by the client, so a retried create returns the first note. */
   id?: string;

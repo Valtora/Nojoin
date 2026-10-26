@@ -333,6 +333,7 @@ class TestTimelineNote(TestBase, table=True):
     quoted_text: Optional[str] = None
     revision: int = 1
     last_write_token: Optional[str] = None
+    file_removed: bool = False
 
 
 class TestTimelineNoteTombstone(SQLModel, table=True):
