@@ -200,7 +200,8 @@ Components declare paint and interaction independently of their surface role:
 Markers belong on the actual fill owner, including conditional variants. They do not parse
 `className`, change Default's utility classes or replace functional IDs and accessible labels.
 Vendor calendar classes remain the integration hooks for react-datepicker's generated parts and
-selected cells. Contract tests render the owning components and match the production selectors;
+selected cells. Contract tests render the owning components, check fill markers against their
+base background classes and match the production selectors;
 a selector audit rejects application IDs, accessible-copy selectors and Tailwind class coupling.
 The perimeter contrast checks include nested, translucent and tinted hosts and independently
 positioned gradient stops in every palette, while focus and text-on-fill retain their own checks.

@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { renderWithFillContract as render } from "@/test/fillMarkerContracts";
 import type { ComponentProps } from "react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 

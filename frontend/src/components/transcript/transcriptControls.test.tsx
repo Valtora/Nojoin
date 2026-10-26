@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { fillMarkerViolations, renderWithFillContract as render } from "@/test/fillMarkerContracts";
 import type { ComponentProps } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -71,6 +72,7 @@ function openEverything() {
   fireEvent.click(button("Find & Replace"));
   fireEvent.change(findField(), { target: { value: "alpha" } });
   fireEvent.click(button("Advanced Search Settings"));
+  expect(fillMarkerViolations(document.body)).toEqual([]);
 }
 
 const expectIconTarget = (control: HTMLElement, name: string) => {
@@ -370,16 +372,19 @@ describe("transcript toolbar", () => {
     fireEvent.click(button("Search"));
     expect(button("Search")).toHaveAttribute("aria-pressed", "true");
     expect(button("Find & Replace")).toHaveAttribute("aria-pressed", "false");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
 
     // Find & Replace opens the find field as well, so both are on.
     fireEvent.click(button("Find & Replace"));
     expect(button("Search")).toHaveAttribute("aria-pressed", "true");
     expect(button("Find & Replace")).toHaveAttribute("aria-pressed", "true");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
 
     fireEvent.click(button("Find & Replace"));
     expect(button("Search")).toHaveAttribute("aria-pressed", "false");
     expect(button("Find & Replace")).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByPlaceholderText("Find...")).not.toBeInTheDocument();
+    expect(fillMarkerViolations(document.body)).toEqual([]);
   });
 
   it("closes the settings menu on Escape and returns focus to its toggle", () => {

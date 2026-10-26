@@ -62,6 +62,7 @@ export default function CapturesGallery({
     return (
       <li key={note.id} data-testid="capture-item" className="min-w-0">
         <ButtonBase
+          data-ui-fill="inset"
           type="button"
           onClick={() => open?.(note.id)}
           aria-label={`Open ${file.title}, on the note at ${time}`}
