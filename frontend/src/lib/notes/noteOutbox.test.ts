@@ -855,4 +855,46 @@ describe("NoteOutbox: a note's file", () => {
 
     expect(outbox.getSnapshot().uploads.size).toBe(0);
   });
+
+  it("forgets a failed file once it is removed from its note, so Retry can't bring it back", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    server.uploadFailures.push(NO_ANSWER);
+    outbox.submit({ kind: "point", body: "Slide", anchorMs: 1_000 }, { file: still() });
+    const [entry] = outbox.getSnapshot().entries;
+    await vi.waitFor(() =>
+      expect(outbox.getSnapshot().uploads.get(entry.id)?.status).toBe("failed"),
+    );
+    const { key } = outbox.getSnapshot().uploads.get(entry.id)!;
+
+    outbox.forgetUpload(entry.id);
+    outbox.retryUpload(key);
+    await settle();
+
+    expect(outbox.getSnapshot().uploads.size).toBe(0);
+    expect(outbox.hasUnsaved()).toBe(false);
+    expect(attachFileToNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("says nothing of a forgotten file whose upload fails after its removal", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    let refuse: (error: unknown) => void = () => undefined;
+    attachFileToNote.mockImplementationOnce(
+      () => new Promise((_resolve, reject) => {
+        refuse = reject;
+      }),
+    );
+    outbox.submit({ kind: "point", body: "Slide", anchorMs: 1_000 }, { file: still() });
+    const [entry] = outbox.getSnapshot().entries;
+    await vi.waitFor(() =>
+      expect(outbox.getSnapshot().uploads.get(entry.id)?.status).toBe("uploading"),
+    );
+    const noticeBefore = outbox.getSnapshot().notice;
+
+    outbox.forgetUpload(entry.id);
+    refuse(NO_ANSWER);
+    await settle();
+
+    expect(outbox.getSnapshot().uploads.size).toBe(0);
+    expect(outbox.getSnapshot().notice).toBe(noticeBefore);
+  });
 });

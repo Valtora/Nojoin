@@ -29,7 +29,12 @@ from sqlalchemy import and_, or_
 from sqlmodel import col, select
 
 from backend.models.document import Document
+from backend.models.timeline_note import TimelineNote, TimelineNoteKind
 from backend.processing.documents import SUPPORTED_EXTENSIONS
+
+# The text of the point note a screen capture makes, as the browser writes it
+# (CAPTURE_NOTE_BODY in frontend/src/lib/captures/useCaptureActions.ts).
+CAPTURE_NOTE_BODY = "Screen capture"
 
 # The attachments drawn as pictures, by extension, as the parse path tells
 # images (backend.processing.documents.formats).
@@ -69,6 +74,22 @@ def unread_attachment_ids():
     return select(Document.id).where(
         and_(col(Document.note_id).is_not(None), col(Document.use_in_notes).is_(False))
     )
+
+
+def note_goes_with_its_file(note: TimelineNote, file_title: str) -> bool:
+    """Whether removing the note's file removes the note too (#734).
+
+    Only a note whose text is still what the browser gave it with its file: a
+    capture's point note reading exactly "Screen capture", or a note of any
+    kind reading exactly the file's name, as one pasted or dropped with
+    nothing typed does. No column marks either, so the text decides. Both
+    sides of the second are the browser's file name, trimmed by the API, so
+    the comparison is exact: case, extension and spaces included. Any other
+    note, a caption typed over either text included, stays as a text note.
+    """
+    if note.body == file_title:
+        return True
+    return note.kind == TimelineNoteKind.POINT.value and note.body == CAPTURE_NOTE_BODY
 
 
 def _extension(path: str | None) -> str:
