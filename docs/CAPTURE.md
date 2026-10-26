@@ -26,7 +26,7 @@ If you do not share tab audio, the shared channel is silent and everyone in the 
 
 While you record, the recording page shows a live waveform and a **Live Transcript** panel a few seconds behind the conversation ([USAGE.md](USAGE.md#live-transcription)).
 
-Nojoin keeps none of the shared video unless you ask it to. While you record, it reads one still from it when you ask for a [capture](USAGE.md#captures), with the camera button beside the note box or Alt+Shift+C (Option+Shift+C on a Mac), and saves it on a note. Where an administrator has allowed it, the installation's first Owner account can also tick **Screen study** at **Start Meeting** for that meeting ([Screen Study](#screen-study)).
+Nojoin keeps none of the shared video. While you record, it reads one still from it only when you ask for a [capture](USAGE.md#captures), with the camera button beside the note box or Alt+Shift+C (Option+Shift+C on a Mac), and saves it on a note.
 
 A segment the server cannot decode is set aside and leaves a two-second gap instead of stopping the meeting. The API logs it as a `segment_corrupt_skipped` pipeline metric.
 
@@ -93,19 +93,6 @@ To take notes on a second device, such as a phone while a laptop records, sign i
 ## Naming Speakers During Capture
 
 With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with the stretch of the meeting it was given for, the label's longest locked turn, or its longest turn when none is locked or the locked one is under a second, and processing gives it to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
-
-## Screen Study
-
-The screen study measures whether the active-speaker highlight that meeting apps draw around a participant's tile could help Nojoin's speaker labels. It keeps frames of the shared screen, timed against the audio, for an analysis run later on the server. It is off on every installation until an administrator allows it ([DEPLOYMENT.md](DEPLOYMENT.md#screen-study)), and even then only the installation's first Owner account, the one created at first-run setup, is offered it.
-
-- **Opt-in for each meeting.** **Screen study** is a checkbox under **Start Meeting**, unticked at the start of every meeting. It needs a shared tab, window or screen, so a phone never offers it.
-- **What it keeps.** About once per second of recorded audio, or twice if the administrator chose that, it looks at the shared screen and keeps a JPEG at most 1920 pixels on its long side, only when the screen has changed since the last frame kept, or after 15 seconds without a change. Nothing is taken while the recording is paused. Each frame records its place in the audio, so it lines up with the transcript.
-- **Where the frames go.** Only to your Nojoin server, after any audio waiting to upload, which keeps them in its data directory. They are never sent anywhere else and no model reads them: not the AI provider, notes, Meeting Chat, search, exports, backups or the MCP connector. They are never written to the browser's storage. Up to 30 frames wait in the tab's memory while uploads are behind, and the oldest are dropped past that.
-- **How long they stay.** Frames are deleted 14 days after the recording stops, and at once when the recording is discarded, moved to the bin or deleted. Once the frames of every recording together reach 20 GB, or the server runs short of free disk space, no more are kept.
-- **During the meeting.** The live controls show how many frames the server holds for the meeting, their size and the date they will be deleted. **Stop sampling** ends the study for this meeting while the recording carries on. **Delete frames** stops it too and deletes this meeting's frames at once, and the server keeps none for the meeting after that.
-- **When something fails.** If the browser cannot read the shared screen, or the server refuses a frame, sampling stops and the live controls say why. The recording carries on untouched.
-
-The study reads the shared screen through a copy of its video, so stopping the study never ends the share. After **Stop**, frames still waiting have 20 seconds to upload. A recording resumed after its tab was closed or reloaded samples nothing, since the box was ticked in the tab that started it, and its live controls still offer **Delete frames** for the frames already kept.
 
 ## Paused Recording Lock
 
@@ -243,7 +230,7 @@ If the browser is already supported, check the address. Browsers allow capture o
 
 ## Privacy Notes
 
-The browser decides what Nojoin receives: on desktop, the tab, window or screen you pick and the microphone you allow; on a phone, the microphone only. Of the shared video, Nojoin keeps only the stills you capture and, for a meeting started with **Screen study** ticked, the study's frames ([Screen Study](#screen-study)). To end capture, stop the meeting in Nojoin or stop sharing from the browser's indicator.
+The browser decides what Nojoin receives: on desktop, the tab, window or screen you pick and the microphone you allow; on a phone, the microphone only. To end capture, stop the meeting in Nojoin or stop sharing from the browser's indicator.
 
 ## Related Docs
 

@@ -22,7 +22,6 @@ from backend.utils.document_storage import (
 )
 from backend.utils.languages import validate_transcription_language
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
-from backend.utils.speaker_frames import delete_frames_off_loop
 
 from .helpers import (
     _get_owned_calendar_event,
@@ -118,13 +117,11 @@ async def delete_recording(
     # committed, so a failed commit keeps them for the row it leaves.
     artifacts = [(recording.id, recording.audio_path, recording.proxy_path)]
     document_paths = await recording_document_paths(db, [recording.id])
-    public_id = recording.public_id
 
     await db.delete(recording)
     await db.commit()
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
-    await delete_frames_off_loop([public_id], reason="deleted")
 
     return {"ok": True}
 
@@ -288,8 +285,6 @@ async def soft_delete_recording(
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    # Screen study frames do not wait in the bin with the meeting (#653).
-    await delete_frames_off_loop([recording.public_id], reason="moved to the bin")
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -330,13 +325,11 @@ async def permanently_delete_recording(
     # Read under the lock and removed after the commit, as in delete_recording.
     artifacts = [(recording.id, recording.audio_path, recording.proxy_path)]
     document_paths = await recording_document_paths(db, [recording.id])
-    public_id = recording.public_id
 
     await db.delete(recording)
     await db.commit()
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
-    await delete_frames_off_loop([public_id], reason="permanently deleted")
 
     return {"ok": True}
 
