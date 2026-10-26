@@ -1,4 +1,5 @@
-"""An empty LLM_PROVIDER means gemini, whatever else holds a provider.
+"""An empty LLM_PROVIDER means gemini, whatever else holds a provider, unless
+exactly one provider key is set, which then names the provider (#724).
 
 docker-compose.example.yml filled in gemini for an unset LLM_PROVIDER until
 #477, and now passes the variable through empty so the setup wizard can see
