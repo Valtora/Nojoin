@@ -11,8 +11,8 @@ import { ChangeRule, GRID_CHANNELS, GRID_COLUMNS, GRID_ROWS } from "./changeRule
 // The frame reader is a static worker script, so it runs here in a sandbox
 // with a stand-in canvas whose pixels the test paints.
 const WORKER = path.resolve(__dirname, "../../../../public/workers/speaker-frames.js");
-const WIDTH = 1280;
-const HEIGHT = 720;
+const WIDTH = 1920;
+const HEIGHT = 1080;
 const STAGE = 31;
 
 interface Drawn {
@@ -30,21 +30,23 @@ class Scene {
 
   drawn: Drawn[] = [];
 
+  canvases: [number, number][] = [];
+
   fill(level: number) {
     for (let index = 0; index < this.pixels.length; index += 4) {
       this.pixels.set([level, level, level, 255], index);
     }
   }
 
-  /** A line one pixel wide and 20 tall, inside a single block. */
+  /** A line one pixel wide down the whole of one 30 x 30 block. */
   line(rgb: [number, number, number]) {
-    for (let y = 400; y < 420; y += 1) {
+    for (let y = 390; y < 420; y += 1) {
       this.pixels.set([...rgb, 255], (y * WIDTH + 645) * 4);
     }
   }
 }
 
-const runWorker = (scene: Scene) => {
+const runWorker = (scene: Scene, source: [number, number] = [3840, 2160]) => {
   const replies: Reply[] = [];
   const self = {
     onmessage: null as ((event: { data: unknown }) => void) | null,
@@ -69,13 +71,20 @@ const runWorker = (scene: Scene) => {
     constructor(
       public width: number,
       public height: number,
-    ) {}
+    ) {
+      scene.canvases.push([width, height]);
+    }
 
     getContext() {
       return new Context();
     }
   }
-  const frame = { timestamp: 0, displayWidth: 3840, displayHeight: 2160, close: () => {} };
+  const frame = {
+    timestamp: 0,
+    displayWidth: source[0],
+    displayHeight: source[1],
+    close: () => {},
+  };
   const readable = {
     getReader: () => {
       let sent = false;
@@ -125,6 +134,15 @@ describe("screen study frame reader", () => {
     expect(scene.drawn.every((d) => d.enabled && d.quality === "high")).toBe(true);
   });
 
+  it("draws at most 1920 px on the long side, and a smaller screen at its own size", async () => {
+    const large = new Scene();
+    await runWorker(large).sample();
+    expect(large.canvases).toEqual([[1920, 1080]]);
+    const small = new Scene();
+    await runWorker(small, [1280, 720]).sample();
+    expect(small.canvases).toEqual([[1280, 720]]);
+  });
+
   it("answers a red, green and blue average for each block", async () => {
     const { before } = await keptAfter(() => {});
     expect(before.length).toBe(GRID_COLUMNS * GRID_ROWS * GRID_CHANNELS);
@@ -132,16 +150,16 @@ describe("screen study frame reader", () => {
   });
 
   it("counts a thin coloured ring lighting up as a change", async () => {
-    // Teams' ring, 2 px wide on a 4K screen at 100%, once shrunk to 1280 px:
-    // two thirds of a pixel of its colour over the dark stage. It moves the
-    // block's brightness by four levels and its blue by seven.
-    const ring: [number, number, number] = [95, 99, 174];
+    // Teams' ring, 2 px wide on a 4K screen at 100%, once shrunk to 1920 px:
+    // a pixel of its colour over the dark stage. It moves the block's
+    // brightness by four levels and its blue by seven.
+    const ring: [number, number, number] = [127, 133, 245];
     const { kept } = await keptAfter((scene) => scene.line(ring));
     expect(kept).toBe(true);
   });
 
   it("does not count a grey line of the same strength, such as a cursor blink", async () => {
-    const { kept } = await keptAfter((scene) => scene.line([106, 106, 106]));
+    const { kept } = await keptAfter((scene) => scene.line([144, 144, 144]));
     expect(kept).toBe(false);
   });
 

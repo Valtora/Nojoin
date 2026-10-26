@@ -2,7 +2,7 @@
 
 Every route answers 404 unless ``speaker_frame_sampling`` is ``owner`` and the
 caller is the primary Owner, and the per-recording routes only for a recording
-of the caller's own. Frames have their own limits, apart from the audio's: 1 MB
+of the caller's own. Frames have their own limits, apart from the audio's: 2 MB
 each, two uploads at a time per user and 180 a minute per client. A frame is
 refused once the recording is in the bin or its owner deleted its frames, and
 while free disk space is short. Nothing here logs per frame.
@@ -88,7 +88,7 @@ async def _read_bounded(file: UploadFile, limit: int) -> bytes:
         size += len(chunk)
         if size > limit:
             raise HTTPException(
-                status_code=413, detail="A screen study frame may be at most 1 MB."
+                status_code=413, detail="A screen study frame may be at most 2 MB."
             )
         chunks.append(chunk)
     return b"".join(chunks)

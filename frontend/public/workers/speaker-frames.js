@@ -6,7 +6,7 @@
  * worker can make the processor. It keeps the newest frame and closes the rest,
  * which works with the Nojoin tab hidden, as it is through a meeting.
  *
- * On "sample" it draws the newest frame at most 1280 px on its long edge, with
+ * On "sample" it draws the newest frame at most 1920 px on its long edge, with
  * high-quality smoothing so a line a pixel or two wide on a 4K screen is
  * averaged into the smaller frame rather than skipped, and answers with a
  * 64 x 36 grid of block averages of red, green and blue, which the page
@@ -21,7 +21,7 @@
  */
 "use strict";
 
-const LONG_EDGE_PX = 1280;
+const LONG_EDGE_PX = 1920;
 const COLUMNS = 64;
 const ROWS = 36;
 // Red, green and blue, in that order within each block.

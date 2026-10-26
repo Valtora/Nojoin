@@ -144,7 +144,7 @@ describe("MeetingControls", () => {
   });
 
   describe("screen study opt-in", () => {
-    const available = { rate_hz: 2, retention_days: 14, max_frame_bytes: 1_048_576 };
+    const available = { rate_hz: 2, retention_days: 14, max_frame_bytes: 2_097_152 };
 
     it("is not offered unless the installation allows it for this account", () => {
       render(<MeetingControls variant="dashboard" />);

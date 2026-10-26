@@ -62,8 +62,10 @@ INDEX_FILENAME = "index.jsonl"
 RETENTION = timedelta(days=14)
 # New frames are refused once every recording's frames together pass this.
 TOTAL_CAP_BYTES = 20 * 1024 * 1024 * 1024
-MAX_FRAME_BYTES = 1024 * 1024
-# The browser sends 1280 px on the long edge; this leaves calibration room.
+# A 1920 px frame of a busy screen is a few hundred kB at quality 0.8, and
+# one refused frame ends the study, so the cap leaves room.
+MAX_FRAME_BYTES = 2 * 1024 * 1024
+# The browser sends at most 1920 px on the long edge; this leaves room.
 MAX_FRAME_EDGE_PX = 2560
 # A frame's offset into its 2 s audio chunk. Generous, so a tick on a chunk's
 # boundary is never refused, and small enough to catch a wrong field.
@@ -414,7 +416,7 @@ def _check_frame(sequence: int, offset_ms: int, data: bytes) -> tuple[int, int]:
     if sequence < 0 or not 0 <= offset_ms <= MAX_OFFSET_MS:
         raise InvalidFrame("The frame's position in the recording is out of range.")
     if len(data) > MAX_FRAME_BYTES:
-        raise InvalidFrame("The frame is larger than 1 MB.")
+        raise InvalidFrame("The frame is larger than 2 MB.")
     width, height = jpeg_dimensions(data)
     if width > MAX_FRAME_EDGE_PX or height > MAX_FRAME_EDGE_PX:
         raise InvalidFrame("The frame is larger than 2560 pixels on a side.")
@@ -451,7 +453,7 @@ def store_frame(public_id: str, frame: IncomingFrame) -> StoredFrame:
 
     Raises:
         InvalidRecordingId: ``public_id`` is not a recording id.
-        InvalidFrame: the data is not a whole JPEG, or is over 1 MB or 2560 px a side.
+        InvalidFrame: the data is not a whole JPEG, or is over 2 MB or 2560 px a side.
         StorageCapReached: the total cap would be passed.
         FramesDeleted: the owner deleted this recording's frames.
     """

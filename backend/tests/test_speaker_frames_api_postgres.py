@@ -244,7 +244,7 @@ async def test_the_primary_owner_sees_the_study_and_its_rate(harness) -> None:
     assert response.json() == {
         "rate_hz": 2,
         "retention_days": 14,
-        "max_frame_bytes": 1024 * 1024,
+        "max_frame_bytes": 2 * 1024 * 1024,
     }
 
 
