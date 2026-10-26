@@ -436,7 +436,7 @@ function NoteFileViewer({
     >
       <div className="space-y-4">
         {file.is_image ? (
-          <SurfaceBase kind="inset" className="flex items-center justify-center overflow-hidden rounded-md border border-surface-border bg-surface-inset">
+          <SurfaceBase data-ui-fill="inset" data-ui-border="full" kind="inset" className="flex items-center justify-center overflow-hidden rounded-md border border-surface-border bg-surface-inset">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={documentFileUrl(file.id)}
@@ -445,7 +445,7 @@ function NoteFileViewer({
             />
           </SurfaceBase>
         ) : (
-          <p data-ui="surface" data-ui-surface="inset" className="flex items-center gap-2 rounded-md border border-surface-border bg-surface-inset p-4 text-sm text-foreground">
+          <p data-ui-fill="inset" data-ui-border="full" data-ui="surface" data-ui-surface="inset" className="flex items-center gap-2 rounded-md border border-surface-border bg-surface-inset p-4 text-sm text-foreground">
             <FileText aria-hidden="true" className="h-5 w-5 shrink-0 text-contrast-icon-muted" />
             <span className="min-w-0 break-words">{file.title}</span>
           </p>

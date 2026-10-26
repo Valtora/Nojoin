@@ -58,6 +58,8 @@ export default function BatchActionBar({
       {count > 0 && (
         <div className="sticky bottom-0 z-[var(--z-sticky)] px-2 pb-2">
           <SurfaceBase
+            data-ui-fill="float"
+            data-ui-border="full"
             kind="float"
             role="group"
             aria-label="Selected recordings"

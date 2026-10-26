@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import RecalibrateModal from "./RecalibrateModal";
 import type { GlobalSpeaker, SpeakerSegment } from "@/types";
+import { selectorFor } from "@/test/depthSelectors";
+import { stateSelector, styleRules } from "@/test/styleRules";
 
 const addNotification = vi.fn();
 const getSpeakerSegments = vi.fn();
@@ -73,6 +75,40 @@ describe("RecalibrateModal", () => {
     // Toggling a sample off takes its speech back out.
     fireEvent.click(approve[1]);
     expect(screen.getByText(/^Up to 15 s from one recording/)).toBeTruthy();
+  });
+
+  it("keeps nested card/inset paint local and updates rejected/approved choice contracts", async () => {
+    renderModal();
+    const approve = (await screen.findAllByTitle("Verify / Approve"))[0];
+    const reject = screen.getAllByTitle("Reject / Not this speaker")[0];
+    const pane = approve.closest('[data-ui-surface="pane"]')!;
+    const footer = pane.closest('[data-ui-surface="inset"]')!;
+    const oldStyle = document.documentElement.getAttribute("data-style");
+    const oldDark = document.documentElement.classList.contains("dark");
+    document.documentElement.dataset.style = "depth";
+    document.documentElement.classList.add("dark");
+    try {
+      const translucent = styleRules("depth-dark", "--depth-fill-base",
+        "color-mix(in srgb, var(--surface-inset) 80%, transparent)")[0];
+      const card = styleRules("depth-dark", "--depth-fill-base", "var(--surface-card)")[0];
+      expect(footer.matches(selectorFor(translucent))).toBe(true);
+      expect(pane.matches(selectorFor(card))).toBe(true);
+      expect(pane.matches(selectorFor(translucent))).toBe(false);
+      const dangerHover = styleRules("depth-dark", "background-color", "var(--status-danger-bg)")[0];
+      expect(reject.matches(stateSelector(dangerHover, { hover: true }))).toBe(true);
+      expect(reject).not.toHaveAttribute("data-ui-fill");
+      fireEvent.click(reject);
+      expect(reject).toHaveAttribute("data-ui-fill", "status-danger");
+      expect(reject.matches(stateSelector(dangerHover, { hover: true }))).toBe(false);
+      fireEvent.click(approve);
+      expect(approve).toHaveAttribute("data-ui-fill", "status-success");
+      expect(reject).not.toHaveAttribute("data-ui-fill");
+      expect(reject.matches(stateSelector(dangerHover, { hover: true }))).toBe(true);
+    } finally {
+      if (oldStyle === null) document.documentElement.removeAttribute("data-style");
+      else document.documentElement.setAttribute("data-style", oldStyle);
+      document.documentElement.classList.toggle("dark", oldDark);
+    }
   });
 
   it("says when the server recalibrated from only some of the recordings", async () => {

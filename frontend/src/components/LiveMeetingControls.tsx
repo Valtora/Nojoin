@@ -271,7 +271,9 @@ export default function LiveMeetingControls({
             </span>
           </div>
           {isRecording ? (
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="card"
+              data-ui-border="full" chrome="action"
               type="button"
               onClick={() => sendCommand("pause")}
               disabled={transportDisabled}
@@ -282,7 +284,9 @@ export default function LiveMeetingControls({
               <Pause className="h-4 w-4" />
             </ButtonBase>
           ) : (
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="card"
+              data-ui-border="full" chrome="action"
               type="button"
               onClick={() => sendCommand("resume")}
               disabled={transportDisabled}
@@ -293,7 +297,9 @@ export default function LiveMeetingControls({
               <Play className="h-4 w-4" />
             </ButtonBase>
           )}
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-fill="status-danger"
+            data-ui-hover="status-danger" chrome="action"
             type="button"
             onClick={handleStop}
             disabled={stopDisabled}
@@ -303,7 +309,10 @@ export default function LiveMeetingControls({
           >
             <Square className="h-4 w-4 fill-current" />
           </ButtonBase>
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-fill="card"
+            data-ui-hover="status-danger"
+            data-ui-border="full" chrome="action"
             type="button"
             onClick={handleDiscard}
             disabled={stopDisabled}
@@ -347,7 +356,9 @@ export default function LiveMeetingControls({
               17rem (#538). */}
           <div className="flex min-w-[min(18rem,100%)] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
             {isRecording ? (
-              <ButtonBase chrome="action"
+              <ButtonBase
+                data-ui-fill="card"
+                data-ui-border="full" chrome="action"
                 type="button"
                 onClick={() => sendCommand("pause")}
                 disabled={transportDisabled}
@@ -358,7 +369,9 @@ export default function LiveMeetingControls({
                 Pause
               </ButtonBase>
             ) : (
-              <ButtonBase chrome="action"
+              <ButtonBase
+                data-ui-fill="card"
+                data-ui-border="full" chrome="action"
                 type="button"
                 onClick={() => sendCommand("resume")}
                 disabled={transportDisabled}
@@ -370,7 +383,9 @@ export default function LiveMeetingControls({
               </ButtonBase>
             )}
 
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="status-danger"
+              data-ui-hover="status-danger" chrome="action"
               type="button"
               onClick={handleStop}
               disabled={stopDisabled}
@@ -381,7 +396,10 @@ export default function LiveMeetingControls({
               Stop
             </ButtonBase>
 
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="status-danger"
+              data-ui-border="full" chrome="action"
               type="button"
               onClick={handleDiscard}
               disabled={stopDisabled}
@@ -427,7 +445,9 @@ export default function LiveMeetingControls({
 
       <div className="flex flex-wrap gap-3">
         {isRecording ? (
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-fill="card"
+            data-ui-border="full" chrome="action"
             type="button"
             onClick={() => sendCommand("pause")}
             disabled={transportDisabled}
@@ -438,7 +458,9 @@ export default function LiveMeetingControls({
             Pause
           </ButtonBase>
         ) : (
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-fill="card"
+            data-ui-border="full" chrome="action"
             type="button"
             onClick={() => sendCommand("resume")}
             disabled={transportDisabled}
@@ -450,7 +472,9 @@ export default function LiveMeetingControls({
           </ButtonBase>
         )}
 
-        <ButtonBase chrome="action"
+        <ButtonBase
+          data-ui-fill="status-danger"
+          data-ui-hover="status-danger" chrome="action"
           type="button"
           onClick={handleStop}
           disabled={stopDisabled}
@@ -461,7 +485,10 @@ export default function LiveMeetingControls({
           Stop
         </ButtonBase>
 
-        <ButtonBase chrome="action"
+        <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="status-danger"
+          data-ui-border="full" chrome="action"
           type="button"
           onClick={handleDiscard}
           disabled={stopDisabled}

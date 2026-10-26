@@ -207,7 +207,7 @@ function AuthorizeContent() {
     // revocation note and, on a short window, Allow itself fall off the bottom.
     <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <div className="my-auto w-full max-w-lg flex flex-col items-center">
-        <SurfaceBase kind="card" className="w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
+        <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
           <div className="px-8 pt-10 pb-8">
             {loading && (
               <div className="flex justify-center py-16">
@@ -311,6 +311,8 @@ function AuthorizeContent() {
                         <UserIcon className="h-5 w-5 text-contrast-icon-muted" />
                       </div>
                       <InputBase
+                        data-ui-fill="control"
+                        data-ui-border="full"
                         id="oauth-username"
                         name="username"
                         type="text"
@@ -328,6 +330,8 @@ function AuthorizeContent() {
                         <Lock className="h-5 w-5 text-contrast-icon-muted" />
                       </div>
                       <InputBase
+                        data-ui-fill="control"
+                        data-ui-border="full"
                         id="oauth-password"
                         name="password"
                         type="password"
@@ -339,7 +343,9 @@ function AuthorizeContent() {
                         onChange={(e) => setPassword(e.target.value)}
                       />
                     </div>
-                    <ButtonBase chrome="action"
+                    <ButtonBase
+                      data-ui-fill="action"
+                      data-ui-hover="action-hover" chrome="action"
                       type="submit"
                       {...loadingButtonProps(signingIn)}
                       className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"
@@ -364,14 +370,18 @@ function AuthorizeContent() {
                       </span>
                     </div>
                     <div className="flex gap-3">
-                      <ButtonBase chrome="action"
+                      <ButtonBase
+                        data-ui-hover="inset"
+                        data-ui-border="full" chrome="action"
                         type="button"
                         {...loadingButtonProps(submitting, undefined, () => handleDecision(false))}
                         className="flex-1 py-3 px-4 rounded-lg text-sm font-semibold text-foreground border border-control-border hover:bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"
                       >
                         Deny
                       </ButtonBase>
-                      <ButtonBase chrome="action"
+                      <ButtonBase
+                        data-ui-fill="action"
+                        data-ui-hover="action-hover" chrome="action"
                         type="button"
                         {...loadingButtonProps(submitting, undefined, () => handleDecision(true))}
                         className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"

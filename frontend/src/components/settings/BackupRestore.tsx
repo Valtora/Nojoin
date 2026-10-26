@@ -308,6 +308,10 @@ export default function BackupRestore() {
           >
             <div className="flex flex-wrap gap-2 @min-[26rem]:justify-end">
               <ButtonBase
+                data-ui-fill="card"
+                data-ui-hover="inset"
+                data-ui-active="inset"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 onClick={handleDownloadLatest}
@@ -317,6 +321,10 @@ export default function BackupRestore() {
                 Download
               </ButtonBase>
               <ButtonBase
+                data-ui-fill="card"
+                data-ui-hover="inset"
+                data-ui-active="inset"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 onClick={() => setConfirmDelete(true)}
@@ -365,6 +373,10 @@ export default function BackupRestore() {
           >
             <div className="flex @min-[26rem]:justify-end">
               <ButtonBase
+                data-ui-fill="action"
+                data-ui-hover="action-hover"
+                data-ui-active="action-active"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 onClick={() => setShowBackupOptions(true)}
@@ -445,6 +457,10 @@ export default function BackupRestore() {
 
           {selectedFile && !importing && (
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={handleRemoveFile}
@@ -491,6 +507,10 @@ export default function BackupRestore() {
 
           <div className="mt-4 flex justify-end">
             <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover"
+              data-ui-active="action-active"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={handleRestoreClick}

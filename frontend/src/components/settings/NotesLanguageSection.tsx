@@ -41,6 +41,9 @@ export default function NotesLanguageSection({
         description="Covers titles, headings, summaries, notes and action items."
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           id="notes-language-select"
           aria-describedby="notes-language-select-help"
           value={language}
@@ -66,6 +69,9 @@ export default function NotesLanguageSection({
           description="Needed for Custom. Set the language, regional conventions, tone and heading style."
         >
           <InputBase
+            data-ui-fill="control"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
             id="notes-language-custom"
             aria-describedby="notes-language-custom-help"
             type="text"

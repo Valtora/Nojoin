@@ -265,6 +265,8 @@ export default function AddTagModal({
               <span className={`w-2 h-2 rounded-full ${color.dot}`} />
               {isEditing ? (
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   autoFocus
                   className="bg-control-bg text-foreground border border-control-border rounded px-1 py-0.5 text-sm w-full"
                   value={editValue}

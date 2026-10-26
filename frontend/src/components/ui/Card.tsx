@@ -33,6 +33,9 @@ const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
 ) {
   return (
     <SurfaceBase
+      data-ui-fill="card"
+      data-ui-hover={(interactive) ? "action-tint" : undefined}
+      data-ui-border="full"
       kind="card"
       ref={ref}
       className={cn(

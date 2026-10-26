@@ -56,6 +56,9 @@ export default function GlossarySection({
       >
         {isAdmin ? (
           <TextareaBase
+            data-ui-fill="control"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
             id="glossary-shared"
             value={shared}
             onChange={(event) =>
@@ -68,6 +71,9 @@ export default function GlossarySection({
           />
         ) : shared.trim() ? (
           <TextareaBase
+            data-ui-fill="control-disabled"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
             id="glossary-shared"
             value={shared}
             readOnly
@@ -86,6 +92,9 @@ export default function GlossarySection({
         description="Added to the shared glossary. Where both define a term, yours is used. One term per line, as Term: meaning."
       >
         <TextareaBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           id="glossary-personal"
           value={settings.glossary_terms || ""}
           onChange={(event) =>

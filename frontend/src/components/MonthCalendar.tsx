@@ -37,7 +37,7 @@ export default function MonthCalendar({
   });
 
   return (
-    <SurfaceBase kind="card" className="rounded-lg border border-control-border bg-surface-card p-2">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="rounded-lg border border-control-border bg-surface-card p-2">
       <div className="flex items-center justify-between mb-2">
         <ButtonBase
           type="button"
@@ -78,6 +78,7 @@ export default function MonthCalendar({
 
           return (
             <ButtonBase
+              data-ui-fill={(isSelected) ? "action" : undefined}
               key={dayKey}
               type="button"
               onClick={() => onSelectDay(dayKey)}

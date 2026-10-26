@@ -8,6 +8,8 @@ import {
   within,
 } from "@/test/renderWithProviders";
 import type { Tag } from "@/types";
+import { selectorFor } from "@/test/depthSelectors";
+import { styleRules } from "@/test/styleRules";
 
 const routerPush = vi.fn();
 const toggleTagFilter = vi.fn();
@@ -105,6 +107,25 @@ describe("MainNav", () => {
     expect(screen.getByText("Recordings")).toBeInTheDocument();
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.getByText("Deleted")).toBeInTheDocument();
+  });
+
+  it("resolves its rail fill independently of its pane or float role", async () => {
+    const { container } = renderWithProviders(<MainNav />);
+    await waitFor(() => expect(getTags).toHaveBeenCalled());
+    const rail = container.querySelector('[data-ui-fill="rail"]')!;
+    expect(rail).not.toBeNull();
+    const oldStyle = document.documentElement.getAttribute("data-style");
+    const oldDark = document.documentElement.classList.contains("dark");
+    document.documentElement.dataset.style = "depth";
+    document.documentElement.classList.add("dark");
+    try {
+      const fill = styleRules("depth-dark", "--depth-fill-base", "var(--rail-bg)")[0];
+      expect(rail.matches(selectorFor(fill))).toBe(true);
+    } finally {
+      if (oldStyle === null) document.documentElement.removeAttribute("data-style");
+      else document.documentElement.setAttribute("data-style", oldStyle);
+      document.documentElement.classList.toggle("dark", oldDark);
+    }
   });
 
   it("leaves Import Audio to the recordings list", async () => {

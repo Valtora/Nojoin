@@ -181,7 +181,9 @@ export default function ContextMenu({
     : { top: y, left: x, visibility: "hidden" as const };
 
   return createPortal(
-    <SurfaceBase kind="float"
+    <SurfaceBase
+      data-ui-fill="float"
+      data-ui-border="full" kind="float"
       ref={menuRef}
       role="menu"
       aria-label={label}

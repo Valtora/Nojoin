@@ -359,6 +359,10 @@ function ProviderConnectRow({
     >
       {connected ? (
         <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="inset"
+          data-ui-active="inset"
+          data-ui-border="full"
           chrome="action"
           type="button"
           {...loadingButtonProps(busy, undefined, handleDisconnect)}
@@ -373,6 +377,10 @@ function ProviderConnectRow({
         </ButtonBase>
       ) : blockedBy ? null : (
         <ButtonBase
+          data-ui-fill="action"
+          data-ui-hover="action-hover"
+          data-ui-active="action-active"
+          data-ui-border="full"
           chrome="action"
           type="button"
           {...loadingButtonProps(busy, undefined, beginFlow)}
@@ -422,6 +430,8 @@ function ProviderConnectRow({
                     access. This page updates automatically once you approve.
                   </p>
                   <SurfaceBase
+                    data-ui-fill="inset"
+                    data-ui-border="full"
                     kind="inset" className="rounded-lg border border-surface-border bg-surface-inset px-4 py-3 text-center">
                     <div className="text-xs text-contrast-helper mb-1">Your code</div>
                     <div className="text-2xl font-mono font-semibold tracking-widest text-foreground">
@@ -429,6 +439,7 @@ function ProviderConnectRow({
                     </div>
                   </SurfaceBase>
                   <a
+                    data-ui-fill="action"
                     href={device.verificationUriComplete || device.verificationUri}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -456,6 +467,7 @@ function ProviderConnectRow({
                   </p>
                   {authorizeUrl && (
                     <a
+                      data-ui-fill="action"
                       href={authorizeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -473,6 +485,9 @@ function ProviderConnectRow({
                       Paste the code {meta.vendor} shows you
                     </label>
                     <InputBase
+                      data-ui-fill="control"
+                      data-ui-disabled-fill="control-disabled"
+                      data-ui-border="full"
                       id={`cli-code-${provider}`}
                       type="text"
                       autoComplete="off"

@@ -107,6 +107,10 @@ export default function CaptureProcessingSettings() {
               row offers the way back and nothing while they are on. */}
           {suppressQuietAudioWarnings && (
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={() => {

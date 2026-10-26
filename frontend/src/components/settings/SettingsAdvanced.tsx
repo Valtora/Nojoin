@@ -54,6 +54,9 @@ export default function SettingsAdvanced({
     // inside a card.
     <section className={cn("space-y-4", className)}>
       <ButtonBase
+        data-ui-fill="card"
+        data-ui-hover="inset"
+        data-ui-border="full"
         data-ui-surface="card"
         type="button"
         onClick={() => setOpen((previous) => !previous)}

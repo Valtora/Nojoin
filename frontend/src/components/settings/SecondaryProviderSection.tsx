@@ -160,6 +160,9 @@ export default function SecondaryProviderSection({
             description="Where the fallback's Ollama server listens."
           >
             <InputBase
+              data-ui-fill="control"
+              data-ui-disabled-fill="control-disabled"
+              data-ui-border="full"
               id="ai-fallback-ollama-url"
               aria-describedby="ai-fallback-ollama-url-help"
               type="url"
@@ -184,6 +187,9 @@ export default function SecondaryProviderSection({
             description={<ContextWindowHelp tokens={contextWindow} />}
           >
             <InputBase
+              data-ui-fill="control"
+              data-ui-disabled-fill="control-disabled"
+              data-ui-border="full"
               id="ai-fallback-context-window"
               aria-describedby="ai-fallback-context-window-help"
               type="number"

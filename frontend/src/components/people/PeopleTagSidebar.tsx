@@ -204,6 +204,7 @@ export function PeopleTagSidebar({
           />
         )}
         <SurfaceBase
+          data-ui-fill="card"
           kind="pane"
           className={`${SIDEBAR_SHELL} ${mobileTransform} items-center justify-center`}
         >
@@ -222,6 +223,7 @@ export function PeopleTagSidebar({
         />
       )}
       <SurfaceBase
+        data-ui-fill="card"
         kind="pane" className={`${SIDEBAR_SHELL} ${mobileTransform}`}>
         <div className="p-4 border-b border-surface-border space-y-4">
           <div className="flex items-center justify-between">
@@ -231,6 +233,7 @@ export function PeopleTagSidebar({
             </h2>
             <div className="flex items-center gap-1">
               <ButtonBase
+                data-ui-hover="inset"
                 chrome="action"
                 onClick={onMobileClose}
                 className="lg:hidden p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-contrast-muted"
@@ -240,6 +243,7 @@ export function PeopleTagSidebar({
                 <X className="w-4 h-4" />
               </ButtonBase>
               <ButtonBase
+                data-ui-hover="inset"
                 chrome="action"
                 onClick={() => {
                   const allIds = tags.map((t) => t.id);
@@ -251,6 +255,7 @@ export function PeopleTagSidebar({
                 <ChevronsDown className="w-3.5 h-3.5" />
               </ButtonBase>
               <ButtonBase
+                data-ui-hover="inset"
                 chrome="action"
                 onClick={() => setExpandedTagIds(new Set())}
                 className="p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-contrast-muted"
@@ -259,6 +264,7 @@ export function PeopleTagSidebar({
                 <ChevronsUp className="w-3.5 h-3.5" />
               </ButtonBase>
               <ButtonBase
+                data-ui-hover="inset"
                 chrome="action"
                 onClick={() => setIsAddingRoot(true)}
                 className="p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-action-text"
@@ -272,6 +278,7 @@ export function PeopleTagSidebar({
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-contrast-icon-muted" />
             <InputBase
+              data-ui-fill="inset"
               type="text"
               placeholder="Search tags..."
               value={searchQuery}
@@ -285,6 +292,8 @@ export function PeopleTagSidebar({
           {isAddingRoot && (
             <div className="mb-2 px-2 flex items-center gap-1">
               <InputBase
+                data-ui-fill="card"
+                data-ui-border="full"
                 autoFocus
                 className="flex-1 px-2 py-1 text-sm bg-surface-card border border-action rounded outline-none"
                 placeholder="Root tag name..."
@@ -296,6 +305,7 @@ export function PeopleTagSidebar({
                 }}
               />
               <ButtonBase
+                data-ui-hover="action-tint"
                 chrome="action"
                 onClick={() => handleAddTag(newTagName)}
                 className="p-1.5 text-action-text hover:bg-action-tint rounded"
@@ -341,6 +351,8 @@ export function PeopleTagSidebar({
         {selectedTagIds.length > 0 && (
           <div className="p-2 border-t border-surface-border">
             <ButtonBase
+              data-ui-hover="action-tint"
+              data-ui-border="full"
               chrome="action"
               onClick={onClearFilters}
               className="w-full px-3 py-1.5 text-xs font-medium text-action-text hover:bg-action-tint rounded-lg flex items-center justify-center gap-2 border border-action-border transition-colors"
@@ -447,6 +459,8 @@ function TagNode({
           </div>
           {isEditing ? (
             <InputBase
+              data-ui-fill="card"
+              data-ui-border="full"
               autoFocus
               className="flex-1 bg-surface-card border border-action rounded px-1 py-0.5 text-sm"
               value={editValue}
@@ -545,6 +559,8 @@ function TagNode({
           style={{ paddingLeft: `${(level + 1) * 12 + 20}px` }}
         >
           <InputBase
+            data-ui-fill="card"
+            data-ui-border="full"
             autoFocus
             className="flex-1 px-2 py-0.5 text-xs bg-surface-card border border-action rounded outline-none"
             placeholder="New sub-tag..."
@@ -556,6 +572,7 @@ function TagNode({
             }}
           />
           <ButtonBase
+            data-ui-hover="action-tint"
             chrome="action"
             onClick={() => void saveSubTag()}
             className="p-1 text-action-text hover:bg-action-tint rounded"

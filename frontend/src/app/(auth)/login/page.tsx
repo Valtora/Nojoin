@@ -85,7 +85,7 @@ export default function LoginPage() {
     // page-shell: this route owns its scroll; <body> is overflow-hidden. See
     // the note on .page-shell in globals.css.
     <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 lg:px-8">
-      <SurfaceBase kind="card" className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
+      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image
@@ -114,7 +114,10 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover"
+              data-ui-border="full" chrome="action"
               type="button"
               {...loadingButtonProps(loading, undefined, () => void signIn(DEMO_USERNAME, DEMO_PASSWORD))}
               className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
@@ -140,6 +143,8 @@ export default function LoginPage() {
                   <User className="h-5 w-5 text-contrast-icon-muted" />
                 </div>
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   id="login-username"
                   name="username"
                   type="text"
@@ -164,6 +169,8 @@ export default function LoginPage() {
                   <Lock className="h-5 w-5 text-contrast-icon-muted" />
                 </div>
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   id="login-current-password"
                   name="password"
                   type="password"
@@ -191,7 +198,10 @@ export default function LoginPage() {
             )}
 
             <div>
-              <ButtonBase chrome="action"
+              <ButtonBase
+                data-ui-fill="action"
+                data-ui-hover="action-hover"
+                data-ui-border="full" chrome="action"
                 type="submit"
                 {...loadingButtonProps(loading)}
                 className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"

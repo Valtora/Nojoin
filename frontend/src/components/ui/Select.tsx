@@ -36,6 +36,9 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
       )}
       <div className="relative">
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           ref={ref}
           id={selectId}
           aria-invalid={error ? true : undefined}

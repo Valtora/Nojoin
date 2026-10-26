@@ -246,7 +246,7 @@ export default function LiveTranscriptPanel({
     // below. Not when stacked, where the page scrolls: a clipping card is a
     // scroll container, and the note box would stick to the card, which never
     // scrolls, rather than to the page above an on-screen keyboard.
-    <SurfaceBase as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card @min-[54rem]:overflow-hidden">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card @min-[54rem]:overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           <Radio className="h-3.5 w-3.5" />
@@ -277,7 +277,9 @@ export default function LiveTranscriptPanel({
               itself puts the bar within the frame and across its rounded corners.
               Drawing the frame behind the content and ending it before the gutter
               leaves the bar outside the window entirely. */}
-          <SurfaceBase kind="pane"
+          <SurfaceBase
+            data-ui-fill="card"
+            data-ui-border="full" kind="pane"
             aria-hidden
             className="density-surface-panel pointer-events-none absolute inset-y-0 left-0 right-[var(--live-transcript-gutter)] border border-action-border bg-surface-card"
           />
@@ -369,6 +371,9 @@ export default function LiveTranscriptPanel({
 
           {!isEmpty && !isPinnedToBottom ? (
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="action-tint"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={jumpToLatest}

@@ -401,7 +401,7 @@ export default function NotesView({
   return (
     <div id="meeting-notes" className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
-      <SurfaceBase kind="pane" className="bg-surface-card border-b-2 border-control-border shadow-card z-10 flex flex-col">
+      <SurfaceBase data-ui-fill="card" kind="pane" className="bg-surface-card border-b-2 border-control-border shadow-card z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}
         <div className="px-3 md:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
           {/* Formatting Toolbar */}
@@ -475,7 +475,9 @@ export default function NotesView({
                 button's height: its icon is shorter than the button's text line,
                 so equal padding alone leaves the two a few pixels apart. */}
             <div className="flex items-stretch">
-              <ButtonBase chrome="action"
+              <ButtonBase
+                data-ui-fill="action"
+                data-ui-hover="action-hover" chrome="action"
                 {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 title="Generate Notes with AI"
@@ -554,6 +556,8 @@ export default function NotesView({
             <div className="relative min-w-40 flex-[1_1_11rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <InputBase
+                data-ui-fill="inset"
+                data-ui-border="full"
                 placeholder="Find..."
                 value={findText}
                 onChange={(e) => setFindText(e.target.value)}
@@ -567,7 +571,7 @@ export default function NotesView({
                 autoFocus
               />
               {matches.length > 0 && (
-                <SurfaceBase kind="pane" className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
+                <SurfaceBase data-ui-fill="card" kind="pane" className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
                   <span>
                     {currentMatchIndex + 1} of {matches.length}
                   </span>
@@ -590,6 +594,8 @@ export default function NotesView({
               <div className="relative min-w-40 flex-[1_1_11rem]">
                 <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
                 <InputBase
+                  data-ui-fill="inset"
+                  data-ui-border="full"
                   placeholder="Replace..."
                   value={replaceText}
                   onChange={(e) => setReplaceText(e.target.value)}
@@ -616,7 +622,7 @@ export default function NotesView({
                         className="fixed inset-0 z-[var(--z-dropdown)]"
                         onClick={() => setShowSettings(false)}
                       />
-                      <SurfaceBase kind="float" className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
+                      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="float" className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
                         <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
                           Search Options
                         </div>
@@ -666,20 +672,28 @@ export default function NotesView({
 
                 <div className="w-px h-4 bg-surface-card mx-1" />
 
-                <ButtonBase chrome="action"
+                <ButtonBase
+                  data-ui-fill="inset"
+                  data-ui-hover="inset"
+                  data-ui-border="full" chrome="action"
                   onClick={nextMatch}
                   disabled={matches.length === 0}
                   className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border"
                 >
                   Find Next
                 </ButtonBase>
-                <ButtonBase chrome="action"
+                <ButtonBase
+                  data-ui-fill="inset"
+                  data-ui-hover="inset"
+                  data-ui-border="full" chrome="action"
                   {...loadingButtonProps(isSubmitting, matches.length === 0, handleReplaceCurrent)}
                   className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 >
                   Replace
                 </ButtonBase>
-                <ButtonBase chrome="action"
+                <ButtonBase
+                  data-ui-fill="action"
+                  data-ui-hover="action-hover" chrome="action"
                   {...loadingButtonProps(isSubmitting, !findText, handleFindReplaceSubmit)}
                   className="px-3 py-1.5 bg-action text-action-on text-sm rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 >
@@ -711,7 +725,9 @@ export default function NotesView({
               Click &quot;Generate Notes&quot; to create AI-powered meeting
               notes from the transcript.
             </p>
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover" chrome="action"
               {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
               className="flex items-center gap-2 px-4 py-2 bg-action text-action-on rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
             >

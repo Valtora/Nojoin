@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { act, fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
+import { act, fireEvent, renderWithProviders, screen, within } from "@/test/renderWithProviders";
+import { applyUiStyle } from "@/lib/appearance";
 
 import AppearanceSettings from "./AppearanceSettings";
 
@@ -21,6 +22,10 @@ function choose(label: string, value: string) {
   });
 }
 
+function finishStyleLoad() {
+  act(() => document.getElementById("nojoin-optional-style")!.dispatchEvent(new Event("load")));
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "matchMedia",
@@ -35,9 +40,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  applyUiStyle("default");
   vi.unstubAllGlobals();
   root.className = "";
-  for (const attribute of ["data-palette", "data-corners", "data-ui-density"]) {
+  for (const attribute of ["data-palette", "data-corners", "data-ui-density", "data-style"]) {
     root.removeAttribute(attribute);
   }
 });
@@ -47,20 +53,25 @@ describe("AppearanceSettings", () => {
     localStorage.setItem("nojoin-palette", "ultraviolet");
     localStorage.setItem("nojoin-corners", "subtle");
     localStorage.setItem("nojoin-density", "comfortable");
+    localStorage.setItem("nojoin-style", "depth");
 
     renderSettings();
 
     expect(screen.getByRole("combobox", { name: "Colour palette" })).toHaveValue("ultraviolet");
     expect(screen.getByRole("combobox", { name: "Corner style" })).toHaveValue("subtle");
     expect(screen.getByRole("combobox", { name: "Density" })).toHaveValue("comfortable");
+    expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("depth");
   });
 
   it("falls back to the defaults when storage holds an unknown value", () => {
     localStorage.setItem("nojoin-palette", "neon");
+    localStorage.setItem("nojoin-style", "neon");
 
     renderSettings();
 
     expect(screen.getByRole("combobox", { name: "Colour palette" })).toHaveValue("default");
+    expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("default");
+    expect(root.dataset.style).toBe("default");
   });
 
   it("treats an unknown stored theme as System", () => {
@@ -85,9 +96,65 @@ describe("AppearanceSettings", () => {
     renderSettings();
     choose("Theme", "dark");
     choose("Colour palette", "graphite");
+    choose("Style", "classic");
 
     expect(root.classList.contains("dark")).toBe(true);
     expect(root.dataset.palette).toBe("graphite");
+    expect(root.dataset.style).toBe("default");
+    expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("classic");
+    finishStyleLoad();
+    expect(root.dataset.style).toBe("classic");
+  });
+
+  it("names and describes the Style control and gives search its row anchor", () => {
+    renderSettings();
+
+    const select = screen.getByRole("combobox", { name: "Style" });
+    expect(within(select).getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["Default", "Classic", "Depth"]);
+    expect(select).toHaveAccessibleDescription(
+      "The shape and depth of controls and panels. Classic looks best with Square corners.",
+    );
+    expect(document.getElementById("appearance-style")).toContainElement(select);
+    expect(screen.getByTitle("Saved in this browser only, not with your account")).toBeInTheDocument();
+  });
+
+  it.each(["classic", "depth"])("applies and persists %s, then forgets Default", (style) => {
+    renderSettings();
+
+    choose("Style", style);
+    // The saved preference changes immediately; the rendered style waits for CSS.
+    expect(root.dataset.style).toBe("default");
+    expect(root.style.opacity).toBe("");
+    expect(localStorage.getItem("nojoin-style")).toBe(style);
+    expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue(style);
+    finishStyleLoad();
+    expect(root.dataset.style).toBe(style);
+
+    choose("Style", "default");
+    expect(root.dataset.style).toBe("default");
+    expect(localStorage.getItem("nojoin-style")).toBeNull();
+  });
+
+  it("leaves corners, palette and density unchanged when Classic is chosen", () => {
+    renderSettings();
+    choose("Colour palette", "ultraviolet");
+    choose("Corner style", "subtle");
+    choose("Density", "comfortable");
+
+    choose("Style", "classic");
+
+    expect(root.dataset.palette).toBe("ultraviolet");
+    expect(root.dataset.corners).toBe("subtle");
+    expect(root.dataset.uiDensity).toBe("comfortable");
+    for (const [label, key, value] of [
+      ["Colour palette", "nojoin-palette", "ultraviolet"],
+      ["Corner style", "nojoin-corners", "subtle"],
+      ["Density", "nojoin-density", "comfortable"],
+    ]) {
+      expect(screen.getByRole("combobox", { name: label })).toHaveValue(value);
+      expect(localStorage.getItem(key)).toBe(value);
+    }
   });
 
   it("stores an explicit theme and forgets System, the default", () => {
@@ -171,22 +238,27 @@ describe("AppearanceSettings across tabs", () => {
     });
   }
 
-  it("follows theme, palette, corner style and density changed in another tab", () => {
+  it("follows theme, palette, corners, density and style changed in another tab", () => {
     renderSettings();
 
     changeInAnotherTab("nojoin-theme", "dark");
     changeInAnotherTab("nojoin-palette", "classic");
     changeInAnotherTab("nojoin-corners", "square");
     changeInAnotherTab("nojoin-density", "dense");
+    changeInAnotherTab("nojoin-style", "depth");
 
     expect(root.classList.contains("dark")).toBe(true);
     expect(root.dataset.palette).toBe("classic");
     expect(root.dataset.corners).toBe("square");
     expect(root.dataset.uiDensity).toBe("dense");
+    expect(root.dataset.style).toBe("default");
     expect(screen.getByRole("combobox", { name: "Theme" })).toHaveValue("dark");
     expect(screen.getByRole("combobox", { name: "Colour palette" })).toHaveValue("classic");
     expect(screen.getByRole("combobox", { name: "Corner style" })).toHaveValue("square");
     expect(screen.getByRole("combobox", { name: "Density" })).toHaveValue("dense");
+    expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("depth");
+    finishStyleLoad();
+    expect(root.dataset.style).toBe("depth");
   });
 
   it("returns to the defaults when another tab clears a setting", () => {
@@ -198,5 +270,31 @@ describe("AppearanceSettings across tabs", () => {
 
     expect(root.hasAttribute("data-palette")).toBe(false);
     expect(screen.getByRole("combobox", { name: "Colour palette" })).toHaveValue("default");
+  });
+
+  it("returns the Style control and root to Default after removal or invalid storage", () => {
+    renderSettings();
+
+    for (const value of [null, "unrecognised"]) {
+      changeInAnotherTab("nojoin-style", "classic");
+      expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("classic");
+
+      changeInAnotherTab("nojoin-style", value);
+
+      expect(root.dataset.style).toBe("default");
+      expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("default");
+    }
+  });
+
+  it("updates the Style control and root when another tab clears all storage", () => {
+    renderSettings();
+    changeInAnotherTab("nojoin-style", "depth");
+    expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("depth");
+
+    localStorage.clear();
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: null })));
+
+    expect(root.dataset.style).toBe("default");
+    expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("default");
   });
 });

@@ -889,6 +889,8 @@ export default function Sidebar() {
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <InputBase
+                data-ui-fill="control"
+                data-ui-border="full"
                 ref={searchInputRef}
                 type="text"
                 placeholder="Search..."
@@ -943,7 +945,9 @@ export default function Sidebar() {
                 </div>
               );
             })}
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-hover="status-danger"
+              data-ui-border="full" chrome="action"
               onClick={clearTagFilters}
               className="px-2.5 py-1 rounded-pill text-xs font-medium text-danger-text hover:bg-status-danger-bg border border-status-danger-border transition-colors"
               title="Clear all tag filters"
@@ -954,7 +958,7 @@ export default function Sidebar() {
         )}
 
         {showFilters && (
-          <SurfaceBase kind="card" className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">
+          <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">
             <div className="space-y-1">
               <label className="text-xs font-medium text-rail-fg-muted">
                 Date Filter
@@ -983,6 +987,8 @@ export default function Sidebar() {
               <div className="flex gap-2">
                 {(dateMode === "range" || dateMode === "after") && (
                   <InputBase
+                    data-ui-fill="control"
+                    data-ui-border="full"
                     type="date"
                     value={dateRange.start}
                     onChange={(e) =>
@@ -997,6 +1003,8 @@ export default function Sidebar() {
                 )}
                 {(dateMode === "range" || dateMode === "before") && (
                   <InputBase
+                    data-ui-fill="control"
+                    data-ui-border="full"
                     type="date"
                     value={dateRange.end}
                     onChange={(e) =>
@@ -1119,7 +1127,7 @@ export default function Sidebar() {
               return (
                 <li key={recording.id} className="relative group">
                   {isRenaming ? (
-                    <SurfaceBase kind="card" className="p-3 rounded-lg border bg-surface-card border-action">
+                    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 rounded-lg border bg-surface-card border-action">
                       <InputBase
                         autoFocus
                         type="text"
@@ -1162,6 +1170,9 @@ export default function Sidebar() {
                         }`}
                       />
                       <Link
+                        data-ui-fill={isHighlighted ? "action-tint" : "card"}
+                        data-ui-hover={isHighlighted ? undefined : "action-tint"}
+                        data-ui-border="full"
                         data-ui="surface"
                         data-ui-surface="card"
                         data-recording-link={recording.id}
@@ -1188,7 +1199,7 @@ export default function Sidebar() {
                             ? isSelected
                               ? "bg-action-tint border-action-border"
                               : "bg-action-tint border-action"
-                            : "bg-surface-card border-surface-border group-hover:border-action-border group-hover:bg-action-tint"
+                            : "bg-surface-card border-surface-border hover:border-action-border hover:bg-action-tint"
                         }`}
                       >
                         <div className="flex justify-between items-start mb-1">

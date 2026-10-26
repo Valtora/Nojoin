@@ -1,0 +1,194 @@
+/* Depth's light raised fills shade towards the palette foreground; dark
+   raised fills retain their role mix beneath a softly lit accent wash. */
+html[data-style="depth"]:not(.dark) {
+  --depth-light-card: 7%;
+  --depth-light-pane: 10%;
+  --depth-light-float: 12%;
+  --depth-light-pane-inset: 7.5%;
+  --control-placeholder: var(--contrast-helper);
+  --control-border: var(--contrast-icon-muted);
+  --action-text: var(--action-text-hover);
+  --focus-ring: var(--action-text-hover);
+}
+
+html[data-style="depth"].dark {
+  --depth-gradient-light: 5%;
+  --depth-gradient-shade: 0%;
+  --control-placeholder: var(--contrast-muted);
+  --contrast-helper: var(--contrast-muted);
+  --contrast-icon-muted: var(--contrast-muted);
+  --depth-gradient-top: color-mix(in oklab, var(--foreground) var(--depth-gradient-light), transparent);
+  --depth-gradient-bottom: color-mix(in oklab, var(--foreground) var(--depth-gradient-shade), transparent);
+  --depth-gradient-pane-top: color-mix(in oklab, var(--depth-gradient-top) 96.5%, var(--action) 3.5%);
+  --depth-gradient-paint: linear-gradient(in oklab,
+    var(--depth-gradient-top) 0%,
+    color-mix(in oklab, var(--depth-gradient-top) 60%, var(--depth-gradient-bottom)) 35%,
+    color-mix(in oklab, var(--depth-gradient-top) 25%, var(--depth-gradient-bottom)) 65%,
+    color-mix(in oklab, var(--depth-gradient-top) 6%, var(--depth-gradient-bottom)) 85%,
+    var(--depth-gradient-bottom) 100%);
+  --depth-gradient-pane-paint: linear-gradient(in oklab,
+    var(--depth-gradient-pane-top) 0%,
+    color-mix(in oklab, var(--depth-gradient-pane-top) 60%, var(--depth-gradient-bottom)) 35%,
+    color-mix(in oklab, var(--depth-gradient-pane-top) 25%, var(--depth-gradient-bottom)) 65%,
+    color-mix(in oklab, var(--depth-gradient-pane-top) 6%, var(--depth-gradient-bottom)) 85%,
+    var(--depth-gradient-bottom) 100%);
+}
+
+/* Fields keep flat paint and an explicit, fully opaque placeholder colour. */
+html[data-style="depth"] :is([data-ui-input="field"], [data-ui="textarea"])::placeholder {
+  color: var(--control-placeholder);
+  opacity: 1;
+}
+
+/* Resolve each light fill on its host: translucent inset paint is applied
+   once, and the 1px highlight preserves every shadow and focus slot. */
+html[data-style="depth"]:not(.dark) :is(
+  [data-ui-surface="card"], [data-ui-surface="pane"], [data-ui-surface="float"],
+  [data-ui-reading="pane"],
+  .react-datepicker:not(.task-deadline-calendar), .react-datepicker__time
+):not([data-ui-tooltip]):not([data-ui-chrome="action"]):not(
+  [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field]
+):not(
+  [data-ui-fill="action"], [data-ui-fill="danger"], [data-ui-fill="action-tint"], [data-ui-fill="status-neutral"], [data-ui-fill="status-info"],
+  [data-ui-fill="status-success"], [data-ui-fill="status-warning"], [data-ui-fill="status-danger"]
+):is(
+  [data-ui-fill="card"], [data-ui-fill="inset"], [data-ui-fill="inset-translucent"],
+  [data-ui-fill="float"], [data-ui-fill="control"], .react-datepicker, .react-datepicker__time
+) {
+  --depth-light-fill: initial;
+  --depth-light-shade: var(--depth-light-card);
+  &:is([data-ui-surface="pane"], [data-ui-reading="pane"]) {
+    --depth-light-shade: var(--depth-light-pane);
+  }
+  &:is([data-ui-surface="float"], .react-datepicker, .react-datepicker__time) {
+    --depth-light-shade: var(--depth-light-float);
+  }
+  &[data-ui-fill="card"] { --depth-light-fill: var(--surface-card); }
+  &[data-ui-fill="inset"] { --depth-light-fill: var(--surface-inset); }
+  &[data-ui-fill="inset-translucent"] {
+    --depth-light-fill: color-mix(in oklab, var(--surface-inset) 80%, transparent);
+  }
+  &:is([data-ui-surface="pane"], [data-ui-reading="pane"]):is([data-ui-fill="inset"], [data-ui-fill="inset-translucent"]) {
+    --depth-light-shade: var(--depth-light-pane-inset);
+  }
+  &:is([data-ui-fill="float"], .react-datepicker, .react-datepicker__time) {
+    --depth-light-fill: var(--surface-float);
+  }
+  &[data-ui-fill="control"] { --depth-light-fill: var(--control-bg); }
+  &[data-ui-active="inset"]:active { --depth-light-fill: var(--surface-inset); }
+  --depth-light-bottom: color-mix(in oklab, var(--depth-light-fill) calc(100% - var(--depth-light-shade)),
+    var(--foreground) var(--depth-light-shade));
+  --depth-light-highlight: color-mix(in oklab, var(--action-on) 65%, transparent);
+  --depth-light-neutral-paint: linear-gradient(in oklab,
+    var(--depth-light-fill) 0%,
+    color-mix(in oklab, var(--depth-light-fill) 60%, var(--depth-light-bottom)) 35%,
+    color-mix(in oklab, var(--depth-light-fill) 25%, var(--depth-light-bottom)) 65%,
+    color-mix(in oklab, var(--depth-light-fill) 6%, var(--depth-light-bottom)) 85%,
+    var(--depth-light-bottom) 100%);
+  background-color: transparent;
+  background-image: linear-gradient(var(--depth-light-highlight), var(--depth-light-highlight)),
+    var(--depth-light-neutral-paint);
+  background-size: 100% 1px, 100% 100%;
+  background-repeat: no-repeat;
+
+  /* Search targets stay flat while marked; let the cue fade back to their
+     local fill rather than retaining the animation's transparent endpoint. */
+  &.settings-target {
+    background-image: none;
+    background-color: var(--depth-light-fill);
+    animation-fill-mode: none;
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+      background-color: var(--settings-tab-active-bg);
+    }
+  }
+
+  @media (hover: hover) {
+    &[data-ui-hover="inset"]:hover { --depth-light-fill: var(--surface-inset); }
+    &:is([data-ui-hover="action-tint"], [data-ui-hover="status-info"],
+      [data-ui-hover="status-danger"]):hover { background-image: none; }
+    &[data-ui-hover="action-tint"]:hover { background-color: var(--action-tint); }
+    &[data-ui-hover="status-info"]:hover { background-color: var(--status-info-bg); }
+    &[data-ui-hover="status-danger"]:hover { background-color: var(--status-danger-bg); }
+  }
+}
+
+html[data-style="depth"].dark :is(
+  [data-ui-surface="card"], [data-ui-surface="pane"], [data-ui-surface="float"],
+  [data-ui-reading="pane"],
+  .react-datepicker:not(.task-deadline-calendar), .react-datepicker__time
+):not([data-ui-tooltip]):not([data-ui-chrome="action"]):not(
+  [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field]
+):not(
+  [data-ui-fill="action"], [data-ui-fill="danger"], [data-ui-fill="action-tint"], [data-ui-fill="status-neutral"], [data-ui-fill="status-info"],
+  [data-ui-fill="status-success"], [data-ui-fill="status-warning"], [data-ui-fill="status-danger"]
+):is(
+  [data-ui-fill="card"], [data-ui-fill="inset"], [data-ui-fill="inset-translucent"],
+  [data-ui-fill="float"], [data-ui-fill="control"], .react-datepicker, .react-datepicker__time
+) {
+  background-image: var(--depth-gradient-paint);
+  &:is([data-ui-surface="pane"], [data-ui-reading="pane"]) {
+    background-image: var(--depth-gradient-pane-paint);
+    &.settings-target { background-image: none; }
+  }
+  &.settings-target {
+    background-image: none;
+    background-color: color-mix(in oklab, var(--depth-fill-base) calc(100% - var(--depth-role-mix)),
+      var(--foreground) var(--depth-role-mix));
+    animation-fill-mode: none;
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+      background-color: var(--settings-tab-active-bg);
+    }
+  }
+  @media (hover: hover) {
+    &:is([data-ui-hover="action-tint"], [data-ui-hover="status-info"],
+      [data-ui-hover="status-danger"]):hover { background-image: none; }
+  }
+}
+
+html[data-style="depth"].dark :is(button, a, [data-ui="button"])[data-ui-chrome="action"][data-ui-fill="action"]:not(
+  :disabled, [aria-disabled="true"]
+) {
+  --depth-gradient-action: var(--action);
+  background-image: linear-gradient(in oklab,
+    color-mix(in oklab, var(--depth-gradient-action) 97%, var(--action-hover) 3%), var(--depth-gradient-action));
+  @media (hover: hover) {
+    &[data-ui-hover="action-hover"]:hover { --depth-gradient-action: var(--action-hover); }
+  }
+  &[data-ui-active="action-active"]:active { --depth-gradient-action: var(--action-active); }
+  &[aria-pressed="true"] { background-image: none; }
+}
+
+/* The horizontal splitter continues the upper pane's bottom fill. Its grip
+   identifies the control; its full-width border is a decorative divider. */
+html[data-style="depth"]:not(.dark) [data-ui-resize-handle="vertical"] {
+  --depth-split-fill: color-mix(in oklab, var(--surface-inset) calc(100% - var(--depth-light-pane-inset)),
+    var(--foreground) var(--depth-light-pane-inset));
+  background-color: var(--depth-split-fill);
+  border-color: var(--surface-card-border);
+}
+html[data-style="depth"].dark [data-ui-resize-handle="vertical"] {
+  --depth-split-fill: color-mix(in oklab, var(--surface-inset) calc(100% - var(--depth-mix-pane)),
+    var(--foreground) var(--depth-mix-pane));
+  background-color: var(--depth-split-fill);
+  border-color: var(--surface-card-border);
+}
+html[data-style="depth"] [data-ui-resize-handle] > [data-ui-resize-grip] {
+  background-color: var(--control-border);
+}
+html[data-style="depth"] [data-ui-resize-handle] {
+  border-color: var(--surface-card-border);
+}
+/* My notes is an unmarked, flat inset; keep its adjoining strip flat too. */
+html[data-style="depth"] [data-ui-resize-group="vertical"]:has(
+  [data-ui-side-tab="my-notes"][aria-selected="true"]
+) > [data-ui-resize-handle] {
+  --depth-split-fill: var(--surface-inset);
+}
+html[data-style="depth"] [data-ui-resize-handle]:hover {
+  background-color: var(--action);
+}
+html[data-style="depth"] [data-ui-resize-handle]:hover > [data-ui-resize-grip] {
+  background-color: var(--action-on);
+}

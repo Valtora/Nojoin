@@ -52,6 +52,8 @@ export default function SettingsCard({
 
   return (
     <SurfaceBase
+      data-ui-fill="card"
+      data-ui-border="full"
       as="section" kind="card" id={id} className={cn("settings-card scroll-mt-24", className)}>
       <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:p-6">
         <div className="min-w-0">

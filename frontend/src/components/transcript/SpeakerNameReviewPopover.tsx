@@ -125,7 +125,9 @@ export default function SpeakerNameReviewPopover({
           stacking context the lines after it would paint over. */}
       {open
         ? createPortal(
-            <SurfaceBase kind="float"
+            <SurfaceBase
+              data-ui-fill="card"
+              data-ui-border="full" kind="float"
               ref={panelRef}
               id={panelId}
               role="dialog"

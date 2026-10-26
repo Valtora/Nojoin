@@ -25,6 +25,9 @@ export default function AiAnalysisLimitSection() {
         description="Each analysis is one long call against that person's AI provider quota, counted from midnight UTC. Leave it blank or at 0 for no limit. To change one person's limit, edit them in the table above."
       >
         <InputBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           id="ai-analysis-daily-limit"
           aria-describedby="ai-analysis-daily-limit-help"
           type="number"

@@ -346,6 +346,19 @@ describe("changed-count badge", () => {
 });
 
 describe("registry search", () => {
+  it.each(["style", "bevel", "elevation", "classic", "depth"])(
+    "finds the browser-scoped Style setting by %s",
+    (query) => {
+      const result = searchSettingsRegistry(query, USER).find(
+        (match) => match.entry.id === "appearance-style",
+      );
+
+      expect(result?.entry.category).toBe("appearance");
+      expect(result?.entry.scope).toBe("browser");
+      expect(result?.entry.settingsKeys).toBeUndefined();
+    },
+  );
+
   it("returns nothing for an empty query", () => {
     expect(searchSettingsRegistry("", SUPERUSER)).toEqual([]);
     expect(searchSettingsRegistry("   ", SUPERUSER)).toEqual([]);

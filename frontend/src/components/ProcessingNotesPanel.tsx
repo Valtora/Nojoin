@@ -143,7 +143,10 @@ function ConflictNotice({
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
         {nothingToKeep ? null : (
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-fill="card"
+            data-ui-hover="action-tint"
+            data-ui-border="full" chrome="action"
             type="button"
             onClick={onKeepMine}
             disabled={locked}
@@ -152,7 +155,10 @@ function ConflictNotice({
             {changed && mineIsBlank ? "Delete anyway" : "Keep mine"}
           </ButtonBase>
         )}
-        <ButtonBase chrome="action"
+        <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="action-tint"
+          data-ui-border="full" chrome="action"
           type="button"
           onClick={onUseTheirs}
           className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint"
@@ -530,7 +536,7 @@ function ProcessingNotesPanel({
           : "";
 
   return (
-    <SurfaceBase as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       {/* One row: title and save state. */}
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 id={headingId} className="text-base font-semibold text-foreground">
@@ -556,6 +562,8 @@ function ProcessingNotesPanel({
       ) : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <TextareaBase
+          data-ui-fill="control"
+          data-ui-border="full"
           ref={textareaRef}
           defaultValue={initialValue}
           onChange={handleChange}
@@ -572,7 +580,9 @@ function ProcessingNotesPanel({
             box from under the caret, so the reason is read out, and hands it
             back when the lock ends. Not a tab stop, since it does nothing. */}
         {disabled ? (
-          <SurfaceBase kind="pane"
+          <SurfaceBase
+            data-ui-fill="card"
+            data-ui-border="full" kind="pane"
             ref={lockRef}
             role="group"
             aria-labelledby={lockTitleId}

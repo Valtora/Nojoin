@@ -14,9 +14,11 @@ import {
   storeCornerStyle,
   storePalette,
   storeTheme,
+  storeUiStyle,
   type CornerStyle,
   type Palette,
   type Theme,
+  type UiStyle,
 } from '@/lib/appearance';
 
 export type { Theme } from '@/lib/appearance';
@@ -30,6 +32,8 @@ interface ThemeContextValue {
   setPalette: (palette: Palette) => void;
   cornerStyle: CornerStyle;
   setCornerStyle: (cornerStyle: CornerStyle) => void;
+  uiStyle: UiStyle;
+  setUiStyle: (uiStyle: UiStyle) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -59,11 +63,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('system');
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>('dark');
   const [mounted, setMounted] = useState(false);
-  // Palette and corner style are applied to <html> by the inline script before
+  // Palette, corners and style are applied to <html> by the inline script before
   // hydration, so these initialisers only have to agree with it; reading the
   // same storage keeps the settings controls showing the active choice.
   const [palette, setPaletteState] = useState<Palette>(readStoredPalette);
   const [cornerStyle, setCornerStyleState] = useState<CornerStyle>(readStoredCornerStyle);
+  const [uiStyle, setUiStyleState] = useState<UiStyle>(readStoredUiStyle);
 
   // Initialize theme from localStorage on mount. readStoredTheme validates
   // against the allowed values and survives blocked storage, so a junk value
@@ -122,7 +127,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyCornerStyle(nextCorners);
       }
       if (event.key === null || event.key === keys.style) {
-        applyUiStyle(readStoredUiStyle());
+        const nextStyle = readStoredUiStyle();
+        setUiStyleState(nextStyle);
+        applyUiStyle(nextStyle);
       }
     };
 
@@ -150,6 +157,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     applyCornerStyle(newCornerStyle);
   }, []);
 
+  const setUiStyle = useCallback((newStyle: UiStyle) => {
+    setUiStyleState(newStyle);
+    storeUiStyle(newStyle);
+    applyUiStyle(newStyle);
+  }, []);
+
   // Children render before mount: the inline script has already applied the
   // stored appearance, so nothing flashes.
   const value: ThemeContextValue = {
@@ -160,6 +173,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setPalette,
     cornerStyle,
     setCornerStyle,
+    uiStyle,
+    setUiStyle,
   };
 
   return (

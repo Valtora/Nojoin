@@ -167,6 +167,10 @@ export default function InvitesTab() {
       description="Sign-up links for new people. Revoke one to stop it working."
       headerAside={
         <ButtonBase
+          data-ui-fill="action"
+          data-ui-hover="action-hover"
+          data-ui-active="action-active"
+          data-ui-border="full"
           chrome="action"
           type="button"
           onClick={() => setShowCreateModal(true)}
@@ -220,6 +224,10 @@ export default function InvitesTab() {
               <div className="flex flex-wrap gap-2 @min-[26rem]:justify-end">
                 {!inv.is_revoked && (
                   <ButtonBase
+                    data-ui-fill="card"
+                    data-ui-hover="inset"
+                    data-ui-active="inset"
+                    data-ui-border="full"
                     chrome="action"
                     type="button"
                     onClick={() => copyLink(inv.link)}
@@ -231,6 +239,10 @@ export default function InvitesTab() {
                 )}
                 {!inv.is_revoked ? (
                   <ButtonBase
+                    data-ui-fill="card"
+                    data-ui-hover="inset"
+                    data-ui-active="inset"
+                    data-ui-border="full"
                     chrome="action"
                     type="button"
                     onClick={() => handleRevokeClick(inv.id)}
@@ -241,6 +253,10 @@ export default function InvitesTab() {
                   </ButtonBase>
                 ) : (
                   <ButtonBase
+                    data-ui-fill="card"
+                    data-ui-hover="inset"
+                    data-ui-active="inset"
+                    data-ui-border="full"
                     chrome="action"
                     type="button"
                     onClick={() => handleDeleteClick(inv.id)}

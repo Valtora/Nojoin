@@ -185,7 +185,7 @@ export default function MeetingControls({
 
   if (variant === "dashboard") {
     return (
-      <SurfaceBase kind="card" className="density-surface border border-action-border bg-surface-card shadow-card">
+      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface border border-action-border bg-surface-card shadow-card">
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <Mic className="h-5 w-5 shrink-0 text-action-text" />
@@ -214,7 +214,10 @@ export default function MeetingControls({
             // grid, and the icon is sized in `em` so it tracks the label
             // instead of needing its own scale.
             <div className="@container">
-              <ButtonBase chrome="action"
+              <ButtonBase
+                data-ui-fill="action"
+                data-ui-hover="action-hover"
+                chrome="action"
                 type="button"
                 onClick={handlePrimaryAction}
                 disabled={meetingSurfaceState.buttonDisabled}
@@ -262,7 +265,10 @@ export default function MeetingControls({
                   : "basis-full"
               }
             >
-              <ButtonBase chrome="action"
+              <ButtonBase
+                data-ui-fill="action"
+                data-ui-hover="action-hover"
+                chrome="action"
                 type="button"
                 onClick={handlePrimaryAction}
                 disabled={meetingSurfaceState.buttonDisabled}

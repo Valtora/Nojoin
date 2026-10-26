@@ -42,6 +42,8 @@ export default function SettingsCallout({
 
   return (
     <SurfaceBase
+      data-ui-fill={tone === "neutral" ? "inset" : `status-${tone === "error" ? "danger" : tone}`}
+      data-ui-border="full"
       kind="pane"
       className={cn(
         "rounded-lg border px-4 py-3 text-sm",

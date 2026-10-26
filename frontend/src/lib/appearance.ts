@@ -1,6 +1,6 @@
 /**
- * Per-browser appearance preferences: colour palette, corner style and
- * density and style. They sit beside the light/dark theme and follow the same rules: the
+ * Per-browser appearance preferences: colour palette, corners, density and
+ * style. They sit beside the light/dark theme and follow the same rules: the
  * choice lives in local storage, the inline script in theme-script.ts stamps it
  * on <html> before first paint, and the React providers keep it in sync after
  * that. Every default is the product's original look, so an untouched browser
@@ -8,8 +8,11 @@
  *
  * The stylesheet side is attribute-driven: palettes.css keys its token blocks
  * on html[data-palette], tokens.css keys the radius scale on html[data-corners]
- * and the compact spacing on html[data-ui-density].
+ * and the compact spacing on html[data-ui-density]. Style chrome keys on
+ * html[data-style], which always carries an explicit value.
  */
+
+import { applyUiStyleToRoot } from "./ui-style-loader";
 
 export const THEMES = ["system", "light", "dark"] as const;
 export type Theme = (typeof THEMES)[number];
@@ -26,8 +29,7 @@ export type Palette = (typeof PALETTES)[number];
 export const CORNER_STYLES = ["rounded", "subtle", "square"] as const;
 export type CornerStyle = (typeof CORNER_STYLES)[number];
 
-// Only the existing look is available while the shared chrome is migrated.
-export const UI_STYLES = ["default"] as const;
+export const UI_STYLES = ["default", "classic", "depth"] as const;
 export type UiStyle = (typeof UI_STYLES)[number];
 
 export const DENSITY_PREFERENCES = ["auto", "comfortable", "compact", "dense"] as const;
@@ -59,6 +61,12 @@ export const CORNER_STYLE_LABELS: Record<CornerStyle, string> = {
   rounded: "Rounded",
   subtle: "Subtle",
   square: "Square",
+};
+
+export const UI_STYLE_LABELS: Record<UiStyle, string> = {
+  default: "Default",
+  classic: "Classic",
+  depth: "Depth",
 };
 
 export const DENSITY_PREFERENCE_LABELS: Record<DensityPreference, string> = {
@@ -139,9 +147,9 @@ export function storeUiStyle(style: UiStyle) {
   writeStored(APPEARANCE_STORAGE_KEYS.style, style, style === DEFAULT_UI_STYLE);
 }
 
-/** The style seam is explicit even before any alternative look is available. */
+/** Apply the style and load optional chrome only while it is selected. */
 export function applyUiStyle(style: UiStyle, root: HTMLElement = document.documentElement) {
-  root.dataset.style = style;
+  applyUiStyleToRoot(style, root);
 }
 
 export function storeDensityPreference(preference: DensityPreference) {

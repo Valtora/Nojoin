@@ -14,7 +14,9 @@ export default function Loading() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <SurfaceBase kind="card"
+            <SurfaceBase
+              data-ui-fill="card"
+              data-ui-border="full" kind="card"
               key={i}
               className="bg-surface-card rounded-surface-panel border border-surface-border shadow-card p-4 h-32 animate-pulse"
             >

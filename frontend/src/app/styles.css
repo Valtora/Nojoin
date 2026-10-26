@@ -1,0 +1,214 @@
+/* App-only shape treatments. Palette owns every fill and identifying edge;
+   Corners and Density retain their existing tokens. Default has no rules here. */
+html[data-style="classic"]:not(.dark) {
+  --classic-outer-highlight: #ffffff;
+  --classic-inner-highlight: #dfdfdf;
+  --classic-base-dark: color-mix(in srgb, var(--foreground) 84%, var(--surface-card));
+  --classic-outer-dark: color-mix(in srgb, var(--classic-base-dark) 67%, var(--surface-card));
+  --classic-inner-dark: color-mix(in srgb, #808080 67%, var(--surface-card));
+  --style-focus-edge: var(--focus-ring);
+  --style-elevation-3: 0 6px 14px -4px rgb(15 23 42 / 0.24);
+}
+
+html[data-style="classic"].dark {
+  /* The lit outer facet identifies controls; charcoal facets model shade. */
+  --classic-outer-highlight: var(--control-border);
+  --classic-inner-highlight: #3a3a3a;
+  --classic-outer-dark: color-mix(in srgb, #000000 67%, var(--surface-card));
+  --classic-inner-dark: color-mix(in srgb, #141414 67%, var(--surface-card));
+  --style-focus-edge: var(--focus-ring);
+  --style-elevation-3: 0 6px 14px -4px rgb(0 0 0 / 0.65);
+}
+
+html[data-style="classic"] {
+  --style-raised-shadow: inset 1px 1px 0 var(--classic-inner-highlight),
+    inset -1px -1px 0 var(--classic-inner-dark);
+  --style-sunken-shadow: inset 1px 1px 0 var(--classic-inner-dark),
+    inset -1px -1px 0 var(--classic-inner-highlight);
+  --style-pressed-shadow: var(--style-sunken-shadow);
+  --style-etched-shadow: var(--style-raised-shadow);
+  --classic-raised-borderless: inset 1px 1px 0 var(--classic-outer-highlight),
+    inset -1px -1px 0 var(--classic-outer-dark), inset 2px 2px 0 var(--classic-inner-highlight),
+    inset -2px -2px 0 var(--classic-inner-dark);
+  --classic-sunken-borderless: inset 1px 1px 0 var(--classic-outer-dark),
+    inset -1px -1px 0 var(--classic-outer-highlight), inset 2px 2px 0 var(--classic-inner-dark),
+    inset -2px -2px 0 var(--classic-inner-highlight);
+  --classic-reading-raised: inset 1px 1px 0 var(--classic-outer-highlight),
+    inset 2px 2px 0 var(--classic-inner-highlight), inset -2px -2px 0 var(--classic-inner-dark);
+  --classic-reading-sunken: inset -1px -1px 0 var(--classic-outer-highlight),
+    inset 2px 2px 0 var(--classic-inner-dark), inset -2px -2px 0 var(--classic-inner-highlight);
+  /* Also reaches vendor calendars, which have shadow-float but no marker. */
+  --float-shadow: var(--style-elevation-3);
+}
+
+html[data-style="depth"]:not(.dark) {
+  --style-focus-edge: var(--focus-ring);
+  --style-glow-colour: var(--focus-ring);
+  --style-sunken-shadow: inset 0 1px 3px rgb(15 23 42 / 0.12);
+  --style-elevation-1: 0 2px 5px -2px rgb(15 23 42 / 0.16);
+  --style-elevation-2: 0 5px 12px -4px rgb(15 23 42 / 0.24);
+  --style-elevation-3: 0 14px 30px -8px rgb(15 23 42 / 0.28), 0 4px 10px -4px rgb(15 23 42 / 0.18);
+}
+
+html[data-style="depth"].dark {
+  --style-focus-edge: var(--focus-ring);
+  --style-glow-colour: var(--focus-ring);
+  --style-sunken-shadow: inset 0 1px 3px rgb(0 0 0 / 0.45);
+  --style-elevation-1: 0 2px 5px -2px rgb(0 0 0 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --style-elevation-2: 0 5px 12px -4px rgb(0 0 0 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.07);
+  --style-elevation-3: 0 14px 30px -8px rgb(0 0 0 / 0.75),
+    0 4px 10px -4px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+html[data-style="depth"] {
+  --float-shadow: var(--style-elevation-3);
+}
+
+/* The five Tailwind v4 slots preserve selection rings and inset rings. The
+   supplemental focus shadow is local so a focussed pane cannot halo children. */
+html[data-style="classic"] :is(
+  [data-ui-chrome="action"], [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"],
+  [data-ui-field], [data-ui-surface]:not([data-ui-tooltip])
+),
+html[data-style="depth"] :is(
+  [data-ui-chrome="action"], [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"],
+  [data-ui-field], [data-ui-surface]:not([data-ui-tooltip])
+) {
+  --style-focus-glow: 0 0 #0000;
+  --tw-shadow: var(--style-chrome-shadow, 0 0 #0000), var(--style-focus-glow);
+  box-shadow: var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+html[data-style="classic"] [data-ui-chrome="action"] {
+  --style-chrome-shadow: var(--style-raised-shadow);
+}
+
+html[data-style="classic"] [data-ui-chrome="action"]:not(:disabled):not([aria-disabled="true"]):is(
+  :active, [aria-pressed="true"]
+) {
+  --style-chrome-shadow: var(--style-pressed-shadow);
+}
+
+html[data-style="classic"] :is(
+  [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field],
+  [data-ui-surface="inset"], [data-ui-surface="pane"]
+) {
+  --style-chrome-shadow: var(--style-sunken-shadow);
+}
+
+html[data-style="classic"] [data-ui-surface="card"] {
+  --style-chrome-shadow: var(--style-etched-shadow);
+}
+
+html[data-style="classic"] [data-ui-surface="float"]:not([data-ui-tooltip]) {
+  --style-chrome-shadow: var(--style-raised-shadow), var(--style-elevation-3);
+}
+
+/* Exterior focus works on both neutral fields and filled action buttons. */
+html[data-style="classic"] :is(
+  [data-ui="button"], [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"],
+  [data-ui="switch"], [data-ui-field], [data-ui-surface][tabindex]
+):focus-visible {
+  outline: 2px dotted var(--style-focus-edge);
+  outline-offset: 2px;
+}
+
+html[data-style="classic"] [data-ui="multiselect-trigger"]:focus-within {
+  outline: 2px dotted var(--style-focus-edge);
+  outline-offset: 2px;
+}
+
+@media (pointer: fine) {
+  /* Never overwrite inline icon gutters, select arrows, fixed control heights
+     or coarse-pointer targets. Density continues to own the surrounding layout. */
+  html[data-style="classic"] :is(
+    [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field]
+  ) {
+    padding-block: 0.25rem;
+  }
+}
+
+html[data-style="depth"] :is(
+  [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field],
+  [data-ui-surface="inset"]
+) {
+  --style-chrome-shadow: var(--style-sunken-shadow);
+}
+
+html[data-style="depth"] :is([data-ui-surface="card"], [data-ui-chrome="action"]) {
+  --style-chrome-shadow: var(--style-elevation-1);
+}
+
+html[data-style="depth"] [data-ui-surface="pane"] {
+  --style-chrome-shadow: var(--style-elevation-2);
+}
+
+html[data-style="depth"] [data-ui-surface="float"]:not([data-ui-tooltip]) {
+  --style-chrome-shadow: var(--style-elevation-3);
+}
+
+/* Reading hosts retain their own role so Classic does not acquire new targets.
+   Resolve their five shadow/ring slots and focus reset locally. */
+html[data-style="depth"] :is(
+  [data-ui-reading="bubble"], [data-ui-reading="pane"]
+) {
+  --style-focus-glow: 0 0 #0000;
+  --tw-shadow: var(--style-chrome-shadow), var(--style-focus-glow);
+  box-shadow: var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+html[data-style="depth"] [data-ui-reading="bubble"] {
+  --style-chrome-shadow: var(--style-elevation-1);
+}
+
+html[data-style="depth"] :is([data-ui-reading="pane"]) {
+  --style-chrome-shadow: var(--style-elevation-2);
+}
+
+html[data-style="depth"] :is(
+  [data-ui="button"], [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"],
+  [data-ui="switch"], [data-ui-field], [data-ui-surface][tabindex]
+):focus-visible {
+  outline: 2px solid var(--style-focus-edge);
+  outline-offset: 2px;
+}
+
+html[data-style="depth"] :is(
+  [data-ui-chrome="action"], [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field]
+):focus-visible,
+html[data-style="depth"] [data-ui="multiselect-trigger"]:focus-within {
+  --style-focus-glow: 0 0 8px -3px var(--style-glow-colour);
+}
+
+html[data-style="depth"] [data-ui="multiselect-trigger"]:focus-within {
+  outline: 2px solid var(--style-focus-edge);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  html[data-style="depth"] [data-ui-chrome="action"]:not(:disabled):not([aria-disabled="true"]) {
+    transition-property: color, background-color, border-color, box-shadow, translate;
+    transition-duration: 150ms;
+  }
+
+  html[data-style="depth"] [data-ui-chrome="action"]:not(:disabled):not([aria-disabled="true"]):hover {
+    --style-chrome-shadow: var(--style-elevation-2);
+    translate: 0 -1px;
+  }
+}
+
+html[data-style="depth"] [data-ui-chrome="action"]:not(:disabled):not([aria-disabled="true"]):is(
+  :active, [aria-pressed="true"]
+) {
+  --style-chrome-shadow: var(--style-sunken-shadow);
+  translate: 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-style="depth"] [data-ui-chrome="action"] {
+    transition: none;
+    translate: none;
+  }
+}

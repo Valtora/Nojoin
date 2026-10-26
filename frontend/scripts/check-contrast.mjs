@@ -4,8 +4,8 @@
  *
  * Reads the design tokens straight out of tokens.css and the marketing site's
  * site-tokens.css, and measures the pairings declared below against WCAG 2.2
- * AA across four themes: the app's light and dark, and the site's light and
- * dark, which are the app themes plus the site-only families. It
+ * AA across 30 app themes (five palettes, two modes, three styles), plus the
+ * site's light and dark, which add the site-only families. It
  * exists because contrast is a property
  * of a pair, not of a colour: a token can only be judged against the thing it is
  * actually drawn on, and that relationship lives nowhere in CSS. Declaring the
@@ -23,6 +23,9 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { contrastRatio, flattenStack, measurePairing, parseBlock, toHex } from "./contrast-colour.mjs";
+import { addStyleThemes } from "./style-contrast.mjs";
+import { addDepthGradientThemes, addDepthThemes } from "./depth-contrast.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /**
@@ -47,6 +50,8 @@ const SITE_TOKENS = resolve(ROOT, "../site/src/styles/site-tokens.css");
  * it exists.
  */
 const PALETTES = resolve(ROOT, "src/app/palettes.css");
+const STYLES = resolve(ROOT, "src/app/styles.css");
+const DEPTH = resolve(ROOT, "src/app/depth-dark.css");
 
 /**
  * Thresholds.
@@ -331,41 +336,6 @@ const FLOAT_SEPARATION = HAIRLINE;
 /* ------------------------------------------------------------------ parsing */
 
 /**
- * Pull `--name: value;` declarations out of one top-level CSS block.
- *
- * The selector is anchored to the start of a line and has to be followed by its
- * own brace. That mattered most when this read globals.css, where `.dark` also
- * appeared inside a @custom-variant and in component overrides; tokens.css is
- * cleaner, but the anchoring stays because a substring match that finds the
- * wrong block makes the audit measure the wrong theme and pass anyway.
- */
-function parseBlock(css, selector) {
-  const anchored = new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`, "m");
-  const match = anchored.exec(css);
-  if (match === null) throw new Error(`selector ${selector} not found`);
-  const start = match.index;
-  const open = css.indexOf("{", start);
-  let depth = 0;
-  let end = open;
-  for (let i = open; i < css.length; i += 1) {
-    if (css[i] === "{") depth += 1;
-    else if (css[i] === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        end = i;
-        break;
-      }
-    }
-  }
-  const body = css.slice(open + 1, end);
-  const tokens = {};
-  for (const [, name, value] of body.matchAll(/--([\w-]+)\s*:\s*([^;]+);/g)) {
-    tokens[name] = value.trim();
-  }
-  return tokens;
-}
-
-/**
  * Pull the `:root` block from inside the site's prefers-color-scheme media
  * query. The site has no JavaScript, so its dark theme lives under a media
  * query rather than a class; the block is indented, which the anchored parser
@@ -397,80 +367,6 @@ function parseMediaDarkRoot(css) {
     tokens[name] = value.trim();
   }
   return tokens;
-}
-
-/** Resolve var() indirection within a theme, falling back to the light theme. */
-function resolveValue(name, theme, base, seen = new Set()) {
-  if (seen.has(name)) throw new Error(`circular token reference at --${name}`);
-  seen.add(name);
-  const raw = theme[name] ?? base[name];
-  if (raw === undefined) throw new Error(`unknown token --${name}`);
-  const varMatch = raw.match(/^var\(\s*--([\w-]+)\s*(?:,[^)]*)?\)$/);
-  if (varMatch) return resolveValue(varMatch[1], theme, base, seen);
-  return raw;
-}
-
-/** Parse a CSS colour into [r, g, b, a]. Only the forms the tokens use. */
-function parseColour(value, token) {
-  const v = value.trim();
-
-  const hex = v.match(/^#([0-9a-f]{3,8})$/i);
-  if (hex) {
-    let h = hex[1];
-    if (h.length === 3 || h.length === 4) h = h.split("").map((c) => c + c).join("");
-    const n = (i) => parseInt(h.slice(i, i + 2), 16);
-    return [n(0), n(2), n(4), h.length === 8 ? n(6) / 255 : 1];
-  }
-
-  // rgb(r, g, b) / rgba(r, g, b, a) / rgb(r g b / a)
-  const fn = v.match(/^rgba?\(([^)]+)\)$/i);
-  if (fn) {
-    const [rgbPart, alphaPart] = fn[1].split("/");
-    const parts = rgbPart.trim().split(/[\s,]+/).filter(Boolean);
-    const alpha = alphaPart !== undefined ? Number(alphaPart) : parts[3] !== undefined ? Number(parts[3]) : 1;
-    return [Number(parts[0]), Number(parts[1]), Number(parts[2]), alpha];
-  }
-
-  throw new Error(`cannot parse colour "${value}" for --${token}`);
-}
-
-/* ---------------------------------------------------------------- measuring */
-
-/** Composite a colour with alpha onto an opaque backdrop. */
-function composite([r, g, b, a], [br, bg, bb]) {
-  return [r * a + br * (1 - a), g * a + bg * (1 - a), b * a + bb * (1 - a), 1];
-}
-
-function relativeLuminance([r, g, b]) {
-  const channel = (c) => {
-    const s = c / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-}
-
-function contrastRatio(a, b) {
-  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
-}
-
-function toHex([r, g, b]) {
-  return "#" + [r, g, b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("");
-}
-
-/** Flatten a bottom-first stack of tokens into one opaque colour. */
-function flattenStack(stack, theme, base) {
-  let current = null;
-  for (const token of stack) {
-    const colour = parseColour(resolveValue(token, theme, base), token);
-    if (current === null) {
-      if (colour[3] < 1) throw new Error(`bottom of stack --${token} must be opaque`);
-      current = colour;
-    } else {
-      current = composite(colour, current);
-    }
-  }
-  return current;
 }
 
 /* -------------------------------------------------------------------- audit */
@@ -556,6 +452,11 @@ for (const name of paletteNames) {
   );
 }
 
+const styleCss = await readFile(STYLES, "utf8");
+addStyleThemes(themes, styleCss, parseBlock);
+addDepthThemes(themes, await readFile(DEPTH, "utf8"));
+addDepthGradientThemes(themes, await readFile(resolve(ROOT, "src/app/depth-gradient.css"), "utf8"));
+
 const failures = [];
 const results = [];
 
@@ -564,10 +465,9 @@ for (const theme of themes) {
   for (const pairing of theme.pairings) {
     let ratio;
     try {
-      const bg = flattenStack(pairing.bg, theme.tokens, base);
-      const fgRaw = parseColour(resolveValue(pairing.fg, theme.tokens, base), pairing.fg);
-      const fg = fgRaw[3] < 1 ? composite(fgRaw, bg) : fgRaw;
-      ratio = contrastRatio(fg, bg);
+      const measured = measurePairing(pairing, theme.tokens, base);
+      const { bg, fg } = measured;
+      ratio = measured.ratio;
       results.push({
         theme: theme.name,
         label: pairing.label,
@@ -591,8 +491,10 @@ for (const theme of themes) {
 
   // A float has to separate from the scrimmed card behind it, which is the
   // worst case: a card is the lightest thing the scrim ever covers.
-  const behind = flattenStack(["surface-page", "surface-card", "scrim"], theme.tokens, base);
-  const float = flattenStack(["surface-float"], theme.tokens, base);
+  const behindStack = theme.behindStack ?? ["surface-page", "surface-card", "scrim"];
+  const floatStack = theme.floatStack ?? ["surface-float"];
+  const behind = flattenStack(behindStack, theme.tokens, base);
+  const float = flattenStack(floatStack, theme.tokens, base);
   const separation = contrastRatio(float, behind);
   const separationPass = separation >= FLOAT_SEPARATION;
   results.push({
