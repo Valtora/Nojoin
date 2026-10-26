@@ -113,8 +113,8 @@ def test_with_labels_off_no_model_loads_and_no_label_state_is_written(
 def test_with_labels_off_the_live_task_never_imports_the_label_code(
     monkeypatch, tmp_path
 ):
-    # The step module pulls in the engine and SciPy. Off is the default, so a
-    # default install's live runs must not import it at all.
+    # The step module pulls in the engine and SciPy. An explicit opt-out must
+    # keep live runs from importing it at all.
     temp_dir, audio_store, transcript, session = _lane(monkeypatch, tmp_path)
     monkeypatch.setitem(config_manager.config, "live_speaker_labels", "off")
     monkeypatch.delattr(live_diarization, "step", raising=False)

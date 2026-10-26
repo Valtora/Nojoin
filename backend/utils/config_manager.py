@@ -211,7 +211,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "live_speech_pad_ms": 300,
     # Provisional speaker labels in the live transcript: "off", or "auto" to run
     # them when the live lane is on CUDA. See docs/DEPLOYMENT.md.
-    "live_speaker_labels": "off",
+    "live_speaker_labels": "auto",
     "speaker_engine": "auto",
     # The opt-in screen study (#653): see backend/utils/speaker_frames/settings.py.
     "speaker_frame_sampling": "off",

@@ -5,9 +5,9 @@ are saved, inside a try block of its own, so nothing here can fail the run or
 delay its text. The step feeds the engines on their own sample clock and saves
 decision state before writing labels, then saves settled/pruned progress.
 
-``live_speaker_labels`` (``data/config.json``) switches it: ``off`` (the
-default) or ``auto``, which runs it when the live lane's device is CUDA. Any
-other value is off. Off returns before any model or state is touched.
+``live_speaker_labels`` (``data/config.json``) switches it: ``auto`` (the
+default), which runs it when the live lane's device is CUDA, or ``off``. Any
+other value is off. Off and CPU return before any model or state is touched.
 """
 
 from __future__ import annotations
