@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -41,6 +42,9 @@ SETUP_RATE_LIMIT_DETAIL = "Too many setup requests. Please try again later."
 PUBLIC_LLM_VALIDATION_ERROR_DETAIL = "Unable to validate the AI provider configuration."
 PUBLIC_MODEL_LIST_ERROR_DETAIL = "Unable to list AI provider models."
 LLM_PROVIDER_ENV_KEY = "LLM_PROVIDER"
+# Outside the int4 range on purpose: the hashtext() keys other routes lock on
+# can never take this value.
+FIRST_RUN_SETUP_ADVISORY_LOCK_ID = 724_118_305_264_909_173
 
 
 def _raise_setup_validation_error(
@@ -94,6 +98,25 @@ async def is_system_initialized(db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+async def lock_first_run_setup(db: AsyncSession) -> None:
+    """Hold first-run setup to one request at a time until this transaction ends.
+
+    Setup checks that no user exists and then creates the owner. Two requests
+    that both checked before either committed would each create one. Taken
+    before the check, this lock makes the second wait for the first to commit
+    or roll back, and its check then sees the first's owner. It relies on READ
+    COMMITTED, PostgreSQL's default, so the check after the lock reads what the
+    first request committed. Other databases run only in tests, one request at
+    a time, and take no lock.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_id)"),
+        {"lock_id": FIRST_RUN_SETUP_ADVISORY_LOCK_ID},
+    )
+
+
 def get_first_run_password(request: Request) -> Optional[str]:
     authorization_header = request.headers.get("Authorization")
     if not authorization_header:
@@ -103,7 +126,30 @@ def get_first_run_password(request: Request) -> Optional[str]:
     if scheme.lower() != FIRST_RUN_PASSWORD_AUTH_SCHEME.lower() or not credential:
         return None
 
-    return credential.strip()
+    # ASCII whitespace only: the header is read as Latin-1, so a bare strip()
+    # would also cut 0x85 and 0xA0, which end the UTF-8 of letters such as "à".
+    return credential.strip(" \t")
+
+
+def _bootstrap_password_matches(provided: str, configured: str) -> bool:
+    """Compare the header's password with FIRST_RUN_PASSWORD, as bytes.
+
+    hmac.compare_digest refuses str with any non-ASCII character, so a
+    FIRST_RUN_PASSWORD such as one holding a pound sign failed every unlock
+    with a 500. Starlette decodes header bytes as Latin-1, so encoding back
+    recovers the bytes sent. The web app and curl in a UTF-8 terminal send
+    UTF-8, while Python's http.client sends a character up to U+00FF as one
+    Latin-1 byte, so either form of the configured password is accepted.
+    """
+    sent = provided.encode("latin-1", errors="replace")
+    candidates = [configured.encode("utf-8")]
+    try:
+        candidates.append(configured.encode("latin-1"))
+    except UnicodeEncodeError:
+        pass
+    # Every candidate is compared, so the time taken does not say which matched.
+    matches = [hmac.compare_digest(sent, candidate) for candidate in candidates]
+    return any(matches)
 
 
 def require_first_run_password(request: Request) -> None:
@@ -119,9 +165,8 @@ def require_first_run_password(request: Request) -> None:
         )
 
     provided_password = get_first_run_password(request)
-    if not provided_password or not hmac.compare_digest(
-        provided_password,
-        configured_password,
+    if not provided_password or not _bootstrap_password_matches(
+        provided_password, configured_password
     ):
         logger.warning(
             "First-run setup request denied: missing or incorrect bootstrap password."

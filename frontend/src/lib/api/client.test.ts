@@ -7,7 +7,7 @@ import {
   useSessionStore,
 } from "@/lib/session";
 
-import api from "./client";
+import api, { buildFirstRunRequestConfig } from "./client";
 
 // The real axios instance and its response interceptor run, on the fetch
 // adapter, against a stubbed fetch. jsdom cannot navigate, so location is a
@@ -222,5 +222,17 @@ describe("api client while a capture holds sign-in in place", () => {
     await expect(request).rejects.toMatchObject({ response: { status: 401 } });
     expect(navigations).toEqual([]);
     expect(useSessionStore.getState().signInRequired).toBe(false);
+  });
+});
+
+describe("first-run bootstrap header", () => {
+  it("sends a password beyond Latin-1 as its UTF-8 bytes", () => {
+    const config = buildFirstRunRequestConfig("pass-€-à");
+
+    // A header value with any character above U+00FF is refused outright.
+    expect(() => new Headers(config.headers)).not.toThrow();
+    expect(config.headers?.Authorization).toBe(
+      "Bootstrap pass-\u00e2\u0082\u00ac-\u00c3\u00a0",
+    );
   });
 });
