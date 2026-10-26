@@ -347,7 +347,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to seed demo data on startup: {e}")
 
     try:
-        await enqueue_model_preparation(include_core=True)
+        await enqueue_model_preparation(target="core")
     except Exception as e:  # noqa: BLE001 -- boundary: model preparation is queued best-effort at startup; the admin page can retry
         logger.error("Failed to queue startup model preparation: %s", e, exc_info=True)
 

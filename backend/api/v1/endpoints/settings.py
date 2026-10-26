@@ -2,7 +2,15 @@ import logging
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from fastapi.exceptions import RequestValidationError
+from pydantic import (
+    BaseModel,
+    Field,
+    SkipValidation,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
@@ -83,6 +91,9 @@ class SettingsUpdate(BaseModel):
     notes_language: Optional[str] = None
     notes_language_custom_instruction: Optional[str] = None
     enable_live_transcription: Optional[bool] = None
+    # Install-wide, admin-only; selection is frozen when capture labels start.
+    live_speaker_labels: Optional[str] = None
+    speaker_engine: Optional[str] = None
     theme: Optional[str] = None
     gemini_model: Optional[str] = None
     gemini_live_model: Optional[str] = None
@@ -156,6 +167,20 @@ class SettingsUpdate(BaseModel):
             raise ValueError(
                 f"Invalid whisper_model_size. Must be one of {WHISPER_MODEL_SIZES}"
             )
+        return value
+
+    @field_validator("speaker_engine", "live_speaker_labels")
+    @classmethod
+    def validate_speaker_setting(
+        cls, value: Optional[str], info: ValidationInfo
+    ) -> Optional[str]:
+        choices = (
+            ("auto", "classic")
+            if info.field_name == "speaker_engine"
+            else ("off", "auto")
+        )
+        if value is not None and value not in choices:
+            raise ValueError(f"Invalid {info.field_name}.")
         return value
 
     @field_validator("transcription_backend")
@@ -312,6 +337,47 @@ def _has_configured_value(value: Any) -> bool:
     return value is not None and value != ""
 
 
+def _is_settings_admin(user: User) -> bool:
+    return user.role in {"owner", "admin"} or user.is_superuser
+
+
+def _validated_settings_update(
+    settings: SkipValidation[SettingsUpdate],
+    current_user: User = Depends(get_current_user),
+) -> SettingsUpdate:
+    """Filter unchangeable install keys before strict request validation.
+
+    SkipValidation preserves the documented SettingsUpdate body schema while
+    deferring validation until the authenticated account's scope is known.
+    Stale pages may send malformed install values with an unrelated preference.
+    """
+    payload = settings
+    if not _is_settings_admin(current_user) and isinstance(payload, dict):
+        payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in INSTALL_WIDE_ONLY_USER_SETTING_KEYS
+        }
+    try:
+        return SettingsUpdate.model_validate(payload)
+    except ValidationError as exc:
+        errors = [
+            {**error, "loc": ("body", *error["loc"])}
+            for error in exc.errors(include_url=False)
+        ]
+        raise RequestValidationError(errors, body=settings) from exc
+
+
+def _normalise_speaker_settings(merged: dict[str, Any]) -> None:
+    """Report the effective runtime choices without changing stored config."""
+    engine = str(config_manager.get("speaker_engine", "auto") or "auto")
+    merged["speaker_engine"] = engine if engine in {"auto", "classic"} else "auto"
+    labels = (
+        str(config_manager.get("live_speaker_labels", "off") or "off").strip().lower()
+    )
+    merged["live_speaker_labels"] = "auto" if labels == "auto" else "off"
+
+
 def _apply_install_wide_ai_owner_fallback(
     merged: dict[str, Any],
     owner_settings: dict[str, Any] | None,
@@ -320,6 +386,8 @@ def _apply_install_wide_ai_owner_fallback(
         return
 
     for field in INSTALL_WIDE_AI_SETTING_KEYS:
+        if field in {"speaker_engine", "live_speaker_labels"}:
+            continue
         current_value = merged.get(field)
         owner_value = owner_settings.get(field)
         if _has_configured_value(current_value) or not _has_configured_value(
@@ -473,6 +541,7 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
             {k: v for k, v in sanitized_user_settings.items() if v is not None}
         )
     _normalise_processing_tuning(merged, config_manager.get_all())
+    _normalise_speaker_settings(merged)
 
     # System API keys (admin settings or .env) apply to every user.
     from backend.utils.config_manager import async_get_system_api_keys
@@ -526,7 +595,7 @@ def _build_settings_update_data(
 
     # config.json is the only place these keys live, so a null saved there would
     # replace the engine instead of falling back to the default.
-    for key in TRANSCRIPTION_SETTING_KEYS:
+    for key in (*TRANSCRIPTION_SETTING_KEYS, "speaker_engine", "live_speaker_labels"):
         if key in update_data and update_data[key] is None:
             del update_data[key]
 
@@ -604,7 +673,7 @@ async def _save_user_settings(
     db: AsyncSession,
 ) -> Any:
     current_settings = _get_mutable_user_settings(current_user.settings)
-    is_admin = current_user.role in ["owner", "admin"] or current_user.is_superuser
+    is_admin = _is_settings_admin(current_user)
     update_data = _build_settings_update_data(settings, is_admin=is_admin)
 
     try:
@@ -706,7 +775,7 @@ async def get_settings(
 
 @router.post("", response_model=Any)
 async def update_settings_root(
-    settings: SettingsUpdate,
+    settings: SettingsUpdate = Depends(_validated_settings_update),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -718,7 +787,7 @@ async def update_settings_root(
 
 @router.post("/", response_model=Any)
 async def update_settings(
-    settings: SettingsUpdate,
+    settings: SettingsUpdate = Depends(_validated_settings_update),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Any:

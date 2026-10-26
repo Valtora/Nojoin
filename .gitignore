@@ -69,6 +69,8 @@ nginx/*.pem
 
 # Audio Files
 *.wav
+# Attributed, hashed PCM excerpt required by the offline Nemotron replay.
+!backend/tests/fixtures/nemotron/es2004d-first-21_13.wav
 *.opus
 
 # Docker Compose

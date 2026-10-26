@@ -324,6 +324,28 @@ NOJOIN_TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/nojoin_t
 - **Image boundaries.** CI installs the API and worker requirements together, so a test passes on an import that one of the images cannot make. `test_api_torch_boundary.py` imports API modules with torch blocked, and `test_worker_import_boundary.py` imports worker modules with FastAPI and the API's other packages blocked ([Worker imports](#audio-processing--ml-operations)).
 - **ffmpeg.** Tests that run real media through ffmpeg skip when `shutil.which("ffmpeg")` finds nothing. CI installs Ubuntu's ffmpeg 6.1, the series the worker image ships; the API image ships 7.1. A test that depends on one version's behaviour should say which. To simulate a host without ffmpeg, point `PATH` at an empty directory with `monkeypatch.setenv`.
 
+### Native Nemotron Runtime Checks
+
+[The evaluation](evaluation/nemotron-710.md) separates official weight checks, native accuracy and the failed numerical match with NeMo. The [regression fixture](../backend/tests/fixtures/nemotron/README.md) records extraction, hashes, packet times and tolerances. Live labels use the production scheduler; the independent [final speaker pass](ARCHITECTURE.md#final-speaker-pass) combines community-1 with offline Nemotron when eligible.
+
+CPU CI replays recorded window results through the production scheduler, checking PCM slices, overlapping clips, hashes, first/end-of-file flags, cache continuity and frame availability times. It needs no model weights, GPU, network or ffmpeg and tests scheduling rather than inference. Combined-engine tests must exercise both engines' packet loop: backlogs and paced overlapping clips must produce identical model calls, switch times and speaker mappings. Inject at `infer_window`, before packet scheduling completes.
+
+Tests must distinguish fp32 probability sums for live line decisions from float16 `> 0.5` activity for routing. Cover the live switch at 200 active frames on each of eight channels, stable turn IDs through back-fill and re-clustering, permanent gap/failure fallback, unique display numbers, line callbacks without side effects, manual names/assignments, and restart decisions saved before DB publication. Each new behavioural test needs a deliberate mutation that makes it fail. Declare development accuracy thresholds before held-out checks; historical mappings that used future labels cannot validate production. Count every transcript line, including those beyond the last native frame.
+
+Final-pass tests cover eligibility, eighth-channel routing, float32 interval thresholds, overlap mapping and ties, separate identities, duplicate intervals and short fragments. Check unchanged community fallback, sequential model release, cancellation/time-limit propagation and downstream pipeline order. Keep live line-accuracy comparisons separate from final DER; neither describes named-person recognition or end-to-end ASR quality.
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 pytest -q backend/tests/test_nemotron_*.py
+python scripts/check_held_pins.py --offline
+python scripts/evaluate_nemotron.py --recorded-only
+```
+
+The real inference regression skips unless `NOJOIN_RUN_NEMOTRON_INFERENCE=1`, CUDA is available and `NOJOIN_NEMOTRON_MODEL_DIR` names the exact verified local snapshot. That path is a test-only asset selection, not a production repository/revision override. Run it in a throwaway GPU container with network disabled after preparing the three assets; it never downloads from pytest. It checks the production loader, independent CPU/CUDA frontend equivalence, recorded probabilities and cache checkpoints. Frontend tolerances are separate from posterior/cache tolerances. Regeneration is an explicit developer operation described in the fixture README, never part of pytest.
+
+The canonical Transformers pin in `requirements/worker.txt` is inherited by CI and local requirements. Its compatibility check binds that version and the canonical asset-manifest digest to both fixture and evaluation records. A dependency/checkpoint change requires new golden and comparison evidence. This policy is separate from security-advisory holds. The worker image constructs the native model and processor without weights or network to catch missing dependencies during the build. API and CPU-worker import tests guard the lazy ML boundary.
+
+Run the backend suite once with ffmpeg and ffprobe absent from `PATH` as well as the normal checks. No test may contact Redis; take `stub_celery_dispatch` when exercising preparation dispatch.
+
 ## Browser Capture Development
 
 Capture code lives in `frontend/src/lib/capture/`. After a capture change, check whichever of these apply:

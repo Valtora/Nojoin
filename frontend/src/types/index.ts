@@ -673,6 +673,10 @@ export interface Settings {
   notes_language?: string;
   notes_language_custom_instruction?: string;
   enable_live_transcription?: boolean;
+  /** Install-wide, admin-only: provisional labels require CUDA. */
+  live_speaker_labels?: "off" | "auto";
+  /** Install-wide, admin-only: selected when a capture's live labels start. */
+  speaker_engine?: "auto" | "classic";
   enable_meeting_edge?: boolean;
   meeting_edge_context_level?: number;
   /** Re-measure stale delivery figures when the Analytics tab is next opened. */
@@ -1072,6 +1076,11 @@ export interface ModelStatusInfo {
   /** Not downloaded, but the model's own entry is in Nojoin's model cache: a
    * download that was cut off or is still running. It can be deleted. */
   partial?: boolean;
+  /** Completed verification receipt plus unchanged local file metadata. */
+  verification_state?: "missing" | "partial" | "verified" | "invalid";
+  revision?: string;
+  manifest_sha256?: string;
+  verification_error?: string | null;
 }
 
 export interface SystemModelStatus {
@@ -1083,7 +1092,7 @@ export interface SystemModelStatus {
 
 /** Which local model assets a preparation request should fetch. `active` covers
  * whatever the saved transcription settings need. */
-export type ModelPreparationTarget = "active" | "core" | "parakeet" | "canary";
+export type ModelPreparationTarget = "active" | "core" | "parakeet" | "canary" | "nemotron";
 
 export interface ModelPreparationResponse {
   task_id: string;

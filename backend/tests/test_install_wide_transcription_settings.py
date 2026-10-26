@@ -13,6 +13,7 @@ import asyncio
 import importlib
 import json
 from pathlib import Path
+from typing import Any, TypedDict
 
 import pytest
 from fastapi import FastAPI
@@ -78,13 +79,23 @@ def test_a_user_row_cannot_override_the_install_engine() -> None:
     assert resolved.merged_config["prefer_short_titles"] is False
 
 
+class _SettingsRequestOptions(TypedDict, total=False):
+    is_superuser: bool
+    path: str
+
+
 async def _call_settings(
-    role: str, row: dict, method: str, payload: dict | None = None
+    role: str,
+    row: dict,
+    method: str,
+    payload: Any = None,
+    options: _SettingsRequestOptions | None = None,
 ) -> tuple[int, dict, dict]:
     """Send one settings request as a user with this role and row.
 
     Returns the status, the response body and the user's stored row after it.
     """
+    request_options = options or {}
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -101,7 +112,7 @@ async def _call_settings(
                 username="caller",
                 hashed_password="x",
                 role=role,
-                is_superuser=False,
+                is_superuser=request_options.get("is_superuser", False),
                 settings=dict(row),
             )
         )
@@ -120,9 +131,11 @@ async def _call_settings(
             transport=ASGITransport(app=app), base_url="http://t"
         ) as client:
             if method == "POST":
-                response = await client.post("/settings", json=payload)
+                response = await client.post(
+                    request_options.get("path", "/settings"), json=payload
+                )
             else:
-                response = await client.get("/settings")
+                response = await client.get(request_options.get("path", "/settings"))
         await session.refresh(user)
         return response.status_code, response.json(), dict(user.settings or {})
     finally:

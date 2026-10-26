@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "repository": "nvidia/Nemotron-3-Diarization",
+  "revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
+  "transformers_version": "5.20.2",
+  "files": [
+    {"filename": "config.json", "size": 1458, "sha256": "dd795ec07ffa09acf18d231aa3fa8642aa5c521760953754e02559a7413b6873"},
+    {"filename": "processor_config.json", "size": 623, "sha256": "91726746788a024a2f0f2f699a6c3667f0d74e6a0e9288fc44fe3018e23af68e"},
+    {"filename": "model.safetensors", "size": 396954592, "sha256": "c074d86335b3b794f8fa5edc25594558f128bdb3914d27806a3a5a2e44963cb6"}
+  ]
+}

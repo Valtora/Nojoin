@@ -523,7 +523,7 @@ async def setup_system(
         model_preparation_task_id = await enqueue_model_preparation(
             whisper_model_size=whisper_model_size,
             transcription_backend="whisper",
-            include_core=True,
+            target="core",
         )
     except Exception as e:  # noqa: BLE001 -- boundary: model preparation is queued best-effort; the admin page can retry
         logger.error(
@@ -634,7 +634,7 @@ class ModelPreparationRequest(BaseModel):
     @field_validator("target")
     @classmethod
     def validate_target(cls, value: str) -> str:
-        allowed = {"active", "core", "parakeet", "canary"}
+        allowed = {"active", "core", "parakeet", "canary", "nemotron"}
         if value not in allowed:
             raise ValueError(f"target must be one of {sorted(allowed)}")
         return value
@@ -680,7 +680,11 @@ async def prepare_models_endpoint(
     try:
         task_id = await enqueue_model_preparation(
             transcription_backend=transcription_backend,
-            include_core=include_core,
+            target="nemotron"
+            if target == "nemotron"
+            else "core"
+            if include_core
+            else "active",
         )
     except Exception as e:  # noqa: BLE001 -- boundary: a queue failure becomes a 503 the admin page can act on
         logger.error("Failed to queue model preparation: %s", e, exc_info=True)
@@ -714,6 +718,7 @@ async def delete_model_endpoint(
         "segmentation",
         "parakeet",
         "canary",
+        "nemotron",
     ]:
         raise HTTPException(status_code=400, detail="Invalid model name")
 

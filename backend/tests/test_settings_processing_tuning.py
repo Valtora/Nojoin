@@ -19,10 +19,11 @@ from backend.api.v1.endpoints import settings as settings_ep
 from backend.models.user import User
 from backend.processing.processing_tuning import TUNING_KEYS
 from backend.tests.sqlite_schemas import USERS_SCHEMA
+from backend.utils.config_manager import ConfigManager
 
 
-class _FakeConfigManager:
-    """Stands in for the module-level config_manager singleton."""
+class _FakeConfigManager(ConfigManager):
+    """Use the real getter while keeping persistence in memory."""
 
     def __init__(self) -> None:
         self.config: dict = {}
