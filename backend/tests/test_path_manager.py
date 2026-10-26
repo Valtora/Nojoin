@@ -88,6 +88,8 @@ def test_containerized_runtime_uses_persisted_project_data_dir(monkeypatch, tmp_
     _reset_path_manager_singleton()
     monkeypatch.setattr(PathManager, "_get_project_root", lambda self: project_root)
     monkeypatch.setattr(PathManager, "_is_containerized_runtime", lambda self: True)
+    # conftest.py sets it for the whole suite; this checks the default.
+    monkeypatch.delenv("NOJOIN_DATA_DIR", raising=False)
 
     manager = PathManager()
 
@@ -96,6 +98,30 @@ def test_containerized_runtime_uses_persisted_project_data_dir(monkeypatch, tmp_
     assert manager.user_data_directory == project_root / "data"
 
     _reset_path_manager_singleton()
+
+
+def test_source_checkout_data_dir_follows_nojoin_data_dir(monkeypatch, tmp_path):
+    """Outside a container, NOJOIN_DATA_DIR moves data/ as it does inside one."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "README.md").touch()
+    monkeypatch.setattr(PathManager, "_get_project_root", lambda self: project_root)
+    monkeypatch.setattr(PathManager, "_is_containerized_runtime", lambda self: False)
+
+    def fresh_manager() -> PathManager:
+        monkeypatch.setattr(PathManager, "_instance", None)
+        return PathManager()
+
+    monkeypatch.delenv("NOJOIN_DATA_DIR", raising=False)
+    manager = fresh_manager()
+    assert manager.deployment_mode == "development"
+    assert manager.user_data_directory == project_root / "data"
+
+    monkeypatch.setenv("NOJOIN_DATA_DIR", str(tmp_path / "elsewhere"))
+    assert fresh_manager().user_data_directory == tmp_path / "elsewhere"
+
+    monkeypatch.setenv("NOJOIN_DATA_DIR", "relative")
+    assert fresh_manager().user_data_directory == project_root / "relative"
 
 
 def test_legacy_secret_key_is_migrated_into_persisted_data_dir(tmp_path):
