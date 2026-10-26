@@ -1,11 +1,12 @@
 /**
  * The screen study's upload queue (#653): memory only, never browser storage.
  *
- * It holds at most 30 frames and sends one at a time. It sends nothing while
- * any audio is waiting to upload, so a frame never delays a segment: the
- * capture tells it when its own queue changes. Full, it drops the oldest
- * frame. A failed upload stops it for good and says why, and the study turns
- * itself off; the recording is never touched.
+ * It holds at most 30 frames and sends one at a time. It starts a frame only
+ * while no audio is waiting to upload, so frames queue behind segments; a
+ * frame already sending when a segment arrives still finishes first. Full, it
+ * drops the oldest frame. A failed upload stops it for good and says why, and
+ * the study turns itself off; the recording is never touched. Disposing of it
+ * aborts the frame in flight.
  */
 
 export const FRAME_QUEUE_CAPACITY = 30;
@@ -14,14 +15,22 @@ export interface QueuedFrame {
   sequence: number;
   offsetMs: number;
   blob: Blob;
+  /** The session's audio tick the frame was sampled on, from 0. */
+  tick: number;
+  /** The VideoFrame's timestamp, in microseconds. */
+  frameTsUs: number;
+  /** From the audio tick to drawing the frame, in milliseconds. */
+  grabDelayMs: number;
 }
 
 export interface FrameQueueOptions<Result> {
-  send: (frame: QueuedFrame) => Promise<Result>;
+  send: (frame: QueuedFrame, signal: AbortSignal) => Promise<Result>;
   /** Whether the capture has audio waiting to upload. */
   audioWaiting: () => boolean;
-  onSent?: (result: Result) => void;
-  onFailed?: (error: unknown) => void;
+  onSent?: (result: Result, frame: QueuedFrame) => void;
+  onFailed?: (error: unknown, frame: QueuedFrame) => void;
+  /** A frame that will never be sent: dropped when full, or left at dispose. */
+  onDropped?: (frame: QueuedFrame) => void;
   onChange?: (state: FrameQueueState) => void;
   capacity?: number;
 }
@@ -40,7 +49,7 @@ export class FrameQueue<Result = unknown> {
 
   private readonly capacity: number;
 
-  private sending = false;
+  private inFlight: AbortController | null = null;
 
   private failed = false;
 
@@ -59,19 +68,21 @@ export class FrameQueue<Result = unknown> {
     return {
       queued: this.frames.length,
       dropped: this.dropped,
-      sending: this.sending,
+      sending: this.inFlight !== null,
       failed: this.failed,
     };
   }
 
   enqueue(frame: QueuedFrame) {
     if (this.failed || this.disposed) {
+      this.options.onDropped?.(frame);
       return;
     }
     this.frames.push(frame);
     while (this.frames.length > this.capacity) {
-      this.frames.shift();
+      const oldest = this.frames.shift() as QueuedFrame;
       this.dropped += 1;
+      this.options.onDropped?.(oldest);
     }
     this.changed();
     this.pump();
@@ -101,20 +112,25 @@ export class FrameQueue<Result = unknown> {
     });
   }
 
-  /** Drops what is queued and sends nothing more. */
+  /** Drops what is queued, aborts the frame in flight and sends nothing more. */
   dispose() {
+    if (this.disposed) {
+      return;
+    }
     this.disposed = true;
-    this.frames.length = 0;
+    const left = this.frames.splice(0);
+    left.forEach((frame) => this.options.onDropped?.(frame));
+    this.inFlight?.abort();
     this.changed();
     this.settleIdle();
   }
 
   private isIdle() {
-    return this.frames.length === 0 && !this.sending;
+    return this.frames.length === 0 && this.inFlight === null;
   }
 
   private pump() {
-    if (this.sending || this.failed || this.disposed || this.frames.length === 0) {
+    if (this.inFlight || this.failed || this.disposed || this.frames.length === 0) {
       this.settleIdle();
       return;
     }
@@ -122,27 +138,30 @@ export class FrameQueue<Result = unknown> {
       return;
     }
     const frame = this.frames.shift() as QueuedFrame;
-    this.sending = true;
+    const controller = new AbortController();
+    this.inFlight = controller;
     this.changed();
     void this.options
-      .send(frame)
+      .send(frame, controller.signal)
       .then(
         (result) => {
-          this.sending = false;
           if (!this.disposed) {
-            this.options.onSent?.(result);
+            this.options.onSent?.(result, frame);
           }
         },
         (error: unknown) => {
-          this.sending = false;
           this.failed = true;
-          this.frames.length = 0;
-          if (!this.disposed) {
-            this.options.onFailed?.(error);
+          const left = this.frames.splice(0);
+          if (this.disposed) {
+            this.options.onDropped?.(frame);
+            return;
           }
+          this.options.onFailed?.(error, frame);
+          left.forEach((item) => this.options.onDropped?.(item));
         },
       )
       .finally(() => {
+        this.inFlight = null;
         this.changed();
         this.pump();
       });

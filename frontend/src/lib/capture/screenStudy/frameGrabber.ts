@@ -12,10 +12,19 @@ export const SPEAKER_FRAMES_WORKER_URL = "/workers/speaker-frames.js";
 /** How long the worker may take to answer before the study gives up. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
+/** How long `stop` lets the worker close its stream before ending it. */
+const STOP_GRACE_MS = 1_000;
+
+export const FRAME_STREAM_ENDED_MESSAGE = "The shared screen's video ended.";
+
 export interface FrameSample {
   grid: Uint8Array;
   width: number;
   height: number;
+  /** The VideoFrame's own timestamp, in microseconds. */
+  timestampUs: number;
+  /** When the worker drew it: `performance.timeOrigin + performance.now()`. */
+  grabbedAt: number;
 }
 
 export interface FrameGrabber {
@@ -54,6 +63,8 @@ interface WorkerReply {
   grid?: Uint8Array;
   width?: number;
   height?: number;
+  timestamp?: number;
+  grabbedAt?: number;
   blob?: Blob;
   framesSeen?: number;
   message?: string;
@@ -79,6 +90,19 @@ export const createWorkerFrameGrabber = (
   let nextId = 1;
   let failure: Error | null = null;
   let stopped = false;
+  let terminated = false;
+  let stopTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const terminate = () => {
+    if (terminated) {
+      return;
+    }
+    terminated = true;
+    if (stopTimer) {
+      clearTimeout(stopTimer);
+    }
+    worker.terminate();
+  };
 
   const failAll = (error: Error) => {
     failure = failure ?? error;
@@ -88,6 +112,16 @@ export const createWorkerFrameGrabber = (
 
   worker.onmessage = (event: MessageEvent) => {
     const reply = (event.data ?? {}) as WorkerReply;
+    if (reply.type === "stopped") {
+      terminate();
+      return;
+    }
+    if (reply.type === "ended") {
+      // The share ended or the clone was stopped: no new frame will come, so
+      // sampling must stop rather than repeat the last one.
+      failAll(new Error(FRAME_STREAM_ENDED_MESSAGE));
+      return;
+    }
     if (reply.type === "error") {
       const error = new Error(reply.message || "The screen study's frame reader failed.");
       if (typeof reply.id === "number" && pending.has(reply.id)) {
@@ -160,7 +194,13 @@ export const createWorkerFrameGrabber = (
       if (reply.empty || !reply.grid || !reply.width || !reply.height) {
         return null;
       }
-      return { grid: reply.grid, width: reply.width, height: reply.height };
+      return {
+        grid: reply.grid,
+        width: reply.width,
+        height: reply.height,
+        timestampUs: typeof reply.timestamp === "number" ? reply.timestamp : 0,
+        grabbedAt: typeof reply.grabbedAt === "number" ? reply.grabbedAt : Date.now(),
+      };
     },
     async encode() {
       const reply = await request("encode");
@@ -179,13 +219,15 @@ export const createWorkerFrameGrabber = (
       }
       stopped = true;
       failAll(new Error("The screen study's frame reader has stopped."));
+      // Stopping the clone is what lets the share close; the worker gets a
+      // moment to cancel its stream and close its last frame, then goes.
+      clone.stop();
       try {
         worker.postMessage({ type: "stop" });
+        stopTimer = setTimeout(terminate, STOP_GRACE_MS);
       } catch {
-        // Already gone.
+        terminate();
       }
-      worker.terminate();
-      clone.stop();
     },
   };
 };

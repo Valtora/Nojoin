@@ -35,7 +35,7 @@ describe("ScreenStudyStatus", () => {
 
     useScreenStudyStore.getState().update({ recordingId: "rec-2", status: "sampling" });
     render(<ScreenStudyStatus recordingId="rec-1" />);
-    expect(screen.queryByRole("status", { name: "Screen study" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Screen study" })).not.toBeInTheDocument();
   });
 
   it("shows the frame count, the size and the deletion date while sampling", () => {
@@ -49,9 +49,11 @@ describe("ScreenStudyStatus", () => {
 
     render(<ScreenStudyStatus recordingId="rec-1" />);
 
-    expect(screen.getByRole("status", { name: "Screen study" })).toHaveTextContent(
+    expect(screen.getByRole("group", { name: "Screen study" })).toHaveTextContent(
       "Screen study: Sampling. 1,234 frames, 45.0 MB, deleted on 8 Nov 2026",
     );
+    // Only the state is announced, not the count that changes every second.
+    expect(screen.getByRole("status")).toHaveTextContent(/^Screen study: Sampling\.$/);
     expect(screen.getByRole("button", { name: /Stop the screen study/ })).toBeInTheDocument();
   });
 
@@ -88,7 +90,7 @@ describe("ScreenStudyStatus", () => {
       error: "The screen study has reached its storage limit, so sampling stopped.",
     });
     render(<ScreenStudyStatus recordingId="rec-1" />);
-    expect(screen.getByText(/reached its storage limit/)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/reached its storage limit/);
   });
 
   it("shows the deletion once the frames are gone", () => {

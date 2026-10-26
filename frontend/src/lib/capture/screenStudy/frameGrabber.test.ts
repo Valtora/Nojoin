@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createWorkerFrameGrabber } from "./frameGrabber";
+import { createWorkerFrameGrabber, FRAME_STREAM_ENDED_MESSAGE } from "./frameGrabber";
 
 class FakeWorker {
   posted: Array<{ message: Record<string, unknown>; transfer?: Transferable[] }> = [];
@@ -71,8 +71,22 @@ describe("worker frame grabber", () => {
 
     const grid = new Uint8Array([1, 2, 3]);
     const sample = grabber.sample();
-    worker.reply({ type: "sample", id: worker.lastId(), grid, width: 1280, height: 720 });
-    await expect(sample).resolves.toEqual({ grid, width: 1280, height: 720 });
+    worker.reply({
+      type: "sample",
+      id: worker.lastId(),
+      grid,
+      width: 1280,
+      height: 720,
+      timestamp: 4_000_123,
+      grabbedAt: 1_761_400_000_000.5,
+    });
+    await expect(sample).resolves.toEqual({
+      grid,
+      width: 1280,
+      height: 720,
+      timestampUs: 4_000_123,
+      grabbedAt: 1_761_400_000_000.5,
+    });
 
     const blob = new Blob(["jpeg"], { type: "image/jpeg" });
     const encoded = grabber.encode();
@@ -94,7 +108,24 @@ describe("worker frame grabber", () => {
     await expect(grabber.encode()).rejects.toThrow("The shared screen could not be read");
   });
 
-  it("stops the clone and the worker, and nothing else", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fails every request once the shared video ends", async () => {
+    const worker = new FakeWorker();
+    const grabber = createWorkerFrameGrabber(fakeTrack(), {
+      createWorker: () => worker,
+      trackProcessor: null,
+    });
+
+    worker.reply({ type: "ended" });
+
+    await expect(grabber.sample()).rejects.toThrow(FRAME_STREAM_ENDED_MESSAGE);
+  });
+
+  it("stops the clone at once and lets the worker close its stream first", () => {
+    vi.useFakeTimers();
     const worker = new FakeWorker();
     const clone = fakeTrack();
     const grabber = createWorkerFrameGrabber(clone, {
@@ -106,7 +137,24 @@ describe("worker frame grabber", () => {
     grabber.stop();
 
     expect(clone.stop).toHaveBeenCalledTimes(1);
-    expect(worker.terminated).toBe(true);
     expect(worker.posted.at(-1)?.message).toEqual({ type: "stop" });
+    expect(worker.terminated).toBe(false);
+    worker.reply({ type: "stopped" });
+    expect(worker.terminated).toBe(true);
+  });
+
+  it("ends a worker that does not answer stop within a second", () => {
+    vi.useFakeTimers();
+    const worker = new FakeWorker();
+    const grabber = createWorkerFrameGrabber(fakeTrack(), {
+      createWorker: () => worker,
+      trackProcessor: null,
+    });
+
+    grabber.stop();
+    vi.advanceTimersByTime(999);
+    expect(worker.terminated).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(worker.terminated).toBe(true);
   });
 });

@@ -6,6 +6,8 @@ interface ScreenStudyOptInProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   retentionDays: number;
+  /** Frames looked at per second of audio: 1 or 2. */
+  rateHz: number;
   /** The rail's narrow column gets the short wording. */
   compact?: boolean;
   disabled?: boolean;
@@ -21,6 +23,7 @@ export default function ScreenStudyOptIn({
   checked,
   onChange,
   retentionDays,
+  rateHz,
   compact = false,
   disabled = false,
   idPrefix,
@@ -45,7 +48,7 @@ export default function ScreenStudyOptIn({
         <span id={`${id}-help`} className="mt-0.5 block text-xs leading-5 text-contrast-helper">
           {compact
             ? `Samples the shared screen for the speaker study. Kept on this server, deleted after ${retentionDays} days.`
-            : `Samples the shared screen about once a second while it changes, for the speaker study. The frames stay on this server, are never sent anywhere, and are deleted ${retentionDays} days after the meeting ends.`}
+            : `Samples the shared screen about ${rateHz === 2 ? "twice a second" : "once a second"} while it changes, for the speaker study. The frames stay on this server, are never sent anywhere, and are deleted ${retentionDays} days after the meeting ends.`}
         </span>
       </span>
     </label>

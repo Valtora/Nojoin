@@ -728,6 +728,13 @@ async def finalize_upload(
 
     finalized_from_paused = recording.status == RecordingStatus.PAUSED
 
+    # Starts a screen study's 14 days and its upload window before the status
+    # changes, so a frame arriving in between is still taken. For a recording
+    # without frames it costs one stat (#653).
+    await asyncio.to_thread(
+        mark_recording_stopped, recording.public_id, datetime.now(UTC)
+    )
+
     recording.status = RecordingStatus.QUEUED
     recording.client_status = ClientStatus.IDLE
     recording.processing_started_at = None
@@ -740,11 +747,6 @@ async def finalize_upload(
     # them once the capture ends, so they go now, not with the temp directory.
     remove_live_label_state(
         recordings_module.recording_upload_temp_dir(recording.id, create=False) / "live"
-    )
-    # Starts a screen study's 14 days and closes its upload window, for a
-    # recording that has frames; for any other it costs one stat (#653).
-    await asyncio.to_thread(
-        mark_recording_stopped, recording.public_id, datetime.now(UTC)
     )
 
     _record_finalize_capture_metrics(

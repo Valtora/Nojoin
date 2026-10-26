@@ -375,7 +375,7 @@ On a 12 GB RTX 4070 Ti, labels take about 32 ms of the GPU worker's time per 2 s
 - `off`, the shipped default: nobody is offered the study, and every one of its endpoints answers 404.
 - `owner`: the installation's first Owner account, the one created at first-run setup, sees **Screen study** under **Start Meeting**. No other account does.
 
-`speaker_frame_rate_hz` sets how often the browser looks at the shared screen: `1` (the default) or `2` times per second of audio. Any other value of either key reads as its default. The api re-reads `config.json` on each study request, so an edit reaches the next request without a restart. A page already open offers the box within five minutes, or on reload.
+`speaker_frame_rate_hz` sets how often the browser looks at the shared screen: `1` (the default) or `2` times per second of audio. Any other value of either key reads as its default. The api re-reads `config.json` on each study request, so an edit reaches the next request without a restart. A page already open offers the box once it is reloaded.
 
 To allow it, add the key to `data/config.json`, keeping the file valid JSON and owned by UID 1000:
 
@@ -383,7 +383,7 @@ To allow it, add the key to `data/config.json`, keeping the file valid JSON and 
 "speaker_frame_sampling": "owner"
 ```
 
-Frames live in `data/speaker_frames/<recording public id>/` as `<sequence>-<offset_ms>.jpg`, mode 0600, with an `index.jsonl` beside them: `sequence` is the audio chunk a frame was taken in and `offset_ms` the offset into it, so `recording_audio_chunks.absolute_start_ms + offset_ms` puts the frame on the transcript's clock. `data/speaker_frame_state/` records when each recording stopped. A frame is kept only when the screen changes, or every 15 seconds while it does not, so storage depends on the meeting. Once all frames together reach 20 GB, no more are kept. An hourly task on `worker-io` deletes frames 14 days after their recording stops, and keeps doing so with the key set to `off`.
+Frames live in `data/speaker_frames/<recording public id>/` as `<sequence>-<offset_ms>.jpg`, mode 0600, with an `index.jsonl` beside them: `sequence` is the audio chunk a frame was taken in and `offset_ms` the offset into it, so `recording_audio_chunks.absolute_start_ms + offset_ms` puts the frame on the transcript's clock. Each index line also holds the frame's size and SHA-256, `tick` (the capture's audio tick it was sampled on, from 0), `lost_before` (ticks since the previous stored frame that were not sampled, or whose frame was dropped or failed to upload, so a still screen is not mistaken for a gap), `frame_ts_us` (the video frame's own timestamp) and `grab_delay_ms` (from the audio tick to the grab). `platform_hint` is always `null` for now. `data/speaker_frame_state/` records when each recording stopped and whether its frames were deleted, and holds a lock file per recording. A frame is kept only when the screen changes, or every 15 seconds while it does not, so storage depends on the meeting. Once all frames together reach 20 GB, or storing one would leave less free disk space than uploads keep (2 GB by default, `DOCUMENT_DISK_HEADROOM_BYTES`), no more are kept. An hourly task on `worker-io` deletes frames 14 days after their recording stops, and keeps doing so with the key set to `off`.
 
 The bundled proxy leaves the study's per-recording requests out of its access log, as the api does. A reverse proxy of your own logs them like any other request unless you exclude `/api/v1/recordings/<id>/speaker-frames`.
 

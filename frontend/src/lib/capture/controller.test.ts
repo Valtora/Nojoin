@@ -3437,8 +3437,10 @@ describe("audio kept for a capture finished elsewhere (issue #589)", () => {
 
       await controller.start("", { screenStudy: { rateHz: 2 } });
 
-      expect(screenStudyMocks.startScreenStudySession).toHaveBeenCalledWith(
-        expect.objectContaining({ recordingId: "rec-study", displayTrack: videoTrack }),
+      await vi.waitFor(() =>
+        expect(screenStudyMocks.startScreenStudySession).toHaveBeenCalledWith(
+          expect.objectContaining({ recordingId: "rec-study", displayTrack: videoTrack }),
+        ),
       );
       const options = lastRecorderOptions();
       expect(options.audioTickSeconds).toBe(0.5);
@@ -3463,6 +3465,7 @@ describe("audio kept for a capture finished elsewhere (issue #589)", () => {
       });
       const controller = new CaptureController();
       await controller.start("", { screenStudy: { rateHz: 1 } });
+      await vi.waitFor(() => expect(screenStudyMocks.startScreenStudySession).toHaveBeenCalled());
 
       await controller.pause();
       expect(screenStudyMocks.session.pause).toHaveBeenCalled();
@@ -3477,6 +3480,7 @@ describe("audio kept for a capture finished elsewhere (issue #589)", () => {
       apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-study", status: "QUEUED" });
       const controller = new CaptureController();
       await controller.start("", { screenStudy: { rateHz: 1 } });
+      await vi.waitFor(() => expect(screenStudyMocks.startScreenStudySession).toHaveBeenCalled());
 
       await controller.stop();
 
@@ -3491,6 +3495,7 @@ describe("audio kept for a capture finished elsewhere (issue #589)", () => {
       pickSourceMocks.pickCaptureSource.mockResolvedValue(sharedSources());
       const controller = new CaptureController();
       await controller.start("", { screenStudy: { rateHz: 1 } });
+      await vi.waitFor(() => expect(screenStudyMocks.startScreenStudySession).toHaveBeenCalled());
 
       await controller.cancel();
 
@@ -3507,6 +3512,7 @@ describe("audio kept for a capture finished elsewhere (issue #589)", () => {
       const controller = new CaptureController();
 
       await controller.start("", { screenStudy: { rateHz: 1 } });
+      await vi.waitFor(() => expect(warn).toHaveBeenCalled());
 
       expect(controller.getState().status).toBe("recording");
       expect(controller.getState().error).toBeNull();

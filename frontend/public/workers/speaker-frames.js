@@ -8,9 +8,11 @@
  *
  * On "sample" it draws the newest frame at most 1280 px on its long edge and
  * answers with a 64 x 36 grid of block brightness averages, which the page
- * compares with the last frame it kept. On "encode" it answers with that same
- * drawing as a JPEG at quality 0.8. Pixels leave this worker only as that
- * JPEG, sent back to the page that asked for it.
+ * compares with the last frame it kept, the frame's timestamp and when it drew
+ * it. On "encode" it answers with that same drawing as a JPEG at quality 0.8.
+ * Pixels leave this worker only as that JPEG, sent back to the page that asked
+ * for it. When the stream ends it says "ended"; on "stop" it closes its
+ * stream and answers "stopped".
  *
  * A static file, like the PCM tap worklet, so it needs no bundler support and
  * loads only when a study starts.
@@ -45,6 +47,10 @@ const pump = async (readable) => {
       if (done || stopped) {
         if (value) {
           value.close();
+        }
+        if (done && !stopped) {
+          // The share ended: tell the page, so it stops sampling.
+          self.postMessage({ type: "ended" });
         }
         break;
       }
@@ -91,6 +97,7 @@ const sample = (id) => {
     self.postMessage({ type: "sample", id, empty: true });
     return;
   }
+  const timestamp = latest.timestamp;
   const frameWidth = latest.displayWidth;
   const frameHeight = latest.displayHeight;
   const scale = Math.min(1, LONG_EDGE_PX / Math.max(frameWidth, frameHeight));
@@ -101,9 +108,12 @@ const sample = (id) => {
     context = canvas.getContext("2d", { willReadFrequently: true });
   }
   context.drawImage(latest, 0, 0, width, height);
+  const grabbedAt = performance.timeOrigin + performance.now();
   const grid = blockGrid(context.getImageData(0, 0, width, height).data, width, height);
   drawn = true;
-  self.postMessage({ type: "sample", id, grid, width, height }, [grid.buffer]);
+  self.postMessage({ type: "sample", id, grid, width, height, timestamp, grabbedAt }, [
+    grid.buffer,
+  ]);
 };
 
 const encode = async (id) => {
@@ -115,15 +125,16 @@ const encode = async (id) => {
   self.postMessage({ type: "jpeg", id, blob });
 };
 
-const stop = () => {
+const stop = async () => {
   stopped = true;
-  if (reader) {
-    reader.cancel().catch(() => {});
-  }
   if (latest) {
     latest.close();
     latest = null;
   }
+  if (reader) {
+    await reader.cancel().catch(() => {});
+  }
+  self.postMessage({ type: "stopped" });
   self.close();
 };
 
@@ -148,7 +159,7 @@ self.onmessage = (event) => {
         self.postMessage({ type: "stats", id: message.id, framesSeen });
         break;
       case "stop":
-        stop();
+        void stop();
         break;
       default:
         break;

@@ -8,8 +8,16 @@ screen.
 from __future__ import annotations
 
 import io
+from typing import Any
 
 from PIL import Image, ImageDraw
+
+from backend.utils.speaker_frames import (
+    FrameTiming,
+    IncomingFrame,
+    StoredFrame,
+    store_frame,
+)
 
 
 def draw_frame(
@@ -32,3 +40,18 @@ def draw_frame(
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=quality)
     return buffer.getvalue()
+
+
+def timing(tick: int = 0, *, lost_before: int = 0) -> FrameTiming:
+    """Sampling details for a test frame, as the browser would send them."""
+    return FrameTiming(
+        tick=tick,
+        lost_before=lost_before,
+        frame_ts_us=1_000_000 + tick * 1_000_000,
+        grab_delay_ms=12,
+    )
+
+
+def store_test_frame(public_id: str, **fields: Any) -> StoredFrame:
+    """``store_frame`` with the frame's fields as keywords, as the tests read best."""
+    return store_frame(public_id, IncomingFrame(**fields))

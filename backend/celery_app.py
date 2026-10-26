@@ -289,8 +289,6 @@ celery_app.conf.update(
             "task": "backend.worker.tasks.cleanup_temp_recordings",
             "schedule": 86400.0,
         },
-        # Reclaims exported archives, uploaded archives, abandoned multipart uploads and
-        # any restore staging left behind by a worker that died mid-restore.
         # Screen study frames (#653) go 14 days after their recording stops.
         # Hourly, so none outlives its date by more than an hour; a run with
         # no frames lists one empty directory.
@@ -298,6 +296,8 @@ celery_app.conf.update(
             "task": "backend.worker.tasks.sweep_speaker_frames_task",
             "schedule": 3600.0,
         },
+        # Reclaims exported archives, uploaded archives, abandoned multipart uploads and
+        # any restore staging left behind by a worker that died mid-restore.
         "cleanup-backup-artifacts-every-6h": {
             "task": "backend.worker.tasks.cleanup_backup_artifacts",
             "schedule": 21600.0,

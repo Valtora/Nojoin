@@ -204,5 +204,28 @@ describe("MeetingControls", () => {
       render(<MeetingControls variant="sidebar" />);
       expect(screen.queryByRole("checkbox", { name: /Screen study/ })).not.toBeInTheDocument();
     });
+
+    it("names the installation's rate", () => {
+      studyAvailability.value = { ...available, rate_hz: 2 };
+      render(<MeetingControls variant="dashboard" />);
+      expect(screen.getByText(/about twice a second/)).toBeInTheDocument();
+    });
+
+    it("is unticked again after any meeting goes live, a resume included", () => {
+      studyAvailability.value = available;
+      const { rerender } = render(<MeetingControls variant="sidebar" />);
+      fireEvent.click(screen.getByRole("checkbox", { name: /Screen study/ }));
+      expect(screen.getByRole("checkbox", { name: /Screen study/ })).toBeChecked();
+
+      // A paused recording resumed from its dialog, never through Start Meeting.
+      captureState.runtimeActive = true;
+      captureState.status = "recording";
+      rerender(<MeetingControls variant="sidebar" />);
+      captureState.runtimeActive = false;
+      captureState.status = "idle";
+      rerender(<MeetingControls variant="sidebar" />);
+
+      expect(screen.getByRole("checkbox", { name: /Screen study/ })).not.toBeChecked();
+    });
   });
 });

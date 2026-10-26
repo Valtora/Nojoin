@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import stat
+import struct
 import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
@@ -24,7 +25,7 @@ from PIL import Image
 from sqlalchemy import create_engine, text
 from sqlmodel import Session
 
-from backend.tests.speaker_frame_images import draw_frame
+from backend.tests.speaker_frame_images import draw_frame, store_test_frame, timing
 from backend.tests.sqlite_schemas import RECORDINGS_SCHEMA
 from backend.utils import speaker_frames
 from backend.utils.config_manager import DEFAULT_SYSTEM_CONFIG, ConfigManager
@@ -45,23 +46,20 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         storage, "path_manager", SimpleNamespace(user_data_directory=root)
     )
-    storage._summaries.clear()
-    storage._announced.clear()
-    storage._total_cache.clear()
+    storage._reset_caches()
     yield root
-    storage._summaries.clear()
-    storage._announced.clear()
-    storage._total_cache.clear()
+    storage._reset_caches()
 
 
 def _store(public_id: str, sequence: int = 0, offset_ms: int = 0, **kwargs) -> bytes:
     data = kwargs.pop("data", None) or draw_frame(highlight=sequence % 4)
-    speaker_frames.store_frame(
+    store_test_frame(
         public_id,
         sequence=sequence,
         offset_ms=offset_ms,
         data=data,
         received_at=kwargs.pop("received_at", NOW),
+        timing=kwargs.pop("timing", timing(sequence)),
     )
     return data
 
@@ -166,7 +164,10 @@ def test_a_frame_is_stored_private_and_indexed_exactly_as_the_contract_says(
     data_dir: Path,
 ) -> None:
     public_id = str(uuid.uuid4())
-    data = _store(public_id, sequence=7, offset_ms=1500)
+    sampled = speaker_frames.FrameTiming(
+        tick=41, lost_before=3, frame_ts_us=123_456_789, grab_delay_ms=37
+    )
+    data = _store(public_id, sequence=7, offset_ms=1500, timing=sampled)
 
     directory = data_dir / "speaker_frames" / public_id
     frame = directory / "7-1500.jpg"
@@ -192,6 +193,10 @@ def test_a_frame_is_stored_private_and_indexed_exactly_as_the_contract_says(
         "width",
         "height",
         "platform_hint",
+        "tick",
+        "lost_before",
+        "frame_ts_us",
+        "grab_delay_ms",
     ]
     assert entry == {
         "sequence": 7,
@@ -202,17 +207,21 @@ def test_a_frame_is_stored_private_and_indexed_exactly_as_the_contract_says(
         "width": 1280,
         "height": 720,
         "platform_hint": None,
+        "tick": 41,
+        "lost_before": 3,
+        "frame_ts_us": 123_456_789,
+        "grab_delay_ms": 37,
     }
 
 
 def test_a_retried_frame_is_kept_once_and_indexed_once(data_dir: Path) -> None:
     public_id = str(uuid.uuid4())
     data = draw_frame()
-    first = speaker_frames.store_frame(
-        public_id, sequence=1, offset_ms=0, data=data, received_at=NOW
+    first = store_test_frame(
+        public_id, sequence=1, offset_ms=0, data=data, received_at=NOW, timing=timing()
     )
-    again = speaker_frames.store_frame(
-        public_id, sequence=1, offset_ms=0, data=data, received_at=NOW
+    again = store_test_frame(
+        public_id, sequence=1, offset_ms=0, data=data, received_at=NOW, timing=timing()
     )
 
     assert first.duplicate is False and again.duplicate is True
@@ -224,7 +233,7 @@ def test_a_retried_frame_is_kept_once_and_indexed_once(data_dir: Path) -> None:
 def test_the_summary_counts_every_frame(data_dir: Path) -> None:
     public_id = str(uuid.uuid4())
     sizes = [len(_store(public_id, sequence=sequence)) for sequence in range(3)]
-    storage._summaries.clear()
+    storage._reset_caches()
     assert speaker_frames.frames_summary(public_id) == speaker_frames.FrameSummary(
         frames=3, bytes=sum(sizes)
     )
@@ -251,12 +260,13 @@ def test_frames_out_of_bounds_are_refused(
     data_dir: Path, sequence, offset_ms, data
 ) -> None:
     with pytest.raises(speaker_frames.InvalidFrame):
-        speaker_frames.store_frame(
+        store_test_frame(
             str(uuid.uuid4()),
             sequence=sequence,
             offset_ms=offset_ms,
             data=data or draw_frame(),
             received_at=NOW,
+            timing=timing(),
         )
     assert not (data_dir / "speaker_frames").exists() or not any(
         (data_dir / "speaker_frames").iterdir()
@@ -266,8 +276,13 @@ def test_frames_out_of_bounds_are_refused(
 @pytest.mark.parametrize("public_id", ["../escape", "a/b", "", "not-a-uuid", "A" * 36])
 def test_only_a_recording_id_names_a_directory(data_dir: Path, public_id: str) -> None:
     with pytest.raises(speaker_frames.InvalidRecordingId):
-        speaker_frames.store_frame(
-            public_id, sequence=0, offset_ms=0, data=draw_frame(), received_at=NOW
+        store_test_frame(
+            public_id,
+            sequence=0,
+            offset_ms=0,
+            data=draw_frame(),
+            received_at=NOW,
+            timing=timing(),
         )
     assert speaker_frames.delete_recording_frames(public_id, reason="test") == 0
 
@@ -376,6 +391,7 @@ def test_storing_logs_one_line_per_capture_and_nothing_per_frame(
         ("/api/v1/recordings/0b0c/speaker-frames", False),
         ("/api/v1/recordings/0b0c/segment?sequence=3", True),
         ("/api/v1/recordings/0b0c?view=speaker-frames", True),
+        ("/api/v1/recordings/speaker-frames/availability", True),
     ],
 )
 def test_the_api_access_log_leaves_out_frame_requests(path: str, kept: bool) -> None:
@@ -706,8 +722,7 @@ def test_a_backup_carries_no_frame(
     context = build_test_context(tmp_path / "source")
     patch_backup_manager(monkeypatch, context)
     monkeypatch.setattr(storage, "path_manager", context.path_manager)
-    storage._summaries.clear()
-    storage._total_cache.clear()
+    storage._reset_caches()
     public_id = str(uuid.uuid4())
     audio = context.path_manager.recordings_directory / "quarterly-planning.wav"
     audio.write_bytes(b"RIFF0000WAVE")
@@ -772,3 +787,195 @@ def test_telemetry_carries_nothing_of_the_study(
     assert "speaker_frame" not in serialised
     assert "screen" not in serialised
     assert "frame" not in serialised
+
+
+# --- delete races, locks and caches (review of #722) --------------------------
+
+
+def test_after_the_owners_delete_no_frame_is_kept_again(data_dir: Path) -> None:
+    public_id = str(uuid.uuid4())
+    _store(public_id, sequence=0)
+    _store(public_id, sequence=1)
+
+    assert speaker_frames.delete_frames_for_owner(public_id) == 2
+
+    assert not (data_dir / "speaker_frames" / public_id).exists()
+    assert speaker_frames.frames_deleted_by_owner(public_id)
+    with pytest.raises(speaker_frames.FramesDeleted):
+        _store(public_id, sequence=2)
+    assert not (data_dir / "speaker_frames" / public_id).exists()
+    # Nor through the window after a stop, which the marker also closes.
+    speaker_frames.mark_recording_stopped(public_id, NOW)
+    assert not speaker_frames.accepts_frames_after_stop(public_id, now=NOW)
+
+
+def test_a_failed_delete_is_reported_and_the_frames_stay_listed(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    public_id = str(uuid.uuid4())
+    _store(public_id)
+
+    def refuse(_path):
+        raise OSError(39, "Directory not empty")
+
+    monkeypatch.setattr(storage.shutil, "rmtree", refuse)
+    with pytest.raises(speaker_frames.FrameDeletionFailed):
+        speaker_frames.delete_frames_for_owner(public_id)
+    assert speaker_frames.frames_summary(public_id).frames == 1
+    # The marker was written first, so nothing more is kept meanwhile.
+    with pytest.raises(speaker_frames.FramesDeleted):
+        _store(public_id, sequence=5)
+
+
+def test_storing_waits_for_a_delete_holding_the_recording_lock(data_dir: Path) -> None:
+    import threading
+
+    public_id = str(uuid.uuid4())
+    _store(public_id, sequence=0)
+    finished = threading.Event()
+    outcome: list[object] = []
+
+    def store_later() -> None:
+        try:
+            _store(public_id, sequence=1)
+            outcome.append("stored")
+        except speaker_frames.FramesDeleted as exc:
+            outcome.append(exc)
+        finished.set()
+
+    with storage.recording_lock(public_id):
+        worker = threading.Thread(target=store_later)
+        worker.start()
+        assert not finished.wait(0.3), "a store ran while the lock was held"
+        # As the owner's delete does under the lock: marker, then the files.
+        storage._update_state(public_id, frames_deleted_at="2026-10-25T12:00:00Z")
+        storage._remove_frames_locked(public_id)
+    worker.join(5)
+
+    assert isinstance(outcome[0], speaker_frames.FramesDeleted)
+    assert not (data_dir / "speaker_frames" / public_id).exists()
+
+
+def test_counts_notice_frames_deleted_by_another_process(data_dir: Path) -> None:
+    import shutil
+
+    public_id = str(uuid.uuid4())
+    _store(public_id, sequence=0)
+    _store(public_id, sequence=1)
+    assert speaker_frames.frames_summary(public_id).frames == 2
+
+    # A purge from the CLI or the worker's sweep, which share no cache.
+    shutil.rmtree(data_dir / "speaker_frames" / public_id)
+    assert speaker_frames.frames_summary(public_id).frames == 0
+    stored = store_test_frame(
+        public_id,
+        sequence=9,
+        offset_ms=0,
+        data=draw_frame(),
+        received_at=NOW,
+        timing=timing(9),
+    )
+    assert stored.summary.frames == 1
+
+
+def test_a_delete_lowers_the_total_without_a_rescan(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keep, drop = str(uuid.uuid4()), str(uuid.uuid4())
+    kept = len(_store(keep))
+    _store(drop)
+    speaker_frames.total_bytes(refresh=True)
+    speaker_frames.delete_recording_frames(drop, reason="test")
+
+    monkeypatch.setattr(storage, "_scan_total_bytes", lambda: pytest.fail("rescanned"))
+    assert speaker_frames.total_bytes() == kept
+
+
+def test_a_stop_time_the_sweep_supplies_opens_no_window(
+    data_dir: Path, recordings_db
+) -> None:
+    public_id = str(uuid.uuid4())
+    recordings_db.add(public_id, status="QUEUED")
+    _store(public_id)
+
+    with Session(recordings_db.engine) as session:
+        sweep_speaker_frames(session, now=NOW)
+
+    assert speaker_frames.recording_stopped_at(public_id) == NOW
+    assert not speaker_frames.accepts_frames_after_stop(public_id, now=NOW)
+
+
+def test_the_sweep_keeps_a_delete_marker_while_the_capture_runs(
+    data_dir: Path, recordings_db
+) -> None:
+    live, done = str(uuid.uuid4()), str(uuid.uuid4())
+    recordings_db.add(live, status="UPLOADING", last_activity=NOW)
+    recordings_db.add(done, status="PROCESSED")
+    for public_id in (live, done):
+        _store(public_id)
+        speaker_frames.delete_frames_for_owner(public_id)
+
+    with Session(recordings_db.engine) as session:
+        result = sweep_speaker_frames(session, now=NOW)
+
+    assert speaker_frames.frames_deleted_by_owner(live)
+    assert not (data_dir / "speaker_frame_state" / f"{done}.json").exists()
+    assert not (data_dir / "speaker_frame_state" / f"{done}.lock").exists()
+    assert result.orphaned_state_removed == 1
+
+
+def test_audit_scan_knows_a_jpeg_by_its_bytes_and_counts_what_it_skips(
+    data_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    public_id = str(uuid.uuid4())
+    data = _store(public_id)
+    assert cli.main(["purge", "--all"]) == 0
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "renamed.bin").write_bytes(data)
+    locked = elsewhere / "locked.zip"
+    with zipfile.ZipFile(locked, "w") as archive:
+        archive.writestr("frame.dat", data)
+        archive.writestr("plain/frame.dat", data)
+    # Mark the first member encrypted, which reading refuses without a password.
+    raw = bytearray(locked.read_bytes())
+    raw[6] |= 0x1  # its local header, at the start of the file
+    raw[raw.find(b"PK\x01\x02") + 8] |= 0x1  # its central directory entry
+    locked.write_bytes(bytes(raw))
+    # An end record naming a central directory that is not there.
+    (elsewhere / "broken.zip").write_bytes(
+        struct.pack("<4s4H2LH", b"PK\x05\x06", 0, 0, 1, 1, 46, 0, 0)
+    )
+    capsys.readouterr()
+
+    assert cli.main(["audit", "--scan", str(elsewhere)]) == cli.EXIT_MATCH
+
+    out = capsys.readouterr().out
+    assert f"match: {elsewhere / 'renamed.bin'}" in out
+    assert f"match: {elsewhere / 'locked.zip'}!plain/frame.dat" in out
+    assert "2 JPEG files checked, 2 match a saved hash" in out
+    assert "1 unreadable ZIP files and 1 unreadable ZIP members" in out
+
+
+def test_a_redis_outage_is_logged_once_a_minute(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from backend.utils import rate_limit
+
+    class Broken:
+        async def incr(self, _key):
+            raise ConnectionError("Redis is down")
+
+    async def broken_client():
+        return Broken()
+
+    monkeypatch.setattr(rate_limit, "_get_redis", broken_client)
+    monkeypatch.setattr(rate_limit, "_last_redis_warning", {})
+    caplog.set_level(logging.WARNING, logger=rate_limit.logger.name)
+
+    for _ in range(20):
+        assert asyncio.run(rate_limit._consume_redis_window("k", 60)) is None
+
+    assert len([r for r in caplog.records if r.name == rate_limit.logger.name]) == 1

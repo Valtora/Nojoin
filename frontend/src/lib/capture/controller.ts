@@ -644,8 +644,9 @@ export class CaptureController {
   };
 
   /**
-   * Delete: this meeting's frames go from the server now. Sampling stops
-   * first, so none arrives after them.
+   * Delete: this meeting's frames go from the server now. Sampling stops and
+   * the upload in flight is aborted first, and the server refuses every frame
+   * for the recording once the delete reaches it, so none is kept after it.
    */
   deleteScreenStudyFrames = async () => {
     const store = useScreenStudyStore.getState();
@@ -864,7 +865,9 @@ export class CaptureController {
         error: null,
       });
       if (options.screenStudy) {
-        await this.beginScreenStudy(initResponse.id);
+        // Not awaited: the study's code loads on its own, and the source
+        // report and the paused context must not wait for it.
+        void this.beginScreenStudy(initResponse.id);
       }
       await this.reportCaptureSourceAttempt(
         initResponse.id,

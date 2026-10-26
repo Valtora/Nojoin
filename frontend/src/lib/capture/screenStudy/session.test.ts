@@ -1,11 +1,10 @@
 import { AxiosError } from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SpeakerFrameUploadResult } from "@/lib/api/speakerFrames";
+import type { SpeakerFrameUpload, SpeakerFrameUploadResult } from "@/lib/api/speakerFrames";
 
 import { GRID_COLUMNS, GRID_ROWS } from "./changeRule";
-import type { FrameGrabber, FrameSample } from "./frameGrabber";
-import type { QueuedFrame } from "./frameQueue";
+import { FRAME_STREAM_ENDED_MESSAGE, type FrameGrabber, type FrameSample } from "./frameGrabber";
 import { ScreenStudySession, type ScreenStudySessionOptions } from "./session";
 import { useScreenStudyStore } from "./store";
 
@@ -31,18 +30,35 @@ class FakeGrabber implements FrameGrabber {
 
   sampleError: Error | null = null;
 
+  /** Holds `sample` open until released, as a slow worker would. */
+  hold: Promise<void> | null = null;
+
+  /** No frame has arrived yet. */
+  empty = false;
+
   stopped = false;
 
   encodes = 0;
 
-  async sample(): Promise<FrameSample> {
+  /** When the worker "draws", on the test's tick clock. */
+  grabbedAt = 0;
+
+  async sample(): Promise<FrameSample | null> {
+    if (this.hold) {
+      await this.hold;
+    }
     if (this.sampleError) {
       throw this.sampleError;
+    }
+    if (this.empty) {
+      return null;
     }
     return {
       grid: new Uint8Array(GRID_COLUMNS * GRID_ROWS).fill(this.level),
       width: 1280,
       height: 720,
+      timestampUs: 5_000_000 + this.level,
+      grabbedAt: this.grabbedAt,
     };
   }
 
@@ -77,7 +93,7 @@ const uploaded = (frames: number): SpeakerFrameUploadResult => ({
 describe("screen study session", () => {
   let track: FakeTrack;
   let grabber: FakeGrabber;
-  let sent: QueuedFrame[];
+  let sent: SpeakerFrameUpload[];
   let audioWaiting: boolean;
   let clock: number;
 
@@ -93,6 +109,7 @@ describe("screen study session", () => {
       remove: async () => ({ deleted: sent.length }),
       createGrabber: () => grabber,
       now: () => clock,
+      tickClock: () => clock + 100,
       ...overrides,
     });
     session.start();
@@ -101,6 +118,8 @@ describe("screen study session", () => {
 
   const tickAt = async (session: ScreenStudySession, sequence: number, offsetMs = 0) => {
     clock += 1_000;
+    // The worker draws 25 ms after the tick, on the same clock.
+    grabber.grabbedAt = clock + 125;
     session.tick({ sequence, offsetMs });
     await settle();
   };
@@ -307,5 +326,132 @@ describe("screen study session", () => {
     expect(setItem).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  describe("what each frame says about its sampling", () => {
+    it("numbers ticks from 0 and sends the grab's timestamp and delay", async () => {
+      const session = createSession();
+      await tickAt(session, 4, 1_000);
+      grabber.level = 90;
+      await tickAt(session, 5, 0);
+
+      expect(
+        sent.map(({ tick, lostBefore, frameTsUs, grabDelayMs }) => ({
+          tick,
+          lostBefore,
+          frameTsUs,
+          grabDelayMs,
+        })),
+      ).toEqual([
+        { tick: 0, lostBefore: 0, frameTsUs: 5_000_050, grabDelayMs: 25 },
+        { tick: 1, lostBefore: 0, frameTsUs: 5_000_090, grabDelayMs: 25 },
+      ]);
+    });
+
+    it("does not count an unchanged screen as lost", async () => {
+      const session = createSession();
+      for (let second = 0; second < 4; second += 1) {
+        await tickAt(session, second);
+      }
+      grabber.level = 99;
+      await tickAt(session, 4);
+
+      expect(sent.map(({ tick, lostBefore }) => [tick, lostBefore])).toEqual([
+        [0, 0],
+        [4, 0],
+      ]);
+    });
+
+    it("counts ticks skipped while the reader was busy, or before it had a frame", async () => {
+      const session = createSession();
+      grabber.empty = true;
+      await tickAt(session, 0);
+      grabber.empty = false;
+
+      let release: () => void = () => {};
+      grabber.hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      clock += 1_000;
+      session.tick({ sequence: 1, offsetMs: 0 });
+      await settle();
+      // Two more ticks arrive while that sample is still out.
+      clock += 1_000;
+      session.tick({ sequence: 2, offsetMs: 0 });
+      clock += 1_000;
+      session.tick({ sequence: 3, offsetMs: 0 });
+      grabber.hold = null;
+      release();
+      await settle();
+
+      expect(sent.map(({ tick, lostBefore }) => [tick, lostBefore])).toEqual([[1, 1]]);
+      grabber.level = 77;
+      await tickAt(session, 4);
+      expect(sent.map(({ tick, lostBefore }) => [tick, lostBefore])).toEqual([
+        [1, 1],
+        [4, 2],
+      ]);
+    });
+
+    it("counts a kept frame the full queue dropped", async () => {
+      audioWaiting = true;
+      const session = createSession();
+      for (let second = 0; second < 32; second += 1) {
+        grabber.level = (second * 10) % 250;
+        await tickAt(session, second);
+      }
+      audioWaiting = false;
+      session.audioQueueChanged();
+      for (let index = 0; index < 40; index += 1) {
+        await settle();
+      }
+
+      // Ticks 0 and 1 were dropped from the 30-frame queue.
+      expect(sent[0]).toMatchObject({ tick: 2, lostBefore: 2 });
+      expect(sent).toHaveLength(30);
+      expect(sent.slice(1).every((frame) => frame.lostBefore === 0)).toBe(true);
+    });
+  });
+
+  it("stops when the shared video ends instead of repeating its last frame", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const session = createSession();
+    await tickAt(session, 0);
+    grabber.sampleError = new Error(FRAME_STREAM_ENDED_MESSAGE);
+
+    await tickAt(session, 1);
+    await tickAt(session, 2);
+
+    expect(session.status).toBe("stopped");
+    expect(sent).toHaveLength(1);
+    expect(useScreenStudyStore.getState().error).toBe(
+      `Sampling stopped: ${FRAME_STREAM_ENDED_MESSAGE}`,
+    );
+  });
+
+  it("Delete aborts the upload in flight before it deletes", async () => {
+    const order: string[] = [];
+    let seenSignal: AbortSignal | null = null;
+    const session = createSession({
+      upload: (_recordingId, _frame, signal) =>
+        new Promise<SpeakerFrameUploadResult>((_resolve, reject) => {
+          seenSignal = signal;
+          signal.addEventListener("abort", () => {
+            order.push("aborted");
+            reject(new Error("aborted"));
+          });
+        }),
+      remove: async () => {
+        order.push("deleted");
+        return { deleted: 0 };
+      },
+    });
+    await tickAt(session, 0);
+    expect(seenSignal).not.toBeNull();
+
+    await session.deleteFrames();
+
+    expect(order).toEqual(["aborted", "deleted"]);
+    expect(useScreenStudyStore.getState().error).toBeNull();
   });
 });

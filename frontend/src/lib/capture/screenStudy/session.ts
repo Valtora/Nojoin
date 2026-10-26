@@ -7,6 +7,12 @@
  * keeps the frame when the change rule says so, and queues its JPEG with the
  * audio position it was taken at. Paused, it takes nothing.
  *
+ * Each frame carries its tick, counted from 0, and `lost_before`: the ticks
+ * since the previous stored frame that were not sampled (the reader was still
+ * busy, had no frame yet or failed) or whose kept frame was dropped or failed
+ * to upload. A tick whose screen had not changed is not a loss, so the
+ * analysis can tell a still screen from a gap.
+ *
  * It works on a clone of the shared video track, never the original, so
  * stopping it leaves the share and the recording running. Anything that goes
  * wrong stops sampling and says why; the recording is never touched. Nothing
@@ -19,6 +25,7 @@ import {
   deleteSpeakerFrames,
   uploadSpeakerFrame,
   type SpeakerFrameSummary,
+  type SpeakerFrameUpload,
   type SpeakerFrameUploadResult,
 } from "@/lib/api/speakerFrames";
 import type { RecordingId } from "@/types";
@@ -26,14 +33,21 @@ import type { RecordingId } from "@/types";
 import type { AudioPosition } from "../recorder";
 import { ChangeRule } from "./changeRule";
 import { createWorkerFrameGrabber, type FrameGrabber } from "./frameGrabber";
-import { FrameQueue, type QueuedFrame } from "./frameQueue";
+import { FrameQueue } from "./frameQueue";
 import { useScreenStudyStore, type ScreenStudyState } from "./store";
 
 /** How long queued frames may keep sending after the recording stops. */
 export const SCREEN_STUDY_DRAIN_MS = 20_000;
 
-/** How long Delete waits for a frame already on its way before deleting. */
+/**
+ * How long Delete waits for the aborted upload to settle before deleting. The
+ * server refuses every frame for the recording once Delete reaches it, so a
+ * frame still in flight after this is refused rather than kept.
+ */
 const DELETE_SETTLE_MS = 5_000;
+
+/** The server's bound on `grab_delay_ms`. */
+const MAX_GRAB_DELAY_MS = 3_600_000;
 
 type SessionStatus = "sampling" | "paused" | "stopped" | "ended";
 
@@ -45,11 +59,15 @@ export interface ScreenStudySessionOptions {
   audioWaiting: () => boolean;
   upload?: (
     recordingId: RecordingId,
-    frame: QueuedFrame,
+    frame: SpeakerFrameUpload,
+    signal: AbortSignal,
   ) => Promise<SpeakerFrameUploadResult>;
   remove?: (recordingId: RecordingId) => Promise<{ deleted: number }>;
   createGrabber?: (clone: MediaStreamTrack) => FrameGrabber;
+  /** Milliseconds, for the 15 s keep-alive. */
   now?: () => number;
+  /** The same clock the reader stamps its grabs with. */
+  tickClock?: () => number;
   drainMs?: number;
 }
 
@@ -93,22 +111,36 @@ export class ScreenStudySession {
 
   private readonly now: () => number;
 
+  private readonly tickClock: () => number;
+
   private grabber: FrameGrabber | null = null;
 
   private busy = false;
 
   private finishing: Promise<void> | null = null;
 
+  /** Ticks seen while sampling; the next tick's index. */
+  private ticks = 0;
+
+  /** Lost ticks not yet counted into a stored frame's `lost_before`. */
+  private lostTicks: number[] = [];
+
   constructor(options: ScreenStudySessionOptions) {
     this.options = options;
     this.recordingId = options.recordingId;
     this.now = options.now ?? (() => Date.now());
+    this.tickClock = options.tickClock ?? (() => performance.timeOrigin + performance.now());
     const upload = options.upload ?? uploadSpeakerFrame;
     this.queue = new FrameQueue<SpeakerFrameUploadResult>({
-      send: (frame) => upload(this.recordingId, frame),
+      send: (frame, signal) =>
+        upload(this.recordingId, { ...frame, lostBefore: this.takeLost(frame.tick) }, signal),
       audioWaiting: options.audioWaiting,
       onSent: (result) => this.publish(summaryPatch(result)),
-      onFailed: (error) => this.fail(error),
+      onFailed: (error, frame) => {
+        this.lostTicks.push(frame.tick);
+        this.fail(error);
+      },
+      onDropped: (frame) => this.lostTicks.push(frame.tick),
       onChange: (state) => this.publish({ queued: state.queued, dropped: state.dropped }),
     });
   }
@@ -140,11 +172,18 @@ export class ScreenStudySession {
   }
 
   tick = (position: AudioPosition) => {
-    if (this.statusValue !== "sampling" || this.busy || !this.grabber) {
+    if (this.statusValue !== "sampling" || !this.grabber) {
       return;
     }
+    const tick = this.ticks;
+    this.ticks += 1;
+    if (this.busy) {
+      this.lostTicks.push(tick);
+      return;
+    }
+    const tickAt = this.tickClock();
     this.busy = true;
-    void this.sampleAt(position).finally(() => {
+    void this.sampleAt(position, tick, tickAt).finally(() => {
       this.busy = false;
     });
   };
@@ -199,7 +238,10 @@ export class ScreenStudySession {
     this.end();
   }
 
-  /** Stop sampling, drop the queue and delete this meeting's frames on the server. */
+  /**
+   * Stop sampling, abort the upload in flight, drop the queue and delete this
+   * meeting's frames on the server, which refuses any frame for it from then on.
+   */
   async deleteFrames() {
     this.stopSampling();
     this.queue.dispose();
@@ -220,14 +262,16 @@ export class ScreenStudySession {
     }
   }
 
-  private async sampleAt(position: AudioPosition) {
+  private async sampleAt(position: AudioPosition, tick: number, tickAt: number) {
     const grabber = this.grabber;
     if (!grabber) {
+      this.lostTicks.push(tick);
       return;
     }
     try {
       const sample = await grabber.sample();
       if (!sample || this.statusValue !== "sampling") {
+        this.lostTicks.push(tick);
         return;
       }
       const at = this.now();
@@ -239,12 +283,30 @@ export class ScreenStudySession {
         return;
       }
       this.rule.kept(sample.grid, at);
-      this.queue.enqueue({ sequence: position.sequence, offsetMs: position.offsetMs, blob });
+      this.queue.enqueue({
+        sequence: position.sequence,
+        offsetMs: position.offsetMs,
+        blob,
+        tick,
+        frameTsUs: Math.round(sample.timestampUs),
+        grabDelayMs: Math.min(
+          MAX_GRAB_DELAY_MS,
+          Math.max(0, Math.round(sample.grabbedAt - tickAt)),
+        ),
+      });
     } catch (error: unknown) {
+      this.lostTicks.push(tick);
       if (this.statusValue === "sampling" || this.statusValue === "paused") {
         this.fail(error);
       }
     }
+  }
+
+  /** The lost ticks before `tick`, counted once into the frame about to go. */
+  private takeLost(tick: number): number {
+    const before = this.lostTicks.filter((lost) => lost < tick);
+    this.lostTicks = this.lostTicks.filter((lost) => lost >= tick);
+    return before.length;
   }
 
   /** Read fresh after an await: `end` may have run meanwhile. */

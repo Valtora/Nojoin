@@ -9,6 +9,7 @@ import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useScreenStudyAvailability } from "@/lib/capture/screenStudy/availability";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { RecordingStatus } from "@/types";
@@ -72,8 +73,14 @@ export default function MeetingControls({
   const studyAvailability = useScreenStudyAvailability(
     !DEMO_MODE && support.supported && support.mode === "shared_audio",
   );
-  // Unticked at the start of every meeting: the box resets once Start is used.
+  // Unticked at the start of every meeting, however it starts: Start Meeting
+  // clears it, and so does any capture going live, a resume included.
   const [screenStudyTicked, setScreenStudyTicked] = useState(false);
+  useOnDepsChange([hasLiveRecording], () => {
+    if (hasLiveRecording) {
+      setScreenStudyTicked(false);
+    }
+  });
 
   // Naming the stage keeps a slow stop legible instead of looking hung.
   const stopStageLabel = !stopStage
@@ -203,6 +210,7 @@ export default function MeetingControls({
           checked={screenStudyTicked}
           onChange={setScreenStudyTicked}
           retentionDays={studyAvailability.retention_days}
+          rateHz={studyAvailability.rate_hz}
           compact={compact}
           idPrefix={idPrefix}
         />

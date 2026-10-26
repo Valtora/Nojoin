@@ -8,8 +8,9 @@
 in ``speaker_frame_hashes/``, then deletes the frames and their state. ``audit``
 prints the directories present with their counts and sizes, the state files and
 the hash lists, and never any frame content. ``audit --scan <dir>`` also hashes
-every JPEG under a directory, and every JPEG inside a ZIP there such as a
-backup, and names each file that matches a saved hash.
+every file under a directory that starts like a JPEG, whatever its name, and
+every such member of a ZIP there such as a backup, names each one that matches
+a saved hash, and counts what it could not read.
 
 Exit status: 0 when the command finished, 1 when ``audit --scan`` found a match,
 2 on a usage error.
@@ -22,7 +23,8 @@ import hashlib
 import os
 import sys
 import zipfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO
@@ -35,6 +37,7 @@ from .storage import (
     frames_root,
     hashes_root,
     is_public_id,
+    lock_files,
     recording_dirs,
     recording_stopped_at,
     scan_summary,
@@ -44,8 +47,6 @@ from .storage import (
 EXIT_OK = 0
 EXIT_MATCH = 1
 EXIT_USAGE = 2
-
-_JPEG_SUFFIXES = (".jpg", ".jpeg")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -149,34 +150,78 @@ def _saved_hashes() -> tuple[set[str], list[tuple[str, int]]]:
     return known, lists
 
 
-def _sha256_stream(handle: IO[bytes]) -> str:
-    digest = hashlib.sha256()
+_JPEG_MAGIC = b"\xff\xd8\xff"
+# What reading a member can raise: an encrypted member (RuntimeError), an
+# unsupported compression method (NotImplementedError), or a damaged archive.
+_MEMBER_ERRORS = (
+    OSError,
+    RuntimeError,
+    NotImplementedError,
+    zipfile.BadZipFile,
+    EOFError,
+)
+
+
+def _sha256_if_jpeg(handle: IO[bytes]) -> str | None:
+    """The SHA-256 of a stream that starts like a JPEG, whatever its name, else None."""
+    head = handle.read(len(_JPEG_MAGIC))
+    if head != _JPEG_MAGIC:
+        return None
+    digest = hashlib.sha256(head)
     for block in iter(lambda: handle.read(1 << 16), b""):
         digest.update(block)
     return digest.hexdigest()
 
 
-def _scan(directory: Path, known: set[str]) -> Iterator[tuple[str, bool]]:
-    """``(location, matches)`` for each JPEG under ``directory``, ZIP members included."""
+@dataclass
+class ScanReport:
+    checked: int = 0
+    matches: list[str] = field(default_factory=list)
+    skipped_files: int = 0
+    skipped_zips: int = 0
+    skipped_members: int = 0
+
+
+def _scan_zip(path: Path, known: set[str], report: ScanReport) -> None:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            for member in archive.infolist():
+                if member.is_dir():
+                    continue
+                try:
+                    with archive.open(member) as handle:
+                        digest = _sha256_if_jpeg(handle)
+                except _MEMBER_ERRORS:
+                    report.skipped_members += 1
+                    continue
+                if digest is not None:
+                    report.checked += 1
+                    if digest in known:
+                        report.matches.append(f"{path}!{member.filename}")
+    except _MEMBER_ERRORS:
+        report.skipped_zips += 1
+
+
+def _scan(directory: Path, known: set[str]) -> ScanReport:
+    """Every JPEG under ``directory``, ZIP members included, told by its bytes."""
+    report = ScanReport()
     for root, _dirs, files in os.walk(directory):
         for name in files:
             path = Path(root) / name
-            lower = name.lower()
             try:
-                if lower.endswith(_JPEG_SUFFIXES):
-                    with open(path, "rb") as handle:
-                        yield str(path), _sha256_stream(handle) in known
-                elif lower.endswith(".zip"):
-                    with zipfile.ZipFile(path) as archive:
-                        for member in archive.namelist():
-                            if member.lower().endswith(_JPEG_SUFFIXES):
-                                with archive.open(member) as handle:
-                                    yield (
-                                        f"{path}!{member}",
-                                        _sha256_stream(handle) in known,
-                                    )
-            except (OSError, zipfile.BadZipFile):
+                if zipfile.is_zipfile(path):
+                    _scan_zip(path, known, report)
+                    continue
+                with open(path, "rb") as handle:
+                    digest = _sha256_if_jpeg(handle)
+            except OSError:
+                report.skipped_files += 1
                 continue
+            if digest is not None:
+                report.checked += 1
+                if digest in known:
+                    report.matches.append(str(path))
+    return report
 
 
 def audit(scan_dirs: Sequence[str]) -> int:
@@ -201,7 +246,7 @@ def audit(scan_dirs: Sequence[str]) -> int:
         f"Recordings with frames: {len(directories)}, frames: {totals[0]}, "
         f"bytes: {totals[1]}"
     )
-    print(f"State files: {len(state_files())}")
+    print(f"State files: {len(state_files())}, lock files: {len(lock_files())}")
     known, lists = _saved_hashes()
     print(f"Hash lists: {len(lists)}")
     for name, count in lists:
@@ -209,19 +254,16 @@ def audit(scan_dirs: Sequence[str]) -> int:
 
     status = EXIT_OK
     for scan_dir in scan_dirs:
-        checked = 0
-        matches: list[str] = []
-        for location, matched in _scan(Path(scan_dir), known):
-            checked += 1
-            if matched:
-                matches.append(location)
+        report = _scan(Path(scan_dir), known)
         print(
-            f"Scanned {scan_dir}: {checked} JPEG files checked, "
-            f"{len(matches)} match a saved hash"
+            f"Scanned {scan_dir}: {report.checked} JPEG files checked, "
+            f"{len(report.matches)} match a saved hash; skipped "
+            f"{report.skipped_files} unreadable files, {report.skipped_zips} "
+            f"unreadable ZIP files and {report.skipped_members} unreadable ZIP members"
         )
-        for location in matches:
+        for location in report.matches:
             print(f"  match: {location}")
-        if matches:
+        if report.matches:
             status = EXIT_MATCH
     if scan_dirs and not known:
         print("No saved hashes to compare against.")

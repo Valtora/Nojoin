@@ -7,6 +7,9 @@ const frame = (sequence: number): QueuedFrame => ({
   sequence,
   offsetMs: 0,
   blob: new Blob([`frame-${sequence}`], { type: "image/jpeg" }),
+  tick: sequence,
+  frameTsUs: sequence * 1_000_000,
+  grabDelayMs: 10,
 });
 
 const deferred = <T>() => {
@@ -115,7 +118,7 @@ describe("screen study frame queue", () => {
     queue.enqueue(frame(3));
     await flush();
 
-    expect(onFailed).toHaveBeenCalledWith(failure);
+    expect(onFailed).toHaveBeenCalledWith(failure, expect.objectContaining({ tick: 1 }));
     expect(send).toHaveBeenCalledTimes(1);
     expect(queue.state).toMatchObject({ failed: true, queued: 0 });
   });
@@ -148,5 +151,47 @@ describe("screen study frame queue", () => {
     await flush();
     expect(send).not.toHaveBeenCalled();
     expect(queue.state.queued).toBe(0);
+  });
+
+  it("reports every frame it drops, from the full queue and at dispose", () => {
+    const onDropped = vi.fn();
+    const queue = new FrameQueue<string>({
+      send: async () => "ok",
+      audioWaiting: () => true,
+      onDropped,
+      capacity: 2,
+    });
+    queue.enqueue(frame(1));
+    queue.enqueue(frame(2));
+    queue.enqueue(frame(3));
+    expect(onDropped.mock.calls.map(([item]) => item.tick)).toEqual([1]);
+
+    queue.dispose();
+    expect(onDropped.mock.calls.map(([item]) => item.tick)).toEqual([1, 2, 3]);
+  });
+
+  it("aborts the frame in flight when disposed, and counts it dropped, not failed", async () => {
+    const onDropped = vi.fn();
+    const onFailed = vi.fn();
+    let signal: AbortSignal | null = null;
+    const queue = new FrameQueue<string>({
+      send: (_item, abort) =>
+        new Promise<string>((_resolve, reject) => {
+          signal = abort;
+          abort.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+      audioWaiting: () => false,
+      onDropped,
+      onFailed,
+    });
+    queue.enqueue(frame(7));
+    expect(signal).not.toBeNull();
+
+    queue.dispose();
+    await expect(queue.drain(1_000)).resolves.toBe(true);
+
+    expect((signal as AbortSignal | null)?.aborted).toBe(true);
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(onDropped.mock.calls.map(([item]) => item.tick)).toEqual([7]);
   });
 });

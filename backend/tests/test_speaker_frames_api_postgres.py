@@ -30,7 +30,7 @@ from backend.core.db import driver_urls
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User, UserRole
 from backend.tests.postgres_setup import fresh_schema
-from backend.tests.speaker_frame_images import draw_frame
+from backend.tests.speaker_frame_images import draw_frame, store_test_frame, timing
 from backend.utils import rate_limit, speaker_frames
 from backend.utils.config_manager import ConfigManager
 from backend.utils.speaker_frames import settings as study_settings
@@ -58,9 +58,7 @@ def _add_users(engine) -> dict[str, int]:
 
 
 def _reset_caches() -> None:
-    storage._summaries.clear()
-    storage._announced.clear()
-    storage._total_cache.clear()
+    storage._reset_caches()
     rate_limit._fallback_windows.clear()
     rate_limit._fallback_concurrency.clear()
 
@@ -185,11 +183,20 @@ async def _upload(
     harness, public_id: str, *, sequence=0, offset_ms=0, body=None, **kwargs
 ):
     content_type = kwargs.pop("content_type", "image/jpeg")
+    params = {
+        "sequence": sequence,
+        "offset_ms": offset_ms,
+        "tick": sequence,
+        "lost_before": 0,
+        "frame_ts_us": 1_000_000 * (sequence + 1),
+        "grab_delay_ms": 15,
+        **kwargs.pop("params", {}),
+    }
     return await _request(
         harness,
         "POST",
         f"/recordings/{public_id}/speaker-frames",
-        params={"sequence": sequence, "offset_ms": offset_ms},
+        params={key: value for key, value in params.items() if value is not None},
         files={"file": ("frame.jpg", body or draw_frame(), content_type)},
     )
 
@@ -200,12 +207,13 @@ def _frames_dir(harness, public_id: str) -> Path:
 
 def _seed_frames(harness, public_id: str, count: int = 2) -> None:
     for sequence in range(count):
-        speaker_frames.store_frame(
+        store_test_frame(
             public_id,
             sequence=sequence,
             offset_ms=0,
             data=draw_frame(highlight=sequence),
             received_at=datetime.now(UTC),
+            timing=timing(sequence),
         )
 
 
@@ -360,7 +368,7 @@ async def test_the_cap_refuses_new_frames(harness, monkeypatch) -> None:
     first = draw_frame()
     assert (await _upload(harness, public_id, body=first)).status_code == 200
     monkeypatch.setattr(storage, "TOTAL_CAP_BYTES", len(first) + 10)
-    storage._total_cache.clear()
+    storage._reset_caches()
 
     response = await _upload(harness, public_id, sequence=1)
 
@@ -442,8 +450,11 @@ async def test_delete_takes_this_meetings_frames_and_leaves_the_recording(
             {"id": public_id},
         ).scalar_one()
     assert remaining == 1
-    # The capture goes on: a later frame is stored again.
-    assert (await _upload(harness, public_id, sequence=9)).status_code == 200
+    # The capture goes on, but takes no frame again: one in flight is refused.
+    late = await _upload(harness, public_id, sequence=9)
+    assert late.status_code == 409
+    assert "were deleted" in late.json()["detail"]
+    assert not _frames_dir(harness, public_id).exists()
 
 
 # Each route that removes a recording, or moves it to the bin, with what it needs.
@@ -521,3 +532,100 @@ async def test_deleting_the_owners_account_takes_the_frames(harness) -> None:
 
     assert response.status_code == 200, response.text
     assert not _frames_dir(harness, public_id).exists()
+
+
+# --- review of #722 ---------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_the_sampling_details_are_required_and_kept(harness) -> None:
+    public_id = _add_recording(harness)
+    missing = await _upload(harness, public_id, params={"tick": None})
+    assert missing.status_code == 422
+
+    response = await _upload(
+        harness,
+        public_id,
+        sequence=3,
+        params={
+            "tick": 7,
+            "lost_before": 2,
+            "frame_ts_us": 98_765,
+            "grab_delay_ms": 41,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    (line,) = (_frames_dir(harness, public_id) / "index.jsonl").read_text().splitlines()
+    entry = json.loads(line)
+    assert {
+        key: entry[key]
+        for key in ("tick", "lost_before", "frame_ts_us", "grab_delay_ms")
+    } == {
+        "tick": 7,
+        "lost_before": 2,
+        "frame_ts_us": 98_765,
+        "grab_delay_ms": 41,
+    }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"sequence": 10_000_001},
+        {"tick": 100_000_001},
+        {"lost_before": -1},
+        {"grab_delay_ms": 3_600_001},
+        {"frame_ts_us": 2**60},
+    ],
+)
+async def test_out_of_range_numbers_are_a_422(harness, params) -> None:
+    public_id = _add_recording(harness)
+    sequence = params.pop("sequence", 0)
+    response = await _upload(harness, public_id, sequence=sequence, params=params)
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_a_capture_in_the_bin_takes_no_frames(harness) -> None:
+    public_id = _add_recording(
+        harness, status=RecordingStatus.UPLOADING, is_deleted=True
+    )
+    assert (await _upload(harness, public_id)).status_code == 409
+    assert not _frames_dir(harness, public_id).exists()
+
+
+@pytest.mark.anyio
+async def test_frames_are_refused_when_free_disk_space_is_short(
+    harness, monkeypatch
+) -> None:
+    import shutil
+    from collections import namedtuple
+
+    public_id = _add_recording(harness)
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda _path: usage(10, 9, 1024))
+
+    response = await _upload(harness, public_id)
+
+    assert response.status_code == 507
+    assert "free disk space" in response.json()["detail"]
+    assert not _frames_dir(harness, public_id).exists()
+
+
+@pytest.mark.anyio
+async def test_a_delete_that_leaves_frames_says_so(harness, monkeypatch) -> None:
+    public_id = _add_recording(harness)
+    _seed_frames(harness, public_id)
+
+    def refuse(_path):
+        raise OSError(39, "Directory not empty")
+
+    monkeypatch.setattr(storage.shutil, "rmtree", refuse)
+    response = await _request(
+        harness, "DELETE", f"/recordings/{public_id}/speaker-frames"
+    )
+
+    assert response.status_code == 500
+    assert _frames_dir(harness, public_id).is_dir()

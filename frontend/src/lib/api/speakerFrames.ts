@@ -46,9 +46,27 @@ export const getSpeakerFrameAvailability =
     }
   };
 
+/** How long one frame may take to upload before the study gives up on it. */
+export const SPEAKER_FRAME_UPLOAD_TIMEOUT_MS = 30_000;
+
+export interface SpeakerFrameUpload {
+  sequence: number;
+  offsetMs: number;
+  blob: Blob;
+  /** The capture's audio tick the frame was sampled on, from 0. */
+  tick: number;
+  /** Ticks since the previous stored frame that were lost. */
+  lostBefore: number;
+  /** The VideoFrame's timestamp, in microseconds. */
+  frameTsUs: number;
+  /** From the audio tick to drawing the frame, in milliseconds. */
+  grabDelayMs: number;
+}
+
 export const uploadSpeakerFrame = async (
   recordingId: RecordingId,
-  frame: { sequence: number; offsetMs: number; blob: Blob },
+  frame: SpeakerFrameUpload,
+  signal?: AbortSignal,
 ): Promise<SpeakerFrameUploadResult> => {
   const formData = new FormData();
   formData.append("file", frame.blob, `${frame.sequence}-${frame.offsetMs}.jpg`);
@@ -56,8 +74,17 @@ export const uploadSpeakerFrame = async (
     `/recordings/${recordingId}/speaker-frames`,
     formData,
     {
-      params: { sequence: frame.sequence, offset_ms: frame.offsetMs },
+      params: {
+        sequence: frame.sequence,
+        offset_ms: frame.offsetMs,
+        tick: frame.tick,
+        lost_before: frame.lostBefore,
+        frame_ts_us: frame.frameTsUs,
+        grab_delay_ms: frame.grabDelayMs,
+      },
       headers: { "Content-Type": "multipart/form-data" },
+      signal,
+      timeout: SPEAKER_FRAME_UPLOAD_TIMEOUT_MS,
     },
   );
   return response.data;

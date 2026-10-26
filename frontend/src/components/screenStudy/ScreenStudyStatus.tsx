@@ -93,20 +93,32 @@ export default function ScreenStudyStatus({ recordingId, compact = false }: Scre
   return (
     <div
       className="density-surface-panel flex flex-col gap-2 border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-fg"
-      role="status"
+      role="group"
       aria-label="Screen study"
     >
       <div className="flex items-start gap-2">
         <ScanEye className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1">
-          <span className="font-semibold">Screen study: {STATUS_LABELS[study.status]}.</span>{" "}
+          {/* Only the state and why it stopped are announced: the count
+              below changes about once a second and would talk over the
+              meeting. */}
+          <span role="status">
+            <span className="font-semibold">
+              Screen study: {STATUS_LABELS[study.status]}.
+            </span>
+            {study.error ? <span className="sr-only"> {study.error}</span> : null}
+          </span>{" "}
           <span>{summary}</span>
           {study.dropped > 0 && !compact ? (
             <span className="block">
               {study.dropped} {study.dropped === 1 ? "frame was" : "frames were"} dropped while uploads were behind.
             </span>
           ) : null}
-          {study.error ? <span className="block">{study.error}</span> : null}
+          {study.error ? (
+            <span className="block" aria-hidden="true">
+              {study.error}
+            </span>
+          ) : null}
         </span>
       </div>
       {study.status !== "deleted" ? (

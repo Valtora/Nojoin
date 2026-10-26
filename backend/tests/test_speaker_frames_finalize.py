@@ -18,7 +18,7 @@ import soundfile
 from httpx import AsyncClient
 from sqlalchemy.orm import sessionmaker
 
-from backend.tests.speaker_frame_images import draw_frame
+from backend.tests.speaker_frame_images import draw_frame, store_test_frame, timing
 from backend.tests.test_recording_segment_transcode import (  # noqa: F401 -- fixtures
     TRUSTED_ORIGIN,
     api_app,
@@ -42,11 +42,9 @@ def frames_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         storage, "path_manager", SimpleNamespace(user_data_directory=root)
     )
-    storage._summaries.clear()
-    storage._total_cache.clear()
+    storage._reset_caches()
     yield root
-    storage._summaries.clear()
-    storage._total_cache.clear()
+    storage._reset_caches()
 
 
 def _flac_segment() -> bytes:
@@ -88,12 +86,13 @@ async def test_finalize_records_when_a_study_recording_stopped(
     client: AsyncClient, test_session_maker: sessionmaker, frames_data_dir: Path
 ) -> None:
     public_id = await _capture_one_segment(client)
-    speaker_frames.store_frame(
+    store_test_frame(
         public_id,
         sequence=0,
         offset_ms=500,
         data=draw_frame(),
         received_at=datetime.now(UTC),
+        timing=timing(),
     )
     before = datetime.now(UTC)
 
@@ -119,3 +118,37 @@ async def test_finalize_writes_nothing_for_a_recording_without_frames(
     assert speaker_frames.recording_stopped_at(public_id) is None
     assert not (frames_data_dir / "speaker_frames").exists()
     assert not (frames_data_dir / "speaker_frame_state").exists()
+
+
+@pytest.mark.anyio
+async def test_the_stop_time_is_written_while_the_capture_still_takes_frames(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    frames_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sync_engine,
+) -> None:
+    """Before the status commit, so a frame arriving in between is never refused."""
+    from sqlalchemy import text
+
+    from backend.api.v1.endpoints.recordings import routes_capture
+
+    public_id = await _capture_one_segment(client)
+    statuses: list[str] = []
+    real_mark = speaker_frames.mark_recording_stopped
+
+    def mark_and_look(recording_public_id, when, **kwargs):
+        with sync_engine.connect() as connection:
+            statuses.append(
+                connection.execute(
+                    text("SELECT status FROM recordings WHERE public_id = :id"),
+                    {"id": recording_public_id},
+                ).scalar_one()
+            )
+        return real_mark(recording_public_id, when, **kwargs)
+
+    monkeypatch.setattr(routes_capture, "mark_recording_stopped", mark_and_look)
+
+    await _finalize(client, public_id)
+
+    assert statuses == ["UPLOADING"]

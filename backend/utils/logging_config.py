@@ -135,22 +135,22 @@ class SensitiveDataFilter(logging.Filter):
 # root handlers' filters.
 URL_LOGGER_NAMES = ("uvicorn.access", "uvicorn.error")
 
-# The screen study's routes (#653). Frames arrive about once a second, and the
-# study logs one line per capture rather than one per frame, so their requests
-# are left out of the access log. nginx/access-log.conf does the same.
-SPEAKER_FRAME_PATH_MARKER = "/speaker-frames"
+# The screen study's per-recording routes (#653). Frames arrive about once a
+# second, and the study logs one line per capture rather than one per frame,
+# so those requests are left out of the access log. The availability check is
+# kept. nginx/access-log.conf matches the same paths.
+SPEAKER_FRAME_PATH = re.compile(r"/recordings/[^/?]+/speaker-frames(?:[/?]|$)")
 
 
 class SpeakerFrameAccessFilter(logging.Filter):
-    """Drop uvicorn's access line for a screen study request."""
+    """Drop uvicorn's access line for a screen study frame request."""
 
     def filter(self, record):
         args = record.args
         if isinstance(args, tuple) and len(args) >= 3:
             path = args[2]
-            if (
-                isinstance(path, str)
-                and SPEAKER_FRAME_PATH_MARKER in path.split("?", 1)[0]
+            if isinstance(path, str) and SPEAKER_FRAME_PATH.search(
+                path.split("?", 1)[0]
             ):
                 return False
         return True
