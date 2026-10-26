@@ -63,7 +63,7 @@ async def enqueue_model_preparation(
         0,
         "Model preparation queued...",
         status="downloading",
-        stage="queued",
+        stage="nemotron" if target == "nemotron" else "queued",
     )
     logger.info("Queued model preparation task %s with args %s", task.id, kwargs)
     return str(task.id)

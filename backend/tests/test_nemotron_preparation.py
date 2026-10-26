@@ -148,11 +148,15 @@ def test_native_offline_failure_reports_not_prepared_without_downloading(
 def test_native_async_enqueue_does_not_pass_asr_selection(
     native_assets: tuple, stub_celery_dispatch: list, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    updates: list[dict] = []
     monkeypatch.setattr(
-        preparation, "set_download_progress", lambda *args, **kwargs: None
+        preparation,
+        "set_download_progress",
+        lambda *args, **kwargs: updates.append(kwargs),
     )
     asyncio.run(preparation.enqueue_model_preparation(target="nemotron"))
     assert stub_celery_dispatch[0][2] == {"nemotron_only": True, "include_core": False}
+    assert updates == [{"status": "downloading", "stage": "nemotron"}]
     # API dispatch must never write the read-only model volume marker.
     assert not control._control_path("pending.json").exists()
 

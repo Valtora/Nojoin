@@ -58,7 +58,12 @@ def atomic_json(path: Path, value: dict[str, Any]) -> None:
 
 
 def pending_task() -> dict[str, Any] | None:
-    """Read a valid unexpired marker; caller holds the model lock."""
+    """Read a valid unexpired marker without writing or acquiring a lock.
+
+    Atomic publication permits read-only API status inspection. Callers making
+    dispatch or deletion decisions must hold the model lock across the read and
+    subsequent change; a status read may simply observe either adjacent state.
+    """
     try:
         marker = read_json(_control_path("pending.json"))
         age = time.time() - float(marker["created_at"])

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   DownloadProgress,
@@ -11,15 +11,14 @@ import {
 } from "@/types";
 import {
   deleteModel,
-  getDownloadProgress,
   getLanguageOptions,
   getModelsStatus,
   listModels,
-  prepareModels,
   validateLLM,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
+import { useModelPreparation } from "./useModelPreparation";
 
 export interface ValidationMessage {
   type: "success" | "error";
@@ -83,13 +82,6 @@ export function useAISettingsModels(
   const [languageRegistry, setLanguageRegistry] =
     useState<LanguageRegistry | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-
-  const [downloadProgress, setDownloadProgress] =
-    useState<DownloadProgress | null>(null);
-  const [preparing, setPreparing] = useState<ModelPreparationTarget | null>(
-    null,
-  );
-  const [pollingProgress, setPollingProgress] = useState(false);
 
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
@@ -212,93 +204,12 @@ export function useAISettingsModels(
     }
   };
 
-  const refreshStatus = () => {
+  const refreshStatus = useCallback(() => {
     getModelsStatus(settings.whisper_model_size)
       .then(setModelStatus)
       .catch(console.error);
-  };
-
-  // One read on open, so a preparation started elsewhere (first-run setup, or
-  // another admin) is visible immediately instead of only after a local action.
-  useEffect(() => {
-    let cancelled = false;
-    getDownloadProgress()
-      .then((progress) => {
-        if (cancelled) return;
-        setDownloadProgress(progress);
-        if (progress.in_progress) setPollingProgress(true);
-      })
-      .catch(console.error);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!pollingProgress) return;
-
-    let cancelled = false;
-    const timer = setInterval(async () => {
-      try {
-        const progress = await getDownloadProgress();
-        if (cancelled) return;
-        setDownloadProgress(progress);
-
-        if (progress.status === "complete") {
-          setPollingProgress(false);
-          setPreparing(null);
-          refreshStatus();
-          addNotification({
-            type: "success",
-            message: "Model preparation complete.",
-          });
-        } else if (progress.status === "error") {
-          setPollingProgress(false);
-          setPreparing(null);
-          addNotification({
-            type: "error",
-            message: progress.message || "Model preparation failed.",
-          });
-        }
-      } catch (e: unknown) {
-        console.error("Failed to read model preparation progress", e);
-      }
-    }, 2000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-    // pollingProgress alone starts and stops the poll. refreshStatus is
-    // redefined every render and addNotification is a store action; listing
-    // either would tear the interval down and restart it mid-cycle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollingProgress]);
-
-  const startPreparation = async (
-    target: ModelPreparationTarget,
-  ): Promise<boolean> => {
-    setPreparing(target);
-    try {
-      await prepareModels(target);
-      setPollingProgress(true);
-      addNotification({
-        type: "success",
-        message: "Model preparation started. Progress is shown below.",
-      });
-      return true;
-    } catch (e: unknown) {
-      setPreparing(null);
-      addNotification({
-        type: "error",
-        message: `Could not start model preparation: ${getErrorMessage(
-          e,
-          "Unknown error",
-        )}`,
-      });
-      return false;
-    }
-  };
+  }, [settings.whisper_model_size]);
+  const preparation = useModelPreparation(refreshStatus);
 
   const handleDeleteModel = async (modelName: string) => {
     if (
@@ -333,10 +244,7 @@ export function useAISettingsModels(
     modelStatus,
     languageRegistry,
     deleting,
-    downloadProgress,
-    preparing,
-    preparationRunning: pollingProgress,
-    startPreparation,
+    ...preparation,
     availableModels,
     setAvailableModels,
     fetchingModels,

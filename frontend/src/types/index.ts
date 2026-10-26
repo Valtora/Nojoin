@@ -1072,14 +1072,19 @@ export interface ModelStatusInfo {
   downloaded: boolean;
   path: string | null;
   checked_paths: string[];
-  source?: ModelSource;
+  /** Optional assets report their preparation lifecycle separately from presence. */
+  state?: "absent" | "downloading" | "ready" | "failed" | null;
+  /** Total expected download size from the model's asset manifest. */
+  size_bytes?: number | null;
+  unused_reason?: string | null;
+  source?: ModelSource | null;
   /** Not downloaded, but the model's own entry is in Nojoin's model cache: a
    * download that was cut off or is still running. It can be deleted. */
-  partial?: boolean;
+  partial?: boolean | null;
   /** Completed verification receipt plus unchanged local file metadata. */
-  verification_state?: "missing" | "partial" | "verified" | "invalid";
-  revision?: string;
-  manifest_sha256?: string;
+  verification_state?: "missing" | "partial" | "verified" | "invalid" | null;
+  revision?: string | null;
+  manifest_sha256?: string | null;
   verification_error?: string | null;
 }
 

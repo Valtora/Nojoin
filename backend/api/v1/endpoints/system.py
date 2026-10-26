@@ -48,10 +48,12 @@ from backend.core.security import (
     validate_password_policy,
 )
 from backend.core.task_dispatch import dispatch_task
+from backend.models.system_public import ModelStatusInfo
 from backend.models.user import User
 from backend.preload_models import check_model_status
 from backend.seed_demo import seed_demo_data
 from backend.services.model_preparation import enqueue_model_preparation
+from backend.services.model_status import add_nemotron_preparation_status
 from backend.utils.config_manager import (
     DEFAULT_SYSTEM_CONFIG,
     config_manager,
@@ -604,7 +606,11 @@ async def get_task_status(
     return response
 
 
-@router.get("/models/status")
+@router.get(
+    "/models/status",
+    response_model=dict[str, ModelStatusInfo],
+    response_model_exclude_unset=True,
+)
 async def get_models_status(
     whisper_model_size: Optional[str] = None,
     current_user: User = Depends(get_current_user),
@@ -613,6 +619,7 @@ async def get_models_status(
     Get the status of all models.
     """
     status = check_model_status(whisper_model_size=whisper_model_size)
+    await asyncio.to_thread(add_nemotron_preparation_status, status)
     is_admin = current_user.role in ["owner", "admin"] or current_user.is_superuser
     if not is_admin:
         for model in status:
