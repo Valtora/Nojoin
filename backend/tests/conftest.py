@@ -312,29 +312,37 @@ def stub_text_embedding(monkeypatch):
     return fake
 
 
-# Every variable that moves a model cache: huggingface_hub's (in precedence
-# order) and the XDG base that both it and Whisper fall back to.
+# Cache overrides inherited from the host must not escape the temporary HOME.
 MODEL_CACHE_VARIABLES = (
     "HF_HUB_CACHE",
     "HUGGINGFACE_HUB_CACHE",
     "HF_HOME",
     "XDG_CACHE_HOME",
+    "FASTEMBED_CACHE_PATH",
 )
 
 
-@pytest.fixture
-def model_cache_env(monkeypatch, tmp_path_factory):
-    """An empty HOME and none of the variables that move the model caches.
+@pytest.fixture(autouse=True)
+def model_cache_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
+    """Isolate every test's model caches, including Nemotron's pending marker.
 
-    Model status resolves its roots from the environment, so a developer
-    machine that exports HF_HUB_CACHE (common on ML hosts), or simply has a
-    model in ~/.cache, would otherwise steer every lookup to its own cache.
-    Returns the HOME it set.
+    Keep the environment unset so cache-precedence tests can still exercise
+    each override themselves. Returns the temporary HOME, as before.
     """
+    from huggingface_hub import constants
+
     home = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("HOME", str(home))
     for variable in MODEL_CACHE_VARIABLES:
         monkeypatch.delenv(variable, raising=False)
+
+    # ONNX/Pyannote loaders can omit cache_dir. huggingface_hub freezes these
+    # defaults on import, before a function-scoped environment patch runs.
+    hub = str(home / ".cache" / "huggingface" / "hub")
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", hub)
+    monkeypatch.setattr(constants, "HUGGINGFACE_HUB_CACHE", hub)
     return home
 
 
