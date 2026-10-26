@@ -66,6 +66,21 @@ pytorch-metric-learning==2.9.0
 scipy==1.18.1
 rich==15.0.0
 safetensors==0.8.0
+# Native Nemotron inference. No broad Transformers extras or NeMo dependency:
+# the immutable asset manifest and golden fixture pin this version together
+# (scripts/check_held_pins.py). Revalidate both before changing it.
+transformers==5.20.2
+librosa==1.0.0
+soxr==1.1.0
+lazy-loader==0.6
+msgpack==1.2.3
+decorator==5.3.1
+pooch==1.9.0
+platformdirs==4.12.4
+# Transformers' CLI dependency and its shell detector, present in a clean
+# worker-stack resolution even though native inference uses neither CLI.
+typer==0.27.3
+shellingham==1.5.4
 torch-audiomentations==0.12.0
 torchmetrics==1.9.0
 soundfile==0.14.0

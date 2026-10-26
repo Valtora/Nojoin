@@ -1,0 +1,3146 @@
+{
+  "schema_version": 1,
+  "transformers_version": "5.20.2",
+  "asset_manifest_sha256": "82cb1da687ecdd7378b13ad4585274d00b0f3022f32af0774b741452a8c8239c",
+  "asset_revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
+  "numerical_parity": "fails",
+  "environment": {
+    "native_torch": "2.14.1+cu130",
+    "historical_nemo_torch": "2.11.0+cu129",
+    "historical_nemo_source": "cf724ac337 (3.1.0 development source)",
+    "corrected_nemo_source": "68a12fc5e469614abd23b25ff9cfcb822aa0be93 + compatibility.patch",
+    "corrected_nemo_metadata": "3.1.0+cf724ac33 (metadata retained; actual source differs)",
+    "native_and_control_device": "RTX 4070 Ti",
+    "inference_dtype": "float32",
+    "scoring_storage": "hf-argmax and historical: float16; hf-fp32/control: float32",
+    "packets_samples": 32000,
+    "sample_rate": 16000,
+    "frame_seconds": 0.01,
+    "streaming": {
+      "chunk": 9,
+      "right_context": 4,
+      "fifo": 264,
+      "cache": 264,
+      "update": 222
+    },
+    "control": "NeMo eval-mode CUDA frontend, same worker Torch, dither disabled",
+    "historical": "actual retained output; frontend dither was stochastic"
+  },
+  "source_parity": {
+    "transformers_version": "5.20.2",
+    "torch_version": "2.14.1+cu130",
+    "archive_sha256": "867c53f552998f772e5b5e5c082962ae85ee7ca5669c2bc17d7f615133d4e96d",
+    "official_tensor_count": 417,
+    "study_tensor_count": 417,
+    "official_only_keys": [],
+    "study_only_keys": [],
+    "tensor_mismatches": [],
+    "model_config_differences": [
+      {
+        "path": "_name_or_path",
+        "official": "<verified local snapshot>",
+        "study": ""
+      },
+      {
+        "path": "architectures",
+        "official": [
+          "Nemotron3DiarizationForAudioFrameClassification"
+        ],
+        "study": null
+      }
+    ],
+    "processor_config_differences": [],
+    "processor_outputs": [
+      {
+        "case": "first",
+        "fields": [
+          {
+            "field": "attention_mask",
+            "shape": [
+              1,
+              104
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          },
+          {
+            "field": "input_features",
+            "shape": [
+              1,
+              104,
+              128
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          },
+          {
+            "field": "num_lookahead_frames",
+            "equal": true,
+            "official": 4,
+            "study": 4
+          }
+        ]
+      },
+      {
+        "case": "later",
+        "fields": [
+          {
+            "field": "attention_mask",
+            "shape": [
+              1,
+              104
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          },
+          {
+            "field": "input_features",
+            "shape": [
+              1,
+              104,
+              128
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          },
+          {
+            "field": "num_lookahead_frames",
+            "equal": true,
+            "official": 4,
+            "study": 4
+          }
+        ]
+      },
+      {
+        "case": "eof",
+        "fields": [
+          {
+            "field": "attention_mask",
+            "shape": [
+              1,
+              75
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          },
+          {
+            "field": "input_features",
+            "shape": [
+              1,
+              75,
+              128
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          }
+        ]
+      },
+      {
+        "case": "short",
+        "fields": [
+          {
+            "field": "attention_mask",
+            "shape": [
+              1,
+              5
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          },
+          {
+            "field": "input_features",
+            "shape": [
+              1,
+              5,
+              128
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          }
+        ]
+      },
+      {
+        "case": "offline",
+        "fields": [
+          {
+            "field": "attention_mask",
+            "shape": [
+              1,
+              251
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          },
+          {
+            "field": "input_features",
+            "shape": [
+              1,
+              251,
+              128
+            ],
+            "equal": true,
+            "max_abs_diff": 0.0
+          }
+        ]
+      }
+    ]
+  },
+  "source_parity_sha256": "01cdf4e34b28a5bfc4ef0419c406b6c3e5cd66ddb736bc8638d987f711e8d788",
+  "asset_manifest": {
+    "schema_version": 1,
+    "repository": "nvidia/Nemotron-3-Diarization",
+    "revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
+    "transformers_version": "5.20.2",
+    "files": [
+      {
+        "filename": "config.json",
+        "size": 1458,
+        "sha256": "dd795ec07ffa09acf18d231aa3fa8642aa5c521760953754e02559a7413b6873"
+      },
+      {
+        "filename": "processor_config.json",
+        "size": 623,
+        "sha256": "91726746788a024a2f0f2f699a6c3667f0d74e6a0e9288fc44fe3018e23af68e"
+      },
+      {
+        "filename": "model.safetensors",
+        "size": 396954592,
+        "sha256": "c074d86335b3b794f8fa5edc25594558f128bdb3914d27806a3a5a2e44963cb6"
+      }
+    ]
+  },
+  "streams": [
+    {
+      "name": "Mix-Headset_EN2002a",
+      "group": "AMI headset",
+      "seconds": 2142.709375,
+      "hf_frames": 214270,
+      "nemo_frames": 214271,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.995817244052887,
+          "p99_abs": 0.06538873165845871,
+          "threshold_disagreements": 3807,
+          "threshold_agreement_pct": 99.77790871330564,
+          "first_different_frame": 0,
+          "length_difference": -1
+        },
+        "hf_frames_emitted_after_scorer_eof": 142,
+        "hf_vs_original_fp16": {
+          "frames_a": 214270,
+          "frames_b": 214271,
+          "max_abs": 0.9957551956176758,
+          "p99_abs": 0.06689453125,
+          "threshold_agreement_pct": 99.77767536285994,
+          "threshold_disagreements": 3811
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 214271,
+          "frames_b": 214271,
+          "max_abs": 0.711822509765625,
+          "p99_abs": 0.0352783203125,
+          "threshold_agreement_pct": 99.86763257743698,
+          "threshold_disagreements": 2269
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 214270,
+          "frames_b": 214270,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.00022172927856445312,
+          "threshold_agreement_pct": 99.9992999486629,
+          "threshold_disagreements": 12
+        },
+        "hf_vs_original_emission_different_frames": 8568
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 5.435943603515625e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 5.435943603515625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.011084318161010742
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 5.054473876953125e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 5.435943603515625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.011084318161010742
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 6.818771362304688e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 82.34819030761719
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.5716236233711243
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 6.818771362304688e-05,
+      "last_checkpoint_step": 2912,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 868,
+          "first_correct": 637,
+          "first_labelled": 868,
+          "der": {
+            "total_s": 2530.2599999999943,
+            "confusion_s": 29.47999999999774,
+            "missed_s": 718.6399999999973,
+            "false_alarm_s": 30.07999999999872
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 868,
+          "first_correct": 636,
+          "first_labelled": 868,
+          "der": {
+            "total_s": 2530.2599999999875,
+            "confusion_s": 27.52999999999805,
+            "missed_s": 717.7099999999978,
+            "false_alarm_s": 30.129999999998233
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 868,
+          "first_correct": 639,
+          "first_labelled": 868,
+          "der": {
+            "total_s": 2530.25999999999,
+            "confusion_s": 29.039999999997907,
+            "missed_s": 715.690000000001,
+            "false_alarm_s": 29.95999999999936
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 868,
+          "first_correct": 639,
+          "first_labelled": 868,
+          "der": {
+            "total_s": 2530.25999999999,
+            "confusion_s": 29.079999999998098,
+            "missed_s": 715.5800000000005,
+            "false_alarm_s": 29.969999999999352
+          }
+        }
+      },
+      "input_sha256": "a15017d0d3c871866971ee178052a0ce3a7e44d6fbf89fc23dcab326511b65f5"
+    },
+    {
+      "name": "Mix-Headset_ES2004d",
+      "group": "AMI headset",
+      "seconds": 2222.2906875,
+      "hf_frames": 222229,
+      "nemo_frames": 222230,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.9874513149261475,
+          "p99_abs": 0.02961287461221218,
+          "threshold_disagreements": 1724,
+          "threshold_agreement_pct": 99.9030279576473,
+          "first_different_frame": 53,
+          "length_difference": -1
+        },
+        "hf_frames_emitted_after_scorer_eof": 109,
+        "hf_vs_original_fp16": {
+          "frames_a": 222229,
+          "frames_b": 222230,
+          "max_abs": 0.9875726699829102,
+          "p99_abs": 0.03140022233128548,
+          "threshold_agreement_pct": 99.89509694954305,
+          "threshold_disagreements": 1865
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 222230,
+          "frames_b": 222230,
+          "max_abs": 0.4505615234375,
+          "p99_abs": 0.013671875,
+          "threshold_agreement_pct": 99.96237006704766,
+          "threshold_disagreements": 669
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 222229,
+          "frames_b": 222229,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.0002173781394958496,
+          "threshold_agreement_pct": 99.99943751715573,
+          "threshold_disagreements": 10
+        },
+        "hf_vs_original_emission_different_frames": 8856
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.004731088876724243
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.004731088876724243
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 2.288818359375e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.014145255088806152
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 2.288818359375e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 7.104873657226562e-05,
+      "last_checkpoint_step": 2912,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 713,
+          "first_correct": 564,
+          "first_labelled": 713,
+          "der": {
+            "total_s": 2006.769999999996,
+            "confusion_s": 12.319999999998833,
+            "missed_s": 409.9600000000038,
+            "false_alarm_s": 34.31068700000276
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 713,
+          "first_correct": 562,
+          "first_labelled": 713,
+          "der": {
+            "total_s": 2006.7699999999936,
+            "confusion_s": 12.42999999999825,
+            "missed_s": 409.2700000000023,
+            "false_alarm_s": 34.3706870000036
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 713,
+          "first_correct": 560,
+          "first_labelled": 712,
+          "der": {
+            "total_s": 2006.769999999996,
+            "confusion_s": 12.829999999999373,
+            "missed_s": 407.86000000000354,
+            "false_alarm_s": 35.44000000000341
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 713,
+          "first_correct": 560,
+          "first_labelled": 712,
+          "der": {
+            "total_s": 2006.769999999996,
+            "confusion_s": 12.829999999999373,
+            "missed_s": 407.8100000000036,
+            "false_alarm_s": 35.49000000000359
+          }
+        }
+      },
+      "input_sha256": "3cfce3297ebb7faeb53c02727eea5e9f2c76e9ed4b62db3b03d73e66836e91f3"
+    },
+    {
+      "name": "Mix-Headset_IS1009d",
+      "group": "AMI headset",
+      "seconds": 1944.5,
+      "hf_frames": 194450,
+      "nemo_frames": 194450,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.9736536145210266,
+          "p99_abs": 0.05805341154336929,
+          "threshold_disagreements": 2903,
+          "threshold_agreement_pct": 99.81338390331705,
+          "first_different_frame": 5,
+          "length_difference": 0
+        },
+        "hf_frames_emitted_after_scorer_eof": 0,
+        "hf_vs_original_fp16": {
+          "frames_a": 194450,
+          "frames_b": 194450,
+          "max_abs": 0.9751968383789062,
+          "p99_abs": 0.05615234375,
+          "threshold_agreement_pct": 99.8051555669838,
+          "threshold_disagreements": 3031
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 194450,
+          "frames_b": 194450,
+          "max_abs": 0.46044921875,
+          "p99_abs": 0.0281982421875,
+          "threshold_agreement_pct": 99.89965286706094,
+          "threshold_disagreements": 1561
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 194450,
+          "frames_b": 194450,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.00021839141845703125,
+          "threshold_agreement_pct": 99.99948572897918,
+          "threshold_disagreements": 8
+        },
+        "hf_vs_original_emission_different_frames": 7776
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 4.553794860839844e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 4.553794860839844e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.0016236305236816406
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 4.3392181396484375e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 4.553794860839844e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.0016236305236816406
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 4.3392181396484375e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 2.47955322265625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.00798112154006958
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 2.2411346435546875e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 0.00019025802612304688,
+      "last_checkpoint_step": 2496,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 607,
+          "first_correct": 464,
+          "first_labelled": 607,
+          "der": {
+            "total_s": 1738.599999999998,
+            "confusion_s": 19.08999999999935,
+            "missed_s": 306.50000000000176,
+            "false_alarm_s": 31.340000000000195
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 607,
+          "first_correct": 463,
+          "first_labelled": 607,
+          "der": {
+            "total_s": 1738.5999999999979,
+            "confusion_s": 18.9599999999985,
+            "missed_s": 305.8800000000023,
+            "false_alarm_s": 31.76000000000144
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 607,
+          "first_correct": 463,
+          "first_labelled": 607,
+          "der": {
+            "total_s": 1738.5999999999958,
+            "confusion_s": 16.759999999998,
+            "missed_s": 303.73000000000036,
+            "false_alarm_s": 31.460000000000136
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 607,
+          "first_correct": 463,
+          "first_labelled": 607,
+          "der": {
+            "total_s": 1738.5999999999958,
+            "confusion_s": 16.769999999997992,
+            "missed_s": 303.67000000000036,
+            "false_alarm_s": 31.480000000000118
+          }
+        }
+      },
+      "input_sha256": "470440114ee2ed076cfc77c53136ad5d3af500d8a5a6ca36755e83534f5ca4ea"
+    },
+    {
+      "name": "Mix-Headset_TS3003d",
+      "group": "AMI headset",
+      "seconds": 2618.2,
+      "hf_frames": 261820,
+      "nemo_frames": 261820,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.9967787265777588,
+          "p99_abs": 0.03272924944758415,
+          "threshold_disagreements": 2381,
+          "threshold_agreement_pct": 99.8863245741349,
+          "first_different_frame": 72,
+          "length_difference": 0
+        },
+        "hf_frames_emitted_after_scorer_eof": 0,
+        "hf_vs_original_fp16": {
+          "frames_a": 261820,
+          "frames_b": 261820,
+          "max_abs": 0.9966516494750977,
+          "p99_abs": 0.032136574387550354,
+          "threshold_agreement_pct": 99.9003131922695,
+          "threshold_disagreements": 2088
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 261820,
+          "frames_b": 261820,
+          "max_abs": 0.6597366333007812,
+          "p99_abs": 0.01806640625,
+          "threshold_agreement_pct": 99.93569055076006,
+          "threshold_disagreements": 1347
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 261820,
+          "frames_b": 261820,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.00020962953567504883,
+          "threshold_agreement_pct": 99.99952257275991,
+          "threshold_disagreements": 10
+        },
+        "hf_vs_original_emission_different_frames": 10440
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 2.86102294921875e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 2.86102294921875e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.0090370774269104
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 1.9073486328125e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 2.86102294921875e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.0090370774269104
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 7.343292236328125e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 7.343292236328125e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.0022670626640319824
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 3.0040740966796875e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 0.00010418891906738281,
+      "last_checkpoint_step": 3328,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 789,
+          "first_correct": 666,
+          "first_labelled": 789,
+          "der": {
+            "total_s": 2070.3399999999947,
+            "confusion_s": 9.319999999999215,
+            "missed_s": 632.999999999999,
+            "false_alarm_s": 17.640000000001244
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 789,
+          "first_correct": 664,
+          "first_labelled": 789,
+          "der": {
+            "total_s": 2070.3399999999974,
+            "confusion_s": 9.700000000001001,
+            "missed_s": 633.7299999999975,
+            "false_alarm_s": 17.64000000000022
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 789,
+          "first_correct": 662,
+          "first_labelled": 789,
+          "der": {
+            "total_s": 2070.339999999996,
+            "confusion_s": 10.159999999998892,
+            "missed_s": 632.6499999999987,
+            "false_alarm_s": 17.13000000000131
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 789,
+          "first_correct": 662,
+          "first_labelled": 789,
+          "der": {
+            "total_s": 2070.339999999996,
+            "confusion_s": 10.159999999998892,
+            "missed_s": 632.5499999999986,
+            "false_alarm_s": 17.13000000000131
+          }
+        }
+      },
+      "input_sha256": "ece4a41c37c1092c737d1dfe313afb18248364625991f745fed4b372c3c67eb3"
+    },
+    {
+      "name": "Array1-01_EN2002a",
+      "group": "AMI far-field",
+      "seconds": 2142.709375,
+      "hf_frames": 214270,
+      "nemo_frames": 214271,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.9828222990036011,
+          "p99_abs": 0.09723035246133804,
+          "threshold_disagreements": 6142,
+          "threshold_agreement_pct": 99.64169039062864,
+          "first_different_frame": 0,
+          "length_difference": -1
+        },
+        "hf_frames_emitted_after_scorer_eof": 142,
+        "hf_vs_original_fp16": {
+          "frames_a": 214270,
+          "frames_b": 214271,
+          "max_abs": 0.9844245910644531,
+          "p99_abs": 0.09674423187971115,
+          "threshold_agreement_pct": 99.61001306762496,
+          "threshold_disagreements": 6685
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 214271,
+          "frames_b": 214271,
+          "max_abs": 0.8389892578125,
+          "p99_abs": 0.070556640625,
+          "threshold_agreement_pct": 99.72091416943964,
+          "threshold_disagreements": 4784
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 214270,
+          "frames_b": 214270,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.00022113323211669922,
+          "threshold_agreement_pct": 99.9988332477715,
+          "threshold_disagreements": 20
+        },
+        "hf_vs_original_emission_different_frames": 8568
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 2.6226043701171875e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 2.288818359375e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.01646476984024048
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 2.6226043701171875e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 2.288818359375e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.01646476984024048
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 3.814697265625e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 70.61549377441406
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.8924930691719055
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 3.814697265625e-05,
+      "last_checkpoint_step": 2912,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 868,
+          "first_correct": 616,
+          "first_labelled": 868,
+          "der": {
+            "total_s": 2530.26,
+            "confusion_s": 37.91999999999783,
+            "missed_s": 750.5599999999968,
+            "false_alarm_s": 28.120000000000083
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 868,
+          "first_correct": 619,
+          "first_labelled": 868,
+          "der": {
+            "total_s": 2530.259999999994,
+            "confusion_s": 34.69999999999847,
+            "missed_s": 746.679999999995,
+            "false_alarm_s": 26.930000000000625
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 868,
+          "first_correct": 617,
+          "first_labelled": 868,
+          "der": {
+            "total_s": 2530.259999999997,
+            "confusion_s": 32.42999999999942,
+            "missed_s": 745.1799999999962,
+            "false_alarm_s": 26.649999999997462
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 868,
+          "first_correct": 617,
+          "first_labelled": 868,
+          "der": {
+            "total_s": 2530.259999999997,
+            "confusion_s": 32.469999999999416,
+            "missed_s": 744.9899999999966,
+            "false_alarm_s": 26.659999999997453
+          }
+        }
+      },
+      "input_sha256": "6c0644431679e59adc70129f2ba6c2fb737fa731cf1ffe8a033cd7f0c441170e"
+    },
+    {
+      "name": "Array1-01_ES2004d",
+      "group": "AMI far-field",
+      "seconds": 2222.2906875,
+      "hf_frames": 222229,
+      "nemo_frames": 222230,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.9474784135818481,
+          "p99_abs": 0.08986824750900269,
+          "threshold_disagreements": 4336,
+          "threshold_agreement_pct": 99.75610743872312,
+          "first_different_frame": 0,
+          "length_difference": -1
+        },
+        "hf_frames_emitted_after_scorer_eof": 109,
+        "hf_vs_original_fp16": {
+          "frames_a": 222229,
+          "frames_b": 222230,
+          "max_abs": 0.8553466796875,
+          "p99_abs": 0.07421875,
+          "threshold_agreement_pct": 99.71999604012078,
+          "threshold_disagreements": 4978
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 222230,
+          "frames_b": 222230,
+          "max_abs": 0.966156005859375,
+          "p99_abs": 0.07421875,
+          "threshold_agreement_pct": 99.6700490482833,
+          "threshold_disagreements": 5866
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 222229,
+          "frames_b": 222229,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.0002174973487854004,
+          "threshold_agreement_pct": 99.99932502058687,
+          "threshold_disagreements": 12
+        },
+        "hf_vs_original_emission_different_frames": 8856
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 6.103515625e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 6.103515625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.015319585800170898
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 2.86102294921875e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 6.103515625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.015319585800170898
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 2.86102294921875e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 2.288818359375e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.015789568424224854
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 2.47955322265625e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 6.389617919921875e-05,
+      "last_checkpoint_step": 2912,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 713,
+          "first_correct": 571,
+          "first_labelled": 713,
+          "der": {
+            "total_s": 2006.7699999999968,
+            "confusion_s": 34.87999999999863,
+            "missed_s": 424.8400000000049,
+            "false_alarm_s": 34.970687000003124
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 713,
+          "first_correct": 562,
+          "first_labelled": 713,
+          "der": {
+            "total_s": 2006.7699999999975,
+            "confusion_s": 33.41999999999976,
+            "missed_s": 425.5600000000043,
+            "false_alarm_s": 32.450687000003825
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 713,
+          "first_correct": 570,
+          "first_labelled": 712,
+          "der": {
+            "total_s": 2006.769999999997,
+            "confusion_s": 27.43999999999745,
+            "missed_s": 422.11000000000615,
+            "false_alarm_s": 31.10000000000558
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 713,
+          "first_correct": 570,
+          "first_labelled": 712,
+          "der": {
+            "total_s": 2006.769999999997,
+            "confusion_s": 27.439999999997223,
+            "missed_s": 422.0300000000061,
+            "false_alarm_s": 31.14000000000577
+          }
+        }
+      },
+      "input_sha256": "f55f83cf1f563c460030bf2790849428a102c41f296c401cedfa1be96ab1f2f7"
+    },
+    {
+      "name": "Array1-01_IS1009d",
+      "group": "AMI far-field",
+      "seconds": 1944.6613125,
+      "hf_frames": 194466,
+      "nemo_frames": 194467,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.9480852484703064,
+          "p99_abs": 0.11997942626476288,
+          "threshold_disagreements": 6693,
+          "threshold_agreement_pct": 99.56978340686804,
+          "first_different_frame": 0,
+          "length_difference": -1
+        },
+        "hf_frames_emitted_after_scorer_eof": 138,
+        "hf_vs_original_fp16": {
+          "frames_a": 194466,
+          "frames_b": 194467,
+          "max_abs": 0.9552154541015625,
+          "p99_abs": 0.1494140625,
+          "threshold_agreement_pct": 99.51038999105242,
+          "threshold_disagreements": 7617
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 194467,
+          "frames_b": 194467,
+          "max_abs": 0.8726325035095215,
+          "p99_abs": 0.10672912746667862,
+          "threshold_agreement_pct": 99.67693747525287,
+          "threshold_disagreements": 5026
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 194466,
+          "frames_b": 194466,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.00021833181381225586,
+          "threshold_agreement_pct": 99.99903582117182,
+          "threshold_disagreements": 15
+        },
+        "hf_vs_original_emission_different_frames": 7776
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 2.47955322265625e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 2.47955322265625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.0053931474685668945
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 5.817413330078125e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 2.47955322265625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.0053931474685668945
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 5.817413330078125e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 51.7922477722168
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.7574402689933777
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 1.9073486328125e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 7.939338684082031e-05,
+      "last_checkpoint_step": 2496,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 607,
+          "first_correct": 456,
+          "first_labelled": 607,
+          "der": {
+            "total_s": 1738.5999999999976,
+            "confusion_s": 31.570000000000093,
+            "missed_s": 316.9800000000025,
+            "false_alarm_s": 35.82999999999945
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 607,
+          "first_correct": 461,
+          "first_labelled": 607,
+          "der": {
+            "total_s": 1738.5999999999976,
+            "confusion_s": 35.25999999999952,
+            "missed_s": 309.3299999999999,
+            "false_alarm_s": 33.52999999999998
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 607,
+          "first_correct": 452,
+          "first_labelled": 607,
+          "der": {
+            "total_s": 1738.599999999997,
+            "confusion_s": 36.42000000000038,
+            "missed_s": 306.9099999999985,
+            "false_alarm_s": 35.18999999999683
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 607,
+          "first_correct": 452,
+          "first_labelled": 607,
+          "der": {
+            "total_s": 1738.599999999997,
+            "confusion_s": 36.43000000000037,
+            "missed_s": 306.8099999999986,
+            "false_alarm_s": 35.239999999996805
+          }
+        }
+      },
+      "input_sha256": "7f568d1eafa0802a0eb6d8ad975eb182568dfda2b815ae338fd8b9967aa2b5d1"
+    },
+    {
+      "name": "Array1-01_TS3003d",
+      "group": "AMI far-field",
+      "seconds": 2618.2,
+      "hf_frames": 261820,
+      "nemo_frames": 261820,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.8654274940490723,
+          "p99_abs": 0.06778303533792496,
+          "threshold_disagreements": 4523,
+          "threshold_agreement_pct": 99.78405965930793,
+          "first_different_frame": 0,
+          "length_difference": 0
+        },
+        "hf_frames_emitted_after_scorer_eof": 0,
+        "hf_vs_original_fp16": {
+          "frames_a": 261820,
+          "frames_b": 261820,
+          "max_abs": 0.86956787109375,
+          "p99_abs": 0.06005859375,
+          "threshold_agreement_pct": 99.81022267206477,
+          "threshold_disagreements": 3975
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 261820,
+          "frames_b": 261820,
+          "max_abs": 0.81427001953125,
+          "p99_abs": 0.04736328125,
+          "threshold_agreement_pct": 99.83991864639829,
+          "threshold_disagreements": 3353
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 261820,
+          "frames_b": 261820,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.0002079606056213379,
+          "threshold_agreement_pct": 99.99933160186387,
+          "threshold_disagreements": 14
+        },
+        "hf_vs_original_emission_different_frames": 10440
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.047393798828125
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 2.288818359375e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 0.047393798828125
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 2.6226043701171875e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.0012205243110656738
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 2.288818359375e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 3.814697265625e-05,
+      "last_checkpoint_step": 3328,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 789,
+          "first_correct": 630,
+          "first_labelled": 789,
+          "der": {
+            "total_s": 2070.3399999999956,
+            "confusion_s": 23.369999999999298,
+            "missed_s": 669.6299999999997,
+            "false_alarm_s": 18.200000000002404
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 789,
+          "first_correct": 631,
+          "first_labelled": 789,
+          "der": {
+            "total_s": 2070.3399999999983,
+            "confusion_s": 19.850000000000588,
+            "missed_s": 668.5899999999979,
+            "false_alarm_s": 17.70000000000092
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 789,
+          "first_correct": 632,
+          "first_labelled": 789,
+          "der": {
+            "total_s": 2070.339999999996,
+            "confusion_s": 20.83000000000114,
+            "missed_s": 669.8000000000004,
+            "false_alarm_s": 17.49999999999884
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 789,
+          "first_correct": 632,
+          "first_labelled": 789,
+          "der": {
+            "total_s": 2070.339999999996,
+            "confusion_s": 20.830000000000684,
+            "missed_s": 669.6900000000016,
+            "false_alarm_s": 17.52999999999904
+          }
+        }
+      },
+      "input_sha256": "16f5463568010ac6c8c71d2d5f9d703b71b200c7748c8b6a5f608118bf8b16d0"
+    },
+    {
+      "name": "lords",
+      "group": "Lords",
+      "seconds": 9000.0026875,
+      "hf_frames": 900000,
+      "nemo_frames": 900001,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.9995532035827637,
+          "p99_abs": 0.9789419770240784,
+          "threshold_disagreements": 896904,
+          "threshold_agreement_pct": 87.543,
+          "first_different_frame": 0,
+          "length_difference": -1
+        },
+        "hf_frames_emitted_after_scorer_eof": 72,
+        "hf_vs_original_fp16": {
+          "frames_a": 900000,
+          "frames_b": 900001,
+          "max_abs": 0.9963531494140625,
+          "p99_abs": 0.896728515625,
+          "threshold_agreement_pct": 90.3757638888889,
+          "threshold_disagreements": 692945
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 900001,
+          "frames_b": 900001,
+          "max_abs": 0.9999874830245972,
+          "p99_abs": 0.9990766048431396,
+          "threshold_agreement_pct": 86.2961263376374,
+          "threshold_disagreements": 986680
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 900000,
+          "frames_b": 900000,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.00021409988403320312,
+          "threshold_agreement_pct": 99.99619444444444,
+          "threshold_disagreements": 274
+        },
+        "hf_vs_original_emission_different_frames": 36000
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 3.814697265625e-05
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 3.814697265625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 9.982031770050526e-07
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 3.0517578125e-05
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 3.814697265625e-05
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 9.982031770050526e-07
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 3.2901763916015625e-05
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 0.0
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.0
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 2.288818359375e-05
+          }
+        }
+      ],
+      "maximum_fifo_drift": 0.00013637542724609375,
+      "last_checkpoint_step": 12480,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 1627,
+          "first_correct": 460,
+          "first_labelled": 1627,
+          "der": {
+            "total_s": 8959.04999999999,
+            "confusion_s": 3822.9199999999564,
+            "missed_s": 2984.590000000013,
+            "false_alarm_s": 6.769999999999641
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 1627,
+          "first_correct": 477,
+          "first_labelled": 1627,
+          "der": {
+            "total_s": 8959.04999999999,
+            "confusion_s": 4872.22,
+            "missed_s": 1757.4399999999828,
+            "false_alarm_s": 28.709999999992647
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 1627,
+          "first_correct": 407,
+          "first_labelled": 1627,
+          "der": {
+            "total_s": 8959.049999999988,
+            "confusion_s": 4146.2099999999755,
+            "missed_s": 3207.770000000027,
+            "false_alarm_s": 74.90999999999758
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 1627,
+          "first_correct": 407,
+          "first_labelled": 1627,
+          "der": {
+            "total_s": 8959.049999999988,
+            "confusion_s": 4148.219999999975,
+            "missed_s": 3205.3600000000242,
+            "false_alarm_s": 75.23999999999864
+          }
+        }
+      },
+      "input_sha256": "c42c9e46184251bfb883706ada6d045a634edcb33fd70b8d23e0929941b1166b"
+    },
+    {
+      "name": "london",
+      "group": "London",
+      "seconds": 10899.0984375,
+      "hf_frames": 1089909,
+      "nemo_frames": 1089910,
+      "parity": {
+        "hf_vs_new_control_fp32": {
+          "max_abs": 0.9955772161483765,
+          "p99_abs": 0.46327993273735046,
+          "threshold_disagreements": 115438,
+          "threshold_agreement_pct": 98.6760591939327,
+          "first_different_frame": 5688,
+          "length_difference": -1
+        },
+        "hf_frames_emitted_after_scorer_eof": 189,
+        "hf_vs_original_fp16": {
+          "frames_a": 1089909,
+          "frames_b": 1089910,
+          "max_abs": 0.999968945980072,
+          "p99_abs": 0.5469970703125,
+          "threshold_agreement_pct": 98.45652251701748,
+          "threshold_disagreements": 134580
+        },
+        "new_control_vs_original_fp16": {
+          "frames_a": 1089910,
+          "frames_b": 1089910,
+          "max_abs": 0.9988222122192383,
+          "p99_abs": 0.51904296875,
+          "threshold_agreement_pct": 98.50504858199301,
+          "threshold_disagreements": 130349
+        },
+        "hf_fp16_vs_fp32": {
+          "frames_a": 1089909,
+          "frames_b": 1089909,
+          "max_abs": 0.000244140625,
+          "p99_abs": 0.0002192854881286621,
+          "threshold_agreement_pct": 99.99954124610403,
+          "threshold_disagreements": 40
+        },
+        "hf_vs_original_emission_different_frames": 43560
+      },
+      "compression_checkpoints": [
+        {
+          "step": 29,
+          "seconds_emitted": 20.88,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              0,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              512
+            ],
+            "max_abs": null
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              0,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              0,
+              8
+            ],
+            "max_abs": null
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              261,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              261,
+              512
+            ],
+            "max_abs": 7.62939453125e-06
+          }
+        },
+        {
+          "step": 30,
+          "seconds_emitted": 21.599999999999998,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 7.62939453125e-06
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 1.989537850022316e-07
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              48,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              48,
+              512
+            ],
+            "max_abs": 0.0
+          }
+        },
+        {
+          "step": 54,
+          "seconds_emitted": 38.879999999999995,
+          "hf_compressed": false,
+          "nemo_compressed": false,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              222,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              512
+            ],
+            "max_abs": 7.62939453125e-06
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              222,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              222,
+              8
+            ],
+            "max_abs": 1.989537850022316e-07
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 0.0
+          }
+        },
+        {
+          "step": 55,
+          "seconds_emitted": 39.6,
+          "hf_compressed": true,
+          "nemo_compressed": true,
+          "hf_allocated_bytes": 1089792,
+          "cache": {
+            "hf_shape": [
+              1,
+              264,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              512
+            ],
+            "max_abs": 0.0
+          },
+          "probs": {
+            "hf_shape": [
+              1,
+              264,
+              8
+            ],
+            "nemo_shape": [
+              1,
+              264,
+              8
+            ],
+            "max_abs": 0.0
+          },
+          "fifo": {
+            "hf_shape": [
+              1,
+              51,
+              512
+            ],
+            "nemo_shape": [
+              1,
+              51,
+              512
+            ],
+            "max_abs": 0.0
+          }
+        }
+      ],
+      "maximum_fifo_drift": 0.00017595291137695312,
+      "last_checkpoint_step": 14976,
+      "accuracy": {
+        "nemo-original-argmax": {
+          "reference_lines": 1421,
+          "first_correct": 1121,
+          "first_labelled": 1421,
+          "der": {
+            "total_s": 9707.34999999994,
+            "confusion_s": 1315.6399999999562,
+            "missed_s": 1261.6199999999853,
+            "false_alarm_s": 71.19000000000716
+          }
+        },
+        "nemo-control-argmax": {
+          "reference_lines": 1421,
+          "first_correct": 1138,
+          "first_labelled": 1421,
+          "der": {
+            "total_s": 9707.349999999942,
+            "confusion_s": 1062.249999999973,
+            "missed_s": 1388.0599999999754,
+            "false_alarm_s": 70.39000000000306
+          }
+        },
+        "hf-argmax": {
+          "reference_lines": 1421,
+          "first_correct": 1149,
+          "first_labelled": 1421,
+          "der": {
+            "total_s": 9707.34999999994,
+            "confusion_s": 1177.4699999999889,
+            "missed_s": 1249.6599999999562,
+            "false_alarm_s": 75.63000000000244
+          }
+        },
+        "hf-fp32-argmax": {
+          "reference_lines": 1421,
+          "first_correct": 1149,
+          "first_labelled": 1421,
+          "der": {
+            "total_s": 9707.34999999994,
+            "confusion_s": 1177.719999999987,
+            "missed_s": 1249.2899999999586,
+            "false_alarm_s": 75.6600000000031
+          }
+        }
+      },
+      "input_sha256": "397b4f4223ce6d9d8fed1ede3ff1d873ccf95c3ec0c7e1790ad62305d23f2211"
+    }
+  ],
+  "retained_sources": {
+    "RESULTS.md": "a4c1127ca556850c18ef51579eaae4f1f5b10f4c5e83970a9cff33648a4daed0",
+    "PROVENANCE.json": "73ad6305c2d0cd247db692d2323a9782eee25614ab31925251e75a87f1645abb",
+    "accuracy-corrected.json": "60cb9c6b4fe9ff6179229c96e60e6bc79a01170aaf75014c3a028b21f2da481f",
+    "parity-summary.json": "148cdfe251d5c43f8d80fdd79bd487e7c980194df28c242d139aa767ce9bea22",
+    "hf_runtime.py": "36d5ea9349f6f370410ff50bac876edc88228615e16cd6594a7f62b26bb8a160",
+    "replay_hf.py": "92f048ef974bb8f5dc13c8a9bd35c5b16dffdd9c61ac51b441d95f1ec4143764",
+    "score_outputs.py": "edb3b6bc593f1071d1d9b31c9b169406cb693b9b4f51ecfe0445056a325f4cf6",
+    "evaluate.py": "ca8b80ca0043ba5f78dd1234b310f1da555632f88ea346ccd7b01fdb055e9d4c",
+    "sf_score.py": "14f8ea51c2f621bbfafe4712642b87a0593b179fa901d893ec4b37b42195bfbb",
+    "scorer-sources.json": "7cde8ff70730ff771db014ba9471ed8bb30f6c3a5a2072e4422c50605b424c7f",
+    "diagnosis.json": "89de5f019b4a99112028213d58eec5954b800a869f0cb09a9f93de0907b6477d",
+    "diagnosis-gpu.json": "48b79de671bb5110466b22ced73f4eab57c89c3213432b5ebbfafe2b6d28788b",
+    "../nemo-spike/RESULTS.md": "6e9ae62ce8a57cc67a6ad90b2e1d6be11d12cfea2ad3d9b48150dadce0221994",
+    "../nemo-spike/SOURCE_MAP.md": "c0ccd9985e318ccc8dc15ff819ab6be173ea83170da57181dee4b7bcaa4a1bc0",
+    "../nemo-spike/compatibility.patch": "ef32599540c3c7b17f2b8b23f9b5e356760d583e35cd325975b21734ce89f40a",
+    "../sortformer/RESULTS.md": "70e8646b2069a4c15d65fdcf4c04e5c46bd2227a86a266aaefe52921c016ae4d",
+    "runs-corrected/Mix-Headset_EN2002a/pass.json": "7f70079ffb266d7e77b38966fb95d76b4d453755e35e9a58a697bece22c1f18d",
+    "runs-corrected/Mix-Headset_EN2002a/hf.npz": "92391c4e03dd3c4d539c17ad1c9e77fb8f390082f0db0ca1320c1b6d2590ca9d",
+    "runs-corrected/Mix-Headset_EN2002a/nemo.npz": "8c835bdc2966d830c90ebcd9769fe0a0beabf641f4fea64b6c2f6bc0ad8629c9",
+    "runs-corrected/Mix-Headset_EN2002a/pass.npz": "ccb2986a305e02607322562e53dd890064ce0b22c3dd7c3ad7c2b4760e7974ff",
+    "runs-corrected/Mix-Headset_EN2002a/states.npz": "c5eb6a005a2fc4a2c8c13b67a7dd0e3037006bf88e739c3b58d36b44c1cd291b",
+    "runs-corrected/Mix-Headset_ES2004d/pass.json": "be6f9c05847e6e61125db63506a66c5eda5c44a9c15258c4756eaa368b6d88db",
+    "runs-corrected/Mix-Headset_ES2004d/hf.npz": "385bf6e8e188af33e0ad5cef439564ca0b30ea44e8609cc9d7fa139678f91ccb",
+    "runs-corrected/Mix-Headset_ES2004d/nemo.npz": "71c3cb480cd37dd95d2e920851aa63f202a331de2d609e9bdc7a1db94cd926c8",
+    "runs-corrected/Mix-Headset_ES2004d/pass.npz": "410b3c3c3436374e70d2b0b90a3fb6399ba0e41cc350d58af9a67056bb06ef1b",
+    "runs-corrected/Mix-Headset_ES2004d/states.npz": "f2d5675a1d8d6e3230b0712f1cb4c816cbfff5be595a40d6f57abd0eceb96f00",
+    "runs-corrected/Mix-Headset_IS1009d/pass.json": "ad66031066599e255fae44a675d1c749f90b76b49fd1906d78e4aadf725d3724",
+    "runs-corrected/Mix-Headset_IS1009d/hf.npz": "890db37798c816786deb822e156a9a7c007cddfebe597b8afaab9546d11743ed",
+    "runs-corrected/Mix-Headset_IS1009d/nemo.npz": "5cf6bf3a6c30186e84a1b94270abe6648331cda5b9dfa80136ba48ad74446c3c",
+    "runs-corrected/Mix-Headset_IS1009d/pass.npz": "518d2251b3fa93b54fa62ec6413c8f4be755a44a6cf7252dbd7a5474e2e0cf90",
+    "runs-corrected/Mix-Headset_IS1009d/states.npz": "70c47bccd44e3bd7a43bfa07e060a4b2795a4a54ce3b46bbb832fd72581997b9",
+    "runs-corrected/Mix-Headset_TS3003d/pass.json": "2a3831255092a0214133e0cf426f0fbb0a04d9bb9de817be12003a9cbc0779d4",
+    "runs-corrected/Mix-Headset_TS3003d/hf.npz": "de496887107844355a48193938c50d5ec26f3b6bc6ae19341cd296cd8944da9a",
+    "runs-corrected/Mix-Headset_TS3003d/nemo.npz": "f830ac94e2566bfb51d4544ce83c0e8aa2b2e8bcf160ce304b743e890e76eac8",
+    "runs-corrected/Mix-Headset_TS3003d/pass.npz": "1a2a7c3046017185a5863ae5bc8886cc35886b3ee8ae380c00783c5833e5c639",
+    "runs-corrected/Mix-Headset_TS3003d/states.npz": "0bf87e1e7bcbb5c3552541f74cab31784bf9ef6ea91a54ed9298505844ef88c2",
+    "runs-corrected/Array1-01_EN2002a/pass.json": "2c916e6d5c4ddb5085a16d7d4bf65eacd3c9d109a74fd903ec9317c3e514ee09",
+    "runs-corrected/Array1-01_EN2002a/hf.npz": "b960aefbea1c7541ca98f13093768216abf66ef7e4ca01b168ea2d96f6766194",
+    "runs-corrected/Array1-01_EN2002a/nemo.npz": "1c08d70a401d59eed3b38bc252ed9608d91b25ee55cf29bf0d93837306b7ffe6",
+    "runs-corrected/Array1-01_EN2002a/pass.npz": "3eeb9d7606c765a118b78abaa9de6db0ebadc9f3c769f51be42a6613c32e854d",
+    "runs-corrected/Array1-01_EN2002a/states.npz": "5798ccbd7ffa3d85ee5236e7c109ccea1fc5bf53d07bfb9cb536fd51316b2a6f",
+    "runs-corrected/Array1-01_ES2004d/pass.json": "af1803cd7d8b41e223c56f3a792b367f06452fc3caf99970badf07eb2a29bd42",
+    "runs-corrected/Array1-01_ES2004d/hf.npz": "a1a3af6594fee37d8e0cb6ad0ca55ded9131aba88584e6b2aae8968e64c53141",
+    "runs-corrected/Array1-01_ES2004d/nemo.npz": "ff014b44f862d904268da15856e6cfc25d5a2acd7a9a8c919afecc05e6c08af4",
+    "runs-corrected/Array1-01_ES2004d/pass.npz": "b31aecdb46a8dc6efcc2877558b233a2c97373bcff4e2fb629cc52a90890d5dc",
+    "runs-corrected/Array1-01_ES2004d/states.npz": "40a086d56e6bd07c20d36b6281c52a3166c7d33467b44fa6e2b1506b0b004ece",
+    "runs-corrected/Array1-01_IS1009d/pass.json": "7af316c3b72514251eebd1c6444bd0e2c8417220dc4a7ae172357860944dc523",
+    "runs-corrected/Array1-01_IS1009d/hf.npz": "fc6e41d865a689673cbc6acd884112a3f642b5bcdd73cc2d65651128573dccba",
+    "runs-corrected/Array1-01_IS1009d/nemo.npz": "2ced9e3523aae0c0e7becffa7d2af86b701ce4bb36682f02dccd60a1ace5ab44",
+    "runs-corrected/Array1-01_IS1009d/pass.npz": "360fa048ade6fe632f42b5b80917c8dcf32009899ef562e14a2241b5b2a90122",
+    "runs-corrected/Array1-01_IS1009d/states.npz": "4f67462f402ac7d97100aa27a7b4f4d8530998ee885957c9d6a490058d520f75",
+    "runs-corrected/Array1-01_TS3003d/pass.json": "14e4609217bc94bb8311801ff40d9701958b36916e51c8fa51aea90fd46d1d67",
+    "runs-corrected/Array1-01_TS3003d/hf.npz": "b540f022759ecc252a6b69f40dae560e01ef22aa8c423989aef4fa84168e4a3f",
+    "runs-corrected/Array1-01_TS3003d/nemo.npz": "252c61c6802f23fdd99fd3e0f321859b4058a8b4e16f5b35b891eb9327a3423b",
+    "runs-corrected/Array1-01_TS3003d/pass.npz": "8db618e0bab4c765fbfc71f9cecddc6f65e8700d7f7b69de5e66244061d50291",
+    "runs-corrected/Array1-01_TS3003d/states.npz": "eb9c80caa6cf9c20e493a9b04a01631597bad907ab32bd329a2743bbcf6b1751",
+    "runs-corrected/lords/pass.json": "1750e7688a454f777d19224a9bd0de5f502666391036ef89b7a82df5da89131d",
+    "runs-corrected/lords/hf.npz": "f2f57cee091d202f3c04fc1a7b6157fd6bbc0da3b1dee0a3c5243f85fd298656",
+    "runs-corrected/lords/nemo.npz": "4dd2eb5667b079e88ec2598a16ea3c58a9492c455f829ea8b3a45ab8663b09c2",
+    "runs-corrected/lords/pass.npz": "eff24691dfa834fca2e8e34eb6fc7c4ec353457579c3499cc600918c9b08ac74",
+    "runs-corrected/lords/states.npz": "6d27339df80db0c105df217dc2025e3e76b1a70c7043959184b9542c5f6b6be9",
+    "runs-corrected/london/pass.json": "772d6d66b0896d4922fc85f83e3788423b17730ff0832b4157053a45b6fb87cc",
+    "runs-corrected/london/hf.npz": "c87589f5a5c315e728e37ae5708532af89e8553d9fd4d300dc17412da71a5877",
+    "runs-corrected/london/nemo.npz": "f47a58c84caccdeb2406008bb1525a565a79da8b5d0928f496ae31d0906d121b",
+    "runs-corrected/london/pass.npz": "6e2c4e55f9236c90b6279f598d3215e635aec51214bb9f0b8d468c693e46bee9",
+    "runs-corrected/london/states.npz": "01a28207d43b8fca9943f934d72c406ce5884311ddfe19537f26fa10364b88e8"
+  },
+  "original_input_and_script_hashes": {
+    "source-archive/Nemotron-3-Diarization.nemo": "867c53f552998f772e5b5e5c082962ae85ee7ca5669c2bc17d7f615133d4e96d",
+    "dev-inputs/ami-short-turns/MANIFEST.txt": "ac03e3ac7ad34e2894358b14c22bd1c4db8d6d3c92350c8dd5e927d96f11d592",
+    "dev-inputs/benchmark/MANIFEST.txt": "2c6fb29c3717f376a79ae22b3e93df887bc06d7f64761f498c7411e106c8b420",
+    "dev-inputs/benchmark/MANIFEST-scored.txt": "ef7e1531f5ef9f5ad1c6998cb1a1bc815b21f2c69f407f7484cfb8438f17bc31",
+    "dev-inputs/ami-short-turns/EN2002a/EN2002a.Mix-Headset.wav": "a15017d0d3c871866971ee178052a0ce3a7e44d6fbf89fc23dcab326511b65f5",
+    "dev-inputs/ami-short-turns/ES2004d/ES2004d.Mix-Headset.wav": "3cfce3297ebb7faeb53c02727eea5e9f2c76e9ed4b62db3b03d73e66836e91f3",
+    "dev-inputs/ami-short-turns/IS1009d/IS1009d.Mix-Headset.wav": "470440114ee2ed076cfc77c53136ad5d3af500d8a5a6ca36755e83534f5ca4ea",
+    "dev-inputs/ami-short-turns/TS3003d/TS3003d.Mix-Headset.wav": "ece4a41c37c1092c737d1dfe313afb18248364625991f745fed4b372c3c67eb3",
+    "dev-inputs/ami-short-turns/EN2002a/EN2002a.Array1-01.wav": "6c0644431679e59adc70129f2ba6c2fb737fa731cf1ffe8a033cd7f0c441170e",
+    "dev-inputs/ami-short-turns/ES2004d/ES2004d.Array1-01.wav": "f55f83cf1f563c460030bf2790849428a102c41f296c401cedfa1be96ab1f2f7",
+    "dev-inputs/ami-short-turns/IS1009d/IS1009d.Array1-01.wav": "7f568d1eafa0802a0eb6d8ad975eb182568dfda2b815ae338fd8b9967aa2b5d1",
+    "dev-inputs/ami-short-turns/TS3003d/TS3003d.Array1-01.wav": "16f5463568010ac6c8c71d2d5f9d703b71b200c7748c8b6a5f608118bf8b16d0",
+    "dev-audio/lords.wav": "c42c9e46184251bfb883706ada6d045a634edcb33fd70b8d23e0929941b1166b",
+    "dev-audio/london.wav": "397b4f4223ce6d9d8fed1ede3ff1d873ccf95c3ec0c7e1790ad62305d23f2211",
+    "hf-parity/inspect_dev.py": "6c1cea016b3c15647114b3c3822fa5200de8c30c791a14d1b5340aef0cf7a971",
+    "hf-parity/progress.py": "26ba434832002328adaf1b4949ee785ae0100d8e62438dba60b6fa12d4cc87ea",
+    "hf-parity/replay_hf.py": "92f048ef974bb8f5dc13c8a9bd35c5b16dffdd9c61ac51b441d95f1ec4143764",
+    "hf-parity/cost_cpu_nemo.py": "8ef6aa425a227122f2df986705ef58d7936f65753b9f6b880bd261d8aa43a825",
+    "hf-parity/write_report.py": "74fafc80843b4155973aac041e8a73bab2466132be39898a22d21f262904cab1",
+    "hf-parity/summarise_runs.py": "cea77b90ab4e19fa438469b4efe3c65651c99f1557457bcb3315eb8f9eab752d",
+    "hf-parity/hf_runtime.py": "36d5ea9349f6f370410ff50bac876edc88228615e16cd6594a7f62b26bb8a160",
+    "hf-parity/evaluate.py": "ca8b80ca0043ba5f78dd1234b310f1da555632f88ea346ccd7b01fdb055e9d4c",
+    "hf-parity/provenance.py": "a0c30deabf942f67bb131fe5610fe4d6143c29653ddb7c1f1dc292e7fc301656",
+    "hf-parity/diagnose.py": "6cc6f311ce8ee2dd7bc881a88686b835b589df2a39169575bb538d7ab4c84ddd",
+    "hf-parity/stream_wrapper.py": "108912783408d88acade782851e5a4a1682cdf49ba6976b1fb67610f9d57fa15",
+    "hf-parity/hybrid.py": "75251804de301b47f072fc9435a86aa492749b914fa50ccb1534119eb1d55645",
+    "hf-parity/cost_probe.py": "ce2dff94d4bcccccdee27eca501df685dae34c396c3c5426cdd909d10e3d213c",
+    "hf-parity/score_outputs.py": "edb3b6bc593f1071d1d9b31c9b169406cb693b9b4f51ecfe0445056a325f4cf6",
+    "hf-parity/validate_evidence.py": "e91ae633fd9c02545af2d5f1d409d65754a02b6c16ab5155b2c02f91495d2811",
+    "hf-parity/convert_nemotron3_diarization_to_hf.py": "6a4de669f624642eb723d5361900f0e6c6c07d1d7153edf645e2fae0e0c71da1",
+    "hf-parity/table.py": "7437cdb22379933865a332fa4cca12f89f6692cf171699910109e1b8b7362c83",
+    "hf-parity/prepare_scoring.py": "9622b57bea0449d434a6868fe5dcb7195a95541bbd32f486a5b36dced8e52e6f",
+    "hf-parity/api_probes.py": "51e56a0310e2da3c93d68d29dd3a37c9e4d584e1cac98a5e5580d1120c18f5e6",
+    "hf-parity/sf_score.py": "14f8ea51c2f621bbfafe4712642b87a0593b179fa901d893ec4b37b42195bfbb",
+    "hf-parity/setup_env.py": "ceb154e932d92a77094789760171478650c15a5c2d8d586c9df44b09a372030d",
+    "hf-parity/watch_scoring.py": "df792ead388426fa84a2077da7641457741e2436490fa2495e5004f2910aa1c3",
+    "package-source/transformers/models/nemotron3_diarization/modeling_nemotron3_diarization.py": "6f7688dbcff3123216fa8860af73af934912683f2191e6b36adc4dd19a39fcad",
+    "package-source/transformers/models/nemotron3_diarization/processing_nemotron3_diarization.py": "37d700fd8a041c80cc8a792fbbdc67764e291cfe111928c10e5d266ab5ebad7c",
+    "package-source/transformers/models/nemotron3_diarization/configuration_nemotron3_diarization.py": "0f64152272bb8f27fc8b11fab26d5ec5074207afdade3b6714ce1ed18c9d2c2b",
+    "package-source/transformers/models/nemotron_asr_streaming/feature_extraction_nemotron_asr_streaming.py": "8d2df13e251dcd8315654495b9768138d6e61a359e4f8166f623d890c132dc3d",
+    "live-small/score.py": "78af74b31137f286947701bc4d163eadbff1f8c18007f63bb3e1a69ed77bd550",
+    "live-small/replay.py": "d45f585ed2352bd610d5f48659212162c87031df4711a810d87ef860a56a3140",
+    "live-small/hybrid2/hybrid.py": "75251804de301b47f072fc9435a86aa492749b914fa50ccb1534119eb1d55645",
+    "live-small/sortformer/runs/nemotron/Mix-Headset_EN2002a/pass.json": "25e6b890c3e160a5cf7156bff47f8385bd3c961fb8e00d5b3d9d1b10c5dd9370",
+    "live-small/sortformer/runs/nemotron/Mix-Headset_EN2002a/pass.npz": "b68012fc0fa1834c47bd1b81588e36487fb279187da2f6f3cb28bfb8dd68624b",
+    "live-small/sortformer/runs/nemotron/Mix-Headset_ES2004d/pass.json": "74b072d9c0c7f993a2db02f635fd21d8beeed702082c6b56025fbafd9bc480b5",
+    "live-small/sortformer/runs/nemotron/Mix-Headset_ES2004d/pass.npz": "0c652c069704861dfbc3cd88adccc417931b2c9b88ec843322eaf330f030283d",
+    "live-small/sortformer/runs/nemotron/Mix-Headset_IS1009d/pass.json": "5985e693a362ff43a8be16fbf2597ed2c100ab29e35efad9a776405568868fa3",
+    "live-small/sortformer/runs/nemotron/Mix-Headset_IS1009d/pass.npz": "1ca13432ed50bd419d34826cbcdf39edda8cc56fbb2f441a0717130dbe903a37",
+    "live-small/sortformer/runs/nemotron/Mix-Headset_TS3003d/pass.json": "d8b0767c6586acf890eec61fe98a36a4f3a63ee5d5c50220e1cbb594add447ff",
+    "live-small/sortformer/runs/nemotron/Mix-Headset_TS3003d/pass.npz": "ede4644ffe698e89254015db02c74eb53c24046297a12a0e84480a6e935e29cb",
+    "live-small/sortformer/runs/nemotron/Array1-01_EN2002a/pass.json": "3fbf5c8317288bd37814f50506ba50c99bea84ddb81785b796de38b2db2d5e02",
+    "live-small/sortformer/runs/nemotron/Array1-01_EN2002a/pass.npz": "a9a81eec32601d5e5193066f605018345c496fd07aa15861da3b3161eaf80b8e",
+    "live-small/sortformer/runs/nemotron/Array1-01_ES2004d/pass.json": "0fb937da145fd0c5077e7bd38c51e975224373c908b206f77b540e6f21c9fc4e",
+    "live-small/sortformer/runs/nemotron/Array1-01_ES2004d/pass.npz": "638fa0a42313e5a65a1aeaa5291694c0f8778c720fc91d2b35679c7e88620211",
+    "live-small/sortformer/runs/nemotron/Array1-01_IS1009d/pass.json": "5049aa6a579c10c4d8edf13597c22ab86cca4a37de08e5a655f0615951d1bb96",
+    "live-small/sortformer/runs/nemotron/Array1-01_IS1009d/pass.npz": "c8aeb2fc2a5fa2342084e9c80feebcf99509054897c40ce303f70d7f26aeca6e",
+    "live-small/sortformer/runs/nemotron/Array1-01_TS3003d/pass.json": "b6d8508adf336e96e80dc09b41d06b1df1f216df2eb1685858b87a1991827a2b",
+    "live-small/sortformer/runs/nemotron/Array1-01_TS3003d/pass.npz": "d4a03c1345a09e2ce8cce51ef1af2921919d06b4b0e5214c677da48a7c4dacda",
+    "live-small/sortformer/runs/nemotron/lords/pass.json": "d535bbe6a3df8ad888a78cf8b76a2d2154256b3ea6579b60575bfba2d0823d62",
+    "live-small/sortformer/runs/nemotron/lords/pass.npz": "bc598cea3720ebc73e89d700d7b4f8259477ded2ebe89e05dbcb305feec4b7a5",
+    "live-small/sortformer/runs/nemotron/london/pass.json": "de71be41a7596c2784404810b82895465a49f092cdc3d2149438cfbe84f2df9a",
+    "live-small/sortformer/runs/nemotron/london/pass.npz": "0b89c81902ff9be80674707c6df59ed4642d75fe25656d2259f99a4335f49708"
+  },
+  "scorer_source_hashes": {
+    "sortformer/sf_score.py": "14f8ea51c2f621bbfafe4712642b87a0593b179fa901d893ec4b37b42195bfbb",
+    "sortformer/table.py": "7437cdb22379933865a332fa4cca12f89f6692cf171699910109e1b8b7362c83",
+    "hybrid2/hybrid.py": "75251804de301b47f072fc9435a86aa492749b914fa50ccb1534119eb1d55645",
+    "hybrid2/inspect_dev.py": "6c1cea016b3c15647114b3c3822fa5200de8c30c791a14d1b5340aef0cf7a971",
+    "hybrid2/evaluate.py": "ca8b80ca0043ba5f78dd1234b310f1da555632f88ea346ccd7b01fdb055e9d4c"
+  },
+  "limitations": [
+    "Ten dev streams; no new held-out run. Numerical/output parity fails.",
+    "AMI headset and far-field pools contain correlated microphones from four meetings.",
+    "Zero-collar DER includes overlap; UNKNOWN is wrong in strict first-display accuracy.",
+    "Literal channel threshold agreement has no speaker permutation fitting; DER does.",
+    "Historical outputs have no fp32 tensors/native state; deterministic control is separate.",
+    "EOF frame counts and emission clocks differ; no backdating or silent denominator loss.",
+    "Retrospective research hybrid is not a causal production integration acceptance run.",
+    "Live held-out study used NeMo; final held-out study used native HF with converted weights.",
+    "Production safetensors tensor/config equality is recorded; production golden is separate.",
+    "Retained 42 ms timings exclude production per-window CPU feature equivalence checks; no production 42 ms claim."
+  ]
+}

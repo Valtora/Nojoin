@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "transformers_version": "5.20.2",
+  "asset_manifest_sha256": "82cb1da687ecdd7378b13ad4585274d00b0f3022f32af0774b741452a8c8239c",
+  "asset_revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
+  "source": {
+    "name": "ES2004d.Mix-Headset.wav",
+    "sha256": "3cfce3297ebb7faeb53c02727eea5e9f2c76e9ed4b62db3b03d73e66836e91f3",
+    "corpus_url": "https://groups.inf.ed.ac.uk/ami/corpus/",
+    "licence": "CC BY 4.0",
+    "start_sample": 0
+  },
+  "sample_rate": 16000,
+  "samples": 338080,
+  "packet_samples": 32000,
+  "full_packets": 10,
+  "tail_samples": 18080,
+  "runtime": {
+    "torch": "2.14.1+cu130",
+    "python": "3.12.3",
+    "gpu": "NVIDIA GeForce RTX 4070 Ti, 595.99.02",
+    "fingerprint": "1394e6d58b4e8f8bfc3fe90db4d7e7977a3544b10d30feb1e235dd9b5ed5eb59",
+    "dtype": "float32",
+    "attention": "sdpa",
+    "tf32_matmul": false,
+    "tf32_cudnn": true
+  },
+  "repeat_gate": {
+    "repeats": 3,
+    "maximum_absolute_drift": {
+      "probabilities": 0.0,
+      "cache": 0.0
+    },
+    "tolerances": {
+      "probabilities": {
+        "atol": 2e-06,
+        "rtol": 1e-05
+      },
+      "cache": {
+        "atol": 0.0001,
+        "rtol": 1e-05
+      }
+    }
+  },
+  "tolerance_policy_sha256": "4e83e0c90e528c582aa28caccf1faf8e5dc0430756e4eddfead414a1e31dff21",
+  "generated_utc": "2026-10-26T01:09:47.320483+00:00",
+  "artifacts": {
+    "es2004d-first-21_13.wav": {
+      "bytes": 676204,
+      "sha256": "67b9c72f070b6660326bb7957ef5769c479adf655249cdf68961fb29cf89205e"
+    },
+    "native_packets.npz": {
+      "bytes": 65573,
+      "sha256": "2cf23485a6b1b1b37ad61825f796a5f7c1467d924268fdb28bce711395acc871"
+    },
+    "state_checkpoints.npz": {
+      "bytes": 470777,
+      "sha256": "9dfa12e2451963a44a02d188f94a5c5a853c830c74c56556e9d4f5d263fc708d"
+    },
+    "window_schedule.json": {
+      "bytes": 8722,
+      "sha256": "fd3bc16f7ae90877f9cb0d1f7c3bf6a2a7dac20014b2a1b16a108aa7fc3f2ff4"
+    }
+  }
+}

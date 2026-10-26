@@ -175,6 +175,18 @@ After each task, workers release cached models and CUDA memory. The exception is
 
 `worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Its schedule file is `data/celerybeat-schedule`, so the cadence survives restarts. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
 
+### Optional Native Speaker Assets
+
+The native Nemotron runtime can be prepared and validated separately. This runtime change leaves the existing live and final speaker engines in use; it introduces no engine setting.
+
+An administrator can prepare or repair it through `POST /api/v1/system/models/prepare` with `{"target":"nemotron"}`. This prepares only Nemotron, regardless of the transcription engine. The existing `active` and `core` targets retain their meaning. `GET /api/v1/system/models/status` reports its `verification_state` (`missing`, `partial`, `verified` or `invalid`), revision and manifest identity. `DELETE /api/v1/system/models/nemotron` removes its managed cache through a worker, using the same shared-blob safeguards as other models. These operations require running workers; preparation and deletion require an administrator.
+
+The three official files occupy **396,956,673 bytes**, including **396,954,592 bytes** of safetensors weights, under `$HF_HOME/hub/models--nvidia--Nemotron-3-Diarization/snapshots/f667ed73aee57d40cc39428eb768b4fd87a0a29e/`. `HF_HUB_CACHE` overrides the hub root when set. Keep that directory on the existing `model_cache` volume. Its `nojoin-verification.json` receipt sits in the repository directory, outside the upstream snapshot. A completed receipt and unchanged file metadata indicate completed preparation; the worker rehashes the actual files before its first model load. An interrupted download or a changed file is never reported as verified. Explicit preparation repairs it.
+
+The worker pins Transformers **5.20.2**, loads only the verified local safetensors snapshot with remote code disabled, and uses fp32/SDPA on CUDA. No checkpoint is baked into an image or fetched by settings saves, health polling or startup. The clean worker build adds **55,894,050 bytes** of installed package payload, excluding bytecode and console scripts; this is not a compressed image-layer measurement. The API has no Transformers dependency, and CPU-only workers do not import the native runtime's ML dependencies.
+
+The first-use preparation helper queues one deduplicated Nemotron-only task and returns immediately when a transfer is already pending. Callers can retain their existing engine for that capture and try native inference on a subsequent capture; those callers are not wired by this runtime change. Failed requests can be retried explicitly or by a later capture. Offline use requires assets prepared in advance: the loader never falls through to an online download. Preparation uses the stock single `gpu` worker slot and can delay other work, so prepare before recording. Native packet timing does not establish a live-plus-final latency guarantee.
+
 ### Worker Concurrency Lanes
 
 Worker tasks are split across four Celery queues, each drained by its own container, so a long recording finalise cannot block live transcription, notes, chat or calendar sync:

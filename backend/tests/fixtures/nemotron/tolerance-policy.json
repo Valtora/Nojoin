@@ -1,0 +1,4 @@
+{
+  "probabilities": {"atol": 0.000002, "rtol": 0.00001},
+  "cache": {"atol": 0.0001, "rtol": 0.00001}
+}

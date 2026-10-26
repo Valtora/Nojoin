@@ -324,6 +324,24 @@ NOJOIN_TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/nojoin_t
 - **Image boundaries.** CI installs the API and worker requirements together, so a test passes on an import that one of the images cannot make. `test_api_torch_boundary.py` imports API modules with torch blocked, and `test_worker_import_boundary.py` imports worker modules with FastAPI and the API's other packages blocked ([Worker imports](#audio-processing--ml-operations)).
 - **ffmpeg.** Tests that run real media through ffmpeg skip when `shutil.which("ffmpeg")` finds nothing. CI installs Ubuntu's ffmpeg 6.1, the series the worker image ships; the API image ships 7.1. A test that depends on one version's behaviour should say which. To simulate a host without ffmpeg, point `PATH` at an empty directory with `monkeypatch.setenv`.
 
+### Native Nemotron Runtime Checks
+
+The runtime is isolated from live/final engine selection in this change. [The evaluation record](evaluation/nemotron-710.md) distinguishes the official-source check, the accepted native-HF accuracy evidence and the failed numerical equivalence with NeMo. [The attributed regression fixture](../backend/tests/fixtures/nemotron/README.md) records extraction, hashes, packet clocks and numerical tolerances.
+
+Ordinary CPU CI replays independently recorded window results through the production packet scheduler. It checks real PCM slicing, overlapping clips, window digests, first/EOF flags, cache-token continuity and emitted frame/receipt clocks, without model weights, a GPU, network or ffmpeg. It exercises scheduling rather than native inference. Hybrid publication and final union integration are outside this runtime change.
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 pytest -q backend/tests/test_nemotron_*.py
+python scripts/check_held_pins.py --offline
+python scripts/evaluate_nemotron.py --recorded-only
+```
+
+The real inference regression skips unless `NOJOIN_RUN_NEMOTRON_INFERENCE=1`, CUDA is available and `NOJOIN_NEMOTRON_MODEL_DIR` names the exact verified local snapshot. That path is a test-only asset selection, not a production repository/revision override. Run it in a throwaway GPU container with network disabled after preparing the three assets; it never downloads from pytest. It checks the production loader, independent CPU/CUDA frontend equivalence, recorded probabilities and cache checkpoints. Frontend tolerances are separate from posterior/cache tolerances. Regeneration is an explicit developer operation described in the fixture README, never part of pytest.
+
+The canonical Transformers pin in `requirements/worker.txt` is inherited by CI and local requirements. Its compatibility check binds that version and the canonical asset-manifest digest to both fixture and evaluation records. A dependency/checkpoint change requires new golden and comparison evidence. This policy is separate from security-advisory holds. The worker image constructs the native model and processor without weights or network to catch missing dependencies during the build. API and CPU-worker import tests guard the lazy ML boundary.
+
+Run the backend suite once with ffmpeg and ffprobe absent from `PATH` as well as the normal checks. No test may contact Redis; take `stub_celery_dispatch` when exercising preparation dispatch.
+
 ## Browser Capture Development
 
 Capture code lives in `frontend/src/lib/capture/`. After a capture change, check whichever of these apply:
