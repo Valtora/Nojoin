@@ -1,4 +1,5 @@
-import { renderWithFillContract as render } from "@/test/fillMarkerContracts";
+import { fillMarkerViolations, renderWithFillContract as render } from "@/test/fillMarkerContracts";
+import { screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -88,6 +89,19 @@ function play(times: number[]): number[][] {
 }
 
 describe("playback-follow", () => {
+  it("checks inactive and active group fills as playback moves between groups", () => {
+    const view = render(<TranscriptView {...props(-1)} />);
+    const first = screen.getByRole("button", { name: "Play S0 and S1 at 00:00" });
+    expect(first).toHaveClass("bg-surface-inset");
+    view.rerender(<TranscriptView {...props(0)} />);
+    expect(first).toHaveClass("bg-status-success-bg");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
+    view.rerender(<TranscriptView {...props(20)} />);
+    expect(first).toHaveClass("bg-surface-inset");
+    expect(screen.getByRole("button", { name: "Pause S0 at 00:20" })).toHaveClass("bg-status-success-bg");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
+  });
+
   it("follows the line that continues when the one it overlapped ends", () => {
     // A starts, B joins it, A ends at 5 while B goes on.
     const [atStart, atThree, atFive] = play([0, 3, 5]);

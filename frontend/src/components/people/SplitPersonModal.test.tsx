@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 import SplitPersonModal from "./SplitPersonModal";
 import type { GlobalSpeaker, SpeakerSegment, SpeakerSplitResult } from "@/types";
@@ -48,9 +49,38 @@ const result: SpeakerSplitResult = {
 };
 
 describe("SplitPersonModal", () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     addNotification.mockReset();
     splitSpeaker.mockReset().mockResolvedValue(result);
+  });
+
+  it("checks selection and preview fills through their click transitions", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const { baseElement, unmount } = render(
+      <SplitPersonModal isOpen onClose={vi.fn()} onComplete={vi.fn()}
+        speaker={dana} initialSegments={segments} />,
+    );
+    const text = await screen.findByText(/Robin speaking/);
+    const card = text.closest('[data-ui-surface="card"]')!;
+    const preview = card.querySelector("button")!;
+    expect(card).toHaveClass("bg-surface-card");
+    expect(preview).toHaveClass("bg-surface-inset");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
+    fireEvent.click(text);
+    expect(card).toHaveClass("bg-action-tint");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
+    fireEvent.click(preview);
+    expect(preview).toHaveClass("bg-action");
+    expect(card).toHaveClass("bg-action-tint");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
+    fireEvent.click(preview);
+    expect(preview).toHaveClass("bg-surface-inset");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
+    fireEvent.click(text);
+    expect(card).toHaveClass("bg-surface-card");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
+    unmount();
   });
 
   it("says what the split did to each voiceprint, not that both were recalibrated", async () => {

@@ -7,6 +7,7 @@ import { Markdown } from "tiptap-markdown";
 
 import TableMenu from "./TableMenu";
 import { TableKeymap } from "@/lib/TableKeymap";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 let editor: Editor;
 
@@ -33,6 +34,28 @@ afterEach(() => {
 });
 
 describe("TableMenu", () => {
+  it("checks both cell fills as the hovered table size changes", () => {
+    render(<TableMenu editor={editor} />);
+    const toggle = screen.getByLabelText("Table");
+    expect(fillMarkerViolations(toggle)).toEqual([]);
+    fireEvent.click(toggle);
+    expect(toggle.classList.contains("bg-surface-inset")).toBe(true);
+    expect(fillMarkerViolations(toggle)).toEqual([]);
+    const cells = screen.getAllByRole("button", { name: /^Insert \d by \d table$/ });
+    const checkCells = () => {
+      expect(cells).toHaveLength(36);
+      for (const cell of cells) expect(fillMarkerViolations(cell)).toEqual([]);
+    };
+    expect(cells.every((cell) => cell.classList.contains("bg-surface-inset"))).toBe(true);
+    checkCells();
+    fireEvent.mouseEnter(screen.getByLabelText("Insert 2 by 3 table"));
+    expect(cells.filter((cell) => cell.classList.contains("bg-action"))).toHaveLength(6);
+    checkCells();
+    fireEvent.mouseLeave(cells[0].parentElement!);
+    expect(cells.every((cell) => cell.classList.contains("bg-surface-inset"))).toBe(true);
+    checkCells();
+  });
+
   it("inserts a table of the chosen size as Markdown", async () => {
     render(<TableMenu editor={editor} />);
 

@@ -71,6 +71,7 @@ const settingsOpen = () => screen.queryByRole("checkbox", { name: "Case Sensitiv
 function openEverything() {
   fireEvent.click(button("Find & Replace"));
   fireEvent.change(findField(), { target: { value: "alpha" } });
+  expect(fillMarkerViolations(document.body)).toEqual([]);
   fireEvent.click(button("Advanced Search Settings"));
   expect(fillMarkerViolations(document.body)).toEqual([]);
 }
@@ -401,6 +402,7 @@ describe("transcript toolbar", () => {
     expect(settingsOpen()).toBe(false);
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle).toHaveFocus();
+    expect(fillMarkerViolations(document.body)).toEqual([]);
   });
 
   it("closes the settings menu on Escape without taking focus from the find field", () => {
