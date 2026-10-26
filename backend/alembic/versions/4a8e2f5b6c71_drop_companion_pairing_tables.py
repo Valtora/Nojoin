@@ -54,15 +54,33 @@ def _table_names() -> set[str]:
     return set(sa.inspect(op.get_bind()).get_table_names())
 
 
+def _holds_rows(table_name: str) -> bool:
+    return bool(
+        op.get_bind()
+        .execute(sa.text(f'SELECT EXISTS (SELECT 1 FROM "{table_name}")'))
+        .scalar()
+    )
+
+
 def upgrade() -> None:
-    if not _allow_drop():
+    existing_tables = _table_names()
+    companion_tables = existing_tables & {
+        "companion_pairings",
+        "companion_pairing_requests",
+    }
+    # Empty tables, as on every fresh database, hold nothing to keep, so the
+    # opt-in guards only pairings an install actually made.
+    if not _allow_drop() and any(_holds_rows(name) for name in companion_tables):
+        # Alembic records the revision as applied either way, so setting the
+        # variable later does not bring the drop back.
         logger.warning(
-            "Skipping companion table drop. Set %s=1 to remove companion_pairings and companion_pairing_requests.",
+            "Skipping companion table drop: companion_pairings and "
+            "companion_pairing_requests hold rows from the retired Companion "
+            "app, which nothing reads. Set %s=1 for this upgrade to remove "
+            "them, or drop the two tables by hand later.",
             ALLOW_DROP_ENV_VAR,
         )
         return
-
-    existing_tables = _table_names()
 
     if "companion_pairing_requests" in existing_tables:
         for index_name in PAIRING_REQUEST_INDEXES:

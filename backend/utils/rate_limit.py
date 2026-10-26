@@ -164,14 +164,19 @@ def get_unresolvable_trusted_proxies(
 
 
 def log_trusted_proxy_warnings(
-    *, startup_path: str, logger_instance: Optional[logging.Logger] = None
+    *,
+    startup_path: str,
+    logger_instance: Optional[logging.Logger] = None,
+    unresolvable: Optional[list[str]] = None,
 ) -> list[str]:
-    """Warn once at startup when a configured trusted proxy hostname will not resolve.
+    """Warn when a configured trusted proxy hostname will not resolve.
 
-    Called from API startup so the misconfiguration is visible at deploy time
-    rather than silently degrading per-request rate limiting under load.
+    Reached from API startup through ``warn_unresolvable_trusted_proxies``, so
+    the misconfiguration is visible at deploy time rather than silently
+    degrading per-request rate limiting under load.
     """
-    unresolvable = get_unresolvable_trusted_proxies()
+    if unresolvable is None:
+        unresolvable = get_unresolvable_trusted_proxies()
     if not unresolvable:
         return unresolvable
 
@@ -196,6 +201,43 @@ def log_trusted_proxy_warnings(
         verb,
     )
     return unresolvable
+
+
+# The bundled nginx is started only once the API reports healthy (its compose
+# depends_on), so the default entry `nginx` cannot resolve while the API starts.
+# A hostname gets this long to start resolving before it is reported.
+TRUSTED_PROXY_RESOLVE_GRACE_SECONDS = 120.0
+TRUSTED_PROXY_RESOLVE_RETRY_SECONDS = 5.0
+
+
+async def warn_unresolvable_trusted_proxies(
+    *,
+    startup_path: str,
+    logger_instance: Optional[logging.Logger] = None,
+    grace_seconds: float = TRUSTED_PROXY_RESOLVE_GRACE_SECONDS,
+    retry_seconds: float = TRUSTED_PROXY_RESOLVE_RETRY_SECONDS,
+) -> list[str]:
+    """Warn about trusted proxy hostnames still unresolvable after a grace period.
+
+    Checked once at startup, the bundled `nginx` entry never resolved on a full
+    stack start, so every fresh install was told to replace a correct entry.
+    Requests are unaffected either way: ``_resolve_hostname`` looks a name up
+    when a request needs it and keeps a failed lookup for DNS_CACHE_TTL only,
+    and a request through the proxy arrives once the proxy is running. The
+    lookups block, so they run on a worker thread.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + grace_seconds
+    while True:
+        unresolvable = await asyncio.to_thread(get_unresolvable_trusted_proxies)
+        if not unresolvable or loop.time() >= deadline:
+            break
+        await asyncio.sleep(retry_seconds)
+    return log_trusted_proxy_warnings(
+        startup_path=startup_path,
+        logger_instance=logger_instance,
+        unresolvable=unresolvable,
+    )
 
 
 def _build_rate_limit_key(

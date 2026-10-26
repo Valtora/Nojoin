@@ -49,6 +49,10 @@ class _FakeSession:
     async def execute(self, statement):
         return _FakeResult(self._initialized)
 
+    def get_bind(self):
+        # Not PostgreSQL, so setup takes no advisory lock on this session.
+        return SimpleNamespace(dialect=SimpleNamespace(name="fake"))
+
     def add(self, value):
         self._added.append(value)
 
@@ -390,6 +394,43 @@ async def test_first_run_setup_accepts_correct_bootstrap_password(monkeypatch) -
         "initialized": True,
         "model_preparation_task_id": "model-prep-task",
     }
+
+
+NON_ASCII_BOOTSTRAP_PASSWORD = "bootstrap-£-secret"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "sent",
+    [
+        # A browser sends each character up to U+00FF as one Latin-1 byte.
+        NON_ASCII_BOOTSTRAP_PASSWORD.encode("latin-1"),
+        # curl in a UTF-8 terminal sends the UTF-8 bytes.
+        NON_ASCII_BOOTSTRAP_PASSWORD.encode("utf-8"),
+    ],
+    ids=["latin-1", "utf-8"],
+)
+async def test_first_run_unlock_accepts_a_non_ascii_bootstrap_password(
+    monkeypatch, sent: bytes
+) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, NON_ASCII_BOOTSTRAP_PASSWORD)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        accepted = await client.get(
+            "/api/v1/setup/initial-config",
+            headers={"Authorization": b"Bootstrap " + sent},
+        )
+        refused = await client.get(
+            "/api/v1/setup/initial-config",
+            headers={"Authorization": b"Bootstrap " + sent + b"x"},
+        )
+
+    assert accepted.status_code == 200
+    assert refused.status_code == 403
+    assert refused.json() == {"detail": "First-run setup access denied."}
 
 
 @pytest.mark.anyio
