@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_PALETTE, PALETTES } from "./appearance";
+import { applyUiStyle, DEFAULT_PALETTE, PALETTES } from "./appearance";
 import { themeScript } from "./theme-script";
 import { resolveDensity } from "./viewportDensity";
 
@@ -35,6 +35,7 @@ function setViewport(width: number, height: number) {
 const root = document.documentElement;
 
 function resetRoot() {
+  applyUiStyle("default");
   root.className = "";
   for (const attribute of ["data-palette", "data-corners", "data-ui-density", "data-style"]) {
     root.removeAttribute(attribute);
@@ -102,15 +103,23 @@ describe("themeScript appearance preferences", () => {
     stubPrefersDark(false);
   });
 
-  it.each([null, "default", "classic", "depth", "unrecognised", '\"><script>'])(
-    "applies only Default before paint with stored style %s",
-    (stored) => {
+  it.each([
+    [null, "default"],
+    ["default", "default"],
+    ["classic", "classic"],
+    ["depth", "depth"],
+    ["unrecognised", "default"],
+    ["Classic", "default"],
+    ['\"><script>', "default"],
+  ])(
+    "applies %s as %s before paint",
+    (stored, expected) => {
       if (stored !== null) localStorage.setItem("nojoin-style", stored);
       root.dataset.style = "stale";
 
       runScript();
 
-      expect(root.dataset.style).toBe("default");
+      expect(root.dataset.style).toBe(expected);
     },
   );
 

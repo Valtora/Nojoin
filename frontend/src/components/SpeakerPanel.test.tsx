@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SpeakerPanel from "./SpeakerPanel";
+import { matchesStyleDeclaration } from "@/test/styleMarkerContracts";
 import type {
   GlobalSpeaker,
   RecordingSpeaker,
@@ -145,6 +146,20 @@ describe("SpeakerPanel", () => {
     promoteToGlobalSpeaker.mockReset();
     deleteRecordingSpeaker.mockReset().mockResolvedValue(undefined);
     lastMenuItems = [];
+  });
+
+  it.each([false, true])("matches its own pane elevation and inset-fill rules (dark=%s)", (dark) => {
+    renderPanel();
+    const panel = screen.getByRole("complementary");
+
+    for (const style of ["default", "classic", "depth"]) {
+      const appearance = { dark, style };
+      expect(matchesStyleDeclaration(panel, "styles.css", "--style-chrome-shadow",
+        "var(--style-elevation-2)", appearance)).toBe(style === "depth");
+      expect(matchesStyleDeclaration(panel, dark ? "depth-dark.css" : "depth-gradient.css",
+        dark ? "--depth-fill-base" : "--depth-light-fill", "var(--surface-inset)", appearance))
+        .toBe(style === "depth");
+    }
   });
 
   it("groups speakers into rows by display name", () => {

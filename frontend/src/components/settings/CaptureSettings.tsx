@@ -355,6 +355,10 @@ export default function CaptureSettings() {
       }
       headerAside={
         <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="inset"
+          data-ui-active="inset"
+          data-ui-border="full"
           chrome="action"
           type="button"
           onClick={() => void refreshDevices()}
@@ -388,6 +392,9 @@ export default function CaptureSettings() {
         }
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           value={settings.microphoneDeviceId || ""}
           onChange={(event) =>
             updateSettings({
@@ -444,6 +451,10 @@ export default function CaptureSettings() {
         description="Preview your microphone locally and raise the gain until speech lands comfortably in the meter. Shared-audio gain is best checked during a short test recording."
         aside={
           <ButtonBase
+            data-ui-fill="card"
+            data-ui-hover="inset"
+            data-ui-active="inset"
+            data-ui-border="full"
             chrome="action"
             type="button"
             {...loadingButtonProps(previewLoading, undefined, () => {

@@ -21,6 +21,8 @@ The dashboard holds:
 
 **Settings > Appearance > Density** sets the spacing. **Automatic (by window size)** uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing elsewhere, **Comfortable** and **Compact** use one spacing at every size, and **Dense** is tighter still for mouse and keyboard while keeping compact-sized controls on a touch screen.
 
+**Settings > Appearance > Style** offers **Default** (the original flat look), **Classic** (bevelled buttons, sunken fields and panes, and your system's interface font) and **Depth** (layered shadows and shaded panels, with a stronger focus ring and control borders where the shading needs them). Classic looks best with **Square** corners; choose those separately under **Corner style**. Style keeps your colour palette and density, supports light and dark, and is saved in this browser only.
+
 ### Calendar Surface
 
 - The agenda opens on today. Select a day in the month grid to show only that day, and **Whole month** to return to the month.

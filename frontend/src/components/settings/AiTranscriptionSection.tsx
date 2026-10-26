@@ -101,6 +101,9 @@ export default function AiTranscriptionSection({
         description="Whisper handles the most languages. Parakeet is faster and slightly less accurate. Canary 1B covers a set of European languages."
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           id="transcription-engine-select"
           aria-describedby="transcription-engine-select-help"
           value={engine}
@@ -137,6 +140,10 @@ export default function AiTranscriptionSection({
           <div className="flex flex-wrap items-center gap-3 @min-[26rem]:justify-end">
             <p className={SETTINGS_VALUE_CLASS}>{whisper?.label || whisperSize}</p>
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={() => setShowWhisperModal(true)}

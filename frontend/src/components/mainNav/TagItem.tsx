@@ -236,6 +236,8 @@ export default function TagItem({
       />
       {isEditing ? (
         <InputBase
+          data-ui-fill="control"
+          data-ui-border="full"
           type="text"
           value={editValue}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) =>

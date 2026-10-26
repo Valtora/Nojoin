@@ -312,7 +312,9 @@ export default function PeoplePage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 self-stretch sm:self-auto">
-                <ButtonBase chrome="action"
+                <ButtonBase
+                  data-ui-fill="card"
+                  data-ui-border="full" chrome="action"
                   onClick={() => setIsTagDrawerOpen(true)}
                   className="lg:hidden flex items-center gap-2 px-3 py-2 bg-surface-card text-contrast-muted border border-surface-border rounded-lg hover:border-action-border transition-colors shadow-card font-medium"
                 >
@@ -324,7 +326,9 @@ export default function PeoplePage() {
                     </span>
                   )}
                 </ButtonBase>
-                <ButtonBase chrome="action"
+                <ButtonBase
+                  data-ui-fill="action"
+                  data-ui-hover="action-hover" chrome="action"
                   onClick={handleAddNew}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-card font-medium"
                 >
@@ -355,14 +359,18 @@ export default function PeoplePage() {
                     Clear Selection
                   </ButtonBase>
                   <div className="h-6 w-px bg-action-tint mx-1"></div>
-                  <ButtonBase chrome="action"
+                  <ButtonBase
+                    data-ui-fill="card"
+                    data-ui-border="full" chrome="action"
                     onClick={() => setIsBatchEditOpen(true)}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-surface-card text-contrast-muted border border-surface-border hover:border-action-border rounded-md shadow-card transition-all"
                   >
                     <Edit2 className="w-4 h-4" />
                     Edit
                   </ButtonBase>
-                  <ButtonBase chrome="action"
+                  <ButtonBase
+                    data-ui-fill="status-danger"
+                    data-ui-hover="status-danger" chrome="action"
                     onClick={handleBatchDelete}
                     disabled={isBatchDeleting}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-status-danger-bg text-foreground hover:bg-status-danger-bg rounded-md shadow-card transition-colors"

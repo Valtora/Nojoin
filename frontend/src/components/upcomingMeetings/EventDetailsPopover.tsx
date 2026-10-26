@@ -34,7 +34,7 @@ export function EventDetailsPopoverContent({
   const locationHost = getUrlHost(locationText);
 
   return (
-    <SurfaceBase kind="float" className="w-72 rounded-surface-panel border border-surface-float-border bg-surface-float p-4 text-left shadow-float sm:w-80">
+    <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float" className="w-72 rounded-surface-panel border border-surface-float-border bg-surface-float p-4 text-left shadow-float sm:w-80">
       <div className="flex items-start justify-between gap-3">
         <div className="text-sm font-semibold text-foreground">
           {event.title}
@@ -82,6 +82,7 @@ export function EventDetailsPopoverContent({
 
       {showMeetingUrl && meetingUrl && (
         <a
+          data-ui-fill="action"
           href={meetingUrl}
           target="_blank"
           rel="noopener noreferrer"

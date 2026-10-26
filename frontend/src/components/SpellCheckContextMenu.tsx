@@ -70,7 +70,9 @@ export default function SpellCheckContextMenu({
   const hasSuggestions = suggestions.length > 0;
 
   return createPortal(
-    <SurfaceBase kind="float"
+    <SurfaceBase
+      data-ui-fill="float"
+      data-ui-border="full" kind="float"
       ref={menuRef}
       className="fixed z-[var(--z-popover)] w-48 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 overflow-visible"
       style={style}
@@ -99,7 +101,7 @@ export default function SpellCheckContextMenu({
 
         {/* Suggestion submenu flyout */}
         {showSuggestions && hasSuggestions && (
-          <SurfaceBase kind="float"
+          <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float"
             className="absolute left-full top-0 ml-1 w-44 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 z-[var(--z-popover)]"
             onMouseEnter={handleSuggestionsEnter}
             onMouseLeave={handleSuggestionsLeave}

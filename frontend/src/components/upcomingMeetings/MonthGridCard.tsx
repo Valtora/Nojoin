@@ -41,7 +41,7 @@ export default function MonthGridCard({
   } = calendar;
 
   return (
-    <SurfaceBase kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <CalendarRange className="h-5 w-5 shrink-0 text-action-text" />
         <h2 className="text-base font-semibold text-foreground">Calendar</h2>
@@ -147,6 +147,7 @@ export default function MonthGridCard({
 
             return inCurrentMonth ? (
               <ButtonBase
+                data-ui-fill={(isCurrentDay) ? (inCurrentMonth) ? "action" : "action-tint" : (isSelectedDay && inCurrentMonth) ? "action-tint" : (inCurrentMonth) ? "inset" : undefined}
                 key={day.toISOString()}
                 type="button"
                 aria-pressed={isSelectedDay}

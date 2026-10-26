@@ -298,6 +298,8 @@ export default function SplitPersonModal({
                 </p>
               ))}
               <ButtonBase
+                data-ui-fill="status-info"
+                data-ui-hover="status-info"
                 chrome="action"
                 onClick={() => {
                   onComplete();
@@ -326,6 +328,8 @@ export default function SplitPersonModal({
             <>
               {/* Name Input */}
               <SurfaceBase
+                data-ui-fill="card"
+                data-ui-border="full"
                 kind="card" className="mb-6 bg-surface-card p-4 rounded-xl border border-surface-border shadow-card">
                 <label className="block text-sm font-medium text-contrast-muted mb-2">
                   New Speaker Name <span className="text-danger-text">*</span>
@@ -334,6 +338,8 @@ export default function SplitPersonModal({
                   <div className="relative flex-1">
                     <UserPlus className="absolute left-3 top-2.5 w-5 h-5 text-contrast-icon-muted" />
                     <InputBase
+                      data-ui-fill="inset"
+                      data-ui-border="full"
                       type="text"
                       className="w-full pl-10 pr-4 py-2 bg-surface-inset border border-surface-border rounded-lg focus:outline-hidden focus:ring-2 focus-visible:outline-focus-ring focus:ring-action-border focus:border-transparent transition-all"
                       placeholder="e.g. Jane Doe"
@@ -352,6 +358,7 @@ export default function SplitPersonModal({
 
                   return (
                     <SurfaceBase
+                      data-ui-fill={(isSelected) ? "action-tint" : "card"}
                       kind="card"
                       key={`${seg.recording_id}-${idx}`}
                       onClick={() => toggleSegment(idx)}
@@ -383,6 +390,8 @@ export default function SplitPersonModal({
 
                       <div className="p-3 border-t border-surface-border flex items-center justify-between">
                         <ButtonBase
+                          data-ui-fill={(isPlaying) ? "action" : "inset"}
+                          data-ui-hover={(isPlaying) ? undefined : "action-tint"}
                           chrome="action"
                           onClick={(e) => {
                             e.stopPropagation();

@@ -270,13 +270,15 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
   };
 
   return (
-    <SurfaceBase kind="pane" className="flex flex-col h-full bg-surface-card relative">
+    <SurfaceBase data-ui-fill="card" kind="pane" className="flex flex-col h-full bg-surface-card relative">
       <div className="p-4 border-b border-surface-border flex justify-between items-center">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
           <FileText className="w-4 h-4 text-action-text" />
           Attached Documents
         </h3>
-        <ButtonBase chrome="action"
+        <ButtonBase
+          data-ui-fill="action"
+          data-ui-hover="action-hover" chrome="action"
           onClick={() => setIsUploadModalOpen(true)}
           className="flex items-center gap-2 px-3 py-1.5 bg-action text-action-on text-sm rounded-lg hover:bg-action-hover transition-colors"
         >
@@ -297,7 +299,8 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             <p className="text-base font-medium text-contrast-helper">
               Documents are temporarily unavailable
             </p>
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-border="full" chrome="action"
               onClick={() => void fetchDocuments()}
               className="mt-4 rounded-lg border border-control-border px-4 py-2 text-sm font-medium text-contrast-muted transition-colors hover:border-action-border hover:text-action-text"
             >
@@ -313,7 +316,9 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             <p className="text-sm mt-1 mb-6">
               Upload a PDF, deck, document, spreadsheet, or image for context.
             </p>
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover" chrome="action"
               onClick={() => setIsUploadModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 bg-action text-action-on font-medium rounded-lg hover:bg-action-hover transition-colors shadow-card"
             >

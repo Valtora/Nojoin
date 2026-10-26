@@ -365,6 +365,10 @@ export default function CalendarConnectionsSettings() {
                 controlClassName={SETTINGS_CONTROL_END}
               >
                 <ButtonBase
+                  data-ui-fill="action"
+                  data-ui-hover="action-hover"
+                  data-ui-active="action-active"
+                  data-ui-border="full"
                   chrome="action"
                   type="button"
                   {...loadingButtonProps(isConnecting, !provider.configured, () => handleConnect(provider.provider))}
@@ -430,6 +434,10 @@ export default function CalendarConnectionsSettings() {
                     aside={
                       <div className="flex flex-wrap gap-2">
                         <ButtonBase
+                          data-ui-fill="card"
+                          data-ui-hover="inset"
+                          data-ui-active="inset"
+                          data-ui-border="full"
                           chrome="action"
                           type="button"
                           {...loadingButtonProps(busyKey === `sync:${connection.id}`, isBusy, () => handleManualSync(connection.id))}
@@ -443,6 +451,10 @@ export default function CalendarConnectionsSettings() {
                           Sync now
                         </ButtonBase>
                         <ButtonBase
+                          data-ui-fill="card"
+                          data-ui-hover="inset"
+                          data-ui-active="inset"
+                          data-ui-border="full"
                           chrome="action"
                           type="button"
                           {...loadingButtonProps(busyKey === `disconnect:${connection.id}`, isBusy, () => handleDisconnect(connection.id))}
@@ -518,6 +530,10 @@ export default function CalendarConnectionsSettings() {
                                       // A button, so the picker the wrapper opens
                                       // on click is reachable from the keyboard.
                                       <ButtonBase
+                                        data-ui-fill="card"
+                                        data-ui-hover="inset"
+                                        data-ui-active="inset"
+                                        data-ui-border="full"
                                         chrome="action"
                                         type="button"
                                         className={cn(SETTINGS_BUTTON_SECONDARY, "px-3")}
@@ -537,6 +553,10 @@ export default function CalendarConnectionsSettings() {
 
                               {calendar.custom_colour && busyKey !== `colour:${calendar.id}` && (
                                 <ButtonBase
+                                  data-ui-fill="card"
+                                  data-ui-hover="inset"
+                                  data-ui-active="inset"
+                                  data-ui-border="full"
                                   chrome="action"
                                   type="button"
                                   onClick={() =>

@@ -88,6 +88,7 @@ export default function SettingsBlock({
       )}
 
       <div
+        data-ui-fill={(inset) ? "inset" : undefined}
         data-ui={inset ? "surface" : undefined}
         data-ui-surface={inset ? "inset" : undefined}
         className={cn(

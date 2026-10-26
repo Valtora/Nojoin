@@ -277,7 +277,8 @@ export default function LiveNoteComposer({
     : (message ?? { text: modeHint(draft), tone: "info" as const });
 
   return (
-    <form data-ui="surface" data-ui-surface="pane"
+    <form
+      data-ui-fill="card" data-ui="surface" data-ui-surface="pane"
       onSubmit={handleSubmit}
       onDragOver={(event) => {
         if (onDraftFileChange && event.dataTransfer.types.includes("Files")) event.preventDefault();
@@ -342,6 +343,8 @@ export default function LiveNoteComposer({
         </label>
         <div className="relative h-[44px] w-[52px] shrink-0">
           <SelectBase
+            data-ui-fill="control"
+            data-ui-border="full"
             id={modeId}
             value={selection ? ON_SELECTION : draft.mode}
             title={selection ? ON_SELECTION_LABEL : MODE_LABELS[draft.mode]}
@@ -369,6 +372,8 @@ export default function LiveNoteComposer({
           </span>
         </div>
         <TextareaBase
+          data-ui-fill="control"
+          data-ui-border="full"
           ref={box}
           rows={1}
           value={draft.text}

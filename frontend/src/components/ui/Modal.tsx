@@ -86,6 +86,8 @@ export default function Modal({
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel
+                data-ui-fill="float"
+                data-ui-border="full"
                 data-ui="modal"
                 data-ui-surface="float"
                 className={cn(

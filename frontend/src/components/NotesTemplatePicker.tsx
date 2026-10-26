@@ -72,7 +72,9 @@ export default function NotesTemplatePicker({
     <div className="relative flex" ref={containerRef}>
       {/* Right half of a segmented control: only the outer corners are rounded,
           and a divider stands in for the gap so neither button clips the other. */}
-      <ButtonBase chrome="action"
+      <ButtonBase
+        data-ui-fill="action"
+        data-ui-hover="action-hover" chrome="action"
         type="button"
         onClick={() => setOpen((value) => !value)}
         disabled={disabled}
@@ -84,7 +86,7 @@ export default function NotesTemplatePicker({
       </ButtonBase>
 
       {open && (
-        <SurfaceBase kind="float" className="absolute right-0 z-[var(--z-dropdown)] mt-1 w-64 rounded-md border border-surface-border bg-surface-card shadow-float py-1">
+        <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="float" className="absolute right-0 z-[var(--z-dropdown)] mt-1 w-64 rounded-md border border-surface-border bg-surface-card shadow-float py-1">
           <p className="px-3 py-1.5 text-[11px] uppercase tracking-wide contrast-helper">
             Generate with structure
           </p>

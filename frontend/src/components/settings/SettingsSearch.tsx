@@ -122,6 +122,9 @@ export default function SettingsSearch({
         aria-hidden="true"
       />
       <InputBase
+        data-ui-fill="control"
+        data-ui-disabled-fill="control-disabled"
+        data-ui-border="full"
         type="search"
         role="combobox"
         aria-expanded={showResults}
@@ -141,6 +144,8 @@ export default function SettingsSearch({
 
       {showResults && (
         <SurfaceBase
+          data-ui-fill="card"
+          data-ui-border="full"
           kind="float"
           id="settings-search-results"
           role="listbox"

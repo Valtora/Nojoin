@@ -68,6 +68,10 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
     <ButtonBase
       ref={ref}
       type={type}
+      data-ui-fill={{ primary: "action", secondary: "card", ghost: undefined, danger: "danger" }[variant]}
+      data-ui-hover={{ primary: "action-hover", secondary: "inset", ghost: "inset", danger: "danger-hover" }[variant]}
+      data-ui-active={{ primary: "action-active", secondary: "inset", ghost: undefined, danger: "danger-active" }[variant]}
+      data-ui-border="full"
       {...rest}
       {...loadingButtonProps(loading, disabled, onClick)}
       chrome={variant === "ghost" ? "plain" : "action"}

@@ -90,7 +90,7 @@ export default function TelemetryNotice() {
   }
 
   return (
-    <SurfaceBase kind="float" className="sticky bottom-0 z-[var(--z-sticky)] mx-4 mb-4 rounded-2xl border border-action-border bg-action-tint p-4 shadow-float">
+    <SurfaceBase data-ui-fill="action-tint" data-ui-border="full" kind="float" className="sticky bottom-0 z-[var(--z-sticky)] mx-4 mb-4 rounded-2xl border border-action-border bg-action-tint p-4 shadow-float">
       <div className="flex items-start gap-3">
         <BarChart3 className="mt-0.5 h-5 w-5 shrink-0 text-action-text" />
         <div className="flex-1 text-sm">
@@ -106,14 +106,19 @@ export default function TelemetryNotice() {
             is never sold. No diagnostics have been sent yet.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover" chrome="action"
               type="button"
               {...loadingButtonProps(busy, undefined, () => void decide(true))}
               className="rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60 aria-disabled:opacity-60"
             >
               Keep diagnostics on
             </ButtonBase>
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-border="full" chrome="action"
               type="button"
               {...loadingButtonProps(busy, undefined, () => void decide(false))}
               className="rounded-lg border border-control-border bg-surface-card px-3 py-1.5 text-sm font-medium text-contrast-muted transition-colors hover:bg-surface-inset disabled:opacity-60 aria-disabled:opacity-60"

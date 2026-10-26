@@ -9,9 +9,12 @@ import {
   DENSITY_PREFERENCE_LABELS,
   PALETTES,
   PALETTE_LABELS,
+  UI_STYLES,
+  UI_STYLE_LABELS,
   type CornerStyle,
   type DensityPreference,
   type Palette,
+  type UiStyle,
 } from "@/lib/appearance";
 import { useTheme, type Theme } from "@/lib/ThemeProvider";
 
@@ -39,7 +42,7 @@ function PaletteSwatch() {
  * moment it changes and never reaches the autosave.
  */
 export default function AppearanceSettings() {
-  const { theme, setTheme, palette, setPalette, cornerStyle, setCornerStyle } =
+  const { theme, setTheme, palette, setPalette, cornerStyle, setCornerStyle, uiStyle, setUiStyle } =
     useTheme();
   const { densityPreference, setDensityPreference } = useViewportDensity();
 
@@ -51,6 +54,9 @@ export default function AppearanceSettings() {
     >
       <SettingsRow label="Theme">
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           aria-label="Theme"
           value={theme}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -70,6 +76,9 @@ export default function AppearanceSettings() {
         badge={<PaletteSwatch />}
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           aria-label="Colour palette"
           value={palette}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -86,10 +95,39 @@ export default function AppearanceSettings() {
       </SettingsRow>
 
       <SettingsRow
+        id="appearance-style"
+        label="Style"
+        controlId="appearance-style-select"
+        description="The shape and depth of controls and panels. Classic looks best with Square corners."
+      >
+        <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
+          id="appearance-style-select"
+          aria-describedby="appearance-style-select-help"
+          value={uiStyle}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+            setUiStyle(event.target.value as UiStyle)
+          }
+          className={SETTINGS_SELECT_CLASS}
+        >
+          {UI_STYLES.map((option) => (
+            <option key={option} value={option}>
+              {UI_STYLE_LABELS[option]}
+            </option>
+          ))}
+        </SelectBase>
+      </SettingsRow>
+
+      <SettingsRow
         label="Corner style"
         description="How rounded cards, buttons and fields are. Avatars and status dots stay round."
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           aria-label="Corner style"
           value={cornerStyle}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -110,6 +148,9 @@ export default function AppearanceSettings() {
         description="Automatic uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing everywhere else. Dense is tighter still for mouse and keyboard; on a touch screen it keeps compact-sized controls."
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           aria-label="Density"
           value={densityPreference}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>

@@ -258,6 +258,7 @@ export default function NotesTemplatesSection({
                         <Check className="w-4 h-4 text-action-text mr-1" />
                       )}
                       <ButtonBase
+                        data-ui-hover="inset"
                         chrome="action"
                         type="button"
                         onClick={() => setEditing(template)}
@@ -268,6 +269,7 @@ export default function NotesTemplatesSection({
                         <Pencil className="w-4 h-4" />
                       </ButtonBase>
                       <ButtonBase
+                        data-ui-hover="inset"
                         chrome="action"
                         type="button"
                         onClick={() => handleCopy(template)}
@@ -279,6 +281,7 @@ export default function NotesTemplatesSection({
                       </ButtonBase>
                       {template.is_editable && (
                         <ButtonBase
+                          data-ui-hover="inset"
                           chrome="action"
                           type="button"
                           onClick={() => handleDelete(template)}
@@ -324,6 +327,10 @@ export default function NotesTemplatesSection({
 
             <div className="flex flex-wrap gap-2 pt-2">
               <ButtonBase
+                data-ui-fill="card"
+                data-ui-hover="inset"
+                data-ui-active="inset"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 onClick={() => {
@@ -337,6 +344,10 @@ export default function NotesTemplatesSection({
               </ButtonBase>
               {isAdmin && (
                 <ButtonBase
+                  data-ui-fill="card"
+                  data-ui-hover="inset"
+                  data-ui-active="inset"
+                  data-ui-border="full"
                   chrome="action"
                   type="button"
                   onClick={() => {

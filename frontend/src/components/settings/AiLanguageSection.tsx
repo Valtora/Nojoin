@@ -48,6 +48,9 @@ export default function AiLanguageSection({
         description={capability?.guidance || "Loading what this engine supports..."}
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           id="transcription-language-select"
           aria-describedby="transcription-language-select-help"
           value={shown}

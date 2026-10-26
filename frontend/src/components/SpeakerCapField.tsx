@@ -134,6 +134,8 @@ export default function SpeakerCapField({
 
   const stepper = (
     <div
+      data-ui-fill="control"
+      data-ui-border="full"
       data-ui="stepper"
       data-ui-field="custom"
       className={`flex items-stretch overflow-hidden rounded-xl border bg-control-bg transition-colors focus-within:border-action focus-within:ring-1 focus-within:ring-focus-ring ${

@@ -73,6 +73,8 @@ export default function SettingsIndex() {
             </h2>
 
             <SurfaceBase
+              data-ui-fill="card"
+              data-ui-border="full"
               as="ul" kind="card" className="settings-card settings-card-body overflow-hidden">
               {group.items.map((category) => {
                 const Icon = category.icon;
