@@ -60,7 +60,7 @@ The `CI` workflow in [ci.yml](../.github/workflows/ci.yml) runs on pull requests
 
 | Check | Runs when these changed |
 | --- | --- |
-| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json`, `scripts/dev/**` |
+| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json`, `scripts/dev/**`, `scripts/speaker_frames/**` |
 | `Migrations (Postgres)` | `backend/alembic/**`, `backend/models/**`, `scripts/check_migrations.py` |
 | `Python quality` (Ruff lint and format check, file-size and blind-except gates, mypy) | the `Backend tests` paths, or `scripts/**` |
 | `Frontend lint` (ESLint and the contrast gate) | `frontend/**` |

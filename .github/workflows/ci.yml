@@ -50,8 +50,10 @@ jobs:
           #
           # `scripts` runs only the Python quality gate (lint, format, mypy, and the
           # validators) — not the full pytest suite — since scripts/ are standalone
-          # tooling the backend tests do not import. scripts/dev/ is the exception:
-          # its fake LLM server is tested against the real Ollama backend.
+          # tooling the backend tests do not import. scripts/dev/ and
+          # scripts/speaker_frames/ are the exceptions: the fake LLM server is
+          # tested against the real Ollama backend, and the Screen study's
+          # analysis (#653) by backend/tests/test_speaker_frames_*.py.
           filters: |
             backend:
               - 'backend/**'
@@ -61,6 +63,7 @@ jobs:
               # test checks it against backend/processing/processing_tuning.py.
               - 'frontend/src/lib/processingTuning.json'
               - 'scripts/dev/**'
+              - 'scripts/speaker_frames/**'
             frontend:
               - 'frontend/**'
             site:
