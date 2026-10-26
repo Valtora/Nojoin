@@ -519,7 +519,7 @@ A hostname entry works only if the API container can resolve it, and Docker reso
 NOJOIN_TRUSTED_PROXIES=127.0.0.1,::1,nginx,172.18.0.0/16
 ```
 
-An entry that does not resolve, such as a bare `caddy` from another network, is dropped. The walk then stops at the proxy's own address, and every remote client shares one bucket for the per-IP limits on sign-in, invitations, `/setup` and MCP registration. If an entry still does not resolve two minutes after the API starts, the API logs a warning with the number of such entries. The wait is for the bundled proxy, which starts only once the API is healthy, so `nginx` resolves a few seconds after the API does.
+An entry that does not resolve, such as a bare `caddy` from another network, is dropped. The walk then stops at the proxy's own address, and every remote client shares one bucket for the per-IP limits on sign-in, invitations, `/setup` and MCP registration. If an entry still does not resolve two minutes after the API starts, the API logs a warning with the number of such entries. The wait is for the bundled proxy, which starts only once the API and the web app report healthy, so `nginx` cannot resolve while the API is starting.
 
 #### Host-Run Edge Proxies (Tailscale Serve and Similar)
 
