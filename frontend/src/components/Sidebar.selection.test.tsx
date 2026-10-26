@@ -427,6 +427,30 @@ describe("recordings list selection", () => {
     expect(document.activeElement).toBe(row("Bravo planning"));
   });
 
+  // jsdom has no layout, so this pins the CSS contract instead. The status
+  // line is sr-only, which is absolutely positioned. If its containing block
+  // is outside the list's scroller, it sits at its static position below the
+  // whole list, and that height becomes scrollable overflow on the app shell,
+  // which the chat's auto-scroll then scrolled.
+  it("keeps the status line's containing block inside the list's scroller", async () => {
+    await showList("recordings", [ALPHA, BRAVO]);
+
+    const nearest = (node: Element, classes: string[]) => {
+      let el = node.parentElement;
+      while (el && !classes.some((name) => el!.classList.contains(name))) {
+        el = el.parentElement;
+      }
+      return el;
+    };
+    const status = screen.getByRole("status");
+    const scroller = nearest(status, ["overflow-y-auto", "overflow-auto"]);
+    const containingBlock = nearest(status, ["relative", "absolute", "fixed", "sticky"]);
+
+    expect(scroller).not.toBeNull();
+    expect(containingBlock).not.toBeNull();
+    expect(scroller!.contains(containingBlock)).toBe(true);
+  });
+
   it("marks each row's selection state for assistive technology", async () => {
     await showList("recordings", [ALPHA, BRAVO]);
 
