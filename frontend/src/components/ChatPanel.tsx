@@ -31,6 +31,7 @@ import { ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
 import Link from "next/link";
 import MarkdownBubble from "./MarkdownBubble";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { useStickToBottom } from "@/lib/useStickToBottom";
 import ConfirmationModal from "./ConfirmationModal";
 import MultiSelect, { Option } from "@/components/ui/MultiSelect";
 import IconButton from "@/components/ui/IconButton";
@@ -57,6 +58,8 @@ export default function ChatPanel({
     useState<AbortController | null>(null);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const [messagesContent, setMessagesContent] = useState<HTMLDivElement | null>(null);
+  const followNewMessages = useStickToBottom(messagesRef, messagesContent);
   const { addNotification } = useNotificationStore();
 
   const [isAdmin, setIsAdmin] = useState(false);
@@ -126,13 +129,6 @@ export default function ChatPanel({
     }
   }, [recordingId]);
 
-  // Auto-scroll the message list, and only the message list. scrollIntoView
-  // would also scroll every ancestor with overflow, the app shell included.
-  useEffect(() => {
-    const list = messagesRef.current;
-    list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
-  }, [messages, isStreaming]);
-
   const handleSend = async () => {
     if (!inputValue.trim() || !recordingId || isStreaming) return;
 
@@ -148,6 +144,8 @@ export default function ChatPanel({
       updated_at: new Date().toISOString(),
     };
 
+    // Sending brings a reader who had scrolled up back to the conversation.
+    followNewMessages();
     setMessages((prev) => [...prev, userMsg]);
     setInputValue("");
     setIsStreaming(true);
@@ -312,7 +310,7 @@ export default function ChatPanel({
       <div
         ref={messagesRef}
         data-testid="chat-messages"
-        className="flex-1 overflow-y-auto p-3 space-y-3 @min-[20rem]:p-4 @min-[20rem]:space-y-4"
+        className="flex-1 overflow-y-auto p-3 @min-[20rem]:p-4"
       >
         {!recordingId ? (
           // No opacity on these empty states: the helper token is pitched to
@@ -331,40 +329,45 @@ export default function ChatPanel({
             </p>
           </div>
         ) : (
-          messages.map((msg, index) => (
-            <div
-              key={index}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <SurfaceBase data-ui-fill={(msg.role === "user") ? "action" : "card"} data-ui-border={(msg.role === "user") ? undefined : "full"} kind="inset"
-                className={`max-w-[85%] rounded-surface-panel px-3 py-2 @min-[20rem]:px-4 @min-[20rem]:py-3 text-sm shadow-card ${
-                  msg.role === "user"
-                    ? "bg-action text-action-on rounded-tr-none"
-                    : "bg-surface-card border border-surface-border text-foreground rounded-tl-none"
-                }`}
+          <div
+            ref={setMessagesContent}
+            className="space-y-3 @min-[20rem]:space-y-4"
+          >
+            {messages.map((msg, index) => (
+              <div
+                key={index}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {msg.role === "user" ? (
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
-                ) : (
-                  <div className="w-full">
-                    {msg.content ? (
-                      <>
-                        <MarkdownBubble content={msg.content} />
-                        {isStreaming && index === messages.length - 1 && (
-                          <span className="inline-block w-2 h-4 ml-1 bg-surface-card animate-pulse align-middle"></span>
-                        )}
-                      </>
-                    ) : (
-                      <div className="flex items-center gap-2 text-contrast-helper py-1">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span className="text-xs">Thinking...</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </SurfaceBase>
-            </div>
-          ))
+                <SurfaceBase data-ui-fill={(msg.role === "user") ? "action" : "card"} data-ui-border={(msg.role === "user") ? undefined : "full"} kind="inset"
+                  className={`max-w-[85%] rounded-surface-panel px-3 py-2 @min-[20rem]:px-4 @min-[20rem]:py-3 text-sm shadow-card ${
+                    msg.role === "user"
+                      ? "bg-action text-action-on rounded-tr-none"
+                      : "bg-surface-card border border-surface-border text-foreground rounded-tl-none"
+                  }`}
+                >
+                  {msg.role === "user" ? (
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  ) : (
+                    <div className="w-full">
+                      {msg.content ? (
+                        <>
+                          <MarkdownBubble content={msg.content} />
+                          {isStreaming && index === messages.length - 1 && (
+                            <span className="inline-block w-2 h-4 ml-1 bg-surface-card animate-pulse align-middle"></span>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2 text-contrast-helper py-1">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span className="text-xs">Thinking...</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </SurfaceBase>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

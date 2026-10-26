@@ -1,5 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   UserRole,
@@ -15,6 +15,9 @@ const getSettings = vi.fn();
 const getUserMe = vi.fn();
 const getCliOAuthStatus = vi.fn();
 const getChatHistory = vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]);
+const streamChatMessage = vi.fn<(...args: unknown[]) => AbortController>(
+  () => new AbortController(),
+);
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "rec-1" }),
@@ -25,7 +28,7 @@ vi.mock("@/lib/api", () => ({
   getUserMe: () => getUserMe(),
   getChatHistory: () => getChatHistory(),
   clearChatHistory: () => Promise.resolve({ status: "success" }),
-  streamChatMessage: () => new AbortController(),
+  streamChatMessage: (...args: unknown[]) => streamChatMessage(...args),
   getTags: () => Promise.resolve([]),
 }));
 
@@ -73,8 +76,6 @@ const renderPanel = (
 
 describe("ChatPanel AI availability gate", () => {
   beforeEach(() => {
-    // jsdom has no layout engine, so the auto-scroll effect needs a stub.
-    Element.prototype.scrollTo = vi.fn();
     getSettings.mockReset();
     getUserMe.mockReset();
     getCliOAuthStatus.mockReset();
@@ -151,7 +152,6 @@ describe("ChatPanel AI availability gate", () => {
 
 describe("ChatPanel empty state", () => {
   beforeEach(() => {
-    Element.prototype.scrollTo = vi.fn();
     getSettings.mockReset();
     getUserMe.mockReset();
     getCliOAuthStatus.mockReset();
@@ -195,32 +195,180 @@ describe("ChatPanel auto-scroll", () => {
     updated_at: "2026-05-25T11:54:00Z",
   });
 
+  // jsdom has no layout, so each test gives the list a box. The list's own
+  // scrollTo moves scrollTop within it and fires the scroll event a browser
+  // would, and `resize` reports what a ResizeObserver would see after layout.
+  type Box = { scrollHeight: number; clientHeight: number; scrollTop: number };
+  let observers: { callback: ResizeObserverCallback; targets: Set<Element> }[];
+
+  const resize = (...targets: Element[]) =>
+    act(() => {
+      for (const { callback, targets: watched } of observers) {
+        const entries = targets
+          .filter((target) => watched.has(target))
+          .map((target) => ({ target }) as ResizeObserverEntry);
+        if (entries.length > 0) callback(entries, {} as ResizeObserver);
+      }
+    });
+
+  const readerScrollsTo = (list: HTMLElement, top: number) => {
+    list.scrollTop = top;
+    fireEvent.scroll(list);
+  };
+
+  /** Opens the panel on its history and lays the list out at 1000 over 400 px. */
+  const openHistory = async () => {
+    renderPanel(SERVER_READY);
+    await screen.findByText("She agreed to send the draft by Friday.");
+    const list = screen.getByTestId("chat-messages");
+    const content = list.firstElementChild as HTMLElement;
+    const box: Box = { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 };
+    const clamp = (top: number) => Math.max(0, Math.min(top, box.scrollHeight - box.clientHeight));
+    Object.defineProperties(list, {
+      scrollHeight: { configurable: true, get: () => box.scrollHeight },
+      clientHeight: { configurable: true, get: () => box.clientHeight },
+      scrollTop: {
+        configurable: true,
+        get: () => box.scrollTop,
+        set: (top: number) => {
+          box.scrollTop = clamp(top);
+        },
+      },
+    });
+    const scrollTo = vi.fn((options: ScrollToOptions) => {
+      box.scrollTop = clamp(options.top ?? 0);
+      fireEvent.scroll(list);
+    });
+    list.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+    // The first layout after the history renders: the landing.
+    resize(list, content);
+    return { list, content, box, scrollTo };
+  };
+
+  const send = (text: string) => {
+    const input = screen.getByPlaceholderText("Ask a question...");
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  };
+
   beforeEach(() => {
     getSettings.mockReset();
     getUserMe.mockReset();
     getCliOAuthStatus.mockReset();
+    streamChatMessage.mockClear();
     getChatHistory.mockResolvedValue([
       message(1, "user", "What did Alice Example agree to?"),
       message(2, "assistant", "She agreed to send the draft by Friday."),
     ]);
+    // Any scroll other than the list's own would land on these.
+    Element.prototype.scrollTo = vi.fn();
+    Element.prototype.scrollIntoView = vi.fn();
+    observers = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private entry: (typeof observers)[number];
+        constructor(callback: ResizeObserverCallback) {
+          this.entry = { callback, targets: new Set() };
+          observers.push(this.entry);
+        }
+        observe(target: Element) {
+          this.entry.targets.add(target);
+        }
+        unobserve(target: Element) {
+          this.entry.targets.delete(target);
+        }
+        disconnect() {
+          this.entry.targets.clear();
+        }
+      },
+    );
   });
 
-  // scrollIntoView scrolls every ancestor with overflow as well, so when the
-  // app shell had a few hundred stray pixels of it, opening a recording slid
-  // every column but the nav off screen. Only the message list may move.
-  it("scrolls the message list itself and never calls scrollIntoView", async () => {
-    const scrollTo = vi.fn();
-    const scrollIntoView = vi.fn();
-    Element.prototype.scrollTo = scrollTo;
-    Element.prototype.scrollIntoView = scrollIntoView;
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
-    renderPanel(SERVER_READY);
-    await screen.findByText("She agreed to send the draft by Friday.");
+  // A pin that ran before the side column's split and the Markdown bubbles
+  // settled left the list hundreds of px short of the newest message.
+  it("lands on the newest message and re-pins while the list or its content resizes", async () => {
+    const { list, content, box, scrollTo } = await openHistory();
+    expect(box.scrollTop).toBe(600);
 
-    const list = screen.getByTestId("chat-messages");
-    await waitFor(() => expect(scrollTo.mock.contexts).toContain(list));
-    expect(scrollTo.mock.contexts.every((context) => context === list)).toBe(true);
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: list.scrollHeight, behavior: "smooth" });
-    expect(scrollIntoView).not.toHaveBeenCalled();
+    // The answers' Markdown renders after mount and adds height.
+    box.scrollHeight = 1400;
+    resize(content);
+    expect(box.scrollTop).toBe(1000);
+
+    // The split settles, or the reader drags it, and the list gets shorter.
+    box.clientHeight = 300;
+    resize(list);
+    expect(box.scrollTop).toBe(1100);
+
+    // Nothing has been sent, so every pin is instant and none can be cut short.
+    expect(scrollTo.mock.calls.map(([options]) => options.behavior)).toEqual([
+      "instant",
+      "instant",
+      "instant",
+    ]);
+    // scrollIntoView would also scroll every ancestor, the app shell included.
+    expect(Element.prototype.scrollTo).not.toHaveBeenCalled();
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("leaves a reader who has scrolled up where they are", async () => {
+    const { list, content, box, scrollTo } = await openHistory();
+
+    // Even a nudge up is the reader's own.
+    readerScrollsTo(list, 590);
+    box.scrollHeight = 1400;
+    resize(content);
+    box.clientHeight = 350;
+    resize(list);
+    expect(box.scrollTop).toBe(590);
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+
+    // Coming back near the bottom pins it again.
+    readerScrollsTo(list, 1030);
+    box.scrollHeight = 1500;
+    resize(content);
+    expect(box.scrollTop).toBe(1150);
+  });
+
+  it("follows a sent message and its streamed answer while the reader is at the bottom", async () => {
+    const { list, content, box, scrollTo } = await openHistory();
+
+    // Sending brings a reader who had scrolled up back down, and the new
+    // message glides in.
+    readerScrollsTo(list, 100);
+    send("And Bob Example?");
+    expect(streamChatMessage).toHaveBeenCalledTimes(1);
+    box.scrollHeight = 1200;
+    resize(content);
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1200, behavior: "smooth" });
+    expect(box.scrollTop).toBe(800);
+
+    // A glide's own scroll events, part way down, do not release the list.
+    box.scrollHeight = 1600;
+    readerScrollsTo(list, 900);
+    const onToken = streamChatMessage.mock.calls[0][2] as (token: string) => void;
+    act(() => onToken("He will book the follow-up."));
+    resize(content);
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1600, behavior: "smooth" });
+    expect(box.scrollTop).toBe(1200);
+
+    // The list's own size still jumps rather than glides.
+    box.clientHeight = 300;
+    resize(list);
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1600, behavior: "instant" });
+
+    // Scrolling up to read mid-stream stops the following.
+    readerScrollsTo(list, 1000);
+    const calls = scrollTo.mock.calls.length;
+    box.scrollHeight = 1700;
+    act(() => onToken(" On Friday."));
+    resize(content);
+    expect(scrollTo).toHaveBeenCalledTimes(calls);
+    expect(box.scrollTop).toBe(1000);
   });
 });
