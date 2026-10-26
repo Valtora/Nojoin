@@ -30,6 +30,7 @@ from backend.utils.document_storage import (
 from backend.utils.invitation_roles import resolve_invitation_role
 from backend.utils.rate_limit import enforce_rate_limit
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
+from backend.utils.speaker_frames import delete_frames_off_loop
 from backend.utils.time import utc_now
 
 router = APIRouter()
@@ -385,6 +386,7 @@ async def delete_user(
     document_paths = await recording_document_paths(
         db, [recording.id for recording in recordings]
     )
+    public_ids = [recording.public_id for recording in recordings]
 
     try:
         logger.info(f"User {current_user.id} deleting user {user_id}")
@@ -405,6 +407,7 @@ async def delete_user(
     # error. Neither call raises, so the document files still go.
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
+    await delete_frames_off_loop(public_ids, reason="account deleted")
     return user
 
 

@@ -31,6 +31,8 @@ def _lane(monkeypatch, tmp_path):
     transcript = _FakeTranscript()
     session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, transcript))
     monkeypatch.setitem(config_manager.config, "live_speaker_labels", "auto")
+    # The lane's minimal DB fake has no utterance-event query interface.
+    monkeypatch.setattr(step, "has_label_history", lambda recording_id: False)
     return temp_dir, audio_store, transcript, session
 
 

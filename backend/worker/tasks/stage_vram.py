@@ -11,6 +11,9 @@ next with nothing to allocate. The models reload lazily on the next task.
 import gc
 import logging
 from collections.abc import Callable
+from concurrent.futures import CancelledError
+
+from backend.processing.engines.errors import is_task_interruption
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,8 @@ def _release_on_gpu(release: Callable[[], None], models: str) -> None:
             torch.cuda.empty_cache()
         logger.info("Released %s VRAM.", models)
     except Exception as e:  # noqa: BLE001 -- boundary: VRAM release is best-effort
+        if is_task_interruption(e) or isinstance(e, CancelledError):
+            raise
         logger.error("Error releasing %s VRAM: %s", models, e)
 
 
@@ -37,6 +42,9 @@ def release_diarization_vram() -> None:
     """Free the diarisation pipeline once it has run, before ASR loads."""
 
     def release() -> None:
+        from backend.processing.final_diarization import release_final_native
+
+        release_final_native()
         from backend.processing.diarize import release_pipeline_cache
 
         release_pipeline_cache()

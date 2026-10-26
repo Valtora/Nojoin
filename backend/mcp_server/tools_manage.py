@@ -227,7 +227,8 @@ async def restore_recording(recording_id: str) -> dict[str, Any]:
 @mcp_tool(scope=MCP_WRITE_SCOPE)
 async def trash_recording(recording_id: str) -> dict[str, Any]:
     """Move a recording to the bin (soft delete). Reversible with
-    restore_recording; nothing is destroyed. This is the strongest
+    restore_recording; nothing of the meeting is destroyed, though any
+    screen study frames it holds are deleted. This is the strongest
     deletion the connector offers: emptying the bin permanently is only
     possible in the web app.
 

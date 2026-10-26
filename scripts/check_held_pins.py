@@ -53,6 +53,8 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from nemotron_compatibility import check_nemotron_compatibility
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPI_TIMEOUT_SECONDS = 30
 
@@ -554,6 +556,7 @@ def main() -> int:
     problems += check_hold_records()
     problems += check_interpreter()
     problems += check_hooks()
+    problems += check_nemotron_compatibility(REPO_ROOT)
     results, failures = ((), []) if args.offline else check_releases(HOLDS)
     results = list(results)
     actionable = bool(problems or [r for r in results if r["status"] != "held"])

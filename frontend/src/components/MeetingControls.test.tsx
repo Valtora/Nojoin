@@ -44,6 +44,14 @@ vi.mock("./LiveMeetingControls", () => ({
   default: () => <div data-testid="live-controls" />,
 }));
 
+const studyAvailability = vi.hoisted(() => ({
+  value: null as { rate_hz: number; retention_days: number; max_frame_bytes: number } | null,
+}));
+
+vi.mock("@/lib/capture/screenStudy/availability", () => ({
+  useScreenStudyAvailability: (enabled: boolean) => (enabled ? studyAvailability.value : null),
+}));
+
 describe("MeetingControls", () => {
   beforeEach(() => {
     routerPush.mockReset();
@@ -57,6 +65,7 @@ describe("MeetingControls", () => {
       supported: true,
       mode: "shared_audio",
     };
+    studyAvailability.value = null;
   });
 
   it("toasts start failures instead of rendering them inline", async () => {
@@ -132,5 +141,91 @@ describe("MeetingControls", () => {
     expect(
       screen.getByRole("button", { name: "Paused recording needs attention" }),
     ).toBeDisabled();
+  });
+
+  describe("screen study opt-in", () => {
+    const available = { rate_hz: 2, retention_days: 14, max_frame_bytes: 2_097_152 };
+
+    it("is not offered unless the installation allows it for this account", () => {
+      render(<MeetingControls variant="dashboard" />);
+      expect(screen.queryByRole("checkbox", { name: /Screen study/ })).not.toBeInTheDocument();
+    });
+
+    it("is never offered for a phone's microphone-only capture", () => {
+      studyAvailability.value = available;
+      captureState.support = { supported: true, mode: "microphone_only" };
+      render(<MeetingControls variant="dashboard" />);
+      expect(screen.queryByRole("checkbox", { name: /Screen study/ })).not.toBeInTheDocument();
+    });
+
+    it.each(["dashboard", "sidebar"] as const)(
+      "is offered unticked at Start Meeting (%s)",
+      (variant) => {
+        studyAvailability.value = available;
+        render(<MeetingControls variant={variant} />);
+        const box = screen.getByRole("checkbox", { name: /Screen study/ });
+        expect(box).not.toBeChecked();
+        expect(screen.getByText(/deleted after 14 days|deleted 14 days after/)).toBeInTheDocument();
+      },
+    );
+
+    it("starts a study meeting only when ticked, at the installation's rate", async () => {
+      studyAvailability.value = available;
+      start.mockResolvedValue(null);
+      render(<MeetingControls variant="dashboard" />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+      await waitFor(() => expect(start).toHaveBeenCalledWith(""));
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /Screen study/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+      await waitFor(() =>
+        expect(start).toHaveBeenLastCalledWith("", { screenStudy: { rateHz: 2 } }),
+      );
+    });
+
+    it("is unticked again for the next meeting", async () => {
+      studyAvailability.value = available;
+      start.mockResolvedValue(null);
+      render(<MeetingControls variant="sidebar" />);
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /Screen study/ }));
+      expect(screen.getByRole("checkbox", { name: /Screen study/ })).toBeChecked();
+      fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+      await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole("checkbox", { name: /Screen study/ })).not.toBeChecked();
+    });
+
+    it("is not offered while a meeting is recording", () => {
+      studyAvailability.value = available;
+      captureState.runtimeActive = true;
+      captureState.status = "recording";
+      render(<MeetingControls variant="sidebar" />);
+      expect(screen.queryByRole("checkbox", { name: /Screen study/ })).not.toBeInTheDocument();
+    });
+
+    it("names the installation's rate", () => {
+      studyAvailability.value = { ...available, rate_hz: 2 };
+      render(<MeetingControls variant="dashboard" />);
+      expect(screen.getByText(/about twice a second/)).toBeInTheDocument();
+    });
+
+    it("is unticked again after any meeting goes live, a resume included", () => {
+      studyAvailability.value = available;
+      const { rerender } = render(<MeetingControls variant="sidebar" />);
+      fireEvent.click(screen.getByRole("checkbox", { name: /Screen study/ }));
+      expect(screen.getByRole("checkbox", { name: /Screen study/ })).toBeChecked();
+
+      // A paused recording resumed from its dialog, never through Start Meeting.
+      captureState.runtimeActive = true;
+      captureState.status = "recording";
+      rerender(<MeetingControls variant="sidebar" />);
+      captureState.runtimeActive = false;
+      captureState.status = "idle";
+      rerender(<MeetingControls variant="sidebar" />);
+
+      expect(screen.getByRole("checkbox", { name: /Screen study/ })).not.toBeChecked();
+    });
   });
 });

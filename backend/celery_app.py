@@ -89,6 +89,7 @@ def release_worker_model_caches() -> None:
         logger.info("Releasing worker model caches...")
 
         loaded_release_hooks = (
+            ("backend.processing.nemotron_model", "release_nemotron_model_cache"),
             ("backend.processing.transcribe", "release_model_cache"),
             ("backend.processing.diarize", "release_pipeline_cache"),
             ("backend.processing.embedding_core", "release_embedding_model_cache"),
@@ -240,6 +241,8 @@ TASK_ROUTES = {
     "backend.worker.tasks.ensure_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.renew_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.cleanup_temp_recordings": {"queue": IO_QUEUE},
+    # Deletes screen study frames that are due: local disk work and one query.
+    "backend.worker.tasks.sweep_speaker_frames_task": {"queue": IO_QUEUE},
     # Local disk work on the model volume. Belongs on a worker at all because
     # the API mounts that volume read-only.
     "backend.worker.tasks.delete_model_task": {"queue": IO_QUEUE},
@@ -286,6 +289,13 @@ celery_app.conf.update(
         "cleanup-temp-recordings-every-24h": {
             "task": "backend.worker.tasks.cleanup_temp_recordings",
             "schedule": 86400.0,
+        },
+        # Screen study frames (#653) go 14 days after their recording stops.
+        # Hourly, so none outlives its date by more than an hour; a run with
+        # no frames lists one empty directory.
+        "sweep-speaker-frames-every-1h": {
+            "task": "backend.worker.tasks.sweep_speaker_frames_task",
+            "schedule": 3600.0,
         },
         # Reclaims exported archives, uploaded archives, abandoned multipart uploads and
         # any restore staging left behind by a worker that died mid-restore.

@@ -1,3 +1,5 @@
+from concurrent.futures import CancelledError
+
 from backend.processing.engines.errors import (
     TranscriptionError,
     is_task_interruption,
@@ -233,7 +235,7 @@ def _run_final_diarization_stage(
     crashes finalize -- the unfiltered diarization is used instead.
     """
     from backend.processing.diarization_stats import summarize_diarization_speakers
-    from backend.processing.diarize import diarize_audio
+    from backend.processing.final_diarization import diarize_final_audio
     from backend.processing.speaker_cap import normalize_speaker_cap
 
     session = ctx.session
@@ -264,10 +266,14 @@ def _run_final_diarization_stage(
             },
             log=logger,
         ) as metric:
-            diarization_result = diarize_audio(
+            speaker_pass = {}
+            metric["payload"]["speaker_pass"] = speaker_pass
+            diarization_result = diarize_final_audio(
                 audio_path,
                 config=merged_config,
-                max_speakers=speaker_cap,
+                max_speakers=getattr(recording, "max_speakers", None),
+                status=speaker_pass,
+                recording_id=recording_id,
             )
             metric["payload"]["result_available"] = diarization_result is not None
 
@@ -453,6 +459,10 @@ def _release_pipeline_vram() -> None:
     task's finally block.
     """
     import torch
+
+    from backend.processing.final_diarization import release_final_native
+
+    release_final_native()
 
     try:
         logger.info("Releasing VRAM...")
@@ -710,6 +720,7 @@ def process_recording_task(
             update_recording_status(session, recording.id)
 
     except Exception as e:
+        interrupted = is_task_interruption(e) or isinstance(e, CancelledError)
         record_pipeline_metric(
             stage="final_processing_failed",
             recording_id=recording_id,
@@ -737,7 +748,12 @@ def process_recording_task(
             recording.processing_completed_at = None
             session.add(recording)
             session.commit()
-            update_recording_status(session, recording.id)
+            # Component state can still be pending, processing or completed;
+            # it must not overwrite an interrupted run's terminal ERROR.
+            if not interrupted:
+                update_recording_status(session, recording.id)
+        if interrupted:
+            raise
 
     finally:
         for temp_file in temp_files:

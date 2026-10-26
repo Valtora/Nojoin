@@ -44,6 +44,25 @@ def cleanup_temp_recordings(self):
         logger.exception("Storage hygiene failed; the cleanup sweeps above completed")
 
 
+@celery_app.task(
+    name="backend.worker.tasks.sweep_speaker_frames_task", base=DatabaseTask, bind=True
+)
+def sweep_speaker_frames_task(self):
+    """Delete the screen study frames that are due (#653). Hourly.
+
+    Runs whatever ``speaker_frame_sampling`` says, so switching the study off
+    never keeps a frame past its date. Logs one line per recording it deletes.
+    """
+    from backend.utils.speaker_frames.retention import sweep_speaker_frames
+
+    result = sweep_speaker_frames(self.session)
+    return {
+        "deleted_recordings": len(result.deleted_recordings),
+        "deleted_frames": result.deleted_frames,
+        "kept": result.kept,
+    }
+
+
 @celery_app.task(name="backend.worker.tasks.download_models_task", bind=True)
 def download_models_task(
     self,
@@ -53,10 +72,10 @@ def download_models_task(
     parakeet_model: str | None = None,
     canary_model: str | None = None,
     include_core: bool = True,
+    *,
+    nemotron_only: bool = False,
 ):
-    """
-    Prepare required model assets on disk without retaining models in memory.
-    """
+    """Prepare required assets on disk without retaining models in memory."""
     from backend.preload_models import download_models
 
     def progress_callback(message, progress, speed=None, eta=None, stage=None):
@@ -77,15 +96,23 @@ def download_models_task(
         whisper_model_size,
         include_core,
     )
-    download_models(
-        progress_callback=progress_callback,
-        hf_token=hf_token,
-        whisper_model_size=whisper_model_size,
-        transcription_backend=transcription_backend,
-        parakeet_model=parakeet_model,
-        canary_model=canary_model,
-        include_core=include_core,
-    )
+    try:
+        kwargs = {"nemotron_only": True} if nemotron_only else {}
+        download_models(
+            progress_callback=progress_callback,
+            hf_token=hf_token,
+            whisper_model_size=whisper_model_size,
+            transcription_backend=transcription_backend,
+            parakeet_model=parakeet_model,
+            canary_model=canary_model,
+            include_core=include_core,
+            **kwargs,
+        )
+    finally:
+        if nemotron_only:
+            from backend.utils.nemotron_lock import complete_pending
+
+            complete_pending(self.request.id)
     return {"status": "success", "message": "Model preparation complete."}
 
 
