@@ -63,6 +63,8 @@ The **People** page is your speaker library: the people Nojoin can recognise acr
 
 **Start Meeting** on the dashboard begins a recording. Desktop Chromium browsers record the shared tab, window or screen audio together with your microphone, and Chrome on Android and iOS records the phone microphone only. [CAPTURE.md](CAPTURE.md) covers supported browsers, choosing what to share, and the **Pause**, **Resume**, **Stop** and **Discard** controls.
 
+If an administrator has allowed the screen study, the installation's first Owner account sees a **Screen study** checkbox under **Start Meeting**. Ticked, it keeps frames of the shared screen for this meeting on the server for 14 days, and the live controls show them with **Stop sampling** and **Delete frames** ([Screen Study](CAPTURE.md#screen-study)).
+
 While recording, the page shows the recording controls, a live waveform, the live transcript, your notes and Meeting Edge. **Attach Docs** in the toolbar attaches documents while the meeting runs or is processing, and a note can hold a still of the shared screen or a file ([Captures](#captures)). After **Stop**, the page shows processing progress.
 
 Your notes save as you type and can be edited until notes generation starts. The AI reads them with the transcript, and the generated notes end with them under **User Notes**. A note holds up to 50,000 characters: a count appears near the limit, and longer text is not saved until you shorten it. Notes added on another device or by a connected assistant ([MCP.md](MCP.md)) are listed read-only under **Other notes**. Once the meeting is processed, **My notes** lists every note and edits any of them ([Transcript And Playback](#transcript-and-playback)).
@@ -108,7 +110,7 @@ The note saves first, then its file uploads. A file that fails to upload shows o
 
 **Use in notes** is off for every file until you turn it on, in the viewer that opens when you click or tap the file. It can be turned on for the formats **Attach Docs** takes; any other file stays on its note to download, and Nojoin never opens or shows it. Only once it is on does Nojoin read a file ([Visual Analysis](#visual-analysis), or local OCR without an AI model), and only files switched on reach the AI meeting notes, Meeting Chat and search. The notes mention one by its time, as in "(attached at 12:34)", rather than show it. Documents attached with **Attach Docs** are always read, as before. Turning a file on or off after the notes were written shows the banner that offers to regenerate them.
 
-A still holds whatever the shared screen showed, faces included. Nojoin reads the shared video only when you ask for a capture, and keeps no video otherwise.
+A still holds whatever the shared screen showed, faces included. Nojoin reads the shared video only when you ask for a capture, or for a meeting started with **Screen study** ticked ([Screen Study](CAPTURE.md#screen-study)), and keeps no video otherwise.
 
 ### Meeting Edge
 

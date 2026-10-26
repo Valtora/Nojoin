@@ -140,6 +140,14 @@ export interface StartCaptureResult {
 
 export type StartCaptureResponse = StartCaptureResult | null;
 
+export interface StartCaptureOptions {
+  /**
+   * Samples the shared screen for the screen study (#653), ticked at Start
+   * Meeting, at the installation's rate. Left out, nothing samples it.
+   */
+  screenStudy?: { rateHz: number };
+}
+
 export interface GuardedExitRequest {
   reason: "pagehide" | "beforeunload" | "route-change";
   useBeacon: boolean;
