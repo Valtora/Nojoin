@@ -196,12 +196,9 @@ DEFAULT_SYSTEM_CONFIG = {
     "transcription_backend": "whisper",  # "whisper" | "parakeet" | "canary"
     "parakeet_model": "parakeet-tdt-0.6b-v3",
     "canary_model": "nemo-canary-1b-v2",
-    # Ollama num_ctx. Sized for the hardware this project is actually
-    # self-hosted on rather than for the model's advertised maximum: a KV cache
-    # costs roughly 190 KiB per token on a 14B model, so 32768 is about 6 GB and
-    # fits alongside quantised weights on a 16 GB card. It still covers a
-    # two-hour meeting (~25-30k tokens). 131072 would need ~24 GB of cache on its
-    # own and fails to load on a consumer GPU.
+    # Ollama num_ctx, sized for consumer GPUs: a 14B model's KV cache is ~190 KiB
+    # a token, so 32768 (~6 GB) fits beside quantised weights on a 16 GB card and
+    # covers a two-hour meeting (~25-30k tokens). 131072 would need ~24 GB.
     "ollama_context_window": 32768,
     "secondary_ollama_context_window": 32768,
     "enable_live_transcription": True,
