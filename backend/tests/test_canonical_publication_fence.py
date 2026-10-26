@@ -490,6 +490,11 @@ def test_deletion_waits_without_blocking_publishers_recording_foreign_keys(
         finally:
             publisher.rollback()
         result = future.result(timeout=10)
-        assert result.id == owner_id if route == "user" else result["ok"] is True
+        if route == "user":
+            assert result.id == owner_id
+        elif route == "batch":
+            assert result.recording_ids == [public_id]
+        else:
+            assert result["ok"] is True
     with Session(engine) as session:
         assert session.get(Recording, recording_id) is None
