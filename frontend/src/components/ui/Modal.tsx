@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useEffect, type ReactNode, type RefObject } from "react";
 import { Dialog, Transition, TransitionChild } from "@headlessui/react";
 import { X } from "lucide-react";
 
@@ -21,6 +21,12 @@ interface ModalProps {
   hideCloseButton?: boolean;
   /** Blocks dismissal by scrim click or Escape. Use only for destructive confirmations mid-flight. */
   dismissible?: boolean;
+  /**
+   * Where focus goes once the modal has gone, in place of the element that
+   * opened it: read as the modal unmounts, so an action that takes the opener
+   * away sets it before closing. Null leaves focus to go back to the opener.
+   */
+  returnFocus?: RefObject<HTMLElement | null>;
   className?: string;
   children: ReactNode;
 }
@@ -52,6 +58,7 @@ export default function Modal({
   size = "md",
   hideCloseButton = false,
   dismissible = true,
+  returnFocus,
   className,
   children,
 }: ModalProps) {
@@ -62,6 +69,7 @@ export default function Modal({
         className="relative z-[var(--z-modal)]"
         onClose={dismissible ? onClose : () => {}}
       >
+        {returnFocus ? <ReturnFocus to={returnFocus} /> : null}
         <TransitionChild
           as={Fragment}
           enter="ease-out duration-200"
@@ -138,4 +146,21 @@ export default function Modal({
       </Dialog>
     </Transition>
   );
+}
+
+/**
+ * Moves focus to `to` as the dialog unmounts. Headless UI puts focus back on
+ * the opener in a microtask then, so this waits a task to land after it.
+ */
+function ReturnFocus({ to }: { to: RefObject<HTMLElement | null> }) {
+  useEffect(
+    () => () => {
+      window.setTimeout(() => {
+        const target = to.current;
+        if (target?.isConnected) target.focus({ preventScroll: true });
+      });
+    },
+    [to],
+  );
+  return null;
 }

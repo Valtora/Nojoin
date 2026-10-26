@@ -580,7 +580,7 @@ only. Build a surface from these before reaching for raw elements.
 | `Card` | The resting surface. `interactive` turns on the tint-and-border hover. |
 | `Badge`, `StatusBadge` | Pills. `StatusBadge` maps a `RecordingStatus` to a tone, a glyph and a label. |
 | `Input`, `Select` | Form fields, both built on the shared `fieldChrome` helper. `Select` is a native select, for the platform picker on a phone; it relies on `color-scheme` (see [Themes](#themes)). |
-| `Modal` | Every dialog. Wraps the Headless UI dialog for the focus trap, scroll lock, Escape handling and portal, and adds the plain scrim, the float surface and shadow, `--z-modal`, and a height cap so a tall modal keeps its actions on screen on a phone. |
+| `Modal` | Every dialog. Wraps the Headless UI dialog for the focus trap, scroll lock, Escape handling and portal, and adds the plain scrim, the float surface and shadow, `--z-modal`, and a height cap so a tall modal keeps its actions on screen on a phone. Headless UI puts focus back on the element that opened the dialog; an action that removes that element sets `returnFocus` first, and focus goes there once the dialog has gone. |
 | `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Widgets on the same tokens. |
 | `useAnchoredPanel` | Positions a dropdown or popover against its trigger with `position: fixed`, flipping above when there is more room and clamping to the viewport, so a panel opened inside a modal is not clipped. |
 | `FitText` | A single line that must fit its container, such as the meeting title. Steps the font down from a designed size to a readability floor, then wraps to two clamped lines. |

@@ -287,13 +287,15 @@ export default function LiveTranscriptPanel({
             ref={scrollContainerRef}
             onScroll={handleScroll}
             data-testid="live-transcript-scroll"
+            // Focus lands here when a note file's Remove takes away the button pressed.
+            tabIndex={-1}
             // The floor holds only in the stacked layout, where the page scrolls
             // and a short transcript would simply leave a gap. From 54rem the
             // column has a definite height and this module absorbs whatever the
             // notes and documents cards leave, which on a short window is less
             // than 14rem. A floor there would overflow the card and paint across
             // the notes card, so `min-h-0` lets the window take the card exactly.
-            className="relative min-h-[14rem] flex-1 overflow-y-auto @min-[54rem]:min-h-0"
+            className="relative min-h-[14rem] flex-1 overflow-y-auto outline-none @min-[54rem]:min-h-0"
           >
             <div className="flex min-h-full flex-col py-4 pl-4 pr-8">
               {isEmpty ? (
