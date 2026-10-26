@@ -197,7 +197,8 @@ async def test_startup_prepares_models_once_an_account_exists(monkeypatch) -> No
 
     await backend_main.queue_startup_model_preparation()
 
-    assert len(calls) == 1
+    # The same core preparation startup queued before it learned to wait.
+    assert calls == [{"target": "core"}]
 
 
 @pytest.mark.anyio
