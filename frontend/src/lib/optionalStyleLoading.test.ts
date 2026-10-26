@@ -61,7 +61,7 @@ describe("optional stylesheet via shipped prepaint script", () => {
     expect(currentLink()).toBe(link);
     expect(document.querySelectorAll(`#${id}`)).toHaveLength(1);
     expect(append).toHaveBeenCalledTimes(1);
-    expect(root.dataset.style).toBe("depth");
+    expect(root.dataset.style).toBe("classic");
     append.mockRestore();
   });
 
@@ -77,34 +77,67 @@ describe("optional stylesheet via shipped prepaint script", () => {
     expect(root.style.opacity).toBe("0.45");
   });
 
-  it("restores an originally transparent page and bounds a stalled request", () => {
+  it("restores an originally transparent page after the grace period", () => {
     root.style.opacity = "0";
     apply("depth");
-    vi.advanceTimersByTime(10000);
+    vi.advanceTimersByTime(250);
 
     expect(root.style.opacity).toBe("0");
     expect(root.style.getPropertyPriority("opacity")).toBe("");
-    expect(currentLink()).toBeNull();
+    expect(currentLink()).not.toBeNull();
+    expect(root.dataset.style).toBe("default");
   });
 
-  it("releases an absent inline opacity on timeout and retries a failed link", () => {
-    apply("classic");
-    const failed = currentLink();
-    vi.advanceTimersByTime(10000);
-    expect(root.style.opacity).toBe("");
-    expect(currentLink()).toBeNull();
+  it.each(["classic", "depth"])("reveals Default within 250 ms for stalled %s, then applies a late sheet", (style) => {
+    apply(style);
+    const pending = currentLink()!;
+    vi.advanceTimersByTime(249);
+    expect(root.style.opacity).toBe("0");
+    expect(pending.getAttribute("blocking")).toBe("render");
 
-    apply("depth");
-    expect(currentLink()).not.toBe(failed);
+    vi.advanceTimersByTime(1);
+    expect(root.style.opacity).toBe("");
+    expect(root.dataset.style).toBe("default");
+    expect(pending.hasAttribute("blocking")).toBe(false);
+    expect(currentLink()).toBe(pending);
+    expect(pending.dataset.uiStyleState).toBe("loading");
+    expect(localStorage.getItem("nojoin-style")).toBe(style);
+
+    vi.advanceTimersByTime(10000);
+    pending.dispatchEvent(new Event("load"));
+    expect(root.dataset.style).toBe(style);
+    expect(root.style.opacity).toBe("");
+    expect(currentLink()).toBe(pending);
+    expect(console.warn).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["classic", "depth"])("never reveals Default when %s loads within the grace period", (style) => {
+    apply(style);
+    const setAttribute = vi.spyOn(root, "setAttribute");
+    vi.advanceTimersByTime(249);
     expect(root.style.opacity).toBe("0");
     currentLink()!.dispatchEvent(new Event("load"));
+
+    expect(root.dataset.style).toBe(style);
     expect(root.style.opacity).toBe("");
+    vi.advanceTimersByTime(10000);
+    expect(setAttribute).not.toHaveBeenCalledWith("data-style", "default");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("ignores callbacks from a timed-out render-blocking request", () => {
+  it.each([0, 250])("reveals Default on error after %i ms and permits retry", (delay) => {
     apply("classic");
     const obsolete = currentLink()!;
-    vi.advanceTimersByTime(10000);
+    vi.advanceTimersByTime(delay);
+    obsolete.dispatchEvent(new Event("error"));
+    expect(root.dataset.style).toBe("default");
+    expect(root.style.opacity).toBe("");
+    expect(currentLink()).toBeNull();
+    expect(obsolete.hasAttribute("blocking")).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+
     apply("depth");
     const latest = currentLink();
 
@@ -160,6 +193,24 @@ describe("optional stylesheet via shipped prepaint script", () => {
 });
 
 describe("prepaint/runtime cooperation", () => {
+  it("does not restart the grace period when hydration reuses a pending request", () => {
+    prepaint("classic");
+    const link = currentLink()!;
+    vi.advanceTimersByTime(200);
+    applyUiStyle("classic");
+    applyUiStyle("depth");
+
+    vi.advanceTimersByTime(49);
+    expect(root.style.opacity).toBe("0");
+    vi.advanceTimersByTime(1);
+    expect(root.style.opacity).toBe("");
+    expect(root.dataset.style).toBe("default");
+    expect(currentLink()).toBe(link);
+    expect(link.hasAttribute("blocking")).toBe(false);
+    link.dispatchEvent(new Event("load"));
+    expect(root.dataset.style).toBe("depth");
+  });
+
   it("reuses the prepaint request through hydration and style changes", () => {
     prepaint("classic");
     const link = currentLink();
@@ -172,7 +223,7 @@ describe("prepaint/runtime cooperation", () => {
     expect(root.dataset.style).toBe("depth");
   });
 
-  it.each(["load", "error", "timeout", "default"])("retains prepaint guard ownership through runtime reuse: %s", (event) => {
+  it.each(["load", "error", "grace", "default"])("retains prepaint guard ownership through runtime reuse: %s", (event) => {
     root.style.setProperty("opacity", "0.45", "important");
     prepaint("classic");
     const original = currentLink()!;
@@ -181,14 +232,21 @@ describe("prepaint/runtime cooperation", () => {
     expect(currentLink()).toBe(original);
     expect(root.dataset.style).toBe("classic");
 
-    if (event === "timeout") vi.advanceTimersByTime(10000);
+    if (event === "grace") vi.advanceTimersByTime(250);
     else if (event === "default") applyUiStyle("default");
     else original.dispatchEvent(new Event(event));
 
     expect(root.style.opacity).toBe("0.45");
     expect(root.style.getPropertyPriority("opacity")).toBe("important");
-    expect(root.dataset.style).toBe(event === "load" ? "depth" : event === "default" ? "default" : "classic");
-    if (event !== "load") {
+    expect(root.dataset.style).toBe(event === "load" ? "depth" : "default");
+    if (event === "grace") {
+      expect(currentLink()).toBe(original);
+      applyUiStyle("classic");
+      expect(root.dataset.style).toBe("default");
+      expect(root.style.opacity).toBe("0.45");
+      original.dispatchEvent(new Event("load"));
+      expect(root.dataset.style).toBe("classic");
+    } else if (event !== "load") {
       expect(currentLink()).toBeNull();
       applyUiStyle("depth");
       const latest = currentLink()!;
@@ -199,7 +257,7 @@ describe("prepaint/runtime cooperation", () => {
       latest.dispatchEvent(new Event("load"));
       expect(root.dataset.style).toBe("depth");
     }
-    expect(console.warn).toHaveBeenCalledTimes(event === "error" || event === "timeout" ? 1 : 0);
+    expect(console.warn).toHaveBeenCalledTimes(event === "error" ? 1 : 0);
   });
 
   it.each(["missing", "blocked"])("does not request optional CSS with %s storage", (storage) => {

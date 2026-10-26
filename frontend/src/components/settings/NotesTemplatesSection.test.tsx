@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 const listNotesTemplates = vi.fn();
 
@@ -39,6 +40,31 @@ const listResponse = (isInstallDefault: boolean) => ({
 describe("NotesTemplatesSection install default", () => {
   beforeEach(() => {
     listNotesTemplates.mockReset();
+  });
+
+  it("keeps the built-in fill in agreement after loading and changing the selection", async () => {
+    listNotesTemplates.mockResolvedValue(listResponse(false));
+    const onPersist = vi.fn();
+    const view = (notes_template_id: number | null) => (
+      <NotesTemplatesSection settings={{ notes_template_id }} onPersist={onPersist} />
+    );
+    const { baseElement, rerender } = render(view(null));
+    await screen.findByText("Board pack");
+    const builtin = screen.getByRole("button", { name: /Nojoin default/ });
+    expect(builtin).toHaveClass("bg-action-tint");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Board pack.*Shared/ }));
+    expect(onPersist).toHaveBeenLastCalledWith({ notes_template_id: 7 });
+    rerender(view(7));
+    expect(builtin).not.toHaveClass("bg-action-tint");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
+
+    fireEvent.click(builtin);
+    expect(onPersist).toHaveBeenLastCalledWith({ notes_template_id: null });
+    rerender(view(null));
+    expect(builtin).toHaveClass("bg-action-tint");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
   });
 
   // Issue #149: the badge is server state, so without a refetch a successful
