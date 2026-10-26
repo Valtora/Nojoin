@@ -9,11 +9,12 @@ import {
   type User,
 } from "@/types";
 import ChatPanel from "./ChatPanel";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 const getSettings = vi.fn();
 const getUserMe = vi.fn();
 const getCliOAuthStatus = vi.fn();
-const getChatHistory = vi.fn((): Promise<ChatMessage[]> => Promise.resolve([]));
+const getChatHistory = vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]);
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "rec-1" }),
@@ -154,6 +155,20 @@ describe("ChatPanel empty state", () => {
     getSettings.mockReset();
     getUserMe.mockReset();
     getCliOAuthStatus.mockReset();
+    getChatHistory.mockReset().mockResolvedValue([]);
+  });
+
+  it("checks user and assistant fills after the history arrives", async () => {
+    getChatHistory.mockResolvedValue([
+      { role: "user", content: "Summarise the meeting" },
+      { role: "assistant", content: "The team agreed the agenda." },
+    ]);
+    const { baseElement } = renderPanel(SERVER_READY);
+    const user = await screen.findByText("Summarise the meeting");
+    const assistant = await screen.findByText("The team agreed the agenda.");
+    expect(user.closest('[data-ui="surface"]')).toHaveClass("bg-action");
+    expect(assistant.closest('[data-ui="surface"]')).toHaveClass("bg-surface-card");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
   });
 
   // The helper text token is pitched to clear 4.5:1 on the card on its own.

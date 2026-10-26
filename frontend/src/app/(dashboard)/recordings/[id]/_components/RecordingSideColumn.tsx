@@ -184,6 +184,7 @@ export default function RecordingSideColumn({
     return (
       <div className="flex h-full flex-col">
         <ButtonBase
+          data-ui-fill="card"
           onClick={() => setSpeakerPanelCollapsed(false)}
           className="flex h-9 w-full shrink-0 items-center gap-2 border-b border-surface-border bg-surface-card px-3 text-xs font-medium text-contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground"
           aria-expanded={false}
@@ -210,6 +211,7 @@ export default function RecordingSideColumn({
           <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} />
         </div>
         <ButtonBase
+          data-ui-fill="card"
           onClick={() => setChatPanelCollapsed(false)}
           className="flex h-9 w-full shrink-0 items-center gap-2 border-t border-surface-border bg-surface-card px-3 text-xs font-medium text-contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground"
           aria-expanded={false}

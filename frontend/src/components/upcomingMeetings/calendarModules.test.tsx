@@ -45,6 +45,7 @@ vi.mock("@/lib/timezone", async () => {
 import AgendaCard from "./AgendaCard";
 import MonthGridCard from "./MonthGridCard";
 import { useCalendarDashboard } from "./useCalendarDashboard";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 /**
  * The dashboard's arrangement in miniature: one hook call feeding both modules.
@@ -179,6 +180,12 @@ describe("calendar dashboard modules", () => {
 
     // The agenda opens scoped to today rather than to the whole month.
     expect(screen.getByText(/Monday 15 June/)).toBeInTheDocument();
+    const grid = screen.getByText("Calendar").closest<HTMLElement>('[data-ui="surface"]')!;
+    const today = within(grid).getByRole("button", { name: "15" });
+    const next = within(grid).getByRole("button", { name: "16" });
+    expect(today).toHaveClass("bg-action");
+    expect(next).toHaveClass("bg-surface-inset");
+    expect(fillMarkerViolations(grid)).toEqual([]);
 
     fireEvent.click(screen.getByRole("button", { name: "Whole month" }));
     expect(screen.queryByText(/Monday 15 June/)).not.toBeInTheDocument();
@@ -186,6 +193,12 @@ describe("calendar dashboard modules", () => {
     // Picking a day in the grid is what scopes the agenda back to a day.
     fireEvent.click(screen.getByRole("button", { name: "16" }));
     expect(screen.getByText(/Tuesday 16 June/)).toBeInTheDocument();
+    expect(next).toHaveClass("bg-action-tint");
+    expect(today).toHaveClass("bg-action");
+    expect(fillMarkerViolations(grid)).toEqual([]);
+    fireEvent.click(within(grid).getByRole("button", { name: "17" }));
+    expect(next).toHaveClass("bg-surface-inset");
+    expect(fillMarkerViolations(grid)).toEqual([]);
   });
 
   it("shows upcoming items in the month agenda and reveals past items on demand", async () => {

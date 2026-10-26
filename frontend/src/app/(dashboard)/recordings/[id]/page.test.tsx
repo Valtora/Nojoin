@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { matchesStyleDeclaration } from "@/test/styleMarkerContracts";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 import {
   act,
@@ -777,7 +778,9 @@ describe("RecordingPage (detail)", () => {
     fireEvent.click(within(tablist).getByRole("tab", { name: "Notes" }));
     expect(setActivePanel).toHaveBeenLastCalledWith("notes");
 
+    expect(fillMarkerViolations(document.querySelector("header")!)).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: "Show meeting actions" }));
+    expect(fillMarkerViolations(document.querySelector("header")!)).toEqual([]);
     expect(screen.queryByRole("button", { name: "Speakers" })).toBeNull();
   });
 
