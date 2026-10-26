@@ -260,6 +260,54 @@ describe("a note's file", () => {
     expect(lastNotice()).toBe("File removed. Its note stays.");
   });
 
+  describe("focus once the viewer closes", () => {
+    const captioned = { ...note("slide", 65_000, file()), body: "Budget slide" };
+    const Page = ({ shown }: { shown: TimelineNote }) => (
+      <NoteFilesProvider recordingId={RECORDING} notes={[shown]} noteEdits={noteEdits}>
+        <div tabIndex={-1} data-testid="section">
+          <NoteFile noteId={shown.id} attachment={shown.attachment} />
+        </div>
+      </NoteFilesProvider>
+    );
+    const openFromItsButton = async () => {
+      const opener = screen.getByRole("button", { name: "Open screen-capture.png" });
+      opener.focus();
+      fireEvent.click(opener);
+      return { opener, viewer: await screen.findByRole("dialog") };
+    };
+
+    it.each([
+      ["before the viewer has gone", true],
+      ["after the viewer has gone", false],
+    ])("goes to the file's section when Remove takes its button away, the list back %s", async (_when, early) => {
+      removeNoteFile.mockResolvedValue({ note: { ...captioned, attachment: null } });
+      const { rerender } = render(<Page shown={captioned} />);
+      const { viewer } = await openFromItsButton();
+      // The page's list comes back without the file, and its button goes.
+      const listed = () => rerender(<Page shown={{ ...captioned, attachment: null }} />);
+
+      fireEvent.click(within(viewer).getByRole("button", { name: "Remove" }));
+      fireEvent.click(within(viewer).getByRole("button", { name: "Remove file" }));
+      await vi.waitFor(() => expect(lastNotice()).toBe("File removed. Its note stays."));
+      if (early) listed();
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      if (!early) listed();
+
+      expect(screen.queryByTestId("note-file")).toBeNull();
+      await vi.waitFor(() => expect(screen.getByTestId("section")).toHaveFocus());
+    });
+
+    it("goes back to the file's button on Close", async () => {
+      render(<Page shown={captioned} />);
+      const { opener, viewer } = await openFromItsButton();
+
+      fireEvent.click(within(viewer).getByRole("button", { name: "Close" }));
+
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await vi.waitFor(() => expect(opener).toHaveFocus());
+    });
+  });
+
   it("says a capture nobody captioned goes with its file, and Cancel keeps both", async () => {
     const capture = {
       ...note("still", 65_000, file({ use_in_notes: true, status: "READY" })),
