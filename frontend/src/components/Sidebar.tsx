@@ -872,7 +872,11 @@ export default function Sidebar() {
         </div>
       )}
       {!isCollapsed && (
-      <div className="flex-1 overflow-y-auto">
+      // `relative` keeps absolutely positioned descendants, such as the batch
+      // bar's sr-only status line, inside this scroller. Without it their
+      // containing block is the aside, and the full list's height leaks out
+      // as scrollable overflow on the app shell.
+      <div className="relative flex-1 overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
           <MeetingControls

@@ -56,7 +56,7 @@ export default function ChatPanel({
   const [abortController, setAbortController] =
     useState<AbortController | null>(null);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const { addNotification } = useNotificationStore();
 
   const [isAdmin, setIsAdmin] = useState(false);
@@ -126,9 +126,11 @@ export default function ChatPanel({
     }
   }, [recordingId]);
 
-  // Auto-scroll
+  // Auto-scroll the message list, and only the message list. scrollIntoView
+  // would also scroll every ancestor with overflow, the app shell included.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const list = messagesRef.current;
+    list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
   }, [messages, isStreaming]);
 
   const handleSend = async () => {
@@ -307,7 +309,11 @@ export default function ChatPanel({
         </SurfaceBase>
       )}
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 @min-[20rem]:p-4 @min-[20rem]:space-y-4">
+      <div
+        ref={messagesRef}
+        data-testid="chat-messages"
+        className="flex-1 overflow-y-auto p-3 space-y-3 @min-[20rem]:p-4 @min-[20rem]:space-y-4"
+      >
         {!recordingId ? (
           // No opacity on these empty states: the helper token is pitched to
           // clear 4.5:1 on the card, and dimming the wrapper took the text
@@ -360,7 +366,6 @@ export default function ChatPanel({
             </div>
           ))
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       <SurfaceBase data-ui-fill="card" kind="pane" className="p-3 @min-[20rem]:p-4 border-t border-surface-border bg-surface-card relative">

@@ -161,7 +161,7 @@ export default function AudioPlayer({
   const compactMockContent = (
     <div className="flex flex-col gap-2 opacity-30 pointer-events-none filter blur-[1px]">
       <div className="flex items-center justify-between gap-3">
-        <ButtonBase className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-card text-foreground shadow-card">
+        <ButtonBase data-ui-fill="card" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-card text-foreground shadow-card">
           <Play className="ml-0.5 h-5 w-5 fill-current" />
         </ButtonBase>
         <div className="h-5 w-5 rounded-full bg-surface-inset" />
@@ -196,7 +196,7 @@ export default function AudioPlayer({
         {compact ? compactMockContent : (
         <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
           {/* Mock Play Button */}
-          <ButtonBase className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
+          <ButtonBase data-ui-fill="card" className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
             <Play className="w-5 h-5 fill-current ml-0.5" />
           </ButtonBase>
           {/* Mock Timeline */}
@@ -238,7 +238,7 @@ export default function AudioPlayer({
         {compact ? compactMockContent : (
         <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
           {/* Mock Play Button */}
-          <ButtonBase className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
+          <ButtonBase data-ui-fill="card" className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
             <Play className="w-5 h-5 fill-current ml-0.5" />
           </ButtonBase>
           {/* Mock Timeline */}

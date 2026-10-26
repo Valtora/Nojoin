@@ -61,6 +61,8 @@ export default function TableMenu({ editor }: TableMenuProps) {
   return (
     <div className="relative">
       <ButtonBase
+        data-ui-fill={(isInTable || isOpen) ? "inset" : undefined}
+        data-ui-hover="inset"
         onClick={() => setIsOpen(!isOpen)}
         className={`p-2 rounded hover:bg-surface-inset transition-colors ${
           isInTable || isOpen

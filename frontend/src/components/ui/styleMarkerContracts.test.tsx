@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { paintSelectors, selectorFor } from "@/test/depthSelectors";
 import { mediaConditions, stateSelector, styleRules, styleSources } from "@/test/styleRules";
+import { renderWithFillContract as render } from "@/test/fillMarkerContracts";
 import Button from "./Button";
 import IconButton from "./IconButton";
 import Card from "./Card";

@@ -1,12 +1,20 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { UserRole, type CliOAuthStatus, type Settings, type User } from "@/types";
+import {
+  UserRole,
+  type ChatMessage,
+  type CliOAuthStatus,
+  type Settings,
+  type User,
+} from "@/types";
 import ChatPanel from "./ChatPanel";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 const getSettings = vi.fn();
 const getUserMe = vi.fn();
 const getCliOAuthStatus = vi.fn();
+const getChatHistory = vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]);
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "rec-1" }),
@@ -15,7 +23,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/api", () => ({
   getSettings: () => getSettings(),
   getUserMe: () => getUserMe(),
-  getChatHistory: () => Promise.resolve([]),
+  getChatHistory: () => getChatHistory(),
   clearChatHistory: () => Promise.resolve({ status: "success" }),
   streamChatMessage: () => new AbortController(),
   getTags: () => Promise.resolve([]),
@@ -66,7 +74,7 @@ const renderPanel = (
 describe("ChatPanel AI availability gate", () => {
   beforeEach(() => {
     // jsdom has no layout engine, so the auto-scroll effect needs a stub.
-    Element.prototype.scrollIntoView = vi.fn();
+    Element.prototype.scrollTo = vi.fn();
     getSettings.mockReset();
     getUserMe.mockReset();
     getCliOAuthStatus.mockReset();
@@ -143,10 +151,24 @@ describe("ChatPanel AI availability gate", () => {
 
 describe("ChatPanel empty state", () => {
   beforeEach(() => {
-    Element.prototype.scrollIntoView = vi.fn();
+    Element.prototype.scrollTo = vi.fn();
     getSettings.mockReset();
     getUserMe.mockReset();
     getCliOAuthStatus.mockReset();
+    getChatHistory.mockReset().mockResolvedValue([]);
+  });
+
+  it("checks user and assistant fills after the history arrives", async () => {
+    getChatHistory.mockResolvedValue([
+      { role: "user", content: "Summarise the meeting" },
+      { role: "assistant", content: "The team agreed the agenda." },
+    ]);
+    const { baseElement } = renderPanel(SERVER_READY);
+    const user = await screen.findByText("Summarise the meeting");
+    const assistant = await screen.findByText("The team agreed the agenda.");
+    expect(user.closest('[data-ui="surface"]')).toHaveClass("bg-action");
+    expect(assistant.closest('[data-ui="surface"]')).toHaveClass("bg-surface-card");
+    expect(fillMarkerViolations(baseElement)).toEqual([]);
   });
 
   // The helper text token is pitched to clear 4.5:1 on the card on its own.
@@ -159,5 +181,46 @@ describe("ChatPanel empty state", () => {
     for (let node: Element | null = guidance; node && node !== container; node = node.parentElement) {
       expect(node.className).not.toMatch(/(^|\s)opacity-/);
     }
+  });
+});
+
+describe("ChatPanel auto-scroll", () => {
+  const message = (id: number, role: ChatMessage["role"], content: string): ChatMessage => ({
+    id,
+    recording_id: "rec-1",
+    user_id: 1,
+    role,
+    content,
+    created_at: "2026-05-25T11:54:00Z",
+    updated_at: "2026-05-25T11:54:00Z",
+  });
+
+  beforeEach(() => {
+    getSettings.mockReset();
+    getUserMe.mockReset();
+    getCliOAuthStatus.mockReset();
+    getChatHistory.mockResolvedValue([
+      message(1, "user", "What did Alice Example agree to?"),
+      message(2, "assistant", "She agreed to send the draft by Friday."),
+    ]);
+  });
+
+  // scrollIntoView scrolls every ancestor with overflow as well, so when the
+  // app shell had a few hundred stray pixels of it, opening a recording slid
+  // every column but the nav off screen. Only the message list may move.
+  it("scrolls the message list itself and never calls scrollIntoView", async () => {
+    const scrollTo = vi.fn();
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    renderPanel(SERVER_READY);
+    await screen.findByText("She agreed to send the draft by Friday.");
+
+    const list = screen.getByTestId("chat-messages");
+    await waitFor(() => expect(scrollTo.mock.contexts).toContain(list));
+    expect(scrollTo.mock.contexts.every((context) => context === list)).toBe(true);
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: list.scrollHeight, behavior: "smooth" });
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });

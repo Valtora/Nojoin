@@ -227,6 +227,7 @@ export default function SpeakerPanel({
                       Confirm
                     </ButtonBase>
                     <ButtonBase
+                      data-ui-fill="inset"
                       onClick={() => setMergingSpeaker(null)}
                       className="px-2 py-1 bg-surface-inset text-contrast-muted text-xs rounded hover:bg-surface-card"
                     >

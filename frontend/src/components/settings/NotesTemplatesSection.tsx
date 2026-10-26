@@ -186,6 +186,7 @@ export default function NotesTemplatesSection({
           <>
             <div className="space-y-2">
               <ButtonBase
+                data-ui-fill={selectedId === null ? "action-tint" : undefined}
                 type="button"
                 onClick={() => handleSelectDefault(null)}
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${

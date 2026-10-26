@@ -12,6 +12,7 @@ import type { ViewType } from "@/lib/store";
 import Sidebar from "./Sidebar";
 import ImportAudioHost from "./importAudio/ImportAudioHost";
 import { RecordingStatus, type Recording } from "@/types";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 const routerPush = vi.fn();
 const routerReplace = vi.fn();
@@ -25,6 +26,7 @@ let currentView: ViewType = "recordings";
 let pausedRecording: { id: string } | null = null;
 let pathname = "/recordings";
 let unsentRecordings: string[] = [];
+let selectedRecordingIds: string[] = [];
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: React.ComponentPropsWithoutRef<"a">) => (
@@ -92,7 +94,7 @@ vi.mock("@/lib/store", () => ({
     selectedTagIds: [],
     toggleTagFilter: vi.fn(),
     clearTagFilters: vi.fn(),
-    selectedRecordingIds: [],
+    selectedRecordingIds,
     selectionAnchorId: null,
     setRecordingSelection: vi.fn(),
     toggleRecordingSelection: vi.fn(),
@@ -172,6 +174,7 @@ describe("Sidebar", () => {
     pausedRecording = null;
     pathname = "/recordings";
     unsentRecordings = [];
+    selectedRecordingIds = [];
     sweptLists.length = 0;
     useImportAudioStore.setState({ isImportAudioOpen: false });
 
@@ -182,6 +185,32 @@ describe("Sidebar", () => {
       month: "2026-05",
       day_counts: [],
     });
+  });
+
+  it("checks ordinary, active and batch-selected recording fills", async () => {
+    getRecordings.mockResolvedValue([recording, { ...recording, id: "rec-2", name: "Other meeting" }]);
+    const { rerender } = renderWithProviders(<Sidebar />);
+    const heading = await screen.findByRole("heading", { name: "Latest meeting" });
+    const card = heading.closest("a")!;
+    const check = (background: string) => {
+      expect(card).toHaveClass(background);
+      expect(fillMarkerViolations(card)).toEqual([]);
+    };
+    check("bg-surface-card");
+    pathname = "/recordings/rec-1";
+    rerender(<Sidebar />);
+    check("bg-action-tint");
+    // Selecting another recording takes the highlight off the active one.
+    selectedRecordingIds = ["rec-2"];
+    rerender(<Sidebar />);
+    check("bg-surface-card");
+    selectedRecordingIds = ["rec-1"];
+    rerender(<Sidebar />);
+    check("bg-action-tint");
+    selectedRecordingIds = [];
+    pathname = "/recordings";
+    rerender(<Sidebar />);
+    check("bg-surface-card");
   });
 
   it("keeps the recordings list on /recordings instead of redirecting to the latest item", async () => {

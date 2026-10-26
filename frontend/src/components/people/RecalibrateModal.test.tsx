@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 import RecalibrateModal from "./RecalibrateModal";
 import type { GlobalSpeaker, SpeakerSegment } from "@/types";
@@ -42,6 +43,7 @@ const renderModal = () =>
   );
 
 describe("RecalibrateModal", () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     addNotification.mockReset();
     getSpeakerSegments
@@ -52,6 +54,36 @@ describe("RecalibrateModal", () => {
         segment("rec-2", 0, 15),
       ]);
     recalibrateSpeaker.mockReset();
+  });
+
+  it("checks pending, rejected, approved and playing fills after loading", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const { unmount } = renderModal();
+    const approve = (await screen.findAllByTitle("Verify / Approve"))[0];
+    const reject = screen.getAllByTitle("Reject / Not this speaker")[0];
+    const card = approve.closest('[data-ui-surface="card"]')!;
+    const preview = card.querySelector("button")!;
+    expect(preview).toHaveClass("bg-control-bg");
+    expect(approve).not.toHaveClass("bg-status-success-bg");
+    expect(reject).not.toHaveClass("bg-status-danger-bg");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
+    fireEvent.click(reject);
+    expect(reject).toHaveClass("bg-status-danger-bg");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
+    fireEvent.click(approve);
+    expect(approve).toHaveClass("bg-status-success-bg");
+    expect(reject).not.toHaveClass("bg-status-danger-bg");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
+    fireEvent.click(approve);
+    expect(approve).not.toHaveClass("bg-status-success-bg");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
+    fireEvent.click(preview);
+    expect(preview).toHaveClass("bg-status-info-bg");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
+    fireEvent.click(preview);
+    expect(preview).toHaveClass("bg-control-bg");
+    expect(fillMarkerViolations(document.body)).toEqual([]);
+    unmount();
   });
 
   it("counts the speech per recording, not across them", async () => {

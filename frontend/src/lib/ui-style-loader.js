@@ -7,10 +7,13 @@
  * @param {boolean} prepaint Whether the initial navigation still needs a paint guard.
  */
 export function applyUiStyleToRoot(style, root, prepaint = false) {
+  // Allow cached/fast CSS to avoid a Default flash without delaying usable
+  // content for more than a quarter of a second on a slow connection.
+  const PREPAINT_GRACE_MS = 250;
   const document = root.ownerDocument;
   const id = "nojoin-optional-style";
   const optional = style === "classic" || style === "depth";
-  if (prepaint || !optional) root.setAttribute("data-style", optional ? style : "default");
+  if (!optional) root.setAttribute("data-style", "default");
   let link = document.getElementById(id);
 
   if (link && !optional) {
@@ -25,6 +28,7 @@ export function applyUiStyleToRoot(style, root, prepaint = false) {
     if (link.dataset.uiStyleState === "ready") root.setAttribute("data-style", style);
     return;
   }
+  if (prepaint) root.setAttribute("data-style", style);
 
   const stylesheet = document.createElement("link");
   stylesheet.id = id;
@@ -39,28 +43,39 @@ export function applyUiStyleToRoot(style, root, prepaint = false) {
   const opacity = root.style.getPropertyValue("opacity");
   const priority = root.style.getPropertyPriority("opacity");
   if (prepaint) root.style.setProperty("opacity", "0", "important");
+  let guarded = prepaint;
+
+  function reveal() {
+    if (!guarded) return;
+    guarded = false;
+    // Release native render blocking too, while retaining the pending download.
+    stylesheet.removeAttribute("blocking");
+    if (opacity) root.style.setProperty("opacity", opacity, priority);
+    else root.style.removeProperty("opacity");
+  }
 
   function finish(state) {
     if (document.getElementById(id) !== stylesheet || stylesheet.dataset.uiStyleState !== "loading") return;
     stylesheet.dataset.uiStyleState = state;
     window.clearTimeout(timeout);
-    // Guard ownership stays with the creating call, including hydration reuse.
-    if (prepaint) {
-      if (opacity) root.style.setProperty("opacity", opacity, priority);
-      else root.style.removeProperty("opacity");
-    }
     if (state === "ready") root.setAttribute("data-style", stylesheet.dataset.uiStyleTarget);
-    // Removing a stalled link also releases native blocking="render"; merely
-    // restoring opacity would leave supporting browsers unable to paint.
+    else if (prepaint) root.setAttribute("data-style", "default");
+    // Guard ownership stays with the creating call, including hydration reuse.
+    reveal();
     if (state === "failed") {
       stylesheet.remove();
       console.warn("Unable to load the optional UI stylesheet; keeping the current style.");
     }
   }
 
-  // A stalled request must not leave the page invisible indefinitely. The
-  // preference remains selected on failure, and a later application can retry.
-  const timeout = window.setTimeout(() => finish("failed"), 10000);
+  // Initial navigation falls back visibly but still honours a late stylesheet.
+  // Runtime switches retain the current look and can retry a timed-out request.
+  const timeout = window.setTimeout(() => {
+    if (prepaint) {
+      root.setAttribute("data-style", "default");
+      reveal();
+    } else finish("failed");
+  }, prepaint ? PREPAINT_GRACE_MS : 10000);
   stylesheet.addEventListener("load", () => finish("ready"), { once: true });
   stylesheet.addEventListener("error", () => finish("failed"), { once: true });
   stylesheet.addEventListener("nojoin-style-cancel", () => finish("cancelled"), { once: true });
