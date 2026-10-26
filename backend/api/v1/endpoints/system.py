@@ -39,6 +39,7 @@ from backend.api.v1.endpoints.setup import (
     FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
     enforce_setup_rate_limit,
     is_system_initialized,
+    lock_first_run_setup,
     require_first_run_password,
 )
 from backend.core.security import (
@@ -454,6 +455,10 @@ async def setup_system(
     Only works if no users exist.
     """
     await enforce_setup_rate_limit(request)
+
+    # Held until the owner is committed below, so a second request finishing
+    # setup at the same moment is refused here rather than creating another.
+    await lock_first_run_setup(db)
 
     if await is_system_initialized(db):
         raise HTTPException(

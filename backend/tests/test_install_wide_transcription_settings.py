@@ -371,6 +371,7 @@ def run_setup(install_config, monkeypatch):
 
     monkeypatch.setattr(system, "config_manager", install_config)
     monkeypatch.setattr(system, "enforce_setup_rate_limit", no_op)
+    monkeypatch.setattr(system, "lock_first_run_setup", no_op)
     monkeypatch.setattr(system, "is_system_initialized", not_initialized)
     monkeypatch.setattr(system, "require_first_run_password", lambda request: None)
     monkeypatch.setattr(

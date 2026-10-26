@@ -43,6 +43,15 @@ async def _demo_person(session, user_id: int, name: str, color: str) -> GlobalSp
     return person
 
 
+def _report_missing_user(user_id: int | None) -> None:
+    if user_id:
+        logger.error("Cannot seed demo data: user %s not found.", user_id)
+    else:
+        # A fresh install, before first-run setup. Setup seeds the sample
+        # meeting for the owner it creates.
+        logger.info("No users yet, so no demo recording to seed.")
+
+
 async def seed_demo_data(user_id: int | None = None, force: bool = False) -> None:
     """
     Seeds the database with a demo recording if it doesn't exist.
@@ -65,7 +74,7 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
             target_user = user_result.scalars().first()
 
         if not target_user:
-            logger.error("Cannot seed demo data: No users found.")
+            _report_missing_user(user_id)
             return
 
         if target_user.has_seen_demo_recording and not force:
