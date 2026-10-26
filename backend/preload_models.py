@@ -247,6 +247,7 @@ def _release_validation_caches() -> None:
     import sys
 
     release_hooks = (
+        ("backend.processing.nemotron_model", "release_nemotron_model_cache"),
         ("backend.processing.transcribe", "release_model_cache"),
         ("backend.processing.diarize", "release_pipeline_cache"),
         ("backend.processing.embedding_core", "release_embedding_model_cache"),

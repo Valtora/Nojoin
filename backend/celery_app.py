@@ -89,6 +89,7 @@ def release_worker_model_caches() -> None:
         logger.info("Releasing worker model caches...")
 
         loaded_release_hooks = (
+            ("backend.processing.nemotron_model", "release_nemotron_model_cache"),
             ("backend.processing.transcribe", "release_model_cache"),
             ("backend.processing.diarize", "release_pipeline_cache"),
             ("backend.processing.embedding_core", "release_embedding_model_cache"),

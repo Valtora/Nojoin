@@ -579,12 +579,12 @@ def test_asr_stage_lets_a_task_time_limit_through(monkeypatch):
     _install_happy_path_modules(monkeypatch)
     _route_asr_through_parakeet(monkeypatch, [SoftTimeLimitExceeded()])
 
-    _run_task(monkeypatch, session, recording_id=713, engine_override=_PARAKEET)
+    with pytest.raises(SoftTimeLimitExceeded):
+        _run_task(monkeypatch, session, recording_id=713, engine_override=_PARAKEET)
 
     assert transcript.transcript_status == "pending"
     assert transcript.error_message is None
-    assert recording.status == RecordingStatus.ERROR
-    assert recording.processing_step.startswith("System Error")
+    assert recording.status == RecordingStatus.PROCESSING
 
 
 def test_asr_failure_is_recorded_even_when_freeing_gpu_memory_fails(monkeypatch):
@@ -1726,7 +1726,8 @@ def test_a_time_limit_while_writing_the_union_stops_the_task(monkeypatch, tmp_pa
 
     monkeypatch.setattr(vad_stage, "write_union_muted_audio", _time_up)
 
-    _run_task(monkeypatch, session, recording_id=734)
+    with pytest.raises(SoftTimeLimitExceeded):
+        _run_task(monkeypatch, session, recording_id=734)
 
     assert "transcribe" not in seen["order"]
-    assert recording.status == RecordingStatus.ERROR
+    assert recording.status == RecordingStatus.PROCESSING

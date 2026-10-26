@@ -147,6 +147,47 @@ class NemotronRuntime:
     geometry: NemotronGeometry = field(default_factory=NemotronGeometry)
     _forward_lock: Any = field(default_factory=threading.RLock, init=False, repr=False)
 
+    def infer_offline(self, audio: np.ndarray) -> np.ndarray:
+        """Run the studied full-waveform CPU frontend and offline model geometry.
+
+        Preserve the physical final STFT frame, including its masked feature
+        vector: the cached study thresholds every returned offline logit.
+        """
+        import torch
+
+        validate_audio(audio)
+        if not len(audio):
+            raise NemotronStateError("Nemotron offline audio must not be empty")
+        frames = len(audio) // self.geometry.hop_length + 1
+        with (
+            self._forward_lock,
+            torch.inference_mode(),
+            torch.autocast(device_type=self.device.split(":")[0], enabled=False),
+        ):
+            inputs = self.offline_processor(
+                audio, sampling_rate=16000, is_streaming=False, return_tensors="pt"
+            )
+            if (
+                set(inputs) != {"input_features", "attention_mask"}
+                or inputs["input_features"].shape != (1, frames, 128)
+                or inputs["attention_mask"].shape != (1, frames)
+                or int(inputs["attention_mask"].sum()) != frames - 1
+            ):
+                raise NemotronStateError("Nemotron offline feature geometry differs")
+            output = self.model(**inputs.to(self.device))
+            logits = getattr(output, "logits", None)
+            if (
+                not isinstance(logits, torch.Tensor)
+                or logits.dtype != torch.float32
+                or logits.shape != (1, frames, 8)
+                or not torch.isfinite(logits).all()
+                or getattr(output, "speaker_cache", None) is not None
+            ):
+                raise NemotronStateError("Nemotron returned malformed offline logits")
+            probabilities = logits.sigmoid()[0].cpu().numpy().copy()
+        validate_probabilities(probabilities, frames)
+        return probabilities
+
     def infer_window(
         self,
         audio_window: np.ndarray,

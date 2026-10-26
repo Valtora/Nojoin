@@ -81,7 +81,7 @@ Speakers are identified when the recording is processed. If your administrator h
 
 To name a speaker while the meeting is recording or paused, click or tap their label and type the name; Enter saves and Escape cancels. The name replaces **Speaker 3** on all of that speaker's lines, and in Meeting Edge, chat and exports during the meeting. A name that is exactly a person's in People links that person, and People's names are suggested as you type; naming never adds anyone to People. When processing finishes, the name goes to the processed speaker who holds the speech the label had when you named it (the upright lines, if it had any), and that speaker is not matched by voice. A link to a person also needs the speaker's voice to match theirs: if it doesn't, or if processing splits that speech between speakers, the name waits for you to confirm, as **Dana?** with **You gave this name earlier** ([Speaker Management](#speaker-management)), unless that speaker is recognised by voice. A person's voiceprint learns nothing from it until processing has applied it. Once you press **Stop**, rename speakers on the processed transcript instead. If processing fails, **Retry Processing** starts the transcript afresh and drops the names given during the meeting.
 
-On installations using the automatic speaker engine, live labels favour small meetings. During a larger meeting, or if that engine becomes unavailable, Nojoin can continue with its clustering engine. Unsettled labels may change during the hand-back; matching them to the earlier voices is best-effort. Names you gave and assignments you made by hand remain authoritative. If the model needs preparing, the current meeting uses clustering and the next meeting can use the prepared model. Your administrator controls this for the whole installation ([Live Speaker Labels](DEPLOYMENT.md#live-speaker-labels)).
+The automatic speaker engine favours small meetings. In larger meetings, or if the engine becomes unavailable, Nojoin can switch to clustering. Unsettled labels may change, and matching earlier voices is best-effort. Names and speaker assignments you gave by hand remain authoritative. If the model needs preparing, this meeting uses clustering and the next can use the prepared model. Your administrator controls this for the installation ([Live Speaker Labels](DEPLOYMENT.md#live-speaker-labels)).
 
 ### Live Notes
 
@@ -204,6 +204,8 @@ Once a person has a voiceprint, a speaker you link later is blended in only if i
 ### Limiting The Number Of Speakers
 
 Speaker detection is automatic. If a long meeting comes back with more speakers than there were people, usually because someone's audio changed partway through, set **Max Speakers** (1 to 50) for that recording. Leave it empty to auto-detect.
+
+On CUDA installations with the automatic speaker engine prepared, final processing can combine two speaker passes. This applies to imports and reprocessing too, independently of live labels. It can separate speakers better, but can also mistake more noise for speech. Setting **Max Speakers** uses community-1 with your speaker limit. An administrator can select the classic engine for both live and final processing ([deployment settings](DEPLOYMENT.md#live-speaker-labels)).
 
 - **Live recording**: the field sits with the recording controls and stays editable throughout. The value when you press **Stop** is the one used, so raise it before stopping if someone joined unannounced.
 - **Import**: set it in the import dialog.
