@@ -11,6 +11,8 @@ import hashlib
 import json
 import re
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -31,6 +33,41 @@ from backend.utils import nemotron_model_utils as assets
 
 _RUNTIMES: dict[str, NemotronRuntime] = {}
 _LOAD_LOCK = threading.RLock()
+_PRECISION_LOCK = threading.RLock()
+
+
+@contextmanager
+def _nemotron_precision() -> Iterator[None]:
+    """Keep evaluated TF32 settings local to serial Nemotron operations."""
+    import torch
+
+    with _PRECISION_LOCK:
+        previous_matmul = torch.backends.cuda.matmul.allow_tf32
+        previous_cudnn = torch.backends.cudnn.allow_tf32
+        previous_cuda_policy = torch.backends.cuda.matmul.fp32_precision
+        previous_conv_policy = torch.backends.cudnn.conv.fp32_precision
+        previous_rnn_policy = torch.backends.cudnn.rnn.fp32_precision
+        try:
+            previous_mode = torch.get_float32_matmul_precision()
+        except RuntimeError:
+            # Frameworks can leave mixed precision APIs with readable booleans.
+            previous_mode = None
+        previous_cpu_policy = torch.backends.mkldnn.matmul.fp32_precision
+        try:
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = True
+            yield
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = previous_matmul
+            torch.backends.cudnn.allow_tf32 = previous_cudnn
+            if previous_mode == "medium":
+                # Boolean restoration collapses medium to high; the mode setter
+                # also changes CPU matmul policy, which must remain untouched.
+                torch.set_float32_matmul_precision(previous_mode)
+                torch.backends.mkldnn.matmul.fp32_precision = previous_cpu_policy
+            torch.backends.cuda.matmul.fp32_precision = previous_cuda_policy
+            torch.backends.cudnn.conv.fp32_precision = previous_conv_policy
+            torch.backends.cudnn.rnn.fp32_precision = previous_rnn_policy
 
 
 def _require_attributes(value: Any, expected: dict[str, Any], context: str) -> None:
@@ -161,6 +198,7 @@ class NemotronRuntime:
         frames = len(audio) // self.geometry.hop_length + 1
         with (
             self._forward_lock,
+            _nemotron_precision(),
             torch.inference_mode(),
             torch.autocast(device_type=self.device.split(":")[0], enabled=False),
         ):
@@ -225,6 +263,7 @@ class NemotronRuntime:
             return NativeWindowResult(np.empty((0, 8), np.float32), speaker_cache)
         with (
             self._forward_lock,
+            _nemotron_precision(),
             torch.inference_mode(),
             torch.autocast(device_type=self.device.split(":")[0], enabled=False),
         ):
@@ -334,31 +373,30 @@ def _build_runtime(
         )
     processors = _build_processors(path)
     options = dict(local_files_only=True, trust_remote_code=False)
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = True
-    model = (
-        Nemotron3DiarizationForAudioFrameClassification.from_pretrained(
-            str(path),
-            **options,
-            use_safetensors=True,
-            dtype=torch.float32,
-            attn_implementation="sdpa",
+    with _nemotron_precision():
+        model = (
+            Nemotron3DiarizationForAudioFrameClassification.from_pretrained(
+                str(path),
+                **options,
+                use_safetensors=True,
+                dtype=torch.float32,
+                attn_implementation="sdpa",
+            )
+            .eval()
+            .to(device)
         )
-        .eval()
-        .to(device)
-    )
-    if type(model) is not Nemotron3DiarizationForAudioFrameClassification:
-        raise assets.NemotronModelError("Nemotron loaded an unexpected model class")
-    _check_model(model, torch)
-    processors[0].feature_extractor = CudaFrontend(
-        processors[0].feature_extractor, device=device
-    )
-    try:
-        check_streaming_frontend(processors[2], processors[0], device=device)
-    except NemotronStateError as exc:
-        raise assets.NemotronModelError(
-            "Nemotron load-time CPU/CUDA frontend acceptance failed"
-        ) from exc
+        if type(model) is not Nemotron3DiarizationForAudioFrameClassification:
+            raise assets.NemotronModelError("Nemotron loaded an unexpected model class")
+        _check_model(model, torch)
+        processors[0].feature_extractor = CudaFrontend(
+            processors[0].feature_extractor, device=device
+        )
+        try:
+            check_streaming_frontend(processors[2], processors[0], device=device)
+        except NemotronStateError as exc:
+            raise assets.NemotronModelError(
+                "Nemotron load-time CPU/CUDA frontend acceptance failed"
+            ) from exc
     digest = assets.manifest_sha256()
     return NemotronRuntime(
         model,

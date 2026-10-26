@@ -27,10 +27,14 @@ from __future__ import annotations
 import inspect
 import sys
 import types
+from concurrent.futures import CancelledError
+from pathlib import Path
 
 import numpy as np
 import pytest
 import soundfile
+from billiard.exceptions import Terminated
+from celery.exceptions import SoftTimeLimitExceeded, TimeLimitExceeded
 
 # Before any test patches os.path.exists, which matplotlib reads on import.
 from pyannote.core import Annotation, Segment
@@ -39,6 +43,7 @@ from backend.models.recording import ClientStatus, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.processing import transcribe as real_transcribe
 from backend.processing.engines.base import VAD_MUTED_INPUT
+from backend.utils.status_manager import update_recording_status
 from backend.worker import tasks as tasks_module
 from backend.worker.tasks import vad_stage
 
@@ -568,23 +573,57 @@ def test_asr_gpu_oom_twice_surfaces_cuda_out_of_memory(monkeypatch):
     assert "GPU ran out of memory (CUDA out of memory)" in transcript.error_message
 
 
-def test_asr_stage_lets_a_task_time_limit_through(monkeypatch):
-    """A Celery soft time limit stops the task; it is not recorded as a failed
-    transcription."""
-    from celery.exceptions import SoftTimeLimitExceeded
-
+@pytest.mark.parametrize("transcript_status", ["pending", "processing", "completed"])
+@pytest.mark.parametrize(
+    "failure_type", [SoftTimeLimitExceeded, TimeLimitExceeded, Terminated]
+)
+def test_asr_stage_lets_a_task_time_limit_through(
+    monkeypatch: pytest.MonkeyPatch,
+    transcript_status: str,
+    failure_type: type[Exception],
+) -> None:
+    """Stop the task with an ERROR recording, without failing transcription."""
     recording = _FakeRecording(713)
     transcript = _FakeTranscript(713)
+    transcript.transcript_status = transcript_status
     session = _FakeSession(recording, transcript)
     _install_happy_path_modules(monkeypatch)
-    _route_asr_through_parakeet(monkeypatch, [SoftTimeLimitExceeded()])
+    monkeypatch.setattr(
+        tasks_module, "update_recording_status", update_recording_status
+    )
+    failure = failure_type("worker interrupted")
+    _route_asr_through_parakeet(monkeypatch, [failure])
 
-    with pytest.raises(SoftTimeLimitExceeded):
+    with pytest.raises(failure_type) as raised:
         _run_task(monkeypatch, session, recording_id=713, engine_override=_PARAKEET)
 
-    assert transcript.transcript_status == "pending"
+    assert raised.value is failure
+    assert transcript.transcript_status == transcript_status
     assert transcript.error_message is None
-    assert recording.status == RecordingStatus.PROCESSING
+    assert recording.status == RecordingStatus.ERROR
+    assert recording.processing_step == f"System Error: {failure}"
+    assert recording.processing_completed_at is None
+
+
+def test_a_pre_cancelled_recording_never_starts_processing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recording = _FakeRecording(714)
+    recording.status = RecordingStatus.CANCELLED
+    recording.processing_step = "Cancelled by user"
+    session = _FakeSession(recording, _FakeTranscript(714))
+
+    def _must_not_start() -> None:
+        raise AssertionError("A cancelled task must stop before model release")
+
+    monkeypatch.setattr(
+        tasks_module.pipeline, "_release_pipeline_vram", _must_not_start
+    )
+
+    assert _run_task(monkeypatch, session, recording_id=714) is None
+    assert recording.status == RecordingStatus.CANCELLED
+    assert recording.processing_step == "Cancelled by user"
+    assert session.committed == 0
 
 
 def test_asr_failure_is_recorded_even_when_freeing_gpu_memory_fails(monkeypatch):
@@ -1711,23 +1750,42 @@ def test_a_union_that_cannot_be_written_falls_back_to_the_vad_muted_file(
     assert transcript.text.strip() == "Morning."
 
 
-def test_a_time_limit_while_writing_the_union_stops_the_task(monkeypatch, tmp_path):
-    from celery.exceptions import SoftTimeLimitExceeded
-
+@pytest.mark.parametrize("transcript_status", ["pending", "processing", "completed"])
+@pytest.mark.parametrize(
+    "failure_type",
+    [SoftTimeLimitExceeded, TimeLimitExceeded, Terminated, CancelledError],
+)
+def test_a_time_limit_while_writing_the_union_stops_the_task(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    transcript_status: str,
+    failure_type: type[Exception],
+) -> None:
     recording = _FakeRecording(734)
-    session = _FakeSession(recording, _FakeTranscript(734))
+    transcript = _FakeTranscript(734)
+    transcript.transcript_status = transcript_status
+    session = _FakeSession(recording, transcript)
     _install_happy_path_modules(monkeypatch)
+    monkeypatch.setattr(
+        tasks_module, "update_recording_status", update_recording_status
+    )
     seen = _install_real_vad_files(
         monkeypatch, tmp_path, diarization=_one_turn(9.5, 11.5)
     )
+    failure = failure_type("worker interrupted")
 
-    def _time_up(*args, **kwargs):
-        raise SoftTimeLimitExceeded()
+    def _time_up(*args: object, **kwargs: object) -> None:
+        raise failure
 
     monkeypatch.setattr(vad_stage, "write_union_muted_audio", _time_up)
 
-    with pytest.raises(SoftTimeLimitExceeded):
+    with pytest.raises(failure_type) as raised:
         _run_task(monkeypatch, session, recording_id=734)
 
+    assert raised.value is failure
     assert "transcribe" not in seen["order"]
-    assert recording.status == RecordingStatus.PROCESSING
+    assert transcript.transcript_status == transcript_status
+    assert transcript.error_message is None
+    assert recording.status == RecordingStatus.ERROR
+    assert recording.processing_step == f"System Error: {failure}"
+    assert recording.processing_completed_at is None

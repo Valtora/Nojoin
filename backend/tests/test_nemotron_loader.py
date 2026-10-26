@@ -71,6 +71,8 @@ def constructor_spies(native_assets: tuple, monkeypatch: pytest.MonkeyPatch) -> 
             return [torch.zeros(1, dtype=torch.float32)]
 
     def model_load(path: str, **kwargs: Any) -> Any:
+        assert torch.backends.cuda.matmul.allow_tf32 is False
+        assert torch.backends.cudnn.allow_tf32 is True
         calls.append(("model", path, kwargs))
         return Model()
 
@@ -138,8 +140,8 @@ def test_native_constructors_are_local_safetensors_fp32_sdpa_and_processors_inde
     )
     assert runtime.asset_fingerprint == "asset-digest"
     assert len(runtime.runtime_fingerprint) == 64
-    assert torch.backends.cuda.matmul.allow_tf32 is False
-    assert torch.backends.cudnn.allow_tf32 is True
+    assert torch.backends.cuda.matmul.allow_tf32 is True
+    assert torch.backends.cudnn.allow_tf32 is False
 
 
 def test_wrong_manifest_version_rejects_before_constructors(

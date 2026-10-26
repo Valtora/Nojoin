@@ -720,8 +720,7 @@ def process_recording_task(
             update_recording_status(session, recording.id)
 
     except Exception as e:
-        if is_task_interruption(e) or isinstance(e, CancelledError):
-            raise
+        interrupted = is_task_interruption(e) or isinstance(e, CancelledError)
         record_pipeline_metric(
             stage="final_processing_failed",
             recording_id=recording_id,
@@ -749,7 +748,12 @@ def process_recording_task(
             recording.processing_completed_at = None
             session.add(recording)
             session.commit()
-            update_recording_status(session, recording.id)
+            # Component state can still be pending, processing or completed;
+            # it must not overwrite an interrupted run's terminal ERROR.
+            if not interrupted:
+                update_recording_status(session, recording.id)
+        if interrupted:
+            raise
 
     finally:
         for temp_file in temp_files:
