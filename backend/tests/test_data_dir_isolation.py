@@ -1,5 +1,7 @@
 """The default test environment keeps the data directory out of the checkout."""
 
+import importlib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -79,3 +81,10 @@ def test_a_subprocess_resolves_the_same_data_dir(suite_data_dir: Path) -> None:
     )
 
     assert Path(result.stdout.strip()) == suite_data_dir
+
+
+def test_a_second_load_of_conftest_keeps_the_data_dir(suite_data_dir: Path) -> None:
+    """test_single_flight.py imports backend.tests.conftest, which runs it again."""
+    importlib.import_module("backend.tests.conftest")
+
+    assert os.environ["NOJOIN_DATA_DIR"] == str(suite_data_dir)
