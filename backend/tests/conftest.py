@@ -1,4 +1,6 @@
 import os
+import tempfile
+from pathlib import Path
 
 # No test downloads a model (#689). Offline mode makes huggingface_hub refuse
 # every request at once, and fastembed too. Without it, fastembed downloaded
@@ -7,13 +9,21 @@ import os
 # once, on import.
 os.environ["HF_HUB_OFFLINE"] = "1"
 
+# The data directory holds config.json, the JWT keyring, the data encryption
+# key, logs, documents and recordings. The backend fixes those paths on import
+# and config_manager writes config.json as it loads, so a fixture would come
+# too late: the suite wrote into the checkout's data/, and a read-only checkout
+# failed on import. Set ahead of the imports below; subprocesses inherit it.
+SUITE_DATA_DIR = Path(tempfile.mkdtemp(prefix="nojoin-test-data-"))
+os.environ["NOJOIN_DATA_DIR"] = str(SUITE_DATA_DIR)
+
+import shutil
 import sqlite3
 import sys
-import tempfile
 import traceback
 import types
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
-from pathlib import Path
 
 import pytest
 import redis.connection
@@ -344,6 +354,20 @@ def model_cache_env(
     monkeypatch.setattr(constants, "HF_HUB_CACHE", hub)
     monkeypatch.setattr(constants, "HUGGINGFACE_HUB_CACHE", hub)
     return home
+
+
+@pytest.fixture(scope="session", autouse=True)
+def suite_data_dir() -> Iterator[Path]:
+    """The data directory the whole session shares, under the temp directory.
+
+    NOJOIN_DATA_DIR points at it from the top of this file, because the
+    backend fixes its data paths on import. There is one per session because
+    config_manager loads config.json once. A test that needs a data directory
+    of its own patches path_manager onto tmp_path, as the keyring and
+    telemetry tests do. Removed when the session ends.
+    """
+    yield SUITE_DATA_DIR
+    shutil.rmtree(SUITE_DATA_DIR, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
