@@ -125,6 +125,8 @@ def test_the_cli_as_a_process_writes_nothing_and_fails_closed(
         "PATH": os.environ["PATH"],
         "HOME": str(layout.app),
         "PYTHONPATH": str(REPOSITORY),
+        # Bytecode too: the process must not write into the checkout's backend/.
+        "PYTHONDONTWRITEBYTECODE": "1",
         "NOJOIN_CONTAINERIZED": "1",
         "NOJOIN_DATA_DIR": str(layout.data),
         "DATABASE_URL": (
