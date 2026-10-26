@@ -80,7 +80,7 @@ def pending_task() -> dict[str, Any] | None:
 
 
 def write_pending(task_id: str) -> None:
-    """Publish pending identity before dispatch, under the model lock."""
+    """Publish pending task identity under the model lock."""
     atomic_json(
         _control_path("pending.json"),
         {

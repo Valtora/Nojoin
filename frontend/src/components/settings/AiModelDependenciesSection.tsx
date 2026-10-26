@@ -83,7 +83,7 @@ export default function AiModelDependenciesSection({
     <SettingsCard
       id="ai-providers-model-assets"
       title="Model downloads"
-      description="Required speech models download on first run or when first needed, holding up live transcription and Meeting Edge until they arrive. Optional speaker models prepare in the background."
+      description="Required speech models download on first run or when first needed, holding up live transcription and Meeting Edge until they arrive. Optional Nemotron speaker models prepare during the final pass after capture ends."
     >
       {preparationRunning && (
         <SettingsBlock label="Preparing models" aside={<span className="text-sm tabular-nums text-foreground">{progressPercent}%</span>}>

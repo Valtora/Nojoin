@@ -13,6 +13,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 
+from backend import preload_models
 from backend.api.deps import get_current_user
 from backend.api.v1.endpoints import system
 from backend.services import model_status
@@ -123,13 +124,69 @@ def test_unrelated_asr_progress_does_not_change_native_status(
     assert _response(app).json()["nemotron"]["state"] == "absent"
 
 
-def test_stalled_preparation_is_not_reported_as_active(
+def test_stale_progress_without_a_pending_task_is_not_reported_as_active(
     native_assets: tuple[Path, dict[str, bytes]],
     status_app: tuple[FastAPI, dict[str, Any]],
 ) -> None:
     app, progress = status_app
     progress.update(stage="nemotron", status="downloading", updated_at=time.time() - 31)
     assert _response(app).json()["nemotron"]["state"] == "absent"
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["success", "failure"])
+def test_explicit_worker_transfer_stays_downloading_during_silent_transfer(
+    native_assets: tuple[Path, dict[str, bytes]],
+    status_app: tuple[FastAPI, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    fails: bool,
+) -> None:
+    from backend.worker.tasks.system import download_models_task
+
+    _, payloads = native_assets
+    app, progress = status_app
+    clock = [1000.0]
+    observations: list[str] = []
+    monkeypatch.setattr(model_status.time, "time", lambda: clock[0])
+    monkeypatch.setattr(preload_models, "clear_download_progress", progress.clear)
+    monkeypatch.setattr(download_models_task, "update_state", lambda **kwargs: None)
+
+    def record(percent: int, message: str, **kwargs: Any) -> None:
+        progress.update(
+            progress=percent, message=message, updated_at=clock[0], **kwargs
+        )
+
+    monkeypatch.setattr(preload_models, "set_download_progress", record)
+
+    def transfer(destination: Path) -> None:
+        if destination.name == "model.safetensors":
+            assert _response(app).json()["nemotron"]["state"] == "downloading"
+            for elapsed in (31, 120):
+                clock[0] = 1000.0 + elapsed
+                observations.append(_response(app).json()["nemotron"]["state"])
+                assert observations[-1] == "downloading"
+            assert control.pending_task()["task_id"] == "explicit-task"
+            if fails:
+                raise OSError("Transfer failed after a silent interval")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payloads[destination.name])
+
+    monkeypatch.setattr(assets, "download_asset", transfer)
+    download_models_task.push_request(id="explicit-task")
+    try:
+        if fails:
+            with pytest.raises(OSError, match="Transfer failed"):
+                download_models_task.run(nemotron_only=True)
+        else:
+            download_models_task.run(nemotron_only=True)
+    finally:
+        download_models_task.pop_request()
+
+    assert observations == ["downloading", "downloading"]
+    assert control.pending_task() is None
+    assert not control._control_path("pending.json").exists()
+    assert _response(app).json()["nemotron"]["state"] == (
+        "failed" if fails else "ready"
+    )
 
 
 def test_first_use_pending_marker_is_read_without_a_write_lock(

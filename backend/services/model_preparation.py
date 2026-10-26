@@ -74,7 +74,7 @@ def request_nemotron_preparation(*, recording_id: int | None) -> str | None:
 
     Publishing has no retries and uses two-second connect/socket limits on a
     dedicated connection. It does not subscribe to the result backend.
-    Live and final callers keep community speakers for this invocation; a later
+    The final pass keeps community speakers for this invocation; a later
     eligible recording can use the prepared model.
     """
     task_id = str(uuid4())

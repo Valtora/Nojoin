@@ -55,9 +55,6 @@ def start_capture(
                 if resolution.state in {"missing", "partial"}
                 else "model_invalid"
             )
-            from backend.services.model_preparation import request_nemotron_preparation
-
-            request_nemotron_preparation(recording_id=recording_id)
             return engine
         from backend.processing.nemotron_model import load_nemotron_model
 

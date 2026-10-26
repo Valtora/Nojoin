@@ -11,9 +11,11 @@ import pytest
 import torch
 
 from backend.api.v1.endpoints import settings as settings_ep
-from backend.processing.live_diarization import setting, step
+from backend.processing.live_diarization import hybrid_runtime, setting, step
+from backend.tests.nemotron_asset_helpers import native_assets as native_assets
 from backend.tests.test_install_wide_transcription_settings import _call_settings
 from backend.utils.config_manager import ConfigManager
+from backend.utils.nemotron_lock import pending_task
 
 
 @pytest.fixture(autouse=True)
@@ -67,6 +69,34 @@ def test_fresh_config_saves_auto_as_the_shipped_default(tmp_path: Path) -> None:
     assert manager.get("live_speaker_labels") == "auto"
     assert json.loads(path.read_text(encoding="utf-8"))["live_speaker_labels"] == "auto"
     assert ConfigManager(config_path=str(path)).get("live_speaker_labels") == "auto"
+
+
+def test_default_cuda_capture_with_missing_assets_does_not_queue_preparation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    native_assets: tuple[Path, dict[str, bytes]],
+    stub_celery_dispatch: list[Any],
+) -> None:
+    path = tmp_path / "config.json"
+    path.write_text("{}", encoding="utf-8")
+    manager = ConfigManager(config_path=str(path))
+    for module in (setting, step, hybrid_runtime):
+        monkeypatch.setattr(module, "config_manager", manager)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    live_dir = tmp_path / "live"
+    live_dir.mkdir()
+
+    assert setting.live_speaker_labels_requested()
+    device = step.live_speaker_labels_device()
+    assert device == "cuda"
+    state = hybrid_runtime.start_capture(
+        live_dir, step.CONFIG, device=device, recording_id=42
+    )
+
+    assert state.route == "clustering"
+    assert state.reason == "model_missing"
+    assert stub_celery_dispatch == []
+    assert pending_task() is None
 
 
 @pytest.mark.parametrize("stored", [None, "", "on", ["auto"], {"bad": True}])

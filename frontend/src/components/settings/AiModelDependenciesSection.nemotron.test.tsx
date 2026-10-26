@@ -43,7 +43,8 @@ describe("Nemotron model downloads", () => {
     expect(row.getByText("Missing")).toBeTruthy();
     expect(row.getByText("Download size: 397 MB.")).toBeTruthy();
     expect(row.getByText(/Used only on CUDA workers with the automatic speaker engine/)).toBeTruthy();
-    expect(screen.getByText(/Optional speaker models prepare in the background/)).toBeTruthy();
+    expect(screen.getByText(/Optional Nemotron speaker models prepare during the final pass after capture ends/))
+      .toBeTruthy();
   });
 
   it.each([
@@ -57,14 +58,19 @@ describe("Nemotron model downloads", () => {
     expect(startPreparation).toHaveBeenCalledExactlyOnceWith("nemotron");
   });
 
-  it("shows failed verification and allows retrying or clearing partial assets", () => {
+  it.each([
+    ["receipt_or_assets_changed", "Model files changed or verification is invalid. Retry to repair."],
+    ["receipt_missing", "Model verification is missing. Retry to repair."],
+    ["unknown_future_code", "Model verification failed. Retry to repair."],
+  ])("explains %s and allows retrying or clearing partial assets", (code, message) => {
     const { row, handleDeleteModel } = renderNemotron({
       state: "failed", verification_state: "invalid", partial: true,
-      verification_error: "The asset size does not match its manifest.",
+      verification_error: code,
     });
 
     expect(row.getByText("Failed")).toBeTruthy();
-    expect(row.getByText("The asset size does not match its manifest.")).toBeTruthy();
+    expect(row.getByText(message)).toBeTruthy();
+    expect(row.queryByText(code)).toBeNull();
     expect(row.queryByText("Missing")).toBeNull();
     fireEvent.click(row.getByRole("button", { name: "Clear partial download of Nemotron" }));
     expect(handleDeleteModel).toHaveBeenCalledExactlyOnceWith("nemotron");

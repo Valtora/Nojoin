@@ -1,4 +1,4 @@
-"""Final first use shares the live lane's actual preparation lock and marker."""
+"""Final first use uses the actual preparation lock and pending marker."""
 
 from __future__ import annotations
 

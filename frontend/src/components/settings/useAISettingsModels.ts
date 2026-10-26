@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   DownloadProgress,
@@ -57,7 +57,7 @@ export interface AISettingsModels {
 
   handleValidate: (provider: string) => Promise<void>;
   handleDeleteModel: (modelName: string) => Promise<void>;
-  refreshStatus: () => void;
+  refreshStatus: () => Promise<SystemModelStatus | null>;
 }
 
 /**
@@ -82,6 +82,12 @@ export function useAISettingsModels(
   const [languageRegistry, setLanguageRegistry] =
     useState<LanguageRegistry | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const statusRead = useRef<{
+    size: Settings["whisper_model_size"];
+    promise: Promise<SystemModelStatus | null>;
+  } | null>(null);
+  const mounted = useRef(false);
+  const currentSize = useRef(settings.whisper_model_size);
 
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
@@ -90,11 +96,30 @@ export function useAISettingsModels(
   >([]);
   const [secondaryFetchingModels, setSecondaryFetchingModels] = useState(false);
 
-  useEffect(() => {
-    getModelsStatus(settings.whisper_model_size)
-      .then(setModelStatus)
-      .catch(console.error);
+  const refreshStatus = useCallback(async (): Promise<SystemModelStatus | null> => {
+    const size = settings.whisper_model_size;
+    while (statusRead.current) {
+      if (statusRead.current.size === size) return statusRead.current.promise;
+      await statusRead.current.promise;
+      if (!mounted.current) return null;
+    }
+    const promise = getModelsStatus(size).then((status) => {
+      if (mounted.current && currentSize.current === size) setModelStatus(status);
+      return status;
+    }).catch((error: unknown) => {
+      console.error("Failed to read model status", error);
+      return null;
+    }).finally(() => { statusRead.current = null; });
+    statusRead.current = { size, promise };
+    return promise;
   }, [settings.whisper_model_size]);
+
+  useEffect(() => {
+    mounted.current = true;
+    currentSize.current = settings.whisper_model_size;
+    void refreshStatus();
+    return () => { mounted.current = false; };
+  }, [refreshStatus, settings.whisper_model_size]);
 
   useEffect(() => {
     getLanguageOptions().then(setLanguageRegistry).catch(console.error);
@@ -204,12 +229,8 @@ export function useAISettingsModels(
     }
   };
 
-  const refreshStatus = useCallback(() => {
-    getModelsStatus(settings.whisper_model_size)
-      .then(setModelStatus)
-      .catch(console.error);
-  }, [settings.whisper_model_size]);
-  const preparation = useModelPreparation(refreshStatus);
+  const statusDownloading = Object.values(modelStatus ?? {}).some((model) => model.state === "downloading");
+  const preparation = useModelPreparation(refreshStatus, statusDownloading);
 
   const handleDeleteModel = async (modelName: string) => {
     if (

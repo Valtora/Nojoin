@@ -30,6 +30,10 @@ const UNDELETABLE_REASON: Partial<Record<ModelSource, string>> = {
   external: "Kept in a cache outside Nojoin's, so it is used but not deleted from here.",
 };
 const ICON_BUTTON = cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0");
+const VERIFICATION_ERRORS: Record<string, string> = {
+  receipt_or_assets_changed: "Model files changed or verification is invalid. Retry to repair.",
+  receipt_missing: "Model verification is missing. Retry to repair.",
+};
 
 function ModelBadge({ status }: { status?: ModelStatusInfo }) {
   const state = status?.state ?? (status?.downloaded ? "ready" : "absent");
@@ -71,7 +75,9 @@ export default function AiModelDependencyRow({
           {status?.unused_reason && <span className="block">{status.unused_reason}</span>}
           {ready && reason && <span className="block">{reason}</span>}
           {failed && status?.verification_error && (
-            <span className="block">{status.verification_error}</span>
+            <span className="block">
+              {VERIFICATION_ERRORS[status.verification_error] || "Model verification failed. Retry to repair."}
+            </span>
           )}
           {!ready && (status?.checked_paths?.length ?? 0) > 0 && (
             <details className="mt-1">
