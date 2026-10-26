@@ -169,7 +169,7 @@ Once an account exists, the API queues model preparation at startup for Pyannote
 
 Models live in the `model_cache` volume (`XDG_CACHE_HOME` and `HF_HOME` on the workers), so they survive container recreation. The text embedding model is cached in `$XDG_CACHE_HOME/fastembed`. Set `FASTEMBED_CACHE_PATH` on the workers to keep it elsewhere.
 
-Changing the transcription model downloads nothing by itself. **Settings > Transcription** offers to fetch the new model, and **Model downloads** under **Settings > AI providers** has a **Download** action with progress. A model that was never prepared is fetched on first use, which holds up live transcription and Meeting Edge. One preparation runs at a time, and a second request gets a 409. Deleting a cached model runs on a worker too, because the API mounts `model_cache` read-only, so both actions need running workers.
+Changing the transcription model downloads nothing by itself. **Settings > Transcription** offers to fetch the new model, and **Model downloads**, under **Advanced** in **Settings > AI providers**, has a **Download** action with progress. A model that was never prepared is fetched on first use, which holds up live transcription and Meeting Edge. One preparation runs at a time, and a second request gets a 409. Deleting a cached model runs on a worker too, because the API mounts `model_cache` read-only, so both actions need running workers.
 
 After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation.
 

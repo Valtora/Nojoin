@@ -52,8 +52,8 @@ def test_an_offline_whisper_download_names_the_model_and_the_retry(
     assert error["status"] == "error"
     assert error["message"] == (
         "Could not download the Whisper transcription model. Check that the "
-        "server can reach the internet, then retry from Model downloads in "
-        "Settings > AI providers."
+        "server can reach the internet and has free disk space, then retry "
+        "from Model downloads under Advanced in Settings > AI providers."
     )
     assert "urlopen" not in error["message"]
     # The detail an operator needs to diagnose it stays in the worker log.
