@@ -113,7 +113,8 @@ Corners owns radii, and Density owns workspace spacing.
 The new Style row is the intentional addition to the Appearance page under every style.
 
 - **Default** preserves the existing controls and surfaces.
-- **Classic** uses a two-pixel bevel: a directional outer border and an inset inner facet on
+- **Classic** uses the system UI font and regular-weight buttons and tabs.
+  It uses a two-pixel bevel: a directional outer border and an inset inner facet on
   actions, fields and floats. Reading cards and panes omit the shaded outer facet to keep
   long passages quiet. Light mode mixes the dark facets towards the palette card fill at
   67% shade strength; dark mode keeps the palette control border as its lit identifying edge
