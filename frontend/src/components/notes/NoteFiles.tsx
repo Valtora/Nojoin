@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
 import { Download, FileText, Paperclip, Play, Trash2 } from "lucide-react";
@@ -39,7 +40,12 @@ import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
 interface NoteFilesValue {
   recordingId: RecordingId;
-  open: (noteId: string) => void;
+  /**
+   * Opens the note's file. Given the button pressed, a Remove that takes the
+   * button away puts focus on its nearest `tabindex="-1"` ancestor, the
+   * section it sat in, rather than back on the button.
+   */
+  open: (noteId: string, opener?: HTMLElement | null) => void;
 }
 
 const NoteFilesContext = createContext<NoteFilesValue | null>(null);
@@ -132,6 +138,10 @@ export function NoteFilesProvider({
   children,
 }: NoteFilesProviderProps) {
   const [openId, setOpenId] = useState<string | null>(null);
+  // The file last opened and its button's section, and where focus goes once
+  // the viewer has gone: set only when Remove takes that button away.
+  const opened = useRef<{ noteId: string; home: HTMLElement | null } | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const { outbox, snapshot } = useNoteOutbox(recordingId);
   const { apply } = noteEdits;
   const note = useMemo(
@@ -139,7 +149,18 @@ export function NoteFilesProvider({
       apply(shownNotes(notes, snapshot)).find((candidate) => candidate.id === openId) ?? null,
     [apply, notes, snapshot, openId],
   );
-  const value = useMemo(() => ({ recordingId, open: setOpenId }), [recordingId]);
+  const value = useMemo(
+    () => ({
+      recordingId,
+      open: (noteId: string, opener?: HTMLElement | null) => {
+        const home = opener?.parentElement?.closest<HTMLElement>("[tabindex='-1']") ?? null;
+        opened.current = { noteId, home };
+        returnFocus.current = null;
+        setOpenId(noteId);
+      },
+    }),
+    [recordingId],
+  );
   return (
     <NoteFilesContext.Provider value={value}>
       {children}
@@ -147,6 +168,7 @@ export function NoteFilesProvider({
         recordingId={recordingId}
         note={note?.attachment ? note : null}
         onClose={() => setOpenId(null)}
+        returnFocus={returnFocus}
         onPlay={onPlay}
         onChanged={() => {
           // The page then polls until a file switched on has been read.
@@ -156,6 +178,8 @@ export function NoteFilesProvider({
         onRemoved={(noteId) => {
           // Nojoin refuses any later upload for the note, so none is kept here.
           outbox.forgetUpload(noteId);
+          // The file's button goes with it, so focus goes to its section.
+          if (opened.current?.noteId === noteId) returnFocus.current = opened.current.home;
           // Closed with X while the removal was on its way, another file may be open.
           setOpenId((current) => (current === noteId ? null : current));
           // A page that polls brings the list from the recording's read; one
@@ -187,7 +211,7 @@ export function NoteFile({
     return (
       <ButtonBase
         type="button"
-        onClick={() => context.open(noteId)}
+        onClick={(event) => context.open(noteId, event.currentTarget)}
         data-testid="note-file"
         className="mt-1.5 flex max-w-full flex-col items-start gap-1 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-action"
         aria-label={`Open ${attachment.title}`}
@@ -274,6 +298,8 @@ interface NoteFileViewerProps {
   /** The note whose file to show; null keeps the viewer closed. */
   note: TimelineNote | null;
   onClose: () => void;
+  /** Where focus goes once the viewer has gone, instead of the button that opened it. */
+  returnFocus: RefObject<HTMLElement | null>;
   onPlay?: (seconds: number) => void;
   onChanged: () => void;
   /** Called once the file is gone from its note, which may have gone too. */
@@ -287,6 +313,7 @@ function NoteFileViewer({
   recordingId,
   note,
   onClose,
+  returnFocus,
   onPlay,
   onChanged,
   onRemoved,
@@ -302,7 +329,14 @@ function NoteFileViewer({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const file = note?.attachment ?? null;
 
-  if (!note || !file) return <Modal open={false} onClose={onClose}>{null}</Modal>;
+  // Closing keeps `returnFocus`: it is read as the dialog unmounts, after its fade.
+  if (!note || !file) {
+    return (
+      <Modal open={false} onClose={onClose} returnFocus={returnFocus}>
+        {null}
+      </Modal>
+    );
+  }
   const atMs = noteFileTimeMs(note);
   const confirming = confirmingId === file.id;
   const noteGoes = noteGoesWithItsFile(note, file);
@@ -375,6 +409,7 @@ function NoteFileViewer({
       onClose={close}
       // A removal on its way finishes before the viewer can be dismissed.
       dismissible={!removing}
+      returnFocus={returnFocus}
       size="xl"
       title={file.title}
       description={readState(file)}
