@@ -52,6 +52,13 @@ class NemotronStream:
         """An owned copy of overlapping native audio followed by the partial packet."""
         return np.concatenate((self._audio, self._pending))
 
+    def bind_runtime(self, runtime: WindowRuntime) -> None:
+        """Attach compatible inference after restoring CPU-owned stream state."""
+        if runtime.geometry != self.geometry:
+            raise NemotronStateError("Nemotron restored stream geometry differs")
+        self._check_open()
+        self._infer = runtime.infer_window
+
     def _check_open(self) -> None:
         if self._failed:
             raise NemotronStateError(

@@ -673,6 +673,10 @@ export interface Settings {
   notes_language?: string;
   notes_language_custom_instruction?: string;
   enable_live_transcription?: boolean;
+  /** Install-wide, admin-only: provisional labels require CUDA. */
+  live_speaker_labels?: "off" | "auto";
+  /** Install-wide, admin-only: selected when a capture's live labels start. */
+  speaker_engine?: "auto" | "classic";
   enable_meeting_edge?: boolean;
   meeting_edge_context_level?: number;
   /** Re-measure stale delivery figures when the Analytics tab is next opened. */

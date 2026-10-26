@@ -505,7 +505,7 @@ async def test_the_recording_detail_carries_a_notes_signature_and_the_live_audio
 
 @pytest.mark.anyio
 async def test_just_after_a_resume_the_live_clock_runs_on_from_the_resume(
-    client: AsyncClient, session_maker
+    client: AsyncClient, session_maker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _add_detail_tables(session_maker)
     now = utc_now()
@@ -543,11 +543,15 @@ async def test_just_after_a_resume_the_live_clock_runs_on_from_the_resume(
             )
         await session.commit()
 
+    # Request/DB latency must not advance the 300 ms this scenario specifies.
+    monkeypatch.setattr(
+        "backend.api.v1.endpoints.recordings.routes_query.utc_now", lambda: now
+    )
     detail = (await client.get(f"/api/v1/recordings/{REC}")).json()
 
     # Not 8 000: run on from the segment before the pause, the clock would sit
     # at its 2.5 s cap ahead of the audio until the next segment lands.
-    assert 5_800 <= detail["live_audio_ms"] < 7_000
+    assert detail["live_audio_ms"] == 5_800
 
 
 @pytest.mark.anyio

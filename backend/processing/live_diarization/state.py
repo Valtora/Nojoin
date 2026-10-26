@@ -76,7 +76,8 @@ def new_engine(live_dir: Path, config: LiveLabelConfig) -> LiveLabelEngine:
     return LiveLabelEngine(config, UnitBank(bank_path, config.embedding_dim))
 
 
-def save_engine(live_dir: Path, engine: LiveLabelEngine) -> None:
+def encode_shadow(engine: LiveLabelEngine) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Encode shadow state without writing or mutating the append-only bank."""
     units = engine.units
     clustering = engine.clustering
     meta = {
@@ -92,7 +93,6 @@ def save_engine(live_dir: Path, engine: LiveLabelEngine) -> None:
     }
     open_slots = np.where(units.open_uid >= 0)[0]
     arrays: dict[str, Any] = {
-        "meta": np.array(json.dumps(meta)),
         "audio": engine.audio,
         "active": clustering.active,
         "piece_start": np.array([p.start for p in engine.pieces], np.float64),
@@ -112,8 +112,15 @@ def save_engine(live_dir: Path, engine: LiveLabelEngine) -> None:
     for name, dtype in _UNIT_FIELDS.items():
         arrays[f"unit_{name}"] = np.array(getattr(units, name), dtype)
 
+    return meta, arrays
+
+
+def write_snapshot(
+    live_dir: Path, meta: dict[str, Any], arrays: dict[str, Any]
+) -> None:
+    """Publish one envelope after its append-only bank reaches durable storage."""
     buffer = io.BytesIO()
-    np.savez(buffer, **arrays)
+    np.savez(buffer, meta=np.array(json.dumps(meta, allow_nan=False)), **arrays)
     # The bank rows first: a state on disk never counts rows that are not.
     _sync(live_dir / BANK_FILENAME)
     path = live_dir / STATE_FILENAME
@@ -127,6 +134,12 @@ def save_engine(live_dir: Path, engine: LiveLabelEngine) -> None:
     os.replace(tmp, path)
     # The rename itself, so a run after a power loss finds the new state.
     _sync(live_dir)
+
+
+def save_engine(live_dir: Path, engine: LiveLabelEngine) -> None:
+    """Persist a standalone shadow using the same atomic envelope machinery."""
+    meta, arrays = encode_shadow(engine)
+    write_snapshot(live_dir, meta, arrays)
 
 
 def _sync(path: Path) -> None:
@@ -143,27 +156,52 @@ def _sync(path: Path) -> None:
 
 def load_engine(live_dir: Path, config: LiveLabelConfig) -> LiveLabelEngine | None:
     """The saved engine, or None when this recording has no state yet."""
-    path = live_dir / STATE_FILENAME
-    if not path.exists():
-        return None
     try:
-        with np.load(path) as saved:
-            data = {key: saved[key] for key in saved.files}
-        meta = json.loads(str(data["meta"]))
-        if not isinstance(meta, dict):
-            raise ValueError("state metadata is not an object")
-        if meta.get("version") != STATE_VERSION or meta.get("config") != (
-            config.fingerprint()
-        ):
-            raise LiveLabelStateError("Live label state from another version")
+        snapshot = read_snapshot(live_dir, config)
+        if snapshot is None:
+            return None
+        meta, data = snapshot
         return _restore(live_dir, config, meta, data)
     except _UNREADABLE as exc:
         raise LiveLabelStateError(f"Unreadable live label state: {exc!r}") from exc
 
 
+def read_snapshot(
+    live_dir: Path, config: LiveLabelConfig
+) -> tuple[dict[str, Any], dict[str, np.ndarray]] | None:
+    """Read an envelope without constructing or truncating its unit bank."""
+    path = live_dir / STATE_FILENAME
+    if not path.exists():
+        return None
+    with np.load(path, allow_pickle=False) as saved:
+        data = {key: saved[key] for key in saved.files}
+    meta = json.loads(str(data.pop("meta")))
+    if not isinstance(meta, dict):
+        raise ValueError("state metadata is not an object")
+    if (
+        meta.get("version") != STATE_VERSION
+        or meta.get("config") != config.fingerprint()
+    ):
+        raise LiveLabelStateError("Live label state from another version")
+    return meta, data
+
+
 def _check(condition: bool, what: str) -> None:
     if not condition:
         raise ValueError(f"live label state: {what}")
+
+
+def _validate_meta(meta: dict[str, Any], slots: int) -> None:
+    """Validate shadow metadata without touching its append-only bank."""
+    for name in _META_INTS:
+        _check(type(meta[name]) is int and meta[name] >= 0, name)
+    origin = meta["origin_n"]
+    _check(origin is None or (type(origin) is int and origin >= 0), "origin")
+    _check(type(meta["initialised"]) is bool, "initialised")
+    _check(np.isfinite(meta["next_recluster_s"]), "recluster time")
+    if origin is not None:
+        _check(origin <= meta["audio_end_n"], "audio cursor before origin")
+        _check(meta["next_end_n"] > origin, "step cursor before origin")
 
 
 def _validate(
@@ -175,9 +213,13 @@ def _validate(
     """Raise ValueError unless every part of the state fits together."""
     slots = config.clustering.max_speakers
     dim = config.embedding_dim
-    for name in _META_INTS:
-        _check(isinstance(meta[name], int) and meta[name] >= 0, name)
-    _check(meta["origin_n"] is None or isinstance(meta["origin_n"], int), "origin")
+    _validate_meta(meta, slots)
+    _validate_storage(data)
+    for name, value in data.items():
+        if name.startswith("native_") or name.startswith("hybrid_"):
+            continue
+        _check(value.dtype.kind != "O", f"object array {name}")
+        _check(bool(np.isfinite(value).all()), f"non-finite {name}")
     bank_rows = meta["bank_rows"]
     bank_path = live_dir / BANK_FILENAME
     bank_bytes = bank_path.stat().st_size if bank_path.exists() else 0
@@ -203,14 +245,40 @@ def _validate(
     _check(bool(np.all(data["unit_stable"] >= 0)), "unit passes")
     rows = data["unit_row"]
     _check(bool(np.all((rows >= -1) & (rows < bank_rows))), "unit bank rows")
-    _check(bool(np.all(data["open_uid"] < count)), "open units")
+    _check(
+        bool(np.all((data["open_uid"] >= -1) & (data["open_uid"] < count))),
+        "open units",
+    )
     pieces = len(data["piece_start"])
     for name in _PIECE_FIELDS:
         _check(data[name].shape == (pieces,), name)
+    _check(bool(np.all(data["piece_end"] >= data["piece_start"])), "piece chronology")
     _check(
         bool(np.all((data["piece_unit"] >= 0) & (data["piece_unit"] < count))),
         "piece units",
     )
+
+
+def _validate_storage(data: dict[str, np.ndarray]) -> None:
+    """Reject arrays whose reconstruction would fail after bank truncation."""
+    dtypes = {
+        "audio": np.float32,
+        "active": np.bool_,
+        "open_slots": np.int64,
+        "open_uid": np.int64,
+        "open_first": np.int64,
+        "open_last": np.int64,
+        "open_steps": np.int32,
+        "open_long": np.int8,
+        "open_sum_long": np.float32,
+        "open_sum_all": np.float32,
+        "piece_start": np.float64,
+        "piece_end": np.float64,
+        "piece_unit": np.int64,
+        "piece_open": np.bool_,
+    }
+    for name, dtype in dtypes.items():
+        _check(data[name].dtype == dtype, f"{name} dtype")
 
 
 def _restore(

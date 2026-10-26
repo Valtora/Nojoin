@@ -4,8 +4,9 @@ Native Transformers is accepted as a separately evaluated diarisation engine.
 **Numerical/output parity with NeMo fails.** Similar mapped AMI accuracy does not
 mean identical probabilities, cache selections, channel activity, emission clocks
 or endpoint lengths. This record preserves completed development studies; it is
-not a new held-out experiment or evidence that the later live/final integration
-already passes.
+not a new held-out experiment. The [causal live integration record](nemotron-live-710.md)
+reports its separate dev acceptance and held-out implementation check, including
+parliamentary regressions. Final-pass integration remains a separate gate.
 
 The [machine-readable record](nemotron-710.json) contains all ten dev streams,
 additive strict first-display counts and zero-collar DER components, original and
@@ -76,8 +77,9 @@ The record and fixture bind the canonical three-file asset manifest digest and
 Transformers 5.20.2. No converter or NeMo dependency enters the shipped runtime.
 
 The [fixed PCM golden](../../backend/tests/fixtures/nemotron/README.md) uses the
-production official-loader fp32/SDPA/CUDA frontend. Its first 128.37 seconds of
-ES2004d cross FIFO overflow and cache compression. Three deterministic repeats
+production official-loader fp32/SDPA/CUDA frontend. Its first 21.13 seconds of
+ES2004d cross FIFO overflow at EOF; this short fixture does not cover cache
+compression. Three deterministic repeats
 produced zero posterior/cache drift; pre-registered posterior and cache tolerances
 and their policy hash are recorded in its manifest. CPU integration replay checks
 the actual scheduling boundary; the separate opt-in CUDA regression computes
@@ -85,9 +87,11 @@ native features/cache/posteriors and continues from reconstructed checkpoints.
 Ordinary upstream CI explicitly skips that model gate when opt-in/CUDA/local assets
 are absent. The fixture is a development regression example, not held-out evidence.
 
-Retained approximately 42 ms packet timings exclude the production runtime's
-per-window CPU feature-equivalence guard. They are research-path timings; this
-commit makes no 42 ms production-runtime claim and does not add a new timing study.
+The runtime checks CPU/CUDA feature equivalence when its process-local model
+loads, then validates inputs, probabilities and CPU cache storage during
+inference. Historical approximately 42 ms research packet timings are not a
+latency guarantee for the complete live lane, its shadow engine, checkpointing,
+ASR or queue contention.
 
 Recompute the tables offline from shipped counts, without importing Torch,
 Transformers or NeMo:
@@ -119,8 +123,9 @@ read or recompute this shipped record.
 
 Later evidence must remain attributed correctly: live held-out gains were measured
 with NeMo, while offline final held-out inference used native HF through the now
-verified-equal conversion. The later default causal live replay and final union
-integration remain separate acceptance gates. Existing final routing evidence also
+verified-equal conversion. The [default causal live replay](nemotron-live-710.md)
+now has separate production evidence; final union integration remains a separate
+acceptance gate. Existing final routing evidence also
 reports ICSI confusion/line gains with false alarm +8.3 pp and DER +2.45 pp; that
 limitation is not removed by this runtime commit. No held-out outcomes were retuned
 or rerun for this record.

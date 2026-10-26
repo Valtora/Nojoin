@@ -146,6 +146,8 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "install_glossary_terms",
     # Not an AI setting: listed for the same admin-only, install-wide handling.
     EXPORT_BRANDING_KEY,
+    "live_speaker_labels",
+    "speaker_engine",
     *TRANSCRIPTION_SETTING_KEYS,
 )
 
@@ -213,6 +215,7 @@ DEFAULT_SYSTEM_CONFIG = {
     # Provisional speaker labels in the live transcript: "off", or "auto" to run
     # them when the live lane is on CUDA. See docs/DEPLOYMENT.md.
     "live_speaker_labels": "off",
+    "speaker_engine": "auto",
     "vad_parameters": {
         "threshold": 0.5,
         "min_speech_duration_ms": 250,

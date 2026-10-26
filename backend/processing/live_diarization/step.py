@@ -2,8 +2,8 @@
 
 The live task calls ``run_live_speaker_labels`` after its text and lane state
 are saved, inside a try block of its own, so nothing here can fail the run or
-delay its text. The step loads the engine, feeds it the run's new audio, writes
-the labels in a second transaction, and saves the engine.
+delay its text. The step feeds the engines on their own sample clock and saves
+decision state before writing labels, then saves settled/pruned progress.
 
 ``live_speaker_labels`` (``data/config.json``) switches it: ``off`` (the
 default) or ``auto``, which runs it when the live lane's device is CUDA. Any
@@ -21,8 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.canonical_pipeline.live_labels import (
     LiveLabelDecision,
@@ -32,10 +30,20 @@ from backend.utils.canonical_pipeline.live_labels import (
 from backend.utils.config_manager import config_manager
 
 from .engine import FeedResult, LiveLabelConfig, LiveLabelEngine, ModelFn
-from .files import DISABLED_FILENAME, LOCK_FILENAME, remove_live_label_state
+from .files import (
+    BANK_FILENAME,
+    DISABLED_FILENAME,
+    LOCK_FILENAME,
+    remove_live_label_state,
+)
+from .hybrid import HybridLiveState
+from .hybrid_execution import feed_capture
+from .hybrid_runtime import bind_capture, has_label_history, start_capture
+from .hybrid_source import update_source_cursor
+from .hybrid_state import load_hybrid, save_hybrid
 from .lines import LabelTimeline
 from .setting import live_speaker_labels_requested
-from .state import LiveLabelStateError, load_engine, new_engine, save_engine
+from .state import LiveLabelStateError, save_engine
 
 logger = logging.getLogger(__name__)
 
@@ -91,11 +99,6 @@ def _load_model(device: str, config: LiveLabelConfig) -> ModelFn:
     return LiveLabelModel(device, config)
 
 
-def _mono_samples(audio: Any) -> np.ndarray:
-    samples = audio.numpy() if hasattr(audio, "numpy") else audio
-    return np.asarray(samples, dtype=np.float32).reshape(-1)
-
-
 def _recording_in_flight(session, recording_id: int, *, lock: bool = False) -> bool:
     from backend.models.recording import Recording, RecordingStatus
 
@@ -123,11 +126,17 @@ def _still_capturing(recording_id: int) -> bool:
         session.close()
 
 
-def _write_labels(recording_id: int, engine: LiveLabelEngine) -> LiveLabelWrite | None:
+def _write_labels(
+    recording_id: int, engine: LiveLabelEngine | HybridLiveState
+) -> LiveLabelWrite | None:
     """Write the labels, or return None once the capture has ended."""
     from backend.core.db import get_sync_session
 
-    timeline = LabelTimeline.from_engine(engine)
+    timeline = (
+        engine
+        if isinstance(engine, HybridLiveState)
+        else LabelTimeline.from_engine(engine)
+    )
 
     def decide(start_ms: int, end_ms: int) -> LiveLabelDecision:
         return timeline.label_line(start_ms / 1000.0, end_ms / 1000.0)
@@ -151,7 +160,9 @@ def _write_labels(recording_id: int, engine: LiveLabelEngine) -> LiveLabelWrite 
 
 
 def _save(
-    run: LiveLabelRun, engine: LiveLabelEngine, write: LiveLabelWrite | None
+    run: LiveLabelRun,
+    engine: LiveLabelEngine | HybridLiveState,
+    write: LiveLabelWrite | None,
 ) -> None:
     """Save the engine; after a write, also advance the settled lines and prune."""
     if write is not None:
@@ -162,12 +173,20 @@ def _save(
             else min(write.open_from_s, run.next_text_start_s)
         )
         engine.prune_pieces(open_from_s - PRUNE_MARGIN_S)
-    save_engine(run.live_dir, engine)
+    if isinstance(engine, HybridLiveState):
+        save_hybrid(run.live_dir, engine)
+    else:
+        save_engine(run.live_dir, engine)
 
 
-def _load_or_disable(run: LiveLabelRun) -> LiveLabelEngine | None:
+def _load_or_disable(run: LiveLabelRun, device: str) -> HybridLiveState | None:
     try:
-        engine = load_engine(run.live_dir, CONFIG)
+        engine = load_hybrid(run.live_dir, CONFIG, recording_id=run.recording_id)
+        if engine is None and (
+            (run.live_dir / BANK_FILENAME).exists()
+            or has_label_history(run.recording_id)
+        ):
+            raise LiveLabelStateError("Missing checkpoint for existing live identities")
     except LiveLabelStateError as exc:
         # Starting over would hand earlier speakers' numbers to new voices, so
         # labels stop for this recording; its text is unaffected.
@@ -184,12 +203,18 @@ def _load_or_disable(run: LiveLabelRun) -> LiveLabelEngine | None:
             log=logger,
         )
         return None
-    return engine if engine is not None else new_engine(run.live_dir, CONFIG)
+    if engine is None:
+        engine = start_capture(
+            run.live_dir, CONFIG, device=device, recording_id=run.recording_id
+        )
+    else:
+        bind_capture(engine, device=device)
+    return engine
 
 
 def _record(
     run: LiveLabelRun,
-    engine: LiveLabelEngine,
+    engine: HybridLiveState,
     feed: FeedResult,
     write: LiveLabelWrite,
     started: float,
@@ -207,6 +232,9 @@ def _record(
             "lines_changed": write.changed,
             "speakers": int(engine.clustering.active.sum()),
             "units": engine.units.count,
+            "route": engine.route,
+            "reason": engine.reason,
+            "switch_emitted_at_n": engine.switch_emitted_at_n,
         },
         elapsed_ms=(time.perf_counter() - started) * 1000.0,
         log=logger,
@@ -259,27 +287,37 @@ def run_live_speaker_labels(run: LiveLabelRun) -> None:
 
 def _label_run(run: LiveLabelRun, device: str) -> None:
     started = time.perf_counter()
-    engine = _load_or_disable(run)
+    engine = _load_or_disable(run, device)
     if engine is None:
         return
-    feed = engine.feed(
-        _mono_samples(run.audio),
-        int(round(run.audio_start_s * CONFIG.sample_rate)),
-        _load_model(device, CONFIG),
-    )
-
     ended = False
+    consumed_saved = False
+    feed: FeedResult | None = None
     write: LiveLabelWrite | None = None
     try:
+        # Persist the capture-frozen selection even if loading the shadow fails.
+        if engine.source_sequence < 0:
+            save_hybrid(run.live_dir, engine)
+        engine, feed = feed_capture(run, engine, lambda: _load_model(device, CONFIG))
+        update_source_cursor(engine, run)
+        # All IDs and decisions must exist on disk before a DB callback can lock
+        # a line. A crash before the DB commit replays this retained evidence.
+        save_hybrid(run.live_dir, engine)
+        consumed_saved = True
         write = _write_labels(run.recording_id, engine)
         ended = write is None
+    except (FileNotFoundError, ValueError):
+        if _still_capturing(run.recording_id):
+            raise
+        ended = True
     finally:
         try:
             # Saved even when the write failed: the audio is consumed, and the
             # next run labels these lines from the saved engine.
-            if not ended:
+            ended = ended or not _still_capturing(run.recording_id)
+            if not ended and consumed_saved:
                 _save(run, engine, write)
-        except FileNotFoundError:
+        except (FileNotFoundError, ValueError):
             # Finalize removed the files under a stalled save: once the capture
             # has ended, that is not a failure to report.
             if _still_capturing(run.recording_id):
@@ -293,5 +331,5 @@ def _label_run(run: LiveLabelRun, device: str) -> None:
             ended = ended or not _still_capturing(run.recording_id)
             if ended:
                 remove_live_label_state(run.live_dir)
-    if write is not None and not ended:
+    if write is not None and feed is not None and not ended:
         _record(run, engine, feed, write, started)

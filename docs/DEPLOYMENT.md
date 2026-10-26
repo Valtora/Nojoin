@@ -177,7 +177,7 @@ After each task, workers release cached models and CUDA memory. The exception is
 
 ### Optional Native Speaker Assets
 
-The native Nemotron runtime can be prepared and validated separately. This runtime change leaves the existing live and final speaker engines in use; it introduces no engine setting.
+The native Nemotron runtime supplies live speaker labels on eligible CUDA captures when `speaker_engine` is `auto` and live labels are enabled ([Live Speaker Labels](#live-speaker-labels)). The final speaker pass is unchanged in this change.
 
 An administrator can prepare or repair it through `POST /api/v1/system/models/prepare` with `{"target":"nemotron"}`. This prepares only Nemotron, regardless of the transcription engine. The existing `active` and `core` targets retain their meaning. `GET /api/v1/system/models/status` reports its `verification_state` (`missing`, `partial`, `verified` or `invalid`), revision and manifest identity. `DELETE /api/v1/system/models/nemotron` removes its managed cache through a worker, using the same shared-blob safeguards as other models. These operations require running workers; preparation and deletion require an administrator.
 
@@ -185,7 +185,7 @@ The three official files occupy **396,956,673 bytes**, including **396,954,592 b
 
 The worker pins Transformers **5.20.2**, loads only the verified local safetensors snapshot with remote code disabled, and uses fp32/SDPA on CUDA. No checkpoint is baked into an image or fetched by settings saves, health polling or startup. The clean worker build adds **55,894,050 bytes** of installed package payload, excluding bytecode and console scripts; this is not a compressed image-layer measurement. The API has no Transformers dependency, and CPU-only workers do not import the native runtime's ML dependencies.
 
-The first-use preparation helper queues one deduplicated Nemotron-only task and returns immediately when a transfer is already pending. Callers can retain their existing engine for that capture and try native inference on a subsequent capture; those callers are not wired by this runtime change. Failed requests can be retried explicitly or by a later capture. Offline use requires assets prepared in advance: the loader never falls through to an online download. Preparation uses the stock single `gpu` worker slot and can delay other work, so prepare before recording. Native packet timing does not establish a live-plus-final latency guarantee.
+If verified assets are absent when a capture's labels start, the worker requests one deduplicated Nemotron-only preparation task and keeps clustering labels for that entire capture. The next capture can use the prepared model. A failed request is not retried on every live segment; an administrator can repair it explicitly, or a later capture can request preparation again. Offline use requires assets prepared in advance: the loader never falls through to an online download. Preparation uses the stock single `gpu` worker slot and can delay other work, so prepare before recording. Native packet timing does not establish a live-plus-final latency guarantee.
 
 ### Worker Concurrency Lanes
 
@@ -376,9 +376,18 @@ A user's own value replaces the flat key entirely, so an unusable per-user value
 - `off`, the shipped default: nothing runs and no model loads.
 - `auto`: labels run on `worker-gpu` when it is on CUDA (`processing_device` is `auto` or a `cuda` device, and a GPU is present). On a CPU-only host they stay off, because the model pass alone needs about a third of real time on 16 CPU threads.
 
-Any other value is off. Workers re-read `config.json` before each task, so a change reaches the next live segment, and labels turned on mid-meeting number the speakers from that point.
+Any other value is off. Workers re-read `config.json` before each task, so changing the master switch reaches the next live segment. Turning labels on after a capture has begun uses clustering if the earlier audio is unavailable to the label engine.
 
-On a 12 GB RTX 4070 Ti, labels take about 32 ms of the GPU worker's time per 2 s of audio (p95 about 90 ms, when a re-cluster runs) and add about 450 MiB of VRAM to a capture, since the live lane keeps the segmentation and speaker embedding models loaded beside the transcription model. The first segment of a capture also loads them, about 2 s. On the shipped single GPU lane a final pass releases every model before it starts and after it ends, so it never runs beside them: with Parakeet, the lane's peak rose from 3,890 to 4,140 MiB, set by a capture rather than the final pass. With two GPU lanes on one card, a final pass and a labelled capture running at once peaked at about 8,030 MiB. The engine's state sits in the recording's `temp/<id>/live/` and is deleted at finalise: a file rewritten every 2 s, about 0.35 MB plus 2 KB per speaker (0.5 MB after two and a half hours), and an append-only bank of 1 KB per speaker turn (2.4 MB). Each save syncs both to disk, about 60 ms on a RAID array. A re-cluster handles at most 1,000 recent turns plus 10 older ones per speaker, so its cost does not grow with the meeting (about 0.3 s every 10 s with 40 speakers, against 2.6 s at 8,000 turns unbounded).
+The install-wide `speaker_engine` key selects the speaker engine independently of that master switch:
+
+- `auto`, the default: use verified native Nemotron labels on CUDA, with today's clustering engine running alongside it. If the model is unavailable or fails, or all eight native channels have accumulated two seconds of activity, the capture uses clustering for the rest of the meeting. Labels already settled and manual assignments stay authoritative; matching earlier voices across this change is best-effort.
+- `classic`: retain today's clustering labels and skip native model loading and preparation.
+
+Set these keys in `data/config.json`; neither has a settings-page control. Owners and administrators can also save them through the settings API. Other users cannot change them or supply personal overrides. `speaker_engine` is resolved when labels first start for a capture and retained across worker restarts; a later change applies to subsequent captures. An invalid stored engine value is logged and uses `auto`. Neither key enables live speaker labels on CPU-only hosts.
+
+Native audio has its own sample cursor and chronological two-second packets, so carried ASR audio is not counted twice and a backlog preserves the same model calls and hand-back as paced input. The native CPU cache is about 1.04 MiB per capture, in addition to retained audio, probabilities and clustering history; it is not a bound on the whole snapshot. Native inference and the shadow clustering model add work and memory to the live lane. Retained native packet measurements exclude the production runtime's validation overhead ([evaluation record](evaluation/nemotron-710.md)); they are not production latency guarantees. A final job and preparation still share the stock GPU queue with live work and can delay it.
+
+Earlier measurements of the classic engine alone on a 12 GB RTX 4070 Ti were about 32 ms per 2 s of audio (p95 about 90 ms, including re-clustering) and about 450 MiB of additional VRAM; these exclude native inference. Label state sits in the recording's `temp/<id>/live/` and is deleted at finalise. Each atomic snapshot is synced alongside the append-only bank, which stores 1 KB per closed speaker turn. A re-cluster considers at most 1,000 recent turns plus 10 older anchors per speaker; total retained history and snapshot size can still grow with the meeting.
 
 ## CLI OAuth (worker-io image)
 

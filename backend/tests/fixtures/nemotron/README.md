@@ -21,8 +21,9 @@ after call 28: empty speaker-cache arrays and 252 FIFO encoder frames. Both npz
 files use lossless compression. Reconstruction zero-fills unused capacity, which
 native attention excludes using the valid counts. The final cache metadata records
 the EOF overflow: 222 speaker-cache frames and 43 FIFO frames, uncompressed.
-These are native state reconstruction fixtures; commit 1 does not
-implement or claim coverage of the later production live checkpoint codec.
+The ordinary native-state tests also reconstruct this retained checkpoint through
+the production numeric codec. Longer local integration probes exercise populated
+and compressed cache states; this short checked-in fixture does not contain them.
 
 This is the shortest prefix of this source that exercises the first window,
 a FIFO overflow and EOF. Each ordinary call adds nine encoder frames. After
@@ -48,8 +49,9 @@ local safetensors policy. A scoped test-only inspector selects the directory nam
 by `NOJOIN_NEMOTRON_MODEL_DIR`; production has no directory override. It checks
 every real posterior and the stored live checkpoint, reconstructs native state
 after call 28, and continues inference through the EOF FIFO overflow. It checks
-the final counts and flags separately. The runtime checks
-CPU/CUDA feature equivalence for every window separately.
+the final counts and flags separately. The runtime checks CPU/CUDA feature
+equivalence at process-local model load for the pinned window geometries;
+ordinary inference validates its inputs, probabilities and CPU cache storage.
 
 Three recorded generation repeats on RTX 4070 Ti, Torch 2.14.1+cu130,
 Transformers 5.20.2, fp32/SDPA, matmul TF32 off and cuDNN TF32 on produced maximum

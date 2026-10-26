@@ -1,0 +1,4336 @@
+{
+  "schema_version": 1,
+  "scope": "Build2 slot-fix implementation check",
+  "primary_experiment": "oracle-line emission-clock replay; historical forced EOF visibility; native not EOF-flushed",
+  "heldout_attribution": "Implementation check of a bug fix on held-out data examined before; one frozen rerun after dev passed; no retuning",
+  "declared_before_scoring": {
+    "bars": {
+      "ami_pooled_min_pct": 76.67500839771581,
+      "lords_min_pct": 95.18930547019053,
+      "london_min_pct": 95.05911330049261
+    },
+    "accepted_native_ami_correct": 4595,
+    "accepted_native_ami_lines": 5954
+  },
+  "representation": {
+    "inference": "native HF fp32",
+    "line_decision": "summed raw fp32 argmax, lowest tie",
+    "routing": "float16 probabilities >0.5; each of8 channels200 active frames; receipt-time handback"
+  },
+  "dev": {
+    "streams": 32,
+    "production": {
+      "amiBF": {
+        "streams": 4,
+        "reference_lines": 2499,
+        "audio_seconds": 8079.616062499999,
+        "first": {
+          "correct": 2016,
+          "unknown": 0,
+          "strict_pct": 80.67226890756302
+        },
+        "final": {
+          "correct": 2016,
+          "unknown": 0,
+          "strict_pct": 80.67226890756302
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2499,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "amiBH": {
+        "streams": 4,
+        "reference_lines": 2499,
+        "audio_seconds": 8079.1040625,
+        "first": {
+          "correct": 2044,
+          "unknown": 0,
+          "strict_pct": 81.79271708683473
+        },
+        "final": {
+          "correct": 2044,
+          "unknown": 0,
+          "strict_pct": 81.79271708683473
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2499,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "amiF": {
+        "streams": 4,
+        "reference_lines": 2977,
+        "audio_seconds": 8927.861375,
+        "first": {
+          "correct": 2271,
+          "unknown": 1,
+          "strict_pct": 76.28485052065838
+        },
+        "final": {
+          "correct": 2271,
+          "unknown": 1,
+          "strict_pct": 76.28485052065838
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2977,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        }
+      },
+      "amiH": {
+        "streams": 4,
+        "reference_lines": 2977,
+        "audio_seconds": 8927.7000625,
+        "first": {
+          "correct": 2324,
+          "unknown": 1,
+          "strict_pct": 78.06516627477326
+        },
+        "final": {
+          "correct": 2324,
+          "unknown": 1,
+          "strict_pct": 78.06516627477326
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2977,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        }
+      },
+      "amiTF": {
+        "streams": 2,
+        "reference_lines": 1636,
+        "audio_seconds": 5446.1933125,
+        "first": {
+          "correct": 1353,
+          "unknown": 0,
+          "strict_pct": 82.70171149144254
+        },
+        "final": {
+          "correct": 1353,
+          "unknown": 0,
+          "strict_pct": 82.70171149144254
+        },
+        "routing": {
+          "native_at_end": 2,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1636,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "amiTH": {
+        "streams": 2,
+        "reference_lines": 1636,
+        "audio_seconds": 5446.1933125,
+        "first": {
+          "correct": 1382,
+          "unknown": 0,
+          "strict_pct": 84.47432762836186
+        },
+        "final": {
+          "correct": 1382,
+          "unknown": 0,
+          "strict_pct": 84.47432762836186
+        },
+        "routing": {
+          "native_at_end": 2,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1636,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "icsiF": {
+        "streams": 5,
+        "reference_lines": 5299,
+        "audio_seconds": 14688.7734375,
+        "first": {
+          "correct": 3934,
+          "unknown": 119,
+          "strict_pct": 74.24042272126816
+        },
+        "final": {
+          "correct": 3956,
+          "unknown": 68,
+          "strict_pct": 74.65559539535761
+        },
+        "routing": {
+          "native_at_end": 2,
+          "channel_cap_handback": 3,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 5299,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "icsiH": {
+        "streams": 5,
+        "reference_lines": 5299,
+        "audio_seconds": 14688.7734375,
+        "first": {
+          "correct": 4192,
+          "unknown": 93,
+          "strict_pct": 79.10926589922627
+        },
+        "final": {
+          "correct": 4209,
+          "unknown": 59,
+          "strict_pct": 79.4300811473863
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 5299,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "london": {
+        "streams": 1,
+        "reference_lines": 1421,
+        "audio_seconds": 10899.0984375,
+        "first": {
+          "correct": 1369,
+          "unknown": 10,
+          "strict_pct": 96.34060520760028
+        },
+        "final": {
+          "correct": 1376,
+          "unknown": 7,
+          "strict_pct": 96.83321604503871
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1463,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lords": {
+        "streams": 1,
+        "reference_lines": 1627,
+        "audio_seconds": 9000.0026875,
+        "first": {
+          "correct": 1565,
+          "unknown": 12,
+          "strict_pct": 96.18930547019053
+        },
+        "final": {
+          "correct": 1594,
+          "unknown": 3,
+          "strict_pct": 97.97172710510141
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1628,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      }
+    },
+    "current": {
+      "amiBF": {
+        "streams": 4,
+        "reference_lines": 2499,
+        "audio_seconds": 8079.616062499999,
+        "first": {
+          "correct": 1314,
+          "unknown": 218,
+          "strict_pct": 52.581032412965186
+        },
+        "final": {
+          "correct": 1294,
+          "unknown": 76,
+          "strict_pct": 51.78071228491397
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2499,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "amiBH": {
+        "streams": 4,
+        "reference_lines": 2499,
+        "audio_seconds": 8079.1040625,
+        "first": {
+          "correct": 1486,
+          "unknown": 168,
+          "strict_pct": 59.46378551420568
+        },
+        "final": {
+          "correct": 1469,
+          "unknown": 74,
+          "strict_pct": 58.78351340536214
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2499,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "amiF": {
+        "streams": 4,
+        "reference_lines": 2977,
+        "audio_seconds": 8927.861375,
+        "first": {
+          "correct": 1237,
+          "unknown": 351,
+          "strict_pct": 41.55189788377562
+        },
+        "final": {
+          "correct": 1205,
+          "unknown": 142,
+          "strict_pct": 40.47699025864965
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2977,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        }
+      },
+      "amiH": {
+        "streams": 4,
+        "reference_lines": 2977,
+        "audio_seconds": 8927.7000625,
+        "first": {
+          "correct": 1760,
+          "unknown": 259,
+          "strict_pct": 59.11991938192811
+        },
+        "final": {
+          "correct": 1783,
+          "unknown": 134,
+          "strict_pct": 59.8925092374874
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2977,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        }
+      },
+      "amiTF": {
+        "streams": 2,
+        "reference_lines": 1636,
+        "audio_seconds": 5446.1933125,
+        "first": {
+          "correct": 463,
+          "unknown": 240,
+          "strict_pct": 28.30073349633252
+        },
+        "final": {
+          "correct": 463,
+          "unknown": 75,
+          "strict_pct": 28.30073349633252
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1636,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "amiTH": {
+        "streams": 2,
+        "reference_lines": 1636,
+        "audio_seconds": 5446.1933125,
+        "first": {
+          "correct": 662,
+          "unknown": 189,
+          "strict_pct": 40.46454767726161
+        },
+        "final": {
+          "correct": 719,
+          "unknown": 77,
+          "strict_pct": 43.94865525672372
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1636,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "icsiF": {
+        "streams": 5,
+        "reference_lines": 5299,
+        "audio_seconds": 14688.7734375,
+        "first": {
+          "correct": 2877,
+          "unknown": 344,
+          "strict_pct": 54.29326287978864
+        },
+        "final": {
+          "correct": 2885,
+          "unknown": 182,
+          "strict_pct": 54.44423476127571
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 5299,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "icsiH": {
+        "streams": 5,
+        "reference_lines": 5299,
+        "audio_seconds": 14688.7734375,
+        "first": {
+          "correct": 3383,
+          "unknown": 287,
+          "strict_pct": 63.842234383846005
+        },
+        "final": {
+          "correct": 3453,
+          "unknown": 183,
+          "strict_pct": 65.1632383468579
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 5299,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "london": {
+        "streams": 1,
+        "reference_lines": 1421,
+        "audio_seconds": 10899.0984375,
+        "first": {
+          "correct": 1365,
+          "unknown": 14,
+          "strict_pct": 96.05911330049261
+        },
+        "final": {
+          "correct": 1374,
+          "unknown": 9,
+          "strict_pct": 96.69247009148486
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1463,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lords": {
+        "streams": 1,
+        "reference_lines": 1627,
+        "audio_seconds": 9000.0026875,
+        "first": {
+          "correct": 1565,
+          "unknown": 13,
+          "strict_pct": 96.18930547019053
+        },
+        "final": {
+          "correct": 1594,
+          "unknown": 3,
+          "strict_pct": 97.97172710510141
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1628,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      }
+    },
+    "cohort_definitions": {
+      "amiH": "original AMI headset",
+      "amiF": "original AMI far-field",
+      "amiBH": "additional AMI headset",
+      "amiBF": "additional AMI far-field",
+      "amiTH": "train-contaminated AMI headset",
+      "amiTF": "train-contaminated AMI far-field",
+      "icsiH": "ICSI headset",
+      "icsiF": "ICSI far-field",
+      "lords": "Lords",
+      "london": "London"
+    },
+    "per_fixture_aggregates": [
+      {
+        "fixture": "Mix-Headset_EN2002a",
+        "cohort": "amiH",
+        "reference_lines": 868,
+        "first_correct": 639,
+        "current_first_correct": 427,
+        "first_delta_pp": 24.42396313364055,
+        "final_correct": 639,
+        "current_final_correct": 425,
+        "final_delta_pp": 24.65437788018433
+      },
+      {
+        "fixture": "Mix-Headset_ES2004d",
+        "cohort": "amiH",
+        "reference_lines": 713,
+        "first_correct": 560,
+        "current_first_correct": 451,
+        "first_delta_pp": 15.287517531556801,
+        "final_correct": 560,
+        "current_final_correct": 461,
+        "final_delta_pp": 13.884992987377279
+      },
+      {
+        "fixture": "Mix-Headset_IS1009d",
+        "cohort": "amiH",
+        "reference_lines": 607,
+        "first_correct": 463,
+        "current_first_correct": 371,
+        "first_delta_pp": 15.156507413509061,
+        "final_correct": 463,
+        "current_final_correct": 376,
+        "final_delta_pp": 14.332784184514002
+      },
+      {
+        "fixture": "Mix-Headset_TS3003d",
+        "cohort": "amiH",
+        "reference_lines": 789,
+        "first_correct": 662,
+        "current_first_correct": 511,
+        "first_delta_pp": 19.138149556400506,
+        "final_correct": 662,
+        "current_final_correct": 521,
+        "final_delta_pp": 17.870722433460077
+      },
+      {
+        "fixture": "Array1-01_EN2002a",
+        "cohort": "amiF",
+        "reference_lines": 868,
+        "first_correct": 617,
+        "current_first_correct": 326,
+        "first_delta_pp": 33.525345622119815,
+        "final_correct": 617,
+        "current_final_correct": 311,
+        "final_delta_pp": 35.25345622119816
+      },
+      {
+        "fixture": "Array1-01_ES2004d",
+        "cohort": "amiF",
+        "reference_lines": 713,
+        "first_correct": 570,
+        "current_first_correct": 326,
+        "first_delta_pp": 34.22159887798036,
+        "final_correct": 570,
+        "current_final_correct": 321,
+        "final_delta_pp": 34.922861150070126
+      },
+      {
+        "fixture": "Array1-01_IS1009d",
+        "cohort": "amiF",
+        "reference_lines": 607,
+        "first_correct": 452,
+        "current_first_correct": 287,
+        "first_delta_pp": 27.182866556836903,
+        "final_correct": 452,
+        "current_final_correct": 285,
+        "final_delta_pp": 27.512355848434925
+      },
+      {
+        "fixture": "Array1-01_TS3003d",
+        "cohort": "amiF",
+        "reference_lines": 789,
+        "first_correct": 632,
+        "current_first_correct": 298,
+        "first_delta_pp": 42.332065906210396,
+        "final_correct": 632,
+        "current_final_correct": 288,
+        "final_delta_pp": 43.59949302915082
+      },
+      {
+        "fixture": "Mix-Headset_IB4001",
+        "cohort": "amiBH",
+        "reference_lines": 598,
+        "first_correct": 504,
+        "current_first_correct": 375,
+        "first_delta_pp": 21.57190635451505,
+        "final_correct": 504,
+        "current_final_correct": 380,
+        "final_delta_pp": 20.735785953177256
+      },
+      {
+        "fixture": "Mix-Headset_IB4002",
+        "cohort": "amiBH",
+        "reference_lines": 640,
+        "first_correct": 498,
+        "current_first_correct": 244,
+        "first_delta_pp": 39.6875,
+        "final_correct": 498,
+        "current_final_correct": 214,
+        "final_delta_pp": 44.375
+      },
+      {
+        "fixture": "Mix-Headset_IB4003",
+        "cohort": "amiBH",
+        "reference_lines": 553,
+        "first_correct": 453,
+        "current_first_correct": 398,
+        "first_delta_pp": 9.945750452079565,
+        "final_correct": 453,
+        "current_final_correct": 398,
+        "final_delta_pp": 9.945750452079565
+      },
+      {
+        "fixture": "Mix-Headset_IB4004",
+        "cohort": "amiBH",
+        "reference_lines": 708,
+        "first_correct": 589,
+        "current_first_correct": 469,
+        "first_delta_pp": 16.949152542372882,
+        "final_correct": 589,
+        "current_final_correct": 477,
+        "final_delta_pp": 15.819209039548022
+      },
+      {
+        "fixture": "Array1-01_IB4001",
+        "cohort": "amiBF",
+        "reference_lines": 598,
+        "first_correct": 490,
+        "current_first_correct": 312,
+        "first_delta_pp": 29.765886287625417,
+        "final_correct": 490,
+        "current_final_correct": 320,
+        "final_delta_pp": 28.42809364548495
+      },
+      {
+        "fixture": "Array1-01_IB4002",
+        "cohort": "amiBF",
+        "reference_lines": 640,
+        "first_correct": 496,
+        "current_first_correct": 258,
+        "first_delta_pp": 37.1875,
+        "final_correct": 496,
+        "current_final_correct": 238,
+        "final_delta_pp": 40.3125
+      },
+      {
+        "fixture": "Array1-01_IB4003",
+        "cohort": "amiBF",
+        "reference_lines": 553,
+        "first_correct": 449,
+        "current_first_correct": 365,
+        "first_delta_pp": 15.189873417721518,
+        "final_correct": 449,
+        "current_final_correct": 370,
+        "final_delta_pp": 14.285714285714286
+      },
+      {
+        "fixture": "Array1-01_IB4004",
+        "cohort": "amiBF",
+        "reference_lines": 708,
+        "first_correct": 581,
+        "current_first_correct": 379,
+        "first_delta_pp": 28.531073446327685,
+        "final_correct": 581,
+        "current_final_correct": 366,
+        "final_delta_pp": 30.36723163841808
+      },
+      {
+        "fixture": "Mix-Headset_EN2006a",
+        "cohort": "amiTH",
+        "reference_lines": 1180,
+        "first_correct": 968,
+        "current_first_correct": 385,
+        "first_delta_pp": 49.40677966101695,
+        "final_correct": 968,
+        "current_final_correct": 437,
+        "final_delta_pp": 45
+      },
+      {
+        "fixture": "Mix-Headset_TS3010d",
+        "cohort": "amiTH",
+        "reference_lines": 456,
+        "first_correct": 414,
+        "current_first_correct": 277,
+        "first_delta_pp": 30.04385964912281,
+        "final_correct": 414,
+        "current_final_correct": 282,
+        "final_delta_pp": 28.94736842105263
+      },
+      {
+        "fixture": "Array1-01_EN2006a",
+        "cohort": "amiTF",
+        "reference_lines": 1180,
+        "first_correct": 957,
+        "current_first_correct": 309,
+        "first_delta_pp": 54.91525423728814,
+        "final_correct": 957,
+        "current_final_correct": 300,
+        "final_delta_pp": 55.67796610169491
+      },
+      {
+        "fixture": "Array1-01_TS3010d",
+        "cohort": "amiTF",
+        "reference_lines": 456,
+        "first_correct": 396,
+        "current_first_correct": 154,
+        "first_delta_pp": 53.07017543859649,
+        "final_correct": 396,
+        "current_final_correct": 163,
+        "final_delta_pp": 51.09649122807018
+      },
+      {
+        "fixture": "Mix-Headset_Bmr012",
+        "cohort": "icsiH",
+        "reference_lines": 1070,
+        "first_correct": 541,
+        "current_first_correct": 528,
+        "first_delta_pp": 1.2149532710280373,
+        "final_correct": 558,
+        "current_final_correct": 543,
+        "final_delta_pp": 1.4018691588785046
+      },
+      {
+        "fixture": "Mix-Headset_Bmr013",
+        "cohort": "icsiH",
+        "reference_lines": 953,
+        "first_correct": 836,
+        "current_first_correct": 636,
+        "first_delta_pp": 20.98635886673662,
+        "final_correct": 836,
+        "current_final_correct": 656,
+        "final_delta_pp": 18.88772298006296
+      },
+      {
+        "fixture": "Mix-Headset_Bmr018",
+        "cohort": "icsiH",
+        "reference_lines": 1360,
+        "first_correct": 1144,
+        "current_first_correct": 866,
+        "first_delta_pp": 20.441176470588236,
+        "final_correct": 1144,
+        "current_final_correct": 881,
+        "final_delta_pp": 19.33823529411765
+      },
+      {
+        "fixture": "Mix-Headset_Bmr021",
+        "cohort": "icsiH",
+        "reference_lines": 784,
+        "first_correct": 654,
+        "current_first_correct": 480,
+        "first_delta_pp": 22.193877551020407,
+        "final_correct": 654,
+        "current_final_correct": 489,
+        "final_delta_pp": 21.04591836734694
+      },
+      {
+        "fixture": "Mix-Headset_Bro021",
+        "cohort": "icsiH",
+        "reference_lines": 1132,
+        "first_correct": 1017,
+        "current_first_correct": 873,
+        "first_delta_pp": 12.720848056537102,
+        "final_correct": 1017,
+        "current_final_correct": 884,
+        "final_delta_pp": 11.749116607773852
+      },
+      {
+        "fixture": "PZM-chanF_Bmr012",
+        "cohort": "icsiF",
+        "reference_lines": 1070,
+        "first_correct": 487,
+        "current_first_correct": 475,
+        "first_delta_pp": 1.1214953271028036,
+        "final_correct": 496,
+        "current_final_correct": 487,
+        "final_delta_pp": 0.8411214953271028
+      },
+      {
+        "fixture": "PZM-chanF_Bmr013",
+        "cohort": "icsiF",
+        "reference_lines": 953,
+        "first_correct": 757,
+        "current_first_correct": 579,
+        "first_delta_pp": 18.677859391395593,
+        "final_correct": 766,
+        "current_final_correct": 593,
+        "final_delta_pp": 18.153200419727177
+      },
+      {
+        "fixture": "PZM-chanF_Bmr018",
+        "cohort": "icsiF",
+        "reference_lines": 1360,
+        "first_correct": 1027,
+        "current_first_correct": 729,
+        "first_delta_pp": 21.91176470588235,
+        "final_correct": 1031,
+        "current_final_correct": 718,
+        "final_delta_pp": 23.014705882352942
+      },
+      {
+        "fixture": "PZM-chanF_Bmr021",
+        "cohort": "icsiF",
+        "reference_lines": 784,
+        "first_correct": 663,
+        "current_first_correct": 428,
+        "first_delta_pp": 29.974489795918366,
+        "final_correct": 663,
+        "current_final_correct": 427,
+        "final_delta_pp": 30.102040816326532
+      },
+      {
+        "fixture": "PZM-chanF_Bro021",
+        "cohort": "icsiF",
+        "reference_lines": 1132,
+        "first_correct": 1000,
+        "current_first_correct": 666,
+        "first_delta_pp": 29.50530035335689,
+        "final_correct": 1000,
+        "current_final_correct": 660,
+        "final_delta_pp": 30.035335689045937
+      },
+      {
+        "fixture": "lords",
+        "cohort": "lords",
+        "reference_lines": 1627,
+        "first_correct": 1565,
+        "current_first_correct": 1565,
+        "first_delta_pp": 0,
+        "final_correct": 1594,
+        "current_final_correct": 1594,
+        "final_delta_pp": 0
+      },
+      {
+        "fixture": "london",
+        "cohort": "london",
+        "reference_lines": 1421,
+        "first_correct": 1369,
+        "current_first_correct": 1365,
+        "first_delta_pp": 0.28149190710767064,
+        "final_correct": 1376,
+        "current_final_correct": 1374,
+        "final_delta_pp": 0.14074595355383532
+      }
+    ],
+    "natural_visibility": {
+      "amiBF": {
+        "streams": 4,
+        "reference_lines": 2499,
+        "audio_seconds": 8079.616062499999,
+        "first": {
+          "correct": 2016,
+          "unknown": 0,
+          "strict_pct": 80.67226890756302
+        },
+        "final": {
+          "correct": 2016,
+          "unknown": 0,
+          "strict_pct": 80.67226890756302
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2499,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 233,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 220,
+            "unknown": 0,
+            "strict_pct": 94.4206008583691
+          },
+          "final": {
+            "correct": 220,
+            "unknown": 0,
+            "strict_pct": 94.4206008583691
+          }
+        }
+      },
+      "amiBH": {
+        "streams": 4,
+        "reference_lines": 2499,
+        "audio_seconds": 8079.1040625,
+        "first": {
+          "correct": 2044,
+          "unknown": 0,
+          "strict_pct": 81.79271708683473
+        },
+        "final": {
+          "correct": 2044,
+          "unknown": 0,
+          "strict_pct": 81.79271708683473
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2499,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 233,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 225,
+            "unknown": 0,
+            "strict_pct": 96.56652360515021
+          },
+          "final": {
+            "correct": 225,
+            "unknown": 0,
+            "strict_pct": 96.56652360515021
+          }
+        }
+      },
+      "amiF": {
+        "streams": 4,
+        "reference_lines": 2977,
+        "audio_seconds": 8927.861375,
+        "first": {
+          "correct": 2270,
+          "unknown": 3,
+          "strict_pct": 76.2512596573732
+        },
+        "final": {
+          "correct": 2270,
+          "unknown": 3,
+          "strict_pct": 76.2512596573732
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2977,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        },
+        "clear_le1s_global_line_map": {
+          "n": 346,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 299,
+            "unknown": 2,
+            "strict_pct": 86.41618497109826
+          },
+          "final": {
+            "correct": 299,
+            "unknown": 2,
+            "strict_pct": 86.41618497109826
+          }
+        }
+      },
+      "amiH": {
+        "streams": 4,
+        "reference_lines": 2977,
+        "audio_seconds": 8927.7000625,
+        "first": {
+          "correct": 2322,
+          "unknown": 3,
+          "strict_pct": 77.9979845482029
+        },
+        "final": {
+          "correct": 2322,
+          "unknown": 3,
+          "strict_pct": 77.9979845482029
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2977,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        },
+        "clear_le1s_global_line_map": {
+          "n": 346,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 321,
+            "unknown": 2,
+            "strict_pct": 92.77456647398844
+          },
+          "final": {
+            "correct": 321,
+            "unknown": 2,
+            "strict_pct": 92.77456647398844
+          }
+        }
+      },
+      "amiTF": {
+        "streams": 2,
+        "reference_lines": 1636,
+        "audio_seconds": 5446.1933125,
+        "first": {
+          "correct": 1353,
+          "unknown": 0,
+          "strict_pct": 82.70171149144254
+        },
+        "final": {
+          "correct": 1353,
+          "unknown": 0,
+          "strict_pct": 82.70171149144254
+        },
+        "routing": {
+          "native_at_end": 2,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1636,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 281,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 251,
+            "unknown": 0,
+            "strict_pct": 89.32384341637011
+          },
+          "final": {
+            "correct": 251,
+            "unknown": 0,
+            "strict_pct": 89.32384341637011
+          }
+        }
+      },
+      "amiTH": {
+        "streams": 2,
+        "reference_lines": 1636,
+        "audio_seconds": 5446.1933125,
+        "first": {
+          "correct": 1382,
+          "unknown": 0,
+          "strict_pct": 84.47432762836186
+        },
+        "final": {
+          "correct": 1382,
+          "unknown": 0,
+          "strict_pct": 84.47432762836186
+        },
+        "routing": {
+          "native_at_end": 2,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1636,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 281,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 268,
+            "unknown": 0,
+            "strict_pct": 95.37366548042705
+          },
+          "final": {
+            "correct": 268,
+            "unknown": 0,
+            "strict_pct": 95.37366548042705
+          }
+        }
+      },
+      "icsiF": {
+        "streams": 5,
+        "reference_lines": 5299,
+        "audio_seconds": 14688.7734375,
+        "first": {
+          "correct": 3934,
+          "unknown": 119,
+          "strict_pct": 74.24042272126816
+        },
+        "final": {
+          "correct": 3956,
+          "unknown": 68,
+          "strict_pct": 74.65559539535761
+        },
+        "routing": {
+          "native_at_end": 2,
+          "channel_cap_handback": 3,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 5299,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 1007,
+          "missing_line_windows": 6,
+          "first": {
+            "correct": 725,
+            "unknown": 31,
+            "strict_pct": 71.99602780536246
+          },
+          "final": {
+            "correct": 730,
+            "unknown": 17,
+            "strict_pct": 72.49255213505462
+          }
+        }
+      },
+      "icsiH": {
+        "streams": 5,
+        "reference_lines": 5299,
+        "audio_seconds": 14688.7734375,
+        "first": {
+          "correct": 4192,
+          "unknown": 93,
+          "strict_pct": 79.10926589922627
+        },
+        "final": {
+          "correct": 4209,
+          "unknown": 59,
+          "strict_pct": 79.4300811473863
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 5299,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 1007,
+          "missing_line_windows": 6,
+          "first": {
+            "correct": 831,
+            "unknown": 26,
+            "strict_pct": 82.52234359483614
+          },
+          "final": {
+            "correct": 837,
+            "unknown": 15,
+            "strict_pct": 83.11817279046673
+          }
+        }
+      },
+      "london": {
+        "streams": 1,
+        "reference_lines": 1421,
+        "audio_seconds": 10899.0984375,
+        "first": {
+          "correct": 1369,
+          "unknown": 10,
+          "strict_pct": 96.34060520760028
+        },
+        "final": {
+          "correct": 1376,
+          "unknown": 7,
+          "strict_pct": 96.83321604503871
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1463,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lords": {
+        "streams": 1,
+        "reference_lines": 1627,
+        "audio_seconds": 9000.0026875,
+        "first": {
+          "correct": 1565,
+          "unknown": 12,
+          "strict_pct": 96.18930547019053
+        },
+        "final": {
+          "correct": 1594,
+          "unknown": 3,
+          "strict_pct": 97.97172710510141
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1628,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      }
+    }
+  },
+  "research_comparison": {
+    "AMI headset": {
+      "current_first_strict_pct": 59.11991938192811,
+      "native_hf_first_strict_pct": 78.06516627477326,
+      "retrospective_hf_hybrid_first_strict_pct": 78.06516627477326,
+      "retrospective_hf_hybrid_final_strict_pct": 78.06516627477326
+    },
+    "AMI far-field": {
+      "current_first_strict_pct": 41.55189788377562,
+      "native_hf_first_strict_pct": 76.28485052065838,
+      "retrospective_hf_hybrid_first_strict_pct": 76.28485052065838,
+      "retrospective_hf_hybrid_final_strict_pct": 76.28485052065838
+    },
+    "Lords": {
+      "current_first_strict_pct": 96.18930547019053,
+      "native_hf_first_strict_pct": 25.015365703749232,
+      "retrospective_hf_hybrid_first_strict_pct": 96.37369391518132,
+      "retrospective_hf_hybrid_final_strict_pct": 97.97172710510141
+    },
+    "London": {
+      "current_first_strict_pct": 96.05911330049261,
+      "native_hf_first_strict_pct": 80.85855031667839,
+      "retrospective_hf_hybrid_first_strict_pct": 96.34060520760028,
+      "retrospective_hf_hybrid_final_strict_pct": 96.83321604503871
+    }
+  },
+  "historical_heldout_home_label_M2": {
+    "attribution": "NeMo, historical home-label metric; not directly equivalent to the new global-line-map short score",
+    "chime6-far": {
+      "current_pct": 6,
+      "native_pct": 72.41,
+      "current_n": 1033,
+      "native_n": 1033
+    },
+    "chime6-near": {
+      "current_pct": 10.94,
+      "native_pct": 79.28,
+      "current_n": 1033,
+      "native_n": 1033
+    },
+    "notsofar-far": {
+      "current_pct": 18.08,
+      "native_pct": 84.46,
+      "current_n": 603,
+      "native_n": 605
+    },
+    "lotusdis-far": {
+      "current_pct": 3.7,
+      "native_pct": 27.78,
+      "current_n": 54,
+      "native_n": 54
+    },
+    "lotusdis-near": {
+      "current_pct": 11.11,
+      "native_pct": 85.19,
+      "current_n": 54,
+      "native_n": 54
+    }
+  },
+  "heldout": {
+    "streams": 110,
+    "production": {
+      "chime6-far": {
+        "streams": 4,
+        "reference_lines": 16341,
+        "audio_seconds": 34814.290125,
+        "first": {
+          "correct": 9032,
+          "unknown": 0,
+          "strict_pct": 55.272015176549786
+        },
+        "final": {
+          "correct": 9032,
+          "unknown": 0,
+          "strict_pct": 55.272015176549786
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 16341,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 1033,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 728,
+            "unknown": 0,
+            "strict_pct": 70.47434656340755
+          },
+          "final": {
+            "correct": 728,
+            "unknown": 0,
+            "strict_pct": 70.47434656340755
+          }
+        }
+      },
+      "chime6-near": {
+        "streams": 4,
+        "reference_lines": 16341,
+        "audio_seconds": 34809.108374999996,
+        "first": {
+          "correct": 10116,
+          "unknown": 0,
+          "strict_pct": 61.905636129979804
+        },
+        "final": {
+          "correct": 10116,
+          "unknown": 0,
+          "strict_pct": 61.905636129979804
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 16341,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 1033,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 814,
+            "unknown": 0,
+            "strict_pct": 78.79961277831559
+          },
+          "final": {
+            "correct": 814,
+            "unknown": 0,
+            "strict_pct": 78.79961277831559
+          }
+        }
+      },
+      "commons-2026-09-09": {
+        "streams": 1,
+        "reference_lines": 1253,
+        "audio_seconds": 9000,
+        "first": {
+          "correct": 1179,
+          "unknown": 12,
+          "strict_pct": 94.09417398244214
+        },
+        "final": {
+          "correct": 1212,
+          "unknown": 2,
+          "strict_pct": 96.72785315243416
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1253,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lords-2026-09-02": {
+        "streams": 1,
+        "reference_lines": 1376,
+        "audio_seconds": 9000.0186875,
+        "first": {
+          "correct": 1304,
+          "unknown": 6,
+          "strict_pct": 94.76744186046511
+        },
+        "final": {
+          "correct": 1319,
+          "unknown": 1,
+          "strict_pct": 95.85755813953489
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1377,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lotusdis-far": {
+        "streams": 10,
+        "reference_lines": 2747,
+        "audio_seconds": 8764.978125,
+        "first": {
+          "correct": 2148,
+          "unknown": 0,
+          "strict_pct": 78.19439388423736
+        },
+        "final": {
+          "correct": 2148,
+          "unknown": 0,
+          "strict_pct": 78.19439388423736
+        },
+        "routing": {
+          "native_at_end": 10,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2747,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 18
+        },
+        "clear_le1s_global_line_map": {
+          "n": 62,
+          "missing_line_windows": 8,
+          "first": {
+            "correct": 15,
+            "unknown": 8,
+            "strict_pct": 24.193548387096776
+          },
+          "final": {
+            "correct": 15,
+            "unknown": 8,
+            "strict_pct": 24.193548387096776
+          }
+        }
+      },
+      "lotusdis-near": {
+        "streams": 10,
+        "reference_lines": 2747,
+        "audio_seconds": 8764.978125,
+        "first": {
+          "correct": 2323,
+          "unknown": 0,
+          "strict_pct": 84.564979978158
+        },
+        "final": {
+          "correct": 2323,
+          "unknown": 0,
+          "strict_pct": 84.564979978158
+        },
+        "routing": {
+          "native_at_end": 10,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2747,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 18
+        },
+        "clear_le1s_global_line_map": {
+          "n": 62,
+          "missing_line_windows": 8,
+          "first": {
+            "correct": 47,
+            "unknown": 8,
+            "strict_pct": 75.80645161290323
+          },
+          "final": {
+            "correct": 47,
+            "unknown": 8,
+            "strict_pct": 75.80645161290323
+          }
+        }
+      },
+      "notsofar-far": {
+        "streams": 80,
+        "reference_lines": 14363,
+        "audio_seconds": 30000.725,
+        "first": {
+          "correct": 10498,
+          "unknown": 3,
+          "strict_pct": 73.0905799624034
+        },
+        "final": {
+          "correct": 10498,
+          "unknown": 3,
+          "strict_pct": 73.0905799624034
+        },
+        "routing": {
+          "native_at_end": 80,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 14363,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        },
+        "clear_le1s_global_line_map": {
+          "n": 626,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 525,
+            "unknown": 2,
+            "strict_pct": 83.86581469648563
+          },
+          "final": {
+            "correct": 525,
+            "unknown": 2,
+            "strict_pct": 83.86581469648563
+          }
+        }
+      }
+    },
+    "current": {
+      "chime6-far": {
+        "streams": 4,
+        "reference_lines": 16341,
+        "audio_seconds": 34814.290125,
+        "first": {
+          "correct": 2014,
+          "unknown": 4290,
+          "strict_pct": 12.32482712196316
+        },
+        "final": {
+          "correct": 2136,
+          "unknown": 2848,
+          "strict_pct": 13.071415458050303
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 16341,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 1033,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 66,
+            "unknown": 353,
+            "strict_pct": 6.389157792836399
+          },
+          "final": {
+            "correct": 91,
+            "unknown": 209,
+            "strict_pct": 8.809293320425944
+          }
+        }
+      },
+      "chime6-near": {
+        "streams": 4,
+        "reference_lines": 16341,
+        "audio_seconds": 34809.108374999996,
+        "first": {
+          "correct": 3020,
+          "unknown": 3217,
+          "strict_pct": 18.481121106419437
+        },
+        "final": {
+          "correct": 3249,
+          "unknown": 2006,
+          "strict_pct": 19.882504130714153
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 16341,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 1033,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 116,
+            "unknown": 273,
+            "strict_pct": 11.22942884801549
+          },
+          "final": {
+            "correct": 146,
+            "unknown": 125,
+            "strict_pct": 14.133591481122943
+          }
+        }
+      },
+      "commons-2026-09-09": {
+        "streams": 1,
+        "reference_lines": 1253,
+        "audio_seconds": 9000,
+        "first": {
+          "correct": 1178,
+          "unknown": 18,
+          "strict_pct": 94.01436552274541
+        },
+        "final": {
+          "correct": 1213,
+          "unknown": 2,
+          "strict_pct": 96.80766161213089
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1253,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lords-2026-09-02": {
+        "streams": 1,
+        "reference_lines": 1376,
+        "audio_seconds": 9000.0186875,
+        "first": {
+          "correct": 1307,
+          "unknown": 7,
+          "strict_pct": 94.98546511627907
+        },
+        "final": {
+          "correct": 1321,
+          "unknown": 1,
+          "strict_pct": 96.00290697674419
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1377,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lotusdis-far": {
+        "streams": 10,
+        "reference_lines": 2747,
+        "audio_seconds": 8764.978125,
+        "first": {
+          "correct": 1431,
+          "unknown": 192,
+          "strict_pct": 52.093192573716784
+        },
+        "final": {
+          "correct": 1447,
+          "unknown": 121,
+          "strict_pct": 52.67564615944667
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2747,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 18
+        },
+        "clear_le1s_global_line_map": {
+          "n": 62,
+          "missing_line_windows": 8,
+          "first": {
+            "correct": 1,
+            "unknown": 14,
+            "strict_pct": 1.6129032258064515
+          },
+          "final": {
+            "correct": 1,
+            "unknown": 14,
+            "strict_pct": 1.6129032258064515
+          }
+        }
+      },
+      "lotusdis-near": {
+        "streams": 10,
+        "reference_lines": 2747,
+        "audio_seconds": 8764.978125,
+        "first": {
+          "correct": 2149,
+          "unknown": 59,
+          "strict_pct": 78.23079723334547
+        },
+        "final": {
+          "correct": 2165,
+          "unknown": 40,
+          "strict_pct": 78.81325081907535
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2747,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 18
+        },
+        "clear_le1s_global_line_map": {
+          "n": 62,
+          "missing_line_windows": 8,
+          "first": {
+            "correct": 6,
+            "unknown": 17,
+            "strict_pct": 9.67741935483871
+          },
+          "final": {
+            "correct": 9,
+            "unknown": 12,
+            "strict_pct": 14.516129032258064
+          }
+        }
+      },
+      "notsofar-far": {
+        "streams": 80,
+        "reference_lines": 14363,
+        "audio_seconds": 30000.725,
+        "first": {
+          "correct": 5491,
+          "unknown": 1116,
+          "strict_pct": 38.23017475457773
+        },
+        "final": {
+          "correct": 5572,
+          "unknown": 712,
+          "strict_pct": 38.794123790294506
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 14363,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        },
+        "clear_le1s_global_line_map": {
+          "n": 626,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 103,
+            "unknown": 46,
+            "strict_pct": 16.45367412140575
+          },
+          "final": {
+            "correct": 112,
+            "unknown": 21,
+            "strict_pct": 17.891373801916934
+          }
+        }
+      }
+    },
+    "natural_visibility": {
+      "chime6-far": {
+        "streams": 4,
+        "reference_lines": 16341,
+        "audio_seconds": 34814.290125,
+        "first": {
+          "correct": 9032,
+          "unknown": 0,
+          "strict_pct": 55.272015176549786
+        },
+        "final": {
+          "correct": 9032,
+          "unknown": 0,
+          "strict_pct": 55.272015176549786
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 16341,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 1033,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 728,
+            "unknown": 0,
+            "strict_pct": 70.47434656340755
+          },
+          "final": {
+            "correct": 728,
+            "unknown": 0,
+            "strict_pct": 70.47434656340755
+          }
+        }
+      },
+      "chime6-near": {
+        "streams": 4,
+        "reference_lines": 16341,
+        "audio_seconds": 34809.108374999996,
+        "first": {
+          "correct": 10116,
+          "unknown": 0,
+          "strict_pct": 61.905636129979804
+        },
+        "final": {
+          "correct": 10116,
+          "unknown": 0,
+          "strict_pct": 61.905636129979804
+        },
+        "routing": {
+          "native_at_end": 4,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 16341,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        },
+        "clear_le1s_global_line_map": {
+          "n": 1033,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 814,
+            "unknown": 0,
+            "strict_pct": 78.79961277831559
+          },
+          "final": {
+            "correct": 814,
+            "unknown": 0,
+            "strict_pct": 78.79961277831559
+          }
+        }
+      },
+      "commons-2026-09-09": {
+        "streams": 1,
+        "reference_lines": 1253,
+        "audio_seconds": 9000,
+        "first": {
+          "correct": 1179,
+          "unknown": 12,
+          "strict_pct": 94.09417398244214
+        },
+        "final": {
+          "correct": 1212,
+          "unknown": 2,
+          "strict_pct": 96.72785315243416
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1253,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lords-2026-09-02": {
+        "streams": 1,
+        "reference_lines": 1376,
+        "audio_seconds": 9000.0186875,
+        "first": {
+          "correct": 1304,
+          "unknown": 6,
+          "strict_pct": 94.76744186046511
+        },
+        "final": {
+          "correct": 1319,
+          "unknown": 1,
+          "strict_pct": 95.85755813953489
+        },
+        "routing": {
+          "native_at_end": 0,
+          "channel_cap_handback": 1,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 1377,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 0
+        }
+      },
+      "lotusdis-far": {
+        "streams": 10,
+        "reference_lines": 2747,
+        "audio_seconds": 8764.978125,
+        "first": {
+          "correct": 2141,
+          "unknown": 18,
+          "strict_pct": 77.93957044048052
+        },
+        "final": {
+          "correct": 2141,
+          "unknown": 18,
+          "strict_pct": 77.93957044048052
+        },
+        "routing": {
+          "native_at_end": 10,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2747,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 18
+        },
+        "clear_le1s_global_line_map": {
+          "n": 62,
+          "missing_line_windows": 8,
+          "first": {
+            "correct": 15,
+            "unknown": 8,
+            "strict_pct": 24.193548387096776
+          },
+          "final": {
+            "correct": 15,
+            "unknown": 8,
+            "strict_pct": 24.193548387096776
+          }
+        }
+      },
+      "lotusdis-near": {
+        "streams": 10,
+        "reference_lines": 2747,
+        "audio_seconds": 8764.978125,
+        "first": {
+          "correct": 2316,
+          "unknown": 18,
+          "strict_pct": 84.31015653440116
+        },
+        "final": {
+          "correct": 2316,
+          "unknown": 18,
+          "strict_pct": 84.31015653440116
+        },
+        "routing": {
+          "native_at_end": 10,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 2747,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 18
+        },
+        "clear_le1s_global_line_map": {
+          "n": 62,
+          "missing_line_windows": 8,
+          "first": {
+            "correct": 47,
+            "unknown": 8,
+            "strict_pct": 75.80645161290323
+          },
+          "final": {
+            "correct": 47,
+            "unknown": 8,
+            "strict_pct": 75.80645161290323
+          }
+        }
+      },
+      "notsofar-far": {
+        "streams": 80,
+        "reference_lines": 14363,
+        "audio_seconds": 30000.725,
+        "first": {
+          "correct": 10498,
+          "unknown": 3,
+          "strict_pct": 73.0905799624034
+        },
+        "final": {
+          "correct": 10498,
+          "unknown": 3,
+          "strict_pct": 73.0905799624034
+        },
+        "routing": {
+          "native_at_end": 80,
+          "channel_cap_handback": 0,
+          "other_fallbacks": 0
+        },
+        "inventory": {
+          "oracle_windows": 14363,
+          "dropped_windows": 0,
+          "ends_beyond_pcm": 0,
+          "forced_eof_visibility": 3
+        },
+        "clear_le1s_global_line_map": {
+          "n": 626,
+          "missing_line_windows": 0,
+          "first": {
+            "correct": 525,
+            "unknown": 2,
+            "strict_pct": 83.86581469648563
+          },
+          "final": {
+            "correct": 525,
+            "unknown": 2,
+            "strict_pct": 83.86581469648563
+          }
+        }
+      }
+    },
+    "fixture_regressions": [
+      {
+        "fixture": "notsofar-MTG_32105",
+        "cohort": "notsofar-far",
+        "reference_lines": 72,
+        "first_correct": 61,
+        "current_first_correct": 70,
+        "first_delta_pp": -12.5,
+        "final_correct": 61,
+        "current_final_correct": 72,
+        "final_delta_pp": -15.277777777777779
+      },
+      {
+        "fixture": "notsofar-MTG_32256",
+        "cohort": "notsofar-far",
+        "reference_lines": 56,
+        "first_correct": 55,
+        "current_first_correct": 56,
+        "first_delta_pp": -1.7857142857142858,
+        "final_correct": 55,
+        "current_final_correct": 56,
+        "final_delta_pp": -1.7857142857142858
+      },
+      {
+        "fixture": "lotusdis-S010_T038-near",
+        "cohort": "lotusdis-near",
+        "reference_lines": 127,
+        "first_correct": 108,
+        "current_first_correct": 109,
+        "first_delta_pp": -0.7874015748031497,
+        "final_correct": 108,
+        "current_final_correct": 109,
+        "final_delta_pp": -0.7874015748031497
+      },
+      {
+        "fixture": "lotusdis-S016_T008-near",
+        "cohort": "lotusdis-near",
+        "reference_lines": 252,
+        "first_correct": 223,
+        "current_first_correct": 226,
+        "first_delta_pp": -1.1904761904761905,
+        "final_correct": 223,
+        "current_final_correct": 227,
+        "final_delta_pp": -1.5873015873015872
+      },
+      {
+        "fixture": "commons-2026-09-09",
+        "cohort": "commons-2026-09-09",
+        "reference_lines": 1253,
+        "first_correct": 1179,
+        "current_first_correct": 1178,
+        "first_delta_pp": 0.07980845969672785,
+        "final_correct": 1212,
+        "current_final_correct": 1213,
+        "final_delta_pp": -0.07980845969672785
+      },
+      {
+        "fixture": "lords-2026-09-02",
+        "cohort": "lords-2026-09-02",
+        "reference_lines": 1376,
+        "first_correct": 1304,
+        "current_first_correct": 1307,
+        "first_delta_pp": -0.2180232558139535,
+        "final_correct": 1319,
+        "current_final_correct": 1321,
+        "final_delta_pp": -0.14534883720930233
+      }
+    ],
+    "optional_ami12_excluded": "not part of historical native comparator cohort"
+  },
+  "fresh_inference": {
+    "dev": {
+      "streams": 22,
+      "audio_seconds": 56428.653625,
+      "native_consumed_seconds": 56428.653625,
+      "native_live_frames": 5638608,
+      "native_live_calls": 78314,
+      "stopped_after_channel_cap": 0,
+      "asset_fingerprints": [
+        "82cb1da687ecdd7378b13ad4585274d00b0f3022f32af0774b741452a8c8239c"
+      ],
+      "runtime_fingerprints": [
+        "1394e6d58b4e8f8bfc3fe90db4d7e7977a3544b10d30feb1e235dd9b5ed5eb59"
+      ],
+      "torch_versions": [
+        "2.14.1+cu130"
+      ],
+      "transformers_versions": [
+        "5.20.2"
+      ]
+    },
+    "heldout": {
+      "streams": 110,
+      "audio_seconds": 135154.0984375,
+      "native_consumed_seconds": 118162.07975,
+      "native_live_frames": 11796408,
+      "native_live_calls": 163839,
+      "stopped_after_channel_cap": 2,
+      "asset_fingerprints": [
+        "82cb1da687ecdd7378b13ad4585274d00b0f3022f32af0774b741452a8c8239c"
+      ],
+      "runtime_fingerprints": [
+        "1394e6d58b4e8f8bfc3fe90db4d7e7977a3544b10d30feb1e235dd9b5ed5eb59"
+      ],
+      "torch_versions": [
+        "2.14.1+cu130"
+      ],
+      "transformers_versions": [
+        "5.20.2"
+      ]
+    }
+  },
+  "cache_restart": {
+    "real_checkpoints": [
+      {
+        "cache": {
+          "num_cache_frames": 0,
+          "num_fifo_frames": 18,
+          "is_initialized": true,
+          "is_compressed": false
+        },
+        "roundtrip_exact": true,
+        "next_blocks": 3,
+        "next_probability_max_abs": 0,
+        "next_cache_within_tolerance": true
+      },
+      {
+        "cache": {
+          "num_cache_frames": 0,
+          "num_fifo_frames": 243,
+          "is_initialized": true,
+          "is_compressed": false
+        },
+        "roundtrip_exact": true,
+        "next_blocks": 3,
+        "next_probability_max_abs": 0,
+        "next_cache_within_tolerance": true
+      },
+      {
+        "cache": {
+          "num_cache_frames": 222,
+          "num_fifo_frames": 48,
+          "is_initialized": true,
+          "is_compressed": false
+        },
+        "roundtrip_exact": true,
+        "next_blocks": 2,
+        "next_probability_max_abs": 0,
+        "next_cache_within_tolerance": true
+      },
+      {
+        "cache": {
+          "num_cache_frames": 264,
+          "num_fifo_frames": 51,
+          "is_initialized": true,
+          "is_compressed": true
+        },
+        "roundtrip_exact": true,
+        "next_blocks": 2,
+        "next_probability_max_abs": 0,
+        "next_cache_within_tolerance": true
+      },
+      {
+        "cache": {
+          "num_cache_frames": 264,
+          "num_fifo_frames": 96,
+          "is_initialized": true,
+          "is_compressed": true
+        },
+        "roundtrip_exact": true,
+        "next_blocks": 3,
+        "next_probability_max_abs": 0,
+        "next_cache_within_tolerance": true
+      }
+    ],
+    "tolerances": {
+      "probabilities": {
+        "atol": 0.000002,
+        "rtol": 0.00001
+      },
+      "cache": {
+        "atol": 0.0001,
+        "rtol": 0.00001
+      }
+    },
+    "asset_fingerprint": "82cb1da687ecdd7378b13ad4585274d00b0f3022f32af0774b741452a8c8239c",
+    "runtime_fingerprint": "1394e6d58b4e8f8bfc3fe90db4d7e7977a3544b10d30feb1e235dd9b5ed5eb59"
+  },
+  "provenance": {
+    "code_sources_sha256": {
+      "local-harness:build2_inputs.py": "8ae5f63d8a949806842ac7d4cb0ea6dbbdd6f935713f6a56588b3f96a4ea21cd",
+      "local-harness:build2_oracles.py": "ae4fe02ce386cf852c48850eae3725a907e7bc4f48db3d5cea3e104046184e64",
+      "local-harness:build2_lines.py": "fa58a5695fe5d2c8e38f90555566dbe07b1e8d254df7b38f62598df98d7db3f5",
+      "local-harness:build2_replay.py": "d6d3a49f9e5e0a274d426a643322a457faabd4eabf482e362995c08e11a26e8c",
+      "local-harness:build2_gates.py": "c2be71e728f06e3f462a895903e499653dc40733aad4492b753241fcbbc36b0e",
+      "backend/processing/live_diarization/models.py": "9001f2bdbe70b0a09b15499ca29bf464790852180dcb024302c4195bff77cb52",
+      "backend/processing/live_diarization/state.py": "1cb8c207e094dd4026595a90b45f6cb3a43cf7b0955bb771234474319a1dd042",
+      "backend/processing/live_diarization/setting.py": "c9f004cc2a1a5e8c3ee62f7682b625d2a5b5c21b4a7f612b88ac4044d7d113aa",
+      "backend/processing/live_diarization/__init__.py": "b450a13fbff7648fbb2d82d1ff7f5cb63a2f173e6edc77708b6d20b3be17f37f",
+      "backend/processing/live_diarization/recluster.py": "e385da785858a1531bd535db6c0d33f82c2c5c32a0578bb90b110e0f5f02758c",
+      "backend/processing/live_diarization/hybrid_lines.py": "71e1f88915f26f48e2d6eed592c73183f5d52362b6eab715d76211bd1d57ee41",
+      "backend/processing/live_diarization/nemotron.py": "66e64b360539fa99c4369bdde73e85d0fda136c5c67c8de1a4d311b9a74b1f69",
+      "backend/processing/live_diarization/files.py": "2b63c2187b7c50a34a732c6806757710f0df500d0a1d6aba3bd483bb052b7160",
+      "backend/processing/live_diarization/hybrid_runtime.py": "1bacb9655eb49f63890bf7cb941f8ecba92a40f29d1fb6c1004cfff233eaf94d",
+      "backend/processing/live_diarization/lines.py": "33851c0e2b5e58dd3993efe496cc3bf30a5bba9042bf40779f8722e25506f131",
+      "backend/processing/live_diarization/step.py": "4b6256b8383882d6f05791985a5cc181ab13d8d89bb81ee37a8f903702e5f922",
+      "backend/processing/live_diarization/hybrid_state.py": "cd5e1930adbd7dc6772cfb65d1c4c4c8423043f101badc91e9f4622199b4497a",
+      "backend/processing/live_diarization/hybrid.py": "3b74cad7a3a74882aa58781ac51111b7abf93f3db45ebe4b9e8bd91ffda5e8bc",
+      "backend/processing/live_diarization/native_state.py": "c3dd28b98e2be5701296e3a301bd29b63deb615258e52981a378b5c7aca3f84e",
+      "backend/processing/live_diarization/clustering.py": "bea6798f89d227cf6a0ee28ea6063368073a6f7abd3dd45bd1cac62d77ec610e",
+      "backend/processing/live_diarization/hybrid_overlap.py": "2fe1ebe45498c332a367a85b5a8b51a0207f161dc009e44ca832c66bff956905",
+      "backend/processing/live_diarization/hybrid_identity.py": "c568a1a5690cfcb83c782043bd00ef0b93e16ba654eec4af178f2fdb6746e48d",
+      "backend/processing/live_diarization/engine.py": "31176c4c7c568ffd26afbd83f00de365ee3e88bc68930b9ecd5d9335bae73559",
+      "backend/processing/live_diarization/hybrid_source.py": "897cf1f7ba21ad018c69a90de3a03f1f57096c00a8beba8fe07fbe1239a65ca5",
+      "backend/processing/live_diarization/hybrid_execution.py": "4fd21ea1b9360bd997be69eec0b64909d14701d3e8041c930d8e4261e2a44af5",
+      "retained-study:score.py": "78af74b31137f286947701bc4d163eadbff1f8c18007f63bb3e1a69ed77bd550",
+      "retained-study:replay.py": "d45f585ed2352bd610d5f48659212162c87031df4711a810d87ef860a56a3140",
+      "retained-scorer:ami-short-turns/score_short.py": "ce84cae5f687beca651cca469dad915c3ec8df7283c2c7dc5e2d2a0f27a16601",
+      "retained-scorer:linerule/score.py": "c8c806d53d8867fb033f1e08e0d6f8d30426e6c48fc97d4a9d72055dbbf36d75",
+      "backend/processing/nemotron_types.py": "5a0ceb262eade2aee4b98903f36bb969df8a9f0e09c5ee957f648b9917ca6311",
+      "backend/processing/nemotron_model.py": "13ffe707081e8b995266dc0ff0f6e8ae42c60db2ee2230ffd048ff27a78edcd3",
+      "backend/utils/canonical_pipeline/live_labels.py": "3899c52a7e66a6cfca8efcfab0532c5a1f148a46f72f8403e6c65da6300994b4",
+      "backend/utils/live_speaker_labels.py": "2e98abc3d4233e67b0982c57bc11293e22a0afb4095a5e3c34ac561acbd9e876",
+      "local-harness:build2_heldout_pipeline.py": "072b6c1dc2a2a0c3bc06eb1438b0bba8c636a819ddfc289b4571e9a710c8686d",
+      "local-harness:build2_short.py": "11996bc1f26db318117f361c9cec8fc92827d809ccb939f2788e29e9a5d5a86a",
+      "retained-study:heldout-small/heldout_registry.py": "e65b42dd1c355cf12600806caadce64abcd72f28295bc52007c120d14099b918",
+      "retained-study:heldout-small/scope.py": "835e5ed447fb957da1b8de25f4511b8887d771ae546e12ca0d0c8dd03bc174f1"
+    },
+    "cache_probe_code_sha256": "5b91bc2115d2d5c198300ed07083f4ade0a9c0fc1bec4391a5cd38540620ab18",
+    "generator_code_sha256": "78466b536241e0e8596a27f20e225ab8f53471ff708d787bb499bf76889ec831",
+    "generator_guard_sha256": "0f1c910fb1fb87b371940c87e1504d5faefd81717c29f0430457a786e24d31a5",
+    "aggregate_code_sha256": "96ee09d9302a208885487732bb71f015ea2d9791bf3be0026e3f6b7f689e1ca1",
+    "exporter_sha256": "615b3a09149bf53d5c1f5a0b47d09c3f183a67e06f2682d4edb90fde8bb291de",
+    "raw_input_provenance": "retained locally; excluded from the public aggregate record",
+    "slot_fix_reporter_sha256": "b940e2c2a872c6888c64e1df856e180c66e10657ea43e6d049278473579675e8",
+    "slot_fix_invariant_harness_sha256": "0abb559e19853ff218b6988d43ccb7df89bb2d33766c6d715e05e5f0cdbf10b0"
+  },
+  "limitations": [
+    "This slot fix reuses verified raw-fp32 native inference and cached shadow inputs; no new GPU inference.",
+    "No hybrid frame hypothesis or hybrid DER; anonymous mapped identities, not named-person recognition or ASR quality.",
+    "Clear <=1s scores use score_short clear turns with the global one-to-one line identity map; distinct from historical home-label M2.",
+    "Primary release of oracle lines at EOF is a historical study convention; natural-visibility sensitivity retains the same denominators.",
+    "Original ten dev probabilities are retained raw-fp32 research HF outputs; 22 data2 and 110 held-out streams use fresh verified official-loader inference.",
+    "Shadow model outputs are historical caches with exact t-grid/config/window-count validation; current window digests do not independently revalidate historical inference PCM.",
+    "AMI train-contaminated dev streams are reported separately; ICSI word references omit some laugh/breath/noise.",
+    "Historical NOTSOFAR home-label M2 denominators differed 603/605 and historical hybrid completed 77/80; these are not repaired new hypothesis tests.",
+    "Every dev stream remains within classic minus 1 percentage point; all per-stream deltas are retained."
+  ],
+  "slot_fix": {
+    "invariant": {
+      "passed": true,
+      "fixtures": [
+        {
+          "fixture": "lords",
+          "passed": true,
+          "events": 22500,
+          "model_windows": 18000,
+          "switch_n": 7904000,
+          "packet_scheduler": "same complete packets; final partial retained",
+          "pending_samples": 43,
+          "labels_active_centres_locks_stability_exact": true
+        },
+        {
+          "fixture": "london",
+          "passed": true,
+          "events": 27245,
+          "model_windows": 21796,
+          "switch_n": 29792000,
+          "packet_scheduler": "same complete packets; final partial retained",
+          "pending_samples": 17575,
+          "labels_active_centres_locks_stability_exact": true
+        }
+      ]
+    },
+    "synthetic_stress": {
+      "cycles": 160,
+      "founded_clusters": 161,
+      "equal_events": 4000,
+      "unique_fresh_displays": 160
+    },
+    "mutations": [
+      {
+        "mutation": "reuse-old-display",
+        "status": "killed",
+        "failed_tests": [
+          "test_recycled_slot_gets_fresh_display_after_restart",
+          "test_retire_and_reuse_between_publications_cannot_inherit_translation",
+          "test_full_shadow_history_matches_classic_past_127_lifetime_clusters"
+        ]
+      },
+      {
+        "mutation": "forget-continuity-on-resume",
+        "status": "killed",
+        "failed_tests": [
+          "test_existing_locked_unit_witness_keeps_display_during_cluster_growth"
+        ]
+      },
+      {
+        "mutation": "ignore-continuity-corruption",
+        "status": "killed",
+        "failed_tests": [
+          "test_damaged_continuity_is_rejected_before_bank_truncation"
+        ]
+      },
+      {
+        "mutation": "replace-continuing-display",
+        "status": "killed",
+        "failed_tests": [
+          "test_existing_locked_unit_witness_keeps_display_during_cluster_growth"
+        ]
+      },
+      {
+        "mutation": "permanent-slot-reservation",
+        "status": "killed",
+        "failed_tests": [
+          "test_full_shadow_history_matches_classic_past_127_lifetime_clusters",
+          "test_retired_numeric_slots_recycle_identically_in_native_and_classic"
+        ]
+      }
+    ],
+    "all_stream_deltas": {
+      "dev": [
+        {
+          "fixture": "Mix-Headset_EN2002a",
+          "cohort": "amiH",
+          "reference_lines": 868,
+          "first_correct": 639,
+          "current_first_correct": 427,
+          "first_delta_pp": 24.42396313364055,
+          "final_correct": 639,
+          "current_final_correct": 425,
+          "final_delta_pp": 24.65437788018433
+        },
+        {
+          "fixture": "Mix-Headset_ES2004d",
+          "cohort": "amiH",
+          "reference_lines": 713,
+          "first_correct": 560,
+          "current_first_correct": 451,
+          "first_delta_pp": 15.287517531556801,
+          "final_correct": 560,
+          "current_final_correct": 461,
+          "final_delta_pp": 13.884992987377279
+        },
+        {
+          "fixture": "Mix-Headset_IS1009d",
+          "cohort": "amiH",
+          "reference_lines": 607,
+          "first_correct": 463,
+          "current_first_correct": 371,
+          "first_delta_pp": 15.156507413509061,
+          "final_correct": 463,
+          "current_final_correct": 376,
+          "final_delta_pp": 14.332784184514002
+        },
+        {
+          "fixture": "Mix-Headset_TS3003d",
+          "cohort": "amiH",
+          "reference_lines": 789,
+          "first_correct": 662,
+          "current_first_correct": 511,
+          "first_delta_pp": 19.138149556400506,
+          "final_correct": 662,
+          "current_final_correct": 521,
+          "final_delta_pp": 17.870722433460077
+        },
+        {
+          "fixture": "Array1-01_EN2002a",
+          "cohort": "amiF",
+          "reference_lines": 868,
+          "first_correct": 617,
+          "current_first_correct": 326,
+          "first_delta_pp": 33.525345622119815,
+          "final_correct": 617,
+          "current_final_correct": 311,
+          "final_delta_pp": 35.25345622119816
+        },
+        {
+          "fixture": "Array1-01_ES2004d",
+          "cohort": "amiF",
+          "reference_lines": 713,
+          "first_correct": 570,
+          "current_first_correct": 326,
+          "first_delta_pp": 34.22159887798036,
+          "final_correct": 570,
+          "current_final_correct": 321,
+          "final_delta_pp": 34.922861150070126
+        },
+        {
+          "fixture": "Array1-01_IS1009d",
+          "cohort": "amiF",
+          "reference_lines": 607,
+          "first_correct": 452,
+          "current_first_correct": 287,
+          "first_delta_pp": 27.182866556836903,
+          "final_correct": 452,
+          "current_final_correct": 285,
+          "final_delta_pp": 27.512355848434925
+        },
+        {
+          "fixture": "Array1-01_TS3003d",
+          "cohort": "amiF",
+          "reference_lines": 789,
+          "first_correct": 632,
+          "current_first_correct": 298,
+          "first_delta_pp": 42.332065906210396,
+          "final_correct": 632,
+          "current_final_correct": 288,
+          "final_delta_pp": 43.59949302915082
+        },
+        {
+          "fixture": "Mix-Headset_IB4001",
+          "cohort": "amiBH",
+          "reference_lines": 598,
+          "first_correct": 504,
+          "current_first_correct": 375,
+          "first_delta_pp": 21.57190635451505,
+          "final_correct": 504,
+          "current_final_correct": 380,
+          "final_delta_pp": 20.735785953177256
+        },
+        {
+          "fixture": "Mix-Headset_IB4002",
+          "cohort": "amiBH",
+          "reference_lines": 640,
+          "first_correct": 498,
+          "current_first_correct": 244,
+          "first_delta_pp": 39.6875,
+          "final_correct": 498,
+          "current_final_correct": 214,
+          "final_delta_pp": 44.375
+        },
+        {
+          "fixture": "Mix-Headset_IB4003",
+          "cohort": "amiBH",
+          "reference_lines": 553,
+          "first_correct": 453,
+          "current_first_correct": 398,
+          "first_delta_pp": 9.945750452079565,
+          "final_correct": 453,
+          "current_final_correct": 398,
+          "final_delta_pp": 9.945750452079565
+        },
+        {
+          "fixture": "Mix-Headset_IB4004",
+          "cohort": "amiBH",
+          "reference_lines": 708,
+          "first_correct": 589,
+          "current_first_correct": 469,
+          "first_delta_pp": 16.949152542372882,
+          "final_correct": 589,
+          "current_final_correct": 477,
+          "final_delta_pp": 15.819209039548022
+        },
+        {
+          "fixture": "Array1-01_IB4001",
+          "cohort": "amiBF",
+          "reference_lines": 598,
+          "first_correct": 490,
+          "current_first_correct": 312,
+          "first_delta_pp": 29.765886287625417,
+          "final_correct": 490,
+          "current_final_correct": 320,
+          "final_delta_pp": 28.42809364548495
+        },
+        {
+          "fixture": "Array1-01_IB4002",
+          "cohort": "amiBF",
+          "reference_lines": 640,
+          "first_correct": 496,
+          "current_first_correct": 258,
+          "first_delta_pp": 37.1875,
+          "final_correct": 496,
+          "current_final_correct": 238,
+          "final_delta_pp": 40.3125
+        },
+        {
+          "fixture": "Array1-01_IB4003",
+          "cohort": "amiBF",
+          "reference_lines": 553,
+          "first_correct": 449,
+          "current_first_correct": 365,
+          "first_delta_pp": 15.189873417721518,
+          "final_correct": 449,
+          "current_final_correct": 370,
+          "final_delta_pp": 14.285714285714286
+        },
+        {
+          "fixture": "Array1-01_IB4004",
+          "cohort": "amiBF",
+          "reference_lines": 708,
+          "first_correct": 581,
+          "current_first_correct": 379,
+          "first_delta_pp": 28.531073446327685,
+          "final_correct": 581,
+          "current_final_correct": 366,
+          "final_delta_pp": 30.36723163841808
+        },
+        {
+          "fixture": "Mix-Headset_EN2006a",
+          "cohort": "amiTH",
+          "reference_lines": 1180,
+          "first_correct": 968,
+          "current_first_correct": 385,
+          "first_delta_pp": 49.40677966101695,
+          "final_correct": 968,
+          "current_final_correct": 437,
+          "final_delta_pp": 45
+        },
+        {
+          "fixture": "Mix-Headset_TS3010d",
+          "cohort": "amiTH",
+          "reference_lines": 456,
+          "first_correct": 414,
+          "current_first_correct": 277,
+          "first_delta_pp": 30.04385964912281,
+          "final_correct": 414,
+          "current_final_correct": 282,
+          "final_delta_pp": 28.94736842105263
+        },
+        {
+          "fixture": "Array1-01_EN2006a",
+          "cohort": "amiTF",
+          "reference_lines": 1180,
+          "first_correct": 957,
+          "current_first_correct": 309,
+          "first_delta_pp": 54.91525423728814,
+          "final_correct": 957,
+          "current_final_correct": 300,
+          "final_delta_pp": 55.67796610169491
+        },
+        {
+          "fixture": "Array1-01_TS3010d",
+          "cohort": "amiTF",
+          "reference_lines": 456,
+          "first_correct": 396,
+          "current_first_correct": 154,
+          "first_delta_pp": 53.07017543859649,
+          "final_correct": 396,
+          "current_final_correct": 163,
+          "final_delta_pp": 51.09649122807018
+        },
+        {
+          "fixture": "Mix-Headset_Bmr012",
+          "cohort": "icsiH",
+          "reference_lines": 1070,
+          "first_correct": 541,
+          "current_first_correct": 528,
+          "first_delta_pp": 1.2149532710280373,
+          "final_correct": 558,
+          "current_final_correct": 543,
+          "final_delta_pp": 1.4018691588785046
+        },
+        {
+          "fixture": "Mix-Headset_Bmr013",
+          "cohort": "icsiH",
+          "reference_lines": 953,
+          "first_correct": 836,
+          "current_first_correct": 636,
+          "first_delta_pp": 20.98635886673662,
+          "final_correct": 836,
+          "current_final_correct": 656,
+          "final_delta_pp": 18.88772298006296
+        },
+        {
+          "fixture": "Mix-Headset_Bmr018",
+          "cohort": "icsiH",
+          "reference_lines": 1360,
+          "first_correct": 1144,
+          "current_first_correct": 866,
+          "first_delta_pp": 20.441176470588236,
+          "final_correct": 1144,
+          "current_final_correct": 881,
+          "final_delta_pp": 19.33823529411765
+        },
+        {
+          "fixture": "Mix-Headset_Bmr021",
+          "cohort": "icsiH",
+          "reference_lines": 784,
+          "first_correct": 654,
+          "current_first_correct": 480,
+          "first_delta_pp": 22.193877551020407,
+          "final_correct": 654,
+          "current_final_correct": 489,
+          "final_delta_pp": 21.04591836734694
+        },
+        {
+          "fixture": "Mix-Headset_Bro021",
+          "cohort": "icsiH",
+          "reference_lines": 1132,
+          "first_correct": 1017,
+          "current_first_correct": 873,
+          "first_delta_pp": 12.720848056537102,
+          "final_correct": 1017,
+          "current_final_correct": 884,
+          "final_delta_pp": 11.749116607773852
+        },
+        {
+          "fixture": "PZM-chanF_Bmr012",
+          "cohort": "icsiF",
+          "reference_lines": 1070,
+          "first_correct": 487,
+          "current_first_correct": 475,
+          "first_delta_pp": 1.1214953271028036,
+          "final_correct": 496,
+          "current_final_correct": 487,
+          "final_delta_pp": 0.8411214953271028
+        },
+        {
+          "fixture": "PZM-chanF_Bmr013",
+          "cohort": "icsiF",
+          "reference_lines": 953,
+          "first_correct": 757,
+          "current_first_correct": 579,
+          "first_delta_pp": 18.677859391395593,
+          "final_correct": 766,
+          "current_final_correct": 593,
+          "final_delta_pp": 18.153200419727177
+        },
+        {
+          "fixture": "PZM-chanF_Bmr018",
+          "cohort": "icsiF",
+          "reference_lines": 1360,
+          "first_correct": 1027,
+          "current_first_correct": 729,
+          "first_delta_pp": 21.91176470588235,
+          "final_correct": 1031,
+          "current_final_correct": 718,
+          "final_delta_pp": 23.014705882352942
+        },
+        {
+          "fixture": "PZM-chanF_Bmr021",
+          "cohort": "icsiF",
+          "reference_lines": 784,
+          "first_correct": 663,
+          "current_first_correct": 428,
+          "first_delta_pp": 29.974489795918366,
+          "final_correct": 663,
+          "current_final_correct": 427,
+          "final_delta_pp": 30.102040816326532
+        },
+        {
+          "fixture": "PZM-chanF_Bro021",
+          "cohort": "icsiF",
+          "reference_lines": 1132,
+          "first_correct": 1000,
+          "current_first_correct": 666,
+          "first_delta_pp": 29.50530035335689,
+          "final_correct": 1000,
+          "current_final_correct": 660,
+          "final_delta_pp": 30.035335689045937
+        },
+        {
+          "fixture": "lords",
+          "cohort": "lords",
+          "reference_lines": 1627,
+          "first_correct": 1565,
+          "current_first_correct": 1565,
+          "first_delta_pp": 0,
+          "final_correct": 1594,
+          "current_final_correct": 1594,
+          "final_delta_pp": 0
+        },
+        {
+          "fixture": "london",
+          "cohort": "london",
+          "reference_lines": 1421,
+          "first_correct": 1369,
+          "current_first_correct": 1365,
+          "first_delta_pp": 0.28149190710767064,
+          "final_correct": 1376,
+          "current_final_correct": 1374,
+          "final_delta_pp": 0.14074595355383532
+        }
+      ],
+      "heldout": [
+        {
+          "fixture": "chime6-S02-far",
+          "cohort": "chime6-far",
+          "reference_lines": 4107,
+          "first_correct": 1975,
+          "current_first_correct": 562,
+          "first_delta_pp": 34.40467494521548,
+          "final_correct": 1975,
+          "current_final_correct": 572,
+          "final_delta_pp": 34.16118821524227
+        },
+        {
+          "fixture": "chime6-S02-near",
+          "cohort": "chime6-near",
+          "reference_lines": 4107,
+          "first_correct": 2277,
+          "current_first_correct": 628,
+          "first_delta_pp": 40.15096177258339,
+          "final_correct": 2277,
+          "current_final_correct": 692,
+          "final_delta_pp": 38.592646700754806
+        },
+        {
+          "fixture": "chime6-S09-far",
+          "cohort": "chime6-far",
+          "reference_lines": 3067,
+          "first_correct": 1625,
+          "current_first_correct": 354,
+          "first_delta_pp": 41.44114770133681,
+          "final_correct": 1625,
+          "current_final_correct": 392,
+          "final_delta_pp": 40.20215194000652
+        },
+        {
+          "fixture": "chime6-S09-near",
+          "cohort": "chime6-near",
+          "reference_lines": 3067,
+          "first_correct": 1774,
+          "current_first_correct": 693,
+          "first_delta_pp": 35.24616889468536,
+          "final_correct": 1774,
+          "current_final_correct": 703,
+          "final_delta_pp": 34.92011737854581
+        },
+        {
+          "fixture": "chime6-S01-far",
+          "cohort": "chime6-far",
+          "reference_lines": 5137,
+          "first_correct": 3464,
+          "current_first_correct": 799,
+          "first_delta_pp": 51.87852832392447,
+          "final_correct": 3464,
+          "current_final_correct": 838,
+          "final_delta_pp": 51.1193303484524
+        },
+        {
+          "fixture": "chime6-S01-near",
+          "cohort": "chime6-near",
+          "reference_lines": 5137,
+          "first_correct": 3446,
+          "current_first_correct": 1012,
+          "first_delta_pp": 47.38174031535916,
+          "final_correct": 3446,
+          "current_final_correct": 1078,
+          "final_delta_pp": 46.09694374148336
+        },
+        {
+          "fixture": "chime6-S21-far",
+          "cohort": "chime6-far",
+          "reference_lines": 4030,
+          "first_correct": 1968,
+          "current_first_correct": 299,
+          "first_delta_pp": 41.41439205955335,
+          "final_correct": 1968,
+          "current_final_correct": 334,
+          "final_delta_pp": 40.54590570719603
+        },
+        {
+          "fixture": "chime6-S21-near",
+          "cohort": "chime6-near",
+          "reference_lines": 4030,
+          "first_correct": 2619,
+          "current_first_correct": 687,
+          "first_delta_pp": 47.940446650124066,
+          "final_correct": 2619,
+          "current_final_correct": 776,
+          "final_delta_pp": 45.732009925558316
+        },
+        {
+          "fixture": "notsofar-MTG_32000",
+          "cohort": "notsofar-far",
+          "reference_lines": 172,
+          "first_correct": 136,
+          "current_first_correct": 80,
+          "first_delta_pp": 32.55813953488372,
+          "final_correct": 136,
+          "current_final_correct": 81,
+          "final_delta_pp": 31.976744186046513
+        },
+        {
+          "fixture": "notsofar-MTG_32003",
+          "cohort": "notsofar-far",
+          "reference_lines": 176,
+          "first_correct": 132,
+          "current_first_correct": 66,
+          "first_delta_pp": 37.5,
+          "final_correct": 132,
+          "current_final_correct": 63,
+          "final_delta_pp": 39.20454545454545
+        },
+        {
+          "fixture": "notsofar-MTG_32004",
+          "cohort": "notsofar-far",
+          "reference_lines": 152,
+          "first_correct": 104,
+          "current_first_correct": 65,
+          "first_delta_pp": 25.657894736842106,
+          "final_correct": 104,
+          "current_final_correct": 73,
+          "final_delta_pp": 20.394736842105264
+        },
+        {
+          "fixture": "notsofar-MTG_32005",
+          "cohort": "notsofar-far",
+          "reference_lines": 155,
+          "first_correct": 134,
+          "current_first_correct": 94,
+          "first_delta_pp": 25.806451612903224,
+          "final_correct": 134,
+          "current_final_correct": 97,
+          "final_delta_pp": 23.870967741935484
+        },
+        {
+          "fixture": "notsofar-MTG_32006",
+          "cohort": "notsofar-far",
+          "reference_lines": 198,
+          "first_correct": 159,
+          "current_first_correct": 70,
+          "first_delta_pp": 44.94949494949495,
+          "final_correct": 159,
+          "current_final_correct": 72,
+          "final_delta_pp": 43.93939393939394
+        },
+        {
+          "fixture": "notsofar-MTG_32007",
+          "cohort": "notsofar-far",
+          "reference_lines": 135,
+          "first_correct": 107,
+          "current_first_correct": 70,
+          "first_delta_pp": 27.40740740740741,
+          "final_correct": 107,
+          "current_final_correct": 74,
+          "final_delta_pp": 24.444444444444443
+        },
+        {
+          "fixture": "notsofar-MTG_32008",
+          "cohort": "notsofar-far",
+          "reference_lines": 253,
+          "first_correct": 178,
+          "current_first_correct": 75,
+          "first_delta_pp": 40.71146245059288,
+          "final_correct": 178,
+          "current_final_correct": 79,
+          "final_delta_pp": 39.130434782608695
+        },
+        {
+          "fixture": "notsofar-MTG_32009",
+          "cohort": "notsofar-far",
+          "reference_lines": 135,
+          "first_correct": 112,
+          "current_first_correct": 60,
+          "first_delta_pp": 38.51851851851852,
+          "final_correct": 112,
+          "current_final_correct": 67,
+          "final_delta_pp": 33.333333333333336
+        },
+        {
+          "fixture": "notsofar-MTG_32020",
+          "cohort": "notsofar-far",
+          "reference_lines": 164,
+          "first_correct": 121,
+          "current_first_correct": 74,
+          "first_delta_pp": 28.658536585365855,
+          "final_correct": 121,
+          "current_final_correct": 77,
+          "final_delta_pp": 26.829268292682926
+        },
+        {
+          "fixture": "notsofar-MTG_32021",
+          "cohort": "notsofar-far",
+          "reference_lines": 156,
+          "first_correct": 123,
+          "current_first_correct": 82,
+          "first_delta_pp": 26.28205128205128,
+          "final_correct": 123,
+          "current_final_correct": 82,
+          "final_delta_pp": 26.28205128205128
+        },
+        {
+          "fixture": "notsofar-MTG_32022",
+          "cohort": "notsofar-far",
+          "reference_lines": 174,
+          "first_correct": 120,
+          "current_first_correct": 62,
+          "first_delta_pp": 33.333333333333336,
+          "final_correct": 120,
+          "current_final_correct": 64,
+          "final_delta_pp": 32.18390804597701
+        },
+        {
+          "fixture": "notsofar-MTG_32023",
+          "cohort": "notsofar-far",
+          "reference_lines": 160,
+          "first_correct": 128,
+          "current_first_correct": 74,
+          "first_delta_pp": 33.75,
+          "final_correct": 128,
+          "current_final_correct": 77,
+          "final_delta_pp": 31.875
+        },
+        {
+          "fixture": "notsofar-MTG_32024",
+          "cohort": "notsofar-far",
+          "reference_lines": 186,
+          "first_correct": 136,
+          "current_first_correct": 80,
+          "first_delta_pp": 30.107526881720432,
+          "final_correct": 136,
+          "current_final_correct": 66,
+          "final_delta_pp": 37.634408602150536
+        },
+        {
+          "fixture": "notsofar-MTG_32025",
+          "cohort": "notsofar-far",
+          "reference_lines": 160,
+          "first_correct": 125,
+          "current_first_correct": 61,
+          "first_delta_pp": 40,
+          "final_correct": 125,
+          "current_final_correct": 63,
+          "final_delta_pp": 38.75
+        },
+        {
+          "fixture": "notsofar-MTG_32026",
+          "cohort": "notsofar-far",
+          "reference_lines": 153,
+          "first_correct": 108,
+          "current_first_correct": 73,
+          "first_delta_pp": 22.875816993464053,
+          "final_correct": 108,
+          "current_final_correct": 74,
+          "final_delta_pp": 22.22222222222222
+        },
+        {
+          "fixture": "notsofar-MTG_32027",
+          "cohort": "notsofar-far",
+          "reference_lines": 229,
+          "first_correct": 146,
+          "current_first_correct": 60,
+          "first_delta_pp": 37.55458515283843,
+          "final_correct": 146,
+          "current_final_correct": 59,
+          "final_delta_pp": 37.99126637554585
+        },
+        {
+          "fixture": "notsofar-MTG_32029",
+          "cohort": "notsofar-far",
+          "reference_lines": 213,
+          "first_correct": 151,
+          "current_first_correct": 56,
+          "first_delta_pp": 44.60093896713615,
+          "final_correct": 151,
+          "current_final_correct": 58,
+          "final_delta_pp": 43.66197183098591
+        },
+        {
+          "fixture": "notsofar-MTG_32030",
+          "cohort": "notsofar-far",
+          "reference_lines": 207,
+          "first_correct": 143,
+          "current_first_correct": 60,
+          "first_delta_pp": 40.09661835748792,
+          "final_correct": 143,
+          "current_final_correct": 56,
+          "final_delta_pp": 42.028985507246375
+        },
+        {
+          "fixture": "notsofar-MTG_32040",
+          "cohort": "notsofar-far",
+          "reference_lines": 177,
+          "first_correct": 131,
+          "current_first_correct": 65,
+          "first_delta_pp": 37.28813559322034,
+          "final_correct": 131,
+          "current_final_correct": 65,
+          "final_delta_pp": 37.28813559322034
+        },
+        {
+          "fixture": "notsofar-MTG_32041",
+          "cohort": "notsofar-far",
+          "reference_lines": 250,
+          "first_correct": 174,
+          "current_first_correct": 48,
+          "first_delta_pp": 50.4,
+          "final_correct": 174,
+          "current_final_correct": 46,
+          "final_delta_pp": 51.2
+        },
+        {
+          "fixture": "notsofar-MTG_32042",
+          "cohort": "notsofar-far",
+          "reference_lines": 253,
+          "first_correct": 169,
+          "current_first_correct": 80,
+          "first_delta_pp": 35.17786561264822,
+          "final_correct": 169,
+          "current_final_correct": 76,
+          "final_delta_pp": 36.758893280632414
+        },
+        {
+          "fixture": "notsofar-MTG_32046",
+          "cohort": "notsofar-far",
+          "reference_lines": 81,
+          "first_correct": 73,
+          "current_first_correct": 58,
+          "first_delta_pp": 18.51851851851852,
+          "final_correct": 73,
+          "current_final_correct": 60,
+          "final_delta_pp": 16.049382716049383
+        },
+        {
+          "fixture": "notsofar-MTG_32047",
+          "cohort": "notsofar-far",
+          "reference_lines": 149,
+          "first_correct": 95,
+          "current_first_correct": 62,
+          "first_delta_pp": 22.14765100671141,
+          "final_correct": 95,
+          "current_final_correct": 61,
+          "final_delta_pp": 22.818791946308725
+        },
+        {
+          "fixture": "notsofar-MTG_32048",
+          "cohort": "notsofar-far",
+          "reference_lines": 162,
+          "first_correct": 116,
+          "current_first_correct": 57,
+          "first_delta_pp": 36.41975308641975,
+          "final_correct": 116,
+          "current_final_correct": 61,
+          "final_delta_pp": 33.95061728395062
+        },
+        {
+          "fixture": "notsofar-MTG_32049",
+          "cohort": "notsofar-far",
+          "reference_lines": 147,
+          "first_correct": 111,
+          "current_first_correct": 65,
+          "first_delta_pp": 31.292517006802722,
+          "final_correct": 111,
+          "current_final_correct": 63,
+          "final_delta_pp": 32.6530612244898
+        },
+        {
+          "fixture": "notsofar-MTG_32050",
+          "cohort": "notsofar-far",
+          "reference_lines": 240,
+          "first_correct": 159,
+          "current_first_correct": 71,
+          "first_delta_pp": 36.666666666666664,
+          "final_correct": 159,
+          "current_final_correct": 59,
+          "final_delta_pp": 41.666666666666664
+        },
+        {
+          "fixture": "notsofar-MTG_32052",
+          "cohort": "notsofar-far",
+          "reference_lines": 239,
+          "first_correct": 173,
+          "current_first_correct": 61,
+          "first_delta_pp": 46.86192468619247,
+          "final_correct": 173,
+          "current_final_correct": 56,
+          "final_delta_pp": 48.95397489539749
+        },
+        {
+          "fixture": "notsofar-MTG_32055",
+          "cohort": "notsofar-far",
+          "reference_lines": 184,
+          "first_correct": 124,
+          "current_first_correct": 53,
+          "first_delta_pp": 38.58695652173913,
+          "final_correct": 124,
+          "current_final_correct": 50,
+          "final_delta_pp": 40.21739130434783
+        },
+        {
+          "fixture": "notsofar-MTG_32063",
+          "cohort": "notsofar-far",
+          "reference_lines": 146,
+          "first_correct": 123,
+          "current_first_correct": 66,
+          "first_delta_pp": 39.04109589041096,
+          "final_correct": 123,
+          "current_final_correct": 66,
+          "final_delta_pp": 39.04109589041096
+        },
+        {
+          "fixture": "notsofar-MTG_32068",
+          "cohort": "notsofar-far",
+          "reference_lines": 177,
+          "first_correct": 141,
+          "current_first_correct": 68,
+          "first_delta_pp": 41.24293785310734,
+          "final_correct": 141,
+          "current_final_correct": 67,
+          "final_delta_pp": 41.80790960451977
+        },
+        {
+          "fixture": "notsofar-MTG_32069",
+          "cohort": "notsofar-far",
+          "reference_lines": 155,
+          "first_correct": 133,
+          "current_first_correct": 65,
+          "first_delta_pp": 43.87096774193548,
+          "final_correct": 133,
+          "current_final_correct": 72,
+          "final_delta_pp": 39.354838709677416
+        },
+        {
+          "fixture": "notsofar-MTG_32070",
+          "cohort": "notsofar-far",
+          "reference_lines": 164,
+          "first_correct": 120,
+          "current_first_correct": 58,
+          "first_delta_pp": 37.80487804878049,
+          "final_correct": 120,
+          "current_final_correct": 63,
+          "final_delta_pp": 34.75609756097561
+        },
+        {
+          "fixture": "notsofar-MTG_32071",
+          "cohort": "notsofar-far",
+          "reference_lines": 171,
+          "first_correct": 132,
+          "current_first_correct": 72,
+          "first_delta_pp": 35.08771929824562,
+          "final_correct": 132,
+          "current_final_correct": 71,
+          "final_delta_pp": 35.67251461988304
+        },
+        {
+          "fixture": "notsofar-MTG_32072",
+          "cohort": "notsofar-far",
+          "reference_lines": 141,
+          "first_correct": 118,
+          "current_first_correct": 69,
+          "first_delta_pp": 34.751773049645394,
+          "final_correct": 118,
+          "current_final_correct": 70,
+          "final_delta_pp": 34.04255319148936
+        },
+        {
+          "fixture": "notsofar-MTG_32073",
+          "cohort": "notsofar-far",
+          "reference_lines": 160,
+          "first_correct": 127,
+          "current_first_correct": 64,
+          "first_delta_pp": 39.375,
+          "final_correct": 127,
+          "current_final_correct": 69,
+          "final_delta_pp": 36.25
+        },
+        {
+          "fixture": "notsofar-MTG_32074",
+          "cohort": "notsofar-far",
+          "reference_lines": 175,
+          "first_correct": 135,
+          "current_first_correct": 50,
+          "first_delta_pp": 48.57142857142857,
+          "final_correct": 135,
+          "current_final_correct": 52,
+          "final_delta_pp": 47.42857142857143
+        },
+        {
+          "fixture": "notsofar-MTG_32075",
+          "cohort": "notsofar-far",
+          "reference_lines": 170,
+          "first_correct": 133,
+          "current_first_correct": 74,
+          "first_delta_pp": 34.705882352941174,
+          "final_correct": 133,
+          "current_final_correct": 76,
+          "final_delta_pp": 33.529411764705884
+        },
+        {
+          "fixture": "notsofar-MTG_32080",
+          "cohort": "notsofar-far",
+          "reference_lines": 149,
+          "first_correct": 127,
+          "current_first_correct": 68,
+          "first_delta_pp": 39.59731543624161,
+          "final_correct": 127,
+          "current_final_correct": 69,
+          "final_delta_pp": 38.92617449664429
+        },
+        {
+          "fixture": "notsofar-MTG_32081",
+          "cohort": "notsofar-far",
+          "reference_lines": 185,
+          "first_correct": 152,
+          "current_first_correct": 68,
+          "first_delta_pp": 45.4054054054054,
+          "final_correct": 152,
+          "current_final_correct": 61,
+          "final_delta_pp": 49.189189189189186
+        },
+        {
+          "fixture": "notsofar-MTG_32082",
+          "cohort": "notsofar-far",
+          "reference_lines": 132,
+          "first_correct": 103,
+          "current_first_correct": 61,
+          "first_delta_pp": 31.818181818181817,
+          "final_correct": 103,
+          "current_final_correct": 59,
+          "final_delta_pp": 33.333333333333336
+        },
+        {
+          "fixture": "notsofar-MTG_32085",
+          "cohort": "notsofar-far",
+          "reference_lines": 292,
+          "first_correct": 177,
+          "current_first_correct": 61,
+          "first_delta_pp": 39.726027397260275,
+          "final_correct": 177,
+          "current_final_correct": 57,
+          "final_delta_pp": 41.0958904109589
+        },
+        {
+          "fixture": "notsofar-MTG_32087",
+          "cohort": "notsofar-far",
+          "reference_lines": 189,
+          "first_correct": 148,
+          "current_first_correct": 54,
+          "first_delta_pp": 49.735449735449734,
+          "final_correct": 148,
+          "current_final_correct": 57,
+          "final_delta_pp": 48.148148148148145
+        },
+        {
+          "fixture": "notsofar-MTG_32088",
+          "cohort": "notsofar-far",
+          "reference_lines": 163,
+          "first_correct": 124,
+          "current_first_correct": 53,
+          "first_delta_pp": 43.558282208588956,
+          "final_correct": 124,
+          "current_final_correct": 58,
+          "final_delta_pp": 40.49079754601227
+        },
+        {
+          "fixture": "notsofar-MTG_32089",
+          "cohort": "notsofar-far",
+          "reference_lines": 128,
+          "first_correct": 102,
+          "current_first_correct": 66,
+          "first_delta_pp": 28.125,
+          "final_correct": 102,
+          "current_final_correct": 70,
+          "final_delta_pp": 25
+        },
+        {
+          "fixture": "notsofar-MTG_32090",
+          "cohort": "notsofar-far",
+          "reference_lines": 191,
+          "first_correct": 134,
+          "current_first_correct": 63,
+          "first_delta_pp": 37.17277486910995,
+          "final_correct": 134,
+          "current_final_correct": 65,
+          "final_delta_pp": 36.12565445026178
+        },
+        {
+          "fixture": "notsofar-MTG_32091",
+          "cohort": "notsofar-far",
+          "reference_lines": 132,
+          "first_correct": 109,
+          "current_first_correct": 67,
+          "first_delta_pp": 31.818181818181817,
+          "final_correct": 109,
+          "current_final_correct": 75,
+          "final_delta_pp": 25.757575757575758
+        },
+        {
+          "fixture": "notsofar-MTG_32092",
+          "cohort": "notsofar-far",
+          "reference_lines": 124,
+          "first_correct": 104,
+          "current_first_correct": 76,
+          "first_delta_pp": 22.580645161290324,
+          "final_correct": 104,
+          "current_final_correct": 77,
+          "final_delta_pp": 21.774193548387096
+        },
+        {
+          "fixture": "notsofar-MTG_32101",
+          "cohort": "notsofar-far",
+          "reference_lines": 284,
+          "first_correct": 198,
+          "current_first_correct": 87,
+          "first_delta_pp": 39.08450704225352,
+          "final_correct": 198,
+          "current_final_correct": 87,
+          "final_delta_pp": 39.08450704225352
+        },
+        {
+          "fixture": "notsofar-MTG_32102",
+          "cohort": "notsofar-far",
+          "reference_lines": 358,
+          "first_correct": 234,
+          "current_first_correct": 66,
+          "first_delta_pp": 46.927374301675975,
+          "final_correct": 234,
+          "current_final_correct": 62,
+          "final_delta_pp": 48.04469273743017
+        },
+        {
+          "fixture": "notsofar-MTG_32105",
+          "cohort": "notsofar-far",
+          "reference_lines": 72,
+          "first_correct": 61,
+          "current_first_correct": 70,
+          "first_delta_pp": -12.5,
+          "final_correct": 61,
+          "current_final_correct": 72,
+          "final_delta_pp": -15.277777777777779
+        },
+        {
+          "fixture": "notsofar-MTG_32106",
+          "cohort": "notsofar-far",
+          "reference_lines": 317,
+          "first_correct": 214,
+          "current_first_correct": 91,
+          "first_delta_pp": 38.801261829652994,
+          "final_correct": 214,
+          "current_final_correct": 84,
+          "final_delta_pp": 41.00946372239748
+        },
+        {
+          "fixture": "notsofar-MTG_32107",
+          "cohort": "notsofar-far",
+          "reference_lines": 327,
+          "first_correct": 211,
+          "current_first_correct": 86,
+          "first_delta_pp": 38.2262996941896,
+          "final_correct": 211,
+          "current_final_correct": 84,
+          "final_delta_pp": 38.837920489296636
+        },
+        {
+          "fixture": "notsofar-MTG_32108",
+          "cohort": "notsofar-far",
+          "reference_lines": 298,
+          "first_correct": 233,
+          "current_first_correct": 93,
+          "first_delta_pp": 46.97986577181208,
+          "final_correct": 233,
+          "current_final_correct": 92,
+          "final_delta_pp": 47.31543624161074
+        },
+        {
+          "fixture": "notsofar-MTG_32109",
+          "cohort": "notsofar-far",
+          "reference_lines": 161,
+          "first_correct": 132,
+          "current_first_correct": 86,
+          "first_delta_pp": 28.571428571428573,
+          "final_correct": 132,
+          "current_final_correct": 96,
+          "final_delta_pp": 22.36024844720497
+        },
+        {
+          "fixture": "notsofar-MTG_32110",
+          "cohort": "notsofar-far",
+          "reference_lines": 582,
+          "first_correct": 342,
+          "current_first_correct": 113,
+          "first_delta_pp": 39.34707903780069,
+          "final_correct": 342,
+          "current_final_correct": 122,
+          "final_delta_pp": 37.80068728522337
+        },
+        {
+          "fixture": "notsofar-MTG_32178",
+          "cohort": "notsofar-far",
+          "reference_lines": 136,
+          "first_correct": 98,
+          "current_first_correct": 62,
+          "first_delta_pp": 26.470588235294116,
+          "final_correct": 98,
+          "current_final_correct": 65,
+          "final_delta_pp": 24.264705882352942
+        },
+        {
+          "fixture": "notsofar-MTG_32179",
+          "cohort": "notsofar-far",
+          "reference_lines": 182,
+          "first_correct": 139,
+          "current_first_correct": 74,
+          "first_delta_pp": 35.714285714285715,
+          "final_correct": 139,
+          "current_final_correct": 77,
+          "final_delta_pp": 34.065934065934066
+        },
+        {
+          "fixture": "notsofar-MTG_32182",
+          "cohort": "notsofar-far",
+          "reference_lines": 186,
+          "first_correct": 142,
+          "current_first_correct": 81,
+          "first_delta_pp": 32.795698924731184,
+          "final_correct": 142,
+          "current_final_correct": 80,
+          "final_delta_pp": 33.333333333333336
+        },
+        {
+          "fixture": "notsofar-MTG_32183",
+          "cohort": "notsofar-far",
+          "reference_lines": 219,
+          "first_correct": 125,
+          "current_first_correct": 66,
+          "first_delta_pp": 26.940639269406393,
+          "final_correct": 125,
+          "current_final_correct": 68,
+          "final_delta_pp": 26.027397260273972
+        },
+        {
+          "fixture": "notsofar-MTG_32185",
+          "cohort": "notsofar-far",
+          "reference_lines": 66,
+          "first_correct": 66,
+          "current_first_correct": 55,
+          "first_delta_pp": 16.666666666666668,
+          "final_correct": 66,
+          "current_final_correct": 54,
+          "final_delta_pp": 18.181818181818183
+        },
+        {
+          "fixture": "notsofar-MTG_32190",
+          "cohort": "notsofar-far",
+          "reference_lines": 157,
+          "first_correct": 108,
+          "current_first_correct": 72,
+          "first_delta_pp": 22.929936305732483,
+          "final_correct": 108,
+          "current_final_correct": 74,
+          "final_delta_pp": 21.656050955414013
+        },
+        {
+          "fixture": "notsofar-MTG_32191",
+          "cohort": "notsofar-far",
+          "reference_lines": 167,
+          "first_correct": 104,
+          "current_first_correct": 71,
+          "first_delta_pp": 19.760479041916167,
+          "final_correct": 104,
+          "current_final_correct": 71,
+          "final_delta_pp": 19.760479041916167
+        },
+        {
+          "fixture": "notsofar-MTG_32250",
+          "cohort": "notsofar-far",
+          "reference_lines": 153,
+          "first_correct": 121,
+          "current_first_correct": 74,
+          "first_delta_pp": 30.718954248366014,
+          "final_correct": 121,
+          "current_final_correct": 75,
+          "final_delta_pp": 30.065359477124183
+        },
+        {
+          "fixture": "notsofar-MTG_32252",
+          "cohort": "notsofar-far",
+          "reference_lines": 163,
+          "first_correct": 114,
+          "current_first_correct": 67,
+          "first_delta_pp": 28.834355828220858,
+          "final_correct": 114,
+          "current_final_correct": 70,
+          "final_delta_pp": 26.993865030674847
+        },
+        {
+          "fixture": "notsofar-MTG_32255",
+          "cohort": "notsofar-far",
+          "reference_lines": 114,
+          "first_correct": 91,
+          "current_first_correct": 63,
+          "first_delta_pp": 24.56140350877193,
+          "final_correct": 91,
+          "current_final_correct": 68,
+          "final_delta_pp": 20.17543859649123
+        },
+        {
+          "fixture": "notsofar-MTG_32256",
+          "cohort": "notsofar-far",
+          "reference_lines": 56,
+          "first_correct": 55,
+          "current_first_correct": 56,
+          "first_delta_pp": -1.7857142857142858,
+          "final_correct": 55,
+          "current_final_correct": 56,
+          "final_delta_pp": -1.7857142857142858
+        },
+        {
+          "fixture": "notsofar-MTG_32257",
+          "cohort": "notsofar-far",
+          "reference_lines": 268,
+          "first_correct": 176,
+          "current_first_correct": 60,
+          "first_delta_pp": 43.28358208955224,
+          "final_correct": 176,
+          "current_final_correct": 63,
+          "final_delta_pp": 42.16417910447761
+        },
+        {
+          "fixture": "notsofar-MTG_32260",
+          "cohort": "notsofar-far",
+          "reference_lines": 157,
+          "first_correct": 106,
+          "current_first_correct": 74,
+          "first_delta_pp": 20.38216560509554,
+          "final_correct": 106,
+          "current_final_correct": 77,
+          "final_delta_pp": 18.471337579617835
+        },
+        {
+          "fixture": "notsofar-MTG_32263",
+          "cohort": "notsofar-far",
+          "reference_lines": 166,
+          "first_correct": 133,
+          "current_first_correct": 86,
+          "first_delta_pp": 28.313253012048193,
+          "final_correct": 133,
+          "current_final_correct": 85,
+          "final_delta_pp": 28.91566265060241
+        },
+        {
+          "fixture": "notsofar-MTG_32265",
+          "cohort": "notsofar-far",
+          "reference_lines": 147,
+          "first_correct": 127,
+          "current_first_correct": 73,
+          "first_delta_pp": 36.734693877551024,
+          "final_correct": 127,
+          "current_final_correct": 81,
+          "final_delta_pp": 31.292517006802722
+        },
+        {
+          "fixture": "notsofar-MTG_32312",
+          "cohort": "notsofar-far",
+          "reference_lines": 115,
+          "first_correct": 95,
+          "current_first_correct": 65,
+          "first_delta_pp": 26.08695652173913,
+          "final_correct": 95,
+          "current_final_correct": 66,
+          "final_delta_pp": 25.217391304347824
+        },
+        {
+          "fixture": "notsofar-MTG_32313",
+          "cohort": "notsofar-far",
+          "reference_lines": 93,
+          "first_correct": 72,
+          "current_first_correct": 61,
+          "first_delta_pp": 11.827956989247312,
+          "final_correct": 72,
+          "current_final_correct": 63,
+          "final_delta_pp": 9.67741935483871
+        },
+        {
+          "fixture": "notsofar-MTG_32314",
+          "cohort": "notsofar-far",
+          "reference_lines": 225,
+          "first_correct": 137,
+          "current_first_correct": 81,
+          "first_delta_pp": 24.88888888888889,
+          "final_correct": 137,
+          "current_final_correct": 83,
+          "final_delta_pp": 24
+        },
+        {
+          "fixture": "notsofar-MTG_32315",
+          "cohort": "notsofar-far",
+          "reference_lines": 188,
+          "first_correct": 140,
+          "current_first_correct": 58,
+          "first_delta_pp": 43.61702127659574,
+          "final_correct": 140,
+          "current_final_correct": 54,
+          "final_delta_pp": 45.744680851063826
+        },
+        {
+          "fixture": "notsofar-MTG_32320",
+          "cohort": "notsofar-far",
+          "reference_lines": 107,
+          "first_correct": 91,
+          "current_first_correct": 65,
+          "first_delta_pp": 24.299065420560748,
+          "final_correct": 91,
+          "current_final_correct": 65,
+          "final_delta_pp": 24.299065420560748
+        },
+        {
+          "fixture": "notsofar-MTG_32321",
+          "cohort": "notsofar-far",
+          "reference_lines": 102,
+          "first_correct": 90,
+          "current_first_correct": 55,
+          "first_delta_pp": 34.31372549019608,
+          "final_correct": 90,
+          "current_final_correct": 60,
+          "final_delta_pp": 29.41176470588235
+        },
+        {
+          "fixture": "notsofar-MTG_32322",
+          "cohort": "notsofar-far",
+          "reference_lines": 127,
+          "first_correct": 102,
+          "current_first_correct": 70,
+          "first_delta_pp": 25.19685039370079,
+          "final_correct": 102,
+          "current_final_correct": 70,
+          "final_delta_pp": 25.19685039370079
+        },
+        {
+          "fixture": "notsofar-MTG_32338",
+          "cohort": "notsofar-far",
+          "reference_lines": 69,
+          "first_correct": 63,
+          "current_first_correct": 56,
+          "first_delta_pp": 10.144927536231885,
+          "final_correct": 63,
+          "current_final_correct": 54,
+          "final_delta_pp": 13.043478260869565
+        },
+        {
+          "fixture": "notsofar-MTG_32345",
+          "cohort": "notsofar-far",
+          "reference_lines": 94,
+          "first_correct": 80,
+          "current_first_correct": 60,
+          "first_delta_pp": 21.27659574468085,
+          "final_correct": 80,
+          "current_final_correct": 65,
+          "final_delta_pp": 15.957446808510639
+        },
+        {
+          "fixture": "notsofar-MTG_32346",
+          "cohort": "notsofar-far",
+          "reference_lines": 303,
+          "first_correct": 168,
+          "current_first_correct": 89,
+          "first_delta_pp": 26.072607260726073,
+          "final_correct": 168,
+          "current_final_correct": 96,
+          "final_delta_pp": 23.762376237623762
+        },
+        {
+          "fixture": "lotusdis-S010_T038-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 127,
+          "first_correct": 108,
+          "current_first_correct": 84,
+          "first_delta_pp": 18.89763779527559,
+          "final_correct": 108,
+          "current_final_correct": 87,
+          "final_delta_pp": 16.53543307086614
+        },
+        {
+          "fixture": "lotusdis-S010_T038-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 127,
+          "first_correct": 108,
+          "current_first_correct": 109,
+          "first_delta_pp": -0.7874015748031497,
+          "final_correct": 108,
+          "current_final_correct": 109,
+          "final_delta_pp": -0.7874015748031497
+        },
+        {
+          "fixture": "lotusdis-S011_T051-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 259,
+          "first_correct": 227,
+          "current_first_correct": 175,
+          "first_delta_pp": 20.077220077220076,
+          "final_correct": 227,
+          "current_final_correct": 170,
+          "final_delta_pp": 22.00772200772201
+        },
+        {
+          "fixture": "lotusdis-S011_T051-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 259,
+          "first_correct": 228,
+          "current_first_correct": 212,
+          "first_delta_pp": 6.177606177606178,
+          "final_correct": 228,
+          "current_final_correct": 214,
+          "final_delta_pp": 5.405405405405405
+        },
+        {
+          "fixture": "lotusdis-S013_T014-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 240,
+          "first_correct": 187,
+          "current_first_correct": 78,
+          "first_delta_pp": 45.416666666666664,
+          "final_correct": 187,
+          "current_final_correct": 80,
+          "final_delta_pp": 44.583333333333336
+        },
+        {
+          "fixture": "lotusdis-S013_T014-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 240,
+          "first_correct": 201,
+          "current_first_correct": 190,
+          "first_delta_pp": 4.583333333333333,
+          "final_correct": 201,
+          "current_final_correct": 192,
+          "final_delta_pp": 3.75
+        },
+        {
+          "fixture": "lotusdis-S014_T018-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 273,
+          "first_correct": 168,
+          "current_first_correct": 75,
+          "first_delta_pp": 34.065934065934066,
+          "final_correct": 168,
+          "current_final_correct": 85,
+          "final_delta_pp": 30.4029304029304
+        },
+        {
+          "fixture": "lotusdis-S014_T018-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 273,
+          "first_correct": 206,
+          "current_first_correct": 196,
+          "first_delta_pp": 3.663003663003663,
+          "final_correct": 206,
+          "current_final_correct": 198,
+          "final_delta_pp": 2.93040293040293
+        },
+        {
+          "fixture": "lotusdis-S015_T077-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 317,
+          "first_correct": 164,
+          "current_first_correct": 90,
+          "first_delta_pp": 23.34384858044164,
+          "final_correct": 164,
+          "current_final_correct": 84,
+          "final_delta_pp": 25.236593059936908
+        },
+        {
+          "fixture": "lotusdis-S015_T077-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 317,
+          "first_correct": 244,
+          "current_first_correct": 219,
+          "first_delta_pp": 7.886435331230284,
+          "final_correct": 244,
+          "current_final_correct": 218,
+          "final_delta_pp": 8.201892744479496
+        },
+        {
+          "fixture": "lotusdis-S016_T008-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 252,
+          "first_correct": 224,
+          "current_first_correct": 202,
+          "first_delta_pp": 8.73015873015873,
+          "final_correct": 224,
+          "current_final_correct": 209,
+          "final_delta_pp": 5.9523809523809526
+        },
+        {
+          "fixture": "lotusdis-S016_T008-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 252,
+          "first_correct": 223,
+          "current_first_correct": 226,
+          "first_delta_pp": -1.1904761904761905,
+          "final_correct": 223,
+          "current_final_correct": 227,
+          "final_delta_pp": -1.5873015873015872
+        },
+        {
+          "fixture": "lotusdis-S017_T074-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 284,
+          "first_correct": 259,
+          "current_first_correct": 195,
+          "first_delta_pp": 22.535211267605632,
+          "final_correct": 259,
+          "current_final_correct": 202,
+          "final_delta_pp": 20.070422535211268
+        },
+        {
+          "fixture": "lotusdis-S017_T074-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 284,
+          "first_correct": 258,
+          "current_first_correct": 234,
+          "first_delta_pp": 8.450704225352112,
+          "final_correct": 258,
+          "current_final_correct": 235,
+          "final_delta_pp": 8.098591549295774
+        },
+        {
+          "fixture": "lotusdis-S018_T075-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 275,
+          "first_correct": 238,
+          "current_first_correct": 194,
+          "first_delta_pp": 16,
+          "final_correct": 238,
+          "current_final_correct": 198,
+          "final_delta_pp": 14.545454545454545
+        },
+        {
+          "fixture": "lotusdis-S018_T075-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 275,
+          "first_correct": 243,
+          "current_first_correct": 219,
+          "first_delta_pp": 8.727272727272727,
+          "final_correct": 243,
+          "current_final_correct": 220,
+          "final_delta_pp": 8.363636363636363
+        },
+        {
+          "fixture": "lotusdis-S019_T044-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 336,
+          "first_correct": 293,
+          "current_first_correct": 195,
+          "first_delta_pp": 29.166666666666668,
+          "final_correct": 293,
+          "current_final_correct": 194,
+          "final_delta_pp": 29.464285714285715
+        },
+        {
+          "fixture": "lotusdis-S019_T044-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 336,
+          "first_correct": 290,
+          "current_first_correct": 284,
+          "first_delta_pp": 1.7857142857142858,
+          "final_correct": 290,
+          "current_final_correct": 285,
+          "final_delta_pp": 1.4880952380952381
+        },
+        {
+          "fixture": "lotusdis-S020_T050-far",
+          "cohort": "lotusdis-far",
+          "reference_lines": 384,
+          "first_correct": 280,
+          "current_first_correct": 143,
+          "first_delta_pp": 35.677083333333336,
+          "final_correct": 280,
+          "current_final_correct": 138,
+          "final_delta_pp": 36.979166666666664
+        },
+        {
+          "fixture": "lotusdis-S020_T050-near",
+          "cohort": "lotusdis-near",
+          "reference_lines": 384,
+          "first_correct": 322,
+          "current_first_correct": 260,
+          "first_delta_pp": 16.145833333333332,
+          "final_correct": 322,
+          "current_final_correct": 267,
+          "final_delta_pp": 14.322916666666666
+        },
+        {
+          "fixture": "commons-2026-09-09",
+          "cohort": "commons-2026-09-09",
+          "reference_lines": 1253,
+          "first_correct": 1179,
+          "current_first_correct": 1178,
+          "first_delta_pp": 0.07980845969672785,
+          "final_correct": 1212,
+          "current_final_correct": 1213,
+          "final_delta_pp": -0.07980845969672785
+        },
+        {
+          "fixture": "lords-2026-09-02",
+          "cohort": "lords-2026-09-02",
+          "reference_lines": 1376,
+          "first_correct": 1304,
+          "current_first_correct": 1307,
+          "first_delta_pp": -0.2180232558139535,
+          "final_correct": 1319,
+          "current_final_correct": 1321,
+          "final_delta_pp": -0.14534883720930233
+        }
+      ]
+    },
+    "loss_phases": {
+      "dev": {
+        "Mix-Headset_Bmr012": {
+          "handback_s": 144,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 2,
+                "gains": 23
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 13,
+                "gains": 5
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 4,
+                "gains": 24
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 11,
+                "gains": 6
+              }
+            }
+          }
+        },
+        "PZM-chanF_Bmr012": {
+          "handback_s": 130,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 2,
+                "gains": 10
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 3,
+                "gains": 7
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 1,
+                "gains": 10
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        },
+        "lords": {
+          "handback_s": 494,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 0,
+                "gains": 3
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 3,
+                "gains": 0
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 1,
+                "gains": 1
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        },
+        "london": {
+          "handback_s": 1862,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 2,
+                "gains": 6
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 3,
+                "gains": 5
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        }
+      },
+      "heldout": {
+        "notsofar-MTG_32105": {
+          "handback_s": null,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 10,
+                "gains": 1
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 11,
+                "gains": 0
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        },
+        "notsofar-MTG_32256": {
+          "handback_s": null,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 1,
+                "gains": 0
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 1,
+                "gains": 0
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        },
+        "lotusdis-S010_T038-near": {
+          "handback_s": null,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 8,
+                "gains": 7
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 8,
+                "gains": 7
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        },
+        "lotusdis-S016_T008-near": {
+          "handback_s": null,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 14,
+                "gains": 11
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 14,
+                "gains": 10
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        },
+        "commons-2026-09-09": {
+          "handback_s": 380,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 1,
+                "gains": 4
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 2,
+                "gains": 0
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 3,
+                "gains": 2
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        },
+        "lords-2026-09-02": {
+          "handback_s": 628,
+          "views": {
+            "appear": {
+              "before": {
+                "regressions": 3,
+                "gains": 2
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 2,
+                "gains": 0
+              }
+            },
+            "final": {
+              "before": {
+                "regressions": 3,
+                "gains": 1
+              },
+              "crossing": {
+                "regressions": 0,
+                "gains": 0
+              },
+              "after": {
+                "regressions": 0,
+                "gains": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "new_gpu_inference": false
+  }
+}

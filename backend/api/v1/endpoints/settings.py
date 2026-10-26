@@ -83,6 +83,9 @@ class SettingsUpdate(BaseModel):
     notes_language: Optional[str] = None
     notes_language_custom_instruction: Optional[str] = None
     enable_live_transcription: Optional[bool] = None
+    # Install-wide, admin-only; selection is frozen when capture labels start.
+    live_speaker_labels: Optional[str] = None
+    speaker_engine: Optional[str] = None
     theme: Optional[str] = None
     gemini_model: Optional[str] = None
     gemini_live_model: Optional[str] = None
@@ -156,6 +159,20 @@ class SettingsUpdate(BaseModel):
             raise ValueError(
                 f"Invalid whisper_model_size. Must be one of {WHISPER_MODEL_SIZES}"
             )
+        return value
+
+    @field_validator("speaker_engine", "live_speaker_labels")
+    @classmethod
+    def validate_speaker_setting(
+        cls, value: Optional[str], info: ValidationInfo
+    ) -> Optional[str]:
+        choices = (
+            ("auto", "classic")
+            if info.field_name == "speaker_engine"
+            else ("off", "auto")
+        )
+        if value is not None and value not in choices:
+            raise ValueError(f"Invalid {info.field_name}.")
         return value
 
     @field_validator("transcription_backend")
@@ -320,6 +337,8 @@ def _apply_install_wide_ai_owner_fallback(
         return
 
     for field in INSTALL_WIDE_AI_SETTING_KEYS:
+        if field in {"speaker_engine", "live_speaker_labels"}:
+            continue
         current_value = merged.get(field)
         owner_value = owner_settings.get(field)
         if _has_configured_value(current_value) or not _has_configured_value(
@@ -526,7 +545,7 @@ def _build_settings_update_data(
 
     # config.json is the only place these keys live, so a null saved there would
     # replace the engine instead of falling back to the default.
-    for key in TRANSCRIPTION_SETTING_KEYS:
+    for key in (*TRANSCRIPTION_SETTING_KEYS, "speaker_engine", "live_speaker_labels"):
         if key in update_data and update_data[key] is None:
             del update_data[key]
 
