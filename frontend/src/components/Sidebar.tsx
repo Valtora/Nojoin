@@ -472,11 +472,11 @@ export default function Sidebar() {
   // Where focus goes once the rows an action took away have gone, or the
   // batch bar holding focus has closed: a row link by id, or the search box.
   const pendingFocusRef = useRef<RecordingId | "search" | null>(null);
+  // Where the confirmation dialog sends focus as it closes, in place of the
+  // element that opened it, which a permanent delete takes away.
+  const confirmFocusRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    const target = pendingFocusRef.current;
-    if (target === null) return;
-    pendingFocusRef.current = null;
+  const focusTargetElement = (target: RecordingId | "search") => {
     const link =
       target === "search"
         ? undefined
@@ -484,10 +484,18 @@ export default function Sidebar() {
             listRef.current?.querySelectorAll<HTMLElement>("[data-recording-link]") ??
               [],
           ).find((element) => element.dataset.recordingLink === target);
-    (link ?? searchInputRef.current)?.focus();
+    return link ?? searchInputRef.current;
+  };
+
+  useEffect(() => {
+    const target = pendingFocusRef.current;
+    if (target === null) return;
+    pendingFocusRef.current = null;
+    focusTargetElement(target)?.focus();
   });
 
-  const focusAfterRemoving = (ids: RecordingId[]) => {
+  /** The row after the first one going, else the one before it, else the search box. */
+  const focusTargetAfterRemoving = (ids: RecordingId[]): RecordingId | "search" => {
     const gone = new Set(ids);
     const first = shownIds.findIndex((id) => gone.has(id));
     const after = shownIds.slice(first + 1).find((id) => !gone.has(id));
@@ -495,7 +503,11 @@ export default function Sidebar() {
       .slice(0, Math.max(first, 0))
       .reverse()
       .find((id) => !gone.has(id));
-    pendingFocusRef.current = after ?? before ?? "search";
+    return after ?? before ?? "search";
+  };
+
+  const focusAfterRemoving = (ids: RecordingId[]) => {
+    pendingFocusRef.current = focusTargetAfterRemoving(ids);
   };
 
   const removeRows = (ids: RecordingId[]) => {
@@ -557,12 +569,15 @@ export default function Sidebar() {
   /** The one list action that asks first, as it cannot be undone. */
   const confirmPermanentDelete = (ids: RecordingId[]) => {
     if (ids.length === 0) return;
+    confirmFocusRef.current = null;
     setConfirmModal({
       isOpen: true,
       ...permanentDeleteConfirmation(ids.length),
       isDangerous: true,
       onConfirm: () => {
-        focusAfterRemoving(ids);
+        const target = focusTargetAfterRemoving(ids);
+        pendingFocusRef.current = target;
+        confirmFocusRef.current = focusTargetElement(target);
         removeRows(ids);
         void actions.permanentDelete(ids, {
           onSuccess: (result) => {
@@ -635,6 +650,7 @@ export default function Sidebar() {
   };
 
   const handleDiscard = (id: RecordingId) => {
+    confirmFocusRef.current = null;
     setConfirmModal({
       isOpen: true,
       title: "Discard Recording",
@@ -1322,6 +1338,7 @@ export default function Sidebar() {
         confirmText={confirmModal.confirmText}
         cancelText={confirmModal.cancelText}
         isDangerous={confirmModal.isDangerous}
+        returnFocus={confirmFocusRef}
       />
 
       {reprocessRecordingId && (

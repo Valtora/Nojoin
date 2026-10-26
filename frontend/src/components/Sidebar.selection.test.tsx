@@ -118,6 +118,7 @@ vi.mock("./ContextMenu", () => ({
     );
   },
 }));
+let lastConfirmFocus: React.RefObject<HTMLElement | null> | undefined;
 vi.mock("./ConfirmationModal", () => ({
   default: ({
     isOpen,
@@ -125,14 +126,17 @@ vi.mock("./ConfirmationModal", () => ({
     confirmText,
     onConfirm,
     onClose,
+    returnFocus,
   }: {
     isOpen: boolean;
     title: string;
     confirmText?: string;
     onConfirm: () => void;
     onClose: () => void;
-  }) =>
-    isOpen ? (
+    returnFocus?: React.RefObject<HTMLElement | null>;
+  }) => {
+    lastConfirmFocus = returnFocus;
+    return isOpen ? (
       <div role="dialog" aria-label={title}>
         <button
           type="button"
@@ -143,8 +147,12 @@ vi.mock("./ConfirmationModal", () => ({
         >
           {confirmText ?? "Confirm"}
         </button>
+        <button type="button" onClick={onClose}>
+          Cancel
+        </button>
       </div>
-    ) : null,
+    ) : null;
+  },
 }));
 
 const meeting = (id: string, name: string, extra: Partial<Recording> = {}): Recording => ({
@@ -340,6 +348,32 @@ describe("recordings list selection", () => {
       expect(api.batchPermanentlyDeleteRecordings).toHaveBeenCalledTimes(1),
     );
     expect(api.batchPermanentlyDeleteRecordings).toHaveBeenCalledWith(["b"]);
+  });
+
+  // The dialog puts focus back on whatever opened it as it closes, which a
+  // permanent delete has just taken away.
+  it("hands focus to the next row once a permanent delete is confirmed, and not on Cancel", async () => {
+    const binned = [ALPHA, BRAVO, CHARLIE].map((r) => ({ ...r, is_deleted: true }));
+    await showList("deleted", binned);
+    api.batchPermanentlyDeleteRecordings.mockResolvedValue({
+      count: 1,
+      skipped: 0,
+      recording_ids: ["b"],
+    });
+    const bar = () => screen.getByRole("group", { name: "Selected recordings" });
+    const dialog = () => screen.getByRole("dialog", { name: "Delete this recording permanently?" });
+
+    fireEvent.click(checkbox("Bravo planning"));
+    fireEvent.click(within(bar()).getByRole("button", { name: "Delete Permanently" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    expect(lastConfirmFocus?.current ?? null).toBeNull();
+
+    fireEvent.click(within(bar()).getByRole("button", { name: "Delete Permanently" }));
+    const next = row("Charlie retro");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Delete Permanently" }));
+
+    expect(lastConfirmFocus?.current).toBe(next);
+    await waitFor(() => expect(api.batchPermanentlyDeleteRecordings).toHaveBeenCalledWith(["b"]));
   });
 
   it("leaves the open recording's page when the bar moves it to the bin", async () => {
