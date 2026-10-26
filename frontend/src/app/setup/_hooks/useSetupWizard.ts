@@ -659,7 +659,7 @@ export function useSetupWizard() {
         if (progress.status === "error") {
           finish(
             progress.message ||
-              "Could not download the transcription and speaker models. Retry from Model downloads in Settings > AI providers.",
+              "Could not download the transcription and speaker models. Check that the server can reach the internet and has free disk space, then retry from Model downloads under Advanced in Settings > AI providers.",
           );
           return;
         }
@@ -680,7 +680,7 @@ export function useSetupWizard() {
         if (consecutiveErrors >= PROGRESS_MAX_CONSECUTIVE_ERRORS) {
           console.error("Model preparation progress unavailable:", err);
           finish(
-            "Lost contact with the progress endpoint. Preparation continues on the server; Model downloads in Settings > AI providers shows the current state.",
+            "Lost contact with the progress endpoint. Preparation continues on the server; Model downloads, under Advanced in Settings > AI providers, shows the current state.",
           );
           return;
         }
@@ -688,7 +688,7 @@ export function useSetupWizard() {
 
       if (Date.now() - startedAt > PROGRESS_TIMEOUT_MS) {
         finish(
-          "Model preparation is taking longer than expected. It continues in the background on the server, and Model downloads in Settings > AI providers shows the current state.",
+          "Model preparation is taking longer than expected. It continues in the background on the server, and Model downloads, under Advanced in Settings > AI providers, shows the current state.",
         );
         return;
       }

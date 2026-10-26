@@ -406,7 +406,8 @@ def preparation_failure_message(stage: str | None) -> str:
     )
     return (
         f"Could not download {subject}. Check that the server can reach the "
-        "internet, then retry from Model downloads in Settings > AI providers."
+        "internet and has free disk space, then retry from Model downloads "
+        "under Advanced in Settings > AI providers."
     )
 
 
