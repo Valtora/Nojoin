@@ -103,6 +103,12 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
     ),
     (
         "/{recording_id}/timeline-notes/{note_id}/attachment",
+        ("DELETE",),
+        "remove_file_from_note",
+        "NoteFileRemovedRead",
+    ),
+    (
+        "/{recording_id}/timeline-notes/{note_id}/attachment",
         ("PATCH",),
         "set_note_file_use_in_notes",
         "NoteAttachmentRead",

@@ -438,6 +438,13 @@ async def delete_document(
     recording = await db.get(Recording, document.recording_id)
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Document not found")
+    if document.note_id is not None:
+        # Removed through its note, which also decides the note's fate, the
+        # stale notes flag and the fence against a late upload (#734).
+        raise HTTPException(
+            status_code=409,
+            detail="This file is on a note. Remove it from the note instead.",
+        )
 
     file_path = document.file_path
     await db.delete(document)

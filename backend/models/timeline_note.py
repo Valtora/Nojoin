@@ -129,6 +129,15 @@ class TimelineNote(BaseDBModel, table=True):
     last_write_token: Optional[str] = Field(
         default=None, sa_column=Column(String(36), nullable=True)
     )
+    # Set when the note's file was removed and the note kept (#734). The note
+    # then takes no other file, so an upload still on its way for it cannot
+    # bring the file back (routes_note_attachments).
+    file_removed: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean, nullable=False, default=False, server_default="false"
+        ),
+    )
 
 
 class TimelineNoteTombstone(SQLModel, table=True):

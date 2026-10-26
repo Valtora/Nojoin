@@ -24,7 +24,9 @@ from sqlmodel import select
 import backend.api.v1.endpoints.transcripts.routes_timeline_notes as notes_routes
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.api.v1.endpoints import documents as documents_ep
 from backend.models.recording import Recording
+from backend.tests import test_note_attachments as note_files
 from backend.tests.postgres_setup import migrate_empty_database
 from backend.tests.test_timeline_notes_api import OWNER_ID, _session_user
 from backend.tests.test_timeline_notes_migration_postgres import _psycopg_url
@@ -32,6 +34,10 @@ from backend.tests.test_timeline_notes_migration_postgres import _psycopg_url
 REC = "rec-pg"
 OTHER_REC = "rec-pg-other"
 BASE = f"/api/v1/transcripts/{REC}/timeline-notes"
+
+# Note files are stored under the test's own directory, as in their SQLite tests.
+uploads = note_files.uploads
+_png = note_files._png
 
 
 def _seed(database_url: str) -> None:
@@ -391,3 +397,96 @@ async def test_deleting_a_recording_removes_its_notes_and_tombstones(
             "SELECT count(*) FROM timeline_note_tombstones"
         ).fetchone()
     assert (notes, tombstones) == ((0,), (0,))
+
+
+async def _note_with_file(client: AsyncClient, body: str, anchor_ms: int) -> dict:
+    note = await client.post(
+        BASE, json={"kind": "point", "anchor_ms": anchor_ms, "body": body}
+    )
+    assert note.status_code == 201, note.text
+    attached = await client.post(
+        f"{BASE}/{note.json()['id']}/attachment",
+        files={"file": ("capture.png", _png((64, 36)), "image/png")},
+    )
+    assert attached.status_code == 201, attached.text
+    return note.json()
+
+
+@pytest.mark.anyio
+async def test_removing_a_notes_file_takes_only_an_uncaptioned_capture(
+    client: AsyncClient, database: str, uploads: list[tuple]
+) -> None:
+    capture = await _note_with_file(client, "Screen capture", 1_000)
+    captioned = await _note_with_file(client, "Budget slide", 2_000)
+
+    took = await client.delete(f"{BASE}/{capture['id']}/attachment")
+    kept = await client.delete(f"{BASE}/{captioned['id']}/attachment")
+    late = await client.post(
+        f"{BASE}/{captioned['id']}/attachment",
+        files={"file": ("capture.png", _png((64, 36)), "image/png")},
+    )
+
+    assert (took.status_code, took.json()) == (200, {"note": None})
+    assert kept.json()["note"]["attachment"] is None
+    assert late.status_code == 410
+    listed = (await client.get(BASE)).json()
+    assert [(n["body"], n["attachment"]) for n in listed] == [("Budget slide", None)]
+    with psycopg.connect(database) as conn:
+        counts = conn.execute(
+            "SELECT (SELECT count(*) FROM documents),"
+            " (SELECT count(*) FROM timeline_note_tombstones)"
+        ).fetchone()
+    assert counts == (0, 1)
+
+
+@pytest.mark.anyio
+async def test_an_upload_stored_across_its_files_removal_is_refused(
+    client: AsyncClient,
+    database: str,
+    uploads: list[tuple],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    # A retry passes its checks before the first attempt has landed; the first
+    # lands, and is removed, while the retry is being stored.
+    note = (
+        await client.post(
+            BASE, json={"kind": "point", "anchor_ms": 1_000, "body": "Budget slide"}
+        )
+    ).json()
+    stored, release = asyncio.Event(), asyncio.Event()
+    store_upload = documents_ep.store_upload
+
+    async def _held_once_stored(*args, **kwargs):
+        result = await store_upload(*args, **kwargs)
+        stored.set()
+        await release.wait()
+        return result
+
+    monkeypatch.setattr(documents_ep, "store_upload", _held_once_stored)
+    retry = asyncio.create_task(
+        client.post(
+            f"{BASE}/{note['id']}/attachment",
+            files={"file": ("capture.png", _png((64, 36)), "image/png")},
+        )
+    )
+    await asyncio.wait_for(stored.wait(), 10)
+    with psycopg.connect(database) as conn:
+        conn.execute(
+            "INSERT INTO documents (created_at, updated_at, recording_id, title,"
+            " file_path, file_type, status, parse_mode, pages_parsed, note_id,"
+            " use_in_notes) SELECT now(), now(), recording_id, 'capture.png', %s,"
+            " 'image/png', 'PENDING'::documentstatus, 'VISUAL'::documentparsemode,"
+            " 0, id, false FROM timeline_notes WHERE public_id = %s",
+            (str(tmp_path / "landed.png"), note["id"]),
+        )
+    removed = await client.delete(f"{BASE}/{note['id']}/attachment")
+    release.set()
+    late = await retry
+
+    assert removed.status_code == 200, removed.text
+    assert late.status_code == 410, late.text
+    with psycopg.connect(database) as conn:
+        documents = conn.execute("SELECT count(*) FROM documents").fetchone()
+    assert documents == (0,)
+    assert list(tmp_path.iterdir()) == []

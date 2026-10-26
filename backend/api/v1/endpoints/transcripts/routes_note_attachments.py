@@ -7,12 +7,22 @@ client uploads it once the note is saved. The file is not parsed until its
 switch is turned on, which only a readable format allows, and turning the
 switch either way marks notes already written as stale. Deleting the note
 deletes the file (``routes_timeline_notes``).
+
+Removing the file (#734) is one request, so the file and what becomes of its
+note are decided in one transaction: a note whose text is still the one its
+file gave it, "Screen capture" or the file's name, goes with its file
+(``note_goes_with_its_file``), and any other note stays as a text note,
+fenced (``TimelineNote.file_removed``) so that an upload still on its way for
+it cannot bring the file back.
 """
 
+import logging
+
 from fastapi import Depends, File, HTTPException, Request, UploadFile, status
+from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import col, select
 
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
@@ -22,18 +32,39 @@ from backend.models.timeline_note import TimelineNote
 from backend.models.timeline_note_public import (
     NoteAttachmentRead,
     NoteAttachmentUpdate,
+    NoteFileRemovedRead,
     TimelineNoteErrorCode,
 )
-from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.services.timeline_note_service import serialize_attachment
-from backend.utils.note_attachments import clean_title, is_readable, media_type_for
+from backend.utils.config_manager import is_meeting_edge_enabled
+from backend.utils.document_storage import delete_document_files
+from backend.utils.note_attachments import (
+    clean_title,
+    is_readable,
+    media_type_for,
+    note_goes_with_its_file,
+)
 
 from .. import documents as documents_ep
 from .router import router
-from .routes_timeline_notes import NOTE_NOT_FOUND_DETAIL, _owned_recording, _refused
+from .routes_timeline_notes import (
+    NOTE_NOT_FOUND_DETAIL,
+    _delete_note_and_its_file,
+    _lock_note_id,
+    _locked_note,
+    _mark_written_notes_stale,
+    _missing,
+    _owned_recording,
+    _read,
+    _refused,
+    _tombstone_on,
+)
+
+logger = logging.getLogger(__name__)
 
 ATTACHMENT_EXISTS_DETAIL = "This note already holds a file."
+FILE_REMOVED_DETAIL = "This note's file was removed, so it takes no other."
 NO_ATTACHMENT_DETAIL = "This note holds no file."
 UNREADABLE_DETAIL = "Nojoin can't read this kind of file, so it can't be used in notes."
 
@@ -57,6 +88,21 @@ async def _attachment(db: AsyncSession, note: TimelineNote) -> Document | None:
     ).scalar_one_or_none()
 
 
+async def _file_was_removed(db: AsyncSession, note_pk: int) -> bool:
+    """Whether the note's file was removed, read under a share lock to the commit.
+
+    The lock waits for a removal of the note's file in progress, so an upload
+    that passed the first check while the file was being removed still sees
+    the fence before its row goes in.
+    """
+    removed = await db.execute(
+        select(TimelineNote.file_removed)
+        .where(TimelineNote.id == note_pk)
+        .with_for_update(read=True)
+    )
+    return bool(removed.scalar_one_or_none())
+
+
 @router.post(
     "/{recording_id}/timeline-notes/{note_id}/attachment",
     response_model=NoteAttachmentRead,
@@ -70,19 +116,30 @@ async def attach_file_to_note(  # noqa: PLR0913 - FastAPI dependencies are param
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Store a file of any type on a note, switched off and unread. A second is a 409."""
+    """Store a file of any type on a note, switched off and unread.
+
+    A second file is a 409, and any file for a note whose file was removed a 410.
+    """
     user_id = current_user.id
     recording = await _owned_recording(db, recording_id, user_id)
     note = await _note(db, recording, note_id)
+    note_pk = note.id
+    if note.file_removed:
+        raise HTTPException(status_code=410, detail=FILE_REMOVED_DETAIL)
     if await _attachment(db, note) is not None:
         raise HTTPException(status_code=409, detail=ATTACHMENT_EXISTS_DETAIL)
     file_path, size_bytes = await documents_ep.store_upload(
         request, file, user_id=user_id, recording=recording, any_format=True
     )
+    if await _file_was_removed(db, note_pk):
+        # Removed while this upload was stored: it was the removed file's.
+        await db.rollback()
+        await delete_document_files([file_path], logger=logger)
+        raise HTTPException(status_code=410, detail=FILE_REMOVED_DETAIL)
     title = clean_title(file.filename)
     document = Document(
         recording_id=recording.id,
-        note_id=note.id,
+        note_id=note_pk,
         use_in_notes=False,
         title=title,
         file_path=file_path,
@@ -139,18 +196,7 @@ async def set_note_file_use_in_notes(
         document.error_message = None
         document.parse_stage = "Queued"
     db.add(document)
-    transcript = (
-        await db.execute(
-            select(Transcript).where(Transcript.recording_id == recording.id)
-        )
-    ).scalar_one_or_none()
-    if (
-        transcript is not None
-        and transcript.notes_status == "completed"
-        and (transcript.notes or "").strip()
-    ):
-        transcript.notes_stale_documents = True
-        db.add(transcript)
+    await _mark_written_notes_stale(db, recording.id)
     await db.commit()
     await db.refresh(document)
     if parse:
@@ -161,3 +207,57 @@ async def set_note_file_use_in_notes(
 
         await register_task_ownership(db, task.id, user_id)
     return serialize_attachment(document)
+
+
+@router.delete(
+    "/{recording_id}/timeline-notes/{note_id}/attachment",
+    response_model=NoteFileRemovedRead,
+)
+async def remove_file_from_note(
+    recording_id: str,
+    note_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove a note's file, and the note with it if nobody captioned it.
+
+    A capture's point note whose text is still only "Screen capture", or a
+    note whose text is still only the file's name, is deleted as the note's
+    own delete does, leaving its tombstone; the answer's ``note`` is then
+    null. Any other note stays without its file and takes no other. A
+    file switched into the notes marks notes already written as stale, as
+    switching it off does. A note that is gone is the 404 or 410 its delete
+    would give, and one with no file a 404.
+    """
+    # Read before any rollback, which expires the request's user.
+    user_id = current_user.id
+    edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
+    recording = await _owned_recording(db, recording_id, user_id)
+    recording_pk, recording_public_id = recording.id, recording.public_id
+    # The same locks as the note's delete, in the same order: the id, then the row.
+    await _lock_note_id(db, note_id)
+    note = await _locked_note(db, recording_pk, note_id)
+    if note is None:
+        refusal = _missing(await _tombstone_on(db, recording_pk, note_id), None)
+        await db.rollback()
+        raise refusal
+    document = await _attachment(db, note)
+    if document is None:
+        await db.rollback()
+        raise HTTPException(status_code=404, detail=NO_ATTACHMENT_DETAIL)
+    if note_goes_with_its_file(note, document.title):
+        await _delete_note_and_its_file(
+            db, note, write_token=None, edge_enabled=edge_enabled
+        )
+        return NoteFileRemovedRead(note=None)
+    file_path, fed_notes = document.file_path, bool(document.use_in_notes)
+    # Its pages and chunks cascade, so search and chat lose it with the row.
+    await db.execute(delete(Document).where(col(Document.id) == document.id))
+    note.file_removed = True
+    db.add(note)
+    if fed_notes:
+        await _mark_written_notes_stale(db, recording_pk)
+    await db.commit()
+    await delete_document_files([file_path], logger=logger)
+    await db.refresh(note)
+    return NoteFileRemovedRead(note=await _read(db, note, recording_public_id))
