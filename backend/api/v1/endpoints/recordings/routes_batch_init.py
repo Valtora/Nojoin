@@ -22,7 +22,6 @@ from backend.utils.document_storage import (
     recording_document_paths,
 )
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
-from backend.utils.speaker_frames import delete_frames_off_loop
 from backend.utils.time import utc_now
 
 from .router import router
@@ -116,10 +115,6 @@ async def batch_soft_delete_recordings(
         db.add(recording)
 
     await db.commit()
-    # Screen study frames do not wait in the bin with the meetings (#653).
-    await delete_frames_off_loop(
-        [recording.public_id for recording in recordings], reason="moved to the bin"
-    )
     return {"ok": True, "count": len(recordings)}
 
 
@@ -155,14 +150,12 @@ async def batch_permanently_delete_recordings(
     document_paths = await recording_document_paths(
         db, [recording.id for recording in recordings]
     )
-    public_ids = [recording.public_id for recording in recordings]
     for recording in recordings:
         await db.delete(recording)
 
     await db.commit()
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
-    await delete_frames_off_loop(public_ids, reason="permanently deleted")
     return {"ok": True, "count": len(recordings)}
 
 

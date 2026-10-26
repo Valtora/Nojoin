@@ -9,7 +9,6 @@ export { API_BASE_URL } from "./client";
 export * from "./auth";
 export * from "./recordings";
 export * from "./capture";
-export * from "./speakerFrames";
 export * from "./tasks";
 export * from "./speakers";
 export * from "./voiceprints";

@@ -50,8 +50,6 @@ files = [
     "backend/api/deps.py",
     "backend/api/error_handling.py",
     "backend/utils/upload_limit.py",
-    "backend/utils/speaker_frames",
-    "backend/api/v1/endpoints/recordings/routes_speaker_frames.py",
     "backend/utils/storage_hygiene.py",
     "backend/utils/storage_hygiene_breaker.py",
     "backend/utils/storage_hygiene_report.py",
