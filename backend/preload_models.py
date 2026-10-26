@@ -386,6 +386,30 @@ def _resolve_onnx_asr_id(backend: str, model_id: str | None) -> str | None:
     return None
 
 
+# What each preparation stage fetches, named in the message shown when it
+# fails. The exception goes to the worker log instead: offline it reads
+# "<urlopen error [Errno -3] Temporary failure in name resolution>", which
+# tells someone finishing the setup wizard nothing they can act on.
+_PREPARATION_STAGE_SUBJECTS = {
+    "whisper": "the Whisper transcription model",
+    "pyannote": "the speaker models",
+    "segmentation": "the speaker models",
+    "parakeet": "the Parakeet transcription model",
+    "canary": "the Canary transcription model",
+}
+
+
+def preparation_failure_message(stage: str | None) -> str:
+    """The progress message for a preparation that failed during ``stage``."""
+    subject = _PREPARATION_STAGE_SUBJECTS.get(
+        stage or "", "the transcription and speaker models"
+    )
+    return (
+        f"Could not download {subject}. Check that the server can reach the "
+        "internet, then retry from Model downloads in Settings > AI providers."
+    )
+
+
 def download_models(
     progress_callback=None,
     hf_token=None,
@@ -409,7 +433,11 @@ def download_models(
         return
     clear_download_progress()
 
+    stage_reached: str | None = None
+
     def report(msg, percent, speed=None, eta=None, stage=None, status="complete"):
+        nonlocal stage_reached
+        stage_reached = stage
         logger.info(f"{msg} ({percent}%)")
         set_download_progress(percent, msg, speed, eta, status=status, stage=stage)
         if progress_callback:
@@ -488,7 +516,10 @@ def download_models(
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
         set_download_progress(
-            0, f"Model preparation failed: {exc}", status="error", stage="error"
+            0,
+            preparation_failure_message(stage_reached),
+            status="error",
+            stage="error",
         )
         raise
     finally:

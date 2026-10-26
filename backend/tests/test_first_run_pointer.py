@@ -158,3 +158,63 @@ async def test_demo_seed_for_a_missing_user_is_an_error(
 
     assert "user 42 not found" in caplog.text
     assert caplog.records[-1].levelno == logging.ERROR
+
+
+def _recording_enqueue(monkeypatch) -> list[dict]:
+    calls: list[dict] = []
+
+    async def _enqueue(**kwargs):
+        calls.append(kwargs)
+        return "model-prep-task"
+
+    monkeypatch.setattr(backend_main, "enqueue_model_preparation", _enqueue)
+    return calls
+
+
+@pytest.mark.anyio
+async def test_startup_downloads_nothing_before_an_account_exists(
+    monkeypatch, caplog
+) -> None:
+    # A new install waits for the setup wizard, which queues preparation with
+    # the transcription model the operator chose. Queuing at startup as well
+    # downloaded the default model (Turbo, about 1.5 GB) before the wizard ran.
+    monkeypatch.setattr(backend_main, "async_session_maker", _fake_session_maker(None))
+    calls = _recording_enqueue(monkeypatch)
+
+    with caplog.at_level(logging.INFO, logger="backend.main"):
+        await backend_main.queue_startup_model_preparation()
+
+    assert calls == []
+    assert "wait for first-run setup" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_startup_prepares_models_once_an_account_exists(monkeypatch) -> None:
+    monkeypatch.setattr(
+        backend_main, "async_session_maker", _fake_session_maker(object())
+    )
+    calls = _recording_enqueue(monkeypatch)
+
+    await backend_main.queue_startup_model_preparation()
+
+    # The same core preparation startup queued before it learned to wait.
+    assert calls == [{"target": "core"}]
+
+
+@pytest.mark.anyio
+async def test_a_failed_startup_queue_does_not_stop_the_api(
+    monkeypatch, caplog
+) -> None:
+    monkeypatch.setattr(
+        backend_main, "async_session_maker", _fake_session_maker(object())
+    )
+
+    async def _broker_down(**kwargs):
+        raise ConnectionError("broker unreachable")
+
+    monkeypatch.setattr(backend_main, "enqueue_model_preparation", _broker_down)
+
+    with caplog.at_level(logging.ERROR, logger="backend.main"):
+        await backend_main.queue_startup_model_preparation()
+
+    assert "Failed to queue startup model preparation" in caplog.text

@@ -77,6 +77,18 @@ function makeForbidden() {
   });
 }
 
+function makeExampleRefused() {
+  return Object.assign(new Error("forbidden"), {
+    response: {
+      status: 403,
+      data: {
+        detail:
+          "Setup does not accept the example FIRST_RUN_PASSWORD from .env.example.",
+      },
+    },
+  });
+}
+
 const CONFIGURED_GEMINI = {
   llm_provider: "gemini",
   llm_provider_selected: true,
@@ -140,6 +152,7 @@ async function advanceToAi(config: Record<string, unknown> = CONFIGURED_GEMINI) 
 describe("SetupPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     getCurrentUser.mockRejectedValue(makeUnauthorised());
     checkFFmpeg.mockResolvedValue({
       ffmpeg: true,
@@ -201,6 +214,23 @@ describe("SetupPage", () => {
         ),
       ).toBeInTheDocument();
     });
+    expect(screen.queryByText("Legal Disclaimer")).not.toBeInTheDocument();
+  });
+
+  it("asks for your own password when the example one is entered", async () => {
+    getInitialConfig.mockRejectedValue(makeExampleRefused());
+
+    renderWithProviders(<SetupPage />);
+
+    const unlockInput = await screen.findByLabelText("First-run setup password");
+    fireEvent.change(unlockInput, {
+      target: { value: "change_this_before_first_start" },
+    });
+    fireEvent.click(screen.getByText("Unlock Setup"));
+
+    await screen.findByText(
+      "Setup does not accept the example password from .env.example. Set your own FIRST_RUN_PASSWORD in .env, restart the stack with docker compose up -d, then enter it here.",
+    );
     expect(screen.queryByText("Legal Disclaimer")).not.toBeInTheDocument();
   });
 
@@ -418,5 +448,105 @@ describe("SetupPage", () => {
     expect(
       screen.queryByText("Password must be at least 8 characters"),
     ).not.toBeInTheDocument();
+  });
+
+  describe("after a reload", () => {
+    const SIGNED_IN_OWNER = {
+      id: 1,
+      username: "admin",
+      force_password_change: false,
+    };
+
+    /** Unmounts the wizard and renders it again signed in, as a reload does. */
+    function reload(unmount: () => void) {
+      unmount();
+      routerPush.mockClear();
+      getInitialConfig.mockClear();
+      getCurrentUser.mockResolvedValue(SIGNED_IN_OWNER);
+      renderWithProviders(<SetupPage />);
+    }
+
+    it("resumes at the AI step once the account exists", async () => {
+      const { unmount } = renderWithProviders(<SetupPage />);
+      await advanceToAi(NO_PROVIDER);
+
+      reload(unmount);
+
+      await screen.findByText("AI Configuration");
+      expect(routerPush).not.toHaveBeenCalled();
+      // The session authenticates now; the bootstrap password is gone.
+      expect(getInitialConfig).toHaveBeenCalledWith(undefined);
+      expect(screen.getByText("Step 4 of 5: AI")).toBeInTheDocument();
+    });
+
+    it("resumes the Finish step with its summary", async () => {
+      const { unmount } = renderWithProviders(<SetupPage />);
+      await advanceToTranscription(NO_PROVIDER);
+      fireEvent.change(screen.getByLabelText("Transcription model"), {
+        target: { value: "small" },
+      });
+      fireEvent.click(screen.getByText("Next Step"));
+      await screen.findByLabelText("Username");
+      fillAccount();
+      fireEvent.click(screen.getByLabelText(/Include a sample meeting/));
+      fireEvent.click(screen.getByText("Create account"));
+      await screen.findByText("AI Configuration");
+      fireEvent.click(screen.getByText("Decide later"));
+      fireEvent.click(screen.getByText("Finish setup"));
+      await screen.findByText("Setup Complete");
+
+      reload(unmount);
+
+      await screen.findByText("Setup Complete");
+      expect(routerPush).not.toHaveBeenCalled();
+      expect(screen.getByText("admin")).toBeInTheDocument();
+      expect(screen.getByText("Not configured yet")).toBeInTheDocument();
+      expect(screen.getByText("Not added")).toBeInTheDocument();
+      expect(screen.getByText("Small")).toBeInTheDocument();
+    });
+
+    it("lands a finished setup on the dashboard", async () => {
+      const { unmount } = renderWithProviders(<SetupPage />);
+      await advanceToAi(NO_PROVIDER);
+      fireEvent.click(screen.getByText("Decide later"));
+      fireEvent.click(screen.getByText("Finish setup"));
+      fireEvent.click(await screen.findByText("Go to the dashboard"));
+      expect(routerPush).toHaveBeenCalledWith("/");
+
+      reload(unmount);
+
+      await waitFor(() => {
+        expect(routerPush).toHaveBeenCalledWith("/");
+      });
+      expect(screen.queryByText("AI Configuration")).not.toBeInTheDocument();
+    });
+
+    it("does not resume someone else's wizard", async () => {
+      const { unmount } = renderWithProviders(<SetupPage />);
+      await advanceToAi(NO_PROVIDER);
+
+      unmount();
+      getCurrentUser.mockResolvedValue({
+        ...SIGNED_IN_OWNER,
+        username: "someone.else",
+      });
+      renderWithProviders(<SetupPage />);
+
+      await waitFor(() => {
+        expect(routerPush).toHaveBeenCalledWith("/");
+      });
+    });
+  });
+
+  it("names the Owner and says how to remove the sample meeting", async () => {
+    renderWithProviders(<SetupPage />);
+    await advanceToAccount();
+
+    expect(screen.getByText("Create Owner Account")).toBeInTheDocument();
+    expect(screen.queryByText(/Admin Account/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Delete it like any other meeting; Settings > Help can create it again\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Removable in Settings/)).not.toBeInTheDocument();
   });
 });

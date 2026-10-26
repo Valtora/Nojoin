@@ -40,6 +40,7 @@ from backend.api.v1.endpoints.setup import (
     enforce_setup_rate_limit,
     is_system_initialized,
     lock_first_run_setup,
+    refuse_example_first_run_password,
     require_first_run_password,
 )
 from backend.core.security import (
@@ -455,6 +456,7 @@ async def setup_system(
     Only works if no users exist.
     """
     await enforce_setup_rate_limit(request)
+    refuse_example_first_run_password(request)
 
     # Held until the owner is committed below, so a second request finishing
     # setup at the same moment is refused here rather than creating another.
