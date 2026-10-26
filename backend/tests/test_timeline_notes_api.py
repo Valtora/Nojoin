@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import backend.api.v1.endpoints.recordings.routes_query as routes_query
 import backend.api.v1.endpoints.transcripts.routes_timeline_notes as notes_routes
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
@@ -509,6 +510,7 @@ async def test_just_after_a_resume_the_live_clock_runs_on_from_the_resume(
 ) -> None:
     await _add_detail_tables(session_maker)
     now = utc_now()
+    monkeypatch.setattr(routes_query, "utc_now", lambda: now)
     async with session_maker() as session:
         # Its audio ends at 5.5 s, the last segment having arrived 30 s ago,
         # before a pause; capture resumed 300 ms ago, and no segment has landed
