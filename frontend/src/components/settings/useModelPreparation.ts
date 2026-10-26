@@ -15,18 +15,23 @@ export function useModelPreparation(
   const { addNotification } = useNotificationStore();
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [preparing, setPreparing] = useState<ModelPreparationTarget | null>(null);
+  // Set while a preparation found at mount is followed, so its progress going
+  // quiet does not end the poll.
+  const [following, setFollowing] = useState(false);
   const active = useRef(false);
   const queueing = useRef(false);
   const reading = useRef(false);
   const mounted = useRef(false);
-  const preparationRunning = preparing !== null || statusDownloading || (downloadProgress?.in_progress ?? false);
+  const preparationRunning = preparing !== null || following || statusDownloading;
 
   useEffect(() => {
     let cancelled = false;
     mounted.current = true;
     reading.current = true;
     void getDownloadProgress().then((progress) => {
-      if (!cancelled) setDownloadProgress(progress);
+      if (cancelled) return;
+      setDownloadProgress(progress);
+      if (progress.in_progress) setFollowing(true);
     }).catch((error: unknown) => console.error("Failed to read model preparation progress", error))
       .finally(() => { reading.current = false; });
     return () => { cancelled = true; mounted.current = false; };
@@ -44,12 +49,18 @@ export function useModelPreparation(
         if (cancelled) return;
         const status = await refreshStatus();
         if (cancelled || queueing.current || status === null) return;
-        const running = progress.in_progress || Object.values(status).some((model) => model.state === "downloading");
+        // A followed preparation runs until its record completes, fails or
+        // expires. in_progress goes false after 30 s without an update, which
+        // happens while Whisper, Pyannote or ONNX weights download and while
+        // a task waits for the GPU lane, so it cannot end the poll.
+        const running = progress.status === "downloading"
+          || Object.values(status).some((model) => model.state === "downloading");
         const wasActive = active.current;
         active.current = running;
         setDownloadProgress(progress);
         if (!running) {
           setPreparing(null);
+          setFollowing(false);
           if (wasActive && (progress.status === "complete" || progress.status === "error")) {
             addNotification({
               type: progress.status === "complete" ? "success" : "error",

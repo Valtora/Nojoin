@@ -248,4 +248,38 @@ describe("model preparation status transitions", () => {
     expect(mocks.getDownloadProgress).toHaveBeenCalledTimes(progressReads);
     expect(mocks.addNotification).not.toHaveBeenCalled();
   });
+
+  // Whisper, Pyannote and ONNX weights report nothing between stages, and a
+  // queued task reports nothing until the GPU lane frees, so the progress
+  // record goes stale (in_progress false) while the preparation still runs.
+  const silent = { ...progress("downloading"), stage: "whisper", in_progress: false };
+
+  it("follows a requested transcription model through a silent stage until it completes", async () => {
+    mocks.getModelsStatus.mockResolvedValue(status("absent"));
+    const { result } = await openModels();
+    await act(async () => { await result.current.startPreparation("active"); });
+    mocks.getDownloadProgress.mockResolvedValue(silent);
+    await tick(32_000);
+    expect(result.current.preparationRunning).toBe(true);
+    expect(result.current.preparing).toBe("active");
+
+    mocks.getDownloadProgress.mockResolvedValue({ ...progress("complete"), stage: "complete" });
+    await tick();
+    expect(result.current.preparationRunning).toBe(false);
+    expect(mocks.addNotification).toHaveBeenCalledWith({ type: "success", message: "Model preparation complete." });
+  });
+
+  it("keeps following a preparation found at mount when its progress goes quiet", async () => {
+    mocks.getDownloadProgress.mockResolvedValue({ ...progress("downloading"), stage: "whisper" });
+    const { result } = await openModels();
+    expect(result.current.preparationRunning).toBe(true);
+    mocks.getDownloadProgress.mockResolvedValue(silent);
+    await tick(32_000);
+    expect(result.current.preparationRunning).toBe(true);
+
+    mocks.getDownloadProgress.mockResolvedValue(progress("error"));
+    await tick();
+    expect(result.current.preparationRunning).toBe(false);
+    expect(mocks.addNotification).toHaveBeenCalledWith({ type: "error", message: "Preparation error" });
+  });
 });
