@@ -19,10 +19,12 @@ const api = {
   inferSpeakers: vi.fn(),
   discardRecordingCapture: vi.fn(),
   deleteRecording: vi.fn(),
-  archiveRecording: vi.fn(),
-  restoreRecording: vi.fn(),
-  softDeleteRecording: vi.fn(),
-  permanentlyDeleteRecording: vi.fn(),
+  batchArchiveRecordings: vi.fn(),
+  batchRestoreRecordings: vi.fn(),
+  batchSoftDeleteRecordings: vi.fn(),
+  batchPermanentlyDeleteRecordings: vi.fn(),
+  batchAddTagToRecordings: vi.fn(),
+  batchRemoveTagFromRecordings: vi.fn(),
   exportAudio: vi.fn(),
   setRecordingTranscriptionLanguage: vi.fn(),
   reprocessRecording: vi.fn(),
@@ -34,11 +36,15 @@ vi.mock("@/lib/api", () => ({
   discardRecordingCapture: (...a: unknown[]) =>
     api.discardRecordingCapture(...a),
   deleteRecording: (...a: unknown[]) => api.deleteRecording(...a),
-  archiveRecording: (...a: unknown[]) => api.archiveRecording(...a),
-  restoreRecording: (...a: unknown[]) => api.restoreRecording(...a),
-  softDeleteRecording: (...a: unknown[]) => api.softDeleteRecording(...a),
-  permanentlyDeleteRecording: (...a: unknown[]) =>
-    api.permanentlyDeleteRecording(...a),
+  batchArchiveRecordings: (...a: unknown[]) => api.batchArchiveRecordings(...a),
+  batchRestoreRecordings: (...a: unknown[]) => api.batchRestoreRecordings(...a),
+  batchSoftDeleteRecordings: (...a: unknown[]) =>
+    api.batchSoftDeleteRecordings(...a),
+  batchPermanentlyDeleteRecordings: (...a: unknown[]) =>
+    api.batchPermanentlyDeleteRecordings(...a),
+  batchAddTagToRecordings: (...a: unknown[]) => api.batchAddTagToRecordings(...a),
+  batchRemoveTagFromRecordings: (...a: unknown[]) =>
+    api.batchRemoveTagFromRecordings(...a),
   exportAudio: (...a: unknown[]) => api.exportAudio(...a),
   setRecordingTranscriptionLanguage: (...a: unknown[]) =>
     api.setRecordingTranscriptionLanguage(...a),
@@ -182,24 +188,39 @@ describe("useRecordingActions", () => {
     expect(captureState.cancel).not.toHaveBeenCalled();
   });
 
-  it("runs onSuccess for the lifecycle actions (delete/archive/restore/softDelete/permanentDelete)", async () => {
+  it("runs onSuccess for the lifecycle actions, the list ones with the server's result", async () => {
+    const changed = { count: 1, skipped: 0, recording_ids: ["rec-1"] };
+    for (const name of [
+      "batchArchiveRecordings",
+      "batchRestoreRecordings",
+      "batchSoftDeleteRecordings",
+      "batchPermanentlyDeleteRecordings",
+      "batchAddTagToRecordings",
+    ] as const) {
+      api[name].mockResolvedValue(changed);
+    }
     const { result } = renderHook(() => useRecordingActions());
     const onSuccess = vi.fn();
 
     await act(async () => {
       await result.current.delete("rec-1", { onSuccess });
-      await result.current.archive("rec-1", { onSuccess });
-      await result.current.restore("rec-1", { onSuccess });
-      await result.current.softDelete("rec-1", { onSuccess });
-      await result.current.permanentDelete("rec-1", { onSuccess });
+      await result.current.archive(["rec-1"], { onSuccess });
+      await result.current.unarchive(["rec-1"], { onSuccess });
+      await result.current.restore(["rec-1"], { onSuccess });
+      await result.current.softDelete(["rec-1"], { onSuccess });
+      await result.current.permanentDelete(["rec-1"], { onSuccess });
+      await result.current.tag(["rec-1"], "Board", { onSuccess });
     });
 
     expect(api.deleteRecording).toHaveBeenCalledWith("rec-1");
-    expect(api.archiveRecording).toHaveBeenCalledWith("rec-1");
-    expect(api.restoreRecording).toHaveBeenCalledWith("rec-1");
-    expect(api.softDeleteRecording).toHaveBeenCalledWith("rec-1");
-    expect(api.permanentlyDeleteRecording).toHaveBeenCalledWith("rec-1");
-    expect(onSuccess).toHaveBeenCalledTimes(5);
+    expect(api.batchArchiveRecordings).toHaveBeenCalledWith(["rec-1"]);
+    // Unarchive and restore are one server action: back to Recordings.
+    expect(api.batchRestoreRecordings).toHaveBeenCalledTimes(2);
+    expect(api.batchSoftDeleteRecordings).toHaveBeenCalledWith(["rec-1"]);
+    expect(api.batchPermanentlyDeleteRecordings).toHaveBeenCalledWith(["rec-1"]);
+    expect(api.batchAddTagToRecordings).toHaveBeenCalledWith(["rec-1"], "Board");
+    expect(onSuccess).toHaveBeenCalledTimes(7);
+    expect(onSuccess).toHaveBeenLastCalledWith(changed);
   });
 
   it("forgets the notes kept in the browser for a recording it deletes for good or discards", async () => {
@@ -215,28 +236,219 @@ describe("useRecordingActions", () => {
       discards: [],
     });
     try {
-      for (const id of ["rec-1", "rec-2", "rec-3", "rec-4"]) await store.put(kept(id));
+      for (const id of ["rec-1", "rec-2", "rec-3", "rec-4", "rec-5"]) {
+        await store.put(kept(id));
+      }
       const { result } = renderHook(() => useRecordingActions());
 
+      api.batchPermanentlyDeleteRecordings.mockResolvedValueOnce({
+        count: 1,
+        skipped: 1,
+        recording_ids: ["rec-1"],
+      });
       await act(async () => {
-        await result.current.permanentDelete("rec-1");
+        // rec-5 was no longer in the bin, so the server kept it.
+        await result.current.permanentDelete(["rec-1", "rec-5"]);
         await result.current.discard("rec-2");
       });
       await waitFor(async () =>
-        expect(await store.recordingsOf(1)).toEqual(["rec-3", "rec-4"]),
+        expect(await store.recordingsOf(1)).toEqual(["rec-3", "rec-4", "rec-5"]),
       );
 
       // Kept when the server refuses, and when the recording only goes to the bin.
-      api.permanentlyDeleteRecording.mockRejectedValueOnce(new Error("offline"));
-      await act(async () => {
-        await result.current.permanentDelete("rec-3");
-        await result.current.softDelete("rec-4");
+      api.batchPermanentlyDeleteRecordings.mockRejectedValueOnce(new Error("offline"));
+      api.batchSoftDeleteRecordings.mockResolvedValueOnce({
+        count: 1,
+        skipped: 0,
+        recording_ids: ["rec-4"],
       });
-      expect(await store.recordingsOf(1)).toEqual(["rec-3", "rec-4"]);
+      await act(async () => {
+        await result.current.permanentDelete(["rec-3"]);
+        await result.current.softDelete(["rec-4"]);
+      });
+      expect(await store.recordingsOf(1)).toEqual(["rec-3", "rec-4", "rec-5"]);
     } finally {
       setNoteStoreForTests(null);
       resetSessionForTests();
     }
+  });
+
+  describe("list action notifications", () => {
+    const lastNotification = () =>
+      addNotification.mock.calls.at(-1)?.[0] as {
+        type: string;
+        message: string;
+        durationMs?: number;
+        actions?: { label: string; onClick: () => void }[];
+      };
+
+    // Runs the notification's Undo and waits for the notification it ends with.
+    const undo = async () => {
+      const action = lastNotification().actions?.find(({ label }) => label === "Undo");
+      expect(action).toBeDefined();
+      const shown = addNotification.mock.calls.length;
+      action?.onClick();
+      await waitFor(() =>
+        expect(addNotification.mock.calls.length).toBeGreaterThan(shown),
+      );
+    };
+
+    it("counts what the server changed, with the right plural", async () => {
+      const { result } = renderHook(() => useRecordingActions());
+
+      api.batchArchiveRecordings.mockResolvedValueOnce({
+        count: 1,
+        skipped: 0,
+        recording_ids: ["rec-1"],
+      });
+      await act(() => result.current.archive(["rec-1"]));
+      expect(lastNotification()).toMatchObject({
+        type: "success",
+        message: "Archived 1 recording.",
+      });
+
+      // One of three was in the bin, which archive leaves alone.
+      api.batchArchiveRecordings.mockResolvedValueOnce({
+        count: 2,
+        skipped: 1,
+        recording_ids: ["rec-1", "rec-2"],
+      });
+      await act(() => result.current.archive(["rec-1", "rec-2", "rec-3"]));
+      expect(lastNotification().message).toBe("Archived 2 of 3 recordings.");
+
+      api.batchPermanentlyDeleteRecordings.mockResolvedValueOnce({
+        count: 1,
+        skipped: 1,
+        recording_ids: ["rec-2"],
+      });
+      await act(() => result.current.permanentDelete(["rec-1", "rec-2"]));
+      expect(lastNotification().message).toBe(
+        "Deleted 1 of 2 recordings permanently. 1 was no longer in the bin, so it was kept.",
+      );
+    });
+
+    it("offers Undo on every list action but permanent delete", async () => {
+      const changed = { count: 2, skipped: 0, recording_ids: ["rec-1", "rec-2"] };
+      const { result } = renderHook(() => useRecordingActions());
+
+      api.batchSoftDeleteRecordings.mockResolvedValueOnce(changed);
+      await act(() => result.current.softDelete(["rec-1", "rec-2"]));
+      expect(lastNotification()).toMatchObject({
+        message: "Moved 2 recordings to the bin.",
+        durationMs: 10000,
+      });
+      expect(lastNotification().actions?.map(({ label }) => label)).toEqual(["Undo"]);
+
+      api.batchPermanentlyDeleteRecordings.mockResolvedValueOnce(changed);
+      await act(() => result.current.permanentDelete(["rec-1", "rec-2"]));
+      expect(lastNotification().message).toBe("Deleted 2 recordings permanently.");
+      expect(lastNotification().actions).toBeUndefined();
+    });
+
+    it.each([
+      ["archive", "batchArchiveRecordings", "batchRestoreRecordings", "Recordings"],
+      ["unarchive", "batchRestoreRecordings", "batchArchiveRecordings", "Archived"],
+      ["restore", "batchRestoreRecordings", "batchSoftDeleteRecordings", "the bin"],
+      ["softDelete", "batchSoftDeleteRecordings", "batchRestoreRecordings", "Recordings"],
+    ] as const)(
+      "undoes %s for exactly what the server changed",
+      async (action, call, inverse, destination) => {
+        const onUndone = vi.fn();
+        const { result } = renderHook(() => useRecordingActions());
+        api[call].mockResolvedValueOnce({
+          count: 1,
+          skipped: 1,
+          recording_ids: ["rec-1"],
+        });
+        api[inverse].mockResolvedValueOnce({
+          count: 1,
+          skipped: 0,
+          recording_ids: ["rec-1"],
+        });
+
+        await act(() => result.current[action](["rec-1", "rec-2"], { onUndone }));
+        await undo();
+
+        expect(api[inverse]).toHaveBeenLastCalledWith(["rec-1"]);
+        expect(lastNotification()).toMatchObject({
+          type: "success",
+          message: `Moved 1 recording back to ${destination}.`,
+        });
+        expect(onUndone).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("puts recordings binned from Archived back in Archived", async () => {
+      const changed = { count: 2, skipped: 0, recording_ids: ["rec-1", "rec-2"] };
+      api.batchSoftDeleteRecordings.mockResolvedValueOnce(changed);
+      api.batchRestoreRecordings.mockResolvedValueOnce(changed);
+      api.batchArchiveRecordings.mockResolvedValueOnce(changed);
+      const { result } = renderHook(() => useRecordingActions());
+
+      await act(() =>
+        result.current.softDelete(["rec-1", "rec-2"], { from: "archived" }),
+      );
+      await undo();
+
+      // A restore lands in Recordings, so the undo archives them again.
+      expect(api.batchRestoreRecordings).toHaveBeenCalledWith(["rec-1", "rec-2"]);
+      expect(api.batchArchiveRecordings).toHaveBeenCalledWith(["rec-1", "rec-2"]);
+      expect(lastNotification().message).toBe("Moved 2 recordings back to Archived.");
+    });
+
+    it("removes the tag again only from the recordings that gained it", async () => {
+      api.batchAddTagToRecordings.mockResolvedValueOnce({
+        count: 1,
+        skipped: 1,
+        recording_ids: ["rec-2"],
+      });
+      api.batchRemoveTagFromRecordings.mockResolvedValueOnce({
+        count: 1,
+        skipped: 0,
+        recording_ids: ["rec-2"],
+      });
+      const { result } = renderHook(() => useRecordingActions());
+
+      await act(() => result.current.tag(["rec-1", "rec-2"], "Board"));
+      expect(lastNotification().message).toBe(
+        'Added "Board" to 1 of 2 recordings. The other already had it.',
+      );
+      await undo();
+
+      expect(api.batchRemoveTagFromRecordings).toHaveBeenCalledWith(["rec-2"], "Board");
+      expect(lastNotification().message).toBe('Removed "Board" from 1 recording.');
+    });
+
+    it("offers no Undo when the server changed nothing, and says so", async () => {
+      api.batchRestoreRecordings.mockResolvedValueOnce({
+        count: 0,
+        skipped: 2,
+        recording_ids: [],
+      });
+      const { result } = renderHook(() => useRecordingActions());
+
+      await act(() => result.current.restore(["rec-1", "rec-2"]));
+
+      expect(lastNotification()).toMatchObject({
+        type: "warning",
+        message: "Nothing was restored.",
+      });
+      expect(lastNotification().actions).toBeUndefined();
+    });
+
+    it("reports a failed list action with the reason the server gave", async () => {
+      const onError = vi.fn();
+      api.batchArchiveRecordings.mockRejectedValueOnce(new Error("offline"));
+      const { result } = renderHook(() => useRecordingActions());
+
+      await act(() => result.current.archive(["rec-1", "rec-2"], { onError }));
+
+      expect(lastNotification()).toMatchObject({
+        type: "error",
+        message: "Failed to archive the recordings.",
+      });
+      expect(onError).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("exports audio and says what went wrong when there is no file to save", async () => {

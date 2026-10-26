@@ -78,7 +78,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
       open={isOpen}
       onClose={onClose}
       size="sm"
-      title={`${mode === 'add' ? 'Add Tag to' : 'Remove Tag from'} ${count} Recordings`}
+      title={`${mode === 'add' ? 'Add Tag to' : 'Remove Tag from'} ${count} ${count === 1 ? 'Recording' : 'Recordings'}`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

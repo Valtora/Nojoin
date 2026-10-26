@@ -46,14 +46,20 @@ interface NavigationState {
   setMobileNavOpen: (open: boolean) => void;
   toggleMobileNav: () => void;
 
-  // Selection State
-  selectionMode: boolean;
+  // Selection State: the recordings list's multi-select. The model on top of
+  // it, which also keeps it to the rows on screen, is `useRecordingSelection`.
   selectedRecordingIds: RecordingId[];
-  setSelectionMode: (enabled: boolean) => void;
-  toggleSelectionMode: () => void;
+  /**
+   * The row a Shift-click or Shift+Space extends from. Kept by id, so a
+   * refresh that moves the row keeps the range starting from it.
+   */
+  selectionAnchorId: RecordingId | null;
+  setRecordingSelection: (ids: RecordingId[], anchorId: RecordingId | null) => void;
+  /** Toggles one row and makes it the anchor. */
   toggleRecordingSelection: (id: RecordingId) => void;
-  selectAllRecordings: (ids: RecordingId[]) => void;
   clearSelection: () => void;
+  /** Drops rows that are no longer shown, and the anchor with them. */
+  pruneRecordingSelection: (shownIds: readonly RecordingId[]) => void;
 
   // Tour State
   hasSeenTour: Record<number, boolean>;
@@ -133,26 +139,37 @@ export const useNavigationStore = create<NavigationState>()(
         set((state) => ({ isMobileNavOpen: !state.isMobileNavOpen })),
 
       // Selection State
-      selectionMode: false,
       selectedRecordingIds: [],
-      setSelectionMode: (enabled) =>
-        set({
-          selectionMode: enabled,
-          selectedRecordingIds: enabled ? [] : [],
-        }),
-      toggleSelectionMode: () =>
-        set((state) => ({
-          selectionMode: !state.selectionMode,
-          selectedRecordingIds: !state.selectionMode ? [] : [],
-        })),
+      selectionAnchorId: null,
+      setRecordingSelection: (ids, anchorId) =>
+        set({ selectedRecordingIds: ids, selectionAnchorId: anchorId }),
       toggleRecordingSelection: (id) =>
         set((state) => ({
           selectedRecordingIds: state.selectedRecordingIds.includes(id)
             ? state.selectedRecordingIds.filter((rid) => rid !== id)
             : [...state.selectedRecordingIds, id],
+          selectionAnchorId: id,
         })),
-      selectAllRecordings: (ids) => set({ selectedRecordingIds: ids }),
-      clearSelection: () => set({ selectedRecordingIds: [] }),
+      clearSelection: () =>
+        set({ selectedRecordingIds: [], selectionAnchorId: null }),
+      pruneRecordingSelection: (shownIds) =>
+        set((state) => {
+          const shown = new Set(shownIds);
+          const kept = state.selectedRecordingIds.filter((id) => shown.has(id));
+          const anchor =
+            state.selectionAnchorId !== null && shown.has(state.selectionAnchorId)
+              ? state.selectionAnchorId
+              : null;
+          // Unchanged state is returned as is, so a prune on every list change
+          // wakes no subscriber when nothing went.
+          if (
+            kept.length === state.selectedRecordingIds.length &&
+            anchor === state.selectionAnchorId
+          ) {
+            return state;
+          }
+          return { selectedRecordingIds: kept, selectionAnchorId: anchor };
+        }),
 
       // Tour State
       hasSeenTour: {},
