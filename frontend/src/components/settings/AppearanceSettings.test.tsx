@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { act, fireEvent, renderWithProviders, screen, within } from "@/test/renderWithProviders";
+import { applyUiStyle } from "@/lib/appearance";
 
 import AppearanceSettings from "./AppearanceSettings";
 
@@ -21,6 +22,10 @@ function choose(label: string, value: string) {
   });
 }
 
+function finishStyleLoad() {
+  act(() => document.getElementById("nojoin-optional-style")!.dispatchEvent(new Event("load")));
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "matchMedia",
@@ -35,6 +40,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  applyUiStyle("default");
   vi.unstubAllGlobals();
   root.className = "";
   for (const attribute of ["data-palette", "data-corners", "data-ui-density", "data-style"]) {
@@ -94,8 +100,10 @@ describe("AppearanceSettings", () => {
 
     expect(root.classList.contains("dark")).toBe(true);
     expect(root.dataset.palette).toBe("graphite");
-    expect(root.dataset.style).toBe("classic");
+    expect(root.dataset.style).toBe("default");
     expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("classic");
+    finishStyleLoad();
+    expect(root.dataset.style).toBe("classic");
   });
 
   it("names and describes the Style control and gives search its row anchor", () => {
@@ -115,9 +123,13 @@ describe("AppearanceSettings", () => {
     renderSettings();
 
     choose("Style", style);
-    expect(root.dataset.style).toBe(style);
+    // The saved preference changes immediately; the rendered style waits for CSS.
+    expect(root.dataset.style).toBe("default");
+    expect(root.style.opacity).toBe("");
     expect(localStorage.getItem("nojoin-style")).toBe(style);
     expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue(style);
+    finishStyleLoad();
+    expect(root.dataset.style).toBe(style);
 
     choose("Style", "default");
     expect(root.dataset.style).toBe("default");
@@ -239,12 +251,14 @@ describe("AppearanceSettings across tabs", () => {
     expect(root.dataset.palette).toBe("classic");
     expect(root.dataset.corners).toBe("square");
     expect(root.dataset.uiDensity).toBe("dense");
-    expect(root.dataset.style).toBe("depth");
+    expect(root.dataset.style).toBe("default");
     expect(screen.getByRole("combobox", { name: "Theme" })).toHaveValue("dark");
     expect(screen.getByRole("combobox", { name: "Colour palette" })).toHaveValue("classic");
     expect(screen.getByRole("combobox", { name: "Corner style" })).toHaveValue("square");
     expect(screen.getByRole("combobox", { name: "Density" })).toHaveValue("dense");
     expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("depth");
+    finishStyleLoad();
+    expect(root.dataset.style).toBe("depth");
   });
 
   it("returns to the defaults when another tab clears a setting", () => {

@@ -17,16 +17,16 @@ export function paintSelectors(source: string): string[] {
   return selectors;
 }
 
-/** Fill-owner markup from SpeakerPanel, react-datepicker and RecordingSideColumn. */
+/** Synthetic colour/cascade matrix; owner contracts are exercised by rendered component tests. */
 export function depthFixture(dark = false, style = "depth") {
   const fixture = document.implementation.createHTMLDocument();
   fixture.documentElement.dataset.style = style;
   fixture.documentElement.className = dark ? "dark" : "";
-  fixture.body.innerHTML = '<div id="speaker-panel" class="bg-surface-inset"></div>'
+  fixture.body.innerHTML = '<div id="speaker-panel" data-ui-reading="pane" data-ui-fill="inset"></div>'
     + '<div class="react-datepicker" id="calendar"><div class="react-datepicker__time-container">'
     + '<div class="react-datepicker__time" id="time"></div></div></div>'
     + '<div class="react-datepicker task-deadline-calendar" id="inline-calendar"></div>'
-    + '<div data-panel-group-direction="vertical"><button id="side-tab-my-notes" aria-selected="false"></button>'
-    + '<div data-panel-resize-handle-id="fixture" data-panel-group-direction="vertical" class="bg-surface-inset"><div></div></div></div>';
+    + '<div data-ui-resize-group="vertical"><button data-ui-side-tab="my-notes" aria-selected="false"></button>'
+    + '<div data-ui-resize-handle="vertical"><div data-ui-resize-grip></div></div></div>';
   return fixture;
 }

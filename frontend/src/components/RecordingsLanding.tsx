@@ -40,7 +40,9 @@ export default function RecordingsLanding() {
       contentClassName="workspace-shell workspace-shell-feature"
       paddingClassName="workspace-pad-y"
     >
-      <SurfaceBase as="section" kind="card"
+      <SurfaceBase
+        data-ui-fill="card"
+        data-ui-border="full" as="section" kind="card"
         id="recordings-landing-panel"
         className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-card"
       >

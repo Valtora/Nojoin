@@ -54,6 +54,9 @@ export default function AppearanceSettings() {
     >
       <SettingsRow label="Theme">
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           aria-label="Theme"
           value={theme}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -73,6 +76,9 @@ export default function AppearanceSettings() {
         badge={<PaletteSwatch />}
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           aria-label="Colour palette"
           value={palette}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -95,6 +101,9 @@ export default function AppearanceSettings() {
         description="The shape and depth of controls and panels. Classic looks best with Square corners."
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           id="appearance-style-select"
           aria-describedby="appearance-style-select-help"
           value={uiStyle}
@@ -116,6 +125,9 @@ export default function AppearanceSettings() {
         description="How rounded cards, buttons and fields are. Avatars and status dots stay round."
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           aria-label="Corner style"
           value={cornerStyle}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -136,6 +148,9 @@ export default function AppearanceSettings() {
         description="Automatic uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing everywhere else. Dense is tighter still for mouse and keyboard; on a touch screen it keeps compact-sized controls."
       >
         <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           aria-label="Density"
           value={densityPreference}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>

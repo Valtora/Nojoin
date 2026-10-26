@@ -22,6 +22,8 @@ export function PeopleFilters({ onSearch }: PeopleFiltersProps) {
     <div className="flex flex-col sm:flex-row gap-4 mb-6">
       <div className="flex-1">
         <InputBase
+          data-ui-fill="card"
+          data-ui-border="full"
           type="text"
           placeholder="Search people by name, email, company..."
           value={search}

@@ -242,6 +242,9 @@ export default function NotesTemplateEditorModal({
               </p>
             </div>
             <TextareaBase
+              data-ui-fill="control"
+              data-ui-disabled-fill="control-disabled"
+              data-ui-border="full"
               aria-label="Describe your meetings"
               value={brief}
               disabled={readOnly || generating}
@@ -250,6 +253,10 @@ export default function NotesTemplateEditorModal({
               className={cn(SETTINGS_TEXTAREA_CLASS, "min-h-[9rem] flex-1 resize-none")}
             />
             <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover"
+              data-ui-active="action-active"
+              data-ui-border="full"
               chrome="action"
               type="button"
               {...loadingButtonProps(generating, readOnly || !brief.trim(), handleGenerate)}
@@ -278,6 +285,9 @@ export default function NotesTemplateEditorModal({
                 Name
               </label>
               <InputBase
+                data-ui-fill="control"
+                data-ui-disabled-fill="control-disabled"
+                data-ui-border="full"
                 id="notes-structure-name"
                 type="text"
                 value={name}
@@ -301,6 +311,9 @@ export default function NotesTemplateEditorModal({
                 </span>
               </div>
               <InputBase
+                data-ui-fill="control"
+                data-ui-disabled-fill="control-disabled"
+                data-ui-border="full"
                 id="notes-structure-description"
                 type="text"
                 value={description}
@@ -327,6 +340,9 @@ export default function NotesTemplateEditorModal({
                 </span>
               </div>
               <TextareaBase
+                data-ui-fill="control"
+                data-ui-disabled-fill="control-disabled"
+                data-ui-border="full"
                 id="notes-structure-sections"
                 value={sections}
                 disabled={readOnly}
@@ -360,6 +376,8 @@ export default function NotesTemplateEditorModal({
                 Full prompt
               </h3>
               <ButtonBase
+                data-ui-fill="inset"
+                data-ui-hover="inset"
                 chrome="action"
                 type="button"
                 onClick={handlePreview}

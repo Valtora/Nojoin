@@ -180,11 +180,13 @@ export default function AudioPlayer({
   // Render the "processing" disabled state if proxy is unavailable
   if (proxyUnavailable) {
     return (
-      <SurfaceBase kind="card"
+      <SurfaceBase
+        data-ui-fill="card"
+        data-ui-border="full" kind="card"
         id="audio-player"
         className={`${shellClassName} relative overflow-hidden`}
       >
-        <SurfaceBase kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
+        <SurfaceBase data-ui-fill="card" kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 font-medium text-status-info-fg ${compact ? "text-xs" : "text-sm"}`}>
             <Loader2 className="w-4 h-4 animate-spin" />
             Audio is being processed, please wait...
@@ -214,12 +216,14 @@ export default function AudioPlayer({
 
   if (hasError || isDemo || audioMissing) {
     return (
-      <SurfaceBase kind="card"
+      <SurfaceBase
+        data-ui-fill="card"
+        data-ui-border="full" kind="card"
         id="audio-player"
         className={`${shellClassName} relative overflow-hidden`}
       >
         {/* Blurred background visual effect */}
-        <SurfaceBase kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
+        <SurfaceBase data-ui-fill="card" kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 font-medium text-action-tint-fg ${compact ? "text-xs" : "text-sm"}`}>
             <VolumeX className="w-4 h-4" />
             {isDemo
@@ -262,7 +266,9 @@ export default function AudioPlayer({
   }
 
   return (
-    <SurfaceBase kind="card"
+    <SurfaceBase
+      data-ui-fill="card"
+      data-ui-border="full" kind="card"
       id="audio-player"
       className={shellClassName}
     >
@@ -275,7 +281,9 @@ export default function AudioPlayer({
       {compact ? (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover" chrome="action"
               onClick={togglePlay}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-action text-action-on shadow-card transition-colors hover:bg-action-hover"
             >
@@ -324,7 +332,9 @@ export default function AudioPlayer({
       ) : (
         <>
           {/* Play/Pause Button */}
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-fill="action"
+            data-ui-hover="action-hover" chrome="action"
             onClick={togglePlay}
             className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-action text-action-on hover:bg-action-hover transition-colors shadow-card shrink-0 order-1"
           >

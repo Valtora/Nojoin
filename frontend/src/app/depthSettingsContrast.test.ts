@@ -19,6 +19,7 @@ describe("Depth settings search landing cue selectors", () => {
       for (const role of ["card", "pane", "float"]) {
         const target = fixture.createElement("section");
         target.dataset.uiSurface = role;
+        target.dataset.uiFill = "card";
         target.className = "settings-card settings-target bg-surface-card";
         fixture.body.append(target);
         const matching = rules.filter((rule) => target.matches(selectorFor(rule)));

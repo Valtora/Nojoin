@@ -63,6 +63,9 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           </span>
         )}
         <InputBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
           ref={ref}
           id={inputId}
           aria-invalid={error ? true : undefined}

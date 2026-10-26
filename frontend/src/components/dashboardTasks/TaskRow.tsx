@@ -150,7 +150,10 @@ export default function TaskRow(props: TaskRowProps) {
 
     return (
       <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 transition-colors hover:bg-action-tint sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
-        <ButtonBase chrome="action"
+        <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="action-tint"
+          data-ui-border="full" chrome="action"
           type="button"
           {...loadingButtonProps(isBusy, undefined, () => void handleToggleTask(task))}
           className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-control-border bg-surface-card text-contrast-icon-muted transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text"
@@ -232,7 +235,9 @@ export default function TaskRow(props: TaskRowProps) {
 
   return (
     <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
-      <ButtonBase chrome="action"
+      <ButtonBase
+        data-ui-fill="status-success"
+        data-ui-border="full" chrome="action"
         type="button"
         {...loadingButtonProps(isBusy, undefined, () => void handleToggleTask(task))}
         className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-status-success-border bg-status-success-bg text-status-success-fg transition-colors hover:border-status-success-border"

@@ -77,17 +77,39 @@ without the preference.
 `nojoin-style` is validated by the same storage helpers as the other preferences; Default
 removes the key. The pre-paint script applies the validated style before first paint, and
 `ThemeProvider` keeps the controls and root attribute in sync across tabs. Invalid or blocked
-storage falls back to Default. These choices change immediately and never reach server settings.
+storage falls back to Default. These choices never reach server settings; an optional style
+selected at runtime takes effect once its stylesheet is ready.
 
 ### Style
 
 [styles.css](../frontend/src/app/styles.css), [depth-dark.css](../frontend/src/app/depth-dark.css),
 [depth-gradient.css](../frontend/src/app/depth-gradient.css), followed by
-[classic.css](../frontend/src/app/classic.css),
-are app-only and import after the palettes. Every rule is scoped to Classic or Depth, so
-Default retains the flat canon above. Style changes
+[classic.css](../frontend/src/app/classic.css) are the app-only source files for optional chrome.
+Next's configuration compiles them, in that order, through the existing PostCSS/Tailwind pipeline
+into the generated, gitignored `public/styles/optional.css`. The initial build is awaited before
+either `next build` or `next dev` can serve; npm's build and dev scripts use those same entry points.
+Development watches these four sources and regenerates the asset atomically; reload the page to
+see edits to optional chrome. The production image copies the generated asset with `public`.
+The contrast audit continues to read the source files directly and needs no installed dependencies.
+
+Default creates no optional stylesheet link and has none of these selectors in its cascade.
+The validated pre-paint script and runtime share one plain-JavaScript loader: Classic and Depth
+reuse one same-origin stylesheet, and returning to Default removes it immediately. On initial
+navigation only, the link is configured with `blocking="render"` before insertion, with a temporary
+root opacity guard for browsers without dynamic render blocking. The guard uses root opacity so
+explicitly visible descendants cannot escape it. Load, cancellation and failure restore the previous
+opacity; an error or a ten-second timeout removes the failed link and lets the page render.
+At runtime, the current appearance stays visible while the sheet downloads, without render blocking
+or an opacity guard. The new `data-style` is applied only on load. An error or ten-second timeout
+removes the failed link, logs a warning and keeps the previous rendered style. The saved choice
+remains selected and a later application can retry. A newer choice supersedes a pending choice;
+obsolete callbacks cannot apply it. Switching between Classic and Depth with the sheet already
+loaded is immediate. No server preference or CSP relaxation is involved.
+
+Every optional rule also remains scoped to Classic or Depth. Style changes
 shape and elevation and derives dark Depth's lighter fills and contrast support from the
-palette. Palette supplies the colours, Corners owns radii, and Density owns workspace spacing.
+palette. Palette supplies the colours, with Depth's contrast-support token swaps described below;
+Corners owns radii, and Density owns workspace spacing.
 The new Style row is the intentional addition to the Appearance page under every style.
 
 - **Default** preserves the existing controls and surfaces.
@@ -113,13 +135,25 @@ The new Style row is the intentional addition to the Appearance page under every
   narrow inset highlights. Rows and individual tabs
   do not lift. Reduced motion disables the lift and its transitions. Dark action and danger
   labels use their palette hover text colours; control borders and disabled labels use the
-  muted-icon token. Filled actions and selected calendar cells gain a local palette focus
-  perimeter. These control borders also remain identifiable on the coloured person-merge pane.
+  muted-icon token. Filled actions and selected calendar cells gain a local neutral perimeter,
+  mixing the palette foreground at 75% with its page fill in sRGB. This resting edge is independent
+  of the exterior keyboard-focus colour. These control borders also remain identifiable on the
+  coloured person-merge pane.
   Light raised surfaces shade towards foreground at eased stops: Card 7%, Pane 10% and Float 12%,
   with a 1px highlight; nested inset panes stop at 7.5% to retain danger-text contrast. Dark raised
   surfaces carry a 5% foreground wash, with a 3.5% action accent on panes, fading to their own fill;
   primary buttons mix 3% towards their hover fill at the top. Fields and rails stay flat. Splitters
   continue the pane fill with an identifying grip. Decorative borders retain their palette values.
+
+Depth strengthens the focus ring, control borders and placeholder/helper text where its shading
+needs it for contrast. In light Depth, `--focus-ring` swaps to `--action-text-hover`,
+`--control-border` to `--contrast-icon-muted`, `--control-placeholder` to `--contrast-helper`,
+and `--action-text` to `--action-text-hover`. In dark Depth, `--control-placeholder`,
+`--contrast-helper` and `--contrast-icon-muted` swap to `--contrast-muted`; `--control-border`
+and `--control-disabled-fg` use `--contrast-icon-muted`, so they also resolve to `--contrast-muted`.
+Dark `--action-text` and `--danger-text` use `--action-text-hover` and `--danger-text-hover`
+respectively; the dark focus ring retains its palette token. Classic and Default do not make
+these swaps and retain their palette values.
 
 | Tokens | Readers |
 | --- | --- |
@@ -133,7 +167,7 @@ The new Style row is the intentional addition to the Appearance page under every
 | `--depth-light-card`, `--depth-light-pane`, `--depth-light-float`, `--depth-light-pane-inset` | Light gradient bottom strengths: 7%, 10%, 12% and 7.5%; host-local fill, shade and highlight preserve translucent backdrops |
 | `--depth-gradient-light`, `--depth-gradient-shade`, `--depth-gradient-paint`, `--depth-gradient-pane-paint` | Dark foreground wash from 5% to 0%; pane top includes the palette action accent; five eased stops in Oklab |
 | `--depth-split-fill` | Horizontal resize strip continues its upper pane's bottom colour; the grip uses the identifying control edge |
-| `--depth-filled-edge` → `--focus-ring` | Local inset identifying perimeter on dark Depth's filled actions and selected calendar cells; preserves all five Tailwind shadow/ring slots |
+| `--depth-filled-edge` | Neutral palette mix: 75% `--foreground`, 25% `--surface-page` in sRGB; local inset identifying perimeter on dark Depth's filled actions and selected calendar cells, preserving all five Tailwind shadow/ring slots |
 | `--style-focus-edge` → `--focus-ring`, `--style-glow-colour` | Exterior focus outline and Depth's supplemental halo |
 | `--float-shadow` | Style float recipe, also consumed by vendor calendar popovers |
 
@@ -141,13 +175,34 @@ Effects use `data-ui-chrome="action"`, field markers and `data-ui-surface` roles
 checkboxes, radios, files and ranges retain their platform rendering, switches remain round,
 and inverse tooltips retain their own colours. Shadow recipes compose with all five Tailwind
 shadow and ring slots so selection and focus rings survive. Classic's 2px dotted exterior focus
-outline and Depth's 2px solid outline use the palette focus token; the glow is never the only
+outline and Depth's 2px solid outline use the effective focus token, including light Depth's
+`--action-text-hover` swap; the glow is never the only
 focus indicator. The contrast gate measures identifying edges and exterior focus at 3:1 on
 their page, card, inset, float, rail and control backdrops; decorative bevels are supplemental.
 It resolves Classic's nested palette mixes before measuring the rendered identifying facet and
 audits Depth's effective role mixes, every gradient stop, independent nested stops, controls,
 callouts and coloured merge pane in every palette. Each style has one recipe, selected
 only through `data-style`; the dark Depth treatment follows `.dark` without a separate switch.
+
+Components declare paint and interaction independently of their surface role:
+
+| Marker | Contract |
+| --- | --- |
+| `data-ui-fill` | The current local fill: `card`, `inset`, `inset-translucent` (80% inset), `float`, `control`, `control-disabled`, `rail`, `action`, `danger`, `action-tint` or `status-*`; absence leaves the host unfilled |
+| `data-ui-hover`, `data-ui-active`, `data-ui-disabled-fill` | The corresponding state fill, declared by the component recipe rather than inferred from Tailwind utilities |
+| `data-ui-border="full"` | An existing complete border; absence selects Classic's inset borderless bevel |
+| `data-ui-reading="pane"` or `"bubble"` | Depth-only reading hosts, including the speaker panel, meeting tab strip and transcript bubbles; these do not gain Classic surface bevels |
+| `data-ui-resize-group`, `data-ui-resize-handle`, `data-ui-resize-grip` | Resize direction, handle and identifying grip, without depending on vendor IDs or child tag names |
+| `data-ui-side-tab` | Stable side-panel identity; the existing `aria-selected` state chooses the adjoining notes strip fill |
+| `data-ui-tooltip` | Excludes inverse tooltips from ordinary surface treatment |
+
+Markers belong on the actual fill owner, including conditional variants. They do not parse
+`className`, change Default's utility classes or replace functional IDs and accessible labels.
+Vendor calendar classes remain the integration hooks for react-datepicker's generated parts and
+selected cells. Contract tests render the owning components and match the production selectors;
+a selector audit rejects application IDs, accessible-copy selectors and Tailwind class coupling.
+The perimeter contrast checks include nested, translucent and tinted hosts and independently
+positioned gradient stops in every palette, while focus and text-on-fill retain their own checks.
 
 ### Palettes
 

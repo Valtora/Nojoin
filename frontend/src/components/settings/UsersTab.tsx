@@ -265,6 +265,10 @@ export default function UsersTab() {
       description="Each person's role and whether their account is active."
       headerAside={
         <ButtonBase
+          data-ui-fill="action"
+          data-ui-hover="action-hover"
+          data-ui-active="action-active"
+          data-ui-border="full"
           chrome="action"
           type="button"
           onClick={toggleCreateForm}
@@ -288,6 +292,9 @@ export default function UsersTab() {
                 Username
               </label>
               <InputBase
+                data-ui-fill="control"
+                data-ui-disabled-fill="control-disabled"
+                data-ui-border="full"
                 id="new-user-username"
                 name="new-user-username"
                 value={newUser.username}
@@ -304,6 +311,9 @@ export default function UsersTab() {
                 Temporary password
               </label>
               <InputBase
+                data-ui-fill="control"
+                data-ui-disabled-fill="control-disabled"
+                data-ui-border="full"
                 id="new-user-password"
                 name="new-user-password"
                 type="password"
@@ -322,6 +332,9 @@ export default function UsersTab() {
                 Role
               </label>
               <SelectBase
+                data-ui-fill="control"
+                data-ui-disabled-fill="control-disabled"
+                data-ui-border="full"
                 id="new-user-role"
                 value={newUser.role}
                 onChange={(e) =>
@@ -334,6 +347,10 @@ export default function UsersTab() {
             </div>
             <div className="flex justify-end gap-2 @min-[40rem]:col-span-3">
               <ButtonBase
+                data-ui-fill="card"
+                data-ui-hover="inset"
+                data-ui-active="inset"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 onClick={() => {
@@ -345,6 +362,10 @@ export default function UsersTab() {
                 Cancel
               </ButtonBase>
               <ButtonBase
+                data-ui-fill="action"
+                data-ui-hover="action-hover"
+                data-ui-active="action-active"
+                data-ui-border="full"
                 chrome="action" type="submit" className={SETTINGS_BUTTON_PRIMARY}>
                 Create user
               </ButtonBase>
@@ -360,6 +381,9 @@ export default function UsersTab() {
             aria-hidden="true"
           />
           <InputBase
+            data-ui-fill="control"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
             type="search"
             aria-label="Search users"
             value={search}
@@ -429,6 +453,9 @@ export default function UsersTab() {
                       <div className="flex justify-end gap-2">
                         {(isSuperuser || canManage) && (
                           <ButtonBase
+                            data-ui-fill="control"
+                            data-ui-hover="inset"
+                            data-ui-border="full"
                             chrome="action"
                             type="button"
                             onClick={() => startEdit(user)}
@@ -445,6 +472,9 @@ export default function UsersTab() {
                         )}
                         {!isSelf && canManage && (
                           <ButtonBase
+                            data-ui-fill="control"
+                            data-ui-hover="inset"
+                            data-ui-border="full"
                             chrome="action"
                             type="button"
                             onClick={() => handleDeleteUser(user.id)}
@@ -472,6 +502,9 @@ export default function UsersTab() {
           </p>
           <div className="flex gap-2">
             <ButtonBase
+              data-ui-fill="control"
+              data-ui-hover="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -482,6 +515,9 @@ export default function UsersTab() {
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </ButtonBase>
             <ButtonBase
+              data-ui-fill="control"
+              data-ui-hover="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}

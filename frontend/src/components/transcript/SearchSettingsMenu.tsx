@@ -60,6 +60,8 @@ export default function SearchSettingsMenu({
   return (
     <div ref={rootRef} className="relative">
       <IconButton
+        data-ui-fill={open ? "action-tint" : undefined}
+        data-ui-hover={open ? "action-tint" : "inset"}
         ref={toggleRef}
         size="sm"
         aria-label="Advanced Search Settings"
@@ -77,7 +79,9 @@ export default function SearchSettingsMenu({
             className="fixed inset-0 z-[var(--z-dropdown)]"
             onClick={() => setOpen(false)}
           />
-          <SurfaceBase kind="float"
+          <SurfaceBase
+            data-ui-fill="card"
+            data-ui-border="full" kind="float"
             id={panelId}
             className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1"
           >

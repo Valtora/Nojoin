@@ -118,6 +118,8 @@ export default function BackupOptionsModal({
     >
       <div className="space-y-6">
         <SurfaceBase
+          data-ui-fill="inset"
+          data-ui-border="full"
           kind="inset" className="flex items-start gap-4 rounded-lg border border-surface-border bg-surface-inset p-4">
           <div className="mt-1">
             <FileAudio aria-hidden="true" className="h-5 w-5 text-contrast-icon-muted" />

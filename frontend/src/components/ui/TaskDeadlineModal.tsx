@@ -74,7 +74,7 @@ function TaskDeadlineTimeInput({
   timeZoneLabel,
 }: TaskDeadlineTimeInputProps) {
   return (
-    <SurfaceBase kind="inset" className="space-y-3 rounded-surface-panel border border-surface-border bg-surface-inset px-3 py-3">
+    <SurfaceBase data-ui-fill="inset" data-ui-border="full" kind="inset" className="space-y-3 rounded-surface-panel border border-surface-border bg-surface-inset px-3 py-3">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-helper">
         <Clock3 className="h-3.5 w-3.5" />
         Time
@@ -82,6 +82,8 @@ function TaskDeadlineTimeInput({
 
       <div className="flex items-center gap-2">
         <InputBase
+          data-ui-fill="control"
+          data-ui-border="full"
           type="time"
           step={900}
           value={value}
@@ -97,6 +99,7 @@ function TaskDeadlineTimeInput({
 
           return (
             <ButtonBase
+              data-ui-fill={(isActive) ? "action" : "card"}
               key={preset.value}
               type="button"
               onClick={() => onChange?.(preset.value)}
@@ -262,6 +265,7 @@ export default function TaskDeadlineModal({
 
           return (
             <ButtonBase
+              data-ui-fill={(isActive) ? "action" : "card"}
               key={option.label}
               type="button"
               onClick={() => setDraftValue(option.date)}
@@ -279,7 +283,7 @@ export default function TaskDeadlineModal({
         })}
       </div>
 
-      <SurfaceBase kind="inset" className="mt-4 rounded-surface-panel border border-surface-border bg-surface-inset p-3">
+      <SurfaceBase data-ui-fill="inset" data-ui-border="full" kind="inset" className="mt-4 rounded-surface-panel border border-surface-border bg-surface-inset p-3">
         <DatePicker
           inline
           selected={resolvedDraft}

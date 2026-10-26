@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { colour, composite, measurePairing, mixOklab, mixPercent, parseBlock } from "../../scripts/contrast-colour.mjs";
 import { addDepthGradientThemes, addDepthThemes, splitterPairings } from "../../scripts/depth-contrast.mjs";
 import { addStyleThemes } from "../../scripts/style-contrast.mjs";
-import { depthFixture, paintSelectors } from "../test/depthSelectors";
+import { depthFixture, paintSelectors, selectorFor } from "../test/depthSelectors";
 import { gradientStops, paintColour } from "../../scripts/depth-paint.mjs";
 
 type Pairing = { label: string; fg: string; bg: string[]; min: number };
@@ -50,9 +50,9 @@ function perimeterTargets(source: string, style = "depth", darkMode = true): str
   const fixture = document.implementation.createHTMLDocument();
   fixture.documentElement.dataset.style = style;
   fixture.documentElement.className = darkMode ? "dark" : "";
-  fixture.body.innerHTML = ["button", "a", "div role=button"]
+  fixture.body.innerHTML = ["button", "a", 'div data-ui="button"']
     .flatMap((tag) => ["action", "danger"].map((fill) =>
-      `<${tag} class="bg-${fill}" id="${tag.split(" ")[0]}-${fill}"></${tag.split(" ")[0]}>`)).join("")
+      `<${tag} data-ui-fill="${fill}" id="${tag.split(" ")[0]}-${fill}"></${tag.split(" ")[0]}>`)).join("")
     + '<button class="bg-surface-card" id="neutral"></button>';
   return [...fixture.querySelectorAll("[id]")]
     .filter((element) => selectors.some((selector) => element.matches(selector))).map((element) => element.id);
@@ -134,7 +134,7 @@ describe("Depth effective backgrounds", () => {
       "div-action", "div-danger"]);
     expect(perimeterTargets(css, "classic")).toEqual([]);
     expect(perimeterTargets(css, "depth", false)).toEqual([]);
-    expect(perimeterTargets(css.replace(":is(.bg-action, .bg-danger)", ":is(.missing-action, .missing-danger)")))
+    expect(perimeterTargets(css.replace(':is([data-ui-fill="action"], [data-ui-fill="danger"])', ".missing-filled")))
       .toEqual([]);
   });
 });
@@ -148,17 +148,17 @@ function gradientThemes(source = gradientCss): Theme[] {
 
 function gradientTargets(source: string, style: string, darkMode: boolean): string[] {
   const fixture = depthFixture(darkMode, style);
-  fixture.body.insertAdjacentHTML("beforeend", '<section data-ui-surface="pane" class="bg-surface-card" id="pane"></section>'
-    + '<section data-ui-surface="float" class="bg-surface-float" id="float"></section>'
-    + '<section data-ui-surface="card" class="bg-surface-card" id="card"></section>'
+  fixture.body.insertAdjacentHTML("beforeend", '<section data-ui-surface="pane" data-ui-fill="card" id="pane"></section>'
+    + '<section data-ui-surface="float" data-ui-fill="float" id="float"></section>'
+    + '<section data-ui-surface="card" data-ui-fill="card" id="card"></section>'
     + '<section data-ui-surface="pane" id="unfilled"></section>'
-    + '<div data-ui-surface="inset" class="bg-surface-card" id="bubble"></div>'
-    + '<input data-ui-input="field" data-ui-surface="pane" class="bg-control-bg" id="field">'
-    + '<button data-ui-chrome="action" data-ui-surface="card" class="bg-surface-card" id="neutral"></button>'
-    + '<button data-ui-chrome="action" class="bg-action" id="primary"></button>'
-    + '<button data-ui-chrome="action" class="bg-danger" id="danger"></button>'
-    + '<section data-ui-surface="pane" class="bg-status-info-bg" id="status"></section>'
-    + '<div data-ui-surface="float" role="tooltip" class="bg-surface-card" id="tooltip"></div>');
+    + '<div data-ui-surface="inset" data-ui-fill="card" id="bubble"></div>'
+    + '<input data-ui-input="field" data-ui-surface="pane" data-ui-fill="control" id="field">'
+    + '<button data-ui-chrome="action" data-ui-surface="card" data-ui-fill="card" id="neutral"></button>'
+    + '<button data-ui-chrome="action" data-ui-fill="action" id="primary"></button>'
+    + '<button data-ui-chrome="action" data-ui-fill="danger" id="danger"></button>'
+    + '<section data-ui-surface="pane" data-ui-fill="status-info" id="status"></section>'
+    + '<div data-ui-surface="float" data-ui-tooltip data-ui-fill="card" id="tooltip"></div>');
   const selectors = paintSelectors(source);
   return [...fixture.querySelectorAll("[id]")]
     .filter((element) => selectors.some((selector) => element.matches(selector))).map((element) => element.id);
@@ -200,7 +200,7 @@ describe("Depth production gradients", () => {
   });
 
   it("rejects disconnected special production hosts and retains the light paint guard", () => {
-    for (const host of ["#speaker-panel", ".react-datepicker", ".react-datepicker__time"]) {
+    for (const host of ['[data-ui-reading="pane"]', ".react-datepicker", ".react-datepicker__time"]) {
       const broken = gradientCss.replaceAll(host, `.missing-${host.replace(/[^a-z]/g, "")}`);
       expect(gradientTargets(broken, "depth", false)).not.toEqual(gradientTargets(gradientCss, "depth", false));
     }
@@ -253,14 +253,39 @@ describe("Depth production gradients", () => {
   };
   const compare = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
+  it("keeps raised gradient paint above the dark fill reset after removing ID specificity", () => {
+    const fixture = depthFixture(true);
+    for (const role of ["card", "pane", "float"]) {
+      const host = fixture.createElement("section");
+      host.dataset.uiSurface = role;
+      host.dataset.uiFill = "card";
+      fixture.body.append(host);
+      const selectors = (source: string, paint: boolean) => {
+        const result: string[] = [];
+        postcss.parse(source).walkRules((rule) => {
+          if (rule.nodes.some((node) => node.type === "decl" && node.prop === "background-image"
+            && (node.value !== "none") === paint) && host.matches(selectorFor(rule))) {
+            result.push(selectorFor(rule));
+          }
+        });
+        return result;
+      };
+      const resets = selectors(css, false), paints = selectors(gradientCss, true);
+      expect(resets.length).toBeGreaterThan(0);
+      expect(paints.length).toBeGreaterThan(0);
+      for (const reset of resets) expect(paints.some((paint) =>
+        compare(selectorSpecificity(paint), selectorSpecificity(reset)) >= 0)).toBe(true);
+    }
+  });
+
   it("keeps the strip hover specificity tie and matches both resize orientations", () => {
     const tree = postcss.parse(gradientCss);
     const strip = tree.nodes.find((node) => node.type === "rule"
-      && node.selector.includes("[data-panel-resize-handle-id]") && node.selector.endsWith(":hover"));
+      && node.selector.includes("[data-ui-resize-handle]") && node.selector.endsWith(":hover"));
     if (strip?.type !== "rule") throw new Error("missing strip hover rule");
     // Hover must win over the vertical base fill: equal or higher specificity, later in source.
     const bases = tree.nodes.filter((node): node is postcss.Rule => node.type === "rule"
-      && node.selector.includes('[data-panel-group-direction="vertical"]') && !node.selector.includes(":has("));
+      && node.selector.includes('[data-ui-resize-handle="vertical"]') && !node.selector.includes(":has("));
     expect(bases.length).toBeGreaterThan(0);
     for (const base of bases) {
       expect(compare(selectorSpecificity(strip.selector), selectorSpecificity(base.selector))).toBeGreaterThanOrEqual(0);
@@ -268,13 +293,13 @@ describe("Depth production gradients", () => {
     }
     for (const darkMode of [false, true]) {
       const fixture = depthFixture(darkMode);
-      const handle = fixture.querySelector("[data-panel-resize-handle-id]")!;
+      const handle = fixture.querySelector("[data-ui-resize-handle]")!;
       for (const direction of ["vertical", "horizontal"]) {
-        handle.setAttribute("data-panel-group-direction", direction);
+        handle.setAttribute("data-ui-resize-handle", direction);
         expect(handle.matches(strip.selector.replace(":hover", ""))).toBe(true);
       }
       const grip = tree.nodes.find((node) => node.type === "rule"
-        && node.selector.includes("[data-panel-resize-handle-id]:hover > div"));
+        && node.selector.includes("[data-ui-resize-handle]:hover > [data-ui-resize-grip]"));
       expect(grip?.type === "rule" && handle.firstElementChild!.matches(grip.selector.replace(":hover", ""))).toBe(true);
     }
   });

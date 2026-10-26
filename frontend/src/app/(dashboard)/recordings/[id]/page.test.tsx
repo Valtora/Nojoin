@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { matchesStyleDeclaration } from "@/test/styleMarkerContracts";
 
 import {
   act,
@@ -877,6 +878,19 @@ describe("RecordingPage (detail)", () => {
 
     expect(setSideTab).toHaveBeenCalledWith("speakers");
     expect(setSpeakerPanelCollapsed).toHaveBeenCalledWith(false);
+  });
+
+  it.each([360, 1440])("matches the real Meeting panels tablist to Depth pane elevation at %i px", async (width) => {
+    const tablist = await openTabs(width);
+    expect(tablist).toHaveAttribute("data-ui-reading", "pane");
+
+    for (const style of ["default", "classic", "depth"]) {
+      expect(matchesStyleDeclaration(tablist, "styles.css", "--style-chrome-shadow",
+        "var(--style-elevation-2)", { style })).toBe(style === "depth");
+    }
+    // This transparent tab row receives elevation, but acquires no opaque fill.
+    expect(matchesStyleDeclaration(tablist, "depth-gradient.css", "background-image",
+      "var(--depth-gradient-pane-paint)", { dark: true })).toBe(false);
   });
 
   it("keeps four tabs on desktop, where the speaker panel is in the side column", async () => {

@@ -58,6 +58,8 @@ export default function MultiSelect({
     return (
         <div className={`relative ${className}`} ref={containerRef}>
             <div
+              data-ui-fill="control"
+              data-ui-border="full"
                 data-ui="multiselect-trigger"
                 data-ui-field="custom"
                 className="flex min-h-[42px] w-full cursor-pointer flex-wrap items-center gap-2 rounded-lg border border-control-border bg-control-bg px-3 py-2 text-sm text-foreground hover:border-action focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-focus-ring"
@@ -93,7 +95,7 @@ export default function MultiSelect({
             </div>
 
             {isOpen && (
-                <SurfaceBase kind="float" className="absolute z-[var(--z-dropdown)] mt-1 max-h-60 w-full overflow-auto rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
+                <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float" className="absolute z-[var(--z-dropdown)] mt-1 max-h-60 w-full overflow-auto rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
                     {options.length === 0 ? (
                         <div className="p-2 text-center text-sm text-contrast-helper">No options available</div>
                     ) : (

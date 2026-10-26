@@ -126,6 +126,8 @@ export default function LiveSpeakerChip({
     return (
       <div className="mb-1">
         <InputBase
+          data-ui-fill="card"
+          data-ui-border="full"
           autoFocus
           type="text"
           value={draft.text}

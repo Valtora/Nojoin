@@ -41,7 +41,7 @@ const ChartTooltip = ({
   const speaking = payload.filter((entry) => entry.value > 0);
   if (!speaking.length) return null;
   return (
-    <SurfaceBase kind="float" className="rounded-lg border border-surface-float-border bg-surface-float p-2 text-xs shadow-float">
+    <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float" className="rounded-lg border border-surface-float-border bg-surface-float p-2 text-xs shadow-float">
       <p className="mb-1 font-medium text-foreground">
         From {formatTimestamp(label ?? 0)}
       </p>

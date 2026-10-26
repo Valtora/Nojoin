@@ -121,7 +121,7 @@ export default function SetupPage() {
           the card shrinks to the viewport and clips its own content rather than
           overflowing into page-shell's scroll. /oauth/authorize avoids the same
           trap by putting my-auto on a plain wrapper around its card instead. */}
-      <SurfaceBase kind="card" className="my-auto w-full max-w-xl shrink-0 bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
+      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="my-auto w-full max-w-xl shrink-0 bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
         {/* The full welcome earns its space once, on the gate. Past it, every
             step needs the vertical room for its own content instead. */}
         {step === STEP_UNLOCK ? (

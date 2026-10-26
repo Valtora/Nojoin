@@ -19,6 +19,8 @@
 
 # production
 /build
+/public/styles/optional.css
+/public/styles/optional.css.*.tmp
 
 # misc
 .DS_Store

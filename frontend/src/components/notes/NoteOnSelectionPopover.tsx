@@ -169,7 +169,9 @@ export default function NoteOnSelectionPopover({
   // On the body, so no translucent transcript group (a stacking context)
   // keeps it under the lines after it.
   return createPortal(
-    <SurfaceBase kind="float"
+    <SurfaceBase
+      data-ui-fill="card"
+      data-ui-border="full" kind="float"
       ref={panelRef}
       role="dialog"
       aria-labelledby={titleId}
@@ -190,6 +192,8 @@ export default function NoteOnSelectionPopover({
         </blockquote>
       ) : null}
       <TextareaBase
+        data-ui-fill="control"
+        data-ui-border="full"
         ref={boxRef}
         rows={3}
         value={text}

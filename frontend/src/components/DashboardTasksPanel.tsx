@@ -83,7 +83,7 @@ export default function DashboardTasksPanel() {
   );
 
   return (
-    <SurfaceBase kind="card" className="density-surface flex h-full min-h-0 flex-col border border-action-border bg-surface-card shadow-card">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-action-border bg-surface-card shadow-card">
       {/* One row: glyph, title, counts. The counts belong beside the title
           rather than under it, because they qualify it, and a stacked header
           would spend about 140px before the first task. */}
@@ -133,7 +133,7 @@ export default function DashboardTasksPanel() {
           its natural height, so the header and composer never scroll away. */}
       <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto">
         {loading ? (
-          <div data-ui="surface" data-ui-surface="inset" className="density-surface-panel flex items-center gap-3 bg-surface-inset px-4 py-4 text-sm text-contrast-muted">
+          <div data-ui-fill="inset" data-ui="surface" data-ui-surface="inset" className="density-surface-panel flex items-center gap-3 bg-surface-inset px-4 py-4 text-sm text-contrast-muted">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading your tasks...
           </div>

@@ -236,12 +236,13 @@ export default function ChatPanel({
 
   return (
     <aside
+      data-ui-fill="inset"
       id="meeting-chat"
       data-ui="surface"
       data-ui-surface="pane"
       className="@container flex-1 min-w-0 bg-surface-inset h-full flex flex-col"
     >
-      <SurfaceBase kind="pane" className="py-1 pl-3 pr-2 @min-[20rem]:pl-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
+      <SurfaceBase data-ui-fill="card" kind="pane" className="py-1 pl-3 pr-2 @min-[20rem]:pl-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-action-text" />
           Chat
@@ -293,7 +294,7 @@ export default function ChatPanel({
       </SurfaceBase>
 
       {showTagFilter && recordingId && (
-        <SurfaceBase kind="pane" className="px-4 py-3 bg-surface-card border-b border-surface-border animate-in slide-in-from-top-2">
+        <SurfaceBase data-ui-fill="card" kind="pane" className="px-4 py-3 bg-surface-card border-b border-surface-border animate-in slide-in-from-top-2">
           <label className="text-xs text-contrast-helper mb-1.5 block">
             Include context from related meetings with these tags:
           </label>
@@ -329,7 +330,7 @@ export default function ChatPanel({
               key={index}
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <SurfaceBase kind="inset"
+              <SurfaceBase data-ui-fill={(msg.role === "user") ? "action" : "card"} data-ui-border={(msg.role === "user") ? undefined : "full"} kind="inset"
                 className={`max-w-[85%] rounded-surface-panel px-3 py-2 @min-[20rem]:px-4 @min-[20rem]:py-3 text-sm shadow-card ${
                   msg.role === "user"
                     ? "bg-action text-action-on rounded-tr-none"
@@ -362,9 +363,9 @@ export default function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      <SurfaceBase kind="pane" className="p-3 @min-[20rem]:p-4 border-t border-surface-border bg-surface-card relative">
+      <SurfaceBase data-ui-fill="card" kind="pane" className="p-3 @min-[20rem]:p-4 border-t border-surface-border bg-surface-card relative">
         {!availability.available && (
-          <SurfaceBase kind="pane" className="absolute inset-0 bg-surface-card z-20 flex items-center justify-center p-4 text-center">
+          <SurfaceBase data-ui-fill="card" kind="pane" className="absolute inset-0 bg-surface-card z-20 flex items-center justify-center p-4 text-center">
             <div className="text-sm text-contrast-helper font-medium">
               {availability.reason === "subscription_disconnected" ? (
                 // AI routing is per-user, so this link is right for admins and
@@ -398,6 +399,8 @@ export default function ChatPanel({
         )}
         <div className="relative">
           <TextareaBase
+            data-ui-fill="inset"
+            data-ui-border="full"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => {
@@ -414,7 +417,9 @@ export default function ChatPanel({
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
             {isStreaming ? (
-              <ButtonBase chrome="action"
+              <ButtonBase
+                data-ui-fill="status-danger"
+                data-ui-hover="status-danger" chrome="action"
                 onClick={handleStop}
                 className="p-2 bg-status-danger-bg text-foreground rounded-lg hover:bg-status-danger-bg transition-colors shadow-card"
                 title="Stop Generation"
@@ -422,7 +427,9 @@ export default function ChatPanel({
                 <StopCircle className="w-4 h-4" />
               </ButtonBase>
             ) : (
-              <ButtonBase chrome="action"
+              <ButtonBase
+                data-ui-fill="action"
+                data-ui-hover="action-hover" chrome="action"
                 onClick={handleSend}
                 disabled={!recordingId || !inputValue.trim()}
                 className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-card"

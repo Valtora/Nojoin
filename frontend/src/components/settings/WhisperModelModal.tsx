@@ -160,6 +160,8 @@ export default function WhisperModelModal({
 
         {/* Status & Actions */}
         <SurfaceBase
+          data-ui-fill="inset"
+          data-ui-border="full"
           kind="inset" className="rounded-lg border border-surface-border bg-surface-inset p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">

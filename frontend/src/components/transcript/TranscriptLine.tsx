@@ -167,6 +167,8 @@ function TranscriptLine({
       <div className="flex flex-wrap items-baseline gap-2 mb-1">
         {isEditingSpeaker && editor ? (
           <InputBase
+            data-ui-fill="card"
+            data-ui-border="full"
             autoFocus
             type="text"
             value={editor.value}
@@ -265,6 +267,7 @@ function TranscriptLine({
       {/* Transcript Text */}
       <div
         id={`segment-${segmentId}`}
+        data-ui-reading="bubble"
         className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
           isEditingText ? "ring-2 ring-status-info-border" : ""
         } ${

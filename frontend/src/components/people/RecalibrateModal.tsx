@@ -303,6 +303,8 @@ export default function RecalibrateModal({
 
                 <div className="flex flex-col gap-3 w-full max-w-xs">
                   <ButtonBase
+                    data-ui-fill="action"
+                    data-ui-hover="action-hover"
                     chrome="action"
                     {...loadingButtonProps(isSubmitting, undefined, async () => {
                       setIsSubmitting(true);
@@ -336,6 +338,9 @@ export default function RecalibrateModal({
                     )}
                   </ButtonBase>
                   <ButtonBase
+                    data-ui-fill="card"
+                    data-ui-hover="inset"
+                    data-ui-border="full"
                     chrome="action"
                     onClick={() => {
                       onComplete();
@@ -373,6 +378,7 @@ export default function RecalibrateModal({
 
                   return (
                     <SurfaceBase
+                      data-ui-fill="card"
                       kind="card"
                       key={`${seg.recording_id}-${idx}`}
                       className={`
@@ -406,9 +412,13 @@ export default function RecalibrateModal({
 
                       {/* Controls Footer */}
                       <SurfaceBase
+                        data-ui-fill="inset-translucent"
                         kind="inset" className="p-3 bg-surface-inset/80 border-t border-surface-border flex items-center justify-between gap-2">
                         {/* Play Button */}
                         <ButtonBase
+                          data-ui-fill={(isPlaying) ? "status-info" : "control"}
+                          data-ui-hover={(isPlaying) ? undefined : "status-info"}
+                          data-ui-border={(isPlaying) ? undefined : "full"}
                           chrome="action"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -432,8 +442,12 @@ export default function RecalibrateModal({
 
                         {/* Action Buttons */}
                         <SurfaceBase
+                          data-ui-fill="card"
+                          data-ui-border="full"
                           kind="pane" className="flex items-center gap-1.5  p-1 bg-surface-card rounded-lg border border-surface-border shadow-card">
                           <ButtonBase
+                            data-ui-fill={(status === "rejected") ? "status-danger" : undefined}
+                            data-ui-hover={(status === "rejected") ? undefined : "status-danger"}
                             chrome="action"
                             onClick={(e) =>
                               handleStatusChange(idx, "rejected", e)
@@ -445,6 +459,8 @@ export default function RecalibrateModal({
                           </ButtonBase>
                           <div className="w-px h-4 bg-surface-inset"></div>
                           <ButtonBase
+                            data-ui-fill={(status === "approved") ? "status-success" : undefined}
+                            data-ui-hover={(status === "approved") ? undefined : "status-success"}
                             chrome="action"
                             onClick={(e) =>
                               handleStatusChange(idx, "approved", e)

@@ -22,6 +22,9 @@ interface CustomInputProps extends React.DetailedHTMLProps<React.ButtonHTMLAttri
 const CustomInput = forwardRef<HTMLButtonElement, CustomInputProps>(
   ({ value, onClick, className, placeholder }, ref) => (
     <ButtonBase
+      data-ui-fill="control"
+      data-ui-disabled-fill="control-disabled"
+      data-ui-border="full"
       data-ui-field="date"
       type="button"
       onClick={onClick}

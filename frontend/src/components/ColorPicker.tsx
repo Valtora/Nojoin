@@ -65,7 +65,10 @@ export default function ColorPicker({
           {trigger}
         </div>
       ) : (
-        <ButtonBase chrome="action"
+        <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="inset"
+          data-ui-border="full" chrome="action"
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className="flex items-center gap-2 px-3 py-2 bg-surface-card border border-control-border rounded-lg hover:bg-surface-inset transition-colors"
@@ -78,7 +81,9 @@ export default function ColorPicker({
       )}
 
       {isOpen && (
-        <SurfaceBase kind="float"
+        <SurfaceBase
+          data-ui-fill="card"
+          data-ui-border="full" kind="float"
           ref={panelRef}
           style={panelStyle}
           className="z-[var(--z-dropdown)] overflow-y-auto p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]"
@@ -154,7 +159,9 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
       />
 
       {isOpen && (
-        <SurfaceBase kind="float"
+        <SurfaceBase
+          data-ui-fill="card"
+          data-ui-border="full" kind="float"
           ref={panelRef}
           style={panelStyle}
           className="z-[var(--z-dropdown)] overflow-y-auto p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"

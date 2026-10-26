@@ -28,7 +28,7 @@ const formatEta = (seconds?: number | null): string | null => {
  */
 export default function ProcessingCard({ recordings }: ProcessingCardProps) {
   return (
-    <SurfaceBase kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center gap-3">
         <Loader2 className="h-5 w-5 shrink-0 animate-spin text-action-text" />
         <h2 className="text-base font-semibold text-foreground">Processing</h2>

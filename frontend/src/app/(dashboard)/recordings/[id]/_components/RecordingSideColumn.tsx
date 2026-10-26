@@ -86,7 +86,7 @@ function SideTabs({
 
   return (
     <div id="side-tabs" className="@container flex h-full flex-col">
-      <SurfaceBase kind="pane" className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-card pr-1">
+      <SurfaceBase data-ui-fill="card" kind="pane" className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-card pr-1">
         <div
           ref={tablistRef}
           role="tablist"
@@ -101,6 +101,7 @@ function SideTabs({
                 type="button"
                 role="tab"
                 id={`side-tab-${tab}`}
+                data-ui-side-tab={tab}
                 aria-selected={open}
                 aria-controls={`side-panel-${tab}`}
                 tabIndex={open ? 0 : -1}
@@ -224,6 +225,7 @@ export default function RecordingSideColumn({
 
   return (
     <PanelGroup
+      data-ui-resize-group="vertical"
       direction="vertical"
       onLayout={(sizes) => {
         if (sizes.length === 2) {
@@ -241,10 +243,11 @@ export default function RecordingSideColumn({
       </Panel>
 
       <PanelResizeHandle
+        data-ui-resize-handle="vertical"
         className="bg-surface-inset border-t border-control-border h-2 hover:bg-action transition-colors flex items-center justify-center group"
         onDragging={onResizeDragging}
       >
-        <div className="w-8 h-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
+        <div data-ui-resize-grip="" className="w-8 h-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
       </PanelResizeHandle>
 
       <Panel

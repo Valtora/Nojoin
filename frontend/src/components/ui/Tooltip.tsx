@@ -37,6 +37,7 @@ export default function Tooltip({ content, children, position = 'top' }: Tooltip
       {children}
       {isVisible && (
         <SurfaceBase
+          data-ui-tooltip=""
           kind="float"
           role="tooltip"
           className={cn(

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNavigationStore } from "@/lib/store";
+import { matchesStyleDeclaration } from "@/test/styleMarkerContracts";
 
 import RecordingSideColumn, { RecordingSideRail } from "./RecordingSideColumn";
 
@@ -32,6 +33,29 @@ describe("the side column's Speakers, My notes and Captures tabs", () => {
       isSpeakerPanelCollapsed: false,
       isChatPanelCollapsed: false,
     });
+  });
+
+  it.each([false, true])("matches the real splitter and grip, flattening only beside selected My notes (dark=%s)", (dark) => {
+    const { container } = renderColumn();
+    const handle = container.querySelector('[data-ui-resize-handle="vertical"]')!;
+    const grip = handle.querySelector("[data-ui-resize-grip]")!;
+    const appearance = { dark };
+
+    expect(matchesStyleDeclaration(handle, "depth-gradient.css", "background-color",
+      "var(--depth-split-fill)", appearance)).toBe(true);
+    expect(matchesStyleDeclaration(grip, "depth-gradient.css", "background-color",
+      "var(--control-border)", appearance)).toBe(true);
+    expect(matchesStyleDeclaration(handle, "depth-gradient.css", "--depth-split-fill",
+      "var(--surface-inset)", appearance)).toBe(false);
+
+    fireEvent.click(tab("My notes"));
+    expect(tab("My notes")).toHaveAttribute("data-ui-side-tab", "my-notes");
+    expect(matchesStyleDeclaration(handle, "depth-gradient.css", "--depth-split-fill",
+      "var(--surface-inset)", appearance)).toBe(true);
+
+    fireEvent.click(tab("Speakers"));
+    expect(matchesStyleDeclaration(handle, "depth-gradient.css", "--depth-split-fill",
+      "var(--surface-inset)", appearance)).toBe(false);
   });
 
   it("opens on Speakers, with My notes and Captures beside it, each tied to its panel", () => {

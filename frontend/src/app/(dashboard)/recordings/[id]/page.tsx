@@ -214,12 +214,14 @@ export default function RecordingPage({ params }: PageProps) {
           // tabs' scroll regions (pb-clear-floating-*) end with this much
           // room: the button's 3.5rem, its 1rem offset, a 0.5rem gap and the
           // safe area it also clears.
-          <SurfaceBase kind="pane" className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)]">
+          <SurfaceBase data-ui-fill="card" kind="pane" className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)]">
             <div className="min-h-0 flex-1">{mainContent}</div>
 
             {!isMobileChatOpen && (
               <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-[var(--z-sticky)]">
-                <ButtonBase chrome="action"
+                <ButtonBase
+                  data-ui-fill="action"
+                  data-ui-hover="action-hover" chrome="action"
                   onClick={() => setIsMobileChatOpen(true)}
                   className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-action text-action-on shadow-float transition-colors hover:bg-action-hover"
                   title="Open Meeting Chat"
@@ -232,7 +234,7 @@ export default function RecordingPage({ params }: PageProps) {
 
             {/* Mobile Chat Full-Screen Modal */}
             {isMobileChatOpen && (
-              <SurfaceBase kind="pane" className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
+              <SurfaceBase data-ui-fill="card" kind="pane" className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
                 <header className="flex shrink-0 items-center justify-between border-b-2 border-surface-border bg-surface-inset px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
                   <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
                     <MessageSquare className="w-5 h-5 text-action-text" />
@@ -257,6 +259,7 @@ export default function RecordingPage({ params }: PageProps) {
         ) : (
           <div className="flex h-full flex-1 min-w-0">
             <PanelGroup
+              data-ui-resize-group="horizontal"
               direction="horizontal"
               autoSaveId={`recording-layout-persistence-${isCompact ? "compact" : "comfortable"}`}
               className="h-full flex-1 min-w-0"
@@ -268,10 +271,11 @@ export default function RecordingPage({ params }: PageProps) {
               {!(isSpeakerPanelCollapsed && isChatPanelCollapsed) && (
                 <>
                   <PanelResizeHandle
+                    data-ui-resize-handle="horizontal"
                     className="bg-surface-inset border-l border-control-border w-2 hover:bg-action transition-colors flex items-center justify-center group"
                     onDragging={setIsPanelResizing}
                   >
-                    <div className="h-8 w-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
+                    <div data-ui-resize-grip="" className="h-8 w-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
                   </PanelResizeHandle>
 
                   {/* Sidebar: Speaker and Chat panels, each independently collapsible */}

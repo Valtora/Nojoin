@@ -175,6 +175,10 @@ export default function AiModelDependenciesSection({
                 // Delete, so there is no disabled button to explain on hover.
                 reason === undefined && (
                   <ButtonBase
+                    data-ui-fill="card"
+                    data-ui-hover="inset"
+                    data-ui-active="inset"
+                    data-ui-border="full"
                     chrome="action"
                     type="button"
                     {...loadingButtonProps(busy, !isAdmin, () => handleDeleteModel(model.id))}
@@ -193,6 +197,10 @@ export default function AiModelDependenciesSection({
                 <>
                   {status?.partial && (
                     <ButtonBase
+                      data-ui-fill="card"
+                      data-ui-hover="inset"
+                      data-ui-active="inset"
+                      data-ui-border="full"
                       chrome="action"
                       type="button"
                       {...loadingButtonProps(busy, !isAdmin || preparationRunning, () => handleDeleteModel(model.id))}
@@ -212,6 +220,10 @@ export default function AiModelDependenciesSection({
                     </ButtonBase>
                   )}
                   <ButtonBase
+                    data-ui-fill="card"
+                    data-ui-hover="inset"
+                    data-ui-active="inset"
+                    data-ui-border="full"
                     chrome="action"
                     type="button"
                     onClick={() => void startPreparation(model.target)}

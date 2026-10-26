@@ -68,11 +68,11 @@ html[data-style="depth"] {
    supplemental focus shadow is local so a focussed pane cannot halo children. */
 html[data-style="classic"] :is(
   [data-ui-chrome="action"], [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"],
-  [data-ui-field], [data-ui-surface]:not([role="tooltip"])
+  [data-ui-field], [data-ui-surface]:not([data-ui-tooltip])
 ),
 html[data-style="depth"] :is(
   [data-ui-chrome="action"], [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"],
-  [data-ui-field], [data-ui-surface]:not([role="tooltip"])
+  [data-ui-field], [data-ui-surface]:not([data-ui-tooltip])
 ) {
   --style-focus-glow: 0 0 #0000;
   --tw-shadow: var(--style-chrome-shadow, 0 0 #0000), var(--style-focus-glow);
@@ -101,7 +101,7 @@ html[data-style="classic"] [data-ui-surface="card"] {
   --style-chrome-shadow: var(--style-etched-shadow);
 }
 
-html[data-style="classic"] [data-ui-surface="float"]:not([role="tooltip"]) {
+html[data-style="classic"] [data-ui-surface="float"]:not([data-ui-tooltip]) {
   --style-chrome-shadow: var(--style-raised-shadow), var(--style-elevation-3);
 }
 
@@ -144,15 +144,14 @@ html[data-style="depth"] [data-ui-surface="pane"] {
   --style-chrome-shadow: var(--style-elevation-2);
 }
 
-html[data-style="depth"] [data-ui-surface="float"]:not([role="tooltip"]) {
+html[data-style="depth"] [data-ui-surface="float"]:not([data-ui-tooltip]) {
   --style-chrome-shadow: var(--style-elevation-3);
 }
 
-/* Unmarked reading surfaces need the same five shadow/ring slots and local
-   focus reset. Keep their ID selectors separate from control specificity. */
+/* Reading hosts retain their own role so Classic does not acquire new targets.
+   Resolve their five shadow/ring slots and focus reset locally. */
 html[data-style="depth"] :is(
-  [data-line-actions] > [id^="segment-"], #speaker-panel,
-  [role="tablist"][aria-label="Meeting panels"]
+  [data-ui-reading="bubble"], [data-ui-reading="pane"]
 ) {
   --style-focus-glow: 0 0 #0000;
   --tw-shadow: var(--style-chrome-shadow), var(--style-focus-glow);
@@ -160,11 +159,11 @@ html[data-style="depth"] :is(
     var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
-html[data-style="depth"] [data-line-actions] > [id^="segment-"] {
+html[data-style="depth"] [data-ui-reading="bubble"] {
   --style-chrome-shadow: var(--style-elevation-1);
 }
 
-html[data-style="depth"] :is(#speaker-panel, [role="tablist"][aria-label="Meeting panels"]) {
+html[data-style="depth"] :is([data-ui-reading="pane"]) {
   --style-chrome-shadow: var(--style-elevation-2);
 }
 

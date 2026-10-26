@@ -262,7 +262,7 @@ function MeetingEdgePanel({
           : "Autosaves";
 
   return (
-    <SurfaceBase as="section" kind="card" className="@container density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" as="section" kind="card" className="@container density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           {status === "updating" ? (
@@ -409,6 +409,8 @@ function MeetingEdgePanel({
             Add a short goal, concern, or angle you want this guidance to optimize for.
           </p>
           <TextareaBase
+            data-ui-fill="card"
+            data-ui-border="full"
             value={draftFocus}
             onChange={handleChange}
             onBlur={handleBlur}

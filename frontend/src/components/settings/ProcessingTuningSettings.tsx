@@ -88,6 +88,9 @@ function TuningInput({
         </label>
       )}
       <InputBase
+        data-ui-fill="control"
+        data-ui-disabled-fill="control-disabled"
+        data-ui-border="full"
         id={inputId}
         type="number"
         inputMode={spec.integer ? "numeric" : "decimal"}
@@ -183,6 +186,10 @@ export default function ProcessingTuningSettings({
       description="Fine-tune how recordings are split into speech and speakers. Empty fields use the installation's value, or the default shown; a saved value that is no longer accepted uses the default until this page saves again. Changes apply to recordings processed or reprocessed afterwards."
       headerAside={
         <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="inset"
+          data-ui-active="inset"
+          data-ui-border="full"
           chrome="action"
           type="button"
           onClick={() => {

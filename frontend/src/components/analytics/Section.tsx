@@ -81,7 +81,7 @@ export const Note = ({
 
 /** One measured figure in the strip at the top of the tab. */
 export const StatTile = ({ label, value }: { label: string; value: string }) => (
-  <div data-ui="surface" data-ui-surface="inset" className="rounded-surface-subtle bg-surface-inset px-3 py-2">
+  <div data-ui-fill="inset" data-ui="surface" data-ui-surface="inset" className="rounded-surface-subtle bg-surface-inset px-3 py-2">
     <p className="text-xs text-contrast-helper">{label}</p>
     <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
       {value}
@@ -108,10 +108,12 @@ export const Prompt = ({
   onAction?: () => void;
   busy?: boolean;
 }) => (
-  <div data-ui="surface" data-ui-surface="inset" className="flex flex-col items-start gap-2 rounded-surface-subtle bg-surface-inset px-3 py-3">
+  <div data-ui-fill="inset" data-ui="surface" data-ui-surface="inset" className="flex flex-col items-start gap-2 rounded-surface-subtle bg-surface-inset px-3 py-3">
     <p className="text-xs text-contrast-helper">{message}</p>
     {actionLabel && onAction && (
-      <ButtonBase chrome="action"
+      <ButtonBase
+        data-ui-fill="action"
+        data-ui-hover="action-hover" chrome="action"
         type="button"
         {...loadingButtonProps(Boolean(busy), undefined, onAction)}
         className="inline-flex items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60 aria-disabled:opacity-60"

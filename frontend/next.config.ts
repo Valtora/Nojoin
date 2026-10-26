@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants";
 
 // Note: Content-Security-Policy is emitted per-request by proxy.ts so
 // it can include a fresh nonce on every response. All other security
@@ -60,4 +61,12 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default async function configureNext(phase: string): Promise<NextConfig> {
+  if (phase === PHASE_DEVELOPMENT_SERVER || phase === PHASE_PRODUCTION_BUILD) {
+    const { buildOptionalStyles, watchOptionalStyles } = await import("./scripts/build-optional-styles.mjs");
+    const development = phase === PHASE_DEVELOPMENT_SERVER;
+    await buildOptionalStyles({ optimize: !development });
+    if (development) watchOptionalStyles();
+  }
+  return nextConfig;
+}

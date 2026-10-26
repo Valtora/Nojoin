@@ -95,7 +95,7 @@ function RegisterForm() {
     // page-shell: this route owns its scroll; <body> is overflow-hidden. See
     // the note on .page-shell in globals.css.
     <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 lg:px-8">
-      <SurfaceBase kind="card" className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
+      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image
@@ -138,6 +138,8 @@ function RegisterForm() {
                 <User className="h-5 w-5 text-contrast-icon-muted" />
               </div>
               <InputBase
+                data-ui-fill="control"
+                data-ui-border="full"
                 id="register-username"
                 name="register-username"
                 type="text"
@@ -165,6 +167,8 @@ function RegisterForm() {
                 <Lock className="h-5 w-5 text-contrast-icon-muted" />
               </div>
               <InputBase
+                data-ui-fill="control"
+                data-ui-border="full"
                 id="register-new-password"
                 name="register-new-password"
                 type="password"
@@ -190,6 +194,8 @@ function RegisterForm() {
                 <Lock className="h-5 w-5 text-contrast-icon-muted" />
               </div>
               <InputBase
+                data-ui-fill="control"
+                data-ui-border="full"
                 id="register-confirm-password"
                 name="register-confirm-password"
                 type="password"
@@ -218,6 +224,8 @@ function RegisterForm() {
                 Invite Code
               </label>
               <InputBase
+                data-ui-fill="control"
+                data-ui-border="full"
                 id="invite-code"
                 name="register-invite-code"
                 type="text"
@@ -247,7 +255,10 @@ function RegisterForm() {
           )}
 
           <div>
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover"
+              data-ui-border="full" chrome="action"
               type="submit"
               {...loadingButtonProps(loading)}
               className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"

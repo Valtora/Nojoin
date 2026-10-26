@@ -117,7 +117,8 @@ export default function LinkedEventPanel({
           </ButtonBase>
         </div>
       ) : (
-        <ButtonBase chrome="action"
+        <ButtonBase
+          data-ui-border="full" chrome="action"
           onClick={openPicker}
           disabled={isSubmitting}
           className={`${basePillClass} border-dashed border-control-border text-contrast-helper transition-colors hover:border-action-border hover:text-contrast-muted disabled:opacity-40 dark:hover:border-action-border`}
@@ -128,7 +129,7 @@ export default function LinkedEventPanel({
       )}
 
       {isPickerOpen && (
-        <SurfaceBase kind="float" className={`absolute z-[var(--z-dropdown)] mt-2 max-h-72 overflow-y-auto rounded-lg border border-surface-border bg-surface-float shadow-float ${dropdownWidthClass}`}>
+        <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float" className={`absolute z-[var(--z-dropdown)] mt-2 max-h-72 overflow-y-auto rounded-lg border border-surface-border bg-surface-float shadow-float ${dropdownWidthClass}`}>
           {isLoading ? (
             <div className="px-3 py-3 text-sm text-contrast-helper">
               Loading calendar events...

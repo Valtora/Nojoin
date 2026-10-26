@@ -59,6 +59,10 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
     <ButtonBase
       ref={ref}
       type={type}
+      data-ui-fill={{ primary: "action", secondary: "card", ghost: undefined, danger: undefined }[variant]}
+      data-ui-hover={variant === "primary" ? "action-hover" : "inset"}
+      data-ui-active={variant === "primary" ? "action-active" : undefined}
+      data-ui-border="full"
       {...rest}
       {...loadingButtonProps(loading, disabled, onClick)}
       chrome={variant === "ghost" ? "plain" : "action"}

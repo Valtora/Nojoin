@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_PALETTE, PALETTES } from "./appearance";
+import { applyUiStyle, DEFAULT_PALETTE, PALETTES } from "./appearance";
 import { themeScript } from "./theme-script";
 import { resolveDensity } from "./viewportDensity";
 
@@ -35,6 +35,7 @@ function setViewport(width: number, height: number) {
 const root = document.documentElement;
 
 function resetRoot() {
+  applyUiStyle("default");
   root.className = "";
   for (const attribute of ["data-palette", "data-corners", "data-ui-density", "data-style"]) {
     root.removeAttribute(attribute);

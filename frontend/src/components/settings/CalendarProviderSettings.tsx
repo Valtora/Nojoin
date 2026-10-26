@@ -270,6 +270,9 @@ export default function CalendarProviderSettings() {
               controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
             >
               <InputBase
+                data-ui-fill="control"
+                data-ui-disabled-fill="control-disabled"
+                data-ui-border="full"
                 id={`${key}-client-id`}
                 type="text"
                 value={form.client_id}
@@ -287,6 +290,9 @@ export default function CalendarProviderSettings() {
                 controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
               >
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-disabled-fill="control-disabled"
+                  data-ui-border="full"
                   id={`${key}-tenant`}
                   aria-describedby={`${key}-tenant-help`}
                   type="text"
@@ -311,6 +317,9 @@ export default function CalendarProviderSettings() {
             >
               <div className="space-y-2">
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-disabled-fill="control-disabled"
+                  data-ui-border="full"
                   id={`${key}-client-secret`}
                   aria-describedby={`${key}-client-secret-help`}
                   type="password"
@@ -381,6 +390,10 @@ export default function CalendarProviderSettings() {
                 <span className="text-sm text-status-warning-fg">Unsaved changes</span>
               )}
               <ButtonBase
+                data-ui-fill="action"
+                data-ui-hover="action-hover"
+                data-ui-active="action-active"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 {...loadingButtonProps(isSaving, !dirty, () => handleSave(key))}

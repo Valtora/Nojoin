@@ -106,17 +106,49 @@ function darkPairings(fill) {
   return result;
 }
 
+/** Filled controls can sit on each of these real neutral/tinted host stacks.
+ * Keep their resting perimeter separate from text-on-fill and keyboard focus.
+ * Gradient expansion below measures every independently positioned stop. */
+function filledPerimeterPairings(fill) {
+  const card = fill("pane", "surface-card");
+  const float = fill("float", "surface-float");
+  const hosts = [
+    ["page", ["surface-page"]],
+    ["card", ["surface-page", fill("card", "surface-card")]],
+    ["pane", ["surface-page", card]],
+    ["inset", [card, fill("inset", "surface-inset")]],
+    ["pane inset", [card, fill("pane", "surface-inset")]],
+    ["translucent inset", [float, fill("inset", "surface-inset-80")]],
+    ["float", [float]],
+    ["float card", [fill("float", "surface-card")]],
+    ["float control", [fill("float", "control-bg")]],
+    ["control", [card, fill("inset", "control-bg")]],
+    ...["pane", "float"].map((role) => [`${role} rail`, [fill(role, "rail-bg")]]),
+    ...["action-tint", "action-tint-hover", "status-info-bg", "status-danger-bg"]
+      .flatMap((tint) => [[`pane ${tint}`, [card, tint]], [`float ${tint}`, [float, tint]]]),
+  ];
+  return hosts.map(([label, bg]) => ({ label: `depth filled perimeter on ${label}`,
+    fg: "depth-filled-edge", bg, min: 3 }));
+}
+
 /** Adapt only Depth app themes; light keeps palette fills and dark uses configured Oklab role mixes. */
 export function addDepthThemes(themes, css) {
   const settings = parseBlock(css, 'html[data-style="depth"].dark');
   for (const role of ROLES) mixPercent(settings[`depth-mix-${role}`], `depth-mix-${role}`);
+  if (/var\(--(?:focus-ring|style-focus-edge)\)/.test(settings["depth-filled-edge"] ?? "")) {
+    throw new Error("Depth resting perimeter must be independent of keyboard focus");
+  }
   for (const theme of themes.filter((entry) => entry.name.endsWith("-style-depth"))) {
     const dark = /(?:^|-)dark-style-depth$/.test(theme.name);
     const fill = (role, name) => dark ? key(role, name) : name;
     const original = theme.pairings;
     theme.tokens = dark ? effectiveTokens(theme, settings) : theme.tokens;
+    if (dark && colour("depth-filled-edge", theme.tokens, theme.base).every((channel, index) =>
+      channel === colour("focus-ring", theme.tokens, theme.base)[index])) {
+      throw new Error(`Depth resting perimeter equals keyboard focus in ${theme.name}`);
+    }
     theme.pairings = [...original, ...surfacePairings(original, fill, dark), ...commonPairings(fill),
-      ...(dark ? darkPairings(fill) : [])].map((pair) => ({ ...pair,
+      ...(dark ? [...darkPairings(fill), ...filledPerimeterPairings(fill)] : [])].map((pair) => ({ ...pair,
       fg: dark && pair.min === 3 && ["action", "danger"].includes(pair.fg) ? "depth-filled-edge" : pair.fg,
     }));
     if (dark) {
@@ -242,7 +274,7 @@ export function splitterPairings(theme, css) {
   const dark = /(?:^|-)dark-style-depth$/.test(theme.name);
   const result = [];
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .filter((match) => match[1].includes("[data-panel-resize-handle-id]"));
+    .filter((match) => match[1].includes("[data-ui-resize-handle"));
   const value = (predicate, property) => {
     const rule = rules.find((match) => predicate(match[1]));
     const raw = rule && new RegExp(`${property}:\\s*([^;]+);`).exec(rule[2])?.[1];
@@ -257,9 +289,9 @@ export function splitterPairings(theme, css) {
       for (const hover of [false, true]) {
         const label = `splitter ${direction} ${notes ? "notes" : "speakers"} ${hover ? "hover" : "rest"}`;
         const bg = `${label}-background`, fg = `${label}-grip`;
-        const strip = hover ? value((s) => s.includes(":hover") && !s.includes("> div"), "background-color")
+        const strip = hover ? value((s) => s.includes(":hover") && !s.includes("[data-ui-resize-grip]"), "background-color")
           : direction === "vertical" && !notes ? vertical : "var(--surface-inset)";
-        const grip = value((s) => s.includes("> div") && s.includes(":hover") === hover, "background-color");
+        const grip = value((s) => s.includes("[data-ui-resize-grip]") && s.includes(":hover") === hover, "background-color");
         theme.tokens[bg] = rgb(paintColour(strip, variables));
         theme.tokens[fg] = rgb(paintColour(grip, variables));
         result.push({ label, fg, bg: ["surface-page", bg], min: 3 });

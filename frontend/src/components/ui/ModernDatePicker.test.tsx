@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import Modal from "./Modal";
 import ModernDatePicker from "./ModernDatePicker";
+import TaskDeadlineModal from "./TaskDeadlineModal";
+import { paintSelectors, selectorFor } from "@/test/depthSelectors";
+import { styleRules, styleSources } from "@/test/styleRules";
 
 /**
  * The picker's usual home is inside a modal, and that is where its positioning
@@ -43,6 +46,46 @@ describe("ModernDatePicker", () => {
     expect(day?.textContent).toBe("14");
     expect(day?.className).toContain("!text-action-on");
     expect(day?.className).not.toContain("!text-foreground");
+  });
+
+  it("connects the vendor's actual selected day and time to the dark filled perimeter", () => {
+    render(<ModernDatePicker selected={new Date(2026, 9, 14, 10, 30)} onChange={vi.fn()} showTimeSelect open />);
+    const oldStyle = document.documentElement.getAttribute("data-style");
+    const oldDark = document.documentElement.classList.contains("dark");
+    document.documentElement.dataset.style = "depth";
+    document.documentElement.classList.add("dark");
+    try {
+      const perimeter = styleRules("depth-dark", "box-shadow")[0];
+      for (const selected of [".react-datepicker__day--selected", ".react-datepicker__time-list-item--selected"]) {
+        const node = document.querySelector(selected);
+        expect(node).not.toBeNull();
+        expect(node!.matches(selectorFor(perimeter))).toBe(true);
+      }
+    } finally {
+      if (oldStyle === null) document.documentElement.removeAttribute("data-style");
+      else document.documentElement.setAttribute("data-style", oldStyle);
+      document.documentElement.classList.toggle("dark", oldDark);
+    }
+  });
+
+  it("keeps the real inline deadline calendar out of raised gradients", () => {
+    render(<TaskDeadlineModal isOpen taskTitle="Review" value={new Date(2026, 9, 14, 10, 30)}
+      onClose={vi.fn()} onSave={vi.fn()} />);
+    const calendar = document.querySelector(".react-datepicker.task-deadline-calendar");
+    expect(calendar).not.toBeNull();
+    const oldStyle = document.documentElement.getAttribute("data-style");
+    const oldDark = document.documentElement.classList.contains("dark");
+    document.documentElement.dataset.style = "depth";
+    try {
+      for (const dark of [false, true]) {
+        document.documentElement.classList.toggle("dark", dark);
+        expect(paintSelectors(styleSources["depth-gradient"]).some((selector) => calendar!.matches(selector))).toBe(false);
+      }
+    } finally {
+      if (oldStyle === null) document.documentElement.removeAttribute("data-style");
+      else document.documentElement.setAttribute("data-style", oldStyle);
+      document.documentElement.classList.toggle("dark", oldDark);
+    }
   });
 
   it("keeps body text on the days around it", () => {

@@ -12,6 +12,8 @@
  * html[data-style], which always carries an explicit value.
  */
 
+import { applyUiStyleToRoot } from "./ui-style-loader";
+
 export const THEMES = ["system", "light", "dark"] as const;
 export type Theme = (typeof THEMES)[number];
 
@@ -145,9 +147,9 @@ export function storeUiStyle(style: UiStyle) {
   writeStored(APPEARANCE_STORAGE_KEYS.style, style, style === DEFAULT_UI_STYLE);
 }
 
-/** Stamp the style on <html>, including its explicit Default value. */
+/** Apply the style and load optional chrome only while it is selected. */
 export function applyUiStyle(style: UiStyle, root: HTMLElement = document.documentElement) {
-  root.dataset.style = style;
+  applyUiStyleToRoot(style, root);
 }
 
 export function storeDensityPreference(preference: DensityPreference) {

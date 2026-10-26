@@ -163,7 +163,7 @@ export default function BatchActionBar({
 
   return (
     <>
-      <SurfaceBase kind="float" className="absolute bottom-4 left-4 right-4 bg-surface-card rounded-lg shadow-float border border-surface-border p-3 flex items-center justify-between z-20 animate-in slide-in-from-bottom-4 duration-200">
+      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="float" className="absolute bottom-4 left-4 right-4 bg-surface-card rounded-lg shadow-float border border-surface-border p-3 flex items-center justify-between z-20 animate-in slide-in-from-bottom-4 duration-200">
         <div className="flex items-center gap-3">
           <span className="bg-action-tint text-action-text px-2 py-1 rounded-md text-xs font-medium">
             {selectedRecordingIds.length} selected

@@ -60,7 +60,9 @@ export default function NotificationHistoryModal({ isOpen, onClose }: Notificati
           </div>
         ) : (
           history.map((notification) => (
-            <SurfaceBase kind="card"
+            <SurfaceBase
+              data-ui-fill="card"
+              data-ui-border="full" kind="card"
               key={notification.id}
               className="rounded-lg border border-surface-border bg-surface-card p-3"
             >

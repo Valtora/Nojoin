@@ -62,6 +62,9 @@ export function ModelPicker({
   return (
     <div className="flex items-center gap-2">
       <SelectBase
+        data-ui-fill="control"
+        data-ui-disabled-fill="control-disabled"
+        data-ui-border="full"
         id={id}
         aria-describedby={`${id}-help`}
         value={value}
@@ -86,6 +89,10 @@ export function ModelPicker({
       </SelectBase>
       {onRefresh && (
         <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="inset"
+          data-ui-active="inset"
+          data-ui-border="full"
           chrome="action"
           type="button"
           {...loadingButtonProps(Boolean(refreshing), refreshDisabled, onRefresh)}
@@ -141,6 +148,10 @@ export function TestConnection({
   return (
     <div className="flex flex-col gap-2 @min-[26rem]:items-end">
       <ButtonBase
+        data-ui-fill="card"
+        data-ui-hover="inset"
+        data-ui-active="inset"
+        data-ui-border="full"
         chrome="action"
         id={id}
         type="button"

@@ -85,7 +85,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (error) {
     return (
-      <SurfaceBase kind="pane" className="min-h-screen flex items-center justify-center bg-surface-card text-foreground p-4">
+      <SurfaceBase data-ui-fill="card" kind="pane" className="min-h-screen flex items-center justify-center bg-surface-card text-foreground p-4">
         <div className="bg-status-danger-bg border border-status-danger-border text-status-danger-fg p-6 rounded-lg max-w-md text-center">
           <h2 className="text-xl font-bold mb-2">Connection Error</h2>
           <p className="mb-4">{error}</p>
@@ -93,7 +93,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             Please ensure the backend server is running and accessible at <br/>
             <code className="bg-surface-inset px-1 rounded">https://localhost:14443/api/v1</code>
           </p>
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-fill="status-danger"
+            data-ui-hover="status-danger" chrome="action"
             onClick={() => window.location.reload()}
             className="mt-4 px-4 py-2 bg-status-danger-bg hover:bg-status-danger-bg rounded text-foreground text-sm font-medium"
           >

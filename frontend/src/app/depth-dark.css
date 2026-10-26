@@ -9,14 +9,14 @@ html[data-style="depth"].dark {
   --danger-text: var(--danger-text-hover);
   --control-border: var(--contrast-icon-muted);
   --control-disabled-fg: var(--contrast-icon-muted);
-  --depth-filled-edge: var(--focus-ring);
+  --depth-filled-edge: color-mix(in srgb, var(--foreground) 75%, var(--surface-page));
 }
 
 /* Paint the identifying perimeter locally rather than setting an inherited
    shadow variable: nested labels and controls must not acquire that edge. */
-html[data-style="depth"].dark :is(button, a, [role="button"]):is(.bg-action, .bg-danger),
+html[data-style="depth"].dark :is(button, a, [data-ui="button"]):is([data-ui-fill="action"], [data-ui-fill="danger"]),
 html[data-style="depth"].dark :is(
-  .react-datepicker__day--selected, .react-datepicker__time-list-item--selected, [class~="!bg-action"]
+  .react-datepicker__day--selected, .react-datepicker__time-list-item--selected
 ) {
   box-shadow: inset 0 0 0 1px var(--depth-filled-edge),
     var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
@@ -28,12 +28,12 @@ html[data-style="depth"].dark :is(
    so a nested surface cannot inherit its parent's fill or resolved mixture. */
 html[data-style="depth"].dark :is(
   [data-ui-surface], [data-ui-chrome="action"], [data-ui-input="field"], [data-ui="select"],
-  [data-ui="textarea"], [data-ui-field], #speaker-panel, [role="tablist"][aria-label="Meeting panels"],
-  .react-datepicker:not(.task-deadline-calendar),
-  .react-datepicker:not(.task-deadline-calendar) :is(.react-datepicker__header, .react-datepicker__time)
-):not([role="tooltip"]):not(.bg-action, .bg-danger, .bg-action-tint):not(
+  [data-ui="textarea"], [data-ui-field], [data-ui-reading="pane"],
+  :where(.react-datepicker:not(.task-deadline-calendar),
+    .react-datepicker:not(.task-deadline-calendar) :is(.react-datepicker__header, .react-datepicker__time))
+):not([data-ui-tooltip]):not([data-ui-fill="action"], [data-ui-fill="danger"], [data-ui-fill="action-tint"]):not(
   [data-ui-chrome="action"]:is(
-    .bg-status-neutral-bg, .bg-status-info-bg, .bg-status-success-bg, .bg-status-warning-bg, .bg-status-danger-bg
+    [data-ui-fill="status-neutral"], [data-ui-fill="status-info"], [data-ui-fill="status-success"], [data-ui-fill="status-warning"], [data-ui-fill="status-danger"]
   )
 ) {
   --depth-fill-base: initial;
@@ -43,7 +43,7 @@ html[data-style="depth"].dark :is(
     --depth-role-mix: var(--depth-mix-card);
   }
 
-  &:is([data-ui-surface="pane"], #speaker-panel, [role="tablist"][aria-label="Meeting panels"]) {
+  &:is([data-ui-surface="pane"], [data-ui-reading="pane"]) {
     --depth-role-mix: var(--depth-mix-pane);
   }
 
@@ -51,62 +51,62 @@ html[data-style="depth"].dark :is(
     --depth-role-mix: var(--depth-mix-float);
   }
 
-  &:is(.bg-surface-card, .settings-card) { --depth-fill-base: var(--surface-card); }
-  &:is(.bg-surface-inset, .settings-inset, .react-datepicker__header) {
+  &[data-ui-fill="card"] { --depth-fill-base: var(--surface-card); }
+  &:is([data-ui-fill="inset"], .react-datepicker__header) {
     --depth-fill-base: var(--surface-inset);
   }
-  &[class~="bg-surface-inset/80"] {
+  &[data-ui-fill="inset-translucent"] {
     --depth-fill-base: color-mix(in srgb, var(--surface-inset) 80%, transparent);
   }
-  &:is(.bg-surface-float, .react-datepicker, .react-datepicker__time) {
+  &:is([data-ui-fill="float"], .react-datepicker, .react-datepicker__time) {
     --depth-fill-base: var(--surface-float);
   }
-  &.bg-control-bg { --depth-fill-base: var(--control-bg); }
-  &.bg-control-disabled-bg { --depth-fill-base: var(--control-disabled-bg); }
-  &.bg-rail { --depth-fill-base: var(--rail-bg); }
-  &.bg-status-neutral-bg { --depth-fill-base: var(--status-neutral-bg); }
-  &.bg-status-info-bg { --depth-fill-base: var(--status-info-bg); }
-  &.bg-status-success-bg { --depth-fill-base: var(--status-success-bg); }
-  &.bg-status-warning-bg { --depth-fill-base: var(--status-warning-bg); }
-  &.bg-status-danger-bg { --depth-fill-base: var(--status-danger-bg); }
+  &[data-ui-fill="control"] { --depth-fill-base: var(--control-bg); }
+  &[data-ui-fill="control-disabled"] { --depth-fill-base: var(--control-disabled-bg); }
+  &[data-ui-fill="rail"] { --depth-fill-base: var(--rail-bg); }
+  &[data-ui-fill="status-neutral"] { --depth-fill-base: var(--status-neutral-bg); }
+  &[data-ui-fill="status-info"] { --depth-fill-base: var(--status-info-bg); }
+  &[data-ui-fill="status-success"] { --depth-fill-base: var(--status-success-bg); }
+  &[data-ui-fill="status-warning"] { --depth-fill-base: var(--status-warning-bg); }
+  &[data-ui-fill="status-danger"] { --depth-fill-base: var(--status-danger-bg); }
 
   /* Active and hover are separate: Tailwind hover utilities require a mouse
      or similar hover-capable pointer, while touch must still retain :active. */
-  &[class~="active:bg-surface-inset"]:active {
+  &[data-ui-active="inset"]:active {
     --depth-fill-base: var(--surface-inset);
   }
 
   @media (hover: hover) {
-    &[class~="hover:bg-surface-inset"]:hover {
+    &[data-ui-hover="inset"]:hover {
       --depth-fill-base: var(--surface-inset);
     }
 
     /* These real coloured hover states retain their palette fill unchanged. */
-    &[class~="hover:bg-action-tint"]:hover {
+    &[data-ui-hover="action-tint"]:hover {
       background-image: none;
       background-color: var(--action-tint);
     }
 
-    &[class~="hover:bg-status-info-bg"]:hover {
+    &[data-ui-hover="status-info"]:hover {
       background-image: none;
       background-color: var(--status-info-bg);
     }
 
-    &[class~="hover:bg-status-danger-bg"]:hover {
+    &[data-ui-hover="status-danger"]:hover {
       background-image: none;
       background-color: var(--status-danger-bg);
     }
   }
 
-  &[class~="disabled:bg-control-disabled-bg"]:disabled {
+  &[data-ui-disabled-fill="control-disabled"]:disabled {
     --depth-fill-base: var(--control-disabled-bg);
   }
 
   &:is(
-    .bg-surface-card, .settings-card, .bg-surface-inset, .settings-inset, [class~="bg-surface-inset/80"],
-    .bg-surface-float, .bg-control-bg, .bg-control-disabled-bg, .bg-rail,
-    .bg-status-neutral-bg, .bg-status-info-bg, .bg-status-success-bg, .bg-status-warning-bg,
-    .bg-status-danger-bg, .react-datepicker, .react-datepicker__header, .react-datepicker__time
+    [data-ui-fill="card"], [data-ui-fill="inset"], [data-ui-fill="inset-translucent"],
+    [data-ui-fill="float"], [data-ui-fill="control"], [data-ui-fill="control-disabled"], [data-ui-fill="rail"],
+    [data-ui-fill="status-neutral"], [data-ui-fill="status-info"], [data-ui-fill="status-success"], [data-ui-fill="status-warning"],
+    [data-ui-fill="status-danger"], .react-datepicker, .react-datepicker__header, .react-datepicker__time
   ) {
     background-image: none;
     background-color: color-mix(in oklab, var(--depth-fill-base) calc(100% - var(--depth-role-mix)),
@@ -119,7 +119,7 @@ html[data-style="depth"].dark :is(
       var(--foreground) var(--depth-role-mix)) !important;
   }
 
-  /* Share the role selectors' parent specificity, including its ID branches. */
+  /* Keep state overrides within the same role selector and specificity. */
   @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
     &[data-ui-chrome="action"]:not(:disabled):not([aria-disabled="true"]):hover:not(:active):not([aria-pressed="true"]) {
       --depth-role-mix: var(--depth-mix-pane);

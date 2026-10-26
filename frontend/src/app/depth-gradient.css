@@ -44,38 +44,38 @@ html[data-style="depth"] :is([data-ui-input="field"], [data-ui="textarea"])::pla
    once, and the 1px highlight preserves every shadow and focus slot. */
 html[data-style="depth"]:not(.dark) :is(
   [data-ui-surface="card"], [data-ui-surface="pane"], [data-ui-surface="float"],
-  #speaker-panel,
+  [data-ui-reading="pane"],
   .react-datepicker:not(.task-deadline-calendar), .react-datepicker__time
-):not([role="tooltip"]):not([data-ui-chrome="action"]):not(
+):not([data-ui-tooltip]):not([data-ui-chrome="action"]):not(
   [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field]
 ):not(
-  .bg-action, .bg-danger, .bg-action-tint, .bg-status-neutral-bg, .bg-status-info-bg,
-  .bg-status-success-bg, .bg-status-warning-bg, .bg-status-danger-bg
+  [data-ui-fill="action"], [data-ui-fill="danger"], [data-ui-fill="action-tint"], [data-ui-fill="status-neutral"], [data-ui-fill="status-info"],
+  [data-ui-fill="status-success"], [data-ui-fill="status-warning"], [data-ui-fill="status-danger"]
 ):is(
-  .bg-surface-card, .settings-card, .bg-surface-inset, [class~="bg-surface-inset/80"],
-  .bg-surface-float, .bg-control-bg, .react-datepicker, .react-datepicker__time
+  [data-ui-fill="card"], [data-ui-fill="inset"], [data-ui-fill="inset-translucent"],
+  [data-ui-fill="float"], [data-ui-fill="control"], .react-datepicker, .react-datepicker__time
 ) {
   --depth-light-fill: initial;
   --depth-light-shade: var(--depth-light-card);
-  &:is([data-ui-surface="pane"], #speaker-panel) {
+  &:is([data-ui-surface="pane"], [data-ui-reading="pane"]) {
     --depth-light-shade: var(--depth-light-pane);
   }
   &:is([data-ui-surface="float"], .react-datepicker, .react-datepicker__time) {
     --depth-light-shade: var(--depth-light-float);
   }
-  &:is(.bg-surface-card, .settings-card) { --depth-light-fill: var(--surface-card); }
-  &.bg-surface-inset { --depth-light-fill: var(--surface-inset); }
-  &[class~="bg-surface-inset/80"] {
+  &[data-ui-fill="card"] { --depth-light-fill: var(--surface-card); }
+  &[data-ui-fill="inset"] { --depth-light-fill: var(--surface-inset); }
+  &[data-ui-fill="inset-translucent"] {
     --depth-light-fill: color-mix(in oklab, var(--surface-inset) 80%, transparent);
   }
-  &:is([data-ui-surface="pane"], #speaker-panel):is(.bg-surface-inset, [class~="bg-surface-inset/80"]) {
+  &:is([data-ui-surface="pane"], [data-ui-reading="pane"]):is([data-ui-fill="inset"], [data-ui-fill="inset-translucent"]) {
     --depth-light-shade: var(--depth-light-pane-inset);
   }
-  &:is(.bg-surface-float, .react-datepicker, .react-datepicker__time) {
+  &:is([data-ui-fill="float"], .react-datepicker, .react-datepicker__time) {
     --depth-light-fill: var(--surface-float);
   }
-  &.bg-control-bg { --depth-light-fill: var(--control-bg); }
-  &[class~="active:bg-surface-inset"]:active { --depth-light-fill: var(--surface-inset); }
+  &[data-ui-fill="control"] { --depth-light-fill: var(--control-bg); }
+  &[data-ui-active="inset"]:active { --depth-light-fill: var(--surface-inset); }
   --depth-light-bottom: color-mix(in oklab, var(--depth-light-fill) calc(100% - var(--depth-light-shade)),
     var(--foreground) var(--depth-light-shade));
   --depth-light-highlight: color-mix(in oklab, var(--action-on) 65%, transparent);
@@ -104,30 +104,30 @@ html[data-style="depth"]:not(.dark) :is(
   }
 
   @media (hover: hover) {
-    &[class~="hover:bg-surface-inset"]:hover { --depth-light-fill: var(--surface-inset); }
-    &:is([class~="hover:bg-action-tint"], [class~="hover:bg-status-info-bg"],
-      [class~="hover:bg-status-danger-bg"]):hover { background-image: none; }
-    &[class~="hover:bg-action-tint"]:hover { background-color: var(--action-tint); }
-    &[class~="hover:bg-status-info-bg"]:hover { background-color: var(--status-info-bg); }
-    &[class~="hover:bg-status-danger-bg"]:hover { background-color: var(--status-danger-bg); }
+    &[data-ui-hover="inset"]:hover { --depth-light-fill: var(--surface-inset); }
+    &:is([data-ui-hover="action-tint"], [data-ui-hover="status-info"],
+      [data-ui-hover="status-danger"]):hover { background-image: none; }
+    &[data-ui-hover="action-tint"]:hover { background-color: var(--action-tint); }
+    &[data-ui-hover="status-info"]:hover { background-color: var(--status-info-bg); }
+    &[data-ui-hover="status-danger"]:hover { background-color: var(--status-danger-bg); }
   }
 }
 
 html[data-style="depth"].dark :is(
   [data-ui-surface="card"], [data-ui-surface="pane"], [data-ui-surface="float"],
-  #speaker-panel,
+  [data-ui-reading="pane"],
   .react-datepicker:not(.task-deadline-calendar), .react-datepicker__time
-):not([role="tooltip"]):not([data-ui-chrome="action"]):not(
+):not([data-ui-tooltip]):not([data-ui-chrome="action"]):not(
   [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field]
 ):not(
-  .bg-action, .bg-danger, .bg-action-tint, .bg-status-neutral-bg, .bg-status-info-bg,
-  .bg-status-success-bg, .bg-status-warning-bg, .bg-status-danger-bg
+  [data-ui-fill="action"], [data-ui-fill="danger"], [data-ui-fill="action-tint"], [data-ui-fill="status-neutral"], [data-ui-fill="status-info"],
+  [data-ui-fill="status-success"], [data-ui-fill="status-warning"], [data-ui-fill="status-danger"]
 ):is(
-  .bg-surface-card, .settings-card, .bg-surface-inset, [class~="bg-surface-inset/80"],
-  .bg-surface-float, .bg-control-bg, .react-datepicker, .react-datepicker__time
+  [data-ui-fill="card"], [data-ui-fill="inset"], [data-ui-fill="inset-translucent"],
+  [data-ui-fill="float"], [data-ui-fill="control"], .react-datepicker, .react-datepicker__time
 ) {
   background-image: var(--depth-gradient-paint);
-  &:is([data-ui-surface="pane"], #speaker-panel) {
+  &:is([data-ui-surface="pane"], [data-ui-reading="pane"]) {
     background-image: var(--depth-gradient-pane-paint);
     &.settings-target { background-image: none; }
   }
@@ -142,53 +142,53 @@ html[data-style="depth"].dark :is(
     }
   }
   @media (hover: hover) {
-    &:is([class~="hover:bg-action-tint"], [class~="hover:bg-status-info-bg"],
-      [class~="hover:bg-status-danger-bg"]):hover { background-image: none; }
+    &:is([data-ui-hover="action-tint"], [data-ui-hover="status-info"],
+      [data-ui-hover="status-danger"]):hover { background-image: none; }
   }
 }
 
-html[data-style="depth"].dark :is(button, a, [role="button"])[data-ui-chrome="action"].bg-action:not(
+html[data-style="depth"].dark :is(button, a, [data-ui="button"])[data-ui-chrome="action"][data-ui-fill="action"]:not(
   :disabled, [aria-disabled="true"]
 ) {
   --depth-gradient-action: var(--action);
   background-image: linear-gradient(in oklab,
     color-mix(in oklab, var(--depth-gradient-action) 97%, var(--action-hover) 3%), var(--depth-gradient-action));
   @media (hover: hover) {
-    &[class~="hover:bg-action-hover"]:hover { --depth-gradient-action: var(--action-hover); }
+    &[data-ui-hover="action-hover"]:hover { --depth-gradient-action: var(--action-hover); }
   }
-  &[class~="active:bg-action-active"]:active { --depth-gradient-action: var(--action-active); }
+  &[data-ui-active="action-active"]:active { --depth-gradient-action: var(--action-active); }
   &[aria-pressed="true"] { background-image: none; }
 }
 
 /* The horizontal splitter continues the upper pane's bottom fill. Its grip
    identifies the control; its full-width border is a decorative divider. */
-html[data-style="depth"]:not(.dark) [data-panel-resize-handle-id][data-panel-group-direction="vertical"] {
+html[data-style="depth"]:not(.dark) [data-ui-resize-handle="vertical"] {
   --depth-split-fill: color-mix(in oklab, var(--surface-inset) calc(100% - var(--depth-light-pane-inset)),
     var(--foreground) var(--depth-light-pane-inset));
   background-color: var(--depth-split-fill);
   border-color: var(--surface-card-border);
 }
-html[data-style="depth"].dark [data-panel-resize-handle-id][data-panel-group-direction="vertical"] {
+html[data-style="depth"].dark [data-ui-resize-handle="vertical"] {
   --depth-split-fill: color-mix(in oklab, var(--surface-inset) calc(100% - var(--depth-mix-pane)),
     var(--foreground) var(--depth-mix-pane));
   background-color: var(--depth-split-fill);
   border-color: var(--surface-card-border);
 }
-html[data-style="depth"] [data-panel-resize-handle-id] > div {
+html[data-style="depth"] [data-ui-resize-handle] > [data-ui-resize-grip] {
   background-color: var(--control-border);
 }
-html[data-style="depth"] [data-panel-resize-handle-id] {
+html[data-style="depth"] [data-ui-resize-handle] {
   border-color: var(--surface-card-border);
 }
 /* My notes is an unmarked, flat inset; keep its adjoining strip flat too. */
-html[data-style="depth"] [data-panel-group-direction="vertical"]:has(
-  #side-tab-my-notes[aria-selected="true"]
-) > [data-panel-resize-handle-id] {
+html[data-style="depth"] [data-ui-resize-group="vertical"]:has(
+  [data-ui-side-tab="my-notes"][aria-selected="true"]
+) > [data-ui-resize-handle] {
   --depth-split-fill: var(--surface-inset);
 }
-html[data-style="depth"] [data-panel-resize-handle-id][data-panel-group-direction]:hover {
+html[data-style="depth"] [data-ui-resize-handle]:hover {
   background-color: var(--action);
 }
-html[data-style="depth"] [data-panel-resize-handle-id]:hover > div {
+html[data-style="depth"] [data-ui-resize-handle]:hover > [data-ui-resize-grip] {
   background-color: var(--action-on);
 }

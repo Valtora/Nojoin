@@ -281,7 +281,9 @@ export default function SpeakerAssignmentPopover({
   if (!targetElement) return null;
 
   return createPortal(
-    <SurfaceBase kind="float"
+    <SurfaceBase
+      data-ui-fill="float"
+      data-ui-border="full" kind="float"
       ref={containerRef}
       className="@container fixed z-[var(--z-popover)] flex flex-col overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float animate-in fade-in zoom-in-95 duration-100"
       style={{
@@ -295,6 +297,8 @@ export default function SpeakerAssignmentPopover({
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-contrast-icon-muted" />
           <InputBase
+            data-ui-fill="inset"
+            data-ui-border="full"
             autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
