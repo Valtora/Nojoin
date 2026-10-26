@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 
@@ -78,6 +79,26 @@ def test_pipeline_metric_timer_records_success_and_errors(monkeypatch):
     assert events[1]["stage"] == "final_diarization_invocation"
     assert events[1]["status"] == "error"
     assert events[1]["payload"]["error"] == "missing token"
+
+
+@pytest.mark.parametrize(
+    "failure", [RuntimeError(), RuntimeError(" \n "), asyncio.CancelledError()]
+)
+def test_pipeline_metric_timer_records_nonblank_error_and_propagates(
+    monkeypatch: pytest.MonkeyPatch, failure: BaseException
+) -> None:
+    events: list[dict] = []
+    monkeypatch.setattr(
+        "backend.processing.pipeline_metrics.record_pipeline_metric",
+        lambda **kwargs: events.append(kwargs),
+    )
+    with pytest.raises(type(failure)) as raised:
+        with pipeline_metric_timer(stage="final_diarization_invocation"):
+            raise failure
+    assert raised.value is failure
+    assert len(events) == 1
+    assert events[0]["status"] == "error"
+    assert events[0]["payload"]["error"] == type(failure).__name__
 
 
 def test_summarize_pipeline_metrics_tracks_phase_zero_counts():

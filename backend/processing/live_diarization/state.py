@@ -191,7 +191,7 @@ def _check(condition: bool, what: str) -> None:
         raise ValueError(f"live label state: {what}")
 
 
-def _validate_meta(meta: dict[str, Any], slots: int) -> None:
+def _validate_meta(meta: dict[str, Any]) -> None:
     """Validate shadow metadata without touching its append-only bank."""
     for name in _META_INTS:
         _check(type(meta[name]) is int and meta[name] >= 0, name)
@@ -213,7 +213,7 @@ def _validate(
     """Raise ValueError unless every part of the state fits together."""
     slots = config.clustering.max_speakers
     dim = config.embedding_dim
-    _validate_meta(meta, slots)
+    _validate_meta(meta)
     _validate_storage(data)
     for name, value in data.items():
         if name.startswith("native_") or name.startswith("hybrid_"):

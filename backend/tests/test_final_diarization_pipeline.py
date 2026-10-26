@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 from concurrent.futures import CancelledError
 from types import SimpleNamespace
@@ -13,7 +14,8 @@ from pyannote.core import Annotation, Segment
 
 from backend import preload_models
 from backend.processing import final_diarization as final
-from backend.processing import nemotron_model
+from backend.processing import nemotron_model, pipeline_metrics
+from backend.tests.test_final_diarization import lane as lane
 from backend.tests.test_pipeline_stages import (
     _FakeRecording,
     _FakeSession,
@@ -27,6 +29,62 @@ from backend.worker.tasks import pipeline, stage_vram
 pytestmark = pytest.mark.usefixtures("stub_celery_dispatch")
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        SoftTimeLimitExceeded(),
+        TimeLimitExceeded(),
+        CancelledError(),
+        asyncio.CancelledError(),
+    ],
+)
+def test_interrupted_native_stage_records_real_status_and_releases(
+    lane: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: BaseException,
+) -> None:
+    lane.failure = failure
+    recording = _FakeRecording(42)
+    events: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        pipeline_metrics,
+        "record_pipeline_metric",
+        lambda **kwargs: events.append(kwargs),
+    )
+    ctx = SimpleNamespace(
+        task=SimpleNamespace(update_state=lambda **kwargs: None),
+        session=_FakeSession(recording, _FakeTranscript(42)),
+        merged_config={"processing_device": "cuda:1"},
+        recording_id=42,
+        device_suffix="",
+    )
+    with pytest.raises(type(failure)) as raised:
+        pipeline._run_final_diarization_stage(ctx, recording, "meeting.wav")
+    assert raised.value is failure
+    assert lane.calls[-2:] == ["infer", "clear"]
+    assert len(events) == 1
+    assert events[0]["status"] == "error"
+    assert events[0]["payload"]["speaker_pass"] == {
+        "route": "interrupted",
+        "reason": type(failure).__name__,
+    }
+    assert events[0]["payload"]["error"].strip()
+
+
+def test_native_status_is_visible_before_inference(
+    lane: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    status: dict[str, Any] = {}
+
+    def load(*, device: str) -> Any:
+        assert status == {"route": "native", "reason": "running"}
+        return SimpleNamespace(infer_offline=lambda audio: lane.probabilities)
+
+    monkeypatch.setattr(nemotron_model, "load_nemotron_model", load)
+    final.diarize_final_audio("meeting.wav", status=status)
+    assert status["route"] == "union"
+
+
 def test_stage_records_route_and_keeps_phantom_filter_after_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -38,7 +96,12 @@ def test_stage_records_route_and_keeps_phantom_filter_after_wrapper(
     observed: list[Any] = []
 
     def wrap(
-        path: str, config: dict, max_speakers: int | None, *, status: dict
+        path: str,
+        config: dict,
+        max_speakers: int | None,
+        *,
+        status: dict,
+        recording_id: int | None,
     ) -> Annotation:
         observed.append(max_speakers)
         status.update(route="union", reason="channel_7_inactive")

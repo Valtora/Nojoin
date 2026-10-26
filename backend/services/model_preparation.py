@@ -69,12 +69,13 @@ async def enqueue_model_preparation(
     return str(task.id)
 
 
-def request_nemotron_preparation(*, recording_id: int) -> str | None:
+def request_nemotron_preparation(*, recording_id: int | None) -> str | None:
     """Best-effort first-use enqueue; never wait behind a transfer lock.
 
     Publishing has no retries and uses two-second connect/socket limits on a
     dedicated connection. It does not subscribe to the result backend.
-    The capture caller latches fallback and calls this at most once per capture.
+    Live and final callers keep community speakers for this invocation; a later
+    eligible recording can use the prepared model.
     """
     task_id = str(uuid4())
     try:

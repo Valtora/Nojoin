@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -91,10 +92,10 @@ def pipeline_metric_timer(
     context: dict[str, Any] = {"payload": dict(payload or {})}
     try:
         yield context
-    except Exception as exc:
+    except (Exception, asyncio.CancelledError) as exc:
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         error_payload = dict(context.get("payload") or {})
-        error_payload["error"] = str(exc)
+        error_payload["error"] = str(exc).strip() or type(exc).__name__
         record_pipeline_metric(
             stage=stage,
             recording_id=recording_id,

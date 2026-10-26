@@ -340,7 +340,7 @@ A speaker correction (a rename across the recording or from an utterance forward
 
 The following `pipeline_metric` stages make diarisation and naming quality readable from the logs:
 
-- `final_diarization_invocation`: `speaker_pass` records the final route (`union`, `community_channel_7`, `ineligible` or `failed`) and its reason.
+- `final_diarization_invocation`: `speaker_pass` is attached before processing and records the route (`union`, `community_channel_7`, `ineligible`, `failed` or `interrupted`) and its reason. Native work is marked as running before it begins; interruptions propagate with their exception class and a nonempty metric error.
 - `final_diarization_speaker_stats`: per-cluster speech duration, segment count and share, overlapped speech, and whether the cap bound.
 - `speaker_identification`: each cluster's three closest people with cosine scores, and which matched.
 - `speaker_merge_pass`, emitted on every run, including runs that merge or score nothing (with a reason): pair scores, why a pair over the threshold was refused, each merged group with its survivor and scores, and each absorbed cluster's score against the person's library voiceprint.

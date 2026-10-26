@@ -6,6 +6,7 @@ import asyncio
 import sys
 import weakref
 from concurrent.futures import CancelledError
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -23,7 +24,8 @@ pytestmark = pytest.mark.usefixtures("stub_celery_dispatch")
 
 
 @pytest.fixture
-def lane(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+def lane(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SimpleNamespace:
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     community = Annotation(uri="meeting")
     community[Segment(0, 1)] = "SPEAKER_00"
     state = SimpleNamespace(

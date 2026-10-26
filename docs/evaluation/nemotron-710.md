@@ -48,7 +48,7 @@ Recompute shipped counts offline without ML dependencies:
 python scripts/evaluate_nemotron.py --recorded-only
 ```
 
-To verify retained source/output hashes and recompute their counts:
+To verify retained source/output hashes and recompute the shipped tables:
 
 ```sh
 python scripts/evaluate_nemotron.py --retained-root /local/retained/hf-parity
@@ -115,6 +115,8 @@ Fresh native runs on three representative small streams (original AMI, additiona
 Fresh Lords community output differs from its historical cache: today's CUDA call precedes phantom filtering; the older CPU baseline included that filtering. Both have 51 labels. Scoring the fresh millisecond RTTM gives 97.173% whole-line accuracy and 13.141% DER versus historical 97.050% and 16.081%. The wrapper returned the fresh community object unchanged; this is baseline drift, separate from the frozen tables.
 
 ### Sequential Memory And Time
+
+The historical 108-stream small held-out workload ran community-1 and offline Nemotron in separate containers, with community exiting before native loading. PyTorch peaks were **1628.82 MiB allocated / 2010 MiB reserved** for community and **1960.56 MiB allocated / 2962 MiB reserved** for Nemotron. These allocator measurements do not establish a device-capacity bound; CUDA contexts and unrelated device usage are additional costs.
 
 A full **9000.003-second** Lords development meeting took **194.391 seconds**: about 183.3 for community-1 and 10.4 for native loading/inference, plus audio reading and release. Native exactly matched the cached **900001 × 8** float32 matrix with no threshold disagreements; its eighth channel kept the fresh community object unchanged.
 

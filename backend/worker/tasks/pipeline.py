@@ -267,13 +267,14 @@ def _run_final_diarization_stage(
             log=logger,
         ) as metric:
             speaker_pass = {}
+            metric["payload"]["speaker_pass"] = speaker_pass
             diarization_result = diarize_final_audio(
                 audio_path,
                 config=merged_config,
                 max_speakers=getattr(recording, "max_speakers", None),
                 status=speaker_pass,
+                recording_id=recording_id,
             )
-            metric["payload"]["speaker_pass"] = speaker_pass
             metric["payload"]["result_available"] = diarization_result is not None
 
         if diarization_result is None:

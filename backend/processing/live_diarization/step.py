@@ -38,6 +38,7 @@ from .files import (
 )
 from .hybrid import HybridLiveState
 from .hybrid_execution import feed_capture
+from .hybrid_lines import prepare_label_line
 from .hybrid_runtime import bind_capture, has_label_history, start_capture
 from .hybrid_source import update_source_cursor
 from .hybrid_state import load_hybrid, save_hybrid
@@ -132,14 +133,14 @@ def _write_labels(
     """Write the labels, or return None once the capture has ended."""
     from backend.core.db import get_sync_session
 
-    timeline = (
-        engine
+    label_line = (
+        prepare_label_line(engine)
         if isinstance(engine, HybridLiveState)
-        else LabelTimeline.from_engine(engine)
+        else LabelTimeline.from_engine(engine).label_line
     )
 
     def decide(start_ms: int, end_ms: int) -> LiveLabelDecision:
-        return timeline.label_line(start_ms / 1000.0, end_ms / 1000.0)
+        return label_line(start_ms / 1000.0, end_ms / 1000.0)
 
     session = get_sync_session()
     try:

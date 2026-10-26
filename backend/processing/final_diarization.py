@@ -84,10 +84,15 @@ def _read_audio(audio_path: str) -> np.ndarray:
 
 
 def _native_pass(
-    audio_path: str, community: Annotation, device: str, status: dict
+    audio_path: str,
+    community: Annotation,
+    device: str,
+    status: dict,
+    recording_id: int | None,
 ) -> Annotation:
     """Contain failed inference frames so outer cleanup can collect CUDA objects."""
     runtime = None
+    status.update(route="native", reason="running")
     try:
         from backend.processing.diarization_union import (
             native_annotation,
@@ -99,6 +104,9 @@ def _native_pass(
         resolution = inspect_nemotron_model()
         if resolution.state != "verified":
             status.update(route="ineligible", reason=f"assets_{resolution.state}")
+            from backend.services.model_preparation import request_nemotron_preparation
+
+            request_nemotron_preparation(recording_id=recording_id)
             return community
         _release_community()
         audio = _read_audio(audio_path)
@@ -117,6 +125,7 @@ def _native_pass(
         return result
     except Exception as exc:
         if is_task_interruption(exc) or isinstance(exc, CancelledError):
+            status.update(route="interrupted", reason=type(exc).__name__)
             # Remove inference frames holding CUDA tensors before final cleanup.
             _clear_exception_frames(exc)
             exc.__traceback__ = None
@@ -126,6 +135,7 @@ def _native_pass(
         # Log handlers may retain exc_info; discard completed inference-frame locals.
         _clear_exception_frames(exc)
     except asyncio.CancelledError as exc:
+        status.update(route="interrupted", reason=type(exc).__name__)
         _clear_exception_frames(exc)
         exc.__traceback__ = None
         raise
@@ -140,6 +150,7 @@ def diarize_final_audio(
     max_speakers: int | None = None,
     *,
     status: dict | None = None,
+    recording_id: int | None = None,
 ) -> Annotation | None:
     """Return today's annotation unchanged when native cannot safely improve it."""
     from backend.processing.diarize import diarize_audio
@@ -161,6 +172,6 @@ def diarize_final_audio(
         outcome["reason"] = "cpu"
         return community
     try:
-        return _native_pass(audio_path, community, device, outcome)
+        return _native_pass(audio_path, community, device, outcome, recording_id)
     finally:
         release_final_native()
