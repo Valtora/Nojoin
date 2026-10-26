@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.processing import live_persistence
 from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
 from backend.utils.config_manager import (
     DEFAULT_SYSTEM_CONFIG,
@@ -1132,7 +1133,6 @@ def _patch_live_deps(
     """
     import silero_vad
 
-    from backend.processing import live_transcribe as lt
     from backend.processing import transcribe as transcribe_module
     from backend.processing import vad as vad_module
 
@@ -1143,7 +1143,9 @@ def _patch_live_deps(
     )
     monkeypatch.setattr(vad_module, "safe_read_audio", audio_store.read_audio)
     monkeypatch.setattr(silero_vad, "save_audio", audio_store.save_audio)
-    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: False)
+    monkeypatch.setattr(
+        live_persistence, "is_meeting_edge_enabled", lambda user_settings=None: False
+    )
 
     def fake_transcribe_audio(path, config=None):
         # A single segment spanning the whole clip: with no `words`, the
@@ -2287,7 +2289,9 @@ def test_live_writes_context_wav_and_excludes_prefix_text(monkeypatch, tmp_path)
     import silero_vad
 
     monkeypatch.setattr(silero_vad, "save_audio", audio_store.save_audio)
-    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: False)
+    monkeypatch.setattr(
+        live_persistence, "is_meeting_edge_enabled", lambda user_settings=None: False
+    )
 
     _run_live_task(monkeypatch, 21, 0, session)
 
@@ -3143,7 +3147,9 @@ def test_live_meeting_edge_dispatch_failure_is_best_effort(monkeypatch, tmp_path
     )
     # _patch_live_deps disables Meeting Edge; re-enable dispatch for this case so
     # the best-effort failure path is actually exercised.
-    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: True)
+    monkeypatch.setattr(
+        live_persistence, "is_meeting_edge_enabled", lambda user_settings=None: True
+    )
 
     def boom_delay(*args, **kwargs):
         raise RuntimeError("broker down")

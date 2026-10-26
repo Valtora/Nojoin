@@ -37,7 +37,6 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 # count when a file shrinks. Do not add new entries; remove them over time.
 GRANDFATHERED: dict[str, int] = {
     "backend/utils/canonical_pipeline/core.py": 1974,
-    "backend/processing/live_transcribe.py": 1799,
 }
 
 
