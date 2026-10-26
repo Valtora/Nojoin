@@ -71,7 +71,9 @@ export default function ContextMenu({
     : { top: y, left: x, visibility: "hidden" as const };
 
   return createPortal(
-    <SurfaceBase kind="float"
+    <SurfaceBase
+      data-ui-fill="float"
+      data-ui-border="full" kind="float"
       ref={menuRef}
       className="fixed z-[var(--z-popover)] w-48 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 overflow-hidden"
       style={style}

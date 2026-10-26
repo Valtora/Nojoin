@@ -62,7 +62,8 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
         })}
 
 
-        <ButtonBase chrome="action"
+        <ButtonBase
+          data-ui-border="full" chrome="action"
           onClick={() => setIsModalOpen(true)}
           className={`inline-flex items-center rounded-pill border border-dashed text-contrast-helper transition-colors hover:border-action-border hover:text-contrast-muted dark:hover:border-action-border ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-control-border"}`}
         >

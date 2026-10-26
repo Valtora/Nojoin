@@ -180,7 +180,7 @@ export default function VoiceprintModal({
     return (
       <div className="space-y-4">
         {/* Match Info */}
-        <div data-ui="surface" data-ui-surface="inset" className="p-3 bg-surface-inset rounded-lg">
+        <div data-ui-fill="inset" data-ui="surface" data-ui-surface="inset" className="p-3 bg-surface-inset rounded-lg">
           {renderMatchInfo(extractResult.matched_speaker)}
         </div>
 
@@ -228,6 +228,8 @@ export default function VoiceprintModal({
               <p className="text-xs text-contrast-helper mt-1">Add this voice to your library with a new name.</p>
               {selectedAction === 'create_new' && (
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   type="text"
                   placeholder="Enter speaker name..."
                   value={newSpeakerName}
@@ -256,6 +258,8 @@ export default function VoiceprintModal({
               <p className="text-xs text-contrast-helper mt-1">Override the match and train the selected speaker&apos;s voice profile.</p>
               {selectedAction === 'force_link' && (
                 <SelectBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   value={selectedGlobalSpeakerId ?? ''}
                   onChange={(e) => setSelectedGlobalSpeakerId(Number(e.target.value))}
                   className="mt-2 w-full px-3 py-1.5 text-sm border border-control-border rounded bg-control-bg focus:outline-none focus:ring-2 focus:ring-status-info-border"
@@ -330,7 +334,9 @@ export default function VoiceprintModal({
             length, so the pair stacks below roughly two 9.5rem buttons plus
             the gap. */}
         <div className="grid gap-2 @min-[20rem]:grid-cols-2">
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-hover="status-success"
+            data-ui-border="full" chrome="action"
             onClick={() => {
               if (currentResult.matched_speaker) {
                 updateBatchAction(currentResult.diarization_label, {
@@ -347,7 +353,9 @@ export default function VoiceprintModal({
           >
             {currentResult.matched_speaker ? `Link to ${currentResult.matched_speaker.name}` : 'No match'}
           </ButtonBase>
-          <ButtonBase chrome="action"
+          <ButtonBase
+            data-ui-hover="inset"
+            data-ui-border="full" chrome="action"
             onClick={() => {
               updateBatchAction(currentResult.diarization_label, { action: 'local_only' });
               if (currentBatchIndex < successfulResults.length - 1) {

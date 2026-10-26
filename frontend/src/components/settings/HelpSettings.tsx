@@ -66,6 +66,10 @@ export default function HelpSettings({ userId }: HelpSettingsProps) {
         >
           <div className="flex @min-[26rem]:justify-end">
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={handleRestartTour}
@@ -84,6 +88,10 @@ export default function HelpSettings({ userId }: HelpSettingsProps) {
         >
           <div className="flex @min-[26rem]:justify-end">
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={handleRecreateDemo}

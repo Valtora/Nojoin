@@ -188,6 +188,9 @@ export default function AccountSettings({
             controlId="account-username"
           >
             <InputBase
+              data-ui-fill="control"
+              data-ui-disabled-fill="control-disabled"
+              data-ui-border="full"
               id="account-username"
               name="account-username"
               type="text"
@@ -243,6 +246,9 @@ export default function AccountSettings({
                 controlId="account-current-password"
               >
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-disabled-fill="control-disabled"
+                  data-ui-border="full"
                   id="account-current-password"
                   name="account-current-password"
                   type="password"
@@ -262,6 +268,9 @@ export default function AccountSettings({
                 description="At least 8 characters."
               >
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-disabled-fill="control-disabled"
+                  data-ui-border="full"
                   id="account-new-password"
                   name="account-new-password"
                   type="password"
@@ -282,6 +291,9 @@ export default function AccountSettings({
                 controlId="account-confirm-password"
               >
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-disabled-fill="control-disabled"
+                  data-ui-border="full"
                   id="account-confirm-password"
                   name="account-confirm-password"
                   type="password"
@@ -298,6 +310,10 @@ export default function AccountSettings({
 
               <SettingsBlock className="flex justify-end">
                 <ButtonBase
+                  data-ui-fill="action"
+                  data-ui-hover="action-hover"
+                  data-ui-active="action-active"
+                  data-ui-border="full"
                   chrome="action"
                   type="submit"
                   {...loadingButtonProps(passwordLoading)}

@@ -163,6 +163,7 @@ export function BatchEditModal({
               <TagIcon aria-hidden="true" className="w-4 h-4" /> Tags
             </label>
             <SurfaceBase
+              data-ui-fill="inset"
               kind="inset" className="flex rounded-lg bg-surface-inset p-1">
               <ButtonBase
                 type="button"
@@ -189,6 +190,8 @@ export function BatchEditModal({
           </div>
 
           <SurfaceBase
+            data-ui-fill="inset"
+            data-ui-border="full"
             kind="inset" className="flex min-h-[60px] flex-wrap gap-2 rounded-lg border border-surface-border bg-surface-inset p-3">
             {allTags.map((tag) => (
               <ButtonBase

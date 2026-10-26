@@ -41,8 +41,9 @@ import { formatTimelineMs } from "./placement";
  * in memory only, never in the kept copy. It is uploaded once, when its note
  * saves; a failed upload waits with Retry and Discard (`retryUpload`,
  * `discardUpload`), and the note stays saved whichever is chosen. A 409 means
- * an earlier upload landed, and a 404 or 410 that the note is gone: either
- * way there is nothing left to send.
+ * an earlier upload landed, and a 404 or 410 that the note is gone or its file
+ * was removed: either way there is nothing left to send. Removing a note's
+ * file drops whatever is held here for it (`forgetUpload`).
  */
 
 /** How long a create may go unanswered before the note offers Retry and Discard. */
@@ -592,6 +593,20 @@ export class NoteOutbox {
     this.publish();
   };
 
+  /**
+   * Drops what is held of a note's file once the file is removed from its
+   * note, whatever its state: Nojoin refuses any later upload for that note.
+   */
+  forgetUpload = (noteId: string): void => {
+    let changed = false;
+    for (const [key, upload] of this.uploads) {
+      if (upload.noteId !== noteId) continue;
+      this.uploads.delete(key);
+      changed = true;
+    }
+    if (changed) this.publish();
+  };
+
   /** The discards whose delete the server has not confirmed yet. */
   pendingDiscards = (): { id: string; writeToken: string }[] =>
     [...this.discards].map(([id, discard]) => ({ id, writeToken: discard.token }));
@@ -724,6 +739,8 @@ export class NoteOutbox {
     try {
       await attachFileToNote(this.recordingId, upload.noteId, upload.file);
     } catch (error) {
+      // Forgotten meanwhile, as its file was removed: nothing to say.
+      if (this.uploads.get(key) !== upload) return;
       const status = getErrorStatus(error);
       if (status !== 409 && status !== 404 && status !== 410) {
         upload.status = "failed";

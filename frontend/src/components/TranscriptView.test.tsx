@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TranscriptView from "./TranscriptView";
+import { matchesStyleDeclaration } from "@/test/styleMarkerContracts";
 import type { TranscriptSegment } from "@/types";
 
 const addNotification = vi.fn();
@@ -124,6 +125,19 @@ describe("TranscriptView", () => {
   beforeEach(() => {
     addNotification.mockReset();
     positionMap.clear();
+  });
+
+  it("matches the actual TranscriptLine bubble to its elevation rule in Depth alone", () => {
+    renderTranscriptView([
+      buildSegment({ id: "style-contract", text: "Bubble marker", speaker: "SPEAKER_00" }),
+    ]);
+    const bubble = document.getElementById("segment-style-contract")!;
+    expect(bubble).toHaveAttribute("data-ui-reading", "bubble");
+
+    for (const style of ["default", "classic", "depth"]) {
+      expect(matchesStyleDeclaration(bubble, "styles.css", "--style-chrome-shadow",
+        "var(--style-elevation-1)", { style })).toBe(style === "depth");
+    }
   });
 
   // On a phone the meeting page floats its chat button over this region and

@@ -348,6 +348,7 @@ export function DayTimelineEventCard({
       </PopoverButton>
       {showJoinPill && meetingUrl && (
         <a
+          data-ui-fill="action"
           href={meetingUrl}
           target="_blank"
           rel="noopener noreferrer"

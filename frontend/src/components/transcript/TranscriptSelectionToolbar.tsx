@@ -132,7 +132,9 @@ export function TranscriptSelectionToolbar({
   return createPortal(
     <>
       <SelectionAnchor box={box} onAnchor={setAnchor} />
-      <SurfaceBase kind="float"
+      <SurfaceBase
+        data-ui-fill="card"
+        data-ui-border="full" kind="float"
         ref={panelRef}
         role="toolbar"
         aria-label="Selected text"

@@ -144,7 +144,7 @@ export default function TranscriptToolbar({
     : "Export";
 
   return (
-    <div data-ui="surface" data-ui-surface="pane" className="z-10 flex flex-col border-b-2 border-surface-border bg-surface-inset shadow-card">
+    <div data-ui-fill="inset" data-ui="surface" data-ui-surface="pane" className="z-10 flex flex-col border-b-2 border-surface-border bg-surface-inset shadow-card">
       {/* Row 1: Header & Global Actions */}
       {/* The 40 px buttons sit in less padding, so the row keeps its height
           from sm up. */}
@@ -179,6 +179,8 @@ export default function TranscriptToolbar({
             icon={<Download aria-hidden="true" />}
           />
           <IconButton
+            data-ui-fill={(showSearch) ? "action-tint" : undefined}
+            data-ui-hover={showSearch ? "action-tint" : "inset"}
             size="sm"
             aria-label="Search"
             title="Search"
@@ -192,6 +194,8 @@ export default function TranscriptToolbar({
             icon={<Search aria-hidden="true" />}
           />
           <IconButton
+            data-ui-fill={(showReplace) ? "action-tint" : undefined}
+            data-ui-hover={showReplace ? "action-tint" : "inset"}
             ref={findReplaceToggleRef}
             size="sm"
             aria-label="Find & Replace"
@@ -224,6 +228,8 @@ export default function TranscriptToolbar({
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <InputBase
+                data-ui-fill="inset"
+                data-ui-border="full"
                 ref={findRef}
                 placeholder="Find..."
                 value={findText}
@@ -276,6 +282,8 @@ export default function TranscriptToolbar({
             <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
               <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <InputBase
+                data-ui-fill="inset"
+                data-ui-border="full"
                 placeholder="Replace..."
                 value={replaceText}
                 onChange={(e) => setReplaceText(e.target.value)}

@@ -142,6 +142,9 @@ export default function ServerProviderSection({
             description={<ContextWindowHelp tokens={contextWindow} />}
           >
             <InputBase
+              data-ui-fill="control"
+              data-ui-disabled-fill="control-disabled"
+              data-ui-border="full"
               id="ai-primary-context-window"
               aria-describedby="ai-primary-context-window-help"
               type="number"

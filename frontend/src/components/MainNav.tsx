@@ -269,7 +269,8 @@ export default function MainNav() {
         />
       )}
 
-      <SurfaceBase as="aside" kind={isDesktop ? "pane" : "float"}
+      <SurfaceBase
+        data-ui-fill="rail" as="aside" kind={isDesktop ? "pane" : "float"}
         id="main-nav"
         className={`shrink-0 border-r border-rail-border bg-rail flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-[var(--z-modal)] transition-all duration-300 lg:sticky lg:top-0 lg:h-[calc(100dvh_-_var(--demo-banner-h,0px))] ${
           isMobileNavOpen
@@ -442,6 +443,8 @@ export default function MainNav() {
             {isAddingTag && !collapsed && (
               <div className="px-2 pb-2">
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   type="text"
                   value={newTagName}
                   onChange={(e) => setNewTagName(e.target.value)}

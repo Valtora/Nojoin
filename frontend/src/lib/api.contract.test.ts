@@ -172,6 +172,7 @@ describe("api public surface", () => {
         "promoteToGlobalSpeaker",
         "recalibrateSpeaker",
         "registerUser",
+        "removeNoteFile",
         "removePersonalDictionaryWord",
         "removeSpellcheckIgnoredWord",
         "removeTagFromRecording",

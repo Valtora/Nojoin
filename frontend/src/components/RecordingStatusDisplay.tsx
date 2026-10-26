@@ -227,7 +227,9 @@ export default function RecordingStatusDisplay({
   // Attaching a document is a toolbar action, not a panel one: it is most
   // useful while the meeting is still running, before processing finishes.
   const uploadButton = (
-    <ButtonBase chrome="action"
+    <ButtonBase
+      data-ui-fill="card"
+      data-ui-border="full" chrome="action"
       type="button"
       onClick={() => setIsUploadOpen(true)}
       className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-control-border bg-surface-card px-4 text-sm font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text"
@@ -274,6 +276,9 @@ export default function RecordingStatusDisplay({
       {showMobileBackButton && onBack ? (
         <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[var(--z-sticky)] lg:hidden">
           <ButtonBase
+            data-ui-fill="card"
+            data-ui-hover="card"
+            data-ui-border="full"
             chrome="action"
             type="button"
             onClick={onBack}
@@ -307,7 +312,7 @@ export default function RecordingStatusDisplay({
         {/* The console is chrome, not a panel: as a strip it costs one row,
             where a card would take a column's width away from the transcript
             and the guidance, both dense text. */}
-        <SurfaceBase as="section" kind="card" className="density-surface flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
+        <SurfaceBase data-ui-fill="card" data-ui-border="full" as="section" kind="card" className="density-surface flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <span className="inline-flex shrink-0 items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
               {isActiveRecording ? (
@@ -355,6 +360,9 @@ export default function RecordingStatusDisplay({
                   {formatClock(Math.round(recording.duration_seconds || 0))}
                 </span>
                 <ButtonBase
+                  data-ui-fill="card"
+                  data-ui-hover="status-danger"
+                  data-ui-border="full"
                   chrome="action"
                   type="button"
                   onClick={handleProcessingDiscard}
@@ -448,7 +456,7 @@ export default function RecordingStatusDisplay({
                 }
               />
             ) : (
-              <SurfaceBase as="section" kind="card" className="density-surface flex flex-col border border-surface-border bg-surface-card shadow-card">
+              <SurfaceBase data-ui-fill="card" data-ui-border="full" as="section" kind="card" className="density-surface flex flex-col border border-surface-border bg-surface-card shadow-card">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <Loader2 className="h-5 w-5 shrink-0 animate-spin text-action-text" />
                   {/* Not "Processing": the console beside this already carries

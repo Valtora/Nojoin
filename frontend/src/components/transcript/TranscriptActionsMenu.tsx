@@ -213,7 +213,9 @@ export default function TranscriptActionsMenu({
           playing is translucent, which makes it a stacking context, and the
           lines after it would paint over a menu inside it. */}
       {open ? createPortal(
-        <SurfaceBase kind="float"
+        <SurfaceBase
+          data-ui-fill="card"
+          data-ui-border="full" kind="float"
           ref={panelRef}
           id={menuId}
           role="menu"

@@ -174,6 +174,10 @@ SELECT now(), now(), 900001, 'mc-still', '/mc-still.png', 'image/png',
        'READY'::documentstatus, 'VISUAL'::documentparsemode, 0, id, true
 FROM timeline_notes WHERE public_id = 'mc-tn2'
 ON CONFLICT (file_path) DO NOTHING;
+
+-- A note kept after its file was removed: rolling the fence back drops the
+-- column with a row set.
+UPDATE timeline_notes SET file_removed = true WHERE public_id = 'mc-tn4';
 """
 
 

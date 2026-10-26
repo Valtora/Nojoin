@@ -60,7 +60,9 @@ export default function NotificationToast() {
         // The status tints are translucent in dark mode, so the tint sits on
         // an opaque float surface rather than being the fill: a toast must
         // stay readable over whatever it covers.
-        <SurfaceBase kind="float"
+        <SurfaceBase
+          data-ui-fill="float"
+          data-ui-border="full" kind="float"
           key={notification.id}
           role={notification.type === 'error' ? 'alert' : undefined}
           className={`pointer-events-auto overflow-hidden rounded-lg border bg-surface-float shadow-float ${borders[notification.type]}`}

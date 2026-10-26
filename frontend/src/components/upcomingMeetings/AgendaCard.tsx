@@ -62,7 +62,7 @@ export default function AgendaCard({
     : agendaUpcomingItems;
 
   return (
-    <SurfaceBase kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-start gap-3">
         <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-action-text" />
         <div className="min-w-0 flex-1">

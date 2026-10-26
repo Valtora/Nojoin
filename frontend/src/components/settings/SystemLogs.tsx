@@ -384,6 +384,9 @@ export default function SystemLogs() {
             Service
           </label>
           <SelectBase
+            data-ui-fill="control"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
             id="logs-service"
             value={selectedContainer}
             onChange={(e) => setSelectedContainer(e.target.value)}
@@ -401,6 +404,9 @@ export default function SystemLogs() {
             Level
           </label>
           <SelectBase
+            data-ui-fill="control"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
             id="logs-level"
             value={logLevel}
             onChange={(e) => setLogLevel(e.target.value)}
@@ -418,6 +424,9 @@ export default function SystemLogs() {
             Filter
           </label>
           <InputBase
+            data-ui-fill="control"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
             id="logs-filter"
             type="text"
             placeholder="A regular expression"
@@ -428,6 +437,10 @@ export default function SystemLogs() {
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <ButtonBase
+            data-ui-fill="card"
+            data-ui-hover="inset"
+            data-ui-active="inset"
+            data-ui-border="full"
             chrome="action"
             type="button"
             onClick={() => setAutoScroll(!autoScroll)}
@@ -442,6 +455,10 @@ export default function SystemLogs() {
             {autoScroll ? "Pause" : "Follow"}
           </ButtonBase>
           <ButtonBase
+            data-ui-fill="card"
+            data-ui-hover="inset"
+            data-ui-active="inset"
+            data-ui-border="full"
             chrome="action"
             type="button"
             onClick={() => setLogs([])}
@@ -468,7 +485,7 @@ export default function SystemLogs() {
               leaveFrom="opacity-100"
               leaveTo="opacity-0"
             >
-              <Popover.Panel data-ui="surface" data-ui-surface="float" className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-56 rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
+              <Popover.Panel data-ui-fill="float" data-ui-border="full" data-ui="surface" data-ui-surface="float" className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-56 rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
                 <ButtonBase
                   type="button"
                   aria-pressed={logShowTimestamps}
@@ -491,6 +508,10 @@ export default function SystemLogs() {
             </Transition>
           </Popover>
           <ButtonBase
+            data-ui-fill="card"
+            data-ui-hover="inset"
+            data-ui-active="inset"
+            data-ui-border="full"
             chrome="action"
             type="button"
             onClick={handleDownloadLogs}

@@ -49,6 +49,7 @@ from backend.models.timeline_note_public import (
     TimelineNoteRead,
     TimelineNoteUpdate,
 )
+from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.services.timeline_note_service import (
     load_attachments_async,
@@ -360,6 +361,62 @@ async def _record_unused_id(
     return True
 
 
+async def _mark_written_notes_stale(db: AsyncSession, recording_pk: int) -> None:
+    """Flag notes already written as no longer reflecting what they would read.
+
+    For a note's file that fed them and was switched, removed or deleted with
+    its note. Only a prompt to regenerate, as for a document parsed after the
+    notes; the caller commits.
+    """
+    transcript = (
+        await db.execute(
+            select(Transcript).where(Transcript.recording_id == recording_pk)
+        )
+    ).scalar_one_or_none()
+    if (
+        transcript is not None
+        and transcript.notes_status == "completed"
+        and (transcript.notes or "").strip()
+    ):
+        transcript.notes_stale_documents = True
+        db.add(transcript)
+
+
+async def _delete_note_and_its_file(
+    db: AsyncSession,
+    note: TimelineNote,
+    *,
+    write_token: str | None,
+    edge_enabled: bool,
+) -> None:
+    """Delete a note held locked, with its file, leaving its tombstone; commits.
+
+    The file's row goes here (pages and chunks cascade), its file once
+    committed. A file that fed the notes marks them stale.
+    """
+    recording_pk = note.recording_id
+    db.add(
+        TimelineNoteTombstone(
+            public_id=note.public_id,
+            recording_id=recording_pk,
+            deleted_write_token=write_token,
+        )
+    )
+    note_files = col(Document.note_id) == note.id
+    files = (
+        await db.execute(
+            select(Document.file_path, Document.use_in_notes).where(note_files)
+        )
+    ).all()
+    if any(use_in_notes for _path, use_in_notes in files):
+        await _mark_written_notes_stale(db, recording_pk)
+    await db.execute(delete(Document).where(note_files))
+    await db.delete(note)
+    await db.commit()
+    await delete_document_files([path for path, _on in files], logger=logger)
+    await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
+
+
 @dataclass(frozen=True)
 class _DeleteConditions:
     expected_revision: int | None
@@ -566,22 +623,7 @@ async def delete_timeline_note(
     expected_revision = conditions.expected_revision
     if expected_revision is not None and note.revision != expected_revision:
         await _refuse_stale_revision(db, note, recording_public_id)
-    db.add(
-        TimelineNoteTombstone(
-            public_id=note.public_id,
-            recording_id=recording_pk,
-            deleted_write_token=token,
-        )
+    await _delete_note_and_its_file(
+        db, note, write_token=token, edge_enabled=edge_enabled
     )
-    # The note's file goes with it: its row (pages and chunks cascade) here,
-    # its file once committed.
-    note_files = col(Document.note_id) == note.id
-    file_paths = list(
-        (await db.execute(select(Document.file_path).where(note_files))).scalars()
-    )
-    await db.execute(delete(Document).where(note_files))
-    await db.delete(note)
-    await db.commit()
-    await delete_document_files(file_paths, logger=logger)
-    await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

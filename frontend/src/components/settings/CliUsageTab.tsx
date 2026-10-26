@@ -129,6 +129,9 @@ export default function CliUsageTab() {
             aria-hidden="true"
           />
           <InputBase
+            data-ui-fill="control"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
             type="search"
             aria-label="Search people"
             value={search}
@@ -141,6 +144,10 @@ export default function CliUsageTab() {
           />
         </div>
         <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="inset"
+          data-ui-active="inset"
+          data-ui-border="full"
           chrome="action"
           type="button"
           {...loadingButtonProps(loading, undefined, fetchUsage)}
@@ -231,6 +238,10 @@ export default function CliUsageTab() {
             </p>
             <div className="flex gap-2">
               <ButtonBase
+                data-ui-fill="card"
+                data-ui-hover="inset"
+                data-ui-active="inset"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -241,6 +252,10 @@ export default function CliUsageTab() {
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </ButtonBase>
               <ButtonBase
+                data-ui-fill="card"
+                data-ui-hover="inset"
+                data-ui-active="inset"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}

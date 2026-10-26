@@ -186,6 +186,8 @@ function TranscriptGroup({
         </span>
         {!disableSegmentPlayback && (
           <IconButton
+            data-ui-fill={(isGroupActive) ? "status-success" : "inset"}
+            data-ui-hover={(isGroupActive) ? "status-success" : "action"}
             size="sm"
             // Who and when, so two groups in the same second differ.
             aria-label={`${pauses ? "Pause" : "Play"} ${SPEAKER_LIST.format(
@@ -231,7 +233,9 @@ function TranscriptGroup({
                 ? Math.max(7, speakerItems.length * 4.5)
                 : undefined;
               return (
-                <SurfaceBase kind="card"
+                <SurfaceBase
+                  data-ui-fill="card"
+                  data-ui-border="full" kind="card"
                   key={speaker}
                   data-testid={`overlap-lane-${speaker}`}
                   className={`min-w-0 flex flex-col rounded-xl border ${laneColor.border} bg-surface-card`}
@@ -247,7 +251,7 @@ function TranscriptGroup({
                     {speakerItems.length > 0 ? (
                       speakerItems.map(renderLine)
                     ) : (
-                      <SurfaceBase kind="card" className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border rounded-xl bg-surface-card">
+                      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border rounded-xl bg-surface-card">
                         <div className="flex flex-col items-center gap-0.5 opacity-60">
                           <div className="font-semibold text-contrast-helper text-sm">{segmentSpeakerDisplayName(speakerMap, speaker)}</div>
                           <div className="text-[11px] uppercase tracking-wider">(overlapping speech)</div>

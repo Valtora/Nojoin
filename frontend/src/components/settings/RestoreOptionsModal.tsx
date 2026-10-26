@@ -77,6 +77,8 @@ export default function RestoreOptionsModal({
             <div className="space-y-6">
                 {/* Option 1: Clear Existing Data */}
                 <SurfaceBase
+                  data-ui-fill="inset"
+                  data-ui-border="full"
                     kind="inset" className="rounded-lg border border-surface-border bg-surface-inset p-4">
                     <div className="mb-2 flex items-center justify-between gap-4">
                         <span id="restore-clear-label" className="text-sm font-semibold text-foreground">

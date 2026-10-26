@@ -366,6 +366,8 @@ interface TagNode extends PeopleTag {
                   Full Name *
                 </label>
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   type="text"
                   required
                   value={formData.name || ""}
@@ -395,6 +397,8 @@ interface TagNode extends PeopleTag {
                   Title
                 </label>
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   type="text"
                   value={formData.title || ""}
                   onChange={(e) =>
@@ -409,6 +413,8 @@ interface TagNode extends PeopleTag {
                   Company
                 </label>
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   type="text"
                   value={formData.company || ""}
                   onChange={(e) =>
@@ -423,6 +429,8 @@ interface TagNode extends PeopleTag {
                   Email
                 </label>
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   type="email"
                   value={formData.email || ""}
                   onChange={(e) =>
@@ -437,6 +445,8 @@ interface TagNode extends PeopleTag {
                   Phone
                 </label>
                 <InputBase
+                  data-ui-fill="control"
+                  data-ui-border="full"
                   type="tel"
                   value={formData.phone_number || ""}
                   onChange={(e) =>
@@ -462,6 +472,8 @@ interface TagNode extends PeopleTag {
                       12rem before the buttons wrap, so on a wider dialog
                       its text wraps beside them instead. */}
                   <SurfaceBase
+                    data-ui-fill="inset"
+                    data-ui-border="full"
                     kind="inset" className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface-inset rounded-lg border border-surface-border">
                     <div className="flex min-w-0 grow basis-48 items-center gap-3">
                       <div
@@ -495,6 +507,7 @@ interface TagNode extends PeopleTag {
                         // The inset row already has the ghost hover's fill,
                         // so the hover steps up to the card instead.
                         <Button
+                          data-ui-hover="card"
                           variant="ghost"
                           size="sm"
                           onClick={toggleVoiceprintLock}
@@ -517,6 +530,7 @@ interface TagNode extends PeopleTag {
                       )}
                       {person.has_voiceprint && (
                         <ButtonBase
+                          data-ui-hover="status-danger"
                           chrome="action"
                           type="button"
                           onClick={handleDeleteVoiceprint}
@@ -532,6 +546,8 @@ interface TagNode extends PeopleTag {
                   {/* Merge Action */}
                   {!showMerge ? (
                     <ButtonBase
+                      data-ui-hover="inset"
+                      data-ui-border="full"
                       chrome="action"
                       type="button"
                       onClick={() => setShowMerge(true)}
@@ -542,6 +558,8 @@ interface TagNode extends PeopleTag {
                     </ButtonBase>
                   ) : (
                     <SurfaceBase
+                      data-ui-fill="action-tint"
+                      data-ui-border="full"
                       kind="pane" className="p-4 bg-action-tint border border-action-border rounded-lg space-y-3">
                       <div className="flex justify-between items-start">
                         <div>
@@ -576,6 +594,8 @@ interface TagNode extends PeopleTag {
                         {!mergeTarget ? (
                           <div className="relative" ref={speakerSearchRef}>
                             <InputBase
+                              data-ui-fill="control"
+                              data-ui-border="full"
                               type="text"
                               value={speakerSearch}
                               onChange={(e) => setSpeakerSearch(e.target.value)}
@@ -584,6 +604,8 @@ interface TagNode extends PeopleTag {
                             />
                             {speakerSearch && (
                               <SurfaceBase
+                                data-ui-fill="control"
+                                data-ui-border="full"
                                 kind="float"
                                 ref={speakerResultsRef}
                                 style={speakerResultsStyle}
@@ -639,6 +661,8 @@ interface TagNode extends PeopleTag {
                       </div>
 
                       <ButtonBase
+                        data-ui-fill="action"
+                        data-ui-hover="action-hover"
                         chrome="action"
                         type="button"
                         onClick={handleMergeClick}
@@ -694,6 +718,8 @@ interface TagNode extends PeopleTag {
               {showTagInput && (
                 <div className="flex gap-2 mb-2">
                   <InputBase
+                    data-ui-fill="control"
+                    data-ui-border="full"
                     type="text"
                     value={newTagName}
                     onChange={(e) => setNewTagName(e.target.value)}
@@ -707,6 +733,8 @@ interface TagNode extends PeopleTag {
                     }}
                   />
                   <ButtonBase
+                    data-ui-fill="action"
+                    data-ui-hover="action-hover"
                     chrome="action"
                     type="button"
                     onClick={handleCreateTag}
@@ -718,6 +746,8 @@ interface TagNode extends PeopleTag {
               )}
 
               <SurfaceBase
+                data-ui-fill="inset"
+                data-ui-border="full"
                 kind="inset" className="flex flex-wrap gap-2 p-3 border border-surface-border rounded-lg bg-surface-inset min-h-[60px]">
                 {allTags.length > 0 ? (
                   renderTagSelection(tagTree)
@@ -735,6 +765,8 @@ interface TagNode extends PeopleTag {
                 Notes
               </label>
               <TextareaBase
+                data-ui-fill="control"
+                data-ui-border="full"
                 value={formData.notes || ""}
                 onChange={(e) =>
                   setFormData({ ...formData, notes: e.target.value })

@@ -168,7 +168,8 @@ CREATE TABLE timeline_notes (
     end_ms BIGINT,
     quoted_text TEXT,
     revision INTEGER NOT NULL DEFAULT 1,
-    last_write_token VARCHAR(36)
+    last_write_token VARCHAR(36),
+    file_removed BOOLEAN NOT NULL DEFAULT 0
 )
 """
 

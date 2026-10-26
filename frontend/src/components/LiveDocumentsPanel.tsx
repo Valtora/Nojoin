@@ -27,7 +27,7 @@ export default function LiveDocumentsPanel({
   documents,
 }: LiveDocumentsPanelProps) {
   return (
-    <SurfaceBase as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase data-ui-fill="card" data-ui-border="full" as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
         <FileText className="h-5 w-5 shrink-0 text-action-text" />
         <h3 className="text-base font-semibold text-foreground">Documents</h3>
@@ -39,6 +39,7 @@ export default function LiveDocumentsPanel({
       <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         {documents.map((doc) => (
           <li
+            data-ui-fill="inset"
             key={doc.id}
             data-ui="surface"
             data-ui-surface="inset"

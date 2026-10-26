@@ -204,14 +204,19 @@ export default function LiveAudioWaveform({
               : ACTIVITY_HINT_COPY.message}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="card"
+              data-ui-border="full" chrome="action"
               type="button"
               onClick={() => dismissForMeeting(recordingId)}
               className="rounded-pill border border-action-border bg-surface-card px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-surface-card"
             >
               Dismiss
             </ButtonBase>
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-hover="action-tint"
+              data-ui-border="full" chrome="action"
               type="button"
               onClick={() => {
                 dismissForMeeting(recordingId);

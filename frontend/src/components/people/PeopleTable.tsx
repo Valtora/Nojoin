@@ -72,6 +72,8 @@ export function PeopleTable({
   if (people.length === 0) {
     return (
       <SurfaceBase
+        data-ui-fill="card"
+        data-ui-border="full"
         kind="card" className="flex flex-col items-center justify-center p-12 text-center bg-surface-card rounded-xl border border-surface-border border-dashed">
         <div className="w-16 h-16 bg-surface-inset rounded-full flex items-center justify-center mb-4">
           <MessageSquare className="w-8 h-8 text-contrast-icon-muted" />
@@ -91,6 +93,8 @@ export function PeopleTable({
     <>
       {/* Desktop / wide viewports: the full data table. */}
       <SurfaceBase
+        data-ui-fill="card"
+        data-ui-border="full"
         kind="card" className="hidden lg:block bg-surface-card rounded-xl shadow-card border border-surface-border">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -167,6 +171,7 @@ export function PeopleTable({
                             <div className="group/lock relative">
                               <Lock className="w-3.5 h-3.5 text-status-success-fg" />
                               <SurfaceBase
+                                data-ui-fill="card"
                                 as="span" kind="float" className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 text-xs text-foreground bg-surface-card rounded opacity-0 group-hover/lock:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                                 Voiceprint Locked
                               </SurfaceBase>
@@ -260,6 +265,7 @@ export function PeopleTable({
                   {/* Actions */}
                   <td className="px-6 py-4 text-right relative">
                     <ButtonBase
+                      data-ui-hover="inset"
                       chrome="action"
                       onClick={(e) => openMenuFromButton(e, person)}
                       className="p-2 text-contrast-icon-muted hover:text-contrast-helper rounded-full hover:bg-surface-inset transition-colors"
@@ -291,6 +297,8 @@ export function PeopleTable({
 
         {people.map((person) => (
           <SurfaceBase
+            data-ui-fill={(selectedIds.has(person.id)) ? "action-tint" : "card"}
+            data-ui-border="full"
             kind="card"
             key={person.id}
             onContextMenu={(e) => handleContextMenu(e, person)}
@@ -334,6 +342,7 @@ export function PeopleTable({
                 )}
               </div>
               <ButtonBase
+                data-ui-hover="inset"
                 chrome="action"
                 onClick={(e) => openMenuFromButton(e, person)}
                 className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-contrast-icon-muted transition-colors hover:bg-surface-inset hover:text-contrast-helper"

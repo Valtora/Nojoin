@@ -96,6 +96,10 @@ export default function AiModelDependencyRow({
         {ready ? (
           reason === undefined && (
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               {...loadingButtonProps(busy, !isAdmin, () => handleDeleteModel(model.id))}
@@ -111,6 +115,10 @@ export default function AiModelDependencyRow({
           <>
             {status?.partial && (
               <ButtonBase
+                data-ui-fill="card"
+                data-ui-hover="inset"
+                data-ui-active="inset"
+                data-ui-border="full"
                 chrome="action"
                 type="button"
                 {...loadingButtonProps(busy, !isAdmin || preparationBusy, () => handleDeleteModel(model.id))}
@@ -125,6 +133,10 @@ export default function AiModelDependencyRow({
               </ButtonBase>
             )}
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={() => void startPreparation(model.target)}

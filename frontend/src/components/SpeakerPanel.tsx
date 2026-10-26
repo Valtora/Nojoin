@@ -157,12 +157,16 @@ export default function SpeakerPanel({
   return (
     <aside
       id="speaker-panel"
+      data-ui-reading="pane"
+      data-ui-fill="inset"
       className="@container flex h-full min-w-0 flex-col bg-surface-inset"
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         {pendingEntries.length >= 2 && (
           <div className="flex justify-end">
-            <ButtonBase chrome="action"
+            <ButtonBase
+              data-ui-fill="action"
+              data-ui-hover="action-hover" chrome="action"
               type="button"
               className={`rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
               {...loadingButtonProps(isReviewingName, undefined, () =>
@@ -197,7 +201,7 @@ export default function SpeakerPanel({
                   <p className="text-xs font-semibold text-action-text mb-2">
                     Merge {entry.displayName} into:
                   </p>
-                  <SelectBase
+                  <SelectBase data-ui-fill="card" data-ui-border="full"
                     className="w-full text-sm p-1 mb-2 rounded border border-control-border bg-surface-card"
                     value={mergeTargetLabel}
                     onChange={(e) => setMergeTargetLabel(e.target.value)}
@@ -213,7 +217,9 @@ export default function SpeakerPanel({
                     ))}
                   </SelectBase>
                   <div className="flex gap-2">
-                    <ButtonBase chrome="action"
+                    <ButtonBase
+                      data-ui-fill="action"
+                      data-ui-hover="action-hover" chrome="action"
                       onClick={handleMergeSubmit}
                       disabled={!mergeTargetLabel}
                       className="flex-1 px-2 py-1 bg-action text-action-on text-xs rounded hover:bg-action-hover disabled:opacity-50"
@@ -248,7 +254,9 @@ export default function SpeakerPanel({
             );
 
             return (
-              <SurfaceBase kind="card"
+              <SurfaceBase
+                data-ui-fill="card"
+                data-ui-border="full" kind="card"
                 key={entry.key}
                 className="relative group p-2.5 @min-[18rem]:p-3 rounded-lg bg-surface-card border border-control-border hover:border-status-info-border transition-colors shadow-card"
                 onContextMenu={(e) => handleContextMenu(e, entry)}
@@ -285,6 +293,8 @@ export default function SpeakerPanel({
                     <div className="min-w-0 flex-1">
                       {isRenaming ? (
                         <InputBase
+                          data-ui-fill="card"
+                          data-ui-border="full"
                           autoFocus
                           type="text"
                           value={renameValue}
@@ -376,7 +386,9 @@ export default function SpeakerPanel({
                     {/* The reason wraps above the buttons in a narrow
                         column, and a long Not {name} truncates inside it. */}
                     <div className="ml-auto flex min-w-0 max-w-full items-center gap-1.5">
-                      <ButtonBase chrome="action"
+                      <ButtonBase
+                        data-ui-fill="action"
+                        data-ui-hover="action-hover" chrome="action"
                         type="button"
                         aria-label={`Confirm ${entry.displayName}`}
                         className={`shrink-0 rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
@@ -386,7 +398,10 @@ export default function SpeakerPanel({
                       >
                         Confirm
                       </ButtonBase>
-                      <ButtonBase chrome="action"
+                      <ButtonBase
+                        data-ui-fill="card"
+                        data-ui-hover="inset"
+                        data-ui-border="full" chrome="action"
                         type="button"
                         className={`min-w-0 max-w-[10rem] truncate rounded border border-control-border bg-surface-card px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-inset ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
                         {...loadingButtonProps(isReviewingName, undefined, () =>

@@ -77,7 +77,7 @@ export default function TableMenu({ editor }: TableMenuProps) {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setIsOpen(false)} />
-          <SurfaceBase kind="float" className="absolute left-0 top-full mt-2 w-56 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
+          <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="float" className="absolute left-0 top-full mt-2 w-56 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
             <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 border-b border-surface-border">
               {hovered
                 ? `Insert ${hovered.rows} x ${hovered.cols} table`
@@ -98,7 +98,9 @@ export default function TableMenu({ editor }: TableMenuProps) {
                 const active =
                   hovered !== null && row <= hovered.rows && col <= hovered.cols;
                 return (
-                  <ButtonBase chrome="action"
+                  <ButtonBase
+                    data-ui-fill={(active) ? "action" : "inset"}
+                    data-ui-border="full" chrome="action"
                     key={index}
                     onMouseEnter={() => setHovered({ rows: row, cols: col })}
                     onClick={() => insertTable(row, col)}

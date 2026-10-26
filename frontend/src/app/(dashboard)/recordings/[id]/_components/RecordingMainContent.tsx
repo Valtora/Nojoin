@@ -284,6 +284,7 @@ export default function RecordingMainContent({
           ref={tablistRef}
           role="tablist"
           aria-label="Meeting panels"
+          data-ui-reading="pane"
           className={`${isMobile ? "flex overflow-x-auto" : "grid grid-cols-4"} border-b-2 border-surface-border`}
         >
           {tabs.map(({ panel, label }) => (
@@ -306,7 +307,7 @@ export default function RecordingMainContent({
       </div>
 
       {/* Panel Content */}
-      <SurfaceBase kind="pane" className="flex-1 flex flex-col bg-surface-card overflow-hidden min-h-0 h-full relative">
+      <SurfaceBase data-ui-fill="card" kind="pane" className="flex-1 flex flex-col bg-surface-card overflow-hidden min-h-0 h-full relative">
         <TranscriptSection
           active={activePanel === "transcript"}
           recording={recording}

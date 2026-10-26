@@ -60,6 +60,7 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("recording_speakers", "name_source"): "VARCHAR(16)",
     ("documents", "note_id"): "BIGINT",
     ("documents", "use_in_notes"): "BOOLEAN NOT NULL DEFAULT false",
+    ("timeline_notes", "file_removed"): "BOOLEAN NOT NULL DEFAULT false",
 }
 
 

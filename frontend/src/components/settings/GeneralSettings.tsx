@@ -247,11 +247,14 @@ export default function GeneralSettings({
                         leaveFrom="transform opacity-100 scale-100"
                         leaveTo="transform opacity-0 scale-95"
                       >
-                        <Popover.Panel data-ui="surface" data-ui-surface="float" className="absolute left-0 z-[var(--z-dropdown)] mt-2 w-full overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float">
+                        <Popover.Panel data-ui-fill="float" data-ui-border="full" data-ui="surface" data-ui-surface="float" className="absolute left-0 z-[var(--z-dropdown)] mt-2 w-full overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float">
                           <div className="border-b border-surface-float-border p-3">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-contrast-icon-muted" />
                               <InputBase
+                                data-ui-fill="control"
+                                data-ui-disabled-fill="control-disabled"
+                                data-ui-border="full"
                                 type="text"
                                 value={timezoneSearch}
                                 onChange={(event) =>
@@ -343,6 +346,9 @@ export default function GeneralSettings({
             label="Language"
           >
             <SelectBase
+              data-ui-fill="control"
+              data-ui-disabled-fill="control-disabled"
+              data-ui-border="full"
               value={settings.spellcheck_language || "en-GB"}
               onChange={(e) => handleLanguageChange(e.target.value)}
               className={SETTINGS_SELECT_CLASS}
@@ -362,6 +368,10 @@ export default function GeneralSettings({
             controlClassName={SETTINGS_CONTROL_END}
           >
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={() => setIsDictionaryModalOpen(true)}

@@ -107,6 +107,10 @@ export default function ConnectedAppsSettings() {
             controlClassName={SETTINGS_CONTROL_END}
           >
             <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="inset"
+              data-ui-active="inset"
+              data-ui-border="full"
               chrome="action"
               type="button"
               onClick={() => handleRevoke(app.grant_id)}
