@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SpeakerFrameUpload, SpeakerFrameUploadResult } from "@/lib/api/speakerFrames";
 
-import { GRID_COLUMNS, GRID_ROWS } from "./changeRule";
+import { GRID_CHANNELS, GRID_COLUMNS, GRID_ROWS } from "./changeRule";
 import { FRAME_STREAM_ENDED_MESSAGE, type FrameGrabber, type FrameSample } from "./frameGrabber";
 import { ScreenStudySession, type ScreenStudySessionOptions } from "./session";
 import { useScreenStudyStore } from "./store";
@@ -54,7 +54,7 @@ class FakeGrabber implements FrameGrabber {
       return null;
     }
     return {
-      grid: new Uint8Array(GRID_COLUMNS * GRID_ROWS).fill(this.level),
+      grid: new Uint8Array(GRID_COLUMNS * GRID_ROWS * GRID_CHANNELS).fill(this.level),
       width: 1280,
       height: 720,
       timestampUs: 5_000_000 + this.level,

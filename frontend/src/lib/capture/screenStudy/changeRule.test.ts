@@ -4,13 +4,15 @@ import { describe, expect, it } from "vitest";
 import {
   CHANGE_THRESHOLD_LEVELS,
   ChangeRule,
+  GRID_CHANNELS,
   GRID_COLUMNS,
   GRID_ROWS,
   KEEP_ALIVE_MS,
   gridChanged,
 } from "./changeRule";
 
-const flatGrid = (level: number) => new Uint8Array(GRID_COLUMNS * GRID_ROWS).fill(level);
+const flatGrid = (level: number) =>
+  new Uint8Array(GRID_COLUMNS * GRID_ROWS * GRID_CHANNELS).fill(level);
 
 const withBlock = (grid: Uint8Array, index: number, level: number) => {
   const next = grid.slice();

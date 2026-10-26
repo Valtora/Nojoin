@@ -3,7 +3,7 @@
  * the audio and sends the frames that changed.
  *
  * The capture ticks it once per second of recorded audio (twice at 2 Hz). On
- * each tick it asks the frame reader for the newest frame's brightness grid,
+ * each tick it asks the frame reader for the newest frame's colour grid,
  * keeps the frame when the change rule says so, and queues its JPEG with the
  * audio position it was taken at. Paused, it takes nothing.
  *

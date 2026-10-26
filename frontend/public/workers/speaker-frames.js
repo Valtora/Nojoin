@@ -6,8 +6,10 @@
  * worker can make the processor. It keeps the newest frame and closes the rest,
  * which works with the Nojoin tab hidden, as it is through a meeting.
  *
- * On "sample" it draws the newest frame at most 1280 px on its long edge and
- * answers with a 64 x 36 grid of block brightness averages, which the page
+ * On "sample" it draws the newest frame at most 1280 px on its long edge, with
+ * high-quality smoothing so a line a pixel or two wide on a 4K screen is
+ * averaged into the smaller frame rather than skipped, and answers with a
+ * 64 x 36 grid of block averages of red, green and blue, which the page
  * compares with the last frame it kept, the frame's timestamp and when it drew
  * it. On "encode" it answers with that same drawing as a JPEG at quality 0.8.
  * Pixels leave this worker only as that JPEG, sent back to the page that asked
@@ -22,6 +24,8 @@
 const LONG_EDGE_PX = 1280;
 const COLUMNS = 64;
 const ROWS = 36;
+// Red, green and blue, in that order within each block.
+const CHANNELS = 3;
 const JPEG_QUALITY = 0.8;
 
 let reader = null;
@@ -69,25 +73,38 @@ const pump = async (readable) => {
 
 const blockGrid = (pixels, width, height) => {
   const cells = COLUMNS * ROWS;
-  const sums = new Float64Array(cells);
-  const counts = new Uint32Array(cells);
-  const columnOf = new Uint16Array(width);
+  // Integer sums: a block holds a few hundred pixels of at most 255 each.
+  const sums = new Uint32Array(cells * CHANNELS);
+  const offsetOf = new Uint16Array(width);
+  const blockWidth = new Uint32Array(COLUMNS);
+  const blockHeight = new Uint32Array(ROWS);
   for (let x = 0; x < width; x += 1) {
-    columnOf[x] = Math.min(COLUMNS - 1, Math.floor((x * COLUMNS) / width));
+    const column = Math.min(COLUMNS - 1, Math.floor((x * COLUMNS) / width));
+    offsetOf[x] = column * CHANNELS;
+    blockWidth[column] += 1;
   }
   for (let y = 0; y < height; y += 1) {
-    const rowStart = Math.min(ROWS - 1, Math.floor((y * ROWS) / height)) * COLUMNS;
+    const row = Math.min(ROWS - 1, Math.floor((y * ROWS) / height));
+    blockHeight[row] += 1;
+    const rowStart = row * COLUMNS * CHANNELS;
     let index = y * width * 4;
     for (let x = 0; x < width; x += 1) {
-      const cell = rowStart + columnOf[x];
-      sums[cell] += 0.299 * pixels[index] + 0.587 * pixels[index + 1] + 0.114 * pixels[index + 2];
-      counts[cell] += 1;
+      const at = rowStart + offsetOf[x];
+      sums[at] += pixels[index];
+      sums[at + 1] += pixels[index + 1];
+      sums[at + 2] += pixels[index + 2];
       index += 4;
     }
   }
-  const grid = new Uint8Array(cells);
-  for (let cell = 0; cell < cells; cell += 1) {
-    grid[cell] = counts[cell] ? Math.round(sums[cell] / counts[cell]) : 0;
+  const grid = new Uint8Array(cells * CHANNELS);
+  for (let row = 0; row < ROWS; row += 1) {
+    for (let column = 0; column < COLUMNS; column += 1) {
+      const count = blockWidth[column] * blockHeight[row];
+      const at = (row * COLUMNS + column) * CHANNELS;
+      for (let channel = 0; channel < CHANNELS; channel += 1) {
+        grid[at + channel] = count ? Math.round(sums[at + channel] / count) : 0;
+      }
+    }
   }
   return grid;
 };
@@ -107,6 +124,11 @@ const sample = (id) => {
     canvas = new OffscreenCanvas(width, height);
     context = canvas.getContext("2d", { willReadFrequently: true });
   }
+  // The default smoothing can sample the frame without averaging it, which
+  // drops a thin line, such as a meeting app's ring around the speaking tile,
+  // whenever it falls between the pixels it samples.
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
   context.drawImage(latest, 0, 0, width, height);
   const grabbedAt = performance.timeOrigin + performance.now();
   const grid = blockGrid(context.getImageData(0, 0, width, height).data, width, height);
