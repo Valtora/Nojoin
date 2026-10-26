@@ -77,6 +77,8 @@ Live speaker labels remain off by default and require a CUDA worker. The install
 
 With automatic selection, verified Nemotron assets improve live labels for small meetings. Missing assets trigger a preparation request while that meeting keeps clustering labels. Prepare before recording to avoid queueing a download behind live work. The model-status API reports whether preparation is missing, partial, verified or invalid; explicit preparation repairs an interrupted or invalid copy, and deletion removes the managed cache. These assets are optional: their absence does not make the installation's core services unready. [Optional Native Speaker Assets](DEPLOYMENT.md#optional-native-speaker-assets) lists the preparation, status and deletion endpoints.
 
+`speaker_engine` also chooses the final speaker pass on a CUDA worker, for captures, imports and reprocessing, whether live labels are on or off. On `auto`, the first eligible recording queues the Nemotron download (about 397 MB, to the model cache) and keeps community-1. Once the assets are verified, a recording without a speaker cap combines community-1 with Nemotron unless Nemotron uses its eighth speaker channel ([Final Speaker Pass](ARCHITECTURE.md#final-speaker-pass)). `classic` keeps community-1 and downloads nothing.
+
 ### Notes Structure and Glossary
 
 **Notes structure** (in **Settings > Notes and live assistance**) and **Glossary** (in **Settings > Transcription**) each have a shared value you maintain for everyone, beside each user's own.
