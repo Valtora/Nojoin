@@ -28,6 +28,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    TRANSCRIPTS_SCHEMA,
 )
 
 PERSON_ID = 33
@@ -55,6 +56,7 @@ async def test_session_maker() -> sessionmaker:
     async with engine.begin() as connection:
         for schema in (
             RECORDINGS_SCHEMA,
+            TRANSCRIPTS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
             RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,

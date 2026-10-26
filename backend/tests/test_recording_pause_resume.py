@@ -60,6 +60,8 @@ CREATE TABLE recordings (
 
 TRANSCRIPTS_SCHEMA = """
 CREATE TABLE transcripts (
+    change_sequence BIGINT NOT NULL DEFAULT 0,
+    settling_state JSON,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -451,6 +453,79 @@ async def client(api_app: FastAPI) -> AsyncClient:
         base_url=BASE_URL,
     ) as async_client:
         yield async_client
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("requested", ["off", "auto"])
+async def test_capture_eligibility_policy_and_lifecycle_are_persisted(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+    requested: str,
+) -> None:
+    from sqlmodel import select
+
+    from backend.models.transcript import Transcript
+    from backend.utils.config_manager import config_manager
+
+    original_get = config_manager.get
+    settings = {"live_text_settling": requested, "live_text_settling_k": 4}
+    monkeypatch.setattr(
+        config_manager,
+        "get",
+        lambda key, default=None: settings.get(key, original_get(key, default)),
+    )
+    set_session_cookie(client)
+    response = await client.post(
+        "/api/v1/recordings/init", headers={"Origin": TRUSTED_ORIGIN}
+    )
+    assert response.status_code == 200
+    public_id = response.json()["id"]
+
+    async def state() -> dict | None:
+        async with test_session_maker() as session:
+            return (
+                (await session.execute(select(Transcript))).scalar_one().settling_state
+            )
+
+    initial = await state()
+    if requested == "off":
+        assert initial is None
+        return
+    assert initial["policy"] == {"k": 4, "window_s": 10.0, "enabled": None}
+    assert initial["capture_epoch"] == 0
+    assert not initial["sealed"]
+    response = await client.post(
+        f"/api/v1/recordings/{public_id}/pause", headers={"Origin": TRUSTED_ORIGIN}
+    )
+    assert response.status_code == 200
+    assert (await state())["phase"] == "paused"
+    settings["live_text_settling_k"] = 9
+    response = await client.post(
+        f"/api/v1/recordings/{public_id}/resume", headers={"Origin": TRUSTED_ORIGIN}
+    )
+    assert response.status_code == 200
+    resumed = await state()
+    assert resumed["capture_epoch"] == 1
+    assert resumed["generation"] != initial["generation"]
+    assert resumed["policy"] == initial["policy"]
+    response = await client.post(
+        f"/api/v1/recordings/{public_id}/segment",
+        params={"sequence": 0, "epoch": 1},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.wav", make_wav_bytes(), "audio/wav")},
+    )
+    assert response.status_code == 200
+    response = await client.post(
+        f"/api/v1/recordings/{public_id}/finalize",
+        params={"epoch": 1},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert response.status_code == 200
+    sealed = await state()
+    assert sealed["sealed"]
+    assert sealed["phase"] == "sealed"
+    assert sealed["generation"] == resumed["generation"]
 
 
 @pytest.mark.anyio

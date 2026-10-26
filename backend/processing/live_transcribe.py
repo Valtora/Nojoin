@@ -35,10 +35,10 @@ from backend.processing.live_audio_buffer import (
     _analyze_live_source_channels,
     _build_live_combined_buffer,
     _build_live_source_channel_evidence,
-    _carry_over_live_buffer,
     _expand_audio_channels,
     _mix_live_audio_channels,
     _read_live_audio_channels,
+    stage_live_audio,
 )
 from backend.processing.live_audio_buffer import (
     LIVE_SOURCE_DOMINANCE_RATIO_THRESHOLD as LIVE_SOURCE_DOMINANCE_RATIO_THRESHOLD,
@@ -51,6 +51,9 @@ from backend.processing.live_audio_buffer import (
 )
 from backend.processing.live_audio_buffer import (
     LiveSourceChannelEvidence as LiveSourceChannelEvidence,
+)
+from backend.processing.live_audio_buffer import (
+    _carry_over_live_buffer as _carry_over_live_buffer,
 )
 from backend.processing.live_audio_buffer import (
     _coerce_float as _coerce_float,
@@ -121,6 +124,7 @@ from backend.utils.asr_config import build_asr_config_hash, get_transcription_mo
 from backend.utils.audio_windows import infer_resume_state_from_manifests
 from backend.utils.config_manager import config_manager
 from backend.utils.recording_storage import recording_upload_temp_dir
+from backend.utils.transcript_settling import capture_publication_token
 
 # Tolerance (seconds) for treating a speech region as touching the buffer end.
 TRAIL_EPS = 0.20
@@ -409,7 +413,10 @@ def _transcribe_live_regions(
     """
     import torch
 
-    from backend.processing.transcribe import transcribe_audio
+    from backend.processing.transcribe import (
+        loaded_transcription_device,
+        transcribe_audio,
+    )
 
     W = context_window_samples
     new_segments: list[dict] = []
@@ -469,6 +476,9 @@ def _transcribe_live_regions(
                 log=logger,
             ) as metric:
                 result = transcribe_audio(clip_path, config=live_config)
+                device = loaded_transcription_device(live_config)
+                if device is not None:
+                    live_config["_settling_device"] = device
                 metric["payload"]["text_chars"] = len(result.get("text") or "")
             speaker_label = "UNKNOWN"
 
@@ -604,6 +614,9 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 extra_payload={"status": getattr(recording, "status", None)},
             )
             return
+        expected_token = capture_publication_token(
+            recording, getattr(recording, "transcript", None)
+        )
     finally:
         session.close()
 
@@ -797,7 +810,6 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             live_config,
             warn_unusable=not _live_lane_has_consumed(state),
         )
-
         # --- Detect speech and classify ---
         speech = detect_speech_segments(
             combined,
@@ -855,7 +867,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         )
 
         # --- Carry over the unconsumed trailing audio and context run-up ---
-        new_abs_start = _carry_over_live_buffer(
+        with stage_live_audio(
+            live_dir=live_dir,
             buffer_path=buffer_path,
             context_path=context_path,
             combined_channels=combined_channels,
@@ -863,23 +876,32 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             cut_point=cut_point,
             prev_context_channels=prev_context_channels,
             context_window_samples=W,
-        )
-        live_run.carried_abs_start = new_abs_start
-
-        # --- Persistence: provisional utterances, manifest coverage ---
-        should_dispatch_meeting_edge = _persist_live_run(
-            recording_id=recording_id,
-            sequence=sequence,
-            run=run,
-            new_segments=new_segments,
-            state=state,
-            live_config=live_config,
-            live_config_hash=live_config_hash,
-            live_model_name=live_model_name,
-        )
+        ) as carry:
+            publication = None
+            try:
+                publication = _persist_live_run(
+                    recording_id=recording_id,
+                    sequence=sequence,
+                    run=run,
+                    new_segments=new_segments,
+                    state=state,
+                    live_config=live_config,
+                    live_config_hash=live_config_hash,
+                    live_model_name=live_model_name,
+                    expected_token=expected_token,
+                )
+            finally:
+                # Ordinary DB failures retain the prepared tail for existing
+                # recovery; stale results leave accepted audio untouched.
+                if publication is None or publication.accepted:
+                    carry.promote()
+                    live_run.carried_abs_start = carry.new_abs_start
+            new_abs_start = carry.new_abs_start
+        if not publication.accepted:
+            return
 
         # --- Diarisation dispatch (best-effort Meeting Edge refresh) ---
-        if should_dispatch_meeting_edge:
+        if publication.dispatch_meeting_edge:
             _dispatch_meeting_edge_refresh_best_effort(recording_id)
 
         # --- Advance the lane ---
@@ -928,6 +950,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         audio=combined,
                         audio_start_s=combined_abs_start,
                         next_text_start_s=new_abs_start,
+                        expected_token=expected_token,
                     )
                 )
         except Exception:  # noqa: BLE001 -- boundary: labels are best-effort

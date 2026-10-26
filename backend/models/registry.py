@@ -42,6 +42,9 @@ from backend.models import (
     user,
 )
 
+# Shared publication hooks must also run for standalone ORM/worker sessions.
+from backend.utils import transcript_publication
+
 __all__ = [
     "ai_analysis",
     "base",
@@ -64,5 +67,6 @@ __all__ = [
     "task",
     "timeline_note",
     "transcript",
+    "transcript_publication",
     "user",
 ]

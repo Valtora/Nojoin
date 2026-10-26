@@ -2,6 +2,7 @@
 # logic lives in backend/processing/engines/whisper_engine.py.
 
 import logging
+from typing import Literal
 
 from ..utils.config_manager import config_manager
 from ..utils.transcription_models import engine_has_native_word_timestamps
@@ -14,6 +15,13 @@ from .engines.errors import (
 logger = logging.getLogger(__name__)
 
 _ENGINE_REGISTRY = {}  # name -> TranscriptionEngine instance
+
+
+def loaded_transcription_device(config: dict) -> Literal["cpu", "cuda"] | None:
+    """Read actual cached ASR placement without creating or loading an engine."""
+    engine = _ENGINE_REGISTRY.get(config.get("transcription_backend", "whisper"))
+    loaded_device = getattr(engine, "loaded_device", None)
+    return loaded_device(config) if loaded_device is not None else None
 
 
 def _get_engine(name: str):

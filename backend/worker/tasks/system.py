@@ -407,6 +407,8 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
 
     # 1. Rebuild the canonical utterances from the restored transcript projection. The
     #    projection carries the manual edit flags, so hand corrections survive this.
+    previous_restore = session.info.get("restoring_transcripts")
+    session.info["restoring_transcripts"] = True
     try:
         ensure_canonical_backfill(session, recording_id)
         session.commit()
@@ -415,6 +417,11 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
         logger.error(
             "Canonical backfill failed for restored recording %s: %s", recording_id, e
         )
+    finally:
+        if previous_restore is None:
+            session.info.pop("restoring_transcripts", None)
+        else:
+            session.info["restoring_transcripts"] = previous_restore
 
     # 2. Rebuild the RAG index for the transcript and every attached document.
     # Re-index, do not re-parse: document_pages is archived, so the parsed text

@@ -1,7 +1,11 @@
 """Audio buffering and source-channel evidence for live transcription."""
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from backend.processing.browser_live_audio import (
@@ -19,6 +23,52 @@ LIVE_SAMPLE_RATE = BROWSER_LIVE_SAMPLE_RATE_HZ
 LIVE_SOURCE_DOMINANT_SHARE_THRESHOLD = 0.65
 LIVE_SOURCE_DOMINANCE_RATIO_THRESHOLD = 1.5
 LIVE_SOURCE_OVERLAP_SHARE_THRESHOLD = 0.25
+
+
+@dataclass(frozen=True)
+class StagedLiveAudio:
+    """Carry files prepared without modifying the accepted episode's audio."""
+
+    directory: Path
+    buffer_path: str
+    context_path: str
+    new_abs_start: float
+
+    def promote(self) -> None:
+        """Install prepared files, including the deletion of empty carry audio."""
+        for destination in (self.buffer_path, self.context_path):
+            staged = self.directory / Path(destination).name
+            if staged.exists():
+                os.replace(staged, destination)
+            else:
+                Path(destination).unlink(missing_ok=True)
+
+
+@contextmanager
+def stage_live_audio(
+    *,
+    live_dir: Path,
+    buffer_path: str,
+    context_path: str,
+    combined_channels: Any,
+    combined_abs_start: float,
+    cut_point: float,
+    prev_context_channels: Any,
+    context_window_samples: int,
+) -> Iterator[StagedLiveAudio]:
+    """Prepare carry audio before publication; rejected work discards the files."""
+    with TemporaryDirectory(dir=live_dir, prefix=".carry-") as directory:
+        staged = Path(directory)
+        new_abs_start = _carry_over_live_buffer(
+            buffer_path=str(staged / Path(buffer_path).name),
+            context_path=str(staged / Path(context_path).name),
+            combined_channels=combined_channels,
+            combined_abs_start=combined_abs_start,
+            cut_point=cut_point,
+            prev_context_channels=prev_context_channels,
+            context_window_samples=context_window_samples,
+        )
+        yield StagedLiveAudio(staged, buffer_path, context_path, new_abs_start)
 
 
 @dataclass(frozen=True)

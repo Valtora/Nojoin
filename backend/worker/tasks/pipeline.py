@@ -320,7 +320,10 @@ def _persist_final_transcript(
     session = ctx.session
 
     transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording.id)
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).first()
 
     full_text = transcription_result.get("text", "")

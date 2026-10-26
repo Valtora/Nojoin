@@ -12,6 +12,12 @@ def _build_projection_segment(
     overlap_labels: list[str],
 ) -> dict[str, Any]:
     segment = dict(source_segment)
+    # Public compatibility saves omit private evidence. The canonical row is
+    # authoritative, including when a new outcome has cleared older evidence.
+    if utterance.confidence_payload is not None:
+        segment["confidence_payload"] = dict(utterance.confidence_payload)
+    else:
+        segment.pop("confidence_payload", None)
     segment.update(
         {
             "id": utterance.public_id,

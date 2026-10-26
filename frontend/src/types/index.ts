@@ -489,6 +489,7 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
 
 export interface Transcript extends BaseDBModel {
   recording_id: RecordingId;
+  change_sequence?: number;
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;

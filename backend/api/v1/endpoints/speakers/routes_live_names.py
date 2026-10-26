@@ -7,7 +7,7 @@ when the recording is processed. As a rename does, a name that is exactly a
 person's in People links that person; nothing creates one.
 
 Names are taken only while the capture runs or is paused. The check holds the
-recording's row lock until the event commits: a stop that has not committed
+transcript's row lock until the event commits: a stop that has not committed
 yet waits for the name, which the final pass then reads, and a name sent while
 a stop is committing waits for it and is refused, rather than written after
 the final pass has read the events.
@@ -31,6 +31,10 @@ from backend.utils.speaker_names.live import (
     SURFACE_LIVE,
     live_speaker_names,
     record_live_speaker_name,
+)
+from backend.utils.transcript_settling import (
+    load_capture_publication,
+    publication_is_current,
 )
 
 from .helpers import _get_owned_recording
@@ -81,10 +85,10 @@ async def name_live_speaker(
         raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)
 
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    # FOR NO KEY UPDATE, as the live label step takes it: a stop's status
-    # change waits for it, an insert that references the recording does not.
-    await db.refresh(recording, with_for_update={"key_share": True})
-    if recording.status not in NAMING_STATUSES:
+    transcript, recording = await db.run_sync(
+        lambda session: load_capture_publication(session, recording.id)
+    )
+    if not publication_is_current(recording, transcript, None):
         raise HTTPException(status_code=409, detail=NAMING_CLOSED_DETAIL)
 
     person_id = (

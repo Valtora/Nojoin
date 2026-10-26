@@ -138,6 +138,8 @@ CREATE TABLE recordings (
 
 TRANSCRIPTS_SCHEMA = """
 CREATE TABLE transcripts (
+    change_sequence BIGINT NOT NULL DEFAULT 0,
+    settling_state JSON,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -801,22 +803,22 @@ def test_detect_speech_segments_device_cuda_migration_failure_fallback(
 
 class _FakeAudioStore:
     def __init__(self):
-        self._audio_by_path: dict[str, object] = {}
+        self._audio_by_file: dict[int, object] = {}
 
     def save_audio(self, path: str, tensor, sampling_rate: int = 16000) -> None:
 
         normalized = tensor.detach().clone()
         if normalized.ndim > 1:
             normalized = normalized.squeeze(0)
-        self._audio_by_path[str(path)] = normalized
         file_path = Path(path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"audio")
+        self._audio_by_file[file_path.stat().st_ino] = normalized
 
     def read_audio(
         self, path: str, sampling_rate: int = 16000, preserve_channels: bool = False
     ):
-        tensor = self._audio_by_path.get(str(path))
+        tensor = self._audio_by_file.get(Path(path).stat().st_ino)
         if tensor is None:
             raise FileNotFoundError(path)
         cloned = tensor.detach().clone()
@@ -1533,7 +1535,7 @@ def test_live_entry_guard_accepts_paused_recording_tail(monkeypatch, tmp_path):
 
 def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_path):
     """finalize() landing mid-run (UPLOADING at entry, PROCESSING at the DB
-    write) skips the provisional write but still advances the lane cleanly."""
+    write) rejects the result without advancing the obsolete lane."""
     from backend.models.recording import RecordingStatus
     from backend.processing import live_transcribe as lt
 
@@ -1571,8 +1573,8 @@ def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_pat
     _run_live_task(monkeypatch, 14, 0, session)
 
     assert transcript.segments == []
-    # The run completed normally; only the DB write was guarded.
-    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 1
+    # Rejected inference must not overwrite the accepted episode's checkpoint.
+    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 0
 
 
 def test_live_failure_path_records_recoverable_outcome(monkeypatch, tmp_path):
@@ -2850,7 +2852,8 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
         ).one()
 
     assert recording_row[0] == "CANCELLED"
-    assert recording_row[1] == len(b"joined-audio")
+    # A rejected preparation publishes no audio metadata to the cancelled row.
+    assert recording_row[1] is None
     assert recording_row[2] is None
 
 
@@ -3253,6 +3256,68 @@ def test_live_failed_run_keeps_later_timestamps_correct(monkeypatch, tmp_path):
     # Run 3 got its 1 s region alone: no stale buffer, and no run-up, since the
     # failed run's audio no longer precedes it.
     assert clip_samples[1] == lt.LIVE_SAMPLE_RATE
+
+
+def test_stale_epoch_keeps_carried_audio_and_retry_timestamps(monkeypatch, tmp_path):
+    """A takeover rejects inference without moving its accepted carry or context."""
+    import torch
+
+    from backend.processing import live_transcribe as lt
+
+    sessions = []
+
+    class EpochSession(_FakeSession):
+        def __init__(self, recording):
+            super().__init__(recording)
+            recording.capture_epoch = 0
+            sessions.append(self)
+
+    transcript, temp_dir, run_chunk, _ = _three_chunk_lane(
+        monkeypatch, tmp_path, 34, session_cls=EpochSession
+    )
+    run_chunk(0)
+    live_dir = temp_dir / "live"
+    before_state = lt.read_live_state(live_dir)
+    before_buffer = lt._read_live_audio_channels(str(live_dir / "buffer.wav"))
+    before_context = lt._read_live_audio_channels(str(live_dir / "context.wav"))
+    assert before_buffer.shape[-1] == lt.LIVE_SAMPLE_RATE
+    persist = lt._persist_live_run
+    superseded = False
+
+    def resume_before_publication(**kwargs):
+        nonlocal superseded
+        if kwargs["sequence"] == 1 and not superseded:
+            sessions[0]._recording.capture_epoch += 1
+            superseded = True
+        return persist(**kwargs)
+
+    monkeypatch.setattr(lt, "_persist_live_run", resume_before_publication)
+    run_chunk(1)
+    assert len(transcript.segments) == 1
+    assert lt.read_live_state(live_dir) == before_state
+    assert torch.equal(
+        lt._read_live_audio_channels(str(live_dir / "buffer.wav")), before_buffer
+    )
+    assert torch.equal(
+        lt._read_live_audio_channels(str(live_dir / "context.wav")), before_context
+    )
+    assert not list(live_dir.glob(".carry-*"))
+
+    run_chunk(1)
+    run_chunk(2)
+    assert [(row["start"], row["text"]) for row in transcript.segments] == [
+        (0.0, "run 1"),
+        (1.0, "run 3"),
+        (2.0, "run 4"),
+    ]
+    state = lt.read_live_state(live_dir)
+    assert state["next_expected"] == 3
+    assert state["buffer_abs_start"] == 3.0
+    assert state["buffer_len_s"] == 3.0
+    assert (
+        lt._read_live_audio_channels(str(live_dir / "buffer.wav")).shape[-1]
+        == 3 * lt.LIVE_SAMPLE_RATE
+    )
 
 
 def test_live_failure_after_carry_over_keeps_the_carried_tail(monkeypatch, tmp_path):

@@ -9,6 +9,7 @@ from .queries import (
     ensure_processing_run,
     list_active_utterances,
 )
+from .scope import _lock_active_lines
 from .segmentation import *
 from .speaker import *
 
@@ -69,10 +70,14 @@ def finalize_utterances_from_segments(
     trigger_source: str = "system",
     idempotency_key: str | None = None,
 ) -> list[TranscriptUtterance]:
-    transcript = _load_transcript(session, recording_id)
+    transcript = _load_transcript(session, recording_id, lock=True)
     recording = session.get(Recording, recording_id)
     if transcript is None or recording is None:
         return []
+    active_utterances = sorted(
+        _lock_active_lines(session, recording_id),
+        key=lambda utterance: (utterance.sort_key, utterance.id),
+    )
 
     run_idempotency_key = idempotency_key or _processing_run_idempotency_key(
         run_kind=ProcessingRunKind.FINALIZE,
@@ -109,7 +114,6 @@ def finalize_utterances_from_segments(
         recording_id,
         source_run_id=processing_run.id,
     )
-    active_utterances = list_active_utterances(session, recording_id)
     exact_matches: dict[tuple[int, int], list[TranscriptUtterance]] = defaultdict(list)
     for utterance in active_utterances:
         exact_matches[(utterance.start_ms, utterance.end_ms)].append(utterance)

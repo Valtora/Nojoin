@@ -15,7 +15,7 @@ from __future__ import annotations
 import fcntl
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +28,18 @@ from backend.utils.canonical_pipeline.live_labels import (
     apply_live_speaker_labels,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.transcript_settling import (
+    CapturePublicationToken,
+    load_capture_publication,
+    publication_is_current,
+)
 
+from .checkpoint import (
+    accept_checkpoint,
+    load_checkpoint,
+    mirror_checkpoint,
+    new_checkpoint_filename,
+)
 from .engine import FeedResult, LiveLabelConfig, LiveLabelEngine, ModelFn
 from .files import (
     BANK_FILENAME,
@@ -41,7 +52,7 @@ from .hybrid_execution import feed_capture
 from .hybrid_lines import prepare_label_line
 from .hybrid_runtime import bind_capture, has_label_history, start_capture
 from .hybrid_source import update_source_cursor
-from .hybrid_state import load_hybrid, save_hybrid
+from .hybrid_state import save_hybrid
 from .lines import LabelTimeline
 from .setting import live_speaker_labels_requested
 from .state import LiveLabelStateError, save_engine
@@ -92,6 +103,7 @@ class LiveLabelRun:
     audio: Any
     audio_start_s: float
     next_text_start_s: float
+    expected_token: CapturePublicationToken | None = None
 
 
 def _load_model(device: str, config: LiveLabelConfig) -> ModelFn:
@@ -100,35 +112,37 @@ def _load_model(device: str, config: LiveLabelConfig) -> ModelFn:
     return LiveLabelModel(device, config)
 
 
-def _recording_in_flight(session, recording_id: int, *, lock: bool = False) -> bool:
-    from backend.models.recording import Recording, RecordingStatus
-
-    if lock:
-        # FOR NO KEY UPDATE: blocks a status change, not an insert that
-        # references the recording (an audio chunk, an utterance event).
-        recording = session.get(
-            Recording, recording_id, with_for_update={"key_share": True}
-        )
-    else:
-        recording = session.get(Recording, recording_id)
-    return recording is not None and recording.status in {
-        RecordingStatus.UPLOADING,
-        RecordingStatus.PAUSED,
-    }
+def _recording_in_flight(
+    session: Any,
+    recording_id: int,
+    *,
+    lock: bool = False,
+    expected_token: CapturePublicationToken | None = None,
+) -> bool:
+    transcript, recording = load_capture_publication(session, recording_id, lock=lock)
+    return publication_is_current(recording, transcript, expected_token)
 
 
-def _still_capturing(recording_id: int) -> bool:
+def _still_capturing(
+    recording_id: int, expected_token: CapturePublicationToken | None = None
+) -> bool:
     from backend.core.db import get_sync_session
 
     session = get_sync_session()
     try:
-        return _recording_in_flight(session, recording_id)
+        return _recording_in_flight(
+            session, recording_id, expected_token=expected_token
+        )
     finally:
         session.close()
 
 
 def _write_labels(
-    recording_id: int, engine: LiveLabelEngine | HybridLiveState
+    recording_id: int,
+    engine: LiveLabelEngine | HybridLiveState,
+    expected_token: CapturePublicationToken | None = None,
+    *,
+    before_write: Callable[[], None] | None = None,
 ) -> LiveLabelWrite | None:
     """Write the labels, or return None once the capture has ended."""
     from backend.core.db import get_sync_session
@@ -142,11 +156,14 @@ def _write_labels(
     def decide(start_ms: int, end_ms: int) -> LiveLabelDecision:
         return label_line(start_ms / 1000.0, end_ms / 1000.0)
 
+    if before_write is not None:
+        before_write()
     session = get_sync_session()
     try:
-        # Locked until the labels commit: finalize's status change waits, so no
-        # label lands after the capture has ended.
-        if not _recording_in_flight(session, recording_id, lock=True):
+        # Lifecycle changes share Transcript; Recording stays available to uploads.
+        if not _recording_in_flight(
+            session, recording_id, lock=True, expected_token=expected_token
+        ):
             return None
         write = apply_live_speaker_labels(
             session,
@@ -164,6 +181,8 @@ def _save(
     run: LiveLabelRun,
     engine: LiveLabelEngine | HybridLiveState,
     write: LiveLabelWrite | None,
+    *,
+    filename: str | None = None,
 ) -> None:
     """Save the engine; after a write, also advance the settled lines and prune."""
     if write is not None:
@@ -175,14 +194,17 @@ def _save(
         )
         engine.prune_pieces(open_from_s - PRUNE_MARGIN_S)
     if isinstance(engine, HybridLiveState):
-        save_hybrid(run.live_dir, engine)
+        if filename is None:
+            save_hybrid(run.live_dir, engine)
+        else:
+            save_hybrid(run.live_dir, engine, filename=filename)
     else:
         save_engine(run.live_dir, engine)
 
 
 def _load_or_disable(run: LiveLabelRun, device: str) -> HybridLiveState | None:
     try:
-        engine = load_hybrid(run.live_dir, CONFIG, recording_id=run.recording_id)
+        engine = load_checkpoint(run.live_dir, CONFIG, recording_id=run.recording_id)
         if engine is None and (
             (run.live_dir / BANK_FILENAME).exists()
             or has_label_history(run.recording_id)
@@ -267,10 +289,10 @@ def run_live_speaker_labels(run: LiveLabelRun) -> None:
     device = live_speaker_labels_device()
     if device is None or (run.live_dir / DISABLED_FILENAME).exists():
         return
-    if not _still_capturing(run.recording_id):
+    if not _run_is_current(run):
         # Queued behind finalize: no model pass, and no lock file made; any
         # state still here goes.
-        remove_live_label_state(run.live_dir)
+        _remove_ended_run_state(run)
         return
     with _recording_lock(run.live_dir) as held:
         if held:
@@ -286,51 +308,93 @@ def run_live_speaker_labels(run: LiveLabelRun) -> None:
     )
 
 
+def _run_is_current(run: LiveLabelRun) -> bool:
+    if run.expected_token is None:
+        return _still_capturing(run.recording_id)
+    return _still_capturing(run.recording_id, run.expected_token)
+
+
+def _remove_ended_run_state(run: LiveLabelRun) -> None:
+    if run.expected_token is None or not _still_capturing(run.recording_id):
+        remove_live_label_state(run.live_dir)
+
+
+def _publish_run_labels(
+    run: LiveLabelRun, engine: HybridLiveState
+) -> LiveLabelWrite | None:
+    def retain_evidence() -> None:
+        _checkpoint_labels(run, engine)
+
+    return _write_labels(
+        run.recording_id, engine, run.expected_token, before_write=retain_evidence
+    )
+
+
+class _ObsoleteLabelRun(RuntimeError):
+    """The run's episode ended while inference was outside publication."""
+
+
+def _checkpoint_labels(
+    run: LiveLabelRun, engine: HybridLiveState, write: LiveLabelWrite | None = None
+) -> None:
+    """Prepare durable evidence, then accept its reference under Transcript."""
+    from backend.core.db import get_sync_session
+
+    filename = new_checkpoint_filename()
+    engine.bank.publish_appends()
+    _save(run, engine, write, filename=filename)
+    session = get_sync_session()
+    try:
+        if not _recording_in_flight(
+            session, run.recording_id, lock=True, expected_token=run.expected_token
+        ):
+            raise _ObsoleteLabelRun
+        accept_checkpoint(session, run.recording_id, filename)
+        session.commit()
+    finally:
+        session.close()
+    mirror_checkpoint(run.live_dir, filename)
+
+
 def _label_run(run: LiveLabelRun, device: str) -> None:
     started = time.perf_counter()
     engine = _load_or_disable(run, device)
     if engine is None:
         return
     ended = False
-    consumed_saved = False
     feed: FeedResult | None = None
     write: LiveLabelWrite | None = None
     try:
+        engine.bank.stage_appends()
         # Persist the capture-frozen selection even if loading the shadow fails.
         if engine.source_sequence < 0:
-            save_hybrid(run.live_dir, engine)
-        engine, feed = feed_capture(run, engine, lambda: _load_model(device, CONFIG))
+            _checkpoint_labels(run, engine)
+        engine, feed = feed_capture(
+            run,
+            engine,
+            lambda: _load_model(device, CONFIG),
+            checkpoint=lambda current: _checkpoint_labels(run, current),
+            restore=lambda: load_checkpoint(
+                run.live_dir, CONFIG, recording_id=run.recording_id
+            ),
+        )
         update_source_cursor(engine, run)
-        # All IDs and decisions must exist on disk before a DB callback can lock
-        # a line. A crash before the DB commit replays this retained evidence.
-        save_hybrid(run.live_dir, engine)
-        consumed_saved = True
-        write = _write_labels(run.recording_id, engine)
+        # Evidence is accepted before the separate label write, which rechecks
+        # eligibility so lifecycle can advance between the two transactions.
+        write = _publish_run_labels(run, engine)
         ended = write is None
+        if not ended:
+            _checkpoint_labels(run, engine, write)
+    except _ObsoleteLabelRun:
+        ended = True
     except (FileNotFoundError, ValueError):
         if _still_capturing(run.recording_id):
             raise
         ended = True
     finally:
-        try:
-            # Saved even when the write failed: the audio is consumed, and the
-            # next run labels these lines from the saved engine.
-            ended = ended or not _still_capturing(run.recording_id)
-            if not ended and consumed_saved:
-                _save(run, engine, write)
-        except (FileNotFoundError, ValueError):
-            # Finalize removed the files under a stalled save: once the capture
-            # has ended, that is not a failure to report.
-            if _still_capturing(run.recording_id):
-                raise
-            ended = True
-        finally:
-            # The capture can end at any point up to here (finalize, or a
-            # finalize whose master cannot be built), removing the state, and
-            # no live run comes after it. Checked after the save, so this run
-            # removes what it saved; a capture ending later is finalize's.
-            ended = ended or not _still_capturing(run.recording_id)
-            if ended:
-                remove_live_label_state(run.live_dir)
+        engine.bank.discard_appends()
+        ended = ended or not _run_is_current(run)
+        if ended:
+            _remove_ended_run_state(run)
     if write is not None and feed is not None and not ended:
         _record(run, engine, feed, write, started)

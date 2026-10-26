@@ -22,6 +22,7 @@ from backend.utils.document_storage import (
 )
 from backend.utils.languages import validate_transcription_language
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
+from backend.utils.transcript_publication import lock_transcript_publications
 
 from .helpers import (
     _get_owned_calendar_event,
@@ -111,6 +112,9 @@ async def delete_recording(
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     # Locked, so a worker cannot repoint audio_path between this read and the
     # delete (keep_imported_audio_task) and leave its new file behind.
+    await db.run_sync(
+        lambda session: lock_transcript_publications(session, [recording.id])
+    )
     await db.refresh(recording, with_for_update=True)
 
     # The paths are read under the lock, and the files go once the delete has
@@ -303,6 +307,9 @@ async def permanently_delete_recording(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     # Locked for the same reason as in delete_recording.
+    await db.run_sync(
+        lambda session: lock_transcript_publications(session, [recording.id])
+    )
     await db.refresh(recording, with_for_update=True)
 
     if not recording.is_deleted:

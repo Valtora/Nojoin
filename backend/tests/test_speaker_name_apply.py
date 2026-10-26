@@ -29,6 +29,7 @@ from backend.tests.sqlite_schemas import (
     RECORDINGS_SCHEMA,
     SPEAKER_NAME_EVENTS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
+    TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
 )
 from backend.utils.meeting_intelligence import get_speakers_eligible_for_llm_renaming
@@ -68,6 +69,7 @@ def session():
             PEOPLE_TAGS_SCHEMA,
             P_TAGS_SCHEMA,
             TRANSCRIPT_UTTERANCES_SCHEMA,
+            TRANSCRIPTS_SCHEMA,
             SPEAKER_NAME_EVENTS_SCHEMA,
         ):
             connection.execute(text(schema))

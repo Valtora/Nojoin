@@ -51,14 +51,17 @@ class VadStageResult:
 
 def _complete_without_speech(session, recording: Recording) -> None:
     """Persist an empty transcript and mark the recording PROCESSED."""
+    transcript = session.exec(
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
     recording.status = RecordingStatus.PROCESSED
     recording.client_status = ClientStatus.IDLE
     recording.processing_step = "Completed (No speech detected)"
     recording.processing_completed_at = utc_now()
 
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording.id)
-    ).first()
     if not transcript:
         transcript = Transcript(recording_id=recording.id)
 

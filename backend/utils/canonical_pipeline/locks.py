@@ -30,7 +30,8 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
     is itself an audited event, so the fact that the utterance was once
     manually edited remains in the event log even after the lock is gone.
     """
-    utterance = _get_utterance(session, recording_id, utterance_public_id)
+    transcript = _load_transcript(session, recording_id, lock=True)
+    utterance = _get_utterance(session, recording_id, utterance_public_id, lock=True)
     if utterance is None:
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
@@ -68,7 +69,6 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
         resulting_revision=utterance.revision,
     )
 
-    transcript = _load_transcript(session, recording_id)
     if transcript is not None:
         _update_projection_segment_by_public_id(
             transcript,

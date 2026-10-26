@@ -25,6 +25,7 @@ DISABLED_FILENAME = "speaker_labels.off"
 LOCK_FILENAME = "speaker_labels.lock"
 # The state is written here first, then renamed over STATE_FILENAME.
 STATE_TMP_FILENAME = "speaker_labels.tmp"
+CHECKPOINT_PREFIX = "speaker_labels.checkpoint-"
 LIVE_LABEL_FILENAMES = (
     STATE_FILENAME,
     STATE_TMP_FILENAME,
@@ -36,7 +37,11 @@ LIVE_LABEL_FILENAMES = (
 
 def remove_live_label_state(live_dir: Path) -> None:
     """Delete the label state. Never raises: a leftover goes with the temp dir."""
-    for name in LIVE_LABEL_FILENAMES:
+    names = (
+        *LIVE_LABEL_FILENAMES,
+        *(path.name for path in live_dir.glob(f"{CHECKPOINT_PREFIX}*")),
+    )
+    for name in names:
         try:
             (live_dir / name).unlink(missing_ok=True)
         except OSError as exc:

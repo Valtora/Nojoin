@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from sqlalchemy import BigInteger, Column, ForeignKey, Text
+from sqlalchemy import JSON, BigInteger, Column, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship
 
@@ -17,6 +17,20 @@ class Transcript(BaseDBModel, table=True):
         sa_column=Column(
             BigInteger, ForeignKey("recordings.id", ondelete="CASCADE"), unique=True
         )
+    )
+
+    change_sequence: int = Field(
+        default=0,
+        sa_column=Column(BigInteger, nullable=False, server_default="0"),
+    )
+    settling_state: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(
+            JSON(none_as_null=True).with_variant(
+                JSONB(none_as_null=True), "postgresql"
+            ),
+            nullable=True,
+        ),
     )
 
     text: Optional[str] = None

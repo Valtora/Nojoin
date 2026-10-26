@@ -52,6 +52,7 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.utils.speaker_names.preferences import library_learns_automatically
 from backend.utils.speaker_names.review import link_voice_match
+from backend.utils.transcript_publication import lock_transcript_publications
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -63,12 +64,15 @@ from .helpers import (
     _canonical_transcript_writes_enabled,
     _carry_drift_refusals,
     _lift_drift_refusals,
-    _load_segments_for_speaker_work,
     _merge_local_speakers,
-    _persist_segments_for_speaker_work,
     _require_recordings_support_speaker_mutations,
 )
 from .router import router
+from .split_publication import (
+    publish_split_segments,
+    read_split_segments,
+    stage_split_segments,
+)
 from .split_voiceprints import (
     apply_split_to_new_person,
     apply_split_to_original,
@@ -253,6 +257,10 @@ async def merge_speakers(
         db,
         [rs.recording_id for rs in source_recording_speakers],
     )
+    await db.run_sync(
+        lock_transcript_publications,
+        [rs.recording_id for rs in source_recording_speakers],
+    )
 
     for rs in source_recording_speakers:
         # Check if target already has a speaker in this recording
@@ -348,8 +356,6 @@ async def update_global_speaker(
         existing = result.scalar_one_or_none()
         if existing and existing.id != speaker_id:
             raise HTTPException(status_code=400, detail="Speaker name already exists")
-        speaker.name = speaker_in.name
-
         # Propagate name change to RecordingSpeakers
         stmt = select(RecordingSpeaker).where(
             RecordingSpeaker.global_speaker_id == speaker_id
@@ -361,6 +367,10 @@ async def update_global_speaker(
             db,
             [rs.recording_id for rs in linked_speakers],
         )
+        await db.run_sync(
+            lock_transcript_publications, [rs.recording_id for rs in linked_speakers]
+        )
+        speaker.name = speaker_in.name
 
         for rs in linked_speakers:
             rs.name = speaker_in.name
@@ -432,7 +442,11 @@ async def delete_global_speaker(
     linked_result = await db.execute(
         select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
     )
-    for recording_speaker in linked_result.scalars().all():
+    linked_speakers = linked_result.scalars().all()
+    await db.run_sync(
+        lock_transcript_publications, [rs.recording_id for rs in linked_speakers]
+    )
+    for recording_speaker in linked_speakers:
         if not recording_speaker.local_name:
             recording_speaker.local_name = speaker.name
             db.add(recording_speaker)
@@ -642,6 +656,18 @@ async def split_speaker(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Stage voiceprints before publishing any transcript/name changes. Queries
+    # during extraction must not autoflush the staged recording-speaker rows.
+    with db.no_autoflush:
+        return await _split_speaker(speaker_id, request, db, current_user)
+
+
+async def _split_speaker(
+    speaker_id: int,
+    request: SpeakerSplitRequest,
+    db: AsyncSession,
+    current_user: User,
+) -> SpeakerSplitRead:
     """
     Split a global speaker into a new speaker based on selected audio segments.
 
@@ -707,6 +733,8 @@ async def split_speaker(
 
     new_speaker_voiceprints: list[RecordingVoiceprint] = []
     new_speaker_links: list[RecordingSpeaker] = []
+    staged_segments: dict[int, tuple[Recording, Transcript, list[dict]]] = {}
+    source_sequences: dict[int, int] = {}
 
     for recording_public_id, segments in recording_segments.items():
         rec = recordings_by_public_id.get(recording_public_id)
@@ -719,44 +747,13 @@ async def split_speaker(
         stmt = select(Transcript).where(Transcript.recording_id == rec_id)
         result = await db.execute(stmt)
         transcript = result.scalar_one_or_none()
+        if transcript is not None:
+            source_sequences[rec_id] = transcript.change_sequence
 
-        transcript_segments = await _load_segments_for_speaker_work(
-            db,
-            recording=rec,
-            transcript=transcript,
-        )
-        if transcript and transcript_segments:
-            new_trans_segments = []
-            segments_modified = False
-
-            for t_seg in transcript_segments:
-                is_selected = False
-                t_start = t_seg["start"]
-                t_end = t_seg["end"]
-
-                for sel in segments:
-                    overlap_start = max(t_start, sel.start)
-                    overlap_end = min(t_end, sel.end)
-                    overlap = max(0, overlap_end - overlap_start)
-                    duration = t_end - t_start
-
-                    if duration > 0 and (overlap / duration) > 0.5:
-                        is_selected = True
-                        break
-
-                seg_copy = dict(t_seg)
-                if is_selected:
-                    seg_copy["speaker"] = split_label
-                    segments_modified = True
-                new_trans_segments.append(seg_copy)
-
-            if segments_modified:
-                await _persist_segments_for_speaker_work(
-                    db,
-                    recording=rec,
-                    transcript=transcript,
-                    segments=new_trans_segments,
-                )
+        transcript_segments = await read_split_segments(db, rec, transcript)
+        replacement = stage_split_segments(transcript_segments, segments, split_label)
+        if transcript is not None and replacement is not None:
+            staged_segments[rec_id] = (rec, transcript, replacement)
 
         stmt = select(RecordingSpeaker).where(
             RecordingSpeaker.recording_id == rec_id,
@@ -829,10 +826,10 @@ async def split_speaker(
         valid_labels = {rs.diarization_label for rs in original_rss}
 
         remaining_seg_tuples = []
-        transcript_segments = await _load_segments_for_speaker_work(
-            db,
-            recording=rec,
-            transcript=transcript,
+        transcript_segments = (
+            staged_segments[rec_id][2]
+            if rec_id in staged_segments
+            else await read_split_segments(db, rec, transcript)
         )
         for t_seg in transcript_segments:
             if t_seg.get("speaker") in valid_labels:
@@ -893,6 +890,8 @@ async def split_speaker(
     )
     db.add(original_speaker)
 
+    await publish_split_segments(db, source_sequences, staged_segments)
+
     await db.commit()
     await db.refresh(new_speaker)
     return SpeakerSplitRead(
@@ -941,6 +940,7 @@ async def scan_for_matches(
             RecordingSpeaker.embedding != None,
             Recording.user_id == current_user.id,
         )
+        .order_by(RecordingSpeaker.recording_id, RecordingSpeaker.id)
     )
     result = await db.execute(stmt)
     candidates = result.scalars().all()

@@ -208,12 +208,12 @@ def test_prepublication_snapshot_failure_never_writes_labels(
     save = step.save_hybrid
     calls = 0
 
-    def failed_save(path: Path, engine: Any) -> None:
+    def failed_save(path: Path, engine: Any, **kwargs: Any) -> None:
         nonlocal calls
         calls += 1
         if calls == failure_at:
             raise OSError("injected snapshot failure")
-        save(path, engine)
+        save(path, engine, **kwargs)
 
     monkeypatch.setattr(step, "save_hybrid", failed_save)
     before = _rows(lane_db)
@@ -230,12 +230,12 @@ def test_failed_db_write_replays_consumed_decisions_without_duplicate_forwards(
 ) -> None:
     runtime = LaneRuntime()
     _ready(monkeypatch, runtime)
-    write = step._write_labels
+    write = step.apply_live_speaker_labels
 
     def fail_write(*args: Any, **kwargs: Any) -> None:
         raise RuntimeError("injected database failure")
 
-    monkeypatch.setattr(step, "_write_labels", fail_write)
+    monkeypatch.setattr(step, "apply_live_speaker_labels", fail_write)
     audio = speaker_audio([(0, 12, 1)], 12)
     with pytest.raises(RuntimeError, match="database failure"):
         _run(tmp_path, audio, 0.0, 0.0)
@@ -243,7 +243,7 @@ def test_failed_db_write_replays_consumed_decisions_without_duplicate_forwards(
     saved = load_hybrid(tmp_path, step.CONFIG, recording_id=RECORDING_ID)
     assert saved is not None and saved.consumed_n == len(audio)
     assert all(line["speaker"] == "UNKNOWN" for line in _rows(lane_db).values())
-    monkeypatch.setattr(step, "_write_labels", write)
+    monkeypatch.setattr(step, "apply_live_speaker_labels", write)
     _run(tmp_path, audio, 0.0, 0.0)
     assert runtime.calls == calls
     line = _rows(lane_db)["line-a"]

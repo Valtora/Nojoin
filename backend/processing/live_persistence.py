@@ -1,6 +1,7 @@
 """Database queries and provisional transcript writes for live transcription."""
 
 import logging
+from dataclasses import dataclass
 
 from sqlmodel import select
 
@@ -17,8 +18,22 @@ from backend.utils.audio_windows import (
 )
 from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
+from backend.utils.transcript_settling import (
+    CapturePublicationToken,
+    load_capture_publication,
+    publication_is_current,
+    resolve_capture_settling_policy,
+)
 
 logger = logging.getLogger("backend.processing.live_transcribe")
+
+
+@dataclass(frozen=True)
+class LivePublicationResult:
+    """Separate rejected work from accepted work that needs no follow-up."""
+
+    accepted: bool
+    dispatch_meeting_edge: bool = False
 
 
 def _load_recording_audio_window_manifests(
@@ -63,26 +78,26 @@ def _persist_live_run(
     live_config: dict,
     live_config_hash: str,
     live_model_name: str,
-) -> bool:
+    expected_token: CapturePublicationToken | None = None,
+) -> LivePublicationResult:
     """Persist provisional live utterances and manifest coverage.
 
     Re-reads recording status under a fresh session: the live↔final alignment
     invariant requires that provisional writes only land while the recording is
     still in flight (UPLOADING/PAUSED); a late status flip to a terminal/final
-    state must skip the DB write but otherwise leave the run to advance the lane.
-    Returns whether a Meeting Edge refresh should be dispatched by the caller.
+    state rejects the result without advancing the obsolete lane checkpoint.
+    Returns acceptance and whether a Meeting Edge refresh should be dispatched.
     """
     from backend.core.db import get_sync_session
-    from backend.models.recording import Recording, RecordingStatus
 
     should_dispatch_meeting_edge = False
     session = get_sync_session()
     try:
-        recording = session.get(Recording, recording_id)
-        if recording and recording.status in {
-            RecordingStatus.UPLOADING,
-            RecordingStatus.PAUSED,
-        }:
+        transcript, recording = load_capture_publication(session, recording_id)
+        if publication_is_current(recording, transcript, expected_token):
+            resolve_capture_settling_policy(
+                transcript, device=live_config.get("_settling_device")
+            )
             if new_segments:
                 use_canonical_live_writes = (
                     bool(config_manager.get("enable_canonical_transcript_writes", True))
@@ -164,7 +179,7 @@ def _persist_live_run(
                     },
                     log=logger,
                 )
+            return LivePublicationResult(True, should_dispatch_meeting_edge)
     finally:
         session.close()
-
-    return should_dispatch_meeting_edge
+    return LivePublicationResult(False)

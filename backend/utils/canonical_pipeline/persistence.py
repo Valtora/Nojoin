@@ -9,6 +9,7 @@ from .queries import (
     ensure_processing_run,
     list_active_utterances,
 )
+from .scope import _lock_active_lines
 from .segmentation import *
 from .speaker import *
 
@@ -27,10 +28,11 @@ def replace_utterances_from_segments(
     idempotency_key: str | None = None,
     keep_segment_ids: bool = False,
 ) -> list[TranscriptUtterance]:
-    transcript = _load_transcript(session, recording_id)
+    transcript = _load_transcript(session, recording_id, lock=True)
     recording = session.get(Recording, recording_id)
     if transcript is None or recording is None:
         return []
+    locked_utterances = _lock_active_lines(session, recording_id) if force else []
     # Before any write: a client edit keeping held ids is refused here.
     utterance_ids = public_ids_for_write(
         session,
@@ -77,7 +79,9 @@ def replace_utterances_from_segments(
     )
     speakers_by_id = {speaker.id: speaker for speaker in recording_speakers}
 
-    previous_utterances = list_active_utterances(session, recording_id) if force else []
+    previous_utterances = sorted(
+        locked_utterances, key=lambda utterance: (utterance.sort_key, utterance.id)
+    )
     if force:
         for utterance in previous_utterances:
             old_state = (
@@ -163,7 +167,13 @@ def replace_utterances_from_segments(
             text_confidence=_to_optional_float(segment.get("text_confidence")),
             speaker_confidence=_to_optional_float(segment.get("speaker_confidence")),
         )
-        utterance.confidence_payload = utterance_ids.lineage_for(utterance.public_id)
+        confidence_payload = segment.get("confidence_payload")
+        utterance.confidence_payload = {
+            **(
+                dict(confidence_payload) if isinstance(confidence_payload, dict) else {}
+            ),
+            **dict(utterance_ids.lineage_for(utterance.public_id) or {}),
+        } or None
         session.add(utterance)
         session.flush()
         _append_utterance_event(
@@ -227,11 +237,11 @@ def apply_compatibility_segment_replace(
     recording_id: int,
     segments: Sequence[dict[str, Any]],
 ) -> list[TranscriptUtterance]:
-    transcript = _load_transcript(session, recording_id)
+    transcript = _load_transcript(session, recording_id, lock=True)
     if transcript is None:
         return []
 
-    active_utterances = list_active_utterances(session, recording_id)
+    active_utterances = _lock_active_lines(session, recording_id)
     active_by_public_id = {
         utterance.public_id: utterance for utterance in active_utterances
     }

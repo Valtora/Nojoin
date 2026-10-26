@@ -84,7 +84,12 @@ async def update_segment_speaker(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -103,7 +108,7 @@ async def update_segment_speaker(
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
         )
-        await db.commit()
+        await db.flush()
         await db.refresh(transcript)
         if segment_index < 0 or segment_index >= len(transcript.segments):
             raise HTTPException(status_code=400, detail="Invalid segment index")
@@ -442,7 +447,12 @@ async def update_transcript_segment_text(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -461,7 +471,7 @@ async def update_transcript_segment_text(
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
         )
-        await db.commit()
+        await db.flush()
         await db.refresh(transcript)
         if segment_index < 0 or segment_index >= len(transcript.segments):
             raise HTTPException(status_code=400, detail="Invalid segment index")
@@ -547,7 +557,12 @@ async def find_and_replace(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -603,7 +618,12 @@ async def update_transcript_segments(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -619,7 +639,7 @@ async def update_transcript_segments(
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
         )
-        await db.commit()
+        await db.flush()
         await db.refresh(transcript)
 
         canonical_segments = [dict(segment) for segment in update.segments]

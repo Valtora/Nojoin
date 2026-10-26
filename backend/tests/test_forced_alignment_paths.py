@@ -41,7 +41,9 @@ def aligned_canary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
         ]
 
     monkeypatch.setattr(forced_aligner_model, "align_audio", align)
-    engine = SimpleNamespace(transcribe=lambda *_args: source)
+    engine = SimpleNamespace(
+        transcribe=lambda *_args: source, loaded_device=lambda _config: "cpu"
+    )
     monkeypatch.setattr(transcribe, "_ENGINE_REGISTRY", {"canary": engine})
     config = {"transcription_backend": "canary", "processing_device": "cpu"}
     return SimpleNamespace(path=str(path), source=source, calls=calls, config=config)
@@ -135,6 +137,7 @@ def test_real_live_lane_dispatches_canary_and_publishes_evidence(
         source_channel_labels={},
         state={},
     )
+    assert aligned_canary.config["_settling_device"] == "cpu"
     assert len(lines) == 1
     assert lines[0]["text"] == "Hello, world!"
     evidence = lines[0]["confidence_payload"]
@@ -175,7 +178,11 @@ def test_native_dispatch_never_requests_alignment(
     monkeypatch.setattr(
         transcribe,
         "_ENGINE_REGISTRY",
-        {backend: SimpleNamespace(transcribe=lambda *_args: source)},
+        {
+            backend: SimpleNamespace(
+                transcribe=lambda *_args: source, _runs_on_gpu=lambda _: False
+            )
+        },
     )
     assert (
         transcribe.transcribe_audio(
@@ -213,7 +220,11 @@ def test_native_live_lane_retains_head_repetition_and_confidence_payload(
     monkeypatch.setattr(
         transcribe,
         "_ENGINE_REGISTRY",
-        {backend: SimpleNamespace(transcribe=lambda *_args: source)},
+        {
+            backend: SimpleNamespace(
+                transcribe=lambda *_args: source, _runs_on_gpu=lambda _: False
+            )
+        },
     )
     audio = torch.full((2 * 16000,), 0.1)
     lines = live_transcribe._transcribe_live_regions(

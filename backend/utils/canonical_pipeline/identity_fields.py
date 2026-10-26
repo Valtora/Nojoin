@@ -52,7 +52,10 @@ def apply_recording_speaker_identity_fields(
     """
     # Imported lazily: speaker.py imports this module at load time, and the
     # alias helper lives there.
+    from .constants import _load_transcript
     from .speaker import ensure_recording_speaker_aliases_for_speaker
+
+    _load_transcript(session, recording_speaker.recording_id, lock=True)
 
     library_update = None
     if target_global_speaker is not None:

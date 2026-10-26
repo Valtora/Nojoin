@@ -64,21 +64,50 @@ class UnitBank:
         self.path = path
         self.dim = dim
         self.rows = rows
+        self._pending: list[np.ndarray] | None = None
         row_bytes = dim * 4
         if path.exists() and path.stat().st_size > rows * row_bytes:
             os.truncate(path, rows * row_bytes)
 
     def append(self, vector: np.ndarray) -> int:
-        with open(self.path, "ab") as handle:
-            handle.write(vector.astype(np.float32).tobytes())
+        value = vector.astype(np.float32)
+        if self._pending is None:
+            with open(self.path, "ab") as handle:
+                handle.write(value.tobytes())
+        else:
+            self._pending.append(value)
         self.rows += 1
         return self.rows - 1
 
     def read(self) -> np.ndarray:
         if self.rows == 0:
             return np.zeros((0, self.dim), np.float32)
-        data = np.fromfile(self.path, dtype=np.float32, count=self.rows * self.dim)
-        return data.reshape(self.rows, self.dim)
+        pending = self._pending or []
+        stored_rows = self.rows - len(pending)
+        stored = (
+            np.fromfile(
+                self.path, dtype=np.float32, count=stored_rows * self.dim
+            ).reshape(stored_rows, self.dim)
+            if stored_rows
+            else np.zeros((0, self.dim), np.float32)
+        )
+        return np.concatenate((stored, np.asarray(pending))) if pending else stored
+
+    def stage_appends(self) -> None:
+        """Defer only this run's new vectors until its epoch is accepted."""
+        self._pending = []
+
+    def publish_appends(self) -> None:
+        """Append accepted vectors without copying the existing bank."""
+        if self._pending:
+            with open(self.path, "ab") as handle:
+                handle.write(np.asarray(self._pending, dtype=np.float32).tobytes())
+            self._pending.clear()
+
+    def discard_appends(self) -> None:
+        """Drop rejected vectors while leaving the accepted file untouched."""
+        self.rows -= len(self._pending or [])
+        self._pending = None
 
 
 @dataclass

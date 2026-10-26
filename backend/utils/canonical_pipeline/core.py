@@ -39,7 +39,7 @@ def append_utterances_from_segments(
     model_metadata: dict[str, Any] | None = None,
     reused_live_asr: bool = False,
 ) -> list[TranscriptUtterance]:
-    transcript = _load_transcript(session, recording_id)
+    transcript = _load_transcript(session, recording_id, lock=True)
     recording = session.get(Recording, recording_id)
     if transcript is None or recording is None or not segments:
         return []
@@ -191,6 +191,7 @@ def update_utterance_text(
     expected_revision: int | None = None,
     source: str = "api",
 ) -> TranscriptUtterance:
+    transcript = _load_transcript(session, recording_id, lock=True)
     utterance = _get_utterance(session, recording_id, utterance_public_id, lock=True)
     if utterance is None:
         raise LookupError("Utterance not found")
@@ -225,7 +226,6 @@ def update_utterance_text(
         actor_user_id=actor_user_id,
     )
 
-    transcript = _load_transcript(session, recording_id)
     if transcript is not None:
         _update_projection_segment_by_public_id(
             transcript,
@@ -599,13 +599,16 @@ def refresh_transcript_projection_from_canonical(
     session,
     recording_id: int,
 ) -> list[dict[str, Any]]:
-    transcript = _load_transcript(session, recording_id)
+    transcript = _load_transcript(session, recording_id, lock=True)
     if transcript is None:
         return []
 
     # Unresolved, so an unmerge finds the overlap labels as diarised.
     projection_segments = serialize_canonical_utterances(
-        session, recording_id, resolve_merged_overlaps=False
+        session,
+        recording_id,
+        include_confidence_payload=True,
+        resolve_merged_overlaps=False,
     )
     transcript.segments = projection_segments
     transcript.text = " ".join(

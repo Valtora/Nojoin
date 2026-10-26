@@ -7,6 +7,7 @@ import os
 import threading
 import traceback
 import warnings
+from typing import Literal
 
 import numpy as np
 import soundfile
@@ -356,6 +357,16 @@ class WhisperEngine(TranscriptionEngine):
     """OpenAI Whisper transcription engine."""
 
     name = "whisper"
+
+    def loaded_device(self, config: dict) -> Literal["cpu", "cuda"] | None:
+        """Read the selected cached model's device, independently of configuration."""
+        model = _model_cache.get(config.get("whisper_model_size", "base"))
+        device = str(getattr(model, "device", "")).split(":", 1)[0]
+        if device == "cuda":
+            return "cuda"
+        if device == "cpu":
+            return "cpu"
+        return None
 
     def transcribe(self, audio_path: str, config: dict) -> dict:
         """Transcribes the given audio file using OpenAI Whisper.

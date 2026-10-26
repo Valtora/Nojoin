@@ -10,6 +10,7 @@ by hand.
 from dataclasses import dataclass
 
 from .constants import *
+from .scope import _lock_active_lines
 from .speaker import (
     _append_speaker_correction_event,
     _generic_display_aliases_for_label,
@@ -246,12 +247,10 @@ def unmerge_recording_speaker(
     lines moved. Raises ``LookupError`` for an unknown label and ``ValueError``
     when the label is not merged or has no lines left to restore.
     """
-    from .core import (
-        list_active_utterances,
-        recording_ready_for_canonical_backfill,
-    )
+    from .core import recording_ready_for_canonical_backfill
     from .startup import ensure_canonical_backfill
 
+    transcript = _load_transcript(session, recording_id, lock=True)
     recording = session.get(Recording, recording_id)
     if recording is None:
         raise LookupError("Recording not found")
@@ -276,7 +275,10 @@ def unmerge_recording_speaker(
         )
 
     survivor = _resolve_active_recording_speaker(session, restored)
-    utterances = list_active_utterances(session, recording_id)
+    utterances = sorted(
+        _lock_active_lines(session, recording_id),
+        key=lambda utterance: (utterance.sort_key, utterance.id),
+    )
     moving = _restorable_utterances(
         utterances,
         diarization_label=diarization_label,
@@ -292,7 +294,6 @@ def unmerge_recording_speaker(
         session, restored=restored, speakers=speakers, moving=moving
     )
 
-    transcript = _load_transcript(session, recording_id)
     projection_segments = [
         dict(segment)
         for segment in ((transcript.segments if transcript else None) or [])
