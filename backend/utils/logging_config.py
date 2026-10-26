@@ -135,29 +135,9 @@ class SensitiveDataFilter(logging.Filter):
 # root handlers' filters.
 URL_LOGGER_NAMES = ("uvicorn.access", "uvicorn.error")
 
-# The screen study's per-recording routes (#653). Frames arrive about once a
-# second, and the study logs one line per capture rather than one per frame,
-# so those requests are left out of the access log. The availability check is
-# kept. nginx/access-log.conf matches the same paths.
-SPEAKER_FRAME_PATH = re.compile(r"/recordings/[^/?]+/speaker-frames(?:[/?]|$)")
-
-
-class SpeakerFrameAccessFilter(logging.Filter):
-    """Drop uvicorn's access line for a screen study frame request."""
-
-    def filter(self, record):
-        args = record.args
-        if isinstance(args, tuple) and len(args) >= 3:
-            path = args[2]
-            if isinstance(path, str) and SPEAKER_FRAME_PATH.search(
-                path.split("?", 1)[0]
-            ):
-                return False
-        return True
-
 
 def install_log_redaction():
-    """Mask secrets in the request URLs uvicorn logs, and leave out frame uploads.
+    """Mask secrets in the request URLs uvicorn logs.
 
     Idempotent. The API calls it at import, and setup_logging calls it for the
     workers. A later logging.config.dictConfig keeps logger filters, so the
@@ -167,9 +147,6 @@ def install_log_redaction():
         target = logging.getLogger(name)
         if not any(isinstance(f, SensitiveDataFilter) for f in target.filters):
             target.addFilter(SensitiveDataFilter())
-    access = logging.getLogger("uvicorn.access")
-    if not any(isinstance(f, SpeakerFrameAccessFilter) for f in access.filters):
-        access.addFilter(SpeakerFrameAccessFilter())
 
 
 def setup_logging(log_level=None):

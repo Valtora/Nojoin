@@ -29,29 +29,12 @@ export interface RecorderStallInfo {
   abandonedSegment: boolean;
 }
 
-/**
- * A point on the recording's own clock: `offsetMs` into the audio segment
- * numbered `sequence`. The server places it at that segment's start plus the
- * offset, the transcript's clock, so pauses and upload delays never move it.
- */
-export interface AudioPosition {
-  sequence: number;
-  offsetMs: number;
-}
-
 export interface CreateBrowserRecorderOptions {
   source: PcmSource;
   startSequence?: number;
   onChunk: (chunk: RecordedChunk) => void | Promise<void>;
   onError?: (error: Error) => void;
   onStall?: (info: RecorderStallInfo) => void;
-  /**
-   * Called each time `audioTickSeconds` more of audio has been recorded, with
-   * where the recording has reached. Nothing ticks while paused. The screen
-   * study times its frames by it (#653).
-   */
-  onAudioTick?: (position: AudioPosition) => void;
-  audioTickSeconds?: number;
   segmentSeconds?: number;
   outputSampleRate?: number;
   stallTimeoutMs?: number;
@@ -111,12 +94,6 @@ export class BrowserRecorder {
 
   private stallTimerId: ReturnType<typeof setInterval> | null = null;
 
-  private readonly onAudioTick?: CreateBrowserRecorderOptions["onAudioTick"];
-
-  private readonly framesPerTick: number;
-
-  private framesSinceTick = 0;
-
   constructor(options: CreateBrowserRecorderOptions) {
     this.source = options.source;
     this.onChunk = options.onChunk;
@@ -130,11 +107,6 @@ export class BrowserRecorder {
     this.now = options.now ?? (() => Date.now());
     this.encode = options.encode ?? encodeFlac;
     this.nextSequence = options.startSequence ?? 0;
-    this.onAudioTick = options.onAudioTick;
-    this.framesPerTick = Math.max(
-      1,
-      Math.round((options.audioTickSeconds ?? 1) * this.outputSampleRate),
-    );
   }
 
   get state() {
@@ -204,7 +176,6 @@ export class BrowserRecorder {
       segmenter: new PcmSegmenter(this.framesPerSegment, this.source.channelCount),
     };
     this.stateValue = "recording";
-    this.framesSinceTick = 0;
     // The paused interval is not a stall, and a stale marker would trip the
     // watchdog on its first tick.
     this.lastAudioAt = this.now();
@@ -220,36 +191,7 @@ export class BrowserRecorder {
     for (const segment of this.chain.segmenter.push(resampled)) {
       this.emitSegment(segment);
     }
-    this.advanceAudioTick(resampled[0]?.length ?? 0);
   };
-
-  /**
-   * Ticks once per `audioTickSeconds` of recorded audio, after the block's
-   * segments are out, so the position names the segment still filling and how
-   * far into it the audio has reached.
-   */
-  private advanceAudioTick(frames: number) {
-    if (!this.onAudioTick || !this.chain) {
-      return;
-    }
-    this.framesSinceTick += frames;
-    if (this.framesSinceTick < this.framesPerTick) {
-      return;
-    }
-    this.framesSinceTick %= this.framesPerTick;
-    const position = {
-      sequence: this.nextSequence,
-      offsetMs: Math.floor(
-        (this.chain.segmenter.bufferedFrames * 1_000) / this.outputSampleRate,
-      ),
-    };
-    try {
-      this.onAudioTick(position);
-    } catch (error: unknown) {
-      // A listener's failure must never reach the audio path.
-      console.warn("[capture] audio tick listener failed", error);
-    }
-  }
 
   /** Drains the resampler and emits what is left, then drops the chain. */
   private finishChain(emitTail: boolean) {

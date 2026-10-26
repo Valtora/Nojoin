@@ -91,8 +91,6 @@ export function useCapture() {
     updateSettings: controller.updateSettings,
     dismissCoverageWarning: controller.dismissCoverageWarning,
     displayVideoTrack: controller.displayVideoTrack,
-    stopScreenStudy: controller.stopScreenStudy,
-    deleteScreenStudyFrames: controller.deleteScreenStudyFrames,
     status: state.status,
     levels: state.levels,
     error: state.error,
