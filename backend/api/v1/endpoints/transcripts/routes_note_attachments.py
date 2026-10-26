@@ -9,8 +9,9 @@ switch either way marks notes already written as stale. Deleting the note
 deletes the file (``routes_timeline_notes``).
 
 Removing the file (#734) is one request, so the file and what becomes of its
-note are decided in one transaction: a capture nobody captioned goes with its
-file (``note_goes_with_its_file``), and any other note stays as a text note,
+note are decided in one transaction: a note whose text is still the one its
+file gave it, "Screen capture" or the file's name, goes with its file
+(``note_goes_with_its_file``), and any other note stays as a text note,
 fenced (``TimelineNote.file_removed``) so that an upload still on its way for
 it cannot bring the file back.
 """
@@ -220,9 +221,10 @@ async def remove_file_from_note(
 ):
     """Remove a note's file, and the note with it if nobody captioned it.
 
-    A capture's note whose text is still only "Screen capture" is deleted, as
-    the note's own delete does, leaving its tombstone; the answer's ``note`` is
-    then null. Any other note stays without its file and takes no other. A
+    A capture's point note whose text is still only "Screen capture", or a
+    note whose text is still only the file's name, is deleted as the note's
+    own delete does, leaving its tombstone; the answer's ``note`` is then
+    null. Any other note stays without its file and takes no other. A
     file switched into the notes marks notes already written as stale, as
     switching it off does. A note that is gone is the 404 or 410 its delete
     would give, and one with no file a 404.
@@ -243,7 +245,7 @@ async def remove_file_from_note(
     if document is None:
         await db.rollback()
         raise HTTPException(status_code=404, detail=NO_ATTACHMENT_DETAIL)
-    if note_goes_with_its_file(note):
+    if note_goes_with_its_file(note, document.title):
         await _delete_note_and_its_file(
             db, note, write_token=None, edge_enabled=edge_enabled
         )

@@ -55,25 +55,35 @@ export const noteFileTimeMs = (note: Pick<TimelineNote, "kind" | "anchor_ms" | "
       ? (note.start_ms ?? 0)
       : null;
 
-/**
- * Whether removing a note's file takes the note too: a capture nobody has
- * captioned, its text still only "Screen capture". Nojoin decides by the same
- * rule (`note_goes_with_its_file`), on the note as it is there.
- */
-export const noteGoesWithItsFile = (note: Pick<TimelineNote, "kind" | "body">): boolean =>
+type NoteText = Pick<TimelineNote, "kind" | "body">;
+
+/** A capture's point note whose text is still only "Screen capture". */
+const isUncaptionedCapture = (note: NoteText): boolean =>
   note.kind === "point" && note.body === CAPTURE_NOTE_BODY;
+
+/**
+ * Whether removing a note's file takes the note too: its text is still only
+ * what came with the file, "Screen capture" on a capture or, on any note, the
+ * file's name, which a file pasted or dropped with nothing typed gives it.
+ * Exact, case and extension included. Nojoin decides by the same rule
+ * (`note_goes_with_its_file`), on the note as it is there.
+ */
+export const noteGoesWithItsFile = (note: NoteText, file: Pick<NoteAttachment, "title">): boolean =>
+  note.body === file.title || isUncaptionedCapture(note);
 
 /** What the viewer asks before it removes a note's file, saying what else happens. */
 export const removalQuestion = (
-  note: Pick<TimelineNote, "kind" | "body">,
-  file: Pick<NoteAttachment, "use_in_notes">,
+  note: NoteText,
+  file: Pick<NoteAttachment, "title" | "use_in_notes">,
   atMs: number | null,
 ): string => {
   const place = atMs === null ? "on the meeting" : `at ${formatTimelineMs(atMs)}`;
   return [
-    noteGoesWithItsFile(note)
+    isUncaptionedCapture(note)
       ? `Remove this file and its note? The note ${place} has only the automatic text “${CAPTURE_NOTE_BODY}”, so it goes too.`
-      : `Remove this file? Its note ${place} stays, with its text.`,
+      : noteGoesWithItsFile(note, file)
+        ? `Remove this file and its note? The note ${place} has only the file's name as its text, so it goes too.`
+        : `Remove this file? Its note ${place} stays, with its text.`,
     file.use_in_notes
       ? "The file is used in notes, so notes already written are marked to regenerate."
       : null,
@@ -294,7 +304,7 @@ function NoteFileViewer({
   if (!note || !file) return <Modal open={false} onClose={onClose}>{null}</Modal>;
   const atMs = noteFileTimeMs(note);
   const confirming = confirmingId === file.id;
-  const noteGoes = noteGoesWithItsFile(note);
+  const noteGoes = noteGoesWithItsFile(note, file);
 
   const close = () => {
     setConfirmingId(null);

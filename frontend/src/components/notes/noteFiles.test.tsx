@@ -20,7 +20,9 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 const { default: CapturesGallery } = await import("./CapturesGallery");
-const { NoteFile, NoteFilesProvider, useOpenNoteFile } = await import("./NoteFiles");
+const { NoteFile, NoteFilesProvider, removalQuestion, useOpenNoteFile } = await import(
+  "./NoteFiles"
+);
 const { default: RecordingUnsavedNotes } = await import("./RecordingUnsavedNotes");
 
 const RECORDING = "rec-1";
@@ -281,6 +283,35 @@ describe("a note's file", () => {
 
     await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(lastNotice()).toBe("File and note removed.");
+  });
+
+  it("says a note whose text is still its file's name goes with it", async () => {
+    const named = { ...note("named", 65_000, file()), body: "screen-capture.png" };
+    const viewer = await openViewer(named);
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove" }));
+
+    expect(
+      within(viewer).getByRole("group", {
+        name: "Remove this file and its note? The note at 01:05 has only the file's name as its text, so it goes too. This cannot be undone.",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove file and note" }));
+
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(lastNotice()).toBe("File and note removed.");
+  });
+
+  it.each([
+    ["Q3 Budget.XLSX", "head", "Remove this file and its note? The note on the meeting has only the file's name as its text, so it goes too."],
+    ["q3 budget.xlsx", "head", "Remove this file? Its note on the meeting stays, with its text."],
+    ["Q3 Budget", "head", "Remove this file? Its note on the meeting stays, with its text."],
+    ["Q3 Budget.XLSX, for Friday", "head", "Remove this file? Its note on the meeting stays, with its text."],
+    ["Screen capture", "head", "Remove this file? Its note on the meeting stays, with its text."],
+  ] as const)("asks about a note reading %j by the exact file name", (body, kind, question) => {
+    expect(removalQuestion({ kind, body }, { title: "Q3 Budget.XLSX", use_in_notes: false }, null)).toBe(
+      `${question} This cannot be undone.`,
+    );
   });
 
   it("counts a file already gone as removed, and keeps the viewer on any other failure", async () => {

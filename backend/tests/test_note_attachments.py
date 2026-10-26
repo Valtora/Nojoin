@@ -351,6 +351,79 @@ async def test_only_a_capture_nobody_captioned_goes_with_its_file(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
+    ("payload", "note_goes"),
+    [
+        ({"body": "agenda.pdf"}, True),
+        ({"kind": "head", "anchor_ms": None, "body": "agenda.pdf"}, True),
+        ({"body": "Agenda.pdf"}, False),
+        ({"body": "agenda"}, False),
+        ({"body": "agenda.pdf, page 2"}, False),
+    ],
+    ids=["file-name", "file-name-head-note", "other-case", "no-extension", "captioned"],
+)
+async def test_a_note_whose_text_is_still_its_files_name_goes_with_it(
+    client: AsyncClient,
+    uploads: list[tuple],
+    payload: dict,
+    note_goes: bool,
+) -> None:
+    note = await _note(client, **payload)
+    await _attach(client, note["id"], name="agenda.pdf")
+
+    response = await client.delete(f"{BASE}/{note['id']}/attachment")
+
+    assert response.status_code == 200, response.text
+    assert (response.json()["note"] is None) is note_goes
+    listed = [n["id"] for n in (await client.get(BASE)).json()]
+    assert listed == ([] if note_goes else [note["id"]])
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "name", ["Q3  Budget (final).XLSX", " minutes.docx ", "image.png"]
+)
+async def test_the_name_a_file_gives_its_note_is_its_title(
+    client: AsyncClient, uploads: list[tuple], name: str
+) -> None:
+    # A file pasted or dropped with nothing typed gives its note its name as
+    # the browser has it (noteOutbox.submit). The API trims the note's text
+    # and the file's title alike and keeps case, extension and inner spaces,
+    # so the two are the same string and removing the file takes the note.
+    note = await _note(client, body=name)
+    attachment = (await _attach(client, note["id"], name=name)).json()
+    assert note["body"] == attachment["title"] == name.strip()
+
+    response = await client.delete(f"{BASE}/{note['id']}/attachment")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["note"] is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "body", "goes"),
+    [
+        ("point", "Screen capture", True),
+        ("head", "Screen capture", False),
+        ("point", "Slide 4.png", True),
+        ("selection", "Slide 4.png", True),
+        ("point", "slide 4.png", False),
+        ("point", "Slide 4", False),
+        ("point", "Slide 4.png ", False),
+        ("point", "Slide 4.png, the budget", False),
+    ],
+)
+def test_only_text_nojoin_gave_the_note_is_automatic(
+    kind: str, body: str, goes: bool
+) -> None:
+    from backend.utils.note_attachments import note_goes_with_its_file
+
+    note = TimelineNote(public_id="n", recording_id=10, kind=kind, body=body)
+
+    assert note_goes_with_its_file(note, "Slide 4.png") is goes
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
     "case",
     [
         ("Screen capture", True, True),

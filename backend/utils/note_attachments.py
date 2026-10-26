@@ -76,14 +76,19 @@ def unread_attachment_ids():
     )
 
 
-def note_goes_with_its_file(note: TimelineNote) -> bool:
+def note_goes_with_its_file(note: TimelineNote, file_title: str) -> bool:
     """Whether removing the note's file removes the note too (#734).
 
-    Only a capture nobody has captioned: a point note whose text is still
-    exactly the capture's own. No column marks a note as the camera's, so the
-    text decides. Any other note, a caption typed over the capture's text
-    included, stays as a text note.
+    Only a note whose text is still what the browser gave it with its file: a
+    capture's point note reading exactly "Screen capture", or a note of any
+    kind reading exactly the file's name, as one pasted or dropped with
+    nothing typed does. No column marks either, so the text decides. Both
+    sides of the second are the browser's file name, trimmed by the API, so
+    the comparison is exact: case, extension and spaces included. Any other
+    note, a caption typed over either text included, stays as a text note.
     """
+    if note.body == file_title:
+        return True
     return note.kind == TimelineNoteKind.POINT.value and note.body == CAPTURE_NOTE_BODY
 
 

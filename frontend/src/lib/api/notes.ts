@@ -126,9 +126,10 @@ export const setNoteFileUseInNotes = async (
 };
 
 /**
- * Removes a note's file. A capture's note whose text is still only "Screen
- * capture" goes with it (`note` is null); any other note stays without it and
- * takes no other. 404 or 410 when the file or its note is gone already.
+ * Removes a note's file. A note whose text is still only what came with the
+ * file, "Screen capture" on a capture or the file's name, goes with it (`note`
+ * is null); any other note stays without it and takes no other. 404 or 410
+ * when the file or its note is gone already.
  */
 export const removeNoteFile = async (
   recordingId: RecordingId,
