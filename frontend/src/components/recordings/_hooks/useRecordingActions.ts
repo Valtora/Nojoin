@@ -3,24 +3,39 @@
 import { useMemo } from "react";
 
 import {
-  archiveRecording,
+  batchAddTagToRecordings,
+  batchArchiveRecordings,
+  batchPermanentlyDeleteRecordings,
+  batchRemoveTagFromRecordings,
+  batchRestoreRecordings,
+  batchSoftDeleteRecordings,
   deleteRecording,
   discardRecordingCapture,
   exportAudio,
   inferSpeakers,
-  permanentlyDeleteRecording,
   renameRecording,
   reprocessRecording,
-  restoreRecording,
   setRecordingTranscriptionLanguage,
-  softDeleteRecording,
+  type BatchRecordingResult,
 } from "@/lib/api";
 import { useCapture } from "@/lib/capture/CaptureProvider";
-import { getErrorStatus } from "@/lib/errors";
+import { getErrorDetail, getErrorStatus } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import { LanguageNotice, RecordingId } from "@/types";
+
+import {
+  NOTHING_TO_UNDO,
+  RESULT_TEXT,
+  UNDO_FAILED,
+  UNDO_NOTIFICATION_MS,
+  describeResult,
+  movedBackText,
+  tagResultText,
+  untaggedText,
+  type ResultText,
+} from "../recordingListActions";
 
 /**
  * Shared action model for the per-recording actions used by the sidebar list
@@ -38,6 +53,12 @@ import { LanguageNotice, RecordingId } from "@/types";
  * post-success refresh strategy, `recording-updated` events, confirm()
  * prompts and route redirects) stay in the consumers, wired through the
  * per-call callbacks below.
+ *
+ * The list actions (archive, unarchive, softDelete, restore, permanentDelete
+ * and tag) take a list of ids, so one row and a selection go through the same
+ * batch route and say the same thing. Their notification counts what the
+ * server changed, and every one but permanentDelete offers Undo, which
+ * reverses exactly the recordings the server reported.
  */
 
 /** Stable identifiers for the recording actions exposed by this hook. */
@@ -47,9 +68,11 @@ export const RECORDING_ACTION_IDS = [
   "discard",
   "delete",
   "archive",
+  "unarchive",
   "restore",
   "softDelete",
   "permanentDelete",
+  "tag",
   "exportAudio",
   "setTranscriptionLanguage",
   "reprocessInLanguage",
@@ -63,6 +86,21 @@ export interface RecordingActionCallbacks {
   onSuccess?: () => void;
   /** Runs when the API call rejects, after the error notification is shown. */
   onError?: () => void;
+}
+
+/** Callbacks for the list actions, which act on several recordings at once. */
+export interface RecordingListActionCallbacks {
+  /** Runs once the server has answered, with what it changed. */
+  onSuccess?: (result: BatchRecordingResult) => void;
+  /** Runs when the API call rejects, after the error notification is shown. */
+  onError?: () => void;
+  /** Runs once an Undo from the notification has been answered. */
+  onUndone?: () => void;
+}
+
+export interface MoveToBinCallbacks extends RecordingListActionCallbacks {
+  /** The view the recordings leave, which an Undo returns them to. */
+  from?: "recordings" | "archived";
 }
 
 export interface RecordingActions {
@@ -84,20 +122,33 @@ export interface RecordingActions {
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
   archive: (
-    id: RecordingId,
-    callbacks?: RecordingActionCallbacks,
+    ids: RecordingId[],
+    callbacks?: RecordingListActionCallbacks,
   ) => Promise<void>;
+  /** Back from Archived to Recordings. */
+  unarchive: (
+    ids: RecordingId[],
+    callbacks?: RecordingListActionCallbacks,
+  ) => Promise<void>;
+  /** Back from the bin to Recordings, wherever the recordings were binned from. */
   restore: (
-    id: RecordingId,
-    callbacks?: RecordingActionCallbacks,
+    ids: RecordingId[],
+    callbacks?: RecordingListActionCallbacks,
   ) => Promise<void>;
+  /** Moves the recordings to the bin. */
   softDelete: (
-    id: RecordingId,
-    callbacks?: RecordingActionCallbacks,
+    ids: RecordingId[],
+    callbacks?: MoveToBinCallbacks,
   ) => Promise<void>;
+  /** Deletes for good the recordings still in the bin. Confirming is the caller's. */
   permanentDelete: (
-    id: RecordingId,
-    callbacks?: RecordingActionCallbacks,
+    ids: RecordingId[],
+    callbacks?: RecordingListActionCallbacks,
+  ) => Promise<void>;
+  tag: (
+    ids: RecordingId[],
+    tagName: string,
+    callbacks?: RecordingListActionCallbacks,
   ) => Promise<void>;
   exportAudio: (
     id: RecordingId,
@@ -133,6 +184,26 @@ export const audioExportFailureMessage = (error: unknown): string => {
   }
 };
 
+interface ListActionOptions {
+  callbacks?: RecordingListActionCallbacks;
+  /**
+   * Reverses what the server changed, given those ids, and returns what to
+   * say about it; null for an action that cannot be undone.
+   */
+  undo: ((changed: RecordingId[]) => Promise<UndoOutcome>) | null;
+}
+
+interface UndoOutcome {
+  type: "success" | "warning";
+  message: string;
+}
+
+/** What to say once an undo has been answered, from the count it reversed. */
+const undone = (count: number, say: (count: number) => string): UndoOutcome =>
+  count === 0
+    ? { type: "warning", message: NOTHING_TO_UNDO }
+    : { type: "success", message: say(count) };
+
 export function useRecordingActions(): RecordingActions {
   const { addNotification } = useNotificationStore();
   const {
@@ -143,6 +214,60 @@ export function useRecordingActions(): RecordingActions {
   } = useCapture();
 
   return useMemo<RecordingActions>(() => {
+    const runUndo = async (
+      undo: NonNullable<ListActionOptions["undo"]>,
+      changed: RecordingId[],
+      callbacks?: RecordingListActionCallbacks,
+    ) => {
+      try {
+        addNotification(await undo(changed));
+      } catch (e: unknown) {
+        console.error("Failed to undo", e);
+        addNotification({ type: "error", message: getErrorDetail(e) ?? UNDO_FAILED });
+      }
+      callbacks?.onUndone?.();
+    };
+
+    const runListAction = async (
+      ids: RecordingId[],
+      call: () => Promise<BatchRecordingResult>,
+      text: ResultText,
+      { callbacks, undo }: ListActionOptions,
+    ) => {
+      if (ids.length === 0) return;
+      let result: BatchRecordingResult;
+      try {
+        result = await call();
+      } catch (e: unknown) {
+        console.error(text.failed(ids.length), e);
+        addNotification({
+          type: "error",
+          message: getErrorDetail(e) ?? text.failed(ids.length),
+        });
+        callbacks?.onError?.();
+        return;
+      }
+      const { type, message } = describeResult(text, result);
+      const changed = result.recording_ids;
+      const undoable = undo !== null && changed.length > 0;
+      addNotification({
+        type,
+        message,
+        ...(undoable
+          ? {
+              durationMs: UNDO_NOTIFICATION_MS,
+              actions: [
+                {
+                  label: "Undo",
+                  onClick: () => void runUndo(undo, changed, callbacks),
+                },
+              ],
+            }
+          : {}),
+      });
+      callbacks?.onSuccess?.(result);
+    };
+
     return {
       rename: async (id, name, callbacks) => {
         try {
@@ -228,46 +353,69 @@ export function useRecordingActions(): RecordingActions {
         }
       },
 
-      archive: async (id, callbacks) => {
-        try {
-          await archiveRecording(id);
-          callbacks?.onSuccess?.();
-        } catch (e: unknown) {
-          console.error("Failed to archive", e);
-          callbacks?.onError?.();
-        }
-      },
+      archive: (ids, callbacks) =>
+        runListAction(ids, () => batchArchiveRecordings(ids), RESULT_TEXT.archive, {
+          callbacks,
+          undo: async (changed) =>
+            undone((await batchRestoreRecordings(changed)).count, (n) =>
+              movedBackText(n, "Recordings"),
+            ),
+        }),
 
-      restore: async (id, callbacks) => {
-        try {
-          await restoreRecording(id);
-          callbacks?.onSuccess?.();
-        } catch (e: unknown) {
-          console.error("Failed to restore", e);
-          callbacks?.onError?.();
-        }
-      },
+      unarchive: (ids, callbacks) =>
+        runListAction(ids, () => batchRestoreRecordings(ids), RESULT_TEXT.unarchive, {
+          callbacks,
+          undo: async (changed) =>
+            undone((await batchArchiveRecordings(changed)).count, (n) =>
+              movedBackText(n, "Archived"),
+            ),
+        }),
 
-      softDelete: async (id, callbacks) => {
-        try {
-          await softDeleteRecording(id);
-          callbacks?.onSuccess?.();
-        } catch (e: unknown) {
-          console.error("Failed to delete", e);
-          callbacks?.onError?.();
-        }
-      },
+      restore: (ids, callbacks) =>
+        runListAction(ids, () => batchRestoreRecordings(ids), RESULT_TEXT.restore, {
+          callbacks,
+          undo: async (changed) =>
+            undone((await batchSoftDeleteRecordings(changed)).count, (n) =>
+              movedBackText(n, "the bin"),
+            ),
+        }),
 
-      permanentDelete: async (id, callbacks) => {
-        try {
-          await permanentlyDeleteRecording(id);
-          void forgetRecordingNotes(id);
-          callbacks?.onSuccess?.();
-        } catch (e: unknown) {
-          console.error("Failed to permanently delete", e);
-          callbacks?.onError?.();
-        }
-      },
+      softDelete: (ids, callbacks) =>
+        runListAction(ids, () => batchSoftDeleteRecordings(ids), RESULT_TEXT.softDelete, {
+          callbacks,
+          undo: async (changed) => {
+            // A restore always lands in Recordings, so a recording binned
+            // from Archived is archived again to put it back where it was.
+            const restored = await batchRestoreRecordings(changed);
+            if (callbacks?.from !== "archived") {
+              return undone(restored.count, (n) => movedBackText(n, "Recordings"));
+            }
+            const archived = await batchArchiveRecordings(restored.recording_ids);
+            return undone(archived.count, (n) => movedBackText(n, "Archived"));
+          },
+        }),
+
+      permanentDelete: (ids, callbacks) =>
+        runListAction(
+          ids,
+          async () => {
+            const result = await batchPermanentlyDeleteRecordings(ids);
+            // Notes kept for them can't be saved to them any more.
+            for (const id of result.recording_ids) void forgetRecordingNotes(id);
+            return result;
+          },
+          RESULT_TEXT.permanentDelete,
+          { callbacks, undo: null },
+        ),
+
+      tag: (ids, tagName, callbacks) =>
+        runListAction(ids, () => batchAddTagToRecordings(ids, tagName), tagResultText(tagName), {
+          callbacks,
+          undo: async (changed) =>
+            undone((await batchRemoveTagFromRecordings(changed, tagName)).count, (n) =>
+              untaggedText(n, tagName),
+            ),
+        }),
 
       exportAudio: async (id, name, callbacks) => {
         try {

@@ -1,66 +1,119 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
-import {
-  MemoryNoteStore,
-  NOTE_RECORD_VERSION,
-  setNoteStoreForTests,
-} from "@/lib/notes/noteStore";
-import { noteSignedIn, resetSessionForTests } from "@/lib/session";
+import type { ViewType } from "@/lib/store";
 
 import BatchActionBar from "./BatchActionBar";
 
-const batchPermanentlyDeleteRecordings = vi.fn();
-
-vi.mock("@/lib/api", () => ({
-  batchArchiveRecordings: vi.fn(),
-  batchRestoreRecordings: vi.fn(),
-  batchSoftDeleteRecordings: vi.fn(),
-  batchPermanentlyDeleteRecordings: (...args: unknown[]) =>
-    batchPermanentlyDeleteRecordings(...args),
-  batchAddTagToRecordings: vi.fn(),
-  batchRemoveTagFromRecordings: vi.fn(),
+vi.mock("./BatchTagModal", () => ({
+  default: ({
+    isOpen,
+    onApply,
+  }: {
+    isOpen: boolean;
+    onApply: (tagName: string) => void;
+  }) =>
+    isOpen ? (
+      <button type="button" onClick={() => onApply("Board")}>
+        Apply Board
+      </button>
+    ) : null,
 }));
 
-vi.mock("@/lib/store", () => ({
-  useNavigationStore: () => ({
-    selectedRecordingIds: ["rec-1", "rec-2"],
-    clearSelection: vi.fn(),
-    currentView: "deleted",
-  }),
-}));
+const renderBar = (view: ViewType, count = 2) => {
+  const props = { onClear: vi.fn(), onAction: vi.fn(), onTag: vi.fn() };
+  render(<BatchActionBar view={view} count={count} {...props} />);
+  return props;
+};
 
-vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification: vi.fn() }),
-}));
+const bar = () => screen.getByRole("group", { name: "Selected recordings" });
 
-const kept = (recordingId: string) => ({
-  version: NOTE_RECORD_VERSION,
-  account: 1,
-  recordingId,
-  notes: [],
-  draft: { text: "Half a thought", mode: "typing", typingStartMs: null },
-  discards: [],
-});
+const actionLabels = () =>
+  within(bar())
+    .getAllByRole("button")
+    .map((button) => button.textContent)
+    .filter((label) => label !== "");
 
-describe("the batch bar in the bin", () => {
-  afterEach(() => {
-    setNoteStoreForTests(null);
-    resetSessionForTests();
+describe("BatchActionBar", () => {
+  it.each<[ViewType, string[]]>([
+    ["recordings", ["Tag", "Archive", "Move to Bin"]],
+    ["archived", ["Tag", "Unarchive", "Move to Bin"]],
+    ["deleted", ["Restore", "Delete Permanently"]],
+  ])("offers the %s view's actions as labelled buttons", (view, labels) => {
+    renderBar(view);
+
+    expect(actionLabels()).toEqual(labels);
   });
 
-  it("forgets the notes kept in the browser for the recordings it deletes for good", async () => {
-    const store = new MemoryNoteStore();
-    setNoteStoreForTests(store);
-    noteSignedIn({ username: "alice", force_password_change: false, id: 1 });
-    for (const id of ["rec-1", "rec-2", "rec-3"]) await store.put(kept(id));
-    batchPermanentlyDeleteRecordings.mockResolvedValue(undefined);
-    render(<BatchActionBar onActionComplete={vi.fn()} />);
+  it("gives moving to the bin and deleting for good different icons", () => {
+    const props = { count: 2, onClear: vi.fn(), onAction: vi.fn(), onTag: vi.fn() };
+    render(
+      <>
+        <BatchActionBar view="recordings" {...props} />
+        <BatchActionBar view="deleted" {...props} />
+      </>,
+    );
+    const iconOf = (name: string) =>
+      screen.getByRole("button", { name }).querySelector("svg")?.getAttribute("class");
 
-    fireEvent.click(screen.getByTitle("Permanently Delete"));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(iconOf("Move to Bin")).toBeTruthy();
+    expect(iconOf("Delete Permanently")).not.toBe(iconOf("Move to Bin"));
+  });
 
-    await waitFor(async () => expect(await store.recordingsOf(1)).toEqual(["rec-3"]));
-    expect(batchPermanentlyDeleteRecordings).toHaveBeenCalledWith(["rec-1", "rec-2"]);
+  it("hands the chosen action to the list", () => {
+    const { onAction } = renderBar("deleted");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Permanently" }));
+
+    expect(onAction).toHaveBeenCalledWith("permanentDelete");
+  });
+
+  it("asks for a tag before tagging", () => {
+    const { onAction, onTag } = renderBar("archived");
+
+    fireEvent.click(screen.getByRole("button", { name: "Tag" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply Board" }));
+
+    expect(onTag).toHaveBeenCalledWith("Board");
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("clears the selection from a named button or with Escape", () => {
+    const { onClear } = renderBar("recordings");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Archive" }), {
+      key: "Escape",
+    });
+
+    expect(onClear).toHaveBeenCalledTimes(2);
+  });
+
+  it("announces the count politely, and stays mounted with nothing selected", () => {
+    const { rerender } = render(
+      <BatchActionBar
+        view="recordings"
+        count={0}
+        onClear={vi.fn()}
+        onAction={vi.fn()}
+        onTag={vi.fn()}
+      />,
+    );
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("");
+    expect(screen.queryByRole("group")).not.toBeInTheDocument();
+
+    rerender(
+      <BatchActionBar
+        view="recordings"
+        count={1}
+        onClear={vi.fn()}
+        onAction={vi.fn()}
+        onTag={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status).toHaveTextContent("1 recording selected");
   });
 });

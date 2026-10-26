@@ -238,19 +238,28 @@ async def batch_add_tag(
         recording.public_id: recording for recording in recordings
     }
 
-    count = 0
-    for recording_public_id in batch.recording_ids:
+    # The ids of the recordings this request tagged, so a client can report the
+    # change and undo exactly that; the rest already had the tag or are not found.
+    requested = list(dict.fromkeys(batch.recording_ids))
+    tagged: list[str] = []
+    for recording_public_id in requested:
         recording = recordings_by_public_id.get(recording_public_id)
         if recording is None:
             continue
 
         if await link_recording_tag(db, recording.id, tag.id):
-            count += 1
+            tagged.append(recording_public_id)
 
     await db.commit()
     if created:
         await db.refresh(tag)
-    return {"ok": True, "count": count, "tag": tag}
+    return {
+        "ok": True,
+        "count": len(tagged),
+        "skipped": len(requested) - len(tagged),
+        "recording_ids": tagged,
+        "tag": tag,
+    }
 
 
 @router.post("/batch/remove")
@@ -262,28 +271,42 @@ async def batch_remove_tag(
     """
     Remove a tag from multiple recordings.
     """
+    requested = len(set(batch.recording_ids))
+    nothing_removed = {
+        "ok": True,
+        "count": 0,
+        "skipped": requested,
+        "recording_ids": [],
+    }
     tag = await find_tag_by_name(db, Tag, batch.tag_name, current_user.id)
     if not tag:
-        return {"ok": True, "count": 0}
+        return nothing_removed
 
     recordings = await get_recordings_by_public_ids(
         db,
         batch.recording_ids,
         user_id=current_user.id,
     )
-    recording_db_ids = [recording.id for recording in recordings]
-    if not recording_db_ids:
-        return {"ok": True, "count": 0}
+    public_ids = {recording.id: recording.public_id for recording in recordings}
+    if not public_ids:
+        return nothing_removed
 
     stmt = select(RecordingTag).where(
-        RecordingTag.recording_id.in_(recording_db_ids),
+        RecordingTag.recording_id.in_(list(public_ids)),
         RecordingTag.tag_id == tag.id,
     )
     result = await db.execute(stmt)
     links = result.scalars().all()
+    # A recording holds a tag once, but an older database can hold the link twice.
+    untagged = list(dict.fromkeys(public_ids[link.recording_id] for link in links))
 
     for link in links:
         await db.delete(link)
 
     await db.commit()
-    return {"ok": True, "count": len(links)}
+    return {
+        "ok": True,
+        "count": len(untagged),
+        "skipped": requested - len(untagged),
+        "recording_ids": untagged,
+    }

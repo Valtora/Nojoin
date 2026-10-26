@@ -48,10 +48,10 @@ vi.mock("@/lib/api", () => ({
   retryProcessing: vi.fn(),
   inferSpeakers: vi.fn(),
   getGlobalSpeakers: (...args: unknown[]) => getGlobalSpeakers(...args),
-  archiveRecording: vi.fn(),
-  restoreRecording: vi.fn(),
-  softDeleteRecording: vi.fn(),
-  permanentlyDeleteRecording: vi.fn(),
+  batchArchiveRecordings: vi.fn(),
+  batchRestoreRecordings: vi.fn(),
+  batchSoftDeleteRecordings: vi.fn(),
+  batchPermanentlyDeleteRecordings: vi.fn(),
   getTags: (...args: unknown[]) => getTags(...args),
   discardRecordingCapture: vi.fn(),
   getRecordingsCalendar: (...args: unknown[]) => getRecordingsCalendar(...args),
@@ -92,11 +92,12 @@ vi.mock("@/lib/store", () => ({
     selectedTagIds: [],
     toggleTagFilter: vi.fn(),
     clearTagFilters: vi.fn(),
-    selectionMode: false,
     selectedRecordingIds: [],
+    selectionAnchorId: null,
+    setRecordingSelection: vi.fn(),
     toggleRecordingSelection: vi.fn(),
-    selectAllRecordings: vi.fn(),
     clearSelection: vi.fn(),
+    pruneRecordingSelection: vi.fn(),
     recordingsSidebarWidth: 320,
     setRecordingsSidebarWidth: vi.fn(),
   }),
@@ -209,7 +210,7 @@ describe("Sidebar", () => {
       "Retry Processing",
       "Show Recording Info",
       "Archive",
-      "Delete",
+      "Move to Bin",
     ]);
   });
 
@@ -331,7 +332,9 @@ describe("Sidebar", () => {
         getRecordings.mockResolvedValue([]);
         renderList();
 
-        await screen.findByText(/^No (archived|deleted) recordings\.$/);
+        await screen.findByText(
+          view === "archived" ? "No archived recordings." : "The bin is empty.",
+        );
         expect(importButtons()).toHaveLength(0);
       },
     );

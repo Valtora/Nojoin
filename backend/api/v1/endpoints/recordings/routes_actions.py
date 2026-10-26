@@ -4,7 +4,6 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import CalendarEvent
@@ -30,6 +29,7 @@ from .helpers import (
     _recording_has_audio,
     _recording_has_proxy,
     _requeue_for_processing,
+    revoke_recording_task,
 )
 from .router import router
 
@@ -257,15 +257,15 @@ async def restore_recording(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Restore an archived or soft-deleted recording back to the main list.
+    Restore an archived or binned recording to the main list.
+
+    A recording binned from Archived comes back to the main list too, and
+    ``POST /batch/restore`` follows the same rule.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     recording.is_archived = False
-    if recording.is_deleted:
-        recording.is_deleted = False
-    else:
-        recording.is_archived = False
+    recording.is_deleted = False
 
     db.add(recording)
     await db.commit()
@@ -281,7 +281,7 @@ async def soft_delete_recording(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Soft-delete a recording. It moves to the trash/deleted view.
+    Soft-delete a recording, moving it to the bin (the Deleted view).
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
@@ -321,13 +321,7 @@ async def permanently_delete_recording(
             ),
         )
 
-    if recording.celery_task_id:
-        try:
-            recordings_module.celery_app.control.revoke(
-                recording.celery_task_id, terminate=True
-            )
-        except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
-            pass
+    await revoke_recording_task(recording)
 
     # Read under the lock and removed after the commit, as in delete_recording.
     artifacts = [(recording.id, recording.audio_path, recording.proxy_path)]

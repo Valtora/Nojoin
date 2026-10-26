@@ -453,6 +453,7 @@ PDF and Word exports draw the same charts on the server in `backend/services/exp
 ### UI Duplication Rules
 
 - **Recording actions**: rename, reprocess, archive, discard and the rest are defined once, in [useRecordingActions.ts](../frontend/src/components/recordings/_hooks/useRecordingActions.ts). The recordings rail ([Sidebar.tsx](../frontend/src/components/Sidebar.tsx)) and the live view ([RecordingStatusDisplay.tsx](../frontend/src/components/RecordingStatusDisplay.tsx)) consume that hook, the recording page takes its audio export from it, and `sharedRecordingActions.test.ts` fails if a surface defines its own.
+- **Recording list selection**: the rail's archive, unarchive, bin, restore, permanent delete and tag actions take a list of ids and go through the `/recordings/batch/*` and `/tags/batch/*` routes for one row and for a selection alike, so both say the same thing and offer the same Undo. [recordingListActions.ts](../frontend/src/components/recordings/recordingListActions.ts) holds each view's actions, their labels and icons, and the notification text; [useRecordingSelection.ts](../frontend/src/components/recordings/_hooks/useRecordingSelection.ts) holds the selection, which keeps only the rows on screen. A batch route follows its single-recording route's rules and answers with what it changed (`count`, `skipped`, `recording_ids`), never with what it was sent.
 
 ## Release Workflow and Version Detection
 

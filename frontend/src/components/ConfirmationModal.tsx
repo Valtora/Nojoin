@@ -1,5 +1,7 @@
 "use client";
 
+import type { RefObject } from "react";
+
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
 
@@ -12,6 +14,8 @@ interface ConfirmationModalProps {
   confirmText?: string;
   cancelText?: string;
   isDangerous?: boolean;
+  /** Where focus goes once the dialog has gone, when not back to its opener (Modal's returnFocus). */
+  returnFocus?: RefObject<HTMLElement | null>;
 }
 
 export default function ConfirmationModal({
@@ -23,6 +27,7 @@ export default function ConfirmationModal({
   confirmText = "Confirm",
   cancelText = "Cancel",
   isDangerous = false,
+  returnFocus,
 }: ConfirmationModalProps) {
   return (
     <Modal
@@ -30,6 +35,7 @@ export default function ConfirmationModal({
       onClose={onClose}
       title={title}
       size="sm"
+      returnFocus={returnFocus}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

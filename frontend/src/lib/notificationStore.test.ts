@@ -26,6 +26,16 @@ describe("notificationStore", () => {
     expect(active()).toHaveLength(0);
   });
 
+  it("keeps a notification with its own duration for that long", () => {
+    add({ type: "success", message: "Archived 2 recordings.", durationMs: 10000 });
+
+    vi.advanceTimersByTime(9999);
+    expect(active()).toHaveLength(1);
+
+    vi.advanceTimersByTime(1);
+    expect(active()).toHaveLength(0);
+  });
+
   it("keeps a persistent notification until it is dismissed", () => {
     const id = add({ type: "info", message: "Update available", persistent: true });
 

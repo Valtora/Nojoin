@@ -26,6 +26,7 @@ from backend.utils.time import utc_now
 from backend.utils.transcript_publication import lock_transcript_publications
 from backend.utils.transcript_settling import new_capture_settling_state
 
+from .helpers import revoke_recording_task
 from .router import router
 
 logger = logging.getLogger(__name__)
@@ -35,105 +36,133 @@ class BatchRecordingIds(BaseModel):
     recording_ids: List[str]
 
 
-@router.post("/batch/archive")
+class BatchRecordingResult(BaseModel):
+    """What a batch action did, as the server counts it.
+
+    ``count`` is the recordings the request changed, and ``recording_ids``
+    their public ids, so a client can report the change and undo exactly that.
+    ``skipped`` is the rest of the distinct ids asked for: recordings not found
+    for this user, already where the action would put them, or refused by the
+    rule the single-recording route applies.
+    """
+
+    ok: bool = True
+    count: int
+    skipped: int
+    recording_ids: List[str]
+
+
+async def _requested_recordings(
+    db: AsyncSession, batch: BatchRecordingIds, user_id: int
+) -> tuple[list[Recording], int]:
+    """The user's recordings among the ids, in request order, and how many
+    distinct ids were asked for."""
+    requested = list(dict.fromkeys(batch.recording_ids))
+    found = await recordings_module.get_recordings_by_public_ids(
+        db, requested, user_id=user_id
+    )
+    by_public_id = {recording.public_id: recording for recording in found}
+    recordings = [
+        by_public_id[public_id] for public_id in requested if public_id in by_public_id
+    ]
+    return recordings, len(requested)
+
+
+def _batch_result(changed: list[Recording], requested: int) -> BatchRecordingResult:
+    return BatchRecordingResult(
+        count=len(changed),
+        skipped=requested - len(changed),
+        recording_ids=[recording.public_id for recording in changed],
+    )
+
+
+@router.post("/batch/archive", response_model=BatchRecordingResult)
 async def batch_archive_recordings(
     batch: BatchRecordingIds,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Archive multiple recordings.
+    Archive multiple recordings. As ``POST /{id}/archive`` refuses one, a
+    recording in the bin is left where it is.
     """
-    recordings = await recordings_module.get_recordings_by_public_ids(
-        db,
-        batch.recording_ids,
-        user_id=current_user.id,
-    )
-
-    logger.info(
-        f"Batch archive request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings."
-    )
-
-    for recording in recordings:
-        if not recording.is_deleted:
-            recording.is_archived = True
-            db.add(recording)
+    recordings, requested = await _requested_recordings(db, batch, current_user.id)
+    changed = [
+        recording
+        for recording in recordings
+        if not recording.is_deleted and not recording.is_archived
+    ]
+    for recording in changed:
+        recording.is_archived = True
+        db.add(recording)
 
     await db.commit()
-    return {"ok": True, "count": len(recordings)}
+    logger.info("Batch archive: %s requested, %s archived", requested, len(changed))
+    return _batch_result(changed, requested)
 
 
-@router.post("/batch/restore")
+@router.post("/batch/restore", response_model=BatchRecordingResult)
 async def batch_restore_recordings(
     batch: BatchRecordingIds,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Restore multiple recordings from archive or trash.
+    Restore multiple archived or binned recordings to the main list, as
+    ``POST /{id}/restore`` does: one binned from Archived comes back to the main
+    list too.
     """
-    recordings = await recordings_module.get_recordings_by_public_ids(
-        db,
-        batch.recording_ids,
-        user_id=current_user.id,
-    )
-
-    logger.info(
-        f"Batch restore request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings."
-    )
-
-    for recording in recordings:
-        if recording.is_deleted:
-            recording.is_deleted = False
-        else:
-            recording.is_archived = False
+    recordings, requested = await _requested_recordings(db, batch, current_user.id)
+    changed = [
+        recording
+        for recording in recordings
+        if recording.is_deleted or recording.is_archived
+    ]
+    for recording in changed:
+        recording.is_deleted = False
+        recording.is_archived = False
         db.add(recording)
 
     await db.commit()
-    return {"ok": True, "count": len(recordings)}
+    logger.info("Batch restore: %s requested, %s restored", requested, len(changed))
+    return _batch_result(changed, requested)
 
 
-@router.post("/batch/soft-delete")
+@router.post("/batch/soft-delete", response_model=BatchRecordingResult)
 async def batch_soft_delete_recordings(
     batch: BatchRecordingIds,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Soft-delete multiple recordings.
+    Move multiple recordings to the bin.
     """
-    recordings = await recordings_module.get_recordings_by_public_ids(
-        db,
-        batch.recording_ids,
-        user_id=current_user.id,
-    )
-
-    logger.info(
-        f"Batch soft-delete request for {len(batch.recording_ids)} IDs. Found {len(recordings)} recordings."
-    )
-
-    for recording in recordings:
+    recordings, requested = await _requested_recordings(db, batch, current_user.id)
+    changed = [recording for recording in recordings if not recording.is_deleted]
+    for recording in changed:
         recording.is_deleted = True
         db.add(recording)
 
     await db.commit()
-    return {"ok": True, "count": len(recordings)}
+    logger.info("Batch bin: %s requested, %s binned", requested, len(changed))
+    return _batch_result(changed, requested)
 
 
-@router.post("/batch/permanent")
+@router.post("/batch/permanent", response_model=BatchRecordingResult)
 async def batch_permanently_delete_recordings(
     batch: BatchRecordingIds,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Permanently delete multiple recordings and their files.
+    Permanently delete multiple recordings in the bin, and their files.
+
+    The rules of ``DELETE /{id}/permanent`` hold for each: only a recording in
+    the bin is destroyed, checked under its row lock, so one restored since the
+    client listed it survives, and its Celery task is revoked first. The rest
+    are left as they are and counted as skipped.
     """
-    recordings = await recordings_module.get_recordings_by_public_ids(
-        db,
-        batch.recording_ids,
-        user_id=current_user.id,
-    )
+    recordings, requested = await _requested_recordings(db, batch, current_user.id)
 
     # Locked in id order, so two batches over the same recordings, or a batch
     # and a user deletion, take the locks in one order and cannot deadlock.
@@ -147,23 +176,31 @@ async def batch_permanently_delete_recordings(
         # Locked, as in delete_recording, so keep_imported_audio_task cannot
         # repoint audio_path between this read and the delete.
         await db.refresh(recording, with_for_update=True)
+    binned = [recording for recording in recordings if recording.is_deleted]
+
+    for recording in binned:
+        await revoke_recording_task(recording)
 
     # Read before any delete is flushed, which would cascade the rows away. The
     # files go once the delete has committed, so a failed commit keeps them.
     artifacts = [
         (recording.id, recording.audio_path, recording.proxy_path)
-        for recording in recordings
+        for recording in binned
     ]
     document_paths = await recording_document_paths(
-        db, [recording.id for recording in recordings]
+        db, [recording.id for recording in binned]
     )
-    for recording in recordings:
+    result = _batch_result(binned, requested)
+    for recording in binned:
         await db.delete(recording)
 
     await db.commit()
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
-    return {"ok": True, "count": len(recordings)}
+    logger.info(
+        "Batch permanent delete: %s requested, %s deleted", requested, len(binned)
+    )
+    return result
 
 
 @router.post("/init", response_model=RecordingInitResponse)
