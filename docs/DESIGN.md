@@ -75,7 +75,7 @@ A new preference must keep the same property: its default leaves the product exa
 without the preference.
 
 `nojoin-style` is validated by the same storage helpers as the other preferences; Default
-removes the key. The pre-paint script applies the validated style before first paint, and
+removes the key. The pre-paint script prepares the validated style before first paint, and
 `ThemeProvider` keeps the controls and root attribute in sync across tabs. Invalid or blocked
 storage falls back to Default. These choices never reach server settings; an optional style
 selected at runtime takes effect once its stylesheet is ready.
@@ -98,7 +98,10 @@ reuse one same-origin stylesheet, and returning to Default removes it immediatel
 navigation only, the link is configured with `blocking="render"` before insertion, with a temporary
 root opacity guard for browsers without dynamic render blocking. The guard uses root opacity so
 explicitly visible descendants cannot escape it. Load, cancellation and failure restore the previous
-opacity; an error or a ten-second timeout removes the failed link and lets the page render.
+opacity. A 250 ms grace period lets fast loads show the chosen style without a Default flash,
+while bounding how long a slow sheet can hide usable content. When the grace period expires,
+the loader switches to Default and releases both guards, retaining the download so the selected
+style takes effect when it arrives. An error removes the failed link and reveals Default at once.
 At runtime, the current appearance stays visible while the sheet downloads, without render blocking
 or an opacity guard. The new `data-style` is applied only on load. An error or ten-second timeout
 removes the failed link, logs a warning and keeps the previous rendered style. The saved choice
