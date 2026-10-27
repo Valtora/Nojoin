@@ -24,6 +24,8 @@ from backend.tests.live_naming_fixtures import ONE
 from backend.tests.test_live_speaker_naming_postgres import _seed
 from backend.tests.test_live_speaker_naming_postgres import sessions as sessions
 from backend.utils.canonical_pipeline import serialize_canonical_utterances
+from backend.utils.canonical_pipeline.constants import LIVE_SPEAKER_LABEL_PAYLOAD_KEY
+from backend.utils.canonical_pipeline.guards import settling_required
 
 
 @pytest.fixture
@@ -84,14 +86,16 @@ async def test_live_name_creates_only_an_explicit_owned_person_without_voiceprin
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("settling", [False, True], ids=["ordinary", "settling"])
 @pytest.mark.parametrize("refusal", ["closed", "stale", "unlocked", "missing"])
 async def test_refused_live_person_intent_creates_neither_person_nor_name(
-    sessions: Any, refusal: str
+    sessions: Any, refusal: str, settling: bool
 ) -> None:
     user_id, recording_id, public_id = await _seed(sessions)
     async with sessions() as db:
         transcript = (await db.execute(select(Transcript))).scalar_one()
-        transcript.settling_state = {"settled": True}
+        transcript.settling_state = {"settled": True} if settling else None
+        assert settling_required(transcript) is settling
         line = (
             await db.execute(
                 select(TranscriptUtterance).where(
@@ -101,12 +105,23 @@ async def test_refused_live_person_intent_creates_neither_person_nor_name(
         ).scalar_one()
         assert line.speaker_label == ONE
         line.confidence_payload = {
-            "live_text_settling": {"line_locked": refusal != "unlocked"}
+            **(line.confidence_payload or {}),
+            "live_text_settling": {"line_locked": refusal != "unlocked"},
+            LIVE_SPEAKER_LABEL_PAYLOAD_KEY: {"locked": refusal != "unlocked"},
         }
         if refusal == "closed":
             recording = await db.get(Recording, recording_id)
             recording.status = RecordingStatus.PROCESSING
         await db.commit()
+        await db.refresh(transcript)
+        await db.refresh(line)
+        assert settling_required(transcript) is settling
+        assert line.confidence_payload[LIVE_SPEAKER_LABEL_PAYLOAD_KEY]["locked"] is (
+            refusal != "unlocked"
+        )
+        assert line.confidence_payload["live_text_settling"]["line_locked"] is (
+            refusal != "unlocked"
+        )
         values = (
             {}
             if refusal == "missing"

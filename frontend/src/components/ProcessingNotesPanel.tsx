@@ -214,11 +214,15 @@ function ProcessingNotesPanel({
   // What the box holds, for the character count and the conflict buttons.
   const [draftText, setDraftText] = useState(restoredText);
   const [dirty, setDirty] = useState(restoredDirty);
+  useOnDepsChange([retainedDraft], () => {
+    if (!retainedDraft) return;
+    setDraftText(retainedDraft.text);
+    setDirty(!isSaved(retainedDraft.text, retainedDraft.lastSaved));
+  });
   useOnDepsChange([retainedDraft?.lastSaved], () => {
     if (!retainedDraft) return;
-    setDirty(!isSaved(draftText, retainedDraft.lastSaved));
     setSaveState(retainedDraft.lastSaved === null ? "error"
-      : isSaved(draftText, retainedDraft.lastSaved) ? "saved" : "idle");
+      : isSaved(retainedDraft.text, retainedDraft.lastSaved) ? "saved" : "idle");
   });
   // The box takes new text from the server only while it holds no unsaved
   // text and differs from it (the effect below); the count follows suit.
@@ -332,7 +336,13 @@ function ProcessingNotesPanel({
 
   useLayoutEffect(() => {
     if (!retainedDraft) return;
+    // The owner adopts clean polls as one text/baseline pair. Mirror that pair
+    // before blur or unmount can save, rather than advancing the baseline alone.
+    draftRef.current = retainedDraft.text;
     lastSavedRef.current = retainedDraft.lastSaved;
+    if (textareaRef.current && textareaRef.current.value !== retainedDraft.text) {
+      textareaRef.current.value = retainedDraft.text;
+    }
     lastSaveFailedRef.current = retainedDraft.lastSaved === null;
     saveStateRef.current = retainedDraft.lastSaved === null ? "error"
       : isSaved(draftRef.current, retainedDraft.lastSaved) ? "saved" : "idle";

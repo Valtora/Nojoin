@@ -308,7 +308,7 @@ const mount = (props: { disabled?: boolean; retained?: boolean } = {}) => {
       disabled={disabled}
     />
   ) : null;
-  const element = () => props.retained
+  const element = () => props.retained !== false
     ? <HeadNoteOwnerProvider recordingId={RECORDING} timelineNotes={shown}>{panel()}</HeadNoteOwnerProvider>
     : panel();
   const view = render(element());
@@ -416,6 +416,34 @@ describe("HeadNotePanel", () => {
     await view.poll();
     await view.show(true);
     expect(box()).toHaveValue("Updated while collapsed");
+  });
+
+  it.each([false, true])("keeps received B after saving A and blurring (existing note=%s)", async (existing) => {
+    if (existing) server.add("h1", "head", "Original");
+    const view = mount();
+    type("Saved A");
+    await waitForSave();
+    expect(bodies()).toEqual(["Saved A"]);
+    const { id } = server.notes[0];
+    server.edit(id, "Received B");
+    await view.poll();
+    const revision = server.notes[0].revision;
+    const writes = calls.update.mock.calls.length;
+
+    await blur();
+    expect(bodies()).toEqual(["Received B"]);
+    expect(server.notes[0].revision).toBe(revision);
+    expect(calls.update).toHaveBeenCalledTimes(writes);
+    expect(box()).toHaveValue("Received B");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await view.remount();
+    expect(box()).toHaveValue("Received B");
+
+    type("B plus my next edit");
+    await waitForSave();
+    expect(calls.update).toHaveBeenLastCalledWith(RECORDING, id,
+      expect.objectContaining({ body: "B plus my next edit", expected_revision: revision }));
+    expect(bodies()).toEqual(["B plus my next edit"]);
   });
 
   it("keeps locked conflicting text through responsive remounts and retains Use theirs", async () => {

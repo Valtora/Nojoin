@@ -10,8 +10,7 @@ vi.mock("@/components/ChatPanel", () => ({
   default: () => <div data-testid="chat-panel" />,
 }));
 
-const renderColumn = (allowChat = true) =>
-  render(
+const column = (allowChat = true) =>
     <RecordingSideColumn
       allowChat={allowChat}
       speakers={<div data-testid="speaker-panel" />}
@@ -22,8 +21,15 @@ const renderColumn = (allowChat = true) =>
       onChatPanelHeightChange={vi.fn()}
       onNotesUpdate={vi.fn()}
       onResizeDragging={vi.fn()}
-    />,
-  );
+    />;
+
+const renderColumn = (allowChat = true) => render(column(allowChat));
+
+// Match the page's conditional rail/column mounting, driven by the real store.
+function ResponsiveSideColumn({ allowChat }: { allowChat: boolean }) {
+  const collapsed = useNavigationStore((state) => state.isSpeakerPanelCollapsed);
+  return collapsed ? <RecordingSideRail allowChat={allowChat} /> : column(allowChat);
+}
 
 const tablist = () => screen.getByRole("tablist", { name: "Side panels" });
 const tab = (name: string) => within(tablist()).getByRole("tab", { name });
@@ -190,5 +196,22 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
     fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes, Captures and Meeting Edge" }));
     expect(tab("Meeting Edge")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("meeting-edge")).toBeVisible();
+  });
+
+  it.each([false, true])("focuses Meeting Edge after its rail opener is removed (Chat available=%s)", (allowChat) => {
+    useNavigationStore.setState({ isSpeakerPanelCollapsed: true, isChatPanelCollapsed: true });
+    render(<ResponsiveSideColumn allowChat={allowChat} />);
+    const opener = screen.getByRole("button", { name: "Show Meeting Edge" });
+    opener.focus();
+    expect(opener).toHaveFocus();
+    fireEvent.click(opener);
+
+    expect(opener).not.toBeInTheDocument();
+    expect(tab("Meeting Edge")).toHaveAttribute("aria-selected", "true");
+    expect(tab("Meeting Edge")).toHaveFocus();
+    expect(screen.getByTestId("meeting-edge")).toBeVisible();
+    fireEvent.keyDown(tab("Meeting Edge"), { key: "ArrowLeft" });
+    expect(tab("Captures")).toHaveFocus();
+    expect(tab("Captures")).toHaveAttribute("aria-selected", "true");
   });
 });

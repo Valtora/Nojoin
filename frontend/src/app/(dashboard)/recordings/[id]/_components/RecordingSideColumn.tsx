@@ -3,6 +3,7 @@
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import {
   ChevronDown,
   ChevronsRight,
@@ -289,8 +290,13 @@ export function RecordingSideRail({ allowChat = true }: { allowChat?: boolean })
   );
   const setSideTab = useNavigationStore((state) => state.setSideTab);
   const show = (tab: SideTab) => {
-    setSideTab(tab);
-    setSpeakerPanelCollapsed(false);
+    // Expansion removes this focused opener. Commit the tabs before handing
+    // focus to the selected one, including when the page replaces the rail.
+    flushSync(() => {
+      setSideTab(tab);
+      setSpeakerPanelCollapsed(false);
+    });
+    document.getElementById(`side-tab-${tab}`)?.focus();
   };
   return (
     <div className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-l border-surface-border bg-surface-inset py-2">
