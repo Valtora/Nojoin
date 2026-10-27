@@ -1,6 +1,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureController } from "./controller";
+import { CaptureAudioGraph } from "./captureAudio.fixtures";
 import {
   audioTrack, deferred, mediaStream, microphoneDevice, installCaptureBrowser,
   getUserMedia, getDisplayMedia, enumerateDevices,
@@ -11,6 +12,7 @@ import type { SegmentStore, StoredSegment } from "./segmentStore";
 import { readCaptureSettings, readPausedCaptureContext } from "./shared";
 import { createSegmentUploader } from "./uploader";
 import { usePausedRecordingGuard } from "./usePausedRecordingGuard";
+import { createWaveformMonitor } from "./waveform";
 const api = vi.hoisted(() => ({
   initRecording: vi.fn(), pauseRecordingCapture: vi.fn(), resumeRecordingCapture: vi.fn(),
   finalizeRecordingCapture: vi.fn(), discardRecordingCapture: vi.fn(),
@@ -161,14 +163,55 @@ describe("releasing only the microphone while paused", () => {
     expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true, microphoneDeviceId: "mic-a" });
   });
   it("reacquires the exact microphone before server resume and reuses recorder/uploader", async () => {
-    const { capture, recorder, mixer } = await start();
+    const [realMixer, realRecorder, realWaveform, { encodeFlac }] = await Promise.all([
+      vi.importActual<typeof import("./mixer")>("./mixer"),
+      vi.importActual<typeof import("./recorder")>("./recorder"),
+      vi.importActual<typeof import("./waveform")>("./waveform"),
+      import("./pcm/flacEncoder"),
+    ]);
+    const graph = new CaptureAudioGraph();
+    const encoded: Int16Array[] = [];
+    let waveformFrame: FrameRequestCallback | undefined;
+    vi.mocked(createCaptureMixer).mockImplementationOnce(async (options) => {
+      const mixer = await realMixer.createCaptureMixer({ ...options, ...graph.mixerOptions() });
+      vi.spyOn(mixer, "replaceMicrophone");
+      return mixer;
+    });
+    vi.mocked(createBrowserRecorder).mockImplementationOnce((options) => {
+      const recorder = realRecorder.createBrowserRecorder({
+        ...options,
+        encode: (pcm, ...format) => {
+          encoded.push(pcm.slice());
+          return encodeFlac(pcm, ...format);
+        },
+      });
+      vi.spyOn(recorder, "resume");
+      return recorder;
+    });
+    vi.mocked(createWaveformMonitor).mockImplementationOnce((options) =>
+      realWaveform.createWaveformMonitor({
+        ...options,
+        requestAnimationFrameFn: (callback) => { waveformFrame = callback; return 1; },
+        cancelAnimationFrameFn: () => {},
+      }));
+    const { capture, recorder, mixer, uploader } = await start();
+    capture.updateSettings({ microphoneGain: 1.5 });
+    const originalStream = await getUserMedia.mock.results[0].value;
+    const sharedStream = await getDisplayMedia.mock.results[0].value;
+    graph.signals.set(originalStream, -0.25);
+    graph.signals.set(sharedStream, 0.0625);
+    graph.render(128);
     await capture.pause();
+    expect(microphone.readyState).toBe("ended");
+    graph.render(4096 + 128);
     await capture.resume();
+    const grantedStream = await getUserMedia.mock.results[1].value;
+    expect(grantedStream).not.toBe(originalStream);
+    expect(grantedStream.getAudioTracks()[0]).toBe(replacement);
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(getUserMedia.mock.calls[1][0]).toMatchObject({ audio: { deviceId: { exact: "mic-a" } } });
-    expect(mixer.replaceMicrophone).toHaveBeenCalledWith(
-      expect.objectContaining({ getAudioTracks: expect.any(Function) }),
-    );
+    expect(mixer.replaceMicrophone).toHaveBeenCalledOnce();
+    expect(vi.mocked(mixer.replaceMicrophone).mock.calls[0][0]).toBe(grantedStream);
     expect(getUserMedia.mock.invocationCallOrder[1]).toBeLessThan(
       api.resumeRecordingCapture.mock.invocationCallOrder[0],
     );
@@ -179,7 +222,16 @@ describe("releasing only the microphone while paused", () => {
     expect(recorder.resume).toHaveBeenCalledOnce();
     expect(capture.getState().status).toBe("recording");
     expect(readPausedCaptureContext()).toBeNull();
+    graph.signals.set(grantedStream, 0.25);
+    graph.render(4096);
+    expect(waveformFrame).toBeTypeOf("function");
+    waveformFrame!(0);
+    expect(capture.getState().levels).toEqual({ system: 11, microphone: 45, mixed: 39 });
     await capture.stop();
+    expect(encoded).toHaveLength(2);
+    expect(Array.from(encoded[0])).toEqual(Array.from({ length: 128 }, () => [2048, -12288]).flat());
+    expect(Array.from(encoded[1])).toEqual(Array.from({ length: 4096 }, () => [2048, 12288]).flat());
+    expect(uploader.enqueue).toHaveBeenLastCalledWith(1, expect.any(Blob), 4096 / 16_000);
     expect(replacement.stop).toHaveBeenCalledOnce();
   });
   it.each([
@@ -201,6 +253,34 @@ describe("releasing only the microphone while paused", () => {
     expect(uploader.dispose).not.toHaveBeenCalled();
     await expect(capture.resume()).resolves.toMatchObject({ recordingId: "rec-1", resumed: true });
     expect(recorder.resume).toHaveBeenCalledOnce();
+  });
+  it.each([true, false])("retains the paused capture when the audio boundary fails, release=%s", async (release) => {
+    const { capture, recorder } = await start("shared_audio", release);
+    await capture.pause();
+    vi.mocked(recorder.resume).mockRejectedValueOnce(new Error("Audio capture did not answer. Try Resume again."));
+    await expect(capture.resume()).rejects.toThrow(/Audio capture did not answer/);
+    expect(capture.getState()).toMatchObject({ status: "paused", runtimeActive: true, error: expect.any(String) });
+    expect(readPausedCaptureContext()).toMatchObject({ recordingId: "rec-1" });
+    expect(api.pauseRecordingCapture).toHaveBeenCalledTimes(2);
+    expect(api.pauseRecordingCapture).toHaveBeenLastCalledWith("rec-1", { epoch: 3 });
+    if (release) expect(replacement.readyState).toBe("ended");
+    getUserMedia.mockResolvedValueOnce(mediaStream(audioTrack()));
+    await capture.resume();
+    expect(capture.getState().status).toBe("recording");
+  });
+  it.each(["stop", "cancel"] as const)("%s supersedes a pending audio resume boundary", async (action) => {
+    const { capture, recorder } = await start();
+    await capture.pause();
+    const boundary = deferred<void>();
+    vi.mocked(recorder.resume).mockReturnValueOnce(boundary.promise);
+    const resuming = capture.resume().catch((error: unknown) => error);
+    await waitFor(() => expect(recorder.resume).toHaveBeenCalledOnce());
+    expect(capture.getState().status).toBe("paused");
+    expect(readPausedCaptureContext()).not.toBeNull();
+    await capture[action]();
+    boundary.resolve();
+    expect(await resuming).toBeInstanceOf(Error);
+    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false });
   });
   it("falls back with a warning only when enumeration proves the selected mic absent", async () => {
     const { capture } = await start();

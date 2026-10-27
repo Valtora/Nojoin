@@ -855,7 +855,7 @@ export class CaptureController {
       throw new Error("No paused recording is available to resume.");
     }
     if (this.microphoneResumePending) {
-      throw new Error("The microphone is still opening. Wait for this Resume attempt to finish.");
+      throw new Error("The recording is still resuming. Wait for this Resume attempt to finish.");
     }
     this.captureActionTicket += 1;
     const ticket = this.captureActionTicket;
@@ -1009,7 +1009,7 @@ export class CaptureController {
       this.state.status === "paused" && ticket === this.captureActionTicket;
     let usedDefault = false;
     let response;
-    this.microphoneResumePending = released;
+    this.microphoneResumePending = true;
     try {
       await this.confirmUnconfirmedPause();
       if (released) {
@@ -1023,19 +1023,24 @@ export class CaptureController {
           resumeRecordingCapture(recordingId, { epoch: runtime.epoch }),
         ),
       );
-      if (released) assertMicrophoneResumeCurrent(isCurrent);
+      assertMicrophoneResumeCurrent(isCurrent);
+      // A stalled uploader retries its retained queue before new audio.
+      runtime.uploader.recover();
+      await runtime.recorder.resume();
+      assertMicrophoneResumeCurrent(isCurrent);
     } catch (error: unknown) {
-      if (released && isCurrent()) {
-        releasePausedMicrophone(runtime, true);
+      if (isCurrent()) {
+        if (released) releasePausedMicrophone(runtime, true);
         this.setState({ status: "paused", error: formatCaptureError(error) });
+        if (response) {
+          this.unconfirmedPause = owePause(recordingId);
+          await this.sendServerPause({ drainFirst: false });
+        }
       }
       throw await this.ifEndedElsewhere(error, runtime);
     } finally {
       this.microphoneResumePending = false;
     }
-    // A stalled uploader retains its queue and retries it before new audio.
-    runtime.uploader.recover();
-    runtime.recorder.resume();
     this.startElapsedTimer(this.state.elapsedSeconds);
     clearPausedCaptureContext();
     this.setState({
