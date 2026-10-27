@@ -94,6 +94,8 @@ To take notes on a second device, such as a phone while a laptop records, sign i
 
 Optional [live word settling](USAGE.md#live-transcription) revises only recent transcript words and speaker boundaries. Pause and Stop lock the last accepted words without another decode; Resume starts a fresh settling episode. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
 
+If Pause interrupts a live transcription pass, the next upload after Resume also drains its retained audio. Live text continues on the recording's audio clock, including a partial segment uploaded at Pause.
+
 Settled lines follow continuous speech rather than the two-second upload steps. Words from the same person extend the open line until a speaker change, at least 320 ms of silence, or the existing maximum line length (20 s by default). Earlier words can settle while their line continues growing. Pause and Stop close the remaining line.
 
 Settling checks speech on each new chunk. When a backlog drains, speech still inside the settling window shares one decode at the latest step, even if the newest chunk is silent. If VAD misses speech and the diariser finds it later while that audio is still unlocked inside the settling window, the next chunk step revisits it once within the same audio cap. ASR never waits for the diariser; evidence arriving after the audio leaves the window cannot reopen it.

@@ -556,9 +556,9 @@ def _dispatch_meeting_edge_refresh_best_effort(recording_id: int) -> None:
 def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     """Transcribe an uploaded recording segment in the live lane.
 
-    Sequence-gated: only the task holding next_expected drains the contiguous
-    run of segments on disk. Any failure is logged and the lane still advances;
-    the final processing pipeline recovers everything.
+    Each task drains from next_expected when that chunk is on disk, including
+    work retained after a lifecycle rejection. Missing chunks wait; ordinary
+    failures advance for recovery by final processing.
     """
     import torch
 
@@ -697,8 +697,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             extra_payload={"next_expected": next_expected},
         )
         return
-    if sequence > next_expected:
-        # Gap: this segment waits on disk until the run reaches it.
+    if sequence > next_expected and not (temp_dir / f"{next_expected}.wav").exists():
+        # Only a missing head is a gap; lifecycle rejection can retain it.
         _record_live_sequence_outcome(
             state,
             sequence=sequence,
