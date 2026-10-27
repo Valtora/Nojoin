@@ -160,6 +160,13 @@ export default function MainNav() {
   // which is always expanded, still renders sub-tags.
   const collapsed = mounted ? (isDesktop ? isNavCollapsed : false) : false;
 
+  // Collapse, expand and the mobile slide animate. A drag sets the width on
+  // every pointer move, so it goes without a transition and the edge stays on
+  // the pointer.
+  const railTransition = isResizing
+    ? ""
+    : "transition-all duration-300 motion-reduce:transition-none";
+
   // `parentLines` carries the tree-guide flags from the ancestors down to these
   // nodes (see TagItem's TagGuides). Roots receive `null` and render no guides;
   // each child appends its own "has sibling below" flag so the parent's
@@ -272,7 +279,7 @@ export default function MainNav() {
       <SurfaceBase
         data-ui-fill="rail" as="aside" kind={isDesktop ? "pane" : "float"}
         id="main-nav"
-        className={`shrink-0 border-r border-rail-border bg-rail flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-[var(--z-modal)] transition-all duration-300 lg:sticky lg:top-0 lg:h-[calc(100dvh_-_var(--demo-banner-h,0px))] ${
+        className={`shrink-0 border-r border-rail-border bg-rail flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-[var(--z-modal)] ${railTransition} lg:sticky lg:top-0 lg:h-[calc(100dvh_-_var(--demo-banner-h,0px))] ${
           isMobileNavOpen
             ? "fixed inset-y-2 left-2 translate-x-0 rounded-surface-subtle shadow-float lg:inset-auto lg:left-0 lg:rounded-none lg:shadow-none"
             : "fixed inset-y-2 left-2 -translate-x-[calc(100%+1rem)] rounded-surface-subtle lg:relative lg:inset-auto lg:left-0 lg:translate-x-0 lg:rounded-none lg:shadow-none"

@@ -216,6 +216,9 @@ export function useSetupWizard() {
   );
   const [modelPreparationComplete, setModelPreparationComplete] = useState(false);
   const [modelPreparationWarning, setModelPreparationWarning] = useState("");
+  // Set only when the server reports the download failed. A lost or slow poll
+  // also leaves a warning, but the download may still be running.
+  const [modelPreparationFailed, setModelPreparationFailed] = useState(false);
   // The AI line of a Finish step restored after a reload, when the AI step's
   // choices that produced it are gone.
   const [resumedAiSummary, setResumedAiSummary] = useState<string | null>(null);
@@ -629,11 +632,12 @@ export function useSetupWizard() {
     let consecutiveErrors = 0;
     let sawActivity = false;
 
-    const finish = (warning?: string) => {
+    const finish = (warning?: string, failed = false) => {
       if (cancelled) return;
       setModelPreparationProgress(100);
       setModelPreparationComplete(true);
       if (warning) setModelPreparationWarning(warning);
+      if (failed) setModelPreparationFailed(true);
     };
 
     const tick = async () => {
@@ -660,6 +664,7 @@ export function useSetupWizard() {
           finish(
             progress.message ||
               "Could not download the transcription and speaker models. Check that the server can reach the internet and has free disk space, then retry from Model downloads under Advanced in Settings > AI providers.",
+            true,
           );
           return;
         }
@@ -748,6 +753,7 @@ export function useSetupWizard() {
     modelPreparationStage,
     modelPreparationComplete,
     modelPreparationWarning,
+    modelPreparationFailed,
     // Handlers
     goToStep,
     handleInputChange,

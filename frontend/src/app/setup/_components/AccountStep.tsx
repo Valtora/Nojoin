@@ -69,7 +69,6 @@ export default function AccountStep({
         required
         value={formData.username}
         onChange={onInputChange}
-        placeholder="admin"
       />
 
       <Input
