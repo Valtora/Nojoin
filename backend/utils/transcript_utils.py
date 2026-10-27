@@ -634,13 +634,18 @@ def _smooth_isolated_word_speaker_flips(
 
 
 def consolidate_diarized_transcript(
-    segments, min_duration_s: float = 0.1, max_duration_s: float = DEFAULT_MAX_SEGMENT_S
+    segments,
+    min_duration_s: float = 0.1,
+    max_duration_s: float = DEFAULT_MAX_SEGMENT_S,
+    *,
+    line_break_pause_s: float = TUNING_SPECS[LINE_BREAK_PAUSE_KEY].default,
 ):
     """
     Consolidate diarized transcript segments by speaker, merging consecutive segments by the same speaker,
     and handling overlapping speakers. Returns a list of dicts with start, end, speaker, and text.
     Folds a consolidated segment shorter than min_duration_s into a neighbour
     rather than keeping it on its own (see short_segment_fold.fold_short_segments).
+    A fold cannot bridge a gap exceeding the resolved line_break_pause_s.
     Forces a split if the segment duration exceeds max_duration_s.
     """
     if not segments:
@@ -895,6 +900,7 @@ def consolidate_diarized_transcript(
         short_indices,
         max_duration_s,
         _merge_consolidation_metadata,
+        max_gap_s=line_break_pause_s,
     )
 
     speaker_counts = {}

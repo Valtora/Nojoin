@@ -31,6 +31,7 @@ from backend.utils.canonical_pipeline.live_settling_lines import (
 )
 from backend.utils.canonical_pipeline.live_settling_projection import SETTLING_KEY
 from backend.utils.transcript_utils import combine_transcription_diarization
+from backend.worker.tasks.final_segments import combine_and_consolidate_segments
 
 
 def _word(index: int, start: int, end: int, *, locked: bool = True) -> dict[str, Any]:
@@ -128,6 +129,242 @@ def test_invalid_final_pause_uses_default_and_warns_once(
         record for record in caplog.records if "line_break_pause_s" in record.message
     ]
     assert len(warnings) == 1
+
+
+@pytest.mark.parametrize("short_first", [True, False])
+@pytest.mark.parametrize(
+    "pause_s,gap_s,count",
+    [
+        (0.5, 0.499, 1),
+        (0.5, 0.5, 1),
+        (0.5, 0.8, 2),
+        (1.0, 0.8, 1),
+        (1.0, 1.0, 1),
+        (1.0, 1.001, 2),
+    ],
+)
+def test_worker_final_pause_survives_short_segment_folding(
+    short_first: bool, pause_s: float, gap_s: float, count: int
+) -> None:
+    first_end = 0.08 if short_first else 0.6
+    words = [
+        {"word": " Yes", "start": 0.0, "end": first_end},
+        {
+            "word": " later",
+            "start": first_end + gap_s,
+            "end": first_end + gap_s + (0.6 if short_first else 0.08),
+        },
+    ]
+    final = combine_and_consolidate_segments(
+        {"segments": [{"words": words}]},
+        FakeDiarization([(0.0, 10.0, "A")]),
+        enable_diarization=True,
+        recording_id=1,
+        config={"line_break_pause_s": pause_s},
+    )
+    assert len(final) == count
+    assert [word for segment in final for word in segment["words"]] == words
+    assert " ".join(segment["text"] for segment in final) == "Yes later"
+    assert final[0]["start"] == 0.0
+    assert final[-1]["end"] == words[-1]["end"]
+
+
+def test_worker_folding_uses_larger_pause_without_affecting_later_calls() -> None:
+    words = [
+        {"word": " Yes", "start": 0.0, "end": 0.08},
+        {"word": " later", "start": 1.28, "end": 1.88},
+    ]
+    for pause_s, count in [(0.5, 2), (2.0, 1), (0.5, 2)]:
+        final = combine_and_consolidate_segments(
+            {"segments": [{"words": words}]},
+            FakeDiarization([(0.0, 0.08, "A"), (1.28, 1.88, "B")]),
+            enable_diarization=True,
+            recording_id=1,
+            config={"line_break_pause_s": pause_s, "word_flip_max_duration_s": 0.0},
+        )
+        assert len(final) == count
+        assert [word for segment in final for word in segment["words"]] == words
+        assert final[-1]["speaker"] == "B"
+
+
+@pytest.mark.parametrize("pause_s", [0.5, 2.0])
+def test_worker_without_diarization_keeps_raw_asr_segment(pause_s: float) -> None:
+    words = [
+        {"word": " Yes", "start": 0.0, "end": 0.08, "confidence": 0.9},
+        {"word": " later", "start": 0.88, "end": 1.5, "confidence": 0.8},
+    ]
+    transcription = {
+        "segments": [
+            {
+                "id": "raw-asr",
+                "start": 0.0,
+                "end": 1.5,
+                "text": " Yes later ",
+                "words": words,
+            }
+        ]
+    }
+    final = combine_and_consolidate_segments(
+        transcription,
+        None,
+        enable_diarization=False,
+        recording_id=1,
+        config={"line_break_pause_s": pause_s},
+    )
+    assert final == [
+        {
+            "id": "raw-asr",
+            "start": 0.0,
+            "end": 1.5,
+            "text": "Yes later",
+            "speaker": "UNKNOWN",
+            "overlapping_speakers": [],
+            "words": words,
+        }
+    ]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("pause_s", [0.5, 2.0])
+@pytest.mark.parametrize("combination_empty", [False, True])
+def test_worker_raw_asr_fallback_keeps_default_folding(
+    monkeypatch: pytest.MonkeyPatch,
+    enabled: bool,
+    pause_s: float,
+    combination_empty: bool,
+) -> None:
+    words = [
+        {"word": " Yes", "start": 0.0, "end": 0.08},
+        {"word": " later", "start": 0.88, "end": 1.5},
+    ]
+    transcription = {
+        "segments": [
+            {
+                "id": f"raw-{index}",
+                "start": word["start"],
+                "end": word["end"],
+                "text": word["word"],
+                "words": [word],
+            }
+            for index, word in enumerate(words)
+        ]
+    }
+    turns = None
+    if combination_empty:
+        turns = FakeDiarization([(0.0, 2.0, "A")])
+        monkeypatch.setattr(
+            "backend.utils.transcript_utils.combine_transcription_diarization",
+            lambda *_args, **_kwargs: [],
+        )
+    default = combine_and_consolidate_segments(
+        transcription,
+        turns,
+        enable_diarization=enabled,
+        recording_id=1,
+    )
+    configured = combine_and_consolidate_segments(
+        transcription,
+        turns,
+        enable_diarization=enabled,
+        recording_id=1,
+        config={"line_break_pause_s": pause_s},
+    )
+    assert configured == default
+    assert len(configured) == 1
+    assert configured[0]["text"] == "Yes later"
+    assert configured[0]["words"] == words
+
+
+@pytest.mark.parametrize("shorts_speaker", ["A", "B"])
+def test_worker_short_chain_extends_previous_without_crossing_pause(
+    shorts_speaker: str,
+) -> None:
+    words = [
+        {"word": " First", "start": 0.0, "end": 0.6},
+        {"word": " yes", "start": 0.8, "end": 0.88},
+        {"word": " so", "start": 1.08, "end": 1.16},
+        {"word": " later", "start": 1.96, "end": 2.56},
+    ]
+    turns = FakeDiarization(
+        [
+            (0.0, 0.6, "A"),
+            (0.8, 0.88, shorts_speaker),
+            (1.08, 1.16, "C"),
+            (1.96, 2.56, "D"),
+        ]
+    )
+    final = combine_and_consolidate_segments(
+        {"segments": [{"words": words}]},
+        turns,
+        enable_diarization=True,
+        recording_id=1,
+        config={"line_break_pause_s": 0.5, "word_flip_max_duration_s": 0.0},
+    )
+    assert [(segment["start"], segment["end"]) for segment in final] == [
+        (0.0, 1.16),
+        (1.96, 2.56),
+    ]
+    assert [word for segment in final for word in segment["words"]] == words
+
+
+def test_worker_short_fold_excludes_same_speaker_beyond_pause() -> None:
+    words = [
+        {"word": " First", "start": 0.0, "end": 0.6},
+        {"word": " yes", "start": 1.4, "end": 1.48},
+        {"word": " later", "start": 1.68, "end": 2.28},
+    ]
+    final = combine_and_consolidate_segments(
+        {"segments": [{"words": words}]},
+        FakeDiarization([(0.0, 1.48, "A"), (1.68, 2.28, "B")]),
+        enable_diarization=True,
+        recording_id=1,
+        config={"line_break_pause_s": 0.5},
+    )
+    assert [(segment["speaker"], segment["text"]) for segment in final] == [
+        ("A", "First"),
+        ("B", "yes later"),
+    ]
+    assert [word for segment in final for word in segment["words"]] == words
+
+
+def test_worker_invalid_pause_warns_once_and_keeps_default(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    transcription = {
+        "segments": [
+            {
+                "words": [
+                    {"word": " Yes", "start": 0.0, "end": 0.08},
+                    {"word": " later", "start": 0.88, "end": 1.5},
+                ]
+            }
+        ]
+    }
+    turns = FakeDiarization([(0.0, 2.0, "A")])
+    default = combine_and_consolidate_segments(
+        transcription,
+        turns,
+        enable_diarization=True,
+        recording_id=1,
+    )
+    invalid = combine_and_consolidate_segments(
+        transcription,
+        turns,
+        enable_diarization=True,
+        recording_id=1,
+        config={"line_break_pause_s": 0.0},
+    )
+    assert invalid == default
+    assert (
+        len(
+            [
+                record
+                for record in caplog.records
+                if "Ignoring invalid line_break_pause_s" in record.message
+            ]
+        )
+        == 1
+    )
 
 
 def test_speaker_cap_and_retained_barriers_still_break_lines() -> None:

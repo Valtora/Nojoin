@@ -90,6 +90,20 @@ const speakerLabelOf = (segment: TranscriptSegment): string | null =>
   liveLabelOf(segment) ??
   (segment.settling_required && segment.speaker !== "UNKNOWN" ? segment.speaker : null);
 
+const namingAnchorForRun = (segments: readonly TranscriptSegment[], index: number): TranscriptSegment | undefined => {
+  const first = segments[index];
+  if (!lineIsSettling(first)) return first;
+
+  // A shared header may precede its naming anchor, but only within this
+  // marked speaker run. Its visual lock still belongs to the first line.
+  for (let next = index + 1; next < segments.length; next += 1) {
+    const candidate = segments[next];
+    if (candidate.settling_required !== true || candidate.speaker !== first.speaker) break;
+    if (candidate.locked === true) return candidate;
+  }
+  return undefined;
+};
+
 const NO_NAMES: Readonly<Record<string, string>> = {};
 
 interface LiveTranscriptPanelProps {
@@ -180,6 +194,8 @@ export default function LiveTranscriptPanel({
           ? segment.settling_required ? speakerLabelOf(previous) : liveLabelOf(previous)
           : null;
         const assignedSpeaker = speakers?.find((speaker) => speaker.diarization_label === segment.speaker);
+        const showSpeakerLabel = speakerLabel !== null &&
+          (previous === undefined || speakerLabel !== previousSpeakerLabel);
 
         return {
           segment,
@@ -187,11 +203,8 @@ export default function LiveTranscriptPanel({
           sourceChannel,
           showSourceLabel:
             sourceChannel !== null && sourceChannel !== previousChannel,
-          speakerLabel:
-            speakerLabel !== null &&
-            (previous === undefined || speakerLabel !== previousSpeakerLabel)
-              ? speakerLabel
-              : null,
+          speakerLabel: showSpeakerLabel ? speakerLabel : null,
+          namingAnchor: showSpeakerLabel ? namingAnchorForRun(segments, index) : undefined,
           sameSpeakerContinuation: segment.settling_required === true &&
             previous !== undefined && segment.speaker === previous.speaker,
           speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
@@ -351,7 +364,7 @@ export default function LiveTranscriptPanel({
               ) : (
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
-                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked, assignedName,
+                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked, assignedName, namingAnchor,
                     sameSpeakerContinuation }, index) => [
                     <li
                       key={key}
@@ -374,10 +387,10 @@ export default function LiveTranscriptPanel({
                           locked={speakerLocked}
                           onRename={onRenameLiveSpeaker && liveLabelOf(segment)
                             ? (label, name) => segment.settling_required
-                              ? onRenameLiveSpeaker(label, name, segment)
+                              ? onRenameLiveSpeaker(label, name, namingAnchor)
                               : onRenameLiveSpeaker(label, name)
                             : undefined}
-                          disabledReason={lineIsSettling(segment) ? LINE_SETTLING_REASON : undefined}
+                          disabledReason={segment.settling_required && !namingAnchor ? LINE_SETTLING_REASON : undefined}
                           loadPeopleNames={loadPeopleNames}
                         />
                       ) : null}

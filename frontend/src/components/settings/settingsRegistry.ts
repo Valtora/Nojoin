@@ -480,7 +480,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "transcription-line-break-pause",
     label: "Line break pause",
-    description: "Start a new line after a pause longer than this, live and in the final transcript.",
+    description: "Start a new line after a longer pause in live settling lines and diarised final transcripts when speakers are detected.",
     category: "transcription",
     access: "all",
     settingsKeys: ["line_break_pause_s"],
