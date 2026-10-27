@@ -8,7 +8,12 @@ from sqlmodel import col, func, select
 
 from backend.models.pipeline import TranscriptUtterance
 from backend.models.transcript import Transcript
-from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S, LIVE_MIN_SILENCE_MS
+from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
+from backend.processing.processing_tuning import (
+    LINE_BREAK_PAUSE_KEY,
+    line_break_pause_exceeded,
+    resolve_tuning,
+)
 from backend.utils.config_manager import config_manager
 from backend.utils.live_word_settling import (
     close_word_state,
@@ -64,6 +69,7 @@ class SettlingPass:
     gate_chunks: list[GateChunk] | None = None
     max_segment_ms: int | None = None
     silence_start_ms: int | None = None
+    line_break_pause_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +183,7 @@ def _line_boundaries(
         closed_ends=closed_ends,
         closed_at_ms=sorted(cutoffs),
         silence_start_ms=silence_start_ms,
+        line_break_pause_s=resolve_tuning(state, LINE_BREAK_PAUSE_KEY),
     )
 
 
@@ -337,9 +344,21 @@ def publish_live_settling(
     state = {
         **state,
         "speaker_enabled": state.get("speaker_enabled", _speaker_enabled()),
+        "trailing_silence_start_ms": request.silence_start_ms,
+        "silence_audio_end_ms": request.audio_end_ms,
         **(
             {"max_segment_ms": request.max_segment_ms}
             if request.max_segment_ms is not None
+            else {}
+        ),
+        **(
+            {
+                LINE_BREAK_PAUSE_KEY: resolve_tuning(
+                    {LINE_BREAK_PAUSE_KEY: request.line_break_pause_s},
+                    LINE_BREAK_PAUSE_KEY,
+                )
+            }
+            if request.line_break_pause_s is not None
             else {}
         ),
     }
@@ -359,7 +378,7 @@ def publish_live_settling(
             decide_speaker,
             metadata=metadata,
             decode_id=request.decode_id,
-            silence_start_ms=_confirmed_silence(request),
+            silence_start_ms=_confirmed_silence(request, state),
         ),
         settled,
     )
@@ -379,10 +398,12 @@ def publish_live_settling(
     return result
 
 
-def _confirmed_silence(request: SettlingPass) -> int | None:
+def _confirmed_silence(request: SettlingPass, state: dict[str, Any]) -> int | None:
     """A short ASR hypothesis alone is never evidence of trailing silence."""
     start = request.silence_start_ms
-    if start is not None and request.audio_end_ms - start >= LIVE_MIN_SILENCE_MS:
+    if start is not None and line_break_pause_exceeded(
+        (request.audio_end_ms - start) / 1000, state
+    ):
         return start
     return None
 
@@ -406,9 +427,25 @@ def expire_live_settling(
             **(transcript.settling_state or {}),
             "last_step_index": request.step_index,
             "gate_chunks": request.gate_chunks,
+            "trailing_silence_start_ms": request.silence_start_ms,
+            "silence_audio_end_ms": request.audio_end_ms,
         }
         session.add(transcript)
         return SettlingPublicationResult(True)
+    state = {
+        **(transcript.settling_state or {}),
+        "trailing_silence_start_ms": request.silence_start_ms,
+        "silence_audio_end_ms": request.audio_end_ms,
+    }
+    if request.line_break_pause_s is not None:
+        state = {
+            **state,
+            LINE_BREAK_PAUSE_KEY: resolve_tuning(
+                {LINE_BREAK_PAUSE_KEY: request.line_break_pause_s},
+                LINE_BREAK_PAUSE_KEY,
+            ),
+        }
+    transcript.settling_state = state
     rows = live_rows(
         session,
         request.recording_id,
@@ -421,7 +458,9 @@ def expire_live_settling(
     )
     result = _project(
         session,
-        _Projection(transcript, rows, silence_start_ms=_confirmed_silence(request)),
+        _Projection(
+            transcript, rows, silence_start_ms=_confirmed_silence(request, state)
+        ),
         words,
     )
     transcript.settling_state = {

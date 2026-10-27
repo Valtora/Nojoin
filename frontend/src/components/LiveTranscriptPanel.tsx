@@ -4,6 +4,7 @@ import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import {
   useCallback,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -85,6 +86,10 @@ const sourceChannelOf = (
 const liveLabelOf = (segment: TranscriptSegment): string | null =>
   liveSpeakerDisplayName(segment.speaker) === null ? null : segment.speaker;
 
+const speakerLabelOf = (segment: TranscriptSegment): string | null =>
+  liveLabelOf(segment) ??
+  (segment.settling_required && segment.speaker !== "UNKNOWN" ? segment.speaker : null);
+
 const NO_NAMES: Readonly<Record<string, string>> = {};
 
 interface LiveTranscriptPanelProps {
@@ -151,6 +156,7 @@ export default function LiveTranscriptPanel({
   lineHandlers,
   speakers,
 }: LiveTranscriptPanelProps) {
+  const settlingDescriptionId = useId();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
   const overlaps = useMemo(() => indexOverlaps(segments), [segments]);
@@ -169,8 +175,10 @@ export default function LiveTranscriptPanel({
         const sourceChannel = sourceChannelOf(segment);
         const previous = index > 0 ? segments[index - 1] : undefined;
         const previousChannel = previous ? sourceChannelOf(previous) : undefined;
-        const speakerLabel = liveLabelOf(segment) ??
-          (segment.settling_required && segment.speaker !== "UNKNOWN" ? segment.speaker : null);
+        const speakerLabel = speakerLabelOf(segment);
+        const previousSpeakerLabel = previous
+          ? segment.settling_required ? speakerLabelOf(previous) : liveLabelOf(previous)
+          : null;
         const assignedSpeaker = speakers?.find((speaker) => speaker.diarization_label === segment.speaker);
 
         return {
@@ -181,9 +189,11 @@ export default function LiveTranscriptPanel({
             sourceChannel !== null && sourceChannel !== previousChannel,
           speakerLabel:
             speakerLabel !== null &&
-            (segment.settling_required || previous === undefined || speakerLabel !== liveLabelOf(previous))
+            (previous === undefined || speakerLabel !== previousSpeakerLabel)
               ? speakerLabel
               : null,
+          sameSpeakerContinuation: segment.settling_required === true &&
+            previous !== undefined && segment.speaker === previous.speaker,
           speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
           assignedName: assignedSpeaker ? getRecordingSpeakerDisplayName(assignedSpeaker, new Map()) : undefined,
         };
@@ -279,6 +289,9 @@ export default function LiveTranscriptPanel({
           </span>
         ) : null}
       </div>
+      {segments.some(lineIsSettling) ? (
+        <p id={settlingDescriptionId} hidden>{LINE_SETTLING_REASON}</p>
+      ) : null}
 
       {/* The window fills the card, and the card fills what the column has
           left, with no ceiling: a capped module in an items-stretch grid only
@@ -338,14 +351,16 @@ export default function LiveTranscriptPanel({
               ) : (
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
-                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked, assignedName }, index) => [
+                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked, assignedName,
+                    sameSpeakerContinuation }, index) => [
                     <li
                       key={key}
                       data-testid="live-transcript-line"
                       data-line-index={index}
                       data-order-index={index}
                       data-line-actions
-                      className="group/line"
+                      aria-describedby={lineIsSettling(segment) ? settlingDescriptionId : undefined}
+                      className={sameSpeakerContinuation ? "group/line pt-2" : "group/line"}
                     >
                       {speakerLabel ? (
                         <LiveSpeakerChip
@@ -397,7 +412,6 @@ export default function LiveTranscriptPanel({
                           />
                         ) : null}
                       </div>
-                      {lineIsSettling(segment) ? <span className="text-xs text-contrast-helper">Settling…</span> : null}
                       <FinalWordingReview segment={segment} />
                     </li>,
                     <CollapsedLineNotes

@@ -6,5 +6,6 @@
   "phantom_embedding_floor": { "default": 0.35, "min": 0, "max": 0.95, "integer": false },
   "phantom_merge_threshold": { "default": 0.6, "min": 0.05, "max": 1, "integer": false },
   "word_flip_max_duration_s": { "default": 0.45, "min": 0, "max": 2, "integer": false },
-  "word_flip_max_gap_s": { "default": 0.25, "min": 0, "max": 1, "integer": false }
+  "word_flip_max_gap_s": { "default": 0.25, "min": 0, "max": 1, "integer": false },
+  "line_break_pause_s": { "default": 1, "min": 0.5, "max": 5, "integer": false }
 }

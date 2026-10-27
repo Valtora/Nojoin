@@ -30,6 +30,7 @@ from backend.processing.live_settling_gate import (
     decoded_gate_chunks,
     plan_gate,
 )
+from backend.processing.processing_tuning import LINE_BREAK_PAUSE_KEY, resolve_tuning
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.live_word_settling import plan_settling_window
 from backend.utils.transcript_settling import (
@@ -79,6 +80,8 @@ class EpisodeSnapshot:
     legacy_frontier_ms: int = 0
     gate_chunks: list[GateChunk] = field(default_factory=list)
     delayed_start_ms: int | None = None
+    trailing_silence_start_ms: int | None = None
+    silence_audio_end_ms: int | None = None
 
 
 def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResult:
@@ -123,6 +126,8 @@ def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResul
             live_settling_frontier(session, recording_id=step.recording_id),
             legacy_live_frontier(session, recording_id=step.recording_id),
             list(state.get("gate_chunks", [])),
+            trailing_silence_start_ms=state.get("trailing_silence_start_ms"),
+            silence_audio_end_ms=state.get("silence_audio_end_ms"),
         )
     finally:
         session.close()
@@ -249,7 +254,8 @@ def _publish_step(
         metadata=metadata,
         gate_chunks=snapshot.gate_chunks,
         max_segment_ms=snapshot.policy.get("max_segment_ms"),
-        silence_start_ms=_silence_start(step, evidence),
+        line_break_pause_s=snapshot.policy.get(LINE_BREAK_PAUSE_KEY),
+        silence_start_ms=_silence_start(step, evidence, snapshot),
     )
     session = get_sync_session()
     try:
@@ -295,15 +301,35 @@ def _publish_step(
         session.close()
 
 
-def _silence_start(step: SettlingStep, evidence: Any) -> int:
-    """Find trailing silence from VAD and already available diariser evidence."""
+def _silence_start(
+    step: SettlingStep, evidence: Any, snapshot: EpisodeSnapshot | None = None
+) -> int:
+    """Retain silence across covered chunks; later speech resets its start."""
+    start = round(step.combined_start_s * 1000)
+    if (
+        snapshot is not None
+        and snapshot.trailing_silence_start_ms is not None
+        and snapshot.silence_audio_end_ms is not None
+        and start <= snapshot.silence_audio_end_ms <= step.audio_end_ms
+        and snapshot.trailing_silence_start_ms <= snapshot.silence_audio_end_ms
+    ):
+        start = snapshot.trailing_silence_start_ms
     ends = [
         round((step.combined_start_s + region["end"]) * 1000)
         for region in step.vad_regions
     ]
+    if snapshot is not None:
+        # An unaligned atom occupies its observed capture interval; silence
+        # cannot close its line before that real interval has ended.
+        ends.extend(
+            int(word["observed_audio_end_ms"])
+            for word in snapshot.words
+            if (word.get("start_ms") is None or word.get("end_ms") is None)
+            and word.get("observed_audio_end_ms") is not None
+        )
     if evidence is not None:
         ends.extend(round(end * 1000) for _start, end in evidence.speech_spans())
-    return max([round(step.combined_start_s * 1000), *ends])
+    return max([start, *ends])
 
 
 def run_settling_step(step: SettlingStep, config: dict[str, Any]) -> SettlingStepResult:
@@ -322,6 +348,7 @@ def run_settling_step(step: SettlingStep, config: dict[str, Any]) -> SettlingSte
             "max_segment_ms": round(
                 float(config.get("max_segment_s", DEFAULT_MAX_SEGMENT_S)) * 1000
             ),
+            LINE_BREAK_PAUSE_KEY: resolve_tuning(config, LINE_BREAK_PAUSE_KEY),
         },
     )
     device = loaded_transcription_device(config)

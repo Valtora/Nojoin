@@ -124,6 +124,7 @@ from backend.processing.pipeline_metrics import (
 )
 from backend.processing.processing_tuning import (
     ASR_WORD_LENGTH_CAP_KEY,
+    LINE_BREAK_PAUSE_KEY,
     VAD_THRESHOLD_KEY,
     normalise_tuning_value,
 )
@@ -262,6 +263,7 @@ def _build_live_config() -> dict:
             "live_max_segment_s", DEFAULT_MAX_SEGMENT_S
         ),
         "speech_pad_ms": config_manager.get("live_speech_pad_ms", 300),
+        LINE_BREAK_PAUSE_KEY: config_manager.get(LINE_BREAK_PAUSE_KEY),
     }
 
 
@@ -299,14 +301,10 @@ def _live_tuning_value(
 def _resolve_live_engine_config(
     recording_id: int, live_config: dict, *, warn_unusable: bool = True
 ) -> dict:
-    """Layer user-aware overrides onto the base live engine config.
+    """Merge owner settings into live_config; absent owners keep the base config.
 
-    Loads the recording's owning user once and merges their resolved LLM/ASR
-    settings into ``live_config`` in place, returning the same dict. Behaviour is
-    a no-op when the recording or user is absent. DB/model imports stay local so
-    module import time pulls in no ML inference dependencies.
-    ``warn_unusable`` logs an unusable tuning value at WARNING (else DEBUG);
-    the task sets it until a live run of the recording has completed.
+    Local imports avoid loading ML dependencies. ``warn_unusable`` selects
+    WARNING over DEBUG until a live run of the recording has completed.
     """
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording
@@ -363,6 +361,12 @@ def _resolve_live_engine_config(
                     "max_segment_s": merged_config.get(
                         "live_max_segment_s",
                         live_config["max_segment_s"],
+                    ),
+                    LINE_BREAK_PAUSE_KEY: _live_tuning_value(
+                        recording_id,
+                        merged_config,
+                        LINE_BREAK_PAUSE_KEY,
+                        warn=warn_unusable,
                     ),
                     "vad_threshold": _live_tuning_value(
                         recording_id,

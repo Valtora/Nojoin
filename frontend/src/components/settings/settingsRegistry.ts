@@ -478,6 +478,16 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
 
   // ---------------------------------------------------------- transcription
   {
+    id: "transcription-line-break-pause",
+    label: "Line break pause",
+    description: "Start a new line after a pause longer than this, live and in the final transcript.",
+    category: "transcription",
+    access: "all",
+    settingsKeys: ["line_break_pause_s"],
+    defaultValue: null,
+    keywords: ["line", "break", "pause", "gap", "silence", "transcript", "live", "settling"],
+  },
+  {
     id: "transcription-live-settling",
     label: "Live word settling",
     description: "Revise recent words and lock unchanged wording on a GPU.",

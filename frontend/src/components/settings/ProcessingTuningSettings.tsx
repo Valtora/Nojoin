@@ -44,7 +44,7 @@ interface TuningInputProps {
   descriptionId: string;
 }
 
-function TuningInput({
+export function TuningInput({
   tuningKey,
   value,
   onChange,
@@ -194,7 +194,10 @@ export default function ProcessingTuningSettings({
           type="button"
           onClick={() => {
             setResetCount((count) => count + 1);
-            onUpdate({ ...settings, ...processingTuningReset() });
+            const reset = processingTuningReset();
+            // The pause belongs to Transcription, outside this card's reset.
+            delete reset.line_break_pause_s;
+            onUpdate({ ...settings, ...reset });
           }}
           className={SETTINGS_BUTTON_SECONDARY}
         >

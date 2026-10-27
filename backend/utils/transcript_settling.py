@@ -59,6 +59,9 @@ class CaptureSettlingState(TypedDict):
     last_decode_id: NotRequired[str]
     speaker_enabled: NotRequired[bool]
     gate_chunks: NotRequired[list[GateChunk]]
+    line_break_pause_s: NotRequired[float]
+    trailing_silence_start_ms: NotRequired[int | None]
+    silence_audio_end_ms: NotRequired[int]
     settled: NotRequired[bool]
 
 
@@ -157,6 +160,8 @@ def update_capture_settling_state(
         updated.pop("last_decode_id", None)
         updated.pop("speaker_enabled", None)
         updated.pop("gate_chunks", None)
+        updated.pop("trailing_silence_start_ms", None)
+        updated.pop("silence_audio_end_ms", None)
     updated.update(capture_epoch=capture_epoch, sealed=sealed, phase=phase)
     transcript.settling_state = updated
 
@@ -179,6 +184,9 @@ def resolve_capture_settling_policy(
         **state,
         "policy": {**state["policy"], "enabled": device == "cuda"},
     }
+    if device == "cpu":
+        transcript.settling_state.pop("trailing_silence_start_ms", None)
+        transcript.settling_state.pop("silence_audio_end_ms", None)
 
 
 def load_capture_publication(

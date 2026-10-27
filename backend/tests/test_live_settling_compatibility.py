@@ -151,10 +151,10 @@ def _replace_then_publish_next_line(session: Any) -> None:
     for step in range(2):
         assert publish_live_settling(
             session,
-            # Both edit targets are completed speech; the final silence closes
-            # the second line independently of its agreement count.
+            # Both edit targets are completed speech; >1 s of final silence
+            # closes the second line independently of its agreement count.
             request=replace(
-                _request(session, 1, step, end_ms=3000), silence_start_ms=2500
+                _request(session, 1, step, end_ms=3501), silence_start_ms=2500
             ),
             words=words,
         ).accepted

@@ -155,6 +155,7 @@ class SettingsUpdate(BaseModel):
     phantom_merge_threshold: Optional[float] = None
     word_flip_max_duration_s: Optional[float] = None
     word_flip_max_gap_s: Optional[float] = None
+    line_break_pause_s: Optional[float] = None
 
     @field_validator(*TUNING_KEYS, mode="before")
     @classmethod

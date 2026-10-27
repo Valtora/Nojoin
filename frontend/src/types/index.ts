@@ -818,6 +818,7 @@ export interface Settings {
   phantom_merge_threshold?: number | null;
   word_flip_max_duration_s?: number | null;
   word_flip_max_gap_s?: number | null;
+  line_break_pause_s?: number | null;
   // Read-only, from GET: the installation's config.json tuning values, keyed
   // by tuning key (null where unset or unusable). Today it holds the phantom
   // pair, which the floor/merge check counts for a field left empty.

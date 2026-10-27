@@ -201,7 +201,10 @@ def test_confirmed_pause_follows_retokenised_phrase_instead_of_reused_word_id(
         cursor, _ = _sync_delta(session, recording_id, 0, client)
         assert expire_live_settling(
             session,
-            request=replace(_request(session, recording_id, 1), silence_start_ms=1000),
+            # Closure now requires more than one second of confirmed silence.
+            request=replace(
+                _request(session, recording_id, 1, end_ms=2001), silence_start_ms=1000
+            ),
         ).accepted
         session.commit()
         assert _active(session, recording_id)[0].confidence_payload[SETTLING_KEY][

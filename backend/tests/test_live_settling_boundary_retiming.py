@@ -119,7 +119,10 @@ def test_confirmed_phrase_end_survives_retiming_and_retokenisation(
         cursor, _ = _sync_delta(session, recording_id, 0, client)
         assert expire_live_settling(
             session,
-            request=replace(_request(session, recording_id, 1), silence_start_ms=1000),
+            # Keep a confirmed closure under the strict >1 s line-pause rule.
+            request=replace(
+                _request(session, recording_id, 1, end_ms=2001), silence_start_ms=1000
+            ),
         ).accepted
         session.commit()
         cursor, _ = _sync_delta(session, recording_id, cursor, client)
@@ -158,7 +161,9 @@ def test_retimed_phrase_end_survives_speaker_split_and_rejoin(
         session.commit()
         assert expire_live_settling(
             session,
-            request=replace(_request(session, recording_id, 1), silence_start_ms=1000),
+            request=replace(
+                _request(session, recording_id, 1, end_ms=2001), silence_start_ms=1000
+            ),
         ).accepted
         session.commit()
         assert publish_live_settling(

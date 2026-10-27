@@ -14,7 +14,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from backend.processing import live_settling as worker
-from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S, LIVE_MIN_SILENCE_MS
+from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
 from backend.tests.test_live_settling_publication import (
     _active,
     _request,
@@ -141,9 +141,9 @@ def test_twelve_steps_extend_one_open_line_through_word_locks_and_window_expiry(
 
 
 @pytest.mark.parametrize(
-    "gap_ms, count", [(LIVE_MIN_SILENCE_MS - 1, 1), (LIVE_MIN_SILENCE_MS, 2)]
+    "gap_ms, count", [(319, 1), (320, 1), (500, 1), (1000, 1), (1001, 2), (1200, 2)]
 )
-def test_pause_boundary_uses_the_legacy_threshold(
+def test_pause_boundary_uses_the_final_word_gap_threshold(
     settling_engine: Engine, gap_ms: int, count: int
 ) -> None:
     recording_id = _seed(settling_engine)
@@ -415,8 +415,7 @@ def test_entire_ami_smoke_wording_is_preserved_across_rolling_publications(
             for word in observed:
                 if (
                     not expected
-                    or word["start_ms"] - expected[-1][-1]["end_ms"]
-                    >= LIVE_MIN_SILENCE_MS
+                    or word["start_ms"] - expected[-1][-1]["end_ms"] > 1000
                     or word["end_ms"] - expected[-1][0]["start_ms"]
                     > DEFAULT_MAX_SEGMENT_S * 1000
                 ):
@@ -467,7 +466,9 @@ def test_worker_confirms_trailing_silence_before_locking_and_reopening_same_spea
         assert not line_is_locked(row)
         cursor = _apply_delta(session, worker_db.recording_id, 0, client)
     audio_end = 8000
-    durations = [LIVE_MIN_SILENCE_MS - 1, 1, LIVE_MIN_SILENCE_MS]
+    # Exactly one second stays open; a further millisecond closes it unless
+    # the diariser heard later speech. Decode's 320 ms gate is independent.
+    durations = [1000, 1, 1001]
     for sequence, duration in enumerate(durations, start=4):
         step = worker_db.step(sequence)
         sf.write(step.temp_dir / f"{sequence}.wav", [0.1] * (duration * 16), 16000)
@@ -476,7 +477,7 @@ def test_worker_confirms_trailing_silence_before_locking_and_reopening_same_spea
             step, audio_end_ms=audio_end, combined_start_s=8.0, vad_regions=[]
         )
         if diariser_veto:
-            spans[:] = [(8.0, min(audio_end, 8000 + LIVE_MIN_SILENCE_MS) / 1000)]
+            spans[:] = [(8.0, min(audio_end, 9000) / 1000)]
         result = worker.run_settling_step(step, {})
         assert result.accepted
         closed = sequence == 6 or (sequence == 5 and not diariser_veto)

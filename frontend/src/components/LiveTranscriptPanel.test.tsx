@@ -154,6 +154,78 @@ describe("LiveTranscriptPanel", () => {
     expect(provisional.className).toContain("italic");
   });
 
+  it("shows marked speaker headers only when the speaker changes, including assigned speakers", () => {
+    const marked = (id: string, speaker: string, start: number) => buildSegment({
+      id, speaker, start, settling_required: true, locked: true,
+    });
+    renderPanel([
+      marked("a", "LIVE_PROVISIONAL_1", 0),
+      marked("b", "LIVE_PROVISIONAL_1", 3),
+      marked("c", "SPEAKER_0", 6),
+      marked("d", "SPEAKER_0", 9),
+      marked("e", "UNKNOWN", 12),
+      marked("f", "SPEAKER_0", 15),
+      marked("g", "LIVE_PROVISIONAL_1", 18),
+    ]);
+
+    expect(screen.getAllByTestId("live-transcript-speaker").map((node) => node.textContent))
+      .toEqual(["Speaker 1", "SPEAKER_0", "SPEAKER_0", "Speaker 1"]);
+  });
+
+  it("separates marked same-speaker lines after a pause without repeating their header", () => {
+    renderPanel([
+      buildSegment({ id: "a", start: 0, end: 1, speaker: "LIVE_PROVISIONAL_1", settling_required: true }),
+      buildSegment({ id: "b", start: 3, end: 4, speaker: "LIVE_PROVISIONAL_1", settling_required: true }),
+    ]);
+
+    const lines = screen.getAllByTestId("live-transcript-line");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).not.toHaveClass("pt-2");
+    expect(lines[1]).toHaveClass("pt-2");
+    expect(screen.getAllByTestId("live-transcript-speaker")).toHaveLength(1);
+  });
+
+  it("keeps marked label italics tied to the line lock rather than the speaker state", () => {
+    const segment = buildSegment({ id: "a", speaker: "LIVE_PROVISIONAL_1",
+      settling_required: true, locked: false, speaker_state: "stable" });
+    const { rerender } = renderPanel([segment]);
+    const chip = screen.getByTestId("live-transcript-speaker");
+    expect(chip).toHaveAttribute("data-locked", "false");
+    expect(chip).toHaveClass("italic");
+
+    rerender(<LiveTranscriptPanel segments={[{ ...segment, locked: true, speaker_state: "provisional" }]} hasLoaded />);
+    expect(chip).toHaveAttribute("data-locked", "true");
+    expect(chip).not.toHaveClass("italic");
+  });
+
+  it("describes settling on the line without a visible caption and removes the description when locked", () => {
+    const segment = buildSegment({ id: "a", text: "Words still changing", settling_required: true, locked: false });
+    const { rerender } = renderPanel([segment]);
+    const line = screen.getByTestId("live-transcript-line");
+    expect(line).toHaveAccessibleDescription("This line is still settling.");
+    expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
+    expect(screen.getByText("Lines settle as the conversation continues. Your corrections are kept."))
+      .toBeInTheDocument();
+    expect(line.querySelector("p[data-segment-id]")?.textContent).toBe("Words still changing");
+
+    rerender(<LiveTranscriptPanel segments={[{ ...segment, locked: true }]} hasLoaded />);
+    expect(line).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("keeps unmarked lines free of marked spacing and settling descriptions", () => {
+    renderPanel([
+      buildSegment({ id: "a", speaker: "LIVE_PROVISIONAL_1", locked: false }),
+      buildSegment({ id: "b", start: 3, speaker: "LIVE_PROVISIONAL_1", locked: false }),
+    ]);
+
+    for (const line of screen.getAllByTestId("live-transcript-line")) {
+      expect(line.className).toBe("group/line");
+      expect(line).not.toHaveAttribute("aria-describedby");
+    }
+    expect(screen.getAllByTestId("live-transcript-speaker")).toHaveLength(1);
+    expect(screen.getByText("Provisional. Corrected when the recording is processed.")).toBeInTheDocument();
+  });
+
   it("shows no speaker for lines the live lane left unlabelled", () => {
     renderPanel([
       buildLine("a", 0, "no label yet", "microphone"),

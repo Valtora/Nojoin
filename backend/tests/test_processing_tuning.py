@@ -33,6 +33,7 @@ TODAYS_LITERALS = {
     "phantom_merge_threshold": 0.60,
     "word_flip_max_duration_s": 0.45,
     "word_flip_max_gap_s": 0.25,
+    "line_break_pause_s": 1.0,
 }
 
 
@@ -109,6 +110,18 @@ def test_integer_key_accepts_an_integral_float_as_int() -> None:
 
 def test_resolve_uses_a_valid_value() -> None:
     assert resolve_tuning({"vad_threshold": 0.3}, "vad_threshold") == 0.3
+
+
+def test_line_break_pause_uses_strict_word_time_comparison() -> None:
+    from backend.processing.processing_tuning import line_break_pause_exceeded
+
+    assert not line_break_pause_exceeded(0.5)
+    assert not line_break_pause_exceeded(1.0)
+    assert not line_break_pause_exceeded(1.0 + 1e-10)
+    assert line_break_pause_exceeded(1.2)
+    assert not line_break_pause_exceeded(1.2, {"line_break_pause_s": 2.0})
+    assert line_break_pause_exceeded(1.2, {"line_break_pause_s": 0.5})
+    assert line_break_pause_exceeded(1.2, {"line_break_pause_s": False})
 
 
 def test_resolve_ignores_an_invalid_value_with_a_warning(caplog) -> None:

@@ -5,9 +5,11 @@ import re
 
 from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
 from backend.processing.processing_tuning import (
+    LINE_BREAK_PAUSE_KEY,
     TUNING_SPECS,
     WORD_FLIP_MAX_DURATION_KEY,
     WORD_FLIP_MAX_GAP_KEY,
+    line_break_pause_exceeded,
     resolve_tuning,
 )
 from backend.utils.partial_word_segments import (
@@ -294,6 +296,7 @@ def _combine_word_level(segments, speaker_turns, config=None):
         max_duration_s=resolve_tuning(config, WORD_FLIP_MAX_DURATION_KEY),
         max_gap_s=resolve_tuning(config, WORD_FLIP_MAX_GAP_KEY),
     )
+    line_config = {LINE_BREAK_PAUSE_KEY: resolve_tuning(config, LINE_BREAK_PAUSE_KEY)}
 
     for i, assignment in enumerate(word_assignments):
         word_data = assignment["word"]
@@ -314,7 +317,9 @@ def _combine_word_level(segments, speaker_turns, config=None):
 
         gap = w_start - current_segment["end"]
 
-        if speaker != current_segment["speaker"] or exceeds(gap, 1.0):
+        if speaker != current_segment["speaker"] or line_break_pause_exceeded(
+            gap, line_config
+        ):
             final_segments.append(_with_word_source_public_ids(current_segment))
             current_segment = {
                 "start": w_start,

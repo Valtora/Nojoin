@@ -40,7 +40,8 @@ describe("settling line actions", () => {
     });
     const initial = applyTranscriptDelta({ currentState: null, recordingId: "r1", fallbackSegments: [], delta: delta(false), mode: "full" });
     const view = render(<LiveTranscriptPanel segments={initial.segments} hasLoaded onNoteOnLine={note} lineHandlers={actions} />);
-    expect(screen.getByText("Settling…")).toBeInTheDocument();
+    expect(screen.getByTestId("live-transcript-line")).toHaveAccessibleDescription("This line is still settling.");
+    expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     open();
     const items = screen.getAllByRole("menuitem");
     expect(items).toHaveLength(4);
@@ -53,6 +54,7 @@ describe("settling line actions", () => {
     const locked = applyTranscriptDelta({ currentState: initial, recordingId: "r1", fallbackSegments: [], delta: delta(true) });
     view.rerender(<LiveTranscriptPanel segments={locked.segments} hasLoaded onNoteOnLine={note} lineHandlers={actions} />);
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
+    expect(screen.getByTestId("live-transcript-line")).not.toHaveAttribute("aria-describedby");
     fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
     expect(note).toHaveBeenCalledWith({ startMs: 0, endMs: 2000 });
     open();
@@ -127,7 +129,10 @@ describe("settling line actions", () => {
   it("disables naming on an unlocked anchor while a later locked line remains nameable", () => {
     const rename = vi.fn();
     render(<LiveTranscriptPanel hasLoaded onRenameLiveSpeaker={rename}
-      segments={[line(false), { ...line(true), id: "u2", start: 3 }]} />);
+      // Headers now occur at speaker changes, so another voice breaks the run
+      // before the locked naming anchor returns to Speaker 1.
+      segments={[line(false), { ...line(true), id: "other", start: 3, speaker: "LIVE_PROVISIONAL_2" },
+        { ...line(true), id: "u2", start: 6 }]} />);
     const chips = screen.getAllByRole("button", { name: "Rename Speaker 1" });
     fireEvent.click(chips[0]);
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();

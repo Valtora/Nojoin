@@ -4,7 +4,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S, LIVE_MIN_SILENCE_MS
+from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
+from backend.processing.processing_tuning import (
+    LINE_BREAK_PAUSE_KEY,
+    TUNING_SPECS,
+    line_break_pause_exceeded,
+)
 
 from .live_labels import LiveLabelDecision
 
@@ -32,6 +37,7 @@ class LineBoundaries:
     closed_ends: Mapping[str, int | None] = field(default_factory=dict)
     silence_start_ms: int | None = None
     closed_at_ms: Sequence[int] = ()
+    line_break_pause_s: float = TUNING_SPECS[LINE_BREAK_PAUSE_KEY].default
 
 
 def word_extent(word: dict[str, Any]) -> tuple[int, int] | None:
@@ -73,7 +79,10 @@ def _boundary_reason(
             if extents[-1][0] < point <= start:
                 partition.closed_at_ms = point
                 return "closure"
-        if start - extents[-1][1] >= LIVE_MIN_SILENCE_MS:
+        if line_break_pause_exceeded(
+            (start - extents[-1][1]) / 1000,
+            {LINE_BREAK_PAUSE_KEY: boundaries.line_break_pause_s},
+        ):
             return "pause"
         if any(extents[-1][0] < barrier <= start for barrier in barriers):
             return "closure"
