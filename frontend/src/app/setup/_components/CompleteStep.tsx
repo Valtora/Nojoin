@@ -20,6 +20,8 @@ interface CompleteStepProps {
   modelPreparationStage: string | null;
   modelPreparationProgress: number;
   modelPreparationWarning: string;
+  /** The server reported the download failed, as opposed to a lost or slow poll. */
+  modelPreparationFailed: boolean;
   summary: {
     username: string;
     whisperModelLabel: string;
@@ -48,6 +50,7 @@ export default function CompleteStep({
   modelPreparationStage,
   modelPreparationProgress,
   modelPreparationWarning,
+  modelPreparationFailed,
   summary,
   onComplete,
 }: CompleteStepProps) {
@@ -105,13 +108,21 @@ export default function CompleteStep({
     );
   }
 
+  // "Ready" only when preparation finished cleanly. Setup itself is done
+  // either way; the warning below says what is left and where to retry it.
+  const heading = !modelPreparationWarning
+    ? { title: "Setup Complete", lead: "Nojoin is ready." }
+    : modelPreparationFailed
+      ? { title: "Setup Finished", lead: "A model still needs downloading." }
+      : { title: "Setup Finished", lead: "Model downloads continue on the server." };
+
   return (
     <div className="space-y-5">
       <div className="text-center">
         <CheckCircle className="mx-auto mb-4 h-12 w-12 text-status-success-fg" />
-        <h2 className="text-xl font-semibold text-foreground">Setup Complete</h2>
+        <h2 className="text-xl font-semibold text-foreground">{heading.title}</h2>
         <p className="text-contrast-helper text-sm">
-          Nojoin is ready. Here is what this deployment is set to.
+          {heading.lead} Here is what this deployment is set to.
         </p>
       </div>
 

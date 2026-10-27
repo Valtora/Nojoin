@@ -68,6 +68,7 @@ export default function SetupPage() {
     modelPreparationStage,
     modelPreparationComplete,
     modelPreparationWarning,
+    modelPreparationFailed,
     goToStep,
     handleInputChange,
     handleBootstrapPasswordChange,
@@ -287,6 +288,7 @@ export default function SetupPage() {
               modelPreparationStage={modelPreparationStage}
               modelPreparationProgress={modelPreparationProgress}
               modelPreparationWarning={modelPreparationWarning}
+              modelPreparationFailed={modelPreparationFailed}
               summary={{
                 username: formData.username,
                 whisperModelLabel,

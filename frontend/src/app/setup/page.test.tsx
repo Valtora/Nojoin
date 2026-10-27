@@ -63,6 +63,7 @@ vi.mock("@/components/settings/CliOAuthPanel", () => ({
 
 import AuthGuard from "@/components/AuthGuard";
 
+import CompleteStep from "./_components/CompleteStep";
 import SetupPage from "./page";
 
 function makeUnauthorised() {
@@ -151,6 +152,16 @@ async function advanceToAi(config: Record<string, unknown> = CONFIGURED_GEMINI) 
   fireEvent.click(screen.getByText("Create account"));
   await screen.findByText("AI Configuration");
 }
+
+/** ... -> Finish step, with AI left for later. */
+async function advanceToFinish() {
+  await advanceToAi(NO_PROVIDER);
+  fireEvent.click(screen.getByText("Decide later"));
+  fireEvent.click(screen.getByText("Finish setup"));
+}
+
+const WHISPER_DOWNLOAD_FAILED =
+  "Could not download the Whisper transcription model. Check that the server can reach the internet and has free disk space, then retry from Model downloads under Advanced in Settings > AI providers.";
 
 describe("SetupPage", () => {
   beforeEach(() => {
@@ -393,6 +404,86 @@ describe("SetupPage", () => {
     expect(screen.getByText("Not configured yet")).toBeInTheDocument();
   });
 
+  it("calls a clean finish ready", async () => {
+    renderWithProviders(<SetupPage />);
+    await advanceToFinish();
+
+    await screen.findByText("Setup Complete");
+    expect(
+      screen.getByText("Nojoin is ready. Here is what this deployment is set to."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Setup Finished")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Could not download/)).not.toBeInTheDocument();
+  });
+
+  it("does not call setup ready when the model download failed", async () => {
+    getDownloadProgress.mockResolvedValue({
+      status: "error",
+      progress: 0,
+      message: WHISPER_DOWNLOAD_FAILED,
+      stage: "error",
+    });
+    renderWithProviders(<SetupPage />);
+    await advanceToFinish();
+
+    await screen.findByText("Setup Finished");
+    expect(
+      screen.getByText(
+        "A model still needs downloading. Here is what this deployment is set to.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Setup Complete")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nojoin is ready/)).not.toBeInTheDocument();
+    // The warning still says where to retry.
+    expect(screen.getByText(WHISPER_DOWNLOAD_FAILED)).toBeInTheDocument();
+  });
+
+  it("does not call setup ready while the download may still be running", () => {
+    renderWithProviders(
+      <CompleteStep
+        modelPreparationComplete
+        modelPreparationMessage=""
+        modelPreparationStage={null}
+        modelPreparationProgress={100}
+        modelPreparationWarning="Model preparation is taking longer than expected."
+        modelPreparationFailed={false}
+        summary={{
+          username: "alice",
+          whisperModelLabel: "Turbo",
+          diarizationReady: true,
+          aiRoute: "later",
+          aiDetail: "Not configured yet",
+          demoRecording: true,
+        }}
+        onComplete={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Setup Finished")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Model downloads continue on the server. Here is what this deployment is set to.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Nojoin is ready/)).not.toBeInTheDocument();
+  });
+
+  it("keeps model options short and describes the chosen one below", async () => {
+    renderWithProviders(<SetupPage />);
+    await advanceToTranscription();
+
+    const select = screen.getByLabelText("Transcription model");
+    fireEvent.change(select, { target: { value: "small" } });
+
+    // The closed select shows only the option, so the speed lives in the hint.
+    expect(
+      screen.getByRole("option", { name: "Small (about 2 GB)" }),
+    ).toBeInTheDocument();
+    expect(select).toHaveAccessibleDescription(
+      /244 M parameters, about 2 GB of GPU memory, about 4 times as fast as Large\./,
+    );
+  });
+
   it("refetches the server config on the first 'check config again' click", async () => {
     renderWithProviders(<SetupPage />);
     await advanceToAi(NO_PROVIDER);
@@ -552,6 +643,8 @@ describe("SetupPage", () => {
 
     expect(screen.getByText("Create Owner Account")).toBeInTheDocument();
     expect(screen.queryByText(/Admin Account/)).not.toBeInTheDocument();
+    // No "admin" suggestion: the account is the Owner, named as they like.
+    expect(screen.getByLabelText("Username")).not.toHaveAttribute("placeholder");
     expect(
       screen.getByText(/Delete it like any other meeting; Settings > Help can create it again\./),
     ).toBeInTheDocument();
