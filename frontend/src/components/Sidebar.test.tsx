@@ -13,6 +13,7 @@ import Sidebar from "./Sidebar";
 import ImportAudioHost from "./importAudio/ImportAudioHost";
 import { RecordingStatus, type Recording } from "@/types";
 import { fillMarkerViolations } from "@/test/fillMarkerContracts";
+import { activeTransitions, animatesWidth } from "@/test/widthTransition";
 
 const routerPush = vi.fn();
 const routerReplace = vi.fn();
@@ -27,6 +28,11 @@ let pausedRecording: { id: string } | null = null;
 let pathname = "/recordings";
 let unsentRecordings: string[] = [];
 let selectedRecordingIds: string[] = [];
+let isRecordingsSidebarCollapsed = false;
+const setRecordingsSidebarWidth = vi.fn();
+const toggleRecordingsSidebarCollapse = vi.fn(() => {
+  isRecordingsSidebarCollapsed = !isRecordingsSidebarCollapsed;
+});
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: React.ComponentPropsWithoutRef<"a">) => (
@@ -101,7 +107,9 @@ vi.mock("@/lib/store", () => ({
     clearSelection: vi.fn(),
     pruneRecordingSelection: vi.fn(),
     recordingsSidebarWidth: 320,
-    setRecordingsSidebarWidth: vi.fn(),
+    setRecordingsSidebarWidth,
+    isRecordingsSidebarCollapsed,
+    toggleRecordingsSidebarCollapse,
   }),
 }));
 
@@ -175,6 +183,9 @@ describe("Sidebar", () => {
     pathname = "/recordings";
     unsentRecordings = [];
     selectedRecordingIds = [];
+    isRecordingsSidebarCollapsed = false;
+    setRecordingsSidebarWidth.mockClear();
+    toggleRecordingsSidebarCollapse.mockClear();
     sweptLists.length = 0;
     useImportAudioStore.setState({ isImportAudioOpen: false });
 
@@ -241,6 +252,36 @@ describe("Sidebar", () => {
       "Archive",
       "Move to Bin",
     ]);
+  });
+
+  it("follows the pointer while resizing and animates only collapse and expand (#747)", async () => {
+    const { rerender } = renderWithProviders(<Sidebar />);
+    await screen.findByRole("heading", { name: "Latest meeting" });
+    const rail = document.getElementById("sidebar-recordings-list")!;
+    const handle = rail.querySelector<HTMLElement>(".cursor-col-resize")!;
+    const expandedWidth = rail.style.width;
+    expect(expandedWidth).toMatch(/^\d+px$/);
+    expect(animatesWidth(rail)).toBe(true);
+
+    fireEvent.pointerDown(handle, { button: 0 });
+    expect(activeTransitions(rail)).toEqual([]);
+    fireEvent.pointerMove(document, { clientX: 400 });
+    expect(setRecordingsSidebarWidth).toHaveBeenCalledWith(400);
+    expect(activeTransitions(rail)).toEqual([]);
+
+    fireEvent.pointerUp(document);
+    expect(animatesWidth(rail)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse recordings list" }));
+    rerender(<Sidebar />);
+    expect(rail.style.width).toMatch(/^\d+px$/);
+    expect(rail.style.width).not.toBe(expandedWidth);
+    expect(animatesWidth(rail)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand recordings list" }));
+    rerender(<Sidebar />);
+    expect(rail.style.width).toBe(expandedWidth);
+    expect(animatesWidth(rail)).toBe(true);
   });
 
   it("re-fetches recordings when a recording-updated event fires", async () => {

@@ -10,6 +10,7 @@ import {
 import type { Tag } from "@/types";
 import { selectorFor } from "@/test/depthSelectors";
 import { styleRules } from "@/test/styleRules";
+import { activeTransitions, animatesWidth } from "@/test/widthTransition";
 
 const routerPush = vi.fn();
 const toggleTagFilter = vi.fn();
@@ -24,6 +25,11 @@ const logout = vi.fn();
 
 let pathname = "/";
 let expandedTagIdsArray: number[] = [];
+let isNavCollapsed = false;
+const setNavWidth = vi.fn();
+const toggleNavCollapse = vi.fn(() => {
+  isNavCollapsed = !isNavCollapsed;
+});
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush }),
@@ -40,10 +46,10 @@ vi.mock("@/lib/store", () => ({
     setCurrentView: vi.fn(),
     selectedTagIds: [],
     toggleTagFilter,
-    isNavCollapsed: false,
-    toggleNavCollapse: vi.fn(),
+    isNavCollapsed,
+    toggleNavCollapse,
     navWidth: 256,
-    setNavWidth: vi.fn(),
+    setNavWidth,
     expandedTagIds: expandedTagIdsArray,
     toggleExpandedTag,
     setExpandedTagIds,
@@ -88,6 +94,7 @@ describe("MainNav", () => {
     vi.clearAllMocks();
     pathname = "/";
     expandedTagIdsArray = [];
+    isNavCollapsed = false;
     getTags.mockResolvedValue([]);
   });
 
@@ -126,6 +133,36 @@ describe("MainNav", () => {
       else document.documentElement.setAttribute("data-style", oldStyle);
       document.documentElement.classList.toggle("dark", oldDark);
     }
+  });
+
+  it("follows the pointer while resizing and animates only collapse and expand (#747)", async () => {
+    const { rerender } = renderWithProviders(<MainNav />);
+    await waitFor(() => expect(getTags).toHaveBeenCalled());
+    const rail = document.getElementById("main-nav")!;
+    const handle = rail.querySelector<HTMLElement>(".cursor-col-resize")!;
+    const expandedWidth = rail.style.width;
+    expect(expandedWidth).toMatch(/^\d+px$/);
+    expect(animatesWidth(rail)).toBe(true);
+
+    fireEvent.pointerDown(handle, { button: 0 });
+    expect(activeTransitions(rail)).toEqual([]);
+    fireEvent.pointerMove(document, { clientX: 300 });
+    expect(setNavWidth).toHaveBeenCalledWith(300);
+    expect(activeTransitions(rail)).toEqual([]);
+
+    fireEvent.pointerUp(document);
+    expect(animatesWidth(rail)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse navigation" }));
+    rerender(<MainNav />);
+    expect(rail.style.width).toMatch(/^\d+px$/);
+    expect(rail.style.width).not.toBe(expandedWidth);
+    expect(animatesWidth(rail)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand navigation" }));
+    rerender(<MainNav />);
+    expect(rail.style.width).toBe(expandedWidth);
+    expect(animatesWidth(rail)).toBe(true);
   });
 
   it("leaves Import Audio to the recordings list", async () => {
