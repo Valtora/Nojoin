@@ -4,7 +4,8 @@ from copy import deepcopy
 from heapq import heappop, heappush
 from typing import Any, Sequence
 
-from backend.models.pipeline import TranscriptUtterance
+from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
+from backend.utils.final_word_boundaries import final_words
 
 
 def line_is_protected(line: TranscriptUtterance) -> bool:
@@ -110,6 +111,17 @@ def _group_components(
 def _retained_segment(line: TranscriptUtterance) -> dict[str, Any]:
     payload = deepcopy(line.confidence_payload or {})
     if line_is_protected(line):
+        if line.state == TranscriptUtteranceState.FINALIZED and not payload.get(
+            "human_protection"
+        ):
+            # Protected evidence is read verbatim; persist the same identities
+            # the final line exposed before its speaker was corrected.
+            words = final_words(payload, line.public_id, text=line.text)
+            offset = 0
+            for source in payload.get("asr_segments") or []:
+                count = len(source.get("words") or [])
+                source["words"] = words[offset : offset + count]
+                offset += count
         payload.setdefault("human_protection", {"version": 1, "retained": True})
     return {
         "id": line.public_id,

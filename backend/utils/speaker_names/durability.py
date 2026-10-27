@@ -9,7 +9,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.utils.canonical_pipeline.constants import _load_transcript
 
-from .sources import AUTHORITY, SOURCE_USER
+from .sources import AUTHORITY, KIND_DISMISS, SOURCE_USER
 
 
 def snapshot_name_anchors(session: Any, recording_id: int) -> list[dict[str, Any]]:
@@ -55,7 +55,8 @@ def snapshot_name_anchors(session: Any, recording_id: int) -> list[dict[str, Any
             "recording_speaker_public_id": speakers.get(row.recording_speaker_id),
         }
         for row in rows
-        if row.source == SOURCE_USER and row.id not in superseded
+        if row.source == SOURCE_USER
+        and (row.kind == KIND_DISMISS or row.id not in superseded)
     ]
     if not rows:
         transcript = _load_transcript(session, recording_id)
