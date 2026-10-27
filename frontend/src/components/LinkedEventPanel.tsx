@@ -11,6 +11,8 @@ import {
 } from '@/lib/api';
 import { loadingButtonProps } from '@/components/ui/loadingButton';
 import { parseServerTimestamp } from '@/lib/serverTimestamp';
+import { formatTimeZoneLocale } from '@/lib/timezone';
+import { useUserTimeZone } from '@/lib/useUserTimeZone';
 
 interface LinkedEventPanelProps {
   recordingId: RecordingId;
@@ -19,14 +21,14 @@ interface LinkedEventPanelProps {
   compact?: boolean;
 }
 
-function formatEventTime(event: CalendarEventLink): string {
+function formatEventTime(event: CalendarEventLink, timeZone: string): string {
   const start = parseServerTimestamp(event.starts_at);
   if (!start) return '';
-  const datePart = start.toLocaleDateString(undefined, {
+  const datePart = formatTimeZoneLocale(start, timeZone, 'date', {
     month: 'short',
     day: 'numeric',
   });
-  const timePart = start.toLocaleTimeString(undefined, {
+  const timePart = formatTimeZoneLocale(start, timeZone, 'time', {
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -39,6 +41,7 @@ export default function LinkedEventPanel({
   onLinkChanged,
   compact = false,
 }: LinkedEventPanelProps) {
+  const timeZone = useUserTimeZone();
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [candidates, setCandidates] = useState<CalendarEventLink[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -99,8 +102,8 @@ export default function LinkedEventPanel({
         <div className={`${basePillClass} border-control-border bg-surface-inset text-contrast-muted`}>
           <Calendar className="w-3.5 h-3.5 shrink-0" />
           <span className={`truncate ${compact ? "max-w-[10rem]" : "max-w-[16rem]"}`}>{linkedEvent.title}</span>
-          {formatEventTime(linkedEvent) && (
-            <span className={`opacity-60 ${compact ? "hidden" : ""}`}>{formatEventTime(linkedEvent)}</span>
+          {formatEventTime(linkedEvent, timeZone) && (
+            <span className={`opacity-60 ${compact ? "hidden" : ""}`}>{formatEventTime(linkedEvent, timeZone)}</span>
           )}
           <ButtonBase
             onClick={openPicker}
@@ -150,9 +153,9 @@ export default function LinkedEventPanel({
                     <span className="block text-sm font-medium text-foreground truncate">
                       {candidate.title}
                     </span>
-                    {formatEventTime(candidate) && (
+                    {formatEventTime(candidate, timeZone) && (
                       <span className="block text-xs text-contrast-helper">
-                        {formatEventTime(candidate)}
+                        {formatEventTime(candidate, timeZone)}
                       </span>
                     )}
                   </ButtonBase>

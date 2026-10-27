@@ -12,6 +12,8 @@ import { importAudio, getSupportedAudioFormats } from '@/lib/api';
 import SpeakerCapField from '@/components/SpeakerCapField';
 import RecordingLanguageField from '@/components/RecordingLanguageField';
 import { useNotificationStore } from '@/lib/notificationStore';
+import { fromTimeZoneDate, toTimeZoneDate } from '@/lib/timezone';
+import { useUserTimeZone } from '@/lib/useUserTimeZone';
 
 interface ImportAudioModalProps {
   isOpen: boolean;
@@ -39,6 +41,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [meetingName, setMeetingName] = useState('');
   const [recordedAt, setRecordedAt] = useState<Date | null>(null);
+  const timeZone = useUserTimeZone();
   // null means auto-detect, the default.
   const [maxSpeakers, setMaxSpeakers] = useState<number | null>(null);
   const [language, setLanguage] = useState<string | null>(null);
@@ -338,9 +341,11 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                 Recording Date (optional)
               </label>
               <div className="w-full">
+                {/* The picker works in the browser's zone, so its wall clock is
+                    converted to and from the time-zone setting. */}
                 <ModernDatePicker
-                  selected={recordedAt}
-                  onChange={(date) => setRecordedAt(date)}
+                  selected={recordedAt ? toTimeZoneDate(recordedAt, timeZone) : null}
+                  onChange={(date) => setRecordedAt(date ? fromTimeZoneDate(date, timeZone) : null)}
                   showTimeSelect
                   dateFormat="MMMM d, yyyy h:mm aa"
                   placeholderText="Select date and time"
@@ -348,7 +353,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                 />
               </div>
               <p className="mt-1 text-xs text-contrast-helper">
-                If not set, the current time will be used.
+                In {timeZone}. If not set, the current time will be used.
               </p>
             </div>
 

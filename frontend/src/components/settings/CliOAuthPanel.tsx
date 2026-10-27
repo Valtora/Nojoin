@@ -31,6 +31,8 @@ import {
 } from "./settingsControls";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneLocale } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 
 /** Compact token count, e.g. 1.2M / 340K / 512. */
 function formatTokens(value: number): string {
@@ -168,6 +170,7 @@ function ProviderConnectRow({
   } | null>(null);
 
   const connected = Boolean(status?.connected);
+  const timeZone = useUserTimeZone();
   const usageLimitedUntil = parseServerTimestamp(status?.usage_limited_until);
   const usageLimited =
     usageLimitedUntil !== null && usageLimitedUntil.getTime() > Date.now();
@@ -327,7 +330,7 @@ function ProviderConnectRow({
           <span className="block">Your {meta.plan} plan.</span>
           {usageLimited && (
             <span className="block text-status-warning-fg">
-              Limit reached until {usageLimitedUntil!.toLocaleString()}. The
+              Limit reached until {formatTimeZoneLocale(usageLimitedUntil!, timeZone)}. The
               server&apos;s providers answer until then.
             </span>
           )}

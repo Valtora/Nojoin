@@ -6,6 +6,9 @@ import { BarChart3, Loader2 } from "lucide-react";
 import { getTelemetryStatus, updateTelemetryEnabled } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneLocale } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import type { TelemetryStatus } from "@/types";
 
 import SettingsCallout from "./SettingsCallout";
@@ -62,12 +65,12 @@ function heartbeatDescription(status: TelemetryStatus): string {
   return "The install ID and version, once a day and when Nojoin starts on a new version. It counts installations, and only NOJOIN_TELEMETRY_ENABLED=false stops it.";
 }
 
-function formatTimestamp(value: string | null): string {
+function formatTimestamp(value: string | null, timeZone: string): string {
   if (!value) {
     return "Never";
   }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "Unknown" : parsed.toLocaleString();
+  const parsed = parseServerTimestamp(value);
+  return parsed ? formatTimeZoneLocale(parsed, timeZone) : "Unknown";
 }
 
 export default function TelemetrySection() {
@@ -75,6 +78,7 @@ export default function TelemetrySection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const addNotification = useNotificationStore((state) => state.addNotification);
+  const timeZone = useUserTimeZone();
 
   const load = useCallback(async () => {
     try {
@@ -160,7 +164,7 @@ export default function TelemetrySection() {
           <SettingsCallout
             tone="warning"
             title="The last heartbeat did not arrive"
-            message={`${status.heartbeat_last_attempt_detail ?? "The heartbeat failed."} Attempted ${formatTimestamp(status.heartbeat_last_attempt_at)}. Nothing else in Nojoin is affected, and the next attempt is in an hour. If you block this endpoint deliberately, this is expected.`}
+            message={`${status.heartbeat_last_attempt_detail ?? "The heartbeat failed."} Attempted ${formatTimestamp(status.heartbeat_last_attempt_at, timeZone)}. Nothing else in Nojoin is affected, and the next attempt is in an hour. If you block this endpoint deliberately, this is expected.`}
           />
         </SettingsBlock>
       )}
@@ -200,7 +204,7 @@ export default function TelemetrySection() {
           <SettingsCallout
             tone="warning"
             title="The last diagnostics ping did not arrive"
-            message={`${status.last_attempt_detail ?? "The ping failed."} Attempted ${formatTimestamp(status.last_attempt_at)}. Nothing else in Nojoin is affected, and the next attempt is in at most six hours. If you block this endpoint deliberately, this is expected.`}
+            message={`${status.last_attempt_detail ?? "The ping failed."} Attempted ${formatTimestamp(status.last_attempt_at, timeZone)}. Nothing else in Nojoin is affected, and the next attempt is in at most six hours. If you block this endpoint deliberately, this is expected.`}
           />
         </SettingsBlock>
       )}
@@ -241,13 +245,13 @@ export default function TelemetrySection() {
           <div>
             <dt className="text-contrast-helper">Heartbeat last sent</dt>
             <dd className="text-foreground">
-              {formatTimestamp(status.heartbeat_last_sent_at)}
+              {formatTimestamp(status.heartbeat_last_sent_at, timeZone)}
             </dd>
           </div>
           <div>
             <dt className="text-contrast-helper">Diagnostics last sent</dt>
             <dd className="text-foreground">
-              {formatTimestamp(status.last_sent_at)}
+              {formatTimestamp(status.last_sent_at, timeZone)}
             </dd>
           </div>
           <div className="@min-[33rem]:col-span-2">

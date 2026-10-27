@@ -18,6 +18,8 @@ import Modal from "../ui/Modal";
 import Select from "../ui/Select";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneLocale } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
@@ -33,6 +35,7 @@ export default function InvitesTab() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const { addNotification } = useNotificationStore();
+  const timeZone = useUserTimeZone();
 
   // Create Form State
   const [role, setRole] = useState<UserRole>(UserRole.USER);
@@ -196,8 +199,9 @@ export default function InvitesTab() {
       ) : (
         invitations.map((inv) => {
           const role = inv.role.charAt(0).toUpperCase() + inv.role.slice(1);
+          const expiresAt = parseServerTimestamp(inv.expires_at);
           const expires = inv.expires_at
-            ? (parseServerTimestamp(inv.expires_at)?.toLocaleDateString() ?? "Unknown date")
+            ? (expiresAt ? formatTimeZoneLocale(expiresAt, timeZone, "date") : "Unknown date")
             : null;
           return (
             <SettingsRow

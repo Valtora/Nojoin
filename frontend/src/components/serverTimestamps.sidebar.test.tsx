@@ -1,6 +1,7 @@
 import type { ComponentPropsWithoutRef } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setCachedUserTimeZone } from "@/lib/timezone";
 import { withProcessTimeZone } from "@/test/processTimeZone";
 import { renderWithProviders, screen, within } from "@/test/renderWithProviders";
 import { useNavigationStore } from "@/lib/store";
@@ -54,17 +55,23 @@ const recording = (id: string, created_at: string): Recording => ({
 
 const earlyInstant = new Date("2026-10-27T02:30:00Z");
 const lateInstant = new Date("2026-10-27T20:30:00Z");
-const formatDate = (date: Date) => date.toLocaleDateString("en-GB", {
-  day: "numeric", month: "short", year: "numeric",
+const formatDate = (date: Date, timeZone: string) => date.toLocaleDateString("en-GB", {
+  day: "numeric", month: "short", year: "numeric", timeZone,
 });
-const formatClock = (date: Date) => date.toLocaleTimeString([], {
-  hour: "2-digit", minute: "2-digit", hour12: false,
+const formatClock = (date: Date, timeZone: string) => date.toLocaleTimeString([], {
+  hour: "2-digit", minute: "2-digit", hour12: false, timeZone,
 });
 
-describe.each(["America/New_York", "Asia/Tokyo"])("sidebar server timestamps in %s", (timeZone) => {
-  withProcessTimeZone(timeZone);
+// The browser's zone and the Nojoin setting differ, and the sidebar must show
+// the setting's day and clock.
+describe.each([
+  ["America/New_York", "Asia/Tokyo"],
+  ["Asia/Tokyo", "America/New_York"],
+])("sidebar server timestamps in %s with the setting in %s", (processZone, settingZone) => {
+  withProcessTimeZone(processZone);
 
   beforeEach(() => {
+    setCachedUserTimeZone(settingZone);
     useNavigationStore.setState({
       currentView: "recordings", selectedTagIds: [], selectedRecordingIds: [],
       isRecordingsSidebarCollapsed: false,
@@ -75,19 +82,19 @@ describe.each(["America/New_York", "Asia/Tokyo"])("sidebar server timestamps in 
     ]);
   });
 
-  it("labels recording days from UTC even when the local day crosses midnight", async () => {
+  it("labels recording days from UTC in the setting's zone across midnight", async () => {
     renderWithProviders(<Sidebar />);
     for (const [name, instant] of [["early", earlyInstant], ["late", lateInstant]] as const) {
       const title = await screen.findByRole("heading", { name: `Meeting ${name}` });
-      expect(within(title.closest("a")!).getByText(formatDate(instant))).toBeInTheDocument();
+      expect(within(title.closest("a")!).getByText(formatDate(instant, settingZone))).toBeInTheDocument();
     }
   });
 
-  it("shows the UTC start and duration-derived end as local clock times", async () => {
+  it("shows the UTC start and duration-derived end as clock times in the setting's zone", async () => {
     renderWithProviders(<Sidebar />);
     const title = await screen.findByRole("heading", { name: "Meeting early" });
     const end = new Date("2026-10-27T02:40:00Z");
-    const expected = `${formatClock(earlyInstant)} - ${formatClock(end)}`;
+    const expected = `${formatClock(earlyInstant, settingZone)} - ${formatClock(end, settingZone)}`;
     expect(within(title.closest("a")!).getByText(expected)).toBeInTheDocument();
   });
 });

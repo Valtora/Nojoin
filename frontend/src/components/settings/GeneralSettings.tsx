@@ -218,7 +218,7 @@ export default function GeneralSettings({
         <SettingsCard
           id="appearance-timezone"
           title="Date and time"
-          description="The timezone used across the dashboard, calendars and task deadlines."
+          description="The timezone of every date and time Nojoin shows."
         >
           <SettingsRow
             label="Timezone"

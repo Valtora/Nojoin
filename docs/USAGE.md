@@ -386,6 +386,8 @@ Each settings category is its own page. Every user has **Profile and security**,
 
 Most settings belong to your account. One marked **This browser** is kept in the browser you set it in, such as the theme and the microphone and its levels. One marked **Everyone** applies to the whole installation, and only an administrator can change it.
 
+**Settings > Appearance > Date and time** sets the timezone Nojoin shows dates and times in, and reads the date you give an imported recording in. It can differ from your computer's timezone. Until you choose one it is UTC, or the timezone your administrator set with `DEFAULT_TIMEZONE`. System logs show UTC, as `docker logs` does, and a date with no time of day, such as a subscription's last-used date, is shown as it is.
+
 ### Language Preferences
 
 Two per-user settings:

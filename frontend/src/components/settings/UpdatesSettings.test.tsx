@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
+import { setCachedUserTimeZone } from "@/lib/timezone";
+import { withProcessTimeZone } from "@/test/processTimeZone";
 import type { ReleaseInfo, VersionInfo } from "@/types";
 
 const context = { isAdmin: false };
@@ -55,6 +57,7 @@ const versionInfo: VersionInfo = {
 beforeEach(() => {
   context.isAdmin = false;
   getVersion.mockResolvedValue(versionInfo);
+  setCachedUserTimeZone("UTC");
 });
 
 describe("UpdatesSettings", () => {
@@ -126,5 +129,18 @@ describe("UpdatesSettings", () => {
     render(<UpdatesSettings />);
 
     expect(await screen.findByText("How to upgrade")).toBeTruthy();
+  });
+});
+
+describe("UpdatesSettings in a browser zone that differs from the setting", () => {
+  withProcessTimeZone("America/New_York");
+
+  it("dates releases in the time-zone setting", async () => {
+    setCachedUserTimeZone("Asia/Tokyo");
+    render(<UpdatesSettings />);
+
+    // Midnight UTC on 15 October is still the 14th in New York.
+    expect(await screen.findByText(/^Published 15 Oct 2026, /)).toBeVisible();
+    expect(screen.queryByText(/14 Oct 2026/)).toBeNull();
   });
 });

@@ -1,12 +1,14 @@
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 
 import MarkdownBubble from "@/components/MarkdownBubble";
 import { getVersion } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { prepareReleaseNotes } from "@/lib/releaseNotes";
+import { formatTimeZoneDate } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import type { ReleaseInfo, UpdateStatus, VersionInfo } from "@/types";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
@@ -41,12 +43,12 @@ function parseDate(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function describePublished(value: string | null | undefined): string {
+function describePublished(value: string | null | undefined, timeZone: string): string {
   const date = parseDate(value);
   if (!date) {
     return "Publish date unavailable";
   }
-  return `${format(date, "d MMM yyyy")}, ${formatDistanceToNow(date, { addSuffix: true })}`;
+  return `${formatTimeZoneDate(date, timeZone, "d MMM yyyy")}, ${formatDistanceToNow(date, { addSuffix: true })}`;
 }
 
 const STATUS: Record<
@@ -170,6 +172,7 @@ function ReleaseNotes({ release }: { release: ReleaseInfo }) {
 
 export default function UpdatesSettings() {
   const { isAdmin } = useSettingsContext();
+  const timeZone = useUserTimeZone();
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -268,7 +271,7 @@ export default function UpdatesSettings() {
           label="Latest release"
           description={
             versionInfo.latest_version
-              ? `Published ${describePublished(versionInfo.latest_published_at)}.`
+              ? `Published ${describePublished(versionInfo.latest_published_at, timeZone)}.`
               : "Not available."
           }
         >
@@ -340,7 +343,7 @@ export default function UpdatesSettings() {
                         <SettingsStatusBadge tone="info">Latest</SettingsStatusBadge>
                       )}
                       <span className="text-xs contrast-helper">
-                        {describePublished(release.published_at)}
+                        {describePublished(release.published_at, timeZone)}
                       </span>
                     </span>
                   }
