@@ -25,6 +25,7 @@ const SAVE_DEBOUNCE_MS = 1200;
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 interface MeetingEdgePanelProps {
+  readOnly?: boolean;
   payload?: MeetingEdgePayload | null;
   focusText?: string | null;
   status?: string | null;
@@ -95,6 +96,7 @@ function EdgeSection({
 }
 
 function MeetingEdgePanel({
+  readOnly = false,
   payload,
   focusText,
   status,
@@ -144,7 +146,7 @@ function MeetingEdgePanel({
     async (valueToSave: string) => {
       clearPendingSave();
 
-      if (valueToSave === lastSavedRef.current) {
+      if (readOnly || valueToSave === lastSavedRef.current) {
         return;
       }
 
@@ -160,7 +162,7 @@ function MeetingEdgePanel({
         setVisibleFocusSaveState("error");
       }
     },
-    [clearPendingSave, onSaveFocus, setVisibleFocusSaveState],
+    [clearPendingSave, onSaveFocus, readOnly, setVisibleFocusSaveState],
   );
 
   useEffect(() => {
@@ -195,6 +197,7 @@ function MeetingEdgePanel({
 
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
+      if (readOnly) return;
       const nextValue = event.target.value;
       draftFocusRef.current = nextValue;
       setDraftFocus(nextValue);
@@ -212,7 +215,7 @@ function MeetingEdgePanel({
         void flushSaveRef.current(draftFocusRef.current);
       }, SAVE_DEBOUNCE_MS);
     },
-    [clearPendingSave, setVisibleFocusSaveState],
+    [clearPendingSave, readOnly, setVisibleFocusSaveState],
   );
 
   const handleBlur = useCallback(() => {
@@ -221,7 +224,7 @@ function MeetingEdgePanel({
 
   const handleContextLevelChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
-      if (!onSaveContextLevel) {
+      if (readOnly || !onSaveContextLevel) {
         return;
       }
 
@@ -238,7 +241,7 @@ function MeetingEdgePanel({
         setDraftContextLevel(resolvedContextLevel);
       }
     },
-    [onSaveContextLevel, resolvedContextLevel],
+    [onSaveContextLevel, readOnly, resolvedContextLevel],
   );
 
   const questions = payload?.questions ?? [];
@@ -402,7 +405,7 @@ function MeetingEdgePanel({
               Guide Meeting Edge
             </div>
             <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-contrast-helper">
-              {saveMessage}
+              {readOnly ? "Read-only" : saveMessage}
             </span>
           </div>
           <p className="mt-2 text-sm leading-6 text-contrast-helper">
@@ -412,6 +415,7 @@ function MeetingEdgePanel({
             data-ui-fill="card"
             data-ui-border="full"
             value={draftFocus}
+            readOnly={readOnly}
             onChange={handleChange}
             onBlur={handleBlur}
             placeholder="Example: Help me ask sharper timeline questions and flag hidden risks or missing owners."
@@ -434,6 +438,7 @@ function MeetingEdgePanel({
 
               <InputBase
                 type="range"
+                disabled={readOnly}
                 min={1}
                 max={5}
                 step={1}

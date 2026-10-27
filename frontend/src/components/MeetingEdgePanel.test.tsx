@@ -4,6 +4,25 @@ import { describe, expect, it, vi } from "vitest";
 import MeetingEdgePanel from "./MeetingEdgePanel";
 
 describe("MeetingEdgePanel", () => {
+  it("keeps retained guidance readable and blocks focus/context saves in read-only mode", async () => {
+    const onSaveFocus = vi.fn().mockResolvedValue(undefined);
+    const onSaveContextLevel = vi.fn().mockResolvedValue(undefined);
+    render(<MeetingEdgePanel readOnly focusText="Previous focus" onSaveFocus={onSaveFocus}
+      onSaveContextLevel={onSaveContextLevel} payload={{ summary: "Previous guidance", questions: [], points: [], concepts: [] }} />);
+    const focus = screen.getByDisplayValue("Previous focus");
+    expect(focus).toHaveAttribute("readonly");
+    fireEvent.change(focus, { target: { value: "A new focus" } });
+    fireEvent.blur(focus);
+    fireEvent.click(screen.getByRole("button", { name: /Meeting Edge Technical Context/ }));
+    const slider = screen.getByLabelText("Meeting Edge Technical Context sensitivity");
+    expect(slider).toBeDisabled();
+    fireEvent.change(slider, { target: { value: "5" } });
+    await Promise.resolve();
+    expect(onSaveFocus).not.toHaveBeenCalled();
+    expect(onSaveContextLevel).not.toHaveBeenCalled();
+    expect(screen.getByText("Previous guidance")).toBeInTheDocument();
+  });
+
   it("shows the live-page Technical Context slider and persists changes", async () => {
     const onSaveContextLevel = vi.fn().mockResolvedValue(undefined);
 

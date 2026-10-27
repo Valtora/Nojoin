@@ -143,6 +143,8 @@ export const notFoundMeans = async (
 
 export const hasPolledRecordingChanged = (current: Recording, polled: Recording) =>
   polled.status !== current.status ||
+  !!polled.previous_publication_available !== !!current.previous_publication_available ||
+  !!polled.reprocess_publication_complete !== !!current.reprocess_publication_complete ||
   polled.client_status !== current.client_status ||
   polled.processing_step !== current.processing_step ||
   polled.upload_progress !== current.upload_progress ||
@@ -152,9 +154,10 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.processing_eta_sample_size !== current.processing_eta_sample_size ||
   polled.has_proxy !== current.has_proxy ||
   polled.has_audio !== current.has_audio ||
-  (polled.transcript?.settling_required === true &&
-    (current.transcript?.settling_required !== true ||
-      polled.transcript.change_sequence !== current.transcript?.change_sequence)) ||
+  ((polled.transcript?.settling_required === true || polled.previous_publication_available === true ||
+    polled.reprocess_publication_complete === true) &&
+    (!!polled.transcript?.settling_required !== !!current.transcript?.settling_required ||
+      polled.transcript?.change_sequence !== current.transcript?.change_sequence)) ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||
   // Changes with the notes list, which the page then fetches.

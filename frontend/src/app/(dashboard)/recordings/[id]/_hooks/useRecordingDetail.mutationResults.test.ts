@@ -5,7 +5,7 @@ import { ClientStatus, RecordingStatus, type Recording, type TranscriptSegment }
 import { useRecordingDetail } from "./useRecordingDetail";
 
 const mocks = vi.hoisted(() => ({
-  read: vi.fn(), transcript: vi.fn(), text: vi.fn(), rename: vi.fn(), assign: vi.fn(),
+  read: vi.fn(), transcript: vi.fn(), text: vi.fn(), rename: vi.fn(), assign: vi.fn(), notes: vi.fn(),
   notify: vi.fn(), router: { push: vi.fn() },
   navigation: { activePanel: "transcript", chatPanelHeight: 30, setChatPanelHeight: vi.fn(), setActivePanel: vi.fn() },
 }));
@@ -17,6 +17,7 @@ vi.mock("@/lib/api", async (original) => ({
   updateTranscriptUtteranceText: (...args: unknown[]) => mocks.text(...args),
   updateTranscriptUtteranceSpeaker: (...args: unknown[]) => mocks.assign(...args),
   updateSpeaker: (...args: unknown[]) => mocks.rename(...args),
+  updateNotes: (...args: unknown[]) => mocks.notes(...args),
   getSettings: async () => ({}), getGlobalSpeakers: async () => [],
 }));
 vi.mock("@/lib/api/transcript", () => ({ getTranscriptUtterances: () => new Promise(() => {}) }));
@@ -54,9 +55,19 @@ describe("finished transcript mutation outcomes", () => {
     mocks.text.mockReset().mockResolvedValue(undefined);
     mocks.assign.mockReset().mockResolvedValue(undefined);
     mocks.rename.mockReset().mockResolvedValue({ diarization_label: "SPEAKER_1", local_name: "Alex" });
+    mocks.notes.mockReset().mockResolvedValue(undefined);
     mocks.notify.mockReset();
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it("blocks a debounced notes save captured before reprocessing began", async () => {
+    const { result } = await mount();
+    const saveNotes = result.current.handleNotesChange;
+    act(() => result.current.setRecording({ ...recording, status: RecordingStatus.QUEUED,
+      previous_publication_available: true }));
+    await act(async () => { await saveNotes("An earlier editor's delayed save"); });
+    expect(mocks.notes).not.toHaveBeenCalled();
+  });
 
   it.each(["text", "rename", "assign"] as const)("reports %s refusal instead of resolving as success", async (kind) => {
     const { result } = await mount();

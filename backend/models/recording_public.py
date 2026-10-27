@@ -30,6 +30,10 @@ from backend.processing.embedding import (
     VoiceprintStatus,
 )
 from backend.utils.language_notice import language_notice
+from backend.utils.reprocess_publication import (
+    reprocess_publication_complete,
+    reprocess_publication_pending,
+)
 from backend.utils.speaker_names.sources import name_is_pending
 
 
@@ -224,6 +228,8 @@ class RecordingPublicRead(PublicModel):
     client_status: Optional[ClientStatus] = None
     upload_progress: int = 0
     processing_progress: int = 0
+    previous_publication_available: bool = False
+    reprocess_publication_complete: bool = False
     processing_step: Optional[str] = None
     processing_eta_seconds: Optional[int] = None
     processing_eta_learning: bool = False
@@ -494,6 +500,12 @@ def serialize_recording(
         client_status=recording.client_status,
         upload_progress=recording.upload_progress,
         processing_progress=recording.processing_progress,
+        previous_publication_available=reprocess_publication_pending(
+            recording.__dict__.get("transcript")
+        ),
+        reprocess_publication_complete=reprocess_publication_complete(
+            recording.__dict__.get("transcript")
+        ),
         processing_step=recording.processing_step,
         processing_eta_seconds=processing_eta_seconds,
         processing_eta_learning=processing_eta_learning,

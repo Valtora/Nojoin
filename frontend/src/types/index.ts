@@ -624,6 +624,10 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   duration_seconds?: number;
   file_size_bytes?: number;
   status: RecordingStatus;
+  /** A previous publication retained until this reprocess publishes; false by default. */
+  previous_publication_available?: boolean;
+  /** This reprocess has published, including while optional notes are still running. */
+  reprocess_publication_complete?: boolean;
   client_status?: ClientStatus;
   upload_progress?: number;
   processing_progress?: number;

@@ -28,6 +28,18 @@ const base = (): ComponentProps<typeof TranscriptSection> => ({
 });
 
 describe("shared section in-flight source", () => {
+  it("keeps a retained published transcript read-only under the physical processing guard", () => {
+    const props = base();
+    render(<TranscriptSection {...props} liveTranscript={undefined}
+      recording={{ ...props.recording, previous_publication_available: true, status: RecordingStatus.PROCESSING }} />);
+    expect(screen.getByText("Live speech")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Actions for Speaker 1/ }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Note on this line"]);
+    expect(screen.queryByRole("button", { name: "Rename Speaker 1" })).not.toBeInTheDocument();
+    expect(props.onUpdateSegmentText).not.toHaveBeenCalled();
+    expect(props.onRenameSpeaker).not.toHaveBeenCalled();
+  });
+
   it("renders the supplied feed in shared cards with the composer beneath it", () => {
     const props = base();
     render(<TranscriptSection {...props} inFlightContent={<textarea aria-label="New note" />} />);

@@ -372,6 +372,19 @@ describe("RecordingPage (detail)", () => {
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 
+  it("shows retained Meeting Edge guidance and focus read-only beside processing progress on reload", async () => {
+    const retained = buildRecording({ status: RecordingStatus.PROCESSING, previous_publication_available: true });
+    retained.transcript = { ...retained.transcript!, meeting_edge_focus: "Keep the delivery goal",
+      meeting_edge_payload: { summary: "Previous guidance", questions: ["Who owns delivery?"], points: [], concepts: [] } };
+    getRecording.mockResolvedValue(retained);
+    getTranscriptUtterances.mockReturnValue(new Promise(() => {}));
+    renderPage();
+    expect(await screen.findByText("Previous guidance")).toBeInTheDocument();
+    expect(screen.getByText("Who owns delivery?")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Keep the delivery goal")).toHaveAttribute("readonly");
+    expect(screen.getByTestId("recording-capture-slot")).toBeInTheDocument();
+  });
+
   it("loads the recording and renders the transcript section by default", async () => {
     renderPage();
 

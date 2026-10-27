@@ -55,6 +55,11 @@ from backend.utils.recording_audio_sync import (
 from backend.utils.recording_storage import (
     RECORDING_UPLOAD_RETENTION_HOURS,
 )
+from backend.utils.reprocess_publication import (
+    mark_reprocess_pending,
+    reprocess_publication_complete,
+    reprocess_publication_pending,
+)
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
 from backend.utils.transcript_publication import bump_transcript_change
@@ -188,7 +193,13 @@ async def _mark_recording_upload_error(
 
 
 def _should_hide_in_flight_transcript_content(recording: Recording) -> bool:
-    return recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
+    transcript = recording.transcript
+    # The candidate can publish before optional notes finish. Its new result
+    # remains readable once the pending marker has been retired atomically.
+    return recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES and not (
+        reprocess_publication_pending(transcript)
+        or reprocess_publication_complete(transcript)
+    )
 
 
 async def _get_owned_recording(
@@ -688,6 +699,21 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         existing_transcript is not None
         and (existing_transcript.settling_state or {}).get("settled") is True
     )
+    if (
+        not preserve_live_work
+        and existing_transcript is not None
+        and (
+            existing_transcript.transcript_status == "completed"
+            or reprocess_publication_pending(existing_transcript)
+        )
+    ):
+        mark_reprocess_pending(existing_transcript)
+        if existing_transcript.transcription_failed():
+            existing_transcript.error_message = None
+        existing_transcript.transcript_status = "pending"
+        db.add(existing_transcript)
+        await db.flush()
+        return
     if preserve_live_work:
         from backend.utils.canonical_pipeline import (
             ensure_canonical_backfill,
@@ -799,6 +825,9 @@ async def _requeue_for_processing(
     from backend.models.task import register_task_ownership
 
     await register_task_ownership(db, task.id, recording.user_id)
+    # The queue response can expose retained-publication availability without
+    # making the synchronous serializer perform an async relationship load.
+    await db.refresh(recording, attribute_names=["transcript"])
 
 
 def get_ordinal_suffix(day: int) -> str:

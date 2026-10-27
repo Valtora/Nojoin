@@ -44,6 +44,7 @@ from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
 )
+from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.live_audio_clock import (
     capture_is_advancing,
     estimate_live_audio_ms,
@@ -354,6 +355,16 @@ async def get_recording(
     """
     Get a specific recording by ID with all relationships loaded.
     """
+    owned_id = await db.scalar(
+        select(Recording.id)
+        .where(Recording.public_id == recording_id)
+        .where(Recording.user_id == current_user.id)
+    )
+    if owned_id is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    # Publication can replace both words and speaker identities. Take its fence
+    # before loading either, so a read cannot combine two committed versions.
+    await db.run_sync(lambda session: _load_transcript(session, owned_id, lock=True))
     statement = (
         select(Recording)
         .where(Recording.public_id == recording_id)
@@ -365,6 +376,7 @@ async def get_recording(
             ),
             selectinload(Recording.tags).selectinload(RecordingTag.tag),
         )
+        .execution_options(populate_existing=True)
     )
     result = await db.execute(statement)
     recording = result.scalar_one_or_none()

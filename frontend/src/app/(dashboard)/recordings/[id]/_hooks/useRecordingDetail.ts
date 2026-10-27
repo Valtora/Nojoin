@@ -169,6 +169,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
     transcriptSpeakerNames, transcriptSpeakers, liveTranscript, usesInFlightTranscript, transcriptIsAuthoritative,
+    hasRetainedPublication,
     history, future, isUndoing, syncTranscriptState, repairTranscriptSequence, pushTranscriptHistory,
     setActiveTranscriptEditId, handleUndo, handleRedo,
   } = useRecordingTranscript(recording, setRecording, localCaptureActive);
@@ -244,7 +245,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const refreshRecordingView = useCallback(async () => {
     const refreshedRecording = await fetchRecording();
 
-    if (!refreshedRecording?.id || isRecordingInFlight(refreshedRecording)) {
+    if (!refreshedRecording?.id || (isRecordingInFlight(refreshedRecording) && !hasRetainedPublication)) {
       if (refreshedRecording?.id) refreshInFlightTranscript();
       return;
     }
@@ -252,7 +253,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     await syncTranscriptState("full").catch((e) => {
       console.error("Failed to refresh transcript state:", e);
     });
-  }, [fetchRecording, syncTranscriptState, refreshInFlightTranscript]);
+  }, [fetchRecording, syncTranscriptState, refreshInFlightTranscript, hasRetainedPublication]);
 
   useEffect(() => {
     fetchRecording();
@@ -816,7 +817,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   const handleNotesChange = async (notes: string) => {
-    if (!recording) return;
+    if (!recording || !capabilityRef.current.canExport || capabilityRef.current.recordingId !== recording.id) return;
 
     // Always push current notes to history (even if null) before making changes
     setNotesHistory((prev) => [...prev, recording.transcript?.notes ?? null]);
@@ -835,7 +836,8 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   const handleNotesUndo = async () => {
-    if (notesHistory.length === 0 || !recording) return;
+    if (notesHistory.length === 0 || !recording || !capabilityRef.current.canExport ||
+      capabilityRef.current.recordingId !== recording.id) return;
 
     const previousNotes = notesHistory[notesHistory.length - 1];
     const currentNotes = recording.transcript?.notes ?? null;
@@ -856,7 +858,8 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   const handleNotesRedo = async () => {
-    if (notesFuture.length === 0 || !recording) return;
+    if (notesFuture.length === 0 || !recording || !capabilityRef.current.canExport ||
+      capabilityRef.current.recordingId !== recording.id) return;
 
     const nextNotes = notesFuture[0];
     const currentNotes = recording.transcript?.notes ?? null;
@@ -927,10 +930,13 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     // A live label has no speaker of the recording, so no name is replaced.
     return { ...transcriptSpeakerNames, ...speakers };
   }, [globalSpeakerById, transcriptSpeakers, transcriptSpeakerNames]);
+  const presentedRecording = useMemo(() => recording && hasRetainedPublication
+    ? { ...recording, speakers: transcriptSpeakers ? [...transcriptSpeakers] : recording.speakers }
+    : recording, [recording, hasRetainedPublication, transcriptSpeakers]);
 
   return {
     // Core data
-    recording,
+    recording: presentedRecording,
     setRecording,
     audioClock,
     timelineNotes,
@@ -946,6 +952,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     liveTranscript,
     usesInFlightTranscript,
     transcriptIsAuthoritative,
+    hasRetainedPublication,
     transcriptSegments,
     deferredTranscriptUtteranceIds,
     speakerMap,

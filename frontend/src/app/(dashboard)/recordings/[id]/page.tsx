@@ -12,6 +12,7 @@ import CapturesGallery from "@/components/notes/CapturesGallery";
 import MyNotesList from "@/components/notes/MyNotesList";
 import { NoteFilesProvider } from "@/components/notes/NoteFiles";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
+import MeetingEdgePanel from "@/components/MeetingEdgePanel";
 import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
 import ExportModal from "@/components/ExportModal";
 import { RecordingStatus } from "@/types";
@@ -54,6 +55,7 @@ export default function RecordingPage({ params }: PageProps) {
     liveTranscript,
     usesInFlightTranscript,
     transcriptIsAuthoritative,
+    hasRetainedPublication,
     canPlayback: detailCanPlayback,
     canExport: detailCanExport,
     transcriptSegments,
@@ -153,6 +155,7 @@ export default function RecordingPage({ params }: PageProps) {
       canPlayback={canPlayback}
       canExport={canExport}
       transcriptIsAuthoritative={transcriptIsAuthoritative}
+      hasRetainedPublication={hasRetainedPublication}
       playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording} onDiscarded={navigateToRecordings} /> : undefined}
       inFlightContent={usesInFlightTranscript ? (
         <RecordingStatusDisplay
@@ -166,7 +169,17 @@ export default function RecordingPage({ params }: PageProps) {
           audioClock={audioClock}
           timelineNotes={timelineNotes}
         />
-      ) : undefined}
+      ) : showCaptureSlot && hasRetainedPublication && meetingEdgeEnabled &&
+        (recording.transcript?.meeting_edge_payload || recording.transcript?.meeting_edge_focus) ? (
+          <MeetingEdgePanel readOnly
+            payload={recording.transcript?.meeting_edge_payload}
+            focusText={recording.transcript?.meeting_edge_focus}
+            status={recording.transcript?.meeting_edge_status}
+            onSaveFocus={handleMeetingEdgeFocusChange}
+            contextLevel={meetingEdgeContextLevel}
+            onSaveContextLevel={handleMeetingEdgeContextLevelChange}
+          />
+        ) : undefined}
       timelineNotes={timelineNotes}
       noteEdits={noteEdits}
       isMobile={isMobile}

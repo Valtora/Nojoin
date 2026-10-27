@@ -217,6 +217,8 @@ def test_reprocess_and_retry_keep_sequence_after_a_concurrent_edit(
 ) -> None:
     engine, recording_id, _ = publication_database
     transcript_id = _seed_generated_products(engine, recording_id, status)
+    with Session(engine) as session:
+        before = _load_transcript(session, recording_id).model_dump()
     monkeypatch.setattr(routes_actions, "_recording_has_audio", lambda recording: True)
     waiting = threading.Event()
     with ThreadPoolExecutor(max_workers=1) as executor, Session(engine) as editor:
@@ -240,31 +242,54 @@ def test_reprocess_and_retry_keep_sequence_after_a_concurrent_edit(
         transcript = _load_transcript(session, recording_id)
         assert transcript is not None, "Reprocess deleted the publication identity"
         assert (transcript.id, transcript.change_sequence) == (transcript_id, 52)
-        assert transcript.text is None and transcript.segments == []
         assert transcript.transcript_status == "pending"
-        assert transcript.notes_status == "pending"
-        assert transcript.meeting_edge_status == "idle"
-        assert (
-            transcript.analytics_status == transcript.analytics_ai_status == "pending"
-        )
-        assert transcript.speaker_name_suggestions == []
-        assert transcript.notes_stale_documents is False
-        for field in (
-            "notes",
-            "notes_template_id",
-            "notes_template_sections",
-            "meeting_edge_focus",
-            "meeting_edge_error_message",
-            "meeting_edge_source_signature",
-            "error_message",
-            "analytics_error_message",
-            "analytics_ai_error_message",
-            "language_detection",
-            "meeting_edge_payload",
-            "analytics_payload",
-            "settling_state",
-        ):
-            assert getattr(transcript, field) is None, field
+        if status == RecordingStatus.PROCESSED:
+            # #749 replaces queue-time clearing with retention for completed
+            # publications; the concurrent-edit fence/counter contract is unchanged.
+            assert "edit accepted before reprocess" in transcript.text
+            assert transcript.settling_state == {
+                **before["settling_state"],
+                "reprocess_pending": True,
+            }
+            changed = {
+                "text",
+                "segments",
+                "transcript_status",
+                "settling_state",
+                "updated_at",
+                "change_sequence",
+            }
+            for field, value in before.items():
+                if field not in changed:
+                    assert getattr(transcript, field) == value, field
+        else:
+            # A failed first attempt has no completed publication to retain.
+            assert transcript.text is None and transcript.segments == []
+            assert transcript.notes_status == "pending"
+            assert transcript.meeting_edge_status == "idle"
+            assert (
+                transcript.analytics_status
+                == transcript.analytics_ai_status
+                == "pending"
+            )
+            assert transcript.speaker_name_suggestions == []
+            assert transcript.notes_stale_documents is False
+            for field in (
+                "notes",
+                "notes_template_id",
+                "notes_template_sections",
+                "meeting_edge_focus",
+                "meeting_edge_error_message",
+                "meeting_edge_source_signature",
+                "error_message",
+                "analytics_error_message",
+                "analytics_ai_error_message",
+                "language_detection",
+                "meeting_edge_payload",
+                "analytics_payload",
+                "settling_state",
+            ):
+                assert getattr(transcript, field) is None, field
         append_utterances_from_segments(
             session,
             recording_id=recording_id,

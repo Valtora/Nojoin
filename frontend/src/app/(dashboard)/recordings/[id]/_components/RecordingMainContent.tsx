@@ -44,6 +44,7 @@ interface RecordingMainContentProps {
   canPlayback?: boolean;
   canExport?: boolean;
   transcriptIsAuthoritative?: boolean;
+  hasRetainedPublication?: boolean;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes: readonly TimelineNote[] | null;
   /** The page's note edits, shared by the transcript and My notes. */
@@ -162,6 +163,7 @@ export default function RecordingMainContent({
   canPlayback = true,
   canExport = true,
   transcriptIsAuthoritative = false,
+  hasRetainedPublication = false,
   timelineNotes,
   noteEdits,
   isMobile,
@@ -365,6 +367,7 @@ export default function RecordingMainContent({
           canExport={canExport}
           inFlight={inFlight}
           isGenerating={isGeneratingNotes}
+          hasRetainedPublication={hasRetainedPublication}
           canUndo={notesCanUndo}
           canRedo={notesCanRedo}
           onNotesChange={onNotesChange}

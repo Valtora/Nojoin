@@ -5,6 +5,7 @@ import { useState } from "react";
 import { FileText, RefreshCw, X } from "lucide-react";
 
 import NotesView from "@/components/NotesView";
+import RichTextEditor from "@/components/RichTextEditor";
 import type { Recording } from "@/types";
 
 interface NotesSectionProps {
@@ -12,6 +13,7 @@ interface NotesSectionProps {
   recording: Recording;
   canExport?: boolean;
   inFlight?: boolean;
+  hasRetainedPublication?: boolean;
   isGenerating: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -32,6 +34,7 @@ export default function NotesSection({
   recording,
   canExport = true,
   inFlight = false,
+  hasRetainedPublication = false,
   isGenerating,
   canUndo,
   canRedo,
@@ -86,7 +89,9 @@ export default function NotesSection({
           </ButtonBase>
         </div>
       )}
-      {inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the live transcript.</p> : <NotesView
+      {inFlight && hasRetainedPublication && recording.transcript?.notes ? (
+        <RichTextEditor content={recording.transcript.notes} editable={false} onChange={() => undefined} />
+      ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the live transcript.</p> : <NotesView
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
         onNotesChange={onNotesChange}

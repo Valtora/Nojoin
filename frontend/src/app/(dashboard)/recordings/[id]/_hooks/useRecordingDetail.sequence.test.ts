@@ -1,7 +1,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ClientStatus, RecordingStatus, type Recording, type TranscriptUtteranceList } from "@/types";
+import { ClientStatus, RecordingStatus, type Recording, type RecordingSpeaker, type TranscriptUtteranceList } from "@/types";
 import { IDLE_RECORDING_POLL_INTERVAL_MS, useRecordingDetail } from "./useRecordingDetail";
 
 const mocks = vi.hoisted(() => ({
@@ -66,6 +66,55 @@ describe("durable quiet transcript repair", () => {
     mocks.notify.mockReset();
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+  it("notices publication during processing and holds old speaker identity until the replacement read", async () => {
+    const oldSpeaker = { id: 1, diarization_label: "SPEAKER_00", local_name: "Old name" } as RecordingSpeaker;
+    const newSpeaker = { ...oldSpeaker, id: 2, local_name: "New name" };
+    const initial = { ...recording(4, false, RecordingStatus.PROCESSING), previous_publication_available: true,
+      speakers: [oldSpeaker] };
+    mocks.getRecording.mockResolvedValue(initial);
+    mocks.getTranscript.mockResolvedValue({ ...transcript("Old words"), settling_required: false, speakers: [oldSpeaker] });
+    const { result } = mount();
+    await advance(0);
+    const next = deferred<TranscriptUtteranceList>();
+    mocks.getTranscript.mockReturnValueOnce(next.promise);
+    mocks.getRecording.mockResolvedValue({ ...initial, previous_publication_available: false, speakers: [newSpeaker] });
+    await advance(3_000);
+    expect(mocks.getTranscript).toHaveBeenCalledTimes(2);
+    expect(result.current.transcriptSegments[0].text).toBe("Old words");
+    expect(result.current.recording?.speakers?.[0]?.local_name).toBe("Old name");
+    expect(result.current.isInFlightRecording).toBe(true);
+    expect(result.current.canPlayback).toBe(false);
+    await act(async () => next.resolve({ ...transcript("New words", 0), settling_required: false, speakers: [newSpeaker] }));
+    expect(result.current.transcriptSegments[0].text).toBe("New words");
+    expect(result.current.recording?.speakers?.[0]?.local_name).toBe("New name");
+    expect(result.current.isInFlightRecording).toBe(true);
+  });
+
+  it.each(["sequence", "speaker"])("repairs retained %s changes and retries unchanged metadata without mixing identity", async (kind) => {
+    const oldSpeaker = { id: 1, diarization_label: "SPEAKER_00", local_name: "Old name" } as RecordingSpeaker;
+    const nextSpeaker = { ...oldSpeaker, local_name: "New name" };
+    const initial = { ...recording(4, false), reprocess_publication_complete: true, speakers: [oldSpeaker] };
+    mocks.getRecording.mockResolvedValue(initial);
+    mocks.getTranscript.mockResolvedValue({ ...transcript("Old words"), settling_required: false, speakers: [oldSpeaker] });
+    const { result } = mount();
+    await advance(0);
+    const pending = deferred<TranscriptUtteranceList>();
+    mocks.getTranscript.mockRejectedValueOnce(new Error("offline")).mockReturnValueOnce(pending.promise);
+    mocks.getRecording.mockResolvedValue({ ...initial,
+      transcript: { ...initial.transcript!, change_sequence: kind === "sequence" ? 5 : 4 },
+      speakers: kind === "speaker" ? [nextSpeaker] : [oldSpeaker] });
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(mocks.getTranscript).toHaveBeenCalledTimes(2);
+    expect(result.current.transcriptSegments[0].text).toBe("Old words");
+    expect(result.current.recording?.speakers?.[0]?.local_name).toBe("Old name");
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(mocks.getTranscript).toHaveBeenCalledTimes(3);
+    expect(result.current.recording?.speakers?.[0]?.local_name).toBe("Old name");
+    await act(async () => pending.resolve({ ...transcript("New words"), settling_required: false, speakers: [nextSpeaker] }));
+    expect(result.current.transcriptSegments[0].text).toBe("New words");
+    expect(result.current.recording?.speakers?.[0]?.local_name).toBe("New name");
+  });
 
   it.each([RecordingStatus.PROCESSED, RecordingStatus.ERROR])("repairs settled text in %s only after a changed sequence", async (status) => {
     mocks.getRecording.mockResolvedValue(recording(4, true, status));

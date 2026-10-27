@@ -14,7 +14,10 @@ from .final_asr import (
     transcribe_with_gpu_oom_retry,
 )
 from .final_publication import (
+    begin_transcript_attempt,
     canonical_finalization_required,
+    finish_reprocess_projection,
+    prepare_reprocess_speakers,
     staged_publication_required,
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
@@ -28,14 +31,7 @@ from .vad_stage import (
 )
 
 # ---------------------------------------------------------------------------
-# process_recording_task orchestration stages
-#
-# The canonical finalize pipeline is decomposed into explicit stages with typed
-# inputs and outputs. The stages run inside the task's try/except/finally, so
-# Celery retry and ack handling, temp-file cleanup and VRAM release all stay in
-# one place. Heavy ML imports (whisper, pyannote, torch, embeddings) must stay
-# INSIDE the stage functions so the API process never pays for them at import
-# time.
+# Orchestration stages keep heavy ML imports inside their stage functions.
 # ---------------------------------------------------------------------------
 
 
@@ -63,6 +59,7 @@ class _PipelineRunContext:
     # the union file transcription reads keeps them muted (#678).
     non_speech_turns: tuple = ()
     final_transcript_published: bool = False
+    speaker_voiceprints: dict | None = None
 
 
 @dataclass
@@ -368,8 +365,9 @@ def _finalize_transcript_and_notes(
             session,
             recording.id,
         )
-        # Make the finalized utterances and their projection durable before the
-        # notes and title stages: a failure there rolls the session back.
+    if staged or canonical_finalization_required(transcript):
+        finish_reprocess_projection(transcript, updated_segments, transcription_result)
+        # Notes failures cannot roll back a successful transcript publication.
         session.commit()
         ctx.final_transcript_published = True
 
@@ -553,9 +551,7 @@ def process_recording_task(
         logger.info("Recording %s was cancelled. Aborting task.", recording_id)
         return
 
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording_id)
-    ).first()
+    transcript = begin_transcript_attempt(session, recording_id)
     staged = staged_publication_required(transcript)
     ctx = None
     if not staged:
@@ -640,6 +636,7 @@ def process_recording_task(
             )
 
         # --- Stage: speaker assignment / identification ---
+        prepare_reprocess_speakers(ctx, recording, transcript, diarization_result)
         assign_and_identify_speakers(ctx, recording, final_segments, diarization_result)
 
         # --- Stage: finalize transcript + notes/title ---

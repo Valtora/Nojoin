@@ -599,9 +599,11 @@ def assign_and_identify_speakers(
         f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}"
     )
 
-    speaker_voiceprints = _extract_speaker_voiceprints(
-        ctx, recording, diarization_result
-    )
+    speaker_voiceprints = getattr(ctx, "speaker_voiceprints", None)
+    if speaker_voiceprints is None:
+        speaker_voiceprints = _extract_speaker_voiceprints(
+            ctx, recording, diarization_result
+        )
     carried = carry_names_to_final_speakers(
         session, recording, final_segments, speaker_voiceprints
     )
