@@ -51,7 +51,9 @@ import {
 } from "./recordings/recordingListActions";
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import MonthCalendar from "./MonthCalendar";
-import { getUserTimeZone, localDayRangeToUtc } from "@/lib/timezone";
+import { formatTimeZoneLocale, localDayRangeToUtc } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { format, startOfMonth } from "date-fns";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
@@ -87,16 +89,20 @@ const formatDurationString = (seconds?: number) => {
   return `${minutes}${minutes === 1 ? "min" : "mins"}`;
 };
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+const formatDate = (dateString: string, timeZone: string) => {
+  const date = parseServerTimestamp(dateString);
+  if (!date) return "Unknown date";
+  return formatTimeZoneLocale(
+    date,
+    timeZone,
+    "date",
+    { day: "numeric", month: "short", year: "numeric" },
+    "en-GB",
+  );
 };
 
-const formatTime = (date: Date) => {
-  return date.toLocaleTimeString([], {
+const formatTime = (date: Date, timeZone: string) => {
+  return formatTimeZoneLocale(date, timeZone, "time", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -224,22 +230,9 @@ export default function Sidebar() {
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<string | null>(
     null,
   );
-  const [userTimeZone, setUserTimeZone] = useState<string>("UTC");
-
-  // Resolve the user's IANA timezone for IANA-correct date filtering
-  useEffect(() => {
-    let active = true;
-    getUserTimeZone()
-      .then((tz) => {
-        if (active) {
-          setUserTimeZone(tz);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
+  // The day filter, the calendar's marked days and the times shown all use
+  // the user's time-zone setting.
+  const userTimeZone = useUserTimeZone();
 
   // Load per-day recording counts for the viewed calendar month
   useEffect(() => {
@@ -1141,10 +1134,10 @@ export default function Sidebar() {
           >
             {filteredRecordings.map((recording) => {
               const isActive = pathname === `/recordings/${recording.id}`;
-              const startDate = new Date(recording.created_at);
-              const endDate = new Date(
-                startDate.getTime() + (recording.duration_seconds || 0) * 1000,
-              );
+              const startDate = parseServerTimestamp(recording.created_at);
+              const endDate = startDate
+                ? new Date(startDate.getTime() + (recording.duration_seconds || 0) * 1000)
+                : null;
               const isRenaming = renamingId === recording.id;
               const isSelected = selection.isSelected(recording.id);
               const isHighlighted = isSelected || (isActive && !selection.isSelecting);
@@ -1246,14 +1239,16 @@ export default function Sidebar() {
 
                         <div className="flex items-center overflow-hidden text-xs text-contrast-helper gap-2">
                           <span className="whitespace-nowrap">
-                            {formatDate(recording.created_at)}
+                            {formatDate(recording.created_at, userTimeZone)}
                           </span>
                           {/* The time range yields first when the rail narrows; date and duration stay. */}
                           <span className="hidden whitespace-nowrap text-contrast-icon-muted @min-[19rem]:inline">
                             |
                           </span>
                           <span className="hidden whitespace-nowrap @min-[19rem]:inline">
-                            {formatTime(startDate)} - {formatTime(endDate)}
+                            {startDate && endDate
+                              ? `${formatTime(startDate, userTimeZone)} - ${formatTime(endDate, userTimeZone)}`
+                              : "Time unavailable"}
                           </span>
                           <span className="whitespace-nowrap text-contrast-icon-muted">
                             |

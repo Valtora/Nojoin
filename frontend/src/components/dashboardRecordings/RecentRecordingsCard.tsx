@@ -6,6 +6,7 @@ import { Mic } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/Badge";
 import { formatTimeZoneDate } from "@/lib/timezone";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { Recording, RecordingStatus } from "@/types";
 
 interface RecentRecordingsCardProps {
@@ -41,6 +42,7 @@ export default function RecentRecordingsCard({
       <ul className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto">
         {recordings.map((recording) => {
           const duration = formatDuration(recording.duration_seconds);
+          const createdAt = parseServerTimestamp(recording.created_at);
 
           return (
             <li key={recording.id}>
@@ -53,11 +55,11 @@ export default function RecentRecordingsCard({
                     {recording.name}
                   </span>
                   <span className="mt-0.5 block text-xs text-contrast-helper">
-                    {formatTimeZoneDate(
-                      new Date(recording.created_at),
+                    {createdAt ? formatTimeZoneDate(
+                      createdAt,
                       timeZone,
                       "d MMM",
-                    )}
+                    ) : "Unknown date"}
                     {duration ? ` · ${duration}` : ""}
                   </span>
                 </span>

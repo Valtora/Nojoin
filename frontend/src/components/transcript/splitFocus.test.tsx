@@ -72,3 +72,35 @@ describe("split picker focus", () => {
     expect(cancel).toHaveFocus();
   });
 });
+
+describe("text editor focus", () => {
+  it("focuses the visible textarea on every open and returns to its trigger on Escape", () => {
+    const { handlers, trigger } = renderMenu();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
+      const editor = screen.getByRole("textbox", { name: "Line text" });
+      expect(screen.getByRole("dialog", { name: "Edit line text" })).toHaveStyle({ visibility: "visible" });
+      expect(editor).toHaveFocus();
+      fireEvent.change(document.activeElement!, { target: { value: "Corrected words" } });
+      expect(editor).toHaveValue("Corrected words");
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    }
+    expect(handlers.editText).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus on Cancel when the text editor is repositioned", () => {
+    renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
+    expect(screen.getByRole("textbox", { name: "Line text" })).toHaveFocus();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    cancel.focus();
+    fireEvent.resize(window);
+    fireEvent.scroll(window);
+    expect(cancel).toHaveFocus();
+  });
+});

@@ -4,6 +4,9 @@ import { FileAudio, Server, Monitor } from "lucide-react";
 import { getRecordingInfo } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingInfo } from "@/types";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneLocale } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
 
@@ -22,6 +25,8 @@ export default function RecordingInfoModal({
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const { addNotification } = useNotificationStore();
+  const timeZone = useUserTimeZone();
+  const createdAt = parseServerTimestamp(recording.created_at);
 
   // Each open starts from a loading state; the fetch below fills it in.
   useOnDepsChange([isOpen, recording.id], () => {
@@ -94,7 +99,7 @@ export default function RecordingInfoModal({
             <div>
               <span className="block text-xs text-contrast-helper">Created At</span>
               <span className="text-contrast-muted">
-                {new Date(recording.created_at).toLocaleString()}
+                {createdAt ? formatTimeZoneLocale(createdAt, timeZone) : "Unknown date"}
               </span>
             </div>
             <div>

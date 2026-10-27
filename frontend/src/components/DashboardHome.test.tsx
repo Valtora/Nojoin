@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { renderWithProviders } from "@/test/renderWithProviders";
+import { setCachedUserTimeZone } from "@/lib/timezone";
+import { withProcessTimeZone } from "@/test/processTimeZone";
+import { renderWithProviders, screen } from "@/test/renderWithProviders";
 import { Recording, RecordingStatus } from "@/types";
 
 const useDashboardRecordings = vi.fn();
@@ -61,6 +63,7 @@ const phoneOrder = (container: HTMLElement): string[] =>
 describe("DashboardHome", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setCachedUserTimeZone("UTC");
   });
 
   it("shows only the floor modules for an account with no recordings", () => {
@@ -129,5 +132,22 @@ describe("DashboardHome", () => {
       "dashboard-recent-recordings",
       "dashboard-upcoming-meetings",
     ]);
+  });
+});
+
+describe("DashboardHome in a browser zone that differs from the setting", () => {
+  withProcessTimeZone("America/New_York");
+
+  it("dates Recent Meetings in the time-zone setting", () => {
+    setCachedUserTimeZone("Asia/Tokyo");
+    // 27 October in New York, 28 October in Tokyo.
+    useDashboardRecordings.mockReturnValue({
+      recent: [{ ...recording("1"), created_at: "2026-10-27T20:30:00Z" }],
+      processing: [],
+    });
+
+    renderWithProviders(<DashboardHome />);
+
+    expect(screen.getByText(/^28 Oct/)).toBeInTheDocument();
   });
 });

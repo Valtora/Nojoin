@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setCachedUserTimeZone } from "@/lib/timezone";
+import { withProcessTimeZone } from "@/test/processTimeZone";
 import type { TelemetryStatus } from "@/types";
 
 import TelemetrySection from "./TelemetrySection";
@@ -51,6 +53,7 @@ async function renderWith(overrides: Partial<TelemetryStatus>) {
 describe("TelemetrySection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setCachedUserTimeZone("UTC");
   });
 
   it("shows the heartbeat as always on, with no switch of its own", async () => {
@@ -108,5 +111,23 @@ describe("TelemetrySection", () => {
         message: "Usage diagnostics are off. The daily heartbeat continues.",
       });
     });
+  });
+});
+
+describe("TelemetrySection in a browser zone that differs from the setting", () => {
+  withProcessTimeZone("America/New_York");
+
+  it("shows when each ping was sent and attempted in the time-zone setting", async () => {
+    setCachedUserTimeZone("Asia/Tokyo");
+    await renderWith({
+      heartbeat_last_sent_at: "2026-10-27T02:30:00+00:00",
+      heartbeat_last_attempt_ok: false,
+      heartbeat_last_attempt_detail: "The collector could not be reached.",
+      heartbeat_last_attempt_at: "2026-10-27T02:30:00+00:00",
+    });
+
+    const expected = new Date("2026-10-27T02:30:00Z").toLocaleString(undefined, { timeZone: "Asia/Tokyo" });
+    expect(screen.getByText(expected)).toBeVisible();
+    expect(document.body).toHaveTextContent(`Attempted ${expected}.`);
   });
 });

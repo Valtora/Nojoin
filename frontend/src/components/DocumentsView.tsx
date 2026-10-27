@@ -21,12 +21,20 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
 import ConfirmationModal from "./ConfirmationModal";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneLocale } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 
 interface DocumentsViewProps {
   recordingId: RecordingId;
 }
 
 const POLL_INTERVAL_MS = 2000;
+
+const formatDocumentDate = (createdAt: string, timeZone: string): string => {
+  const date = parseServerTimestamp(createdAt);
+  return date ? formatTimeZoneLocale(date, timeZone, "date") : "Unknown date";
+};
 
 const formatBytes = (bytes?: number | null): string => {
   if (bytes === null || bytes === undefined) return "—";
@@ -138,6 +146,7 @@ function StatusCell({ doc }: { doc: Document }) {
 }
 
 export default function DocumentsView({ recordingId }: DocumentsViewProps) {
+  const timeZone = useUserTimeZone();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -376,7 +385,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                         {doc.title}
                       </p>
                       <p className="mt-0.5 text-xs text-contrast-helper">
-                        {new Date(doc.created_at).toLocaleDateString()}
+                        {formatDocumentDate(doc.created_at, timeZone)}
                       </p>
                     </td>
                     <td className="px-2 py-3">

@@ -35,12 +35,14 @@ export default function LiveLineEditor({
   const words = splitWords(opened.segment);
   const [wordId, setWordId] = useState(words[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
+  const textEditorRef = useRef<HTMLTextAreaElement>(null);
   const splitPickerRef = useRef<HTMLSelectElement>(null);
   const anchorRef = useMemo(() => ({ current: opened.anchor }), [opened.anchor]);
   const { panelRef, panelStyle } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
   const placed = panelStyle.visibility === "visible";
   useEffect(() => {
     // Anchored panels mount hidden for measurement; focus only after placement.
+    if (kind === "editText" && placed) textEditorRef.current?.focus();
     if (kind === "split" && placed) splitPickerRef.current?.focus();
   }, [kind, placed]);
   useEffect(() => {
@@ -70,7 +72,7 @@ export default function LiveLineEditor({
       onKeyDown={(event) => { if (event.key === "Escape" && !saving) onClose(); }}
       className="z-[var(--z-dropdown)] w-80 max-w-[calc(100vw-2rem)] rounded border border-surface-border bg-surface-card p-3 text-foreground shadow-float">
       {kind === "editText" ? (
-        <TextareaBase autoFocus aria-label="Line text" value={text} disabled={saving}
+        <TextareaBase ref={textEditorRef} aria-label="Line text" value={text} disabled={saving}
           onChange={(event) => setText(event.target.value)}
           className="w-full rounded border border-control-border bg-surface-input p-2 text-foreground" />
       ) : (

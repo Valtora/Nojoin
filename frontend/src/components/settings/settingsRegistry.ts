@@ -193,7 +193,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "appearance-timezone",
     label: "Timezone",
-    description: "The timezone used across the dashboard, calendars, and task deadlines.",
+    description: "The timezone of every date and time Nojoin shows.",
     category: "appearance",
     access: "all",
     settingsKeys: ["timezone"],

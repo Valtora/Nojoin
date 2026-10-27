@@ -33,3 +33,28 @@ describe("deadline preset fill contracts", () => {
     }
   });
 });
+
+describe("deadline draft", () => {
+  it("keeps a pick when the parent re-renders with the same deadline", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // Monday 15 June 2026; the saved deadline is Saturday the 20th at 09:00.
+    vi.setSystemTime(new Date("2026-06-15T10:00:00Z"));
+    const saved = "2026-06-20T09:00:00Z";
+    const modal = (value: Date) => (
+      <TaskDeadlineModal isOpen taskTitle="Prepare agenda" value={value} timeZone="UTC"
+        onClose={vi.fn()} onSave={vi.fn()} />
+    );
+    const { rerender } = render(modal(new Date(saved)));
+
+    fireEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+    expect(screen.getByText("Tuesday, 16 June at 9:00 AM")).toBeInTheDocument();
+
+    // A new Date for the same instant, as a parent builds on every render.
+    rerender(modal(new Date(saved)));
+    expect(screen.getByText("Tuesday, 16 June at 9:00 AM")).toBeInTheDocument();
+
+    // A different deadline starts the draft again.
+    rerender(modal(new Date("2026-06-22T09:00:00Z")));
+    expect(screen.getByText("Monday, 22 June at 9:00 AM")).toBeInTheDocument();
+  });
+});

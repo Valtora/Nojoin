@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getLanguageOptions, getSettings, importAudio } from "@/lib/api";
+import { setCachedUserTimeZone } from "@/lib/timezone";
 import type { LanguageRegistry, Settings } from "@/types";
 
+import { withProcessTimeZone } from "@/test/processTimeZone";
 import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 
 const addNotification = vi.fn();
@@ -121,5 +123,41 @@ describe("ImportAudioModal", () => {
     expect(vi.mocked(importAudio).mock.calls[0][1]).toMatchObject({
       transcriptionLanguage: "fr",
     });
+  });
+});
+
+describe("ImportAudioModal recording date in a browser zone that differs from the setting", () => {
+  withProcessTimeZone("America/New_York");
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads the date and time picked as the setting's wall clock", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-20T15:00:00Z"));
+    setCachedUserTimeZone("Asia/Tokyo");
+    vi.mocked(importAudio).mockResolvedValue({ id: "rec-1" } as never);
+    renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+    selectFile("board.mp3");
+    expect(screen.getByText(/^In Asia\/Tokyo\./)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Select date and time/ }));
+    const day = document.querySelector(
+      ".react-datepicker__day--027:not(.react-datepicker__day--outside-month)",
+    );
+    if (!day) throw new Error("27 October not shown");
+    fireEvent.click(day);
+    const time = Array.from(document.querySelectorAll(".react-datepicker__time-list-item"))
+      .find((item) => item.textContent === "10:00 AM");
+    if (!time) throw new Error("10:00 AM not offered");
+    fireEvent.click(time);
+    expect(screen.getByRole("button", { name: /October 27, 2026 10:00 AM/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Import Audio" }));
+
+    await screen.findByText(/success/i);
+    // 10:00 in Tokyo is 01:00 UTC; read in New York it would be 14:00 UTC.
+    expect(vi.mocked(importAudio).mock.calls[0][1]?.recordedAt?.toISOString())
+      .toBe("2026-10-27T01:00:00.000Z");
   });
 });

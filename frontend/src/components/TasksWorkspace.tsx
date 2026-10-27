@@ -30,6 +30,9 @@ import {
 } from "@/lib/api";
 import { getColorByKey } from "@/lib/constants";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneLocale } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import type { Recording, RecordingId, Tag, UserTask } from "@/types";
 import TaskDeadlineModal from "./ui/TaskDeadlineModal";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
@@ -71,20 +74,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function formatTaskDate(value: string | null | undefined): string | null {
-  if (!value) {
+function formatTaskDate(value: string | null | undefined, timeZone: string): string | null {
+  const date = parseServerTimestamp(value);
+  if (!date) {
     return null;
   }
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
+  return formatTimeZoneLocale(date, timeZone, "dateTime", {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(date);
+  });
 }
 
 function getTaskTagIds(task: UserTask): number[] {
@@ -216,12 +215,14 @@ function RecordingSelector({
 
 function DeadlinePickerButton({
   value,
+  timeZone,
   onClick,
 }: {
   value: string;
+  timeZone: string;
   onClick: () => void;
 }) {
-  const formatted = formatTaskDate(value);
+  const formatted = formatTaskDate(value, timeZone);
 
   return (
     <div className="flex items-center gap-3">
@@ -247,6 +248,7 @@ function DeadlinePickerButton({
 }
 
 export default function TasksWorkspace() {
+  const timeZone = useUserTimeZone();
   const [tasks, setTasks] = useState<UserTask[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -261,7 +263,7 @@ export default function TasksWorkspace() {
   const [deadlineTarget, setDeadlineTarget] = useState<"create" | "edit" | null>(
     null,
   );
-  const { addNotification } = useNotificationStore();
+  const addNotification = useNotificationStore((state) => state.addNotification);
 
   useEffect(() => {
     let cancelled = false;
@@ -555,6 +557,7 @@ export default function TasksWorkspace() {
             <div className="flex flex-col gap-4">
               <DeadlinePickerButton
                 value={draft.dueAt}
+                timeZone={timeZone}
                 onClick={() => setDeadlineTarget("create")}
               />
               <TagSelector
@@ -620,8 +623,8 @@ export default function TasksWorkspace() {
           visibleTasks.map((task) => {
             const isEditing = editingTaskId === task.id;
             const isBusy = busyTaskId === task.id;
-            const dueLabel = formatTaskDate(task.due_at);
-            const archivedLabel = formatTaskDate(task.archived_at);
+            const dueLabel = formatTaskDate(task.due_at, timeZone);
+            const archivedLabel = formatTaskDate(task.archived_at, timeZone);
 
             return (
               <SurfaceBase
@@ -662,6 +665,7 @@ export default function TasksWorkspace() {
                     <div className="space-y-4">
                       <DeadlinePickerButton
                         value={editDraft.dueAt}
+                        timeZone={timeZone}
                         onClick={() => setDeadlineTarget("edit")}
                       />
                       <TagSelector
@@ -850,6 +854,7 @@ export default function TasksWorkspace() {
         isOpen={deadlineTarget !== null}
         taskTitle={deadlineModalTitle}
         value={deadlineModalValue}
+        timeZone={timeZone}
         onClose={() => setDeadlineTarget(null)}
         onSave={handleSaveDeadline}
       />

@@ -1,4 +1,9 @@
 import { useNotificationStore } from "@/lib/notificationStore";
+import {
+  formatTimeZoneLocale,
+  getBrowserTimeZone,
+  getCachedUserTimeZone,
+} from "@/lib/timezone";
 import type { RecordingId } from "@/types";
 
 /**
@@ -169,7 +174,9 @@ const notificationId = (audio: Pick<LeftOutAudio, "id">) => `left-out-audio-${au
 
 const offerMessage = (audio: LeftOutAudio) => {
   const recording = audio.recordingName ? `"${audio.recordingName}"` : "a recording";
-  const until = new Date(audio.keptAt + LEFT_OUT_AUDIO_KEEP_MS).toLocaleDateString(undefined, {
+  // In the user's time-zone setting once the app has loaded it, as backups are.
+  const timeZone = getCachedUserTimeZone() ?? getBrowserTimeZone();
+  const until = formatTimeZoneLocale(audio.keptAt + LEFT_OUT_AUDIO_KEEP_MS, timeZone, "date", {
     day: "numeric",
     month: "long",
   });
