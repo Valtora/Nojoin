@@ -1,4 +1,5 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClientStatus, RecordingStatus, type Recording, type TranscriptUtteranceList } from "@/types";
@@ -36,6 +37,10 @@ const mount = (initial = recording()) => renderHook(
     useRecordingTranscript(value, setRecording, localActive),
   { initialProps: { value: initial, localActive: false } },
 );
+const mountStateful = (initial: Recording) => renderHook(() => {
+  const [value, setValue] = useState<Recording | null>(initial);
+  return { ...useRecordingTranscript(value, setValue), setRecording: setValue };
+});
 
 describe("recording transcript handoff", () => {
   beforeEach(() => {
@@ -67,32 +72,66 @@ describe("recording transcript handoff", () => {
       const { result, rerender } = mount();
       await advance();
       mocks.settled.mockRejectedValueOnce(new Error("offline"));
+      const retry = deferred<TranscriptUtteranceList>();
+      mocks.settled.mockReturnValueOnce(retry.promise);
       rerender({ value: recording({ status, client_status: ClientStatus.IDLE }), localActive: false });
       await advance();
       expect(result.current.usesInFlightTranscript).toBe(true);
       expect(result.current.transcriptSegments[0].text).toBe("Live");
+      const liveReads = mocks.live.mock.calls.length;
+      mocks.live.mockResolvedValue(snapshot("Still arriving"));
       await advance(3_000);
+      expect(mocks.settled).toHaveBeenCalledTimes(2);
+      expect(mocks.live).toHaveBeenCalledTimes(liveReads + 1);
+      expect(mocks.live).toHaveBeenLastCalledWith("rec-1", 4, expect.any(AbortSignal));
+      expect(result.current.transcriptSegments[0].text).toBe("Still arriving");
+      expect(result.current.usesInFlightTranscript).toBe(true);
+      await advance(3_000);
+      expect(mocks.live).toHaveBeenCalledTimes(liveReads + 2);
+      expect(result.current.usesInFlightTranscript).toBe(true);
+      expect(result.current.transcriptIsAuthoritative).toBe(false);
+      await act(async () => retry.resolve(snapshot("Final")));
       expect(result.current.usesInFlightTranscript).toBe(false);
+      expect(result.current.transcriptIsAuthoritative).toBe(true);
       expect(result.current.transcriptSegments[0].text).toBe("Final");
       expect(result.current.transcriptSpeakerNames).toEqual({ LIVE_1: "Final" });
-      expect(mocks.settled).toHaveBeenCalledTimes(2);
+      const readsAtSuccess = mocks.live.mock.calls.length;
+      await advance(6_000);
+      expect(mocks.live).toHaveBeenCalledTimes(readsAtSuccess);
     },
   );
 
-  it("accepts an empty unmarked full handoff despite nonempty feed and metadata fallback", async () => {
-    const { result, rerender } = mount();
+  it.each([0, 4])("preserves an accepted revision-%i empty handoff through recording updates", async (revision) => {
+    const { result } = mountStateful(recording());
     await advance();
-    mocks.settled.mockResolvedValue(snapshot(""));
+    mocks.settled.mockResolvedValue({ ...snapshot(""), revision });
     const value = recording({ status: RecordingStatus.PROCESSED, client_status: ClientStatus.IDLE });
     value.transcript = {
       id: 1, recording_id: value.id, created_at: value.created_at, updated_at: value.updated_at,
       text: "Stale metadata", segments: [{ start: 0, end: 1, text: "Stale metadata", speaker: "UNKNOWN" }],
     };
-    rerender({ value, localActive: false });
+    act(() => result.current.setRecording(value));
     await advance();
     expect(result.current.transcriptSegments).toEqual([]);
     expect(result.current.transcriptIsAuthoritative).toBe(true);
     expect(result.current.usesInFlightTranscript).toBe(false);
+    act(() => result.current.setRecording({ ...value, name: "Refreshed metadata" }));
+    expect(result.current.transcriptSegments).toEqual([]);
+    expect(result.current.transcriptIsAuthoritative).toBe(true);
+    expect(result.current.usesInFlightTranscript).toBe(false);
+  });
+
+  it("accepts delayed legacy metadata before the first successful read", async () => {
+    mocks.settled.mockReturnValue(deferred<TranscriptUtteranceList>().promise);
+    const value = recording({ status: RecordingStatus.PROCESSED, client_status: ClientStatus.IDLE });
+    const { result } = mountStateful(value);
+    await advance();
+    act(() => result.current.setRecording({ ...value, transcript: {
+      id: 1, recording_id: value.id, created_at: value.created_at, updated_at: value.updated_at,
+      segments: [{ start: 0, end: 1, text: "Delayed legacy metadata", speaker: "UNKNOWN" }],
+    } }));
+    expect(result.current.transcriptSegments[0].text).toBe("Delayed legacy metadata");
+    expect(result.current.isSettledTranscriptReady).toBe(false);
   });
 
   it("rejects an older settled generation after capture resumes", async () => {
@@ -108,13 +147,17 @@ describe("recording transcript handoff", () => {
     await advance();
     rerender({ value: settled, localActive: false });
     await advance();
-    await act(async () => old.resolve(snapshot("Obsolete")));
     expect(result.current.usesInFlightTranscript).toBe(true);
     expect(result.current.transcriptIsAuthoritative).toBe(false);
     expect(result.current.transcriptSegments[0].text).toBe("Live");
     await act(async () => current.resolve(snapshot("Current")));
     expect(result.current.usesInFlightTranscript).toBe(false);
     expect(result.current.transcriptSegments[0].text).toBe("Current");
+    await act(async () => old.resolve(snapshot("Obsolete")));
+    expect(result.current.transcriptSegments[0].text).toBe("Current");
+    expect(result.current.transcriptSpeakerNames).toEqual({ LIVE_1: "Current" });
+    expect(result.current.transcriptIsAuthoritative).toBe(true);
+    expect(result.current.usesInFlightTranscript).toBe(false);
   });
 
   it("invalidates settled readiness on local resume before server metadata changes", async () => {

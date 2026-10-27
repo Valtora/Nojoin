@@ -41,6 +41,9 @@ const getUserMe = vi.fn();
 let activePanel = "transcript";
 // Both side panels collapsed unless a test opens them, so desktop shows the rail.
 let sidePanelsCollapsed = true;
+let speakerPanelCollapsed: boolean | null = null;
+let chatPanelCollapsed: boolean | null = null;
+let sideTab = "my-notes";
 let localCaptureId: string | null = null;
 let localCaptureStatus = "idle";
 
@@ -80,11 +83,11 @@ vi.mock("@/lib/store", () => ({
       setChatPanelHeight: vi.fn(),
       activePanel,
       setActivePanel,
-      isSpeakerPanelCollapsed: sidePanelsCollapsed,
-      isChatPanelCollapsed: sidePanelsCollapsed,
+      isSpeakerPanelCollapsed: speakerPanelCollapsed ?? sidePanelsCollapsed,
+      isChatPanelCollapsed: chatPanelCollapsed ?? sidePanelsCollapsed,
       setSpeakerPanelCollapsed,
       setChatPanelCollapsed: vi.fn(),
-      sideTab: "my-notes",
+      sideTab,
       setSideTab,
     };
     return select ? select(state) : state;
@@ -316,14 +319,17 @@ describe("RecordingPage (detail)", () => {
   beforeEach(() => {
     activePanel = "transcript";
     sidePanelsCollapsed = true;
+    speakerPanelCollapsed = null;
+    chatPanelCollapsed = null;
+    sideTab = "my-notes";
     localCaptureId = null;
     localCaptureStatus = "idle";
     routerPush.mockReset();
     routerRefresh.mockReset();
     addNotification.mockReset();
     setActivePanel.mockReset();
-    setSideTab.mockReset();
-    setSpeakerPanelCollapsed.mockReset();
+    setSideTab.mockReset().mockImplementation((value: string) => { sideTab = value; });
+    setSpeakerPanelCollapsed.mockReset().mockImplementation((value: boolean) => { speakerPanelCollapsed = value; });
     exportAudio.mockReset();
     exportContent.mockReset().mockResolvedValue(undefined);
     getRecording.mockReset();
@@ -422,6 +428,55 @@ describe("RecordingPage (detail)", () => {
     await screen.findByRole("heading", { name: /Quarterly sync/ });
     expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open Meeting Chat" })).not.toBeInTheDocument();
+  });
+
+  it.each([RecordingStatus.UPLOADING, RecordingStatus.PROCESSING])(
+    "collapses and reopens the side column while %s with Chat's expanded preference", async (status) => {
+      vi.stubGlobal("innerWidth", 1440);
+      sidePanelsCollapsed = false;
+      getRecording.mockResolvedValue(buildRecording({ status }));
+      const params = Promise.resolve({ id: "rec-1" });
+      const view = renderWithProviders(<RecordingPage params={params} />);
+      await screen.findByRole("heading", { name: /Quarterly sync/ });
+
+      fireEvent.click(screen.getByRole("button", { name: "Collapse speakers and notes panel" }));
+      expect(setSpeakerPanelCollapsed).toHaveBeenLastCalledWith(true);
+      // The store emits the new preference; rerender the controlled store mock.
+      view.rerender(<RecordingPage params={params} />);
+      expect(screen.queryByRole("tablist", { name: "Side panels" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Show meeting chat panel" })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Show captures" }));
+      expect(setSideTab).toHaveBeenLastCalledWith("captures");
+      expect(setSpeakerPanelCollapsed).toHaveBeenLastCalledWith(false);
+      view.rerender(<RecordingPage params={params} />);
+      expect(screen.getByRole("tab", { name: "Captures" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByTestId("captures-gallery")).toBeVisible();
+
+      getRecording.mockResolvedValue(buildRecording());
+      fireEvent.click(screen.getByTestId("recording-tag-editor"));
+      await screen.findByTestId("audio-player");
+      expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    },
+  );
+
+  it.each([true, false])("mobile Back navigates from the shared page (capturing=%s)", async (capturing) => {
+    vi.stubGlobal("innerWidth", 390);
+    if (capturing) {
+      localCaptureId = "rec-1";
+      localCaptureStatus = "recording";
+      getRecording.mockResolvedValue(buildRecording({
+        status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
+      }));
+    }
+    renderPage();
+    const back = await screen.findByRole("button", { name: "Back to Recordings" });
+    expect(screen.getByTestId(capturing ? "recording-capture-slot" : "audio-player")).toBeInTheDocument();
+    expect(routerPush).not.toHaveBeenCalled();
+
+    fireEvent.click(back);
+
+    expect(routerPush).toHaveBeenCalledExactlyOnceWith("/recordings");
   });
 
   it.each(["recording", "paused", "finalizing"])("keeps the %s slot when local capture leads the server metadata", async (status) => {

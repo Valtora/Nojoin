@@ -125,6 +125,7 @@ export default function RecordingPage({ params }: PageProps) {
   const isLocalCaptureActive = capture.recordingId === recording.id &&
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
   const showCaptureSlot = isInFlightRecording || isLocalCaptureActive;
+  const sideColumnCollapsed = isSpeakerPanelCollapsed && (showCaptureSlot || isChatPanelCollapsed);
   const canPlayback = detailCanPlayback && !isLocalCaptureActive;
   const canExport = detailCanExport && !isLocalCaptureActive;
 
@@ -284,7 +285,7 @@ export default function RecordingPage({ params }: PageProps) {
                 {mainContent}
               </Panel>
 
-              {!(isSpeakerPanelCollapsed && isChatPanelCollapsed) && (
+              {!sideColumnCollapsed && (
                 <>
                   <PanelResizeHandle
                     data-ui-resize-handle="horizontal"
@@ -353,7 +354,7 @@ export default function RecordingPage({ params }: PageProps) {
               )}
             </PanelGroup>
 
-            {isSpeakerPanelCollapsed && isChatPanelCollapsed && <RecordingSideRail allowChat={!showCaptureSlot} />}
+            {sideColumnCollapsed && <RecordingSideRail allowChat={!showCaptureSlot} />}
           </div>
         )}
       </div>

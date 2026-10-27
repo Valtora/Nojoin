@@ -25,6 +25,7 @@ export function useDetailTranscript(
     { authoritativeEmpty?: boolean; inFlight?: boolean } = {},
 ) {
   const transcriptStateRef = useRef<LocalTranscriptState | null>(null);
+  const acceptedSnapshotRecordingIdRef = useRef<string | null>(null);
   const { addNotification } = useNotificationStore();
   const isInFlightRecording = inFlight;
   const [readerGeneration, setReaderGeneration] = useState(0);
@@ -93,11 +94,15 @@ export function useDetailTranscript(
     }
 
     setTranscriptState((prev) => {
-      if (prev && prev.recordingId === recording.id && prev.revision > 0) {
+      // A successful empty snapshot may have revision zero. Metadata remains
+      // a fallback only until this recording's reader accepts a snapshot.
+      if (prev && prev.recordingId === recording.id &&
+        (prev.revision > 0 || acceptedSnapshotRecordingIdRef.current === recording.id)) {
         transcriptStateRef.current = prev;
         return prev;
       }
 
+      acceptedSnapshotRecordingIdRef.current = null;
       const nextState = createLocalTranscriptState(
         recording.id,
         isRecordingInFlight(recording) ? [] : (recording.transcript?.segments || []),
@@ -191,6 +196,7 @@ export function useDetailTranscript(
           options.deferActiveEdit === false ? null : activeEditRef.current,
       });
       const nextSegments = nextState.segments;
+      acceptedSnapshotRecordingIdRef.current = recording.id;
       transcriptStateRef.current = nextState;
       setTranscriptState(nextState);
       const liveNames = transcriptDelta.live_speaker_names ?? {};

@@ -1,5 +1,5 @@
 /**
- * Scrolls the finished transcript so a body note sits in the middle of it.
+ * Scrolls the active transcript so a body note sits in the middle of it.
  *
  * The target is the note's own line, else its marked words (a selection note
  * folded behind its line's count), else the last shown line at or before the
@@ -9,7 +9,7 @@
  */
 export function scrollTranscriptToNote(noteId: string, afterIndex: number): void {
   const region = document.querySelector<HTMLElement>(
-    '#transcript-view [data-testid="transcript-scroll-region"]',
+    '#transcript-view [data-testid="transcript-scroll-region"], #panel-transcript [data-testid="live-transcript-scroll"]',
   );
   if (!region) return;
   const id = CSS.escape(noteId);

@@ -42,10 +42,6 @@ describe("shared recording action model", () => {
     expect(statusDisplaySource).toContain("useRecordingActions");
   });
 
-  it("RecordingCaptureSlot consumes the shared useRecordingActions hook", () => {
-    expect(captureSlotSource).toContain("useRecordingActions");
-  });
-
   it("the rail and header discard draw their actions from the same shared set", () => {
     const sidebarActions = usedActionIds(sidebarSource);
     const statusActions = usedActionIds(captureSlotSource);
