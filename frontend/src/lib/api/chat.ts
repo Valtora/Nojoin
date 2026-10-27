@@ -1,5 +1,5 @@
 import { getErrorMessage, isAbortError } from "@/lib/errors";
-import type { ChatMessage, RecordingId } from "@/types";
+import type { ChatContextMetadata, ChatMessage, RecordingId } from "@/types";
 import api, { API_BASE_URL } from "./client";
 
 export const getChatHistory = async (
@@ -23,6 +23,7 @@ export const streamChatMessage = (
   onError: (error: string) => void,
   tagIds?: number[],
   onNotesUpdate?: () => void,
+  onContext?: (context: ChatContextMetadata) => void,
 ): AbortController => {
   const controller = new AbortController();
 
@@ -59,7 +60,7 @@ export const streamChatMessage = (
         const { done, value } = await reader.read();
         if (done) {
           if (pendingLine.trim()) {
-            handleChatStreamLine(pendingLine, onToken, onError, onNotesUpdate);
+            handleChatStreamLine(pendingLine, onToken, onError, onNotesUpdate, onContext);
           }
           onComplete();
           break;
@@ -70,7 +71,7 @@ export const streamChatMessage = (
         pendingLine = lines.pop() ?? "";
 
         for (const line of lines) {
-          handleChatStreamLine(line, onToken, onError, onNotesUpdate);
+          handleChatStreamLine(line, onToken, onError, onNotesUpdate, onContext);
         }
       }
     })
@@ -90,6 +91,7 @@ const handleChatStreamLine = (
   onToken: (token: string) => void,
   onError: (error: string) => void,
   onNotesUpdate?: () => void,
+  onContext?: (context: ChatContextMetadata) => void,
 ) => {
   if (line.startsWith("event: notes_update")) {
     onNotesUpdate?.();
@@ -107,7 +109,10 @@ const handleChatStreamLine = (
 
   try {
     const parsed = JSON.parse(data);
-    if (parsed.token !== undefined) {
+    if (parsed.context && typeof parsed.context.provisional === "boolean" &&
+      typeof parsed.context.transcript_trimmed === "boolean") {
+      onContext?.(parsed.context);
+    } else if (parsed.token !== undefined) {
       onToken(parsed.token);
     } else if (parsed.error) {
       onError(parsed.error);

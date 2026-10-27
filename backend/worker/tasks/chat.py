@@ -7,8 +7,14 @@ SSE (see ``backend.services.chat_relay``). This task is the *single writer* of
 the assistant ``ChatMessage``; the API relay never persists.
 """
 
+from collections.abc import Iterator
+from typing import Any
+
 from backend.models.chat import ChatMessage
+from backend.models.recording import IN_FLIGHT_TRANSCRIPT_STATUSES
 from backend.services.chat_relay import ChatStreamPublisher, friendly_chat_error
+from backend.services.live_chat import stream_live_chat
+from backend.utils.chat_prompt import ChatTranscript
 
 from .constants import *  # noqa: F401,F403 - shared task imports (celery_app, models, resolvers)
 
@@ -49,21 +55,26 @@ def meeting_chat_task(
         backend = _llm_backend_from_config(llm_config)  # noqa: F405
 
         full_response = ""
-        for chunk in backend.ask_question_streaming(
-            user_question=augmented_message,
-            meeting_notes=meeting_notes,
-            diarized_transcript=None,  # rebuilt inside via recording_id
-            conversation_history=conversation_history,
-            recording_id=recording.id,
-        ):
+
+        def ask(diarized_transcript: ChatTranscript) -> Iterator[str | dict[str, Any]]:
+            return backend.ask_question_streaming(
+                user_question=augmented_message,
+                meeting_notes=meeting_notes,
+                diarized_transcript=diarized_transcript,
+                conversation_history=conversation_history,
+                recording_id=recording.id,
+            )
+
+        chunks = (
+            stream_live_chat(ask, recording.id)
+            if recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
+            else ask(None)
+        )
+        for chunk in chunks:
             # Only a degraded secondary backend can emit control dicts (e.g.
             # notes_update); its DB side effect already ran. CLI itself never
             # does — skip framing non-text chunks.
-            if isinstance(chunk, dict):
-                continue
-            text = str(chunk)
-            full_response += text
-            publisher.publish_token(text)
+            full_response += _publish_chunk(publisher, chunk)
 
         if full_response.strip():
             session.add(
@@ -88,3 +99,15 @@ def meeting_chat_task(
         publisher.publish_done()
     finally:
         publisher.close()
+
+
+def _publish_chunk(publisher: ChatStreamPublisher, chunk: str | dict[str, Any]) -> str:
+    if isinstance(chunk, dict):
+        if chunk.get("type") == "context":
+            publisher.publish_context(
+                {key: value for key, value in chunk.items() if key != "type"}
+            )
+        return ""
+    text = str(chunk)
+    publisher.publish_token(text)
+    return text

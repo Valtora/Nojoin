@@ -65,6 +65,9 @@ class ChatStreamPublisher:
     def publish_done(self) -> None:
         self._push({"t": _T_DONE})
 
+    def publish_context(self, context: dict[str, bool]) -> None:
+        self._push({"t": "context", "v": context})
+
     def publish_error(self, message: str) -> None:
         self._push({"t": _T_ERROR, "v": message})
 
@@ -122,6 +125,8 @@ def _frame_for(raw: str) -> tuple[str, bool]:
     kind = envelope.get("t")
     if kind == _T_TOKEN:
         return f"data: {json.dumps({'token': str(envelope.get('v', ''))})}\n\n", False
+    if kind == "context" and isinstance(envelope.get("v"), dict):
+        return f"data: {json.dumps({'context': envelope['v']})}\n\n", False
     if kind == _T_ERROR:
         return _error_frame(str(envelope.get("v", "")) or _GENERIC_ERROR), True
     if kind == _T_DONE:

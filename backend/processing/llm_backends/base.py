@@ -4,6 +4,7 @@ from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 
 from backend.utils.chat_prompt import (
     ChatTranscript,
+    LiveChatTranscript,
     TranscriptExcerpts,
     build_chat_prompt,
 )
@@ -474,6 +475,8 @@ class LLMBackend:
         """
         if recording_id is None:
             return diarized_transcript
+        if isinstance(diarized_transcript, LiveChatTranscript):
+            return diarized_transcript
         if isinstance(diarized_transcript, TranscriptExcerpts):
             return self.get_transcript_excerpts_for_llm(
                 recording_id, diarized_transcript.ranges, max_bytes
@@ -808,7 +811,9 @@ Preserve the same schema and do not invent facts not supported by the original t
         return TranscriptExcerpts(ranges=tuple(ranges), text=text)
 
     @staticmethod
-    def get_mapped_transcript_for_llm(recording_id: int) -> str | None:
+    def get_mapped_transcript_for_llm(
+        recording_id: int, *, live: bool = False
+    ) -> str | None:
         """Render a recording's transcript for Meeting Chat, or None without one.
 
         See ``backend.utils.llm_transcript.render_transcript_for_llm``.
@@ -817,7 +822,7 @@ Preserve the same schema and do not invent facts not supported by the original t
         from backend.utils.llm_transcript import render_transcript_for_llm
 
         with get_sync_session() as session:
-            return render_transcript_for_llm(session, recording_id)
+            return render_transcript_for_llm(session, recording_id, live=live)
 
     def _update_notes_in_db(self, recording_id: int, new_notes: str):
         """

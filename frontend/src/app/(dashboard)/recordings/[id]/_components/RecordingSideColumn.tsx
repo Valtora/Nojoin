@@ -31,6 +31,7 @@ const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
 
 interface RecordingSideColumnProps {
   allowChat?: boolean;
+  inFlight?: boolean;
   /** The speaker panel, as the page builds it. */
   speakers: ReactNode;
   /** The My notes list, as the page builds it. */
@@ -167,6 +168,7 @@ function SideTabs({
  */
 export default function RecordingSideColumn({
   allowChat = true,
+  inFlight = false,
   speakers,
   myNotes,
   captures,
@@ -205,6 +207,7 @@ export default function RecordingSideColumn({
         </ButtonBase>
         {allowChat && <div className="min-h-0 flex-1">
           <ChatPanel
+            inFlight={inFlight}
             onNotesUpdate={onNotesUpdate}
             onCollapse={() => setChatPanelCollapsed(true)}
           />
@@ -272,6 +275,7 @@ export default function RecordingSideColumn({
         minSize={18}
       >
         <ChatPanel
+          inFlight={inFlight}
           onNotesUpdate={onNotesUpdate}
           onCollapse={() => setChatPanelCollapsed(true)}
         />

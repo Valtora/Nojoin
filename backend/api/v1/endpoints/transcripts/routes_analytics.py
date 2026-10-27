@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task_best_effort
 from backend.models.ai_analysis import RUN_SOURCE_USER
+from backend.models.analytics_public import LiveRecordingAnalyticsRead
+from backend.models.recording import IN_FLIGHT_TRANSCRIPT_STATUSES, Recording
 from backend.models.user import User
 from backend.services.ai_analysis_budget import (
     AiAnalysisBudgetExhausted,
@@ -14,6 +16,7 @@ from backend.services.ai_analysis_budget import (
     get_budget,
 )
 from backend.services.meeting_analytics import compute_recording_analytics
+from backend.services.meeting_analytics.live import compute_live_recording_analytics
 from backend.utils.analytics_preferences import is_auto_remeasure_delivery_enabled
 from backend.utils.canonical_pipeline import (
     ensure_canonical_backfill,
@@ -86,6 +89,28 @@ class AnalyticsAiGenerateResponse(BaseModel):
 # cover the queue wait and the measurement itself on a busy CPU lane, short
 # enough that a dispatch the worker never picked up is retried on a later open.
 AUTO_REMEASURE_CLAIM_WINDOW_S = 300
+
+
+def _require_final_analytics(recording: Recording) -> None:
+    if recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES:
+        raise HTTPException(
+            status_code=409, detail="Final analytics are available after processing"
+        )
+
+
+@router.get("/{recording_id}/analytics/live", response_model=LiveRecordingAnalyticsRead)
+async def get_live_recording_analytics(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LiveRecordingAnalyticsRead:
+    """Transcript estimates with no backfill, audio work or analysis budget."""
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript = await _get_recording_transcript(db, recording.id)
+    payload = await db.run_sync(
+        lambda session: compute_live_recording_analytics(session, recording, transcript)
+    )
+    return LiveRecordingAnalyticsRead(**payload)
 
 
 def _is_stale(block: dict | None, watermark: object, revision: int) -> bool:
@@ -208,12 +233,17 @@ async def get_recording_analytics(
     invalidation path to get wrong.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_final_analytics(recording)
     transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
     read = await read_recording_analytics(db, recording, transcript)
+    # The read commits its backfill. A new processing pass may have started
+    # across that boundary, so check fresh state before dispatching final work.
+    await db.refresh(recording)
+    _require_final_analytics(recording)
     if await _auto_remeasure_delivery(
         recording, transcript, current_user, read["delivery_stale"]
     ):
@@ -246,6 +276,7 @@ async def generate_recording_analytics(
     though they run on different lanes.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_final_analytics(recording)
     transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:
@@ -302,6 +333,7 @@ async def generate_recording_ai_analytics(
     read. A meeting that has never been analysed simply reports so.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_final_analytics(recording)
     transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:

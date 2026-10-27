@@ -389,6 +389,10 @@ export default function RecordingMainContent({
           active={activePanel === "analytics"}
           recordingId={recording.id}
           speakerColors={speakerColors}
+          refreshKey={JSON.stringify([
+            recording.status, recording.client_status, recording.transcript?.change_sequence,
+            Object.entries(speakerMap).sort(([a], [b]) => a.localeCompare(b)),
+          ])}
           onPlaySegment={canPlayback ? (startMs) => onPlaySegment(startMs / 1000) : undefined}
           // Two routes to one panel: mobile switches to it, desktop reveals it
           // in the side column, which may have been collapsed away.

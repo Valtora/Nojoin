@@ -48,8 +48,8 @@ class RecordingPipelineGeneration(str, Enum):
 LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL = "This recording must be reprocessed before transcript or speaker edits are supported"
 
 # Statuses in which a recording's transcript is still being captured or rebuilt.
-# The recording view blanks the transcript while in one, and Meeting Chat
-# refuses to answer from it.
+# The recording view keeps transcript estimates and Chat available while
+# final analytics and playback wait for these states to finish.
 IN_FLIGHT_TRANSCRIPT_STATUSES = frozenset(
     {
         RecordingStatus.PAUSED,

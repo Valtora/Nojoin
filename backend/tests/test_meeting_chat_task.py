@@ -185,6 +185,9 @@ class _FakePublisher:
     def publish_done(self):
         self.events.append(("done", None))
 
+    def publish_context(self, context: dict[str, bool]) -> None:
+        self.events.append(("context", context))
+
     def publish_error(self, message):
         self.events.append(("err", message))
 

@@ -8,10 +8,12 @@ import type { RecordingId } from "@/types";
 // is opened far more often than this tab. Loading it only when the tab is
 // first shown keeps it out of the route's initial bundle.
 const AnalyticsView = lazy(() => import("@/components/analytics/AnalyticsView"));
+const LiveAnalyticsView = lazy(() => import("@/components/analytics/LiveAnalyticsView"));
 
 interface AnalyticsSectionProps {
   active: boolean;
   inFlight?: boolean;
+  refreshKey?: string;
   recordingId: RecordingId;
   /**
    * The meeting's speaker colours, so a person is the same colour here as in
@@ -26,6 +28,7 @@ interface AnalyticsSectionProps {
 export default function AnalyticsSection({
   active,
   inFlight = false,
+  refreshKey = "",
   recordingId,
   speakerColors,
   onPlaySegment,
@@ -40,9 +43,7 @@ export default function AnalyticsSection({
     >
       {/* Mounted only once the tab has been opened, so an unopened tab costs
           neither the chunk nor the request behind it. */}
-      {inFlight ? (
-        <p className="m-auto p-6 text-center text-sm text-contrast-helper">Analytics will be available once processing finishes.</p>
-      ) : active && (
+      {active && (
         <Suspense
           fallback={
             <div className="flex h-full items-center justify-center text-sm text-contrast-helper">
@@ -50,12 +51,14 @@ export default function AnalyticsSection({
             </div>
           }
         >
-          <AnalyticsView
+          {inFlight ? <LiveAnalyticsView key={recordingId} recordingId={recordingId}
+            refreshKey={refreshKey} speakerColors={speakerColors} /> : <AnalyticsView
+            key={recordingId}
             recordingId={recordingId}
             speakerColors={speakerColors}
             onPlaySegment={onPlaySegment}
             onReviewSpeakers={onReviewSpeakers}
-          />
+          />}
         </Suspense>
       )}
     </div>

@@ -16,7 +16,7 @@ Until the final pass replaces the live lines, every reader that would show
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from sqlalchemy import func
@@ -214,12 +214,16 @@ def require_live_person_anchor(
         )
 
 
-def live_speaker_names(session: Any, recording_id: int) -> dict[str, str]:
+def live_speaker_names(
+    session: Any, recording_id: int, *, labels: Iterable[str] | None = None
+) -> dict[str, str]:
     """Live label -> the newest name the user gave it, while a line carries it.
 
     Only the naming route writes ``live`` rows, each a name for a live label.
     Once the final pass has replaced the live lines no current line carries a
-    live label, so the map is empty and no read shows one.
+    live label, so the map is empty and no read shows one. Readers with a
+    canonical-first projection supply its effective ``labels`` so fallback
+    reads resolve names without requiring matching canonical rows.
     """
     rows = session.execute(
         select(SpeakerNameEvent.anchor_label, SpeakerNameEvent.name)
@@ -229,6 +233,9 @@ def live_speaker_names(session: Any, recording_id: int) -> dict[str, str]:
     ).all()
     if not rows:
         return {}
+    if labels is not None:
+        heard_labels = set(labels)
+        return {str(label): str(name) for label, name in rows if label in heard_labels}
     from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
     heard = set(
@@ -244,11 +251,15 @@ def live_speaker_names(session: Any, recording_id: int) -> dict[str, str]:
 
 
 def with_live_speaker_names(
-    session: Any, recording_id: int, speaker_map: Mapping[str, str]
+    session: Any,
+    recording_id: int,
+    speaker_map: Mapping[str, str],
+    *,
+    labels: Iterable[str] | None = None,
 ) -> dict[str, str]:
     """``speaker_map`` plus the names given to live labels.
 
     A live label has no recording speaker, so no entry of ``speaker_map`` is
     replaced.
     """
-    return {**live_speaker_names(session, recording_id), **speaker_map}
+    return {**live_speaker_names(session, recording_id, labels=labels), **speaker_map}

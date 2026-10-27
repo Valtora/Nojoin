@@ -27,7 +27,7 @@ import {
 import { getCliOAuthStatus } from "@/lib/api/cliOauth";
 import { AiAvailability, resolveAiAvailability } from "@/lib/aiAvailability";
 import { isAdministrator } from "@/lib/roles";
-import { ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
+import { ChatContextMetadata, ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
 import Link from "next/link";
 import MarkdownBubble from "./MarkdownBubble";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -36,13 +36,17 @@ import ConfirmationModal from "./ConfirmationModal";
 import MultiSelect, { Option } from "@/components/ui/MultiSelect";
 import IconButton from "@/components/ui/IconButton";
 
+type DisplayChatMessage = ChatMessage & { context?: ChatContextMetadata; contextFooterComplete?: boolean };
+
 export default function ChatPanel({
   onNotesUpdate,
   onCollapse,
+  inFlight = false,
 }: {
   onNotesUpdate?: () => void;
   /** Desktop side-column collapse; the mobile full-screen chat omits it. */
   onCollapse?: () => void;
+  inFlight?: boolean;
 }) {
   const params = useParams();
   const recordingId: RecordingId | null =
@@ -51,11 +55,14 @@ export default function ChatPanel({
       : Array.isArray(params?.id)
         ? params.id[0] ?? null
         : null;
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<DisplayChatMessage[]>([]);
+  const [loadedHistoryRecordingId, setLoadedHistoryRecordingId] = useState<RecordingId | null>(null);
+  const historyReady = loadedHistoryRecordingId === recordingId;
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [abortController, setAbortController] =
-    useState<AbortController | null>(null);
+  const abortController = useRef<AbortController | null>(null);
+  const generation = useRef(0);
+  const optimisticId = useRef(-1);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const [messagesContent, setMessagesContent] = useState<HTMLDivElement | null>(null);
@@ -121,21 +128,34 @@ export default function ChatPanel({
 
   // Load chat history
   useEffect(() => {
+    let current = true;
     if (recordingId) {
       setMessages([]);
-      getChatHistory(recordingId).then(setMessages).catch(console.error);
+      getChatHistory(recordingId).then((history) => {
+        if (current) setMessages(history);
+      }).catch(console.error).finally(() => {
+        if (current) setLoadedHistoryRecordingId(recordingId);
+      });
     } else {
       setMessages([]);
     }
+    return () => {
+      current = false;
+      generation.current += 1;
+      abortController.current?.abort();
+      abortController.current = null;
+    };
   }, [recordingId]);
 
   const handleSend = async () => {
-    if (!inputValue.trim() || !recordingId || isStreaming) return;
+    if (!inputValue.trim() || !recordingId || isStreaming || !historyReady) return;
+    const requestGeneration = ++generation.current;
+    const isCurrent = () => generation.current === requestGeneration;
 
     const userMsg: ChatMessage = {
       // Local-only id for optimistic rendering; the server assigns the real
       // one when the message is persisted.
-      id: Date.now(),
+      id: optimisticId.current--,
       recording_id: recordingId,
       user_id: 0,
       role: "user",
@@ -151,7 +171,7 @@ export default function ChatPanel({
     setIsStreaming(true);
 
     // Create placeholder for assistant message
-    const assistantMsgId = Date.now() + 1;
+    const assistantMsgId = optimisticId.current--;
     const assistantMsg: ChatMessage = {
       id: assistantMsgId,
       recording_id: recordingId,
@@ -168,6 +188,7 @@ export default function ChatPanel({
       recordingId,
       userMsg.content,
       (token) => {
+        if (!isCurrent()) return;
         setMessages((prev) =>
           prev.map((msg) => {
             if (msg.id === assistantMsgId) {
@@ -178,14 +199,19 @@ export default function ChatPanel({
         );
       },
       () => {
+        if (!isCurrent()) return;
+        setMessages((previous) => previous.map((message) => message.id === assistantMsgId
+          ? { ...message, contextFooterComplete: true } : message));
         setIsStreaming(false);
-        setAbortController(null);
+        abortController.current = null;
       },
       (error) => {
+        if (!isCurrent()) return;
+        generation.current += 1;
         console.error("Chat error:", error);
         addNotification({ type: "error", message: error });
         setIsStreaming(false);
-        setAbortController(null);
+        abortController.current = null;
         setMessages((prev) =>
           prev.map((msg) => {
             if (msg.id === assistantMsgId) {
@@ -199,16 +225,22 @@ export default function ChatPanel({
         );
       },
       selectedTagIds.length > 0 ? (selectedTagIds as number[]) : undefined,
-      onNotesUpdate,
+      () => { if (isCurrent()) onNotesUpdate?.(); },
+      (context) => {
+        if (!isCurrent()) return;
+        setMessages((previous) => previous.map((message) =>
+          message.id === assistantMsgId ? { ...message, context } : message));
+      },
     );
-    setAbortController(controller);
+    abortController.current = controller;
   };
 
   const handleStop = () => {
-    if (abortController) {
-      abortController.abort();
+    if (abortController.current) {
+      generation.current += 1;
+      abortController.current.abort();
       setIsStreaming(false);
-      setAbortController(null);
+      abortController.current = null;
       addNotification({ type: "info", message: "Generation stopped" });
     }
   };
@@ -307,6 +339,10 @@ export default function ChatPanel({
         </SurfaceBase>
       )}
 
+      {inFlight && <p className="border-b border-surface-border px-4 py-2 text-xs text-contrast-helper">
+        Answers use the transcript so far; wording and speakers may still change.
+      </p>}
+
       <div
         ref={messagesRef}
         data-testid="chat-messages"
@@ -320,6 +356,8 @@ export default function ChatPanel({
             <MessageSquare className="w-12 h-12 mb-4 text-contrast-icon-muted" aria-hidden="true" />
             <p className="text-sm">Select a meeting to start chatting.</p>
           </div>
+        ) : !historyReady ? (
+          <p className="text-sm text-contrast-helper" role="status">Loading chat history...</p>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-contrast-helper">
             <Info className="w-12 h-12 mb-4 text-contrast-icon-muted" aria-hidden="true" />
@@ -349,6 +387,9 @@ export default function ChatPanel({
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   ) : (
                     <div className="w-full">
+                      {msg.context?.transcript_trimmed && !msg.contextFooterComplete && <p className="mb-2 text-xs text-contrast-helper">
+                        Only the most recent part of the transcript was included for this answer.
+                      </p>}
                       {msg.content ? (
                         <>
                           <MarkdownBubble content={msg.content} />
@@ -439,7 +480,7 @@ export default function ChatPanel({
                 data-ui-fill="action"
                 data-ui-hover="action-hover" chrome="action"
                 onClick={handleSend}
-                disabled={!recordingId || !inputValue.trim()}
+                disabled={!recordingId || !inputValue.trim() || !historyReady}
                 className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-card"
               >
                 <Send className="w-4 h-4" />

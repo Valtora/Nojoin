@@ -12,6 +12,7 @@ import json
 
 import pytest
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
 from backend.processing.llm_backends.base import LLMBackend
@@ -635,3 +636,17 @@ def test_excerpts_without_notes_carry_no_legend(engine):
     )
 
     assert excerpts.text == "[00:00] Ana: Point 0.\n[...]"
+
+
+def test_live_chat_keeps_timeline_notes_before_any_speech(engine: Engine) -> None:
+    _insert_transcript(engine, segments=[])
+    _insert_note(engine, "head", "Discuss the launch.")
+    _insert_note(engine, "point", "Question before speech.", anchor_ms=0)
+    _insert_note(engine, "tail", "Current decision.")
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID, live=True)
+
+    assert "Discuss the launch." in transcript
+    assert "Question before speech." in transcript
+    assert "Current decision." in transcript
+    assert LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID) is None

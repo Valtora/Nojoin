@@ -475,14 +475,23 @@ describe("RecordingPage (detail)", () => {
     }
   });
 
-  it.each([360, 1440])("keeps Chat unavailable during processing at %i px", async (width) => {
+  it.each([
+    ["recording", RecordingStatus.UPLOADING, ClientStatus.RECORDING],
+    ["paused", RecordingStatus.PAUSED, ClientStatus.PAUSED],
+    ["uploading", RecordingStatus.UPLOADING, ClientStatus.UPLOADING],
+    ["queued", RecordingStatus.QUEUED, undefined],
+    ["processing", RecordingStatus.PROCESSING, undefined],
+    ["processed", RecordingStatus.PROCESSED, undefined],
+    ["error", RecordingStatus.ERROR, undefined],
+  ].flatMap(([state, status, client_status]) => [360, 1440].map((width) =>
+    [state, width, status, client_status] as const)))("opens Chat when %s at %i px", async (_state, width, status, client_status) => {
     vi.stubGlobal("innerWidth", width);
     sidePanelsCollapsed = false;
-    getRecording.mockResolvedValue(buildRecording({ status: RecordingStatus.PROCESSING }));
+    getRecording.mockResolvedValue(buildRecording({ status: status as RecordingStatus, client_status: client_status as ClientStatus }));
     renderPage();
     await screen.findByRole("heading", { name: /Quarterly sync/ });
-    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open Meeting Chat" })).not.toBeInTheDocument();
+    if (width === 360) fireEvent.click(screen.getByRole("button", { name: "Open Meeting Chat" }));
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
   });
 
   it.each([RecordingStatus.UPLOADING, RecordingStatus.PROCESSING])(
@@ -499,11 +508,13 @@ describe("RecordingPage (detail)", () => {
       // The store emits the new preference; rerender the controlled store mock.
       view.rerender(<RecordingPage params={params} />);
       expect(screen.queryByRole("tablist", { name: "Side panels" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Show meeting chat panel" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: "Show captures" }));
-      expect(setSideTab).toHaveBeenLastCalledWith("captures");
+      fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes, Captures and Meeting Edge" }));
       expect(setSpeakerPanelCollapsed).toHaveBeenLastCalledWith(false);
+      view.rerender(<RecordingPage params={params} />);
+      fireEvent.click(screen.getByRole("tab", { name: "Captures" }));
+      expect(setSideTab).toHaveBeenLastCalledWith("captures");
       view.rerender(<RecordingPage params={params} />);
       expect(screen.getByRole("tab", { name: "Captures" })).toHaveAttribute("aria-selected", "true");
       expect(screen.getByTestId("captures-gallery")).toBeVisible();
@@ -545,7 +556,7 @@ describe("RecordingPage (detail)", () => {
     expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
     expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
     expect(screen.queryByTestId("notes-view")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
   });
 
   it.each(["recording-tag-editor", "linked-event-panel"])("rejects a late %s refresh after newer metadata settles", async (action) => {

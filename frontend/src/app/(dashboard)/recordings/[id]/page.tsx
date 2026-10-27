@@ -131,7 +131,7 @@ export default function RecordingPage({ params }: PageProps) {
   const isLocalCaptureActive = capture.recordingId === recording.id &&
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
   const showCaptureSlot = isInFlightRecording || isLocalCaptureActive;
-  const sideColumnCollapsed = isSpeakerPanelCollapsed && (showCaptureSlot || isChatPanelCollapsed);
+  const sideColumnCollapsed = isSpeakerPanelCollapsed && isChatPanelCollapsed;
   const canPlayback = detailCanPlayback && !isLocalCaptureActive;
   const canExport = detailCanExport && !isLocalCaptureActive;
 
@@ -281,7 +281,7 @@ export default function RecordingPage({ params }: PageProps) {
           <SurfaceBase data-ui-fill="card" kind="pane" className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)]">
             <div className="min-h-0 flex-1">{mainContent}</div>
 
-            {!showCaptureSlot && !isMobileChatOpen && (
+            {!isMobileChatOpen && (
               <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-[var(--z-sticky)]">
                 <ButtonBase
                   data-ui-fill="action"
@@ -297,7 +297,7 @@ export default function RecordingPage({ params }: PageProps) {
             )}
 
             {/* Mobile Chat Full-Screen Modal */}
-            {!showCaptureSlot && isMobileChatOpen && (
+            {isMobileChatOpen && (
               <SurfaceBase data-ui-fill="card" kind="pane" className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
                 <header className="flex shrink-0 items-center justify-between border-b-2 border-surface-border bg-surface-inset px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
                   <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
@@ -315,7 +315,7 @@ export default function RecordingPage({ params }: PageProps) {
                   </ButtonBase>
                 </header>
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
-                  <ChatPanel onNotesUpdate={fetchRecording} />
+                  <ChatPanel inFlight={showCaptureSlot} onNotesUpdate={fetchRecording} />
                 </div>
               </SurfaceBase>
             )}
@@ -350,7 +350,7 @@ export default function RecordingPage({ params }: PageProps) {
                     minSize={18}
                   >
                     <RecordingSideColumn
-                      allowChat={!showCaptureSlot}
+                      inFlight={showCaptureSlot}
                       speakers={
                         speakersContent
                       }
@@ -378,7 +378,7 @@ export default function RecordingPage({ params }: PageProps) {
               )}
             </PanelGroup>
 
-            {sideColumnCollapsed && <RecordingSideRail allowChat={!showCaptureSlot} />}
+            {sideColumnCollapsed && <RecordingSideRail />}
           </div>
         )}
       </div>

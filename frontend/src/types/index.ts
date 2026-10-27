@@ -1072,6 +1072,12 @@ export interface ChatMessage extends BaseDBModel {
   content: string;
 }
 
+/** Per-answer context information sent before streamed answer tokens. */
+export interface ChatContextMetadata {
+  provisional: boolean;
+  transcript_trimmed: boolean;
+}
+
 // Voiceprint-related types
 export interface VoiceprintMatchInfo {
   id: number;
@@ -1491,6 +1497,21 @@ export interface AnalyticsWarningReason {
 
 export interface AnalyticsAttributionWarning {
   reasons: AnalyticsWarningReason[];
+}
+
+/** Read-only estimates from the transcript so far; contains no measured audio or AI tiers. */
+export interface LiveRecordingAnalytics {
+  recording_id: RecordingId;
+  provisional: true;
+  change_sequence: number;
+  speakers: AnalyticsSpeaker[];
+  metrics: Pick<AnalyticsMetrics, "utterance_count" | "talk_time" | "turn_structure">;
+  transcript_wpm: Record<string, {
+    words_per_minute: number | null;
+    sample_count: number;
+    excluded_short: number;
+    excluded_overlapping: number;
+  }>;
 }
 
 export interface RecordingAnalytics {
