@@ -8,7 +8,7 @@ import {
 
 import Button from "@/components/ui/Button";
 import Select from "@/components/ui/Select";
-import { WHISPER_MODELS } from "@/lib/whisperModels";
+import { WHISPER_MODELS, describeWhisperModel } from "@/lib/whisperModels";
 
 interface TranscriptionStepProps {
   whisperModelSize: string;
@@ -41,6 +41,7 @@ export default function TranscriptionStep({
   onSubmit,
 }: TranscriptionStepProps) {
   const diarizationMissing = !hfTokenPresent && !pyannoteModelsReady;
+  const selectedModel = WHISPER_MODELS.find((model) => model.id === whisperModelSize);
 
   return (
     <div className="space-y-6">
@@ -60,12 +61,24 @@ export default function TranscriptionStep({
         label="Transcription model"
         value={whisperModelSize}
         onChange={onInputChange}
-        hint="Turbo (default) suits a server with an NVIDIA GPU. On a CPU-only deployment, Small or Base processes far faster. You can change this later in Settings > Transcription."
+        hint={
+          // The options stay short so the closed select fits a phone; the
+          // chosen size's full figures sit here, as in Settings > Transcription.
+          <>
+            {selectedModel && (
+              <span className="block">{describeWhisperModel(selectedModel)}.</span>
+            )}
+            <span className="mt-1 block">
+              Turbo (default) suits a server with an NVIDIA GPU. On a CPU-only
+              deployment, Small or Base processes far faster. You can change this
+              later in Settings &gt; Transcription.
+            </span>
+          </>
+        }
       >
         {WHISPER_MODELS.map((model) => (
           <option key={model.id} value={model.id}>
-            {model.label} — {model.params} params, {model.vram} VRAM, {model.speed}{" "}
-            speed
+            {model.label} ({model.vram.replace("~", "about ")})
           </option>
         ))}
       </Select>
