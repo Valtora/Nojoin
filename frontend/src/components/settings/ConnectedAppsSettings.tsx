@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
@@ -28,8 +29,8 @@ function formatTimestamp(value: string | null): string {
   if (!value) {
     return "Never";
   }
-  const parsed = new Date(value.endsWith("Z") ? value : `${value}Z`);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseServerTimestamp(value);
+  if (!parsed) {
     return value;
   }
   return parsed.toLocaleString();

@@ -10,6 +10,7 @@ import {
   linkRecordingCalendarEvent,
 } from '@/lib/api';
 import { loadingButtonProps } from '@/components/ui/loadingButton';
+import { parseServerTimestamp } from '@/lib/serverTimestamp';
 
 interface LinkedEventPanelProps {
   recordingId: RecordingId;
@@ -19,8 +20,8 @@ interface LinkedEventPanelProps {
 }
 
 function formatEventTime(event: CalendarEventLink): string {
-  if (!event.starts_at) return '';
-  const start = new Date(event.starts_at);
+  const start = parseServerTimestamp(event.starts_at);
+  if (!start) return '';
   const datePart = start.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',

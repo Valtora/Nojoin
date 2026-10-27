@@ -52,6 +52,7 @@ import {
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import MonthCalendar from "./MonthCalendar";
 import { getUserTimeZone, localDayRangeToUtc } from "@/lib/timezone";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { format, startOfMonth } from "date-fns";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
@@ -88,11 +89,11 @@ const formatDurationString = (seconds?: number) => {
 };
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString("en-GB", {
+  return parseServerTimestamp(dateString)?.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
     year: "numeric",
-  });
+  }) ?? "Unknown date";
 };
 
 const formatTime = (date: Date) => {
@@ -1141,10 +1142,10 @@ export default function Sidebar() {
           >
             {filteredRecordings.map((recording) => {
               const isActive = pathname === `/recordings/${recording.id}`;
-              const startDate = new Date(recording.created_at);
-              const endDate = new Date(
-                startDate.getTime() + (recording.duration_seconds || 0) * 1000,
-              );
+              const startDate = parseServerTimestamp(recording.created_at);
+              const endDate = startDate
+                ? new Date(startDate.getTime() + (recording.duration_seconds || 0) * 1000)
+                : null;
               const isRenaming = renamingId === recording.id;
               const isSelected = selection.isSelected(recording.id);
               const isHighlighted = isSelected || (isActive && !selection.isSelecting);
@@ -1253,7 +1254,9 @@ export default function Sidebar() {
                             |
                           </span>
                           <span className="hidden whitespace-nowrap @min-[19rem]:inline">
-                            {formatTime(startDate)} - {formatTime(endDate)}
+                            {startDate && endDate
+                              ? `${formatTime(startDate)} - ${formatTime(endDate)}`
+                              : "Time unavailable"}
                           </span>
                           <span className="whitespace-nowrap text-contrast-icon-muted">
                             |
