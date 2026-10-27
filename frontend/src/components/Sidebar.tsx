@@ -195,7 +195,7 @@ export default function Sidebar() {
   // expanded until mounted to avoid a hydration mismatch (mirrors MainNav).
   const isCollapsed = mounted && isDesktopLayout && isRecordingsSidebarCollapsed;
 
-  const { onResizePointerDown: handleResizePointerDown } = useSidebarResize({
+  const { isResizing, onResizePointerDown: handleResizePointerDown } = useSidebarResize({
     minWidth: MIN_SIDEBAR_WIDTH,
     maxWidth: MAX_SIDEBAR_WIDTH,
     setWidth: setRecordingsSidebarWidth,
@@ -828,10 +828,16 @@ export default function Sidebar() {
   // Determine if we should hide the sidebar on mobile
   const isRecordingView = pathname?.startsWith("/recordings/");
 
+  // Collapse and expand animate the width. A drag sets it on every pointer
+  // move, so it goes without a transition and the edge stays on the pointer.
+  const widthTransition = isResizing
+    ? ""
+    : "transition-[width] duration-300 motion-reduce:transition-none";
+
   return (
     <aside
       id="sidebar-recordings-list"
-      className={`shrink-0 border-r border-rail-border bg-rail flex flex-col h-full relative transition-all duration-300 ${
+      className={`shrink-0 border-r border-rail-border bg-rail flex flex-col h-full relative ${widthTransition} ${
         isRecordingView ? "hidden lg:flex" : "w-full lg:flex"
       }`}
       style={
