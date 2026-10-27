@@ -196,7 +196,7 @@ export default function CliUsageTab() {
                       </div>
                       {lastUsed && (
                         <div className="text-xs contrast-helper">
-                          Last used {lastUsed.toLocaleDateString()}
+                          Last used {lastUsed.toLocaleDateString(undefined, { timeZone: "UTC" })}
                         </div>
                       )}
                     </td>

@@ -8,11 +8,11 @@ export const formatTime = (seconds: number) => {
   return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
 
-/** Revised in the last 15 s: the line shows "Revised", and its lane keeps room for it. */
-export const isRecentlyUpdatedSegment = (segment: TranscriptSegment) => {
+/** Expiry of a visible "Revised" badge, or null when the revision is not recent. */
+export const recentSegmentExpiry = (segment: TranscriptSegment, now = Date.now()): number | null => {
   const updatedAt = parseServerTimestamp(segment.updated_at);
-  if (!updatedAt) return false;
-  const age = Date.now() - updatedAt.getTime();
+  if (!updatedAt) return null;
+  const age = now - updatedAt.getTime();
   // Allow a small difference between browser and server clocks, not future revisions.
-  return age >= -5000 && age < 15000;
+  return age >= -5000 && age < 15000 ? updatedAt.getTime() + 15000 : null;
 };

@@ -138,8 +138,8 @@ describe.each(["America/New_York", "Asia/Tokyo"])("server timestamps in settings
 
       const expectedTime = new Date("2026-10-27T12:30:00Z").toLocaleString();
       expect(await screen.findByText(`Limited until ${expectedTime}`)).toBeVisible();
-      // A date-only rollup is outside this fix; preserve its existing handling.
-      const lastUsed = new Date("2026-10-27").toLocaleDateString();
+      // The rollup is the civil date 27 October, regardless of the viewer's zone.
+      const lastUsed = new Date(2026, 9, 27).toLocaleDateString();
       expect(screen.getByText(`Last used ${lastUsed}`)).toBeVisible();
     },
   );
