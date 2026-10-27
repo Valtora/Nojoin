@@ -552,14 +552,16 @@ def _dispatch_meeting_edge_refresh_best_effort(recording_id: int) -> None:
         )
 
 
-@celery_app.task(bind=True)
-def transcribe_segment_live_task(self, recording_id: int, sequence: int):
-    """Transcribe an uploaded recording segment in the live lane.
+@celery_app.task(bind=True, max_retries=None)
+def transcribe_segment_live_task(self, recording_id: int, sequence: int) -> None:
+    """Serialise drains across workers sharing the recording's audio."""
+    from backend.processing.live_drain_lock import drain_live_recording
 
-    Each task drains from next_expected when that chunk is on disk, including
-    work retained after a lifecycle rejection. Missing chunks wait; ordinary
-    failures advance for recovery by final processing.
-    """
+    drain_live_recording(self, recording_id, sequence)
+
+
+def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
+    """Drain retained chunks; ordinary failures advance for final recovery."""
     import torch
 
     from backend.core.db import get_sync_session

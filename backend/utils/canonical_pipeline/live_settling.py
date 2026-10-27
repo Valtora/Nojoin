@@ -23,6 +23,7 @@ from backend.utils.transcript_settling import (
     publication_is_current,
 )
 
+from .live_settling_boundaries import remap_phrase_end
 from .live_settling_projection import (
     SETTLING_KEY,
     DecideSpeaker,
@@ -140,12 +141,18 @@ def _speaker_enabled() -> bool:
 
 
 def _line_boundaries(
-    rows: list[TranscriptUtterance], state: dict[str, Any], silence_start_ms: int | None
+    rows: list[TranscriptUtterance],
+    state: dict[str, Any],
+    silence_start_ms: int | None,
+    current: list[dict[str, Any]],
 ) -> LineBoundaries:
-    """Keep captured pause cutoffs independent of mutable token identities."""
-    closed_ends: list[str] = []
+    """Attach confirmed ends to revised phrase spans before considering timing."""
+    closed_ends: dict[str, int | None] = {}
     cutoffs: set[int] = set()
+    previous_end = -1
+    phrase_words: list[dict[str, Any]] = []
     for row in rows:
+        phrase_words.extend(row_words(row))
         stored = (row.confidence_payload or {}).get(SETTLING_KEY, {})
         if (
             not stored.get("boundary_locked")
@@ -153,11 +160,13 @@ def _line_boundaries(
         ):
             continue
         point = stored.get("closed_at_ms", row.end_ms)
-        if point is not None:
+        end = remap_phrase_end(phrase_words, current, after_index=previous_end)
+        if end is not None:
+            closed_ends[current[end]["id"]] = point
+            previous_end = end
+        elif point is not None:
             cutoffs.add(point)
-        words = row_words(row)
-        if stored.get("line_closed") and words and words[-1].get("locked"):
-            closed_ends.append(words[-1]["id"])
+        phrase_words = []
     return LineBoundaries(
         max_segment_ms=state.get(
             "max_segment_ms",
@@ -199,7 +208,7 @@ def _project(
         decisions,
         closing=context.closing,
         barriers=[row.start_ms for row in rows if not mutable_row(row)],
-        boundaries=_line_boundaries(mutable, state, context.silence_start_ms),
+        boundaries=_line_boundaries(mutable, state, context.silence_start_ms, words),
     )
     tombstones, ids, changed = write_partitions(
         session,

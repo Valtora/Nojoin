@@ -11,6 +11,7 @@ from math import isfinite
 from typing import Any, NotRequired, TypedDict, Unpack
 from uuid import uuid4
 
+from backend.utils.live_untimed_context import untimed_tail_atom
 from backend.utils.word_text import reconstruct_text_from_words
 
 Word = dict[str, Any]
@@ -302,13 +303,22 @@ def _untimed_hypothesis(
     locked: Sequence[Word],
     pending: Sequence[Word],
     decoded: Sequence[Word],
-    decode_id: str,
-    audio_end_ms: int,
+    policy: DecodePolicy,
 ) -> list[Word]:
     """Keep failed alignment visible as one exact atom without invented times."""
-    text = reconstruct_text_from_words(list(decoded))
-    atom = {**decoded[0], "word": text, "start_ms": None, "end_ms": None}
-    atom.update(source_start=0, source_end=len(text))
+    decode_id, audio_end_ms = policy["decode_id"], policy["audio_end_ms"]
+    input_start_ms = policy.get("input_start_ms")
+    # A missing input start conservatively retains the rolling-context assumption.
+    # Disjoint input cannot contain these locks and may legitimately repeat them.
+    context = [
+        locked[index]
+        for anchor, indices in _groups(locked)
+        if input_start_ms is None or anchor["end_ms"] > input_start_ms
+        for index in indices
+    ]
+    atom = untimed_tail_atom(decoded, reconstruct_text_from_words(context))
+    if atom is None:
+        return list(locked)
     previous = pending[0] if len(pending) == 1 and not _timed(pending[0]) else None
     current = _new_word(atom, previous, equal=False, decode_id=decode_id)
     first_seen = (
@@ -363,9 +373,7 @@ def reconcile_word_state(
             input_start is None or input_start < locked_atom_end
         ):
             return expired
-        return _untimed_hypothesis(
-            locked, pending, decoded_words, decode_id, policy["audio_end_ms"]
-        )
+        return _untimed_hypothesis(locked, pending, decoded_words, policy)
     incoming = _remove_locked_context(locked, decoded_words)
     current = _reconcile_pending(pending, incoming, decode_id)
     first_order = max((int(word.get("order", -1)) for word in locked), default=-1) + 1
