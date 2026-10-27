@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SpeakerPanel from "../SpeakerPanel";
 import TranscriptView from "../TranscriptView";
 import { SpeakerTurnHighlightProvider } from "./SpeakerTurnHighlight";
@@ -23,7 +23,80 @@ beforeEach(() => {
   notify.mockReset();
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe("speaker row controls", () => {
+  const renderHighlightPanel = () => {
+    const props = panelProps();
+    const result = render(<SpeakerTurnHighlightProvider>
+      <SpeakerPanel {...props} />
+      <TranscriptView {...viewProps(props.segments)} speakers={props.speakers} />
+    </SpeakerTurnHighlightProvider>);
+    const name = within(screen.getByRole("complementary")).getByRole("button", { name: "Alex" });
+    const highlighted = () => result.container.querySelectorAll("[data-speaker-highlighted='true']").length;
+    return { ...result, name, highlighted };
+  };
+
+  it.each([false, true])("opens rename without changing highlights (initially selected: %s)", (selected) => {
+    vi.useFakeTimers();
+    const { name, highlighted } = renderHighlightPanel();
+    if (selected) fireEvent.click(name, { detail: 0 });
+    const initialCount = selected ? 1 : 0;
+    expect(highlighted()).toBe(initialCount);
+
+    // Browsers send both clicks before dblclick; checking after the delay
+    // also catches a pending toggle that rename failed to cancel.
+    fireEvent.click(name, { detail: 1 });
+    expect(highlighted()).toBe(initialCount);
+    act(() => vi.advanceTimersByTime(100));
+    fireEvent.click(name, { detail: 2 });
+    fireEvent.doubleClick(name, { detail: 2 });
+    expect(within(screen.getByRole("complementary")).getByRole("textbox")).toHaveValue("Alex");
+    act(() => vi.advanceTimersByTime(500));
+    expect(highlighted()).toBe(initialCount);
+  });
+
+  it("highlights a mouse single click only after 250 ms and clears on the next single click", () => {
+    vi.useFakeTimers();
+    const { name, highlighted } = renderHighlightPanel();
+    fireEvent.click(name, { detail: 1 });
+    act(() => vi.advanceTimersByTime(249));
+    expect(name).toHaveAttribute("aria-pressed", "false");
+    expect(highlighted()).toBe(0);
+    act(() => vi.advanceTimersByTime(1));
+    expect(name).toHaveAttribute("aria-pressed", "true");
+    expect(highlighted()).toBe(1);
+    fireEvent.click(name, { detail: 1 });
+    expect(highlighted()).toBe(1);
+    act(() => vi.advanceTimersByTime(250));
+    expect(highlighted()).toBe(0);
+  });
+
+  it.each(["keyboard", "touch"])("keeps %s activation immediate without a delayed toggle", (input) => {
+    vi.useFakeTimers();
+    const { name, highlighted } = renderHighlightPanel();
+    if (input === "touch") {
+      const down = createEvent.pointerDown(name);
+      Object.defineProperty(down, "pointerType", { value: "touch" });
+      fireEvent(name, down);
+    }
+    fireEvent.click(name, { detail: input === "keyboard" ? 0 : 1 });
+    expect(name).toHaveAttribute("aria-pressed", "true");
+    expect(highlighted()).toBe(1);
+    act(() => vi.advanceTimersByTime(500));
+    expect(highlighted()).toBe(1);
+  });
+
+  it("cancels a pending mouse highlight when the panel unmounts", () => {
+    vi.useFakeTimers();
+    const { name, unmount } = renderHighlightPanel();
+    const timersBefore = vi.getTimerCount();
+    fireEvent.click(name, { detail: 1 });
+    expect(vi.getTimerCount()).toBe(timersBefore + 1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("highlights every grouped label without hiding other turns; second click clears; double-click renames", async () => {
     const speakers = [speaker("A", "Alex"), speaker("A2", "Alex", 3), speaker("B", "Blair", 2)];
     const segments = [line(), line({ id: "next", speaker: "A2", start: 31, end: 32 }),

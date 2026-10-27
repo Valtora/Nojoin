@@ -18,7 +18,7 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -74,6 +74,11 @@ export default function SpeakerPanel({
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const highlight = useSpeakerTurnHighlight();
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerType = useRef("");
+  useEffect(() => () => {
+    if (highlightTimer.current !== null) clearTimeout(highlightTimer.current);
+  }, []);
   const [picker, setPicker] = useState<{ entry: SpeakerPanelEntry; anchor: HTMLElement } | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -323,8 +328,26 @@ export default function SpeakerPanel({
                                 ? "Suggested name, not confirmed yet. Click to highlight turns. Double-click to rename"
                                 : "Click to highlight turns. Double-click to rename"
                             }
-                            onClick={(event) => { if (event.detail < 2) highlight.toggle(entry.labels); }}
-                            onDoubleClick={() => { setPicker(null); handleRenameStart(entry); }}
+                            onPointerDown={(event) => { pointerType.current = event.pointerType; }}
+                            onClick={(event) => {
+                              if (event.detail === 0 || pointerType.current === "touch") {
+                                highlight.toggle(entry.labels);
+                                return;
+                              }
+                              if (event.detail > 1) return;
+                              // Wait for a possible mouse double-click before highlighting.
+                              if (highlightTimer.current !== null) clearTimeout(highlightTimer.current);
+                              highlightTimer.current = setTimeout(() => {
+                                highlightTimer.current = null;
+                                highlight.toggle(entry.labels);
+                              }, 250);
+                            }}
+                            onDoubleClick={() => {
+                              if (highlightTimer.current !== null) clearTimeout(highlightTimer.current);
+                              highlightTimer.current = null;
+                              setPicker(null);
+                              handleRenameStart(entry);
+                            }}
                           >
                             <span className="truncate">{entry.displayName}</span>
                             {/* Outside the truncated name, so a long one
