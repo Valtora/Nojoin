@@ -30,6 +30,7 @@ export interface CaptureLevels {
 
 export interface CaptureSettings {
   microphoneDeviceId: string | null;
+  releaseMicrophoneOnPause: boolean;
   microphoneGain: number;
   systemGain: number;
   echoCancellation: boolean;
@@ -41,6 +42,8 @@ export interface PausedCaptureContext {
   recordingId: RecordingId;
   lastSequence: number;
   persistedAt: number;
+  microphoneReleased?: boolean;
+  microphoneDeviceId?: string | null;
 }
 
 export interface FinalizeRetryProgress {
@@ -153,6 +156,7 @@ export const DEFAULT_CAPTURE_LEVELS: CaptureLevels = {
 
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   microphoneDeviceId: null,
+  releaseMicrophoneOnPause: false,
   microphoneGain: 1,
   systemGain: 1,
   echoCancellation: true,
@@ -188,6 +192,10 @@ export const readCaptureSettings = (): CaptureSettings => {
         typeof parsed.microphoneDeviceId === "string"
           ? parsed.microphoneDeviceId
           : null,
+      releaseMicrophoneOnPause:
+        typeof parsed.releaseMicrophoneOnPause === "boolean"
+          ? parsed.releaseMicrophoneOnPause
+          : DEFAULT_CAPTURE_SETTINGS.releaseMicrophoneOnPause,
       microphoneGain:
         typeof parsed.microphoneGain === "number" &&
         Number.isFinite(parsed.microphoneGain)
@@ -264,6 +272,12 @@ export const readPausedCaptureContext = (): PausedCaptureContext | null => {
       recordingId: parsed.recordingId,
       lastSequence: parsed.lastSequence,
       persistedAt: parsed.persistedAt,
+      ...(typeof parsed.microphoneReleased === "boolean"
+        ? { microphoneReleased: parsed.microphoneReleased }
+        : {}),
+      ...(typeof parsed.microphoneDeviceId === "string" || parsed.microphoneDeviceId === null
+        ? { microphoneDeviceId: parsed.microphoneDeviceId }
+        : {}),
     };
   } catch {
     return null;

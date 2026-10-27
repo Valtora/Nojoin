@@ -22,6 +22,7 @@ class FakeAudioNode {
 
   disconnect() {
     this.disconnected = true;
+    this.connections = [];
   }
 }
 
@@ -98,8 +99,12 @@ class FakeAudioContext {
 
   closed = false;
 
+  sources: FakeMediaStreamSourceNode[] = [];
+
   createMediaStreamSource(stream: MediaStream) {
-    return new FakeMediaStreamSourceNode(stream);
+    const source = new FakeMediaStreamSourceNode(stream);
+    this.sources.push(source);
+    return source;
   }
 
   createAnalyser() {
@@ -147,6 +152,57 @@ const createCaptureMixer = (options: CreateCaptureMixerOptions) =>
   });
 
 describe("capture mixer", () => {
+  it("replaces only the microphone source while preserving its gain and the shared graph", async () => {
+    const context = new FakeAudioContext();
+    const display = { getAudioTracks: () => [{}] } as unknown as MediaStream;
+    const mixer = await createCaptureMixer({
+      displayStream: display,
+      microphoneStream: {} as MediaStream,
+      microphoneGain: 1.7,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+    const [systemSource, oldMic] = context.sources;
+    const microphoneConnections = [...oldMic.connections];
+    const systemConnections = [...systemSource.connections];
+    const pcmSource = mixer.pcmSource;
+    const analyser = mixer.microphoneAnalyser;
+    const tap = context.tapNodes[0];
+
+    mixer.detachMicrophone();
+    mixer.detachMicrophone();
+    expect(oldMic.connections).toEqual([]);
+    expect(systemSource.connections).toEqual(systemConnections);
+
+    context.state = "suspended";
+    context.resumed = false;
+    const replacement = {} as MediaStream;
+    await mixer.replaceMicrophone(replacement);
+
+    expect(context.resumed).toBe(true);
+    expect(context.sources[2].stream).toBe(replacement);
+    expect(context.sources[2].connections).toEqual(microphoneConnections);
+    expect(mixer.microphoneAnalyser).toBe(analyser);
+    expect(mixer.pcmSource).toBe(pcmSource);
+    expect(context.tapNodes).toEqual([tap]);
+    expect(mixer.getMicrophoneGain()).toBe(1.7);
+    expect(systemSource.disconnected).toBe(false);
+    expect(context.closed).toBe(false);
+    await mixer.dispose();
+    expect(context.sources[2].disconnected).toBe(true);
+  });
+
+  it("can dispose a mixer after its microphone was detached", async () => {
+    const context = new FakeAudioContext();
+    const mixer = await createCaptureMixer({
+      microphoneStream: {} as MediaStream,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+    mixer.detachMicrophone();
+    await mixer.dispose();
+    expect(context.closed).toBe(true);
+    expect(context.tapNodes[0].port.sent).toContainEqual({ type: "stop" });
+  });
+
   it("taps the two-channel mix between the merger and the mixed analyser", async () => {
     const context = new FakeAudioContext();
     const mixer = await createCaptureMixer({

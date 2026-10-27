@@ -386,6 +386,8 @@ Each settings category is its own page. Every user has **Profile and security**,
 
 Most settings belong to your account. One marked **This browser** is kept in the browser you set it in, such as the theme and the microphone and its levels. One marked **Everyone** applies to the whole installation, and only an administrator can change it.
 
+**Settings > Recording > Input** holds **Release the microphone while paused**, beside **Microphone** and the gain controls. It is off by default and saved in this browser only. Turn it on to free the microphone for another application after Pause flushes the last audio; shared audio stays open. Resume opens the selected microphone again, or warns and uses the system default if the browser confirms that microphone is missing. A permission or device problem keeps the recording paused so you can fix it and retry. It also works on Chrome for Android and iOS. [Pause, Resume, Stop, And Discard](CAPTURE.md#pause-resume-stop-and-discard) covers recovery and the controls.
+
 **Settings > Appearance > Date and time** sets the timezone Nojoin shows dates and times in, and reads the date you give an imported recording in. It can differ from your computer's timezone. Until you choose one it is UTC, or the timezone your administrator set with `DEFAULT_TIMEZONE`. System logs show UTC, as `docker logs` does, and a date with no time of day, such as a subscription's last-used date, is shown as it is.
 
 ### Language Preferences

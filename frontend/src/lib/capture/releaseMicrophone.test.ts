@@ -1,0 +1,499 @@
+import { renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CaptureController } from "./controller";
+import {
+  audioTrack, deferred, mediaStream, microphoneDevice, installCaptureBrowser,
+  getUserMedia, getDisplayMedia, enumerateDevices,
+} from "./releaseMicrophone.fixtures";
+import { createCaptureMixer } from "./mixer";
+import { createBrowserRecorder } from "./recorder";
+import type { SegmentStore, StoredSegment } from "./segmentStore";
+import { readCaptureSettings, readPausedCaptureContext } from "./shared";
+import { createSegmentUploader } from "./uploader";
+import { usePausedRecordingGuard } from "./usePausedRecordingGuard";
+const api = vi.hoisted(() => ({
+  initRecording: vi.fn(), pauseRecordingCapture: vi.fn(), resumeRecordingCapture: vi.fn(),
+  finalizeRecordingCapture: vi.fn(), discardRecordingCapture: vi.fn(),
+  getRecording: vi.fn(), getUnfinishedCaptures: vi.fn(), getUserMe: vi.fn(),
+  reportRecordingCaptureSources: vi.fn(),
+}));
+const environment = vi.hoisted(() => ({
+  mode: "shared_audio", realDetection: false, notify: vi.fn(), releaseLock: vi.fn(),
+}));
+const hookCapture = vi.hoisted(() => ({ current: null as CaptureController | null }));
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api")>(), ...api,
+}));
+vi.mock("./featureDetect", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./featureDetect")>();
+  return { detectCaptureSupport: () => environment.realDetection
+    ? actual.detectCaptureSupport() : { supported: true, mode: environment.mode } };
+});
+vi.mock("@/lib/notificationStore", () => ({
+  useNotificationStore: { getState: () => ({ addNotification: environment.notify }) },
+}));
+vi.mock("@/lib/session", () => ({
+  holdSignInInPlace: vi.fn(), noteSignedIn: vi.fn(),
+  retryAfterSignIn: (request: () => Promise<unknown>) => request(),
+  useSessionStore: { getState: () => ({ heldInPlace: false, user: null }) },
+}));
+vi.mock("@/lib/connectivity/monitor", () => ({
+  useConnectivityStore: {
+    getState: () => ({ status: "online", lastReachableAt: null }),
+    subscribe: () => () => {},
+  },
+}));
+vi.mock("./captureLock", () => ({
+  holdCaptureLock: () => environment.releaseLock,
+  isCaptureHeldInThisBrowser: async () => false,
+}));
+vi.mock("./mixer", () => ({
+  createCaptureMixer: vi.fn(async () => ({
+    pcmSource: {}, systemAnalyser: {}, microphoneAnalyser: {}, mixedAnalyser: {},
+    detachMicrophone: vi.fn(), replaceMicrophone: vi.fn(async () => {}),
+    applySettings: vi.fn(), updateAutomaticGain: vi.fn(), dispose: vi.fn(async () => {}),
+  })),
+}));
+vi.mock("./recorder", () => ({
+  CAPTURE_SEGMENT_SECONDS: 2,
+  createBrowserRecorder: vi.fn(() => ({
+    start: vi.fn(), pause: vi.fn(async () => {}), resume: vi.fn(), stop: vi.fn(async () => {}),
+  })),
+}));
+vi.mock("./uploader", () => ({
+  createSegmentUploader: vi.fn(() => ({
+    enqueue: vi.fn(), restore: vi.fn(), recover: vi.fn(), waitForIdle: vi.fn(async () => {}),
+    dispose: vi.fn(), settled: vi.fn(async () => {}),
+    pendingSegmentCount: vi.fn(() => 0), pendingAudioSeconds: vi.fn(() => 0),
+  })),
+}));
+vi.mock("./waveform", () => ({
+  createWaveformMonitor: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
+}));
+vi.mock("./CaptureProvider", () => ({
+  useCapture: () => ({
+    ...hookCapture.current!.getState(),
+    refreshPausedRecording: hookCapture.current!.refreshPausedRecording,
+    discardEmptyInterruptedRecording: hookCapture.current!.discardEmptyInterruptedRecording,
+  }),
+}));
+const lifecycle = (status: string, lastSequence = -1) => ({
+  recording_id: "rec-1", status, last_sequence: lastSequence, capture_epoch: 3,
+});
+const paused = {
+  id: "rec-1", name: "Meeting", status: "PAUSED", client_status: "PAUSED", capture_epoch: 3,
+};
+const controllers: CaptureController[] = [];
+let microphone: MediaStreamTrack;
+let sharedAudio: MediaStreamTrack;
+let sharedVideo: MediaStreamTrack;
+let replacement: MediaStreamTrack;
+function controller() {
+  const capture = new CaptureController();
+  controllers.push(capture);
+  return capture;
+}
+async function start(mode = "shared_audio", release = true) {
+  environment.mode = mode;
+  const capture = controller();
+  capture.updateSettings({ releaseMicrophoneOnPause: release, microphoneDeviceId: "mic-a" });
+  expect(capture.getState().settings).toMatchObject({ releaseMicrophoneOnPause: release });
+  expect(JSON.parse(window.localStorage.getItem("nojoin.capture.settings")!))
+    .toMatchObject({ releaseMicrophoneOnPause: release });
+  await capture.start("Meeting");
+  return {
+    capture,
+    recorder: vi.mocked(createBrowserRecorder).mock.results.at(-1)!.value,
+    uploader: vi.mocked(createSegmentUploader).mock.results.at(-1)!.value,
+    mixer: await vi.mocked(createCaptureMixer).mock.results.at(-1)!.value,
+    uploaderOptions: vi.mocked(createSegmentUploader).mock.calls.at(-1)![0],
+  };
+}
+function storeOf(capture: CaptureController) {
+  return (capture as unknown as { segmentStore: SegmentStore }).segmentStore;
+}
+beforeEach(() => {
+  environment.realDetection = false;
+  vi.clearAllMocks();
+  vi.useRealTimers();
+  ({ microphone, sharedAudio, sharedVideo, replacement } = installCaptureBrowser());
+  api.initRecording.mockResolvedValue({ id: "rec-1", name: "Meeting", capture_epoch: 3 });
+  api.pauseRecordingCapture.mockResolvedValue(lifecycle("PAUSED"));
+  api.resumeRecordingCapture.mockResolvedValue(lifecycle("UPLOADING"));
+  api.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+  api.discardRecordingCapture.mockResolvedValue(undefined);
+  api.getUnfinishedCaptures.mockResolvedValue([]);
+  api.getRecording.mockResolvedValue({ id: "rec-1", status: "UPLOADING", captured_audio_seconds: 0 });
+  api.getUserMe.mockResolvedValue({ id: 1 });
+  api.reportRecordingCaptureSources.mockResolvedValue(undefined);
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+afterEach(async () => {
+  await Promise.all(controllers.splice(0).map((capture) => capture.destroy()));
+  hookCapture.current = null;
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+describe("releasing only the microphone while paused", () => {
+  it("persists the browser choice for the next controller", async () => {
+    await start();
+    expect(readCaptureSettings()).toMatchObject({ releaseMicrophoneOnPause: true });
+    expect(controller().getState().settings).toMatchObject({ releaseMicrophoneOnPause: true });
+  });
+  it("finishes the pause tail before releasing mic and retains shared tracks and ownership", async () => {
+    const { capture, recorder, mixer, uploader } = await start();
+    const flushed = deferred<void>();
+    vi.mocked(recorder.pause).mockReturnValueOnce(flushed.promise);
+    const pausing = capture.pause();
+    expect(microphone.stop).not.toHaveBeenCalled();
+    flushed.resolve();
+    await pausing;
+    expect(microphone.stop).toHaveBeenCalledTimes(1);
+    expect(mixer.detachMicrophone).toHaveBeenCalledTimes(1);
+    expect(sharedAudio.readyState).toBe("live");
+    expect(sharedVideo.readyState).toBe("live");
+    expect(mixer.dispose).not.toHaveBeenCalled();
+    expect(uploader.dispose).not.toHaveBeenCalled();
+    expect(environment.releaseLock).not.toHaveBeenCalled();
+    expect(capture.getState()).toMatchObject({ status: "paused", runtimeActive: true });
+    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true, microphoneDeviceId: "mic-a" });
+  });
+  it("reacquires the exact microphone before server resume and reuses recorder/uploader", async () => {
+    const { capture, recorder, mixer } = await start();
+    await capture.pause();
+    await capture.resume();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(getUserMedia.mock.calls[1][0]).toMatchObject({ audio: { deviceId: { exact: "mic-a" } } });
+    expect(mixer.replaceMicrophone).toHaveBeenCalledWith(
+      expect.objectContaining({ getAudioTracks: expect.any(Function) }),
+    );
+    expect(getUserMedia.mock.invocationCallOrder[1]).toBeLessThan(
+      api.resumeRecordingCapture.mock.invocationCallOrder[0],
+    );
+    expect(api.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 3 });
+    expect(createBrowserRecorder).toHaveBeenCalledTimes(1);
+    expect(createSegmentUploader).toHaveBeenCalledTimes(1);
+    expect(getDisplayMedia).toHaveBeenCalledTimes(1);
+    expect(recorder.resume).toHaveBeenCalledOnce();
+    expect(capture.getState().status).toBe("recording");
+    expect(readPausedCaptureContext()).toBeNull();
+    await capture.stop();
+    expect(replacement.stop).toHaveBeenCalledOnce();
+  });
+  it.each([
+    ["NotAllowedError", /permission|allow/i],
+    ["NotReadableError", /busy|another app|in use/i],
+    ["NotFoundError", /microphone|device/i],
+  ])("keeps queue and paused state after %s and lets the next Resume retry", async (name, message) => {
+    const { capture, recorder, uploader } = await start();
+    await storeOf(capture).put({
+      recordingId: "rec-1", sequence: 0, epoch: 3, blob: new Blob(["audio"]), durationSeconds: 1,
+    });
+    await capture.pause();
+    getUserMedia.mockRejectedValueOnce(new DOMException("capture failed", name));
+    await expect(capture.resume()).rejects.toThrow(message);
+    expect(capture.getState()).toMatchObject({ status: "paused", runtimeActive: true });
+    expect(capture.getState().error).toMatch(message);
+    expect(await storeOf(capture).list("rec-1")).toHaveLength(1);
+    expect(recorder.resume).not.toHaveBeenCalled();
+    expect(uploader.dispose).not.toHaveBeenCalled();
+    await expect(capture.resume()).resolves.toMatchObject({ recordingId: "rec-1", resumed: true });
+    expect(recorder.resume).toHaveBeenCalledOnce();
+  });
+  it("falls back with a warning only when enumeration proves the selected mic absent", async () => {
+    const { capture } = await start();
+    await capture.pause();
+    enumerateDevices.mockResolvedValue([microphoneDevice("other")]);
+    replacement = audioTrack("default-device");
+    getUserMedia.mockResolvedValue(mediaStream(replacement));
+    await capture.resume();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(getUserMedia.mock.calls[1][0].audio.deviceId).toBeUndefined();
+    expect(environment.notify).toHaveBeenCalledWith(expect.objectContaining({
+      type: "warning", message: expect.stringMatching(/default/i),
+    }));
+  });
+  it("keeps requesting the selected mic when enumeration fails", async () => {
+    const { capture } = await start();
+    await capture.pause();
+    enumerateDevices.mockRejectedValue(new Error("enumeration unavailable"));
+    await capture.resume();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(getUserMedia.mock.calls[1][0]).toMatchObject({ audio: { deviceId: { exact: "mic-a" } } });
+    expect(environment.notify).not.toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringMatching(/default/i),
+    }));
+  });
+  it.each(["stop", "cancel"] as const)("%s while released never asks for another microphone", async (action) => {
+    const { capture } = await start();
+    await capture.pause();
+    await capture[action]();
+    expect(microphone.stop).toHaveBeenCalled();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(sharedAudio.stop).toHaveBeenCalledOnce();
+    expect(sharedVideo.stop).toHaveBeenCalledOnce();
+    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false });
+  });
+  it.each(["stop", "cancel"] as const)("%s supersedes pending mic acquisition", async (action) => {
+    const { capture, recorder } = await start();
+    await capture.pause();
+    const grant = deferred<MediaStream>();
+    getUserMedia.mockReturnValueOnce(grant.promise);
+    const resuming = capture.resume().catch((error: unknown) => error);
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    await capture[action]();
+    grant.resolve(mediaStream(replacement));
+    await resuming;
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(replacement.stop).toHaveBeenCalledOnce();
+    expect(recorder.resume).not.toHaveBeenCalled();
+    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false });
+  });
+  it("releases the microphone when an upload stall pauses capture", async () => {
+    const { capture, uploaderOptions } = await start();
+    await uploaderOptions.onStalled?.(new Error("upload stalled"));
+    expect(microphone.stop).toHaveBeenCalledOnce();
+    expect(sharedAudio.readyState).toBe("live");
+    expect(capture.getState()).toMatchObject({ status: "paused", runtimeActive: true });
+  });
+  it("observes a remote pause through the existing coverage poll", async () => {
+    vi.useFakeTimers();
+    const { capture, recorder } = await start();
+    api.getRecording.mockResolvedValue({ ...paused, captured_audio_seconds: 0 });
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(api.getRecording).toHaveBeenCalledWith("rec-1");
+    expect(recorder.pause).toHaveBeenCalledOnce();
+    expect(microphone.stop).toHaveBeenCalledOnce();
+    expect(sharedAudio.readyState).toBe("live");
+    expect(capture.getState().status).toBe("paused");
+  });
+  it("offers Resume after a deliberately released empty capture reloads", async () => {
+    const { capture } = await start();
+    await capture.pause();
+    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true, lastSequence: -1 });
+    await capture.destroy();
+    const reloaded = controller();
+    hookCapture.current = reloaded;
+    api.getUnfinishedCaptures.mockResolvedValue([paused]);
+    const { result } = renderHook(() => usePausedRecordingGuard());
+    await waitFor(() => expect(result.current.hasPausedRecording).toBe(true));
+    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
+    expect(result.current.pausedRecording?.id).toBe("rec-1");
+  });
+  it("keeps released reload recovery paused after a rejected mic and permits retry", async () => {
+    const { capture } = await start("microphone_only");
+    await capture.pause();
+    await capture.destroy();
+    const reloaded = controller();
+    api.getUnfinishedCaptures.mockResolvedValue([paused]);
+    await reloaded.refreshPausedRecording();
+    getUserMedia.mockRejectedValueOnce(new DOMException("permission denied", "NotAllowedError"));
+    await expect(reloaded.resume("rec-1")).rejects.toThrow(/permission|allow/i);
+    expect(reloaded.getState().status).toBe("paused");
+    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true });
+    await expect(reloaded.resume("rec-1")).resolves.toMatchObject({ recordingId: "rec-1" });
+    expect(getDisplayMedia).not.toHaveBeenCalled();
+  });
+  it("supports microphone-only pause/resume without a shared picker", async () => {
+    const { capture } = await start("microphone_only");
+    await capture.pause();
+    expect(microphone.stop).toHaveBeenCalledOnce();
+    await capture.resume();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(getDisplayMedia).not.toHaveBeenCalled();
+    await capture.cancel();
+    expect(replacement.stop).toHaveBeenCalledOnce();
+  });
+  it("keeps microphone and graph unchanged with the setting off", async () => {
+    const { capture, mixer } = await start("shared_audio", false);
+    await capture.pause();
+    expect(microphone.readyState).toBe("live");
+    expect(mixer.detachMicrophone).not.toHaveBeenCalled();
+    await capture.resume();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(mixer.replaceMicrophone).not.toHaveBeenCalled();
+    expect(capture.getState().status).toBe("recording");
+  });
+  it("reacquires a released mic after the release setting is disabled", async () => {
+    const { capture } = await start();
+    await capture.pause();
+    capture.updateSettings({ releaseMicrophoneOnPause: false });
+    await capture.resume();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(capture.getState().status).toBe("recording");
+  });
+
+  it.each([false, true])("honours a deliberate new microphone choice after release, reload=%s", async (reload) => {
+    const { capture } = await start("microphone_only");
+    await capture.pause();
+    if (reload) await capture.destroy();
+    const target = reload ? controller() : capture;
+    target.updateSettings({ microphoneDeviceId: "mic-b" });
+    enumerateDevices.mockResolvedValue([microphoneDevice(), microphoneDevice("mic-b")]);
+    getUserMedia.mockResolvedValue(mediaStream(audioTrack("mic-b")));
+    await target.resume("rec-1");
+    expect(getUserMedia.mock.calls.at(-1)![0]).toMatchObject({ audio: { deviceId: { exact: "mic-b" } } });
+    expect(api.reportRecordingCaptureSources.mock.calls.at(-1)![1].requested_microphone_label).toBe(reload ? "mic-b" : null);
+    expect(target.getState().status).toBe("recording");
+  });
+
+  it("releases an acquired mic if server Resume fails and reacquires on retry", async () => {
+    const { capture, recorder } = await start();
+    await capture.pause();
+    api.resumeRecordingCapture.mockRejectedValueOnce(new Error("server unavailable"));
+    await expect(capture.resume()).rejects.toThrow("server unavailable");
+    expect(replacement.stop).toHaveBeenCalledOnce();
+    expect(capture.getState().status).toBe("paused");
+    expect(recorder.resume).not.toHaveBeenCalled();
+    const retriedTrack = audioTrack();
+    getUserMedia.mockResolvedValueOnce(mediaStream(retriedTrack));
+    await capture.resume();
+    expect(getUserMedia).toHaveBeenCalledTimes(3);
+    expect(retriedTrack.readyState).toBe("live");
+    expect(recorder.resume).toHaveBeenCalledOnce();
+  });
+
+  it("preserves released microphone recovery context during guarded pagehide", async () => {
+    const { capture } = await start();
+    capture.attachLifecycle("/recordings/rec-1");
+    await capture.pause();
+    window.dispatchEvent(new Event("pagehide"));
+    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true, microphoneDeviceId: "mic-a" });
+    await waitFor(() => expect(capture.getState().runtimeActive).toBe(false));
+    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true });
+  });
+
+  it("notifies about missing-device default fallback after reload", async () => {
+    const { capture } = await start("microphone_only");
+    await capture.pause();
+    await capture.destroy();
+    const reloaded = controller();
+    enumerateDevices.mockResolvedValue([microphoneDevice("other")]);
+    getUserMedia.mockResolvedValueOnce(mediaStream(audioTrack("default-device")));
+    await reloaded.resume("rec-1");
+    expect(getUserMedia.mock.calls.at(-1)![0].audio.deviceId).toBeUndefined();
+    expect(environment.notify).toHaveBeenCalledWith(expect.objectContaining({
+      type: "warning", message: expect.stringMatching(/default microphone/i),
+    }));
+  });
+
+  it("makes only one microphone request for concurrent Resume clicks", async () => {
+    const { capture, recorder } = await start();
+    await capture.pause();
+    const grant = deferred<MediaStream>();
+    getUserMedia.mockReturnValueOnce(grant.promise);
+    const first = capture.resume();
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    const second = capture.resume().catch((error: unknown) => error);
+    grant.resolve(mediaStream(replacement));
+    await Promise.all([first, second]);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(recorder.resume).toHaveBeenCalledOnce();
+    expect(capture.getState().status).toBe("recording");
+  });
+
+  it("ignores an earlier remote pause answer after a local Resume", async () => {
+    vi.useFakeTimers();
+    const { capture, recorder } = await start();
+    const oldPoll = deferred<typeof paused>();
+    api.getRecording.mockReturnValueOnce(oldPoll.promise);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await capture.pause();
+    await capture.resume();
+    oldPoll.resolve(paused);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(recorder.pause).toHaveBeenCalledOnce();
+    expect(capture.getState().status).toBe("recording");
+    expect(replacement.readyState).toBe("live");
+  });
+
+  it.each(["store", "mixer"] as const)("Discard supersedes cold Resume awaiting %s", async (stage) => {
+    const { capture, mixer } = await start("microphone_only");
+    await capture.pause();
+    await capture.destroy();
+    const reloaded = controller();
+    const stored = deferred<StoredSegment[]>();
+    const mixed = deferred<typeof mixer>();
+    const list = vi.spyOn(storeOf(reloaded), "list");
+    const newMixer = { ...mixer, dispose: vi.fn(async () => {}) };
+    if (stage === "store") list.mockReturnValueOnce(stored.promise);
+    else vi.mocked(createCaptureMixer).mockReturnValueOnce(mixed.promise);
+    const resuming = reloaded.resume("rec-1").catch((error: unknown) => error);
+    await waitFor(() => stage === "store"
+      ? expect(list).toHaveBeenCalled() : expect(createCaptureMixer).toHaveBeenCalledTimes(2));
+    await reloaded.cancel("rec-1");
+    stored.resolve([]);
+    mixed.resolve(newMixer);
+    await resuming;
+    expect(reloaded.getState()).toMatchObject({ status: "idle", runtimeActive: false });
+    expect(createBrowserRecorder).toHaveBeenCalledTimes(1);
+    expect(replacement.stop).toHaveBeenCalledOnce();
+    if (stage === "mixer") expect(newMixer.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("destroy supersedes cold Resume while microphone permission is pending", async () => {
+    const { capture } = await start("microphone_only");
+    await capture.pause();
+    await capture.destroy();
+    const reloaded = controller();
+    const grant = deferred<MediaStream>();
+    getUserMedia.mockReturnValueOnce(grant.promise);
+    const resuming = reloaded.resume("rec-1").catch((error: unknown) => error);
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    await reloaded.destroy();
+    grant.resolve(mediaStream(replacement));
+    await resuming;
+    expect(reloaded.getState().runtimeActive).toBe(false);
+    expect(createBrowserRecorder).toHaveBeenCalledTimes(1);
+    expect(replacement.stop).toHaveBeenCalledOnce();
+  });
+
+  it.each(["denied", "missing"] as const)("uses opted-in recovery in a new tab, mic=%s", async (problem) => {
+    environment.mode = "microphone_only";
+    const fresh = controller();
+    fresh.updateSettings({ releaseMicrophoneOnPause: true, microphoneDeviceId: "mic-a" });
+    expect(readCaptureSettings().releaseMicrophoneOnPause).toBe(true);
+    expect(readPausedCaptureContext()).toBeNull();
+    api.getUnfinishedCaptures.mockResolvedValue([paused]);
+    hookCapture.current = fresh;
+    const { result } = renderHook(() => usePausedRecordingGuard());
+    await waitFor(() => expect(result.current.hasPausedRecording).toBe(true));
+    if (problem === "denied") {
+      getUserMedia.mockReset().mockRejectedValueOnce(new DOMException("permission denied", "NotAllowedError"));
+      const failure = await fresh.resume("rec-1").catch((error: unknown) => error);
+      expect(fresh.getState().status).toBe("paused");
+      expect(failure).toMatchObject({ message: expect.stringMatching(/permission|allow/i) });
+      getUserMedia.mockReset().mockResolvedValue(mediaStream(replacement));
+    } else {
+      enumerateDevices.mockResolvedValue([microphoneDevice("other")]);
+      getUserMedia.mockReset().mockResolvedValue(mediaStream(audioTrack("default-device")));
+    }
+    await fresh.resume("rec-1");
+    expect(fresh.getState().status).toBe("recording");
+    if (problem === "missing") {
+      expect(getUserMedia.mock.calls.at(-1)![0].audio.deviceId).toBeUndefined();
+      expect(environment.notify).toHaveBeenCalledWith(expect.objectContaining({
+        type: "warning", message: expect.stringMatching(/default microphone/i),
+      }));
+    }
+  });
+
+  it.each(["Android Chrome/140.0 Mobile Safari/537.36", "iPhone CriOS/140.0 Mobile Safari/604.1"])(
+    "uses actual mobile support detection for %s", async (userAgent) => {
+      environment.realDetection = true;
+      vi.stubGlobal("navigator", { userAgent, mediaDevices: navigator.mediaDevices });
+      vi.stubGlobal("AudioWorkletNode", class {});
+      expect(navigator.userAgent).toBe(userAgent);
+      expect(typeof AudioWorkletNode).toBe("function");
+      const { capture } = await start();
+      expect(capture.getState().support).toEqual({ supported: true, mode: "microphone_only" });
+      await capture.pause();
+      await capture.resume();
+      expect(microphone.readyState).toBe("ended");
+      expect(getUserMedia).toHaveBeenCalledTimes(2);
+      expect(getDisplayMedia).not.toHaveBeenCalled();
+    },
+  );
+});

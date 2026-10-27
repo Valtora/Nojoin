@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { pickCaptureSource } from "./pickSource";
-import { readCaptureSettings, writeCaptureSettings } from "./shared";
+import {
+  readCaptureSettings,
+  readPausedCaptureContext,
+  writeCaptureSettings,
+  writePausedCaptureContext,
+} from "./shared";
 
 const STORAGE_KEY = "nojoin.capture.settings";
 
@@ -9,6 +14,62 @@ const stored = () => {
   const raw = window.localStorage.getItem(STORAGE_KEY);
   return raw === null ? null : (JSON.parse(raw) as Record<string, unknown>);
 };
+
+describe("microphone release preference", () => {
+  it.each([undefined, null, "true", "false", 1, 0])(
+    "defaults off for an absent or invalid stored value %s without changing existing choices",
+    (releaseMicrophoneOnPause) => {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        version: 2,
+        microphoneDeviceId: "chosen-mic",
+        microphoneGain: 1.4,
+        noiseSuppression: true,
+        releaseMicrophoneOnPause,
+      }));
+
+      expect(readCaptureSettings()).toMatchObject({
+        microphoneDeviceId: "chosen-mic",
+        microphoneGain: 1.4,
+        noiseSuppression: true,
+        releaseMicrophoneOnPause: false,
+      });
+    },
+  );
+
+  it("starts off in a fresh browser and keeps an explicit choice through subsequent saves", () => {
+    expect(readCaptureSettings()).toHaveProperty("releaseMicrophoneOnPause", false);
+    writeCaptureSettings({ ...readCaptureSettings(), releaseMicrophoneOnPause: true });
+    writeCaptureSettings({ ...readCaptureSettings(), microphoneGain: 1.8 });
+    expect(readCaptureSettings()).toMatchObject({
+      releaseMicrophoneOnPause: true,
+      microphoneGain: 1.8,
+    });
+    writeCaptureSettings({ ...readCaptureSettings(), releaseMicrophoneOnPause: false });
+    expect(readCaptureSettings()).toHaveProperty("releaseMicrophoneOnPause", false);
+  });
+});
+
+describe("released microphone recovery context", () => {
+  const base = { recordingId: "rec-1", lastSequence: 4, persistedAt: 1000 };
+
+  it.each(["selected-mic", null])("keeps a released microphone and its selected device %s", (microphoneDeviceId) => {
+    const context = { ...base, microphoneReleased: true, microphoneDeviceId };
+    writePausedCaptureContext(context);
+    expect(readPausedCaptureContext()).toEqual(context);
+  });
+
+  it("does not add microphone fields to older recovery contexts", () => {
+    writePausedCaptureContext(base);
+    expect(readPausedCaptureContext()).toEqual(base);
+  });
+
+  it("ignores invalid optional microphone fields", () => {
+    window.sessionStorage.setItem("nojoin.capture.paused-recording", JSON.stringify({
+      ...base, microphoneReleased: "true", microphoneDeviceId: 42,
+    }));
+    expect(readPausedCaptureContext()).toEqual(base);
+  });
+});
 
 describe("capture processing defaults", () => {
   it.each([
@@ -86,6 +147,7 @@ describe("noise suppression migration for settings saved before it defaulted off
 
     expect(settings).toEqual({
       microphoneDeviceId: "mic-1",
+      releaseMicrophoneOnPause: false,
       microphoneGain: 1.4,
       systemGain: 0.8,
       echoCancellation: false,
@@ -127,6 +189,7 @@ describe("noise suppression migration for settings saved before it defaulted off
   it("gives the defaults and saves nothing when nothing was saved", () => {
     expect(readCaptureSettings()).toEqual({
       microphoneDeviceId: null,
+      releaseMicrophoneOnPause: false,
       microphoneGain: 1,
       systemGain: 1,
       echoCancellation: true,
