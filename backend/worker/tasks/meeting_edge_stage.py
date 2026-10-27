@@ -20,6 +20,12 @@ from backend.utils.timeline_notes import (
     timeline_notes_signature,
 )
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
+from backend.worker.tasks.intelligence_source import (
+    CapturePublicationToken,
+    capture_meeting_edge_episode,
+    load_intelligence_source,
+    meeting_edge_source_is_current,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +229,13 @@ def _set_meeting_edge_state(
     error_message: str | None = None,
     source_signature: str | None = None,
     payload: dict | None = None,
-) -> None:
+    source_revision: int | None = None,
+    source_capture: CapturePublicationToken | None = None,
+) -> bool:
+    if not meeting_edge_source_is_current(
+        session, transcript.recording_id, source_revision, source_capture
+    ):
+        return False
     transcript.meeting_edge_status = status
     transcript.meeting_edge_error_message = error_message
     if source_signature is not None:
@@ -233,6 +245,7 @@ def _set_meeting_edge_state(
         flag_modified(transcript, "meeting_edge_payload")
     session.add(transcript)
     session.commit()
+    return True
 
 
 @celery_app.task(
@@ -271,6 +284,8 @@ def refresh_meeting_edge_task(self, recording_id: int):
 
 def _refresh_meeting_edge(self, recording_id: int):
     session = self.session
+    source_revision = None
+    source_capture = None
 
     try:
         recording = session.get(Recording, recording_id)
@@ -284,12 +299,12 @@ def _refresh_meeting_edge(self, recording_id: int):
         }:
             return None
 
-        transcript = session.exec(
-            select(Transcript)
-            .where(Transcript.recording_id == recording_id)
-            .with_for_update()
-        ).first()
+        transcript = load_intelligence_source(session, recording_id)
         if transcript is None:
+            return None
+        source_revision = transcript.change_sequence
+        source_capture = capture_meeting_edge_episode(session, recording, transcript)
+        if recording.status == RecordingStatus.UPLOADING and source_capture is None:
             return None
 
         user_settings = {}
@@ -308,6 +323,8 @@ def _refresh_meeting_edge(self, recording_id: int):
                     transcript,
                     status=MEETING_EDGE_STATUS_IDLE,
                     error_message=None,
+                    source_revision=source_revision,
+                    source_capture=source_capture,
                 )
             return None
 
@@ -324,6 +341,8 @@ def _refresh_meeting_edge(self, recording_id: int):
         timeline_notes = load_recording_timeline_notes(session, recording_id)
         user_notes = timeline_notes.user_notes_context()
         notes_signature = timeline_notes_signature(timeline_notes.notes)
+        session.flush()
+        source_revision = transcript.change_sequence
 
         if not segments:
             if transcript.meeting_edge_status != MEETING_EDGE_STATUS_IDLE:
@@ -332,6 +351,8 @@ def _refresh_meeting_edge(self, recording_id: int):
                     transcript,
                     status=MEETING_EDGE_STATUS_IDLE,
                     error_message=None,
+                    source_revision=source_revision,
+                    source_capture=source_capture,
                 )
             return None
 
@@ -351,6 +372,8 @@ def _refresh_meeting_edge(self, recording_id: int):
                     transcript,
                     status=MEETING_EDGE_STATUS_IDLE,
                     error_message=None,
+                    source_revision=source_revision,
+                    source_capture=source_capture,
                 )
             return None
 
@@ -412,6 +435,8 @@ def _refresh_meeting_edge(self, recording_id: int):
                 status=MEETING_EDGE_STATUS_ERROR,
                 error_message=missing_llm_config,
                 source_signature=source_signature,
+                source_revision=source_revision,
+                source_capture=source_capture,
             )
             return None
 
@@ -439,13 +464,16 @@ def _refresh_meeting_edge(self, recording_id: int):
             ),
         )
 
-        _set_meeting_edge_state(
+        if not _set_meeting_edge_state(
             session,
             transcript,
             status=MEETING_EDGE_STATUS_UPDATING,
             error_message=None,
             source_signature=source_signature,
-        )
+            source_revision=source_revision,
+            source_capture=source_capture,
+        ):
+            return None
 
         llm = _llm_backend_from_config(llm_config)
         result = llm.generate_meeting_edge(
@@ -480,14 +508,17 @@ def _refresh_meeting_edge(self, recording_id: int):
             reset_history=previous_context_level is not None
             and previous_context_level > context_level,
         )
-        _set_meeting_edge_state(
+        if not _set_meeting_edge_state(
             session,
             transcript,
             status=MEETING_EDGE_STATUS_READY,
             error_message=None,
             source_signature=source_signature,
             payload=payload,
-        )
+            source_revision=source_revision,
+            source_capture=source_capture,
+        ):
+            return None
         return payload
     except Exception as exc:
         logger.error(
@@ -497,6 +528,7 @@ def _refresh_meeting_edge(self, recording_id: int):
             exc_info=True,
         )
 
+        session.rollback()
         transcript = session.exec(
             select(Transcript).where(Transcript.recording_id == recording_id)
         ).first()
@@ -507,6 +539,8 @@ def _refresh_meeting_edge(self, recording_id: int):
                 status=MEETING_EDGE_STATUS_ERROR,
                 error_message=str(exc).strip()[:500]
                 or "Meeting Edge could not be updated.",
+                source_revision=source_revision,
+                source_capture=source_capture,
             )
         return None
 

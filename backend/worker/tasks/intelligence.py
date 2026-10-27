@@ -5,6 +5,10 @@ from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
 from .constants import *
+from .intelligence_source import (
+    intelligence_source_is_current,
+    load_intelligence_source,
+)
 from .speaker_name_apply import apply_inferred_names
 
 
@@ -23,18 +27,18 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
     session = self.session
     recording = None
     transcript = None
+    source_revision = None
     try:
         recording = session.get(Recording, recording_id)
         if not recording:
             logger.error(f"Recording {recording_id} not found.")
             return
 
-        transcript = session.exec(
-            select(Transcript).where(Transcript.recording_id == recording_id)
-        ).first()
+        transcript = load_intelligence_source(session, recording_id)
         if not transcript:
             logger.error(f"Transcript for recording {recording_id} not found.")
             return
+        source_revision = transcript.change_sequence
         if transcript.transcription_failed():
             # The API refuses this; a task queued before the failure lands here.
             logger.warning(
@@ -54,9 +58,6 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         recording.processing_progress = 97
         session.add(transcript)
         session.add(recording)
-        session.commit()
-        update_recording_status(session, recording.id)
-
         user_settings = {}
         if recording.user_id:
             user = session.get(User, recording.user_id)
@@ -70,7 +71,11 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         if missing_llm_config:
             logger.warning("Cannot generate notes: %s", missing_llm_config)
             _mark_notes_generation_error(
-                session, recording, transcript, missing_llm_config
+                session,
+                recording,
+                transcript,
+                missing_llm_config,
+                source_revision=source_revision,
             )
             return
 
@@ -81,7 +86,11 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         )
         if not segments:
             _mark_notes_generation_error(
-                session, recording, transcript, "Transcript is empty"
+                session,
+                recording,
+                transcript,
+                "Transcript is empty",
+                source_revision=source_revision,
             )
             return
 
@@ -122,6 +131,12 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             "output_language_instruction": language_preferences.notes_language_instruction,
             "notes_context": notes_context,
         }
+        # Prompt construction may read or backfill canonical rows. Publish that
+        # work and release its fence before calling a remote model.
+        session.flush()
+        source_revision = transcript.change_sequence
+        update_recording_status(session, recording.id)
+        session.commit()
         try:
             notes = llm.generate_meeting_notes(
                 transcript_text, speaker_map, timeout=300, **notes_arguments
@@ -143,6 +158,8 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 **notes_arguments,
             )
 
+        if not intelligence_source_is_current(session, recording_id, source_revision):
+            return
         transcript.notes = append_user_notes_section(
             notes, timeline_notes.appendix_lines()
         )
@@ -158,22 +175,12 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         recording.processing_progress = 100
         session.add(transcript)
         session.add(recording)
-        session.commit()
         update_recording_status(session, recording.id)
+        session.commit()
         logger.info(f"Generated meeting notes for recording {recording_id}")
 
         # --- Index Notes for RAG ---
         try:
-            existing_chunks = session.exec(
-                select(ContextChunk)
-                .where(ContextChunk.recording_id == recording_id)
-                .where(ContextChunk.document_id == None)
-            ).all()
-
-            for chunk in existing_chunks:
-                if chunk.meta and chunk.meta.get("source") == "notes":
-                    session.delete(chunk)
-
             from backend.processing.text_embedding import get_text_embedding_service
 
             note_chunks = []
@@ -191,6 +198,18 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 embedding_service = get_text_embedding_service()
                 vectors = embedding_service.embed(note_chunks)
 
+                if not intelligence_source_is_current(
+                    session, recording_id, source_revision
+                ):
+                    return
+                existing_chunks = session.exec(
+                    select(ContextChunk)
+                    .where(ContextChunk.recording_id == recording_id)
+                    .where(ContextChunk.document_id == None)
+                ).all()
+                for chunk in existing_chunks:
+                    if chunk.meta and chunk.meta.get("source") == "notes":
+                        session.delete(chunk)
                 for i, (text_chunk, vector) in enumerate(zip(note_chunks, vectors)):
                     db_chunk = ContextChunk(
                         recording_id=recording_id,
@@ -214,7 +233,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == recording_id)
             ).first()
-        _mark_notes_generation_error(session, recording, transcript, e)
+        _mark_notes_generation_error(
+            session, recording, transcript, e, source_revision=source_revision
+        )
 
 
 @celery_app.task(
@@ -225,15 +246,15 @@ def infer_speakers_task(self, recording_id: int):
     Independent task to re-run speaker inference using LLM.
     """
     session = self.session
+    source_revision = None
     try:
         recording = session.get(Recording, recording_id)
         if not recording:
             logger.error(f"Recording {recording_id} not found.")
             return
 
-        transcript = session.exec(
-            select(Transcript).where(Transcript.recording_id == recording_id)
-        ).first()
+        transcript = load_intelligence_source(session, recording_id)
+        source_revision = transcript.change_sequence if transcript is not None else None
         segments = build_transcript_segments_for_read(
             session,
             recording_id,
@@ -241,7 +262,9 @@ def infer_speakers_task(self, recording_id: int):
         )
         if not transcript or not segments:
             logger.error(f"No transcript found for recording {recording_id}.")
-            _complete_speaker_inference_task(session, recording)
+            _complete_speaker_inference_task(
+                session, recording, source_revision, source_locked=True
+            )
             return
 
         speakers = session.exec(
@@ -286,7 +309,6 @@ def infer_speakers_task(self, recording_id: int):
                 missing_llm_config,
             )
             if suggestion_count:
-                session.commit()
                 record_pipeline_metric(
                     stage="speaker_name_suggestions_generated",
                     recording_id=recording_id,
@@ -298,7 +320,9 @@ def infer_speakers_task(self, recording_id: int):
                     },
                     log=logger,
                 )
-            _complete_speaker_inference_task(session, recording)
+            _complete_speaker_inference_task(
+                session, recording, source_revision, source_locked=True
+            )
             return
 
         # No dedicated recording status exists for standalone speaker inference,
@@ -326,15 +350,23 @@ def infer_speakers_task(self, recording_id: int):
                     f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {text}\n"
                 )
 
+            user_notes = load_recording_timeline_notes(
+                session, recording_id
+            ).user_notes_list()
+            session.flush()
+            source_revision = transcript.change_sequence
+            session.commit()
             backend = _llm_backend_from_config(llm_config)
             llm_result = backend.infer_speaker_suggestions(
                 transcript_for_llm,
-                user_notes=load_recording_timeline_notes(
-                    session, recording_id
-                ).user_notes_list(),
+                user_notes=user_notes,
                 meeting_context=meeting_context,
                 eligible_labels=eligible_labels,
             )
+            if not intelligence_source_is_current(
+                session, recording_id, source_revision
+            ):
+                return
             suggestion_count += _persist_generated_speaker_name_suggestions(
                 session,
                 recording=recording,
@@ -358,7 +390,9 @@ def infer_speakers_task(self, recording_id: int):
         else:
             superseded_count = 0
 
-        session.commit()
+        _complete_speaker_inference_task(
+            session, recording, source_revision, source_locked=True
+        )
         record_pipeline_metric(
             stage="speaker_name_suggestions_generated",
             recording_id=recording_id,
@@ -377,14 +411,13 @@ def infer_speakers_task(self, recording_id: int):
             recording_id,
         )
 
-        _complete_speaker_inference_task(session, recording)
-
     except Exception as e:
         logger.error(f"Speaker inference task failed: {e}", exc_info=True)
         # Revert status to PROCESSED on error so spinner stops
         try:
+            session.rollback()
             recording = session.get(Recording, recording_id)
-            _complete_speaker_inference_task(session, recording)
+            _complete_speaker_inference_task(session, recording, source_revision)
         except Exception as db_err:  # noqa: BLE001 -- boundary: the status reset is best-effort after the real failure was logged
             logger.error(f"Failed to revert recording status: {db_err}")
 
@@ -393,122 +426,10 @@ def infer_speakers_task(self, recording_id: int):
     name="backend.worker.tasks.index_transcript_task", base=DatabaseTask, bind=True
 )
 def index_transcript_task(self, recording_id: int):
-    """
-    Index the transcript of a completed recording for RAG.
-    """
-    session = self.session
-    recording = session.get(Recording, recording_id)
-    if not recording:
-        return
+    """Index a completed transcript, fenced to the source read before embedding."""
+    from .transcript_index import index_transcript_source
 
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording_id)
-    ).first()
-    segments = build_transcript_segments_for_read(
-        session,
-        recording_id,
-        transcript=transcript,
-    )
-    if not transcript or not segments:
-        return
-
-    speakers = session.exec(
-        select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
-    ).all()
-    speaker_map = with_live_speaker_names(
-        session, recording_id, build_recording_speaker_map(speakers)
-    )
-
-    try:
-        # Replace this recording's transcript chunks; document and notes chunks stay.
-        existing_chunks = session.exec(
-            select(ContextChunk)
-            .where(ContextChunk.recording_id == recording_id)
-            .where(ContextChunk.document_id == None)
-            .where(ContextChunk.meta["source"].as_string() == '"transcript"')
-        ).all()
-
-        for chunk in existing_chunks:
-            if chunk.meta.get("source") == "transcript":
-                session.delete(chunk)
-
-        # Small segments are grouped, which improves embedding quality.
-
-        segments = [dict(segment) for segment in segments]
-
-        temp_chunk_text = ""
-        temp_chunk_start = 0
-        temp_chunk_end = 0
-        temp_meta_speakers = set()
-
-        chunks_to_embed = []
-        metas = []
-
-        current_length = 0
-        TARGET_LENGTH = 1000  # chars
-
-        for seg in segments:
-            text = seg["text"]
-            start = seg["start"]
-            end = seg["end"]
-            speaker_label = seg["speaker"]
-            speaker_name = speaker_display_name(speaker_label, speaker_map)
-
-            if current_length == 0:
-                temp_chunk_start = start
-
-            temp_chunk_text += f"{speaker_name}: {text}\n"
-            current_length += len(text)
-            temp_meta_speakers.add(speaker_name)
-            temp_chunk_end = end
-
-            if current_length >= TARGET_LENGTH:
-                chunks_to_embed.append(temp_chunk_text)
-                metas.append(
-                    {
-                        "start": temp_chunk_start,
-                        "end": temp_chunk_end,
-                        "speakers": list(temp_meta_speakers),
-                        "source": "transcript",
-                    }
-                )
-
-                temp_chunk_text = ""
-                current_length = 0
-                temp_meta_speakers = set()
-
-        if temp_chunk_text:
-            chunks_to_embed.append(temp_chunk_text)
-            metas.append(
-                {
-                    "start": temp_chunk_start,
-                    "end": temp_chunk_end,
-                    "speakers": list(temp_meta_speakers),
-                    "source": "transcript",
-                }
-            )
-
-        if not chunks_to_embed:
-            return
-
-        from backend.processing.text_embedding import get_text_embedding_service
-
-        embedding_service = get_text_embedding_service()
-        vectors = embedding_service.embed(chunks_to_embed)
-
-        for text, meta, vector in zip(chunks_to_embed, metas, vectors):
-            db_chunk = ContextChunk(
-                recording_id=recording_id, content=text, embedding=vector, meta=meta
-            )
-            session.add(db_chunk)
-
-        session.commit()
-        logger.info(
-            f"Indexed transcript for recording {recording_id}: {len(chunks_to_embed)} chunks."
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to index transcript {recording_id}: {e}", exc_info=True)
+    index_transcript_source(self.session, recording_id)
 
 
 def _format_notes_generation_error(error: Exception | str) -> str:
@@ -523,7 +444,14 @@ def _mark_notes_generation_error_impl(
     recording: Recording | None,
     transcript: Transcript | None,
     error: Exception | str,
+    *,
+    source_revision: int | None = None,
 ) -> None:
+    if transcript is not None:
+        if not intelligence_source_is_current(
+            session, transcript.recording_id, source_revision
+        ):
+            return
     if not transcript or transcript.transcription_failed():
         return
 
@@ -535,17 +463,23 @@ def _mark_notes_generation_error_impl(
         recording.processing_step = "Error generating notes"
         session.add(recording)
 
-    session.commit()
-
     if recording:
         update_recording_status(session, recording.id)
+    session.commit()
 
 
 def _complete_speaker_inference_task(
     session,
     recording: Recording | None,
+    source_revision: int | None = None,
+    *,
+    source_locked: bool = False,
 ) -> None:
     if not recording:
+        return
+    if not source_locked and not intelligence_source_is_current(
+        session, recording.id, source_revision
+    ):
         return
 
     # Speaker inference never repairs a failed transcription, so a recording
@@ -734,17 +668,17 @@ def generate_meeting_intelligence_task(self, recording_id: int):
     session = self.session
     recording = None
     transcript = None
+    source_revision = None
     try:
         recording = session.get(Recording, recording_id)
         if not recording:
             logger.error("Recording %s not found.", recording_id)
             return
-        transcript = session.exec(
-            select(Transcript).where(Transcript.recording_id == recording_id)
-        ).first()
+        transcript = load_intelligence_source(session, recording_id)
         if not transcript:
             logger.error("Transcript for recording %s not found.", recording_id)
             return
+        source_revision = transcript.change_sequence
 
         user_settings = {}
         if recording.user_id:
@@ -771,6 +705,8 @@ def generate_meeting_intelligence_task(self, recording_id: int):
         transcript_text = _build_automatic_meeting_intelligence_transcript(
             segments, speaker_map, unresolved_speakers, timeline_notes
         )
+        session.flush()
+        source_revision = transcript.change_sequence
 
         _run_automatic_meeting_intelligence_stage(
             session=session,
@@ -788,6 +724,7 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             timeline_notes=timeline_notes,
             detected_transcription_language=None,
             update_processing_status=False,
+            source_revision=source_revision,
         )
         logger.info(
             "Generated meeting intelligence on the IO lane for recording %s",
@@ -805,7 +742,9 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == recording_id)
             ).first()
-        _mark_notes_generation_error(session, recording, transcript, exc)
+        _mark_notes_generation_error(
+            session, recording, transcript, exc, source_revision=source_revision
+        )
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+from sqlmodel import Session
+
 import backend.worker.tasks as tasks_module
 from backend.models.timeline_note import TimelineNote
+from backend.models.transcript import Transcript
 from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.meeting_edge import MeetingEdgeRequest, build_meeting_edge_prompt
+from backend.worker.tasks import intelligence_source, meeting_edge_stage
 
 
 class _ExecResult:
@@ -27,6 +32,10 @@ class _FakeSession:
         self.user = user
         self.added = []
         self.commit_count = 0
+        recording.capture_epoch = getattr(recording, "capture_epoch", 0)
+        transcript.recording_id = recording.id
+        transcript.change_sequence = getattr(transcript, "change_sequence", 0)
+        transcript.settling_state = getattr(transcript, "settling_state", None)
 
     def get(self, model, identifier):
         if model is tasks_module.Recording and identifier == self.recording.id:
@@ -51,8 +60,35 @@ class _FakeSession:
     def commit(self):
         self.commit_count += 1
 
+    def flush(self) -> None:
+        pass
+
+    def refresh(self, obj: object, attribute_names: list[str] | None = None) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
     def close(self):
         return None
+
+
+@pytest.fixture(autouse=True)
+def fake_publication_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Adapt the fake's source read while retaining real token validation."""
+    real_load = intelligence_source.load_intelligence_source
+
+    def load_source(
+        session: Session | _FakeSession, recording_id: int
+    ) -> Transcript | SimpleNamespace | None:
+        if isinstance(session, _FakeSession):
+            assert recording_id == session.recording.id
+            assert recording_id == session.transcript.recording_id
+            return session.transcript
+        return real_load(session, recording_id)
+
+    monkeypatch.setattr(meeting_edge_stage, "load_intelligence_source", load_source)
+    monkeypatch.setattr(intelligence_source, "load_intelligence_source", load_source)
 
 
 def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(

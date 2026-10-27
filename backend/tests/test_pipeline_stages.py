@@ -90,6 +90,7 @@ class _FakeTranscript:
         self.transcript_status = "pending"
         self.notes_status = "pending"
         self.error_message = None
+        self.change_sequence: int = 0
 
 
 class _FakeRecording:
@@ -297,6 +298,21 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
 def _run_task(
     monkeypatch, session, recording_id=701, engine_override=None, llm_config=None
 ):
+    if isinstance(session, _FakeSession):
+
+        def load_fake_source(
+            source_session: _FakeSession, source_recording_id: int
+        ) -> _FakeTranscript:
+            # Orchestration fakes model the source-read boundary; actual fence
+            # acquisition and refresh remain exercised by real Session tests.
+            assert source_recording_id == source_session.recording.id
+            assert source_recording_id == source_session.transcript.recording_id
+            return source_session.transcript
+
+        monkeypatch.setattr(
+            tasks_module.pipeline, "load_intelligence_source", load_fake_source
+        )
+
     if llm_config is None:
 
         class _FakeLlmConfig:

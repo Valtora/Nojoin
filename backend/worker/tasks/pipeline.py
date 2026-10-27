@@ -22,6 +22,7 @@ from .final_publication import (
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
+from .intelligence_source import load_intelligence_source
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
 from .vad_stage import (
@@ -371,6 +372,9 @@ def _finalize_transcript_and_notes(
         session.commit()
         ctx.final_transcript_published = True
 
+    transcript = load_intelligence_source(session, recording.id)
+    updated_segments = [dict(segment) for segment in (transcript.segments or [])]
+    source_revision = transcript.change_sequence
     recording_speakers = session.exec(
         select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
     ).all()
@@ -416,6 +420,7 @@ def _finalize_transcript_and_notes(
         device_suffix=device_suffix,
         timeline_notes=timeline_notes,
         detected_transcription_language=transcription_result.get("language"),
+        source_revision=source_revision,
     )
 
 

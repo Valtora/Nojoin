@@ -15,8 +15,32 @@ from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.meeting_notes import append_user_notes_section
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
+from backend.worker.tasks.intelligence_source import intelligence_source_is_current
 
 logger = logging.getLogger(__name__)
+
+
+def _generate_intelligence(
+    llm_config: ResolvedLLMConfig,
+    request: AutomaticMeetingIntelligenceRequest,
+    recording_id: int,
+) -> AutomaticMeetingIntelligenceResult:
+    llm = _llm_backend_from_config(llm_config)
+    try:
+        return llm.generate_meeting_intelligence(
+            request, timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS
+        )
+    except ContextWindowExceededError as overflow:
+        logger.info(
+            "Recording %s is too long for one call; generating its notes in parts: %s",
+            recording_id,
+            overflow,
+        )
+        return llm.generate_meeting_intelligence_in_parts(
+            request,
+            overflow=overflow,
+            timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
+        )
 
 
 def _format_recording_timestamp(seconds: float) -> str:
@@ -84,7 +108,10 @@ def _apply_automatic_meeting_intelligence_result(
     meeting_context: MeetingEventContext | None,
     provider: str | None,
     resolved_template: ResolvedNotesTemplate | None = None,
-) -> None:
+    source_revision: int | None = None,
+) -> AutomaticMeetingIntelligenceResult | None:
+    if not intelligence_source_is_current(session, recording.id, source_revision):
+        return None
     from backend.processing.embedding import cosine_similarity
 
     segments = [
@@ -148,6 +175,7 @@ def _apply_automatic_meeting_intelligence_result(
         transcript.notes_template_sections = resolved_template.sections
     session.add(recording)
     session.add(transcript)
+    update_recording_status(session, recording.id)
     session.commit()
     record_pipeline_metric(
         stage="speaker_name_suggestions_generated",
@@ -161,7 +189,8 @@ def _apply_automatic_meeting_intelligence_result(
         },
         log=logger,
     )
-    update_recording_status(session, recording.id)
+    logger.info("Generated unified meeting intelligence for recording %s", recording.id)
+    return result
 
 
 def _run_automatic_meeting_intelligence_stage_impl(
@@ -179,10 +208,15 @@ def _run_automatic_meeting_intelligence_stage_impl(
     timeline_notes: RecordingTimelineNotes,
     detected_transcription_language: str | None = None,
     update_processing_status: bool = True,
+    source_revision: int | None = None,
 ) -> AutomaticMeetingIntelligenceResult | None:
     # update_processing_status is False when this runs as a deferred IO task: the
     # recording has already been marked Completed by the GPU pipeline, so we must
     # not reset its processing_step/progress back to the "Generating Notes" stage.
+    if source_revision is None:
+        source_revision = transcript.change_sequence
+    if not intelligence_source_is_current(session, recording.id, source_revision):
+        return None
     cleaned_transcript = transcript_text.strip()
     meeting_context = _resolve_meeting_event_context(session, recording)
     deterministic_result = detect_rule_based_speaker_suggestions(
@@ -299,37 +333,18 @@ def _run_automatic_meeting_intelligence_stage_impl(
     transcript.notes_status = "generating"
     transcript.set_notes_error_message(None)
     session.add(transcript)
-    session.commit()
     update_recording_status(session, recording.id)
+    session.commit()
 
     try:
-        llm = _llm_backend_from_config(llm_config)
-        try:
-            result = llm.generate_meeting_intelligence(
-                request,
-                timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
-            )
-        except ContextWindowExceededError as overflow:
-            # Reached only when the secondary provider, if any, also failed on
-            # the whole meeting. See backend.utils.long_meeting_notes.
-            logger.info(
-                "Recording %s is too long for one call; generating its notes "
-                "in parts: %s",
-                recording.id,
-                overflow,
-            )
-            result = llm.generate_meeting_intelligence_in_parts(
-                request,
-                overflow=overflow,
-                timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
-            )
+        result = _generate_intelligence(llm_config, request, recording.id)
         result = dataclasses.replace(
             result,
             notes_markdown=append_user_notes_section(
                 result.notes_markdown, timeline_notes.appendix_lines()
             ),
         )
-        _apply_automatic_meeting_intelligence_result(
+        return _apply_automatic_meeting_intelligence_result(
             session,
             recording,
             transcript,
@@ -338,19 +353,18 @@ def _run_automatic_meeting_intelligence_stage_impl(
             meeting_context=meeting_context,
             provider=llm_config.provider,
             resolved_template=resolved_template,
+            source_revision=source_revision,
         )
-        logger.info(
-            "Generated unified meeting intelligence for recording %s",
-            recording.id,
-        )
-        return result
     except Exception as exc:  # noqa: BLE001 -- boundary: any failure is recorded on the transcript as a notes error; the recording still completes
         logger.error(
             "Failed to generate automatic meeting intelligence for recording %s: %s",
             recording.id,
             exc,
         )
-        _mark_notes_generation_error(session, recording, transcript, exc)
+        session.rollback()
+        _mark_notes_generation_error(
+            session, recording, transcript, exc, source_revision=source_revision
+        )
         return None
 
 

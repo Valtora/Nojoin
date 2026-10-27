@@ -130,7 +130,11 @@ export default function TranscriptSection({
   const applyLiveNames = liveTranscript?.applyLiveSpeakerNames ?? IGNORE_LIVE_NAMES;
   const liveNaming = useLiveSpeakerNaming(recording.id, applyLiveNames);
   const activeCapture = isLiveCaptureInProgress(recording);
-  const readOnly = isRecordingInFlight(recording) && !activeCapture;
+  // Terminal metadata can precede the replacement read; an open editor can
+  // defer its old row even after that read. Wait for the displayed replacement.
+  const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
+    (recording.previous_publication_available === true || recording.reprocess_publication_complete === true);
+  const readOnly = (isRecordingInFlight(recording) || awaitingPublication) && !activeCapture;
   // A replacement reader must not remount a finished recording's drafts.
   // Capture keeps its live presentation through processing until handoff.
   const [presentFeed, setPresentFeed] = useState(usesLiveFeed);
@@ -149,8 +153,9 @@ export default function TranscriptSection({
     return saved;
   };
   const nameReview = useSpeakerNameReview({ recordingId: recording.id, onRefresh });
-  const reviewSpeakerName = (label: string, name: string, decision: SpeakerNameDecision) =>
-    nameReview.review({ labels: [label], name }, decision);
+  const reviewSpeakerName = async (label: string, name: string, decision: SpeakerNameDecision) => {
+    if (canWrite()) await nameReview.review({ labels: [label], name }, decision);
+  };
   const transcriptStatus = recording.transcript?.transcript_status;
   // The listed notes and those saved from this page since, less any it
   // discarded: the outbox outlives the live view, and its notes land here.
@@ -306,12 +311,12 @@ export default function TranscriptSection({
             onReviewSpeakerName={reviewSpeakerName}
             onUpdateSegmentText={(segment, text) => canWrite() ? onUpdateSegmentText(segment, text) : false}
             onSplitSegment={splitLine}
-            onFindAndReplace={onFindAndReplace}
+            onFindAndReplace={(...args) => { if (canWrite()) return onFindAndReplace(...args); }}
             speakerColors={speakerColors}
-            onUndo={onUndo}
-            onRedo={onRedo}
-            canUndo={canUndo}
-            canRedo={canRedo}
+            onUndo={() => { if (canWrite()) onUndo(); }}
+            onRedo={() => { if (canWrite()) onRedo(); }}
+            canUndo={!readOnly && canUndo}
+            canRedo={!readOnly && canRedo}
             onExport={onExport}
             disableSegmentPlayback={!canPlayback}
             disableExport={!canExport}
