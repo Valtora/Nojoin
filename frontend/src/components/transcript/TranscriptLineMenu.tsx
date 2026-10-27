@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { noteTargetForLine } from "@/lib/notes/lineSelection";
 import { isNoteSelection, type NoteTarget, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import { lineActionsFor, type LineActionId } from "@/lib/transcript/actions";
-import type { TranscriptSegment } from "@/types";
+import type { RecordingSpeaker, TranscriptSegment } from "@/types";
 import { lineIsSettling, LINE_SETTLING_REASON, splitWords } from "@/lib/transcript/settling";
 
 import NoteOnSelectionPopover from "../notes/NoteOnSelectionPopover";
@@ -13,9 +13,18 @@ import NoteOnSelectionPopover from "../notes/NoteOnSelectionPopover";
 import type { TranscriptLineActions } from "./_hooks/useTranscriptEditing";
 import TranscriptActionsMenu from "./TranscriptActionsMenu";
 import { formatTime } from "./transcriptDisplay";
-import LiveLineEditor from "./LiveLineEditor";
+import { formatTimelineMs, segmentStartMs } from "@/lib/notes/placement";
+import LiveLineEditor, { type LiveEditKind, type LiveLineHandlers } from "./LiveLineEditor";
+import type { LiveInteractionChange, LiveTranscriptPresentation } from "./liveTranscriptPresentation";
+import type { IndexedTranscriptSegment } from "./transcriptGroups";
 
 interface TranscriptLineMenuProps {
+  readOnly?: boolean;
+  live?: LiveTranscriptPresentation;
+  index?: number;
+  renderIdentity?: string;
+  onLiveInteractionChange?: LiveInteractionChange;
+  speakers?: readonly RecordingSpeaker[];
   segment: TranscriptSegment;
   segmentId: string;
   speakerName: string;
@@ -27,6 +36,7 @@ interface TranscriptLineMenuProps {
   /** Plays on from a time in seconds; null where playback is off. */
   onPlayFrom: ((startSeconds: number) => void) | null;
   onSplitSegment?: ((segment: TranscriptSegment, wordId: string) => Promise<boolean>) | null;
+  captureSplitSegment?: () => ((segment: TranscriptSegment, wordId: string) => Promise<boolean>) | null | undefined;
   isEditingText: boolean;
   /** The line's speaker popover is open. */
   isChangingSpeaker: boolean;
@@ -47,16 +57,42 @@ export default function TranscriptLineMenu({
   onAddNote,
   onPlayFrom,
   onSplitSegment = null,
+  captureSplitSegment,
+  readOnly = false,
   isEditingText,
   isChangingSpeaker,
+  live,
+  speakers,
+  index = 0,
+  renderIdentity = segmentId,
+  onLiveInteractionChange,
 }: TranscriptLineMenuProps) {
   const [noteAnchor, setNoteAnchor] = useState<HTMLElement | null>(null);
-  const [splitEdit, setSplitEdit] = useState<{ anchor: HTMLElement; segment: TranscriptSegment } | null>(null);
+  const [lineEdit, setLineEdit] = useState<{
+    kind: LiveEditKind;
+    anchor: HTMLElement;
+    segment: TranscriptSegment;
+    handlers: LiveLineHandlers;
+    speakers?: readonly RecordingSpeaker[];
+    liveContext?: IndexedTranscriptSegment;
+  } | null>(null);
+  const currentLineEdit = useRef(lineEdit);
+  useLayoutEffect(() => {
+    currentLineEdit.current = lineEdit;
+    return () => { currentLineEdit.current = null; };
+  }, [lineEdit]);
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   /** The ⋯ button, while an editor or popover an item opened is open. */
   const returnFocusTo = useRef<HTMLElement | null>(null);
   const selection = useMemo(() => noteTargetForLine(segment), [segment]);
   const activeNoteTarget = noteTarget && !isNoteSelection(noteTarget) ? noteTarget : selection;
+  const liveContext = lineEdit?.liveContext;
+  useEffect(() => {
+    if (!liveContext) return;
+    const identity = `${renderIdentity}:command`;
+    onLiveInteractionChange?.(identity, true, liveContext);
+    return () => onLiveInteractionChange?.(identity, false);
+  }, [liveContext, renderIdentity, onLiveInteractionChange]);
 
   // Back to the ⋯ button once what an item opened has closed, unless focus
   // went somewhere on purpose (a click elsewhere).
@@ -71,27 +107,55 @@ export default function TranscriptLineMenu({
   }, [opened]);
 
   const run: Record<LineActionId, (trigger: HTMLButtonElement) => void> = {
-    note: (trigger) => { setNoteTarget(selection); setNoteAnchor(trigger); },
+    note: (trigger) => {
+      if (live) {
+        if (selection) live.onNoteOnLine?.(selection);
+      } else {
+        setNoteTarget(selection);
+        setNoteAnchor(trigger);
+      }
+    },
     editText: (trigger) => {
+      if (live) {
+        if (live.lineHandlers) setLineEdit({ kind: "editText", anchor: trigger, segment, handlers: live.lineHandlers, speakers,
+          liveContext: { segment, index, segmentId } });
+        return;
+      }
       returnFocusTo.current = trigger;
       actions.startTextEdit(segment, segmentId);
     },
     changeSpeaker: (trigger) => {
+      if (live) {
+        if (live.lineHandlers) setLineEdit({ kind: "changeSpeaker", anchor: trigger, segment, handlers: live.lineHandlers, speakers,
+          liveContext: { segment, index, segmentId } });
+        return;
+      }
       returnFocusTo.current = trigger;
       actions.openSpeakerPopover(segmentId, trigger);
     },
     play: () => onPlayFrom?.(segment.start),
-    split: (trigger) => setSplitEdit({ anchor: trigger, segment }),
+    split: (trigger) => {
+      const split = captureSplitSegment ? captureSplitSegment() : onSplitSegment;
+      const handlers = live?.lineHandlers ?? (split ? {
+        split,
+        editText: async () => false,
+        changeSpeaker: async () => false,
+      } : null);
+      if (handlers) setLineEdit({ kind: "split", anchor: trigger, segment, handlers, speakers,
+        liveContext: live ? { segment, index, segmentId } : undefined });
+    },
   };
 
+  const liveCanEdit = !readOnly && live?.lineHandlers !== undefined && segment.settling_required === true &&
+    !!segment.id && segment.revision !== undefined;
   const items = lineActionsFor({
-    view: "finished",
-    canNote: onAddNote !== null && selection !== null,
-    canEdit: !isSegmentReadOnly || lineIsSettling(segment),
+    view: live ? "live" : "finished",
+    canNote: (live ? live.onNoteOnLine !== undefined : onAddNote !== null) && selection !== null,
+    canEdit: live ? liveCanEdit : !isSegmentReadOnly || lineIsSettling(segment),
     provisional: segment.provisional === true,
-    canPlay: onPlayFrom !== null,
-    canSplit: !isSegmentReadOnly && !!segment.id && segment.revision !== undefined &&
-      onSplitSegment !== null && splitWords(segment).length > 0,
+    canPlay: !live && onPlayFrom !== null,
+    canSplit: (live ? liveCanEdit : !isSegmentReadOnly && !!segment.id && segment.revision !== undefined &&
+      onSplitSegment !== null) && splitWords(segment).length > 0,
     settlingRequired: segment.settling_required,
     disabledReason: lineIsSettling(segment) ? LINE_SETTLING_REASON : undefined,
   }).map((action) => ({ ...action, onSelect: run[action.id] }));
@@ -99,15 +163,22 @@ export default function TranscriptLineMenu({
   return (
     <>
       <TranscriptActionsMenu
-        label={`Actions for ${speakerName}'s line at ${formatTime(segment.start)}`}
+        label={live ? `Actions for the line at ${formatTimelineMs(segmentStartMs(segment))}`
+          : `Actions for ${speakerName}'s line at ${formatTime(segment.start)}`}
         items={items}
-        active={noteAnchor !== null || splitEdit !== null || opened}
+        active={noteAnchor !== null || lineEdit !== null || opened}
         triggerClassName="ml-auto self-center -my-1 pointer-coarse:-my-2.5"
       />
-      {splitEdit && onSplitSegment && !isSegmentReadOnly ? <LiveLineEditor
-        kind="split" segment={splitEdit.segment} anchor={splitEdit.anchor}
-        handlers={{ split: onSplitSegment, editText: async () => false, changeSpeaker: async () => false }}
-        onClose={() => { setSplitEdit(null); splitEdit.anchor.focus(); }}
+      {lineEdit ? <LiveLineEditor
+        key={`${lineEdit.kind}-${lineEdit.segment.id}`}
+        kind={lineEdit.kind} segment={lineEdit.segment} anchor={lineEdit.anchor}
+        handlers={lineEdit.handlers}
+        speakers={lineEdit.speakers}
+        onClose={() => {
+          if (currentLineEdit.current !== lineEdit) return;
+          setLineEdit((current) => current === lineEdit ? null : current);
+          lineEdit.anchor.focus();
+        }}
       /> : null}
       {noteAnchor && activeNoteTarget && onAddNote ? (
         <NoteOnSelectionPopover

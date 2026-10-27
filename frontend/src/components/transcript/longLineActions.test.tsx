@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import TranscriptView from "../TranscriptView";
-import LiveTranscriptPanel from "../LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import type { TranscriptSegment } from "@/types";
 import { line, viewProps } from "./transcriptTestFixtures";
 

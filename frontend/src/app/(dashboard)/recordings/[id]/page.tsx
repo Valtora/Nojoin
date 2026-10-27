@@ -15,6 +15,7 @@ import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
 import ExportModal from "@/components/ExportModal";
 import { RecordingStatus } from "@/types";
+import { useRef } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 
@@ -30,6 +31,7 @@ interface PageProps {
 }
 
 export default function RecordingPage({ params }: PageProps) {
+  const liveNoteBoxRef = useRef<HTMLTextAreaElement>(null);
   const capture = useCapture();
   const detail = useRecordingDetail({ params, capture });
   const isSpeakerPanelCollapsed = useNavigationStore(
@@ -143,6 +145,8 @@ export default function RecordingPage({ params }: PageProps) {
 
   const mainContent = (
     <RecordingMainContent
+      liveTranscript={usesInFlightTranscript ? liveTranscript : undefined}
+      liveNoteBoxRef={liveNoteBoxRef}
       key={recording.id}
       recording={recording}
       inFlight={showCaptureSlot}
@@ -152,6 +156,7 @@ export default function RecordingPage({ params }: PageProps) {
       playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording} onDiscarded={navigateToRecordings} /> : undefined}
       inFlightContent={usesInFlightTranscript ? (
         <RecordingStatusDisplay
+          composerBoxRef={liveNoteBoxRef}
           recording={recording}
           liveTranscript={liveTranscript}
           onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
@@ -160,7 +165,6 @@ export default function RecordingPage({ params }: PageProps) {
           showMeetingEdge={meetingEdgeEnabled}
           audioClock={audioClock}
           timelineNotes={timelineNotes}
-          noteEdits={noteEdits}
         />
       ) : undefined}
       timelineNotes={timelineNotes}

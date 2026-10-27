@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { useNavigationStore, type ActivePanel } from "@/lib/store";
+import type { LiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import {
   GlobalSpeaker,
   Recording,
@@ -34,6 +35,8 @@ import AnalyticsSection from "./AnalyticsSection";
 import { useScrollEdges } from "../_hooks/useScrollEdges";
 
 interface RecordingMainContentProps {
+  liveTranscript?: LiveTranscript;
+  liveNoteBoxRef?: RefObject<HTMLTextAreaElement | null>;
   recording: Recording;
   playerSlot?: ReactNode;
   inFlightContent?: ReactNode;
@@ -75,18 +78,18 @@ interface RecordingMainContentProps {
   onPlaySegment: (start: number, end?: number) => void | Promise<void>;
   onPause: () => void;
   onResume: () => void;
-  onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
+  onRenameSpeaker: (label: string, newName: string) => void | boolean | Promise<void | boolean>;
   onColorChange: (speakerLabel: string, colorKey: string) => void;
   onRefresh: () => void;
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onUpdateSegmentText: (
     segment: TranscriptSegment,
     text: string,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onFindAndReplace: (
     find: string,
     replace: string,
@@ -150,6 +153,8 @@ function MoreTabsHint({ side }: { side: "left" | "right" }) {
 }
 
 export default function RecordingMainContent({
+  liveTranscript,
+  liveNoteBoxRef,
   recording,
   playerSlot,
   inFlightContent,
@@ -321,6 +326,8 @@ export default function RecordingMainContent({
       {/* Panel Content */}
       <SurfaceBase data-ui-fill="card" kind="pane" className="flex-1 flex flex-col bg-surface-card overflow-hidden min-h-0 h-full relative">
         <TranscriptSection
+          liveTranscript={liveTranscript}
+          liveNoteBoxRef={liveNoteBoxRef}
           active={activePanel === "transcript"}
           recording={recording}
           inFlightContent={inFlightContent}

@@ -448,7 +448,10 @@ describe("transcript play buttons", () => {
     const onExport = vi.fn();
     const view = renderView({ disableSegmentPlayback: true, disableExport: true, onPlaySegment, onExport });
 
-    expect(screen.queryByRole("button", { name: "Play Alex at 00:00" })).not.toBeInTheDocument();
+    // In-flight controls keep their place in the shared cards while playback waits.
+    const playButton = button("Play Alex at 00:00");
+    expect(playButton).toBeDisabled();
+    fireEvent.click(playButton);
     const exportButton = button("Export transcript disabled");
     expect(exportButton).toBeDisabled();
     fireEvent.click(exportButton);

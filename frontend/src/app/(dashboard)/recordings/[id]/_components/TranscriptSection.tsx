@@ -1,9 +1,17 @@
 "use client";
 
-import { useCallback, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AlertCircle } from "lucide-react";
 
 import TranscriptView from "@/components/TranscriptView";
+import type { LiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
+import type { LiveTranscriptPresentation } from "@/components/transcript/liveTranscriptPresentation";
+import type { LiveLineHandlers } from "@/components/transcript/LiveLineEditor";
+import { useLiveSpeakerNaming } from "@/components/transcript/_hooks/useLiveSpeakerNaming";
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
+import { isNoteSelection, type NoteTarget } from "@/lib/notes/noteOutbox";
+import { ClientStatus } from "@/types";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
@@ -24,11 +32,14 @@ import {
 
 // One empty list for every render, so the transcript's memoised lines hold.
 const NO_SPEAKERS: readonly RecordingSpeaker[] = Object.freeze([]);
+const IGNORE_LIVE_NAMES = () => {};
 /** Unsaved notes shown on their line; the rest are listed above the transcript. */
 const SELECTION_NOTES = ["selection"] as const;
 const LISTED_NOTES = ["point", "head", "tail"] as const;
 
 interface TranscriptSectionProps {
+  liveTranscript?: LiveTranscript;
+  liveNoteBoxRef?: RefObject<HTMLTextAreaElement | null>;
   active: boolean;
   recording: Recording;
   inFlightContent?: ReactNode;
@@ -51,17 +62,17 @@ interface TranscriptSectionProps {
   onPlaySegment: (start: number, end?: number) => void | Promise<void>;
   onPause: () => void;
   onResume: () => void;
-  onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
+  onRenameSpeaker: (label: string, newName: string) => void | boolean | Promise<void | boolean>;
   /** Reloads the recording, after a line confirms or dismisses a suggested name. */
   onRefresh: () => void;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onUpdateSegmentText: (
     segment: TranscriptSegment,
     text: string,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onFindAndReplace: (
     find: string,
     replace: string,
@@ -74,6 +85,8 @@ interface TranscriptSectionProps {
 }
 
 export default function TranscriptSection({
+  liveTranscript,
+  liveNoteBoxRef,
   active,
   recording,
   inFlightContent,
@@ -105,9 +118,17 @@ export default function TranscriptSection({
   onActiveEditUtteranceChange,
 }: TranscriptSectionProps) {
   const { addNotification } = useNotificationStore();
+  const usesLiveFeed = liveTranscript !== undefined;
+  const [hasShownLive, setHasShownLive] = useState(usesLiveFeed);
+  useOnDepsChange([usesLiveFeed], () => {
+    if (usesLiveFeed) setHasShownLive(true);
+  });
+  const lineActions = useMemo(() => transcriptLineActions((message) =>
+    addNotification({ type: "error", message })), [addNotification]);
+  const applyLiveNames = liveTranscript?.applyLiveSpeakerNames ?? IGNORE_LIVE_NAMES;
+  const liveNaming = useLiveSpeakerNaming(recording.id, applyLiveNames);
   const splitLine = async (segment: TranscriptSegment, wordId: string) => {
-    const actions = transcriptLineActions((message) => addNotification({ type: "error", message }));
-    const saved = await actions.splitTranscriptLine(recording.id, segment, wordId);
+    const saved = await lineActions.splitTranscriptLine(recording.id, segment, wordId);
     if (saved) onRefresh();
     return saved;
   };
@@ -134,10 +155,10 @@ export default function TranscriptSection({
         inlineNotes(
           timelineNotes,
           { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded },
-          SELECTION_NOTES,
+          usesLiveFeed ? undefined : SELECTION_NOTES,
         ),
       ),
-    [applyEdits, timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
+    [applyEdits, timelineNotes, outboxEntries, outboxSaved, outboxDiscarded, usesLiveFeed],
   );
   const sectionRef = useRef<HTMLDivElement>(null);
   const durationSeconds = recording.duration_seconds;
@@ -147,12 +168,50 @@ export default function TranscriptSection({
   );
   const focusSection = useCallback(() => sectionRef.current?.focus(), []);
   const addNote = useCallback((note: OutboxDraft) => outbox.submit(note), [outbox]);
+  const noteOnLine = useCallback((target: NoteTarget) => {
+    outbox.setDraft({ ...outbox.getSnapshot().draft,
+      selection: isNoteSelection(target) ? target : null,
+      lineSpan: isNoteSelection(target) ? null : target });
+    liveNoteBoxRef?.current?.focus();
+  }, [outbox, liveNoteBoxRef]);
+  const recordingId = recording.id;
+  const refreshLive = liveTranscript?.refresh;
+  const liveLineHandlers = useMemo<LiveLineHandlers>(() => ({
+    editText: async (segment, text) => {
+      const saved = await lineActions.editTranscriptLine(recordingId, segment, text);
+      if (saved) refreshLive?.();
+      return saved;
+    },
+    changeSpeaker: async (segment, assignment) => {
+      const saved = await lineActions.assignTranscriptLine(recordingId, segment, assignment);
+      if (saved) refreshLive?.();
+      return saved;
+    },
+    split: async (segment, wordId) => {
+      const saved = await lineActions.splitTranscriptLine(recordingId, segment, wordId);
+      if (saved) refreshLive?.();
+      return saved;
+    },
+  }), [recordingId, refreshLive, lineActions]);
+  const activeCapture = isLiveCaptureInProgress(recording);
+  const paused = recording.status === RecordingStatus.PAUSED || recording.client_status === ClientStatus.PAUSED;
+  const hasLoaded = liveTranscript?.hasLoaded ?? false;
+  const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed ? ({
+    hasLoaded, isPaused: paused, lineHandlers: liveLineHandlers,
+    onNoteOnLine: activeCapture ? noteOnLine : undefined,
+    onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,
+    loadPeopleNames: liveNaming.loadPeopleNames,
+  }) : undefined, [usesLiveFeed, hasLoaded, paused, liveLineHandlers, activeCapture,
+    noteOnLine, liveNaming.renameLiveSpeaker, liveNaming.loadPeopleNames]);
+  const selectedSpeakerMap = useMemo(() => ({ ...speakerMap, ...liveTranscript?.liveSpeakerNames }),
+    [speakerMap, liveTranscript?.liveSpeakerNames]);
   const discardNote = useCallback(
     (key: string) => {
       outbox.discard(key);
-      focusSection();
+      if (liveNoteBoxRef?.current) liveNoteBoxRef.current.focus();
+      else focusSection();
     },
-    [outbox, focusSection],
+    [outbox, focusSection, liveNoteBoxRef],
   );
   const deleteNote = useCallback(
     async (note: EditableNote) => {
@@ -196,12 +255,9 @@ export default function TranscriptSection({
           </div>
         </div>
       ) : null}
-      {inFlightContent ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">{inFlightContent}</div>
-      ) : <>
       {/* A note from the live note box that never saved, or text left in it,
           outlives processing: listed here until saved or discarded. */}
-      <RecordingUnsavedNotes
+      {!liveTranscript ? <RecordingUnsavedNotes
         recordingId={recording.id}
         // With no lines to show a note on its line, every kind is listed here.
         kinds={transcriptSegments.length > 0 ? LISTED_NOTES : undefined}
@@ -210,10 +266,13 @@ export default function TranscriptSection({
         readEndMs={readEndMs}
         onEmptied={focusSection}
         className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
-      />
-      {transcriptSegments.length > 0 ? (
+      /> : null}
+      {transcriptSegments.length > 0 || liveTranscript || hasShownLive ? (
         <div className="min-h-0 flex-1">
           <TranscriptView
+            live={live}
+            emptyStateTitle={transcriptionError ? "" : transcriptStatus === "completed"
+              ? "No speech was detected in this recording." : "No transcript available yet."}
             recordingId={recording.id}
             segments={transcriptSegments}
             currentTime={currentTime}
@@ -221,8 +280,8 @@ export default function TranscriptSection({
             isPlaying={isPlaying}
             onPause={onPause}
             onResume={onResume}
-            speakerMap={speakerMap}
-            speakers={recording.speakers ?? NO_SPEAKERS}
+            speakerMap={selectedSpeakerMap}
+            speakers={liveTranscript?.speakers ?? recording.speakers ?? NO_SPEAKERS}
             globalSpeakers={globalSpeakers}
             onRenameSpeaker={onRenameSpeaker}
             onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}
@@ -240,13 +299,14 @@ export default function TranscriptSection({
             disableExport={!canExport}
             onActiveEditUtteranceChange={onActiveEditUtteranceChange}
             pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
-            timelineNotes={notes}
+            timelineNotes={liveTranscript && !isLiveCaptureInProgress(recording)
+              ? notes.filter((note) => note.status === "saved") : notes}
             onAddNote={addNote}
             onRetryNote={outbox.retry}
             onDiscardNote={discardNote}
-            onEditNote={editNote}
-            onDeleteNote={deleteNote}
-            onMoveNote={moveNote}
+            onEditNote={liveTranscript ? undefined : editNote}
+            onDeleteNote={liveTranscript ? undefined : deleteNote}
+            onMoveNote={!liveTranscript || transcriptSegments.some((segment) => segment.settling_required) ? moveNote : undefined}
           />
         </div>
       ) : (
@@ -277,7 +337,7 @@ export default function TranscriptSection({
           )}
         </div>
       )}
-      </>}
+      {inFlightContent ? <div className="max-h-[50%] shrink-0 overflow-y-auto">{inFlightContent}</div> : null}
     </div>
   );
 }

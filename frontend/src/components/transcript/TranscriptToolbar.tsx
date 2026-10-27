@@ -32,6 +32,7 @@ const focusIfDisabled = (target: EventTarget | null, field: HTMLInputElement | n
 };
 
 interface TranscriptToolbarProps {
+  mutationsDisabled?: boolean;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -52,6 +53,7 @@ interface TranscriptToolbarProps {
 
 /** The finished transcript's toolbar: undo, redo, export, and find/replace. */
 export default function TranscriptToolbar({
+  mutationsDisabled = false,
   onUndo,
   onRedo,
   canUndo,
@@ -203,6 +205,7 @@ export default function TranscriptToolbar({
             ref={findReplaceToggleRef}
             size="sm"
             aria-label="Find & Replace"
+            disabled={mutationsDisabled}
             title="Find & Replace"
             aria-pressed={showReplace}
             onClick={() => {
@@ -321,7 +324,7 @@ export default function TranscriptToolbar({
               <Button
                 size="sm"
                 onClick={onReplaceCurrent}
-                disabled={!hasMatches || isSubmitting}
+                disabled={mutationsDisabled || !hasMatches || isSubmitting}
                 className={`sm:text-sm ${TOUCH_TARGET_HEIGHT}`}
               >
                 Replace
@@ -330,7 +333,7 @@ export default function TranscriptToolbar({
                 size="sm"
                 variant="primary"
                 onClick={onReplaceAll}
-                disabled={!findText || isSubmitting}
+                disabled={mutationsDisabled || !findText || isSubmitting}
                 className={`sm:text-sm ${TOUCH_TARGET_HEIGHT}`}
               >
                 <span className="sm:hidden">All</span>

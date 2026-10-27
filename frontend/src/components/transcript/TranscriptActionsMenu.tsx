@@ -143,7 +143,8 @@ export default function TranscriptActionsMenu({
     };
   }, [hasItems]);
 
-  if (!hasItems) return null;
+  // A carried editor still owns this anchor after its source line disappears.
+  if (!hasItems && !active) return null;
 
   const close = () => {
     setOpen(false);
@@ -189,8 +190,9 @@ export default function TranscriptActionsMenu({
         size="sm"
         aria-label={label}
         title="Line actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
+        disabled={!hasItems}
+        aria-haspopup={hasItems ? "menu" : undefined}
+        aria-expanded={hasItems ? open : undefined}
         aria-controls={open ? menuId : undefined}
         onClick={(event) => {
           event.stopPropagation();
@@ -214,7 +216,7 @@ export default function TranscriptActionsMenu({
       {/* On the body, as the speaker popover is: a transcript group that isn't
           playing is translucent, which makes it a stacking context, and the
           lines after it would paint over a menu inside it. */}
-      {open ? createPortal(
+      {open && hasItems ? createPortal(
         <SurfaceBase
           data-ui-fill="card"
           data-ui-border="full" kind="float"

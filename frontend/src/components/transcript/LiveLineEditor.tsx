@@ -29,13 +29,14 @@ export default function LiveLineEditor({
   speakers?: readonly RecordingSpeaker[];
   onClose: () => void;
 }) {
-  const [text, setText] = useState(segment.text);
+  const [opened] = useState(() => ({ segment, anchor, handlers, kind }));
+  const [text, setText] = useState(opened.segment.text);
   const [people, setPeople] = useState<GlobalSpeaker[]>([]);
-  const words = splitWords(segment);
+  const words = splitWords(opened.segment);
   const [wordId, setWordId] = useState(words[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
   const splitPickerRef = useRef<HTMLSelectElement>(null);
-  const anchorRef = useMemo(() => ({ current: anchor }), [anchor]);
+  const anchorRef = useMemo(() => ({ current: opened.anchor }), [opened.anchor]);
   const { panelRef, panelStyle } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
   const placed = panelStyle.visibility === "visible";
   useEffect(() => {
@@ -51,13 +52,17 @@ export default function LiveLineEditor({
   const save = async (command: () => Promise<boolean>) => {
     if (saving) return;
     setSaving(true);
-    try { if (await command()) onClose(); } finally { setSaving(false); }
+    try {
+      if (await command()) onClose();
+    } catch (error) {
+      console.error("Failed to save the transcript line", error);
+    } finally { setSaving(false); }
   };
   if (kind === "changeSpeaker") return (
     <SpeakerAssignmentPopover
-      availableSpeakers={speakers} globalSpeakers={people} currentSpeakerLabel={segment.speaker}
-      targetElement={anchor} speakerColors={{}}
-      onSelect={(assignment) => void save(() => handlers.changeSpeaker(segment, assignment))} onClose={onClose}
+      availableSpeakers={speakers} globalSpeakers={people} currentSpeakerLabel={opened.segment.speaker}
+      targetElement={opened.anchor} speakerColors={{}}
+      onSelect={(assignment) => void save(() => opened.handlers.changeSpeaker(opened.segment, assignment))} onClose={onClose}
     />
   );
   return createPortal(
@@ -65,7 +70,8 @@ export default function LiveLineEditor({
       onKeyDown={(event) => { if (event.key === "Escape" && !saving) onClose(); }}
       className="z-[var(--z-dropdown)] w-80 max-w-[calc(100vw-2rem)] rounded border border-surface-border bg-surface-card p-3 text-foreground shadow-float">
       {kind === "editText" ? (
-        <TextareaBase autoFocus aria-label="Line text" value={text} onChange={(event) => setText(event.target.value)}
+        <TextareaBase autoFocus aria-label="Line text" value={text} disabled={saving}
+          onChange={(event) => setText(event.target.value)}
           className="w-full rounded border border-control-border bg-surface-input p-2 text-foreground" />
       ) : (
         <label className="block text-sm">Split before word
@@ -78,7 +84,7 @@ export default function LiveLineEditor({
       )}
       <div className="mt-2 flex gap-2">
         <Button size="sm" disabled={saving || (kind === "split" && !wordId)} onClick={() => void save(() =>
-          kind === "split" ? handlers.split(segment, wordId) : handlers.editText(segment, text))}>
+          kind === "split" ? opened.handlers.split(opened.segment, wordId) : opened.handlers.editText(opened.segment, text))}>
           {kind === "split" ? "Split" : "Save"}
         </Button>
         <Button size="sm" variant="ghost" disabled={saving} onClick={onClose}>Cancel</Button>

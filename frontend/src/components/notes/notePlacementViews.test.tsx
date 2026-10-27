@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import LiveTranscriptPanel from "@/components/LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import TranscriptView from "@/components/TranscriptView";
 import type { InlineNote } from "@/lib/notes/noteOutbox";
 import { expectedRenderOrder, PLACEMENT_CASES, type PlacementCase } from "@/test/placementCases";

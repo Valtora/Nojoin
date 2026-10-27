@@ -1,26 +1,15 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
 
-import RecordingStatusDisplay from "./RecordingStatusDisplay";
+import RecordingStatusDisplay from "@/test/RecordingTranscriptWithLiveBody";
 import type { LiveTranscript } from "./transcript/_hooks/useLiveTranscript";
-import { ClientStatus, type Recording, RecordingStatus, type TranscriptSegment } from "@/types";
+import { ClientStatus, type Recording, RecordingStatus } from "@/types";
 
 const getDocuments = vi.fn();
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getDocuments: (...args: unknown[]) => getDocuments(...args),
-}));
-vi.mock("./LiveTranscriptPanel", () => ({
-  default: ({ segments, isPaused, footer }: {
-    segments: TranscriptSegment[]; isPaused: boolean; footer: ReactNode;
-  }) => (
-    <div data-testid="live-transcript-panel" data-paused={String(isPaused)}>
-      {segments.map((segment) => <p key={segment.id}>{segment.text}</p>)}
-      {footer}
-    </div>
-  ),
 }));
 vi.mock("./MeetingEdgePanel", () => ({
   default: () => <div data-testid="meeting-edge-panel" />,

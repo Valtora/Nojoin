@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TranscriptSegment } from "@/types";
 import type { LiveLineHandlers } from "./LiveLineEditor";
-import LiveLineMenu from "./LiveLineMenu";
+import SharedLiveTranscript from "@/test/SharedLiveTranscript";
 
 const segment: TranscriptSegment = {
   id: "u1", revision: 3, start: 0, end: 2, speaker: "UNKNOWN", text: "Alpha beta",
@@ -20,6 +20,14 @@ beforeEach(() => {
     if (getComputedStyle(this).visibility === "hidden") return;
     nativeFocus.call(this, options);
   });
+  const hidden = document.createElement("button");
+  hidden.style.visibility = "hidden";
+  document.body.append(hidden);
+  const before = document.activeElement;
+  expect(getComputedStyle(hidden).visibility).toBe("hidden");
+  hidden.focus();
+  expect(document.activeElement).toBe(before);
+  hidden.remove();
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -29,7 +37,7 @@ function renderMenu() {
     editText: vi.fn().mockResolvedValue(true), changeSpeaker: vi.fn().mockResolvedValue(true),
     split: vi.fn().mockResolvedValue(true),
   };
-  render(<LiveLineMenu segment={segment} handlers={handlers} onNoteOnLine={vi.fn()} />);
+  render(<SharedLiveTranscript segments={[segment]} hasLoaded lineHandlers={handlers} onNoteOnLine={vi.fn()} />);
   const trigger = screen.getByRole("button", { name: "Actions for the line at 00:00" });
   const openSplit = () => {
     trigger.focus();

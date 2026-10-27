@@ -13,7 +13,7 @@ import {
   type TimelineNoteCreate,
 } from "@/types";
 
-import RecordingStatusDisplay from "./RecordingStatusDisplay";
+import RecordingStatusDisplay from "@/test/RecordingTranscriptWithLiveBody";
 import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
 
 // The shared page owns this reader now; keep these tests at that boundary.

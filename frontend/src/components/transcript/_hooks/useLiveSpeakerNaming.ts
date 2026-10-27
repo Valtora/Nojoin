@@ -10,7 +10,7 @@ import { sourceReference } from "@/lib/transcript/settling";
 
 export interface LiveSpeakerNaming {
   /** Names live speaker `label`; a failure is reported, never thrown. */
-  renameLiveSpeaker: (label: string, name: string, segment?: TranscriptSegment) => Promise<void>;
+  renameLiveSpeaker: (label: string, name: string, segment?: TranscriptSegment) => Promise<boolean>;
   /** People's names, read once on the first rename and kept. */
   loadPeopleNames: () => Promise<readonly string[]>;
 }
@@ -35,6 +35,7 @@ export function useLiveSpeakerNaming(
         applyNames(await (anchor
           ? nameLiveSpeaker(recordingId, label, name, anchor)
           : nameLiveSpeaker(recordingId, label, name)));
+        return true;
       } catch (error) {
         console.error("Failed to name the live speaker", error);
         addNotification({
@@ -42,6 +43,7 @@ export function useLiveSpeakerNaming(
           // The server says why, as when the meeting has just been stopped.
           message: getErrorDetail(error) ?? "Failed to rename the speaker.",
         });
+        return false;
       }
     },
     [recordingId, applyNames, addNotification],

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
+import RecordingStatusDisplay from "@/test/RecordingTranscriptWithLiveBody";
 import { useLiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";

@@ -491,32 +491,36 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   // Transcript Handlers
-  const handleRenameSpeaker = async (label: string, newName: string) => {
-    if (!recording) return;
+  const handleRenameSpeaker = async (label: string, newName: string): Promise<boolean> => {
+    if (!recording) return false;
+    let accepted = false;
     try {
       const renamed = await updateSpeaker(recording.id, label, newName);
+      accepted = true;
       const updated = await metadataReader.read(recording.id);
-      if (!updated) return;
+      if (!updated) return true;
       setRecording(updated);
       await syncTranscriptState("full");
       for (const message of libraryVoiceprintNotices(renamed)) {
         addNotification({ type: "info", message });
       }
-
-        } catch (error: unknown) {
+      return true;
+    } catch (error: unknown) {
       console.error("Failed to rename speaker:", error);
       addNotification({
-        type: "error",
-        message: "Failed to rename speaker. Please try again.",
+        type: accepted ? "warning" : "error",
+        message: accepted ? "Speaker renamed, but the recording could not be refreshed."
+          : "Failed to rename speaker. Please try again.",
       });
+      return accepted;
     }
   };
 
   const handleUpdateSegmentSpeaker = async (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
-  ) => {
-    if (!recording) return;
+  ): Promise<boolean> => {
+    if (!recording) return false;
 
     const previousSegments = cloneTranscriptSegments(transcriptSegments);
 
@@ -527,7 +531,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     };
 
     if (!nextAssignment.name) {
-      return;
+      return false;
     }
 
     const currentSpeaker = recording.speakers?.find(
@@ -549,16 +553,19 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         nextAssignment.name === currentSpeakerName);
 
     if (isSameSelection) {
-      return;
+      return true;
     }
 
+    let accepted = false;
     try {
       if (segment.id) {
         await updateTranscriptUtteranceSpeaker(
           recording.id,
           segment.id,
           nextAssignment,
+          segment.revision,
         );
+        accepted = true;
         const syncResult = await syncTranscriptState("delta", {
           deferActiveEdit: false,
         });
@@ -582,7 +589,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       } else {
         const segmentIndex = transcriptSegments.indexOf(segment);
         if (segmentIndex === -1) {
-          return;
+          return false;
         }
 
         await updateTranscriptSegmentSpeaker(
@@ -590,8 +597,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
           segmentIndex,
           nextAssignment,
         );
+        accepted = true;
         const updated = await metadataReader.read(recording.id);
-        if (!updated) return;
+        if (!updated) return true;
         setRecording(updated);
         const nextSegments = sortTranscriptSegments(updated.transcript?.segments || []);
         setTranscriptState({
@@ -609,24 +617,27 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
           nextSegments,
         );
       }
-
-        } catch (error: unknown) {
+      return true;
+    } catch (error: unknown) {
       console.error("Failed to update segment speaker:", error);
       addNotification({
-        type: "error",
-        message: getErrorDetail(error) ?? "Failed to update segment speaker. Please try again.",
+        type: accepted ? "warning" : "error",
+        message: accepted ? "Speaker changed, but the transcript could not be refreshed."
+          : getErrorDetail(error) ?? "Failed to update segment speaker. Please try again.",
       });
+      return accepted;
     }
   };
 
   const handleUpdateSegmentText = async (
     segment: TranscriptSegment,
     text: string,
-  ) => {
-    if (!recording) return;
+  ): Promise<boolean> => {
+    if (!recording) return false;
 
     const previousSegments = cloneTranscriptSegments(transcriptSegments);
 
+    let accepted = false;
     try {
       if (segment.id) {
         await updateTranscriptUtteranceText(
@@ -635,6 +646,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
           text,
           segment.revision,
         );
+        accepted = true;
         const syncResult = await syncTranscriptState("delta", {
           deferActiveEdit: false,
         });
@@ -648,17 +660,18 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
             syncResult.segments,
           );
         }
-        return;
+        return true;
       }
 
       const segmentIndex = transcriptSegments.indexOf(segment);
       if (segmentIndex === -1) {
-        return;
+        return false;
       }
 
       await updateTranscriptSegmentText(recording.id, segmentIndex, text);
+      accepted = true;
       const updated = await metadataReader.read(recording.id);
-      if (!updated) return;
+      if (!updated) return true;
       setRecording(updated);
       const nextSegments = sortTranscriptSegments(updated.transcript?.segments || []);
       setTranscriptState({
@@ -675,10 +688,13 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         previousSegments,
         nextSegments,
       );
-
-        } catch (error: unknown) {
+      return true;
+    } catch (error: unknown) {
       console.error("Failed to update segment text:", error);
-      addNotification({ type: "error", message: getErrorDetail(error) ?? "Failed to update segment text." });
+      addNotification({ type: accepted ? "warning" : "error", message: accepted
+        ? "Text saved, but the transcript could not be refreshed."
+        : getErrorDetail(error) ?? "Failed to update segment text." });
+      return accepted;
     }
   };
 

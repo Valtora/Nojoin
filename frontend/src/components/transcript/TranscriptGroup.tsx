@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Pause, Play } from "lucide-react";
 
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
+import { formatTimelineMs } from "@/lib/notes/placement";
 import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import {
@@ -30,9 +31,17 @@ import {
   type TranscriptGroup as TranscriptGroupData,
 } from "./transcriptGroups";
 import TranscriptLine from "./TranscriptLine";
+import { liveRenderIdentity, type LiveInteractionChange, type LiveLinePresentation,
+  type LiveTranscriptPresentation } from "./liveTranscriptPresentation";
+import type { SpeakerAssignmentCommand } from "./CapturedSpeakerAssignment";
 
 /** What every line of the view shares; memoised by the view. */
 export interface TranscriptLineShared {
+  preserveLiveIdentity?: boolean;
+  onLiveInteractionChange?: LiveInteractionChange;
+  missingContextIds?: ReadonlySet<string>;
+  live?: LiveTranscriptPresentation;
+  liveLines?: ReadonlyMap<string, LiveLinePresentation>;
   readOnly: boolean;
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
@@ -42,7 +51,8 @@ export interface TranscriptLineShared {
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
-  ) => void | Promise<void>;
+  ) => boolean | void | Promise<boolean | void>;
+  captureSpeakerAssignment?: () => SpeakerAssignmentCommand;
   /** Confirms or dismisses a suggested speaker name; null where names can't be reviewed. */
   onReviewSpeakerName:
     | ((label: string, name: string, decision: SpeakerNameDecision) => Promise<void>)
@@ -54,6 +64,7 @@ export interface TranscriptLineShared {
   /** Plays on from a line's start, in seconds; null where playback is off. */
   onPlayFrom: ((startSeconds: number) => void) | null;
   onSplitSegment: ((segment: TranscriptSegment, wordId: string) => Promise<boolean>) | null;
+  captureSplitSegment?: () => TranscriptLineShared["onSplitSegment"] | undefined;
 }
 
 /** "Alex", "Alex and Blair", "Alex, Blair, and Sam". */
@@ -119,6 +130,7 @@ function TranscriptGroup({
   /** The play button pauses this group's playback rather than starting it. */
   const pauses = isGroupActive && isPlaying;
   const { speakerMap, speakerColors } = lineShared;
+  const timeLabel = lineShared.live ? formatTimelineMs(Math.max(0, group.start) * 1000) : formatTime(group.start);
   const activeKeys = activeLineKeys.split(LINE_KEY_SEPARATOR);
   const recentKeys = recentLineKeys.split(LINE_KEY_SEPARATOR);
 
@@ -126,20 +138,26 @@ function TranscriptGroup({
     const { segment, segmentId } = item;
     const isEditingSpeaker = editingSpeakerLineId === segmentId;
     const isEditingText = editingTextId === segmentId;
+    const renderIdentity = liveRenderIdentity(segment, item.index);
+    const contextOnly = lineShared.missingContextIds?.has(renderIdentity) ?? false;
     return (
       <TranscriptLine
-        key={segmentId}
+        key={lineShared.preserveLiveIdentity ? renderIdentity : segmentId}
+        renderIdentity={renderIdentity}
+        onLiveInteractionChange={lineShared.onLiveInteractionChange}
+        contextOnly={contextOnly}
         segment={segment}
         index={item.index}
         segmentId={segmentId}
         isActive={activeKeys.includes(segmentId)}
-        readOnly={lineShared.readOnly}
+        readOnly={lineShared.readOnly || contextOnly}
         allowProvisionalEdits={lineShared.allowProvisionalEdits}
         speakerMap={speakerMap}
         speakers={lineShared.speakers}
         globalSpeakers={lineShared.globalSpeakers}
         speakerColors={speakerColors}
         onUpdateSegmentSpeaker={lineShared.onUpdateSegmentSpeaker}
+        captureSpeakerAssignment={lineShared.captureSpeakerAssignment}
         onReviewSpeakerName={lineShared.onReviewSpeakerName}
         isSpeakersFirstLine={speakerFirstLines.get(segment.speaker) === segmentId}
         hasPendingRemoteUpdate={
@@ -153,10 +171,13 @@ function TranscriptGroup({
         isEditingText={isEditingText}
         popoverAnchor={activePopover?.segmentId === segmentId ? activePopover.anchor : null}
         actions={lineShared.actions}
-        onAddNote={lineShared.onAddNote}
-        onPlayFrom={lineShared.onPlayFrom}
+        onAddNote={contextOnly ? null : lineShared.onAddNote}
+        onPlayFrom={contextOnly ? null : lineShared.onPlayFrom}
         onSplitSegment={lineShared.onSplitSegment}
+        captureSplitSegment={lineShared.captureSplitSegment}
         editor={isEditingSpeaker || isEditingText ? editor : null}
+        live={lineShared.live}
+        liveLine={lineShared.liveLines?.get(segmentId)}
       />
     );
   };
@@ -181,10 +202,9 @@ function TranscriptGroup({
       {/* Timestamp & Play Control */}
       <div className="flex flex-col items-end min-w-16 md:min-w-[60px] pt-1 mt-1">
         <span className="text-sm text-contrast-icon-muted font-mono mb-1">
-          {formatTime(group.start)}
+          {timeLabel}
         </span>
-        {!disableSegmentPlayback && (
-          <IconButton
+        <IconButton
             data-ui-fill={(isGroupActive) ? "status-success" : "inset"}
             data-ui-hover={(isGroupActive) ? "status-success" : "action"}
             size="sm"
@@ -193,9 +213,11 @@ function TranscriptGroup({
               involvedSpeakers.map((speaker) =>
                 segmentSpeakerDisplayName(speakerMap, speaker),
               ),
-            )} at ${formatTime(group.start)}`}
+            )} at ${timeLabel}`}
             title={pauses ? "Pause segment" : "Play segment"}
+            disabled={disableSegmentPlayback}
             onClick={() => {
+              if (disableSegmentPlayback) return;
               if (isGroupActive) {
                 if (isPlaying) onPause();
                 else onResume();
@@ -215,8 +237,7 @@ function TranscriptGroup({
                 <Play aria-hidden="true" className="fill-current" />
               )
             }
-          />
-        )}
+        />
       </div>
 
       {/* Content */}
@@ -234,6 +255,32 @@ function TranscriptGroup({
  * and note decorations, functions that are new whenever any line's marks
  * change. Those compare by what this group would draw from them.
  */
+function sameLiveLine(left: LiveLinePresentation | undefined, right: LiveLinePresentation | undefined): boolean {
+  return left === right || !!left && !!right &&
+    left.sourceLabel === right.sourceLabel && left.speakerLabel === right.speakerLabel &&
+    left.sameSpeakerContinuation === right.sameSpeakerContinuation && left.speakerLocked === right.speakerLocked &&
+    left.namingAnchor === right.namingAnchor;
+}
+
+function sameLineShared(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
+  const left = previous.lineShared;
+  const right = next.lineShared;
+  const keys = Object.keys(right) as (keyof TranscriptLineShared)[];
+  return keys.length === Object.keys(left).length && keys.every((key) => {
+    if (key === "liveLines") return next.group.items.every(({ segmentId }) =>
+      sameLiveLine(left.liveLines?.get(segmentId), right.liveLines?.get(segmentId)));
+    if (key === "missingContextIds") return next.group.items.every(({ segment, index }) =>
+      left.missingContextIds?.has(liveRenderIdentity(segment, index)) ===
+      right.missingContextIds?.has(liveRenderIdentity(segment, index)));
+    if (key === "live" && left.live && right.live) {
+      const liveKeys = Object.keys(right.live) as (keyof LiveTranscriptPresentation)[];
+      return liveKeys.length === Object.keys(left.live).length &&
+        liveKeys.every((liveKey) => Object.is(left.live![liveKey], right.live![liveKey]));
+    }
+    return Object.is(left[key], right[key]);
+  });
+}
+
 function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
   const keys = Object.keys(next) as (keyof TranscriptGroupProps)[];
   return (
@@ -242,6 +289,8 @@ function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupPro
       switch (key) {
         case "group":
           return sameGroup(previous.group, next.group);
+        case "lineShared":
+          return sameLineShared(previous, next);
         case "speakerDisplayOrder":
           return [...next.group.involved].every(
             (speaker) =>

@@ -15,7 +15,7 @@ import { RECORDING_ACTION_IDS } from "./useRecordingActions";
  * was written for a recordings grid view that no route ever rendered, in the
  * entire history of the repository. The invariant itself is real and survives
  * with `Sidebar` and the recording detail surfaces. The header slot now owns
- * discard; the retained transcript body still uses the shared line actions.
+ * discard; TranscriptSection uses the shared line-action factory.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -25,7 +25,7 @@ const readComponent = (name: string): string =>
   readFileSync(resolve(componentsDir, name), "utf8");
 
 const sidebarSource = readComponent("Sidebar.tsx");
-const statusDisplaySource = readComponent("RecordingStatusDisplay.tsx");
+const transcriptSectionSource = readComponent("../app/(dashboard)/recordings/[id]/_components/TranscriptSection.tsx");
 const captureSlotSource = readComponent("RecordingCaptureSlot.tsx");
 
 const usedActionIds = (source: string): string[] =>
@@ -38,8 +38,8 @@ describe("shared recording action model", () => {
     expect(sidebarSource).toContain("useRecordingActions");
   });
 
-  it("RecordingStatusDisplay consumes the shared useRecordingActions hook", () => {
-    expect(statusDisplaySource).toContain("useRecordingActions");
+  it("TranscriptSection consumes the shared transcriptLineActions factory", () => {
+    expect(transcriptSectionSource).toContain("transcriptLineActions");
   });
 
   it("the rail and header discard draw their actions from the same shared set", () => {
@@ -52,7 +52,7 @@ describe("shared recording action model", () => {
 
     // ...and every action they use must be a member of the single shared set,
     // so neither surface can introduce a divergent, locally-defined action.
-    for (const id of [...sidebarActions, ...statusActions, ...usedActionIds(statusDisplaySource)]) {
+    for (const id of [...sidebarActions, ...statusActions, ...usedActionIds(transcriptSectionSource)]) {
       expect(RECORDING_ACTION_IDS).toContain(id);
     }
 

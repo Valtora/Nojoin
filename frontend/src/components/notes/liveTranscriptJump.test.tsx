@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import LiveTranscriptPanel from "@/components/LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
 import type { InlineNote } from "@/lib/notes/noteOutbox";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
@@ -60,14 +60,19 @@ describe("side-panel jumps into the live transcript", () => {
     Object.defineProperty(region, "clientHeight", { configurable: true, value: 400 });
     region.scrollTop = 50;
     place(region, 100, 400);
+    expect(region.clientHeight).toBe(400);
+    expect(region.scrollTop).toBe(50);
+    expect(region.getBoundingClientRect()).toEqual({ top: 100, height: 400 });
     const line = region.querySelector('[data-order-index="1"]')!;
     place(line, 300, 60);
+    expect(line.getBoundingClientRect()).toEqual({ top: 300, height: 60 });
     const body = within(region).queryByTestId("timeline-note");
     if (folded) {
       expect(body).toBeNull();
     } else {
       expect(body).toHaveAttribute("data-note-id", note.id);
       place(body!, 900, 40);
+      expect(body!.getBoundingClientRect()).toEqual({ top: 900, height: 40 });
     }
     const item = surface === "notes"
       ? screen.getAllByTestId("my-note")[0]
