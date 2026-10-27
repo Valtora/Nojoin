@@ -30,14 +30,7 @@ import {
   SETTINGS_INPUT_CLASS,
 } from "./settingsControls";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
-
-// Backend datetimes are naive UTC (no offset); ensure Date parses them as UTC.
-function parseUtcDate(value?: string | null): Date | null {
-  if (!value) return null;
-  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 
 /** Compact token count, e.g. 1.2M / 340K / 512. */
 function formatTokens(value: number): string {
@@ -175,7 +168,7 @@ function ProviderConnectRow({
   } | null>(null);
 
   const connected = Boolean(status?.connected);
-  const usageLimitedUntil = parseUtcDate(status?.usage_limited_until);
+  const usageLimitedUntil = parseServerTimestamp(status?.usage_limited_until);
   const usageLimited =
     usageLimitedUntil !== null && usageLimitedUntil.getTime() > Date.now();
   const tokens7d = status?.tokens_7d;

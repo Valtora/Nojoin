@@ -4,6 +4,7 @@ import { FileAudio, Server, Monitor } from "lucide-react";
 import { getRecordingInfo } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingInfo } from "@/types";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
 
@@ -94,7 +95,7 @@ export default function RecordingInfoModal({
             <div>
               <span className="block text-xs text-contrast-helper">Created At</span>
               <span className="text-contrast-muted">
-                {new Date(recording.created_at).toLocaleString()}
+                {parseServerTimestamp(recording.created_at)?.toLocaleString() ?? "Unknown date"}
               </span>
             </div>
             <div>

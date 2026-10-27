@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getRecordings } from "@/lib/api";
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { Recording, RecordingStatus } from "@/types";
 
 /**
@@ -32,7 +33,8 @@ interface DashboardRecordings {
 const sortByNewest = (recordings: Recording[]): Recording[] =>
   [...recordings].sort(
     (left, right) =>
-      new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+      (parseServerTimestamp(right.created_at)?.getTime() ?? 0) -
+      (parseServerTimestamp(left.created_at)?.getTime() ?? 0),
   );
 
 /**

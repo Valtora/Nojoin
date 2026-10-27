@@ -21,6 +21,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
 import ConfirmationModal from "./ConfirmationModal";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 
 interface DocumentsViewProps {
   recordingId: RecordingId;
@@ -367,7 +368,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                         {doc.title}
                       </p>
                       <p className="mt-0.5 text-xs text-contrast-helper">
-                        {new Date(doc.created_at).toLocaleDateString()}
+                        {parseServerTimestamp(doc.created_at)?.toLocaleDateString() ?? "Invalid Date"}
                       </p>
                     </td>
                     <td className="px-2 py-3">

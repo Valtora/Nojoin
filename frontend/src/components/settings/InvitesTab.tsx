@@ -17,6 +17,7 @@ import Input from "../ui/Input";
 import Modal from "../ui/Modal";
 import Select from "../ui/Select";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
@@ -196,7 +197,7 @@ export default function InvitesTab() {
         invitations.map((inv) => {
           const role = inv.role.charAt(0).toUpperCase() + inv.role.slice(1);
           const expires = inv.expires_at
-            ? new Date(inv.expires_at).toLocaleDateString()
+            ? (parseServerTimestamp(inv.expires_at)?.toLocaleDateString() ?? "Invalid Date")
             : null;
           return (
             <SettingsRow

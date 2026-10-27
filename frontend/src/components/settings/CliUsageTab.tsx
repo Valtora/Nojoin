@@ -20,6 +20,7 @@ import {
   SETTINGS_INPUT_CLASS,
 } from "./settingsControls";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 
 const PAGE_SIZE = 10;
 
@@ -28,14 +29,6 @@ function formatTokens(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
   return String(value);
-}
-
-// Backend datetimes are naive UTC; ensure Date parses them as UTC.
-function parseUtcDate(value?: string | null): Date | null {
-  if (!value) return null;
-  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 type QuotaTone = "success" | "warning" | "error" | "neutral";
@@ -47,7 +40,7 @@ type QuotaTone = "success" | "warning" | "error" | "neutral";
  * best-effort utilisation percentage of the current window when known.
  */
 function quotaPill(row: CliUsageRow): { label: string; tone: QuotaTone } {
-  const limitedUntil = parseUtcDate(row.usage_limited_until);
+  const limitedUntil = parseServerTimestamp(row.usage_limited_until);
   const util =
     typeof row.utilization === "number"
       ? Math.round(row.utilization * 100)
@@ -194,7 +187,7 @@ export default function CliUsageTab() {
             ) : (
               rows.map((row) => {
                 const pill = quotaPill(row);
-                const lastUsed = parseUtcDate(row.last_used_on);
+                const lastUsed = parseServerTimestamp(row.last_used_on);
                 return (
                   <tr key={row.user_id}>
                     <td className="py-3 pr-4">
