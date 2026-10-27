@@ -38,6 +38,8 @@ import {
 
 const isText = (value: unknown): value is string => typeof value === "string";
 const isId = (value: unknown): value is string => isText(value) && value !== "";
+const isWordTexts = (value: unknown): value is Record<string, string> =>
+  isRecord(value) && Object.values(value).every(isText);
 const isTime = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0;
 
@@ -55,7 +57,8 @@ const readSelection = (value: unknown): NoteSelection | null => {
     ? value.sourceUtterances.flatMap((source) =>
         isRecord(source) && isId(source.id) && Number.isInteger(source.revision) && Number(source.revision) >= 0
           ? [{ id: source.id, revision: Number(source.revision),
-            ...(Array.isArray(source.word_ids) && source.word_ids.every(isId) ? { word_ids: source.word_ids } : {}) }] : [],
+            ...(Array.isArray(source.word_ids) && source.word_ids.every(isId) ? { word_ids: source.word_ids } : {}),
+            ...(isWordTexts(source.word_texts) ? { word_texts: source.word_texts } : {}) }] : [],
       )
     : undefined;
   return selectionOf({ startMs, endMs, quotedText, ...(sourceUtterances ? { sourceUtterances } : {}) });

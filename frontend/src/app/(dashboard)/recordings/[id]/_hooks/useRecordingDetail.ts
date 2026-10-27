@@ -149,7 +149,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const isInFlightRecording = isRecordingInFlight(recording);
   const {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
-    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
+    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, repairTranscriptSequence, pushTranscriptHistory,
     setActiveTranscriptEditId, handleUndo, handleRedo,
   } = useDetailTranscript(recording, setRecording);
   const compactChatPanelHeight = isCompact
@@ -295,6 +295,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
           setRecording(data);
           if (!isEditingTitle) setTitleValue(data.name);
         }
+        await repairTranscriptSequence(data);
 
             } catch (e: unknown) {
         console.error("Polling failed", e);
@@ -312,7 +313,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead]);
+  }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead, repairTranscriptSequence]);
 
   // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {

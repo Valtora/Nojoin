@@ -116,10 +116,11 @@ export const applyTranscriptDelta = ({
   if (mode === "delta" && delta.revision < baseState.revision) {
     return baseState;
   }
-  const nextDeferred = { ...baseState.deferredById };
-  let utterancesToApply = delta.settling_required
+  const nextDeferred: LocalTranscriptState["deferredById"] = mode === "full" ? {} : { ...baseState.deferredById };
+  const fullUtterances = delta.settling_required
     ? delta.utterances.map((utterance) => ({ ...utterance, settling_required: true }))
     : delta.utterances;
+  let utterancesToApply = fullUtterances;
   let tombstonesToApply = delta.tombstones;
 
   if (activeEditUtteranceId) {
@@ -144,14 +145,19 @@ export const applyTranscriptDelta = ({
     }
   }
 
+  // An explicit mutation refresh can apply a row while its editor is still
+  // open. Its new authoritative value supersedes a previously deferred one.
+  for (const utterance of utterancesToApply) delete nextDeferred[utterance.id];
+  for (const utteranceId of tombstonesToApply) delete nextDeferred[utteranceId];
+
   // A delta that applies nothing keeps the list, as a full sync does when
   // nothing changed, so a poll with no news doesn't recompute the views.
-  const nextSegments =
+  let nextSegments =
     mode === "full"
-      ? utterancesToApply.length > 0
+      ? fullUtterances.length > 0
         ? keepUnchangedSegments(
             baseState.segments,
-            sortTranscriptSegments(utterancesToApply.map(transcriptSegmentFromUtterance)),
+            sortTranscriptSegments(fullUtterances.map(transcriptSegmentFromUtterance)),
           )
         : delta.settling_required ? [] : sortTranscriptSegments(fallbackSegments)
       : utterancesToApply.length === 0 && tombstonesToApply.length === 0
@@ -161,6 +167,19 @@ export const applyTranscriptDelta = ({
             utterancesToApply,
             tombstonesToApply,
           );
+
+  if (mode === "full" && activeEditUtteranceId) {
+    const activeSegment = baseState.segments.find((segment) => segment.id === activeEditUtteranceId);
+    if (activeSegment) {
+      // A full snapshot can delete by omission, without a tombstone. Keep the
+      // editor mounted until editing ends, then apply that authoritative value.
+      nextDeferred[activeEditUtteranceId] =
+        nextSegments.find((segment) => segment.id === activeEditUtteranceId) ?? null;
+      nextSegments = keepUnchangedSegments(baseState.segments, sortTranscriptSegments([
+        ...nextSegments.filter((segment) => segment.id !== activeEditUtteranceId), activeSegment,
+      ]));
+    }
+  }
 
   return {
     recordingId,

@@ -1,5 +1,7 @@
 """Check source selections and drag destinations without restricting typed notes."""
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from backend.models.pipeline import TranscriptUtterance
@@ -26,13 +28,41 @@ def _source_row(
     row = next((item for item in rows if item.public_id == reference.id), None)
     if (
         row is None
-        or (row.revision != reference.revision and not reference.word_ids)
+        or (
+            row.revision != reference.revision
+            and not (reference.word_ids and reference.word_texts)
+        )
         or row.revision < reference.revision
     ):
         raise LineActionConflict(
             "line_stale", "The selected lines changed. Select the text again."
         )
     return row
+
+
+def _selected_identity_words(
+    words: list[dict[str, Any]], reference: SourceUtteranceReference
+) -> list[dict[str, Any]]:
+    """Identity can survive lexical corrections; verify captured full wording."""
+    assert reference.word_ids
+    by_id = {word.get("id"): word for word in words}
+    evidence = reference.word_texts
+    if (
+        any(word_id not in by_id for word_id in reference.word_ids)
+        or evidence is not None
+        and (
+            set(evidence) != set(reference.word_ids)
+            or any(
+                str(by_id[word_id].get("word") or "").strip()
+                != evidence[word_id].strip()
+                for word_id in reference.word_ids
+            )
+        )
+    ):
+        raise LineActionConflict(
+            "line_stale", "The selected words changed. Select the text again."
+        )
+    return [by_id[word_id] for word_id in reference.word_ids]
 
 
 def _require_selected_words(
@@ -44,12 +74,7 @@ def _require_selected_words(
     assert payload.start_ms is not None and payload.end_ms is not None
     words = row_words(row)
     if reference is not None and reference.word_ids:
-        by_id = {word.get("id"): word for word in words}
-        if any(word_id not in by_id for word_id in reference.word_ids):
-            raise LineActionConflict(
-                "line_stale", "The selected words changed. Select the text again."
-            )
-        selected = [by_id[word_id] for word_id in reference.word_ids]
+        selected = _selected_identity_words(words, reference)
     else:
         metadata = (row.confidence_payload or {}).get("live_text_settling")
         if not isinstance(metadata, dict) and line_effectively_locked(row):

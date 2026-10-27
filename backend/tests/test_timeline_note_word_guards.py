@@ -63,10 +63,15 @@ async def test_locked_word_in_open_line_survives_revision_drift_and_overlap(
     session_maker: Any,
 ) -> None:
     source_id, revision, words = await _mixed(session_maker)
+    request = _selection(source_id, revision, words[:1])
     async with session_maker() as session:
         rows = (await session.execute(select(TranscriptUtterance))).scalars().all()
         for row in rows:
             if row.public_id == source_id:
+                captured = row.confidence_payload["asr_segments"][0]["words"][0]
+                request["source_utterances"][0]["word_texts"] = {
+                    captured["id"]: captured["word"].strip()
+                }
                 row.revision += 1
             else:
                 row.start_ms, row.end_ms = 2000, 3500
@@ -78,7 +83,7 @@ async def test_locked_word_in_open_line_survives_revision_drift_and_overlap(
                 row.confidence_payload = payload
             session.add(row)
         await session.commit()
-    response = await client.post(PATH, json=_selection(source_id, revision, words[:1]))
+    response = await client.post(PATH, json=request)
     assert response.status_code == 201, response.text
     async with session_maker() as session:
         row = (

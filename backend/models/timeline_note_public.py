@@ -128,6 +128,9 @@ class SourceUtteranceReference(BaseModel):
     id: str
     revision: int = Field(ge=1)
     word_ids: Optional[list[str]] = Field(default=None, min_length=1)
+    # Complete captured token wording, separate from a possibly partial quote.
+    # Required to prove selected words survived an older source revision.
+    word_texts: Optional[dict[str, str]] = None
 
 
 class TimelineNoteCreate(BaseModel):

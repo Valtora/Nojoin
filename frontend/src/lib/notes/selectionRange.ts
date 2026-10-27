@@ -89,10 +89,14 @@ export const selectionFromPicks = (picks: readonly LinePick[]): NoteSelection | 
     endMs: Math.max(...spans.map((span) => span.endMs)),
     quotedText: clampQuote(spans.map((span) => span.text).join(" ")),
     ...(picks.some((pick) => pick.line.revision !== undefined) ? {
-      sourceUtterances: picks.flatMap(({ line, from, to }) => line.revision !== undefined && pickSpan({ line, from, to })
-        ? [{ id: line.segmentId, revision: line.revision, ...(line.words ? {
-          word_ids: line.words.filter((word) => word.from < to && word.to > from).map((word) => word.id!),
-        } : {}) }] : []),
+      sourceUtterances: picks.flatMap(({ line, from, to }) => {
+        if (line.revision === undefined || !pickSpan({ line, from, to })) return [];
+        const words = line.words?.filter((word) => word.from < to && word.to > from);
+        return [{ id: line.segmentId, revision: line.revision, ...(words ? {
+          word_ids: words.map((word) => word.id!),
+          word_texts: Object.fromEntries(words.map((word) => [word.id!, word.text.trim()])),
+        } : {}) }];
+      }),
     } : {}),
   });
 };

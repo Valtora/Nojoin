@@ -69,7 +69,8 @@ describe("words in an open settled line", () => {
     fireEvent.click(add);
     expect(onNote).toHaveBeenCalledWith({
       startMs: 1000, endMs: 1700, quotedText: "Firm words",
-      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w1", "w2"] }],
+      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w1", "w2"],
+        word_texts: { w1: "Firm", w2: "words" } }],
     });
   });
 
@@ -174,7 +175,8 @@ describe("words in an open settled line", () => {
     selectWords("w2", "w3");
     fireEvent.click(screen.getByRole("button", { name: "Add note" }));
     expect(onNote).toHaveBeenCalledWith({ startMs: 1000, endMs: 3000, quotedText: "words pending",
-      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w2", "w3"] }] });
+      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w2", "w3"],
+        word_texts: { w2: "words", w3: "pending" } }] });
   });
 
   it("can quote locked zero-duration punctuation by identity without including the pending neighbour", () => {
@@ -189,6 +191,7 @@ describe("words in an open settled line", () => {
     expect(add).toBeEnabled();
     fireEvent.click(add);
     expect(onNote).toHaveBeenCalledWith({ startMs: 1200, endMs: 1201, quotedText: ",",
-      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w2"] }] });
+      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w2"],
+        word_texts: { w2: "," } }] });
   });
 });

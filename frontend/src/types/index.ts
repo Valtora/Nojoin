@@ -471,6 +471,8 @@ export interface TranscriptSourceReference {
   revision: number;
   /** Exact words selected on a recording using word settling. */
   word_ids?: string[];
+  /** Complete captured token wording; a partial quote is not word evidence. */
+  word_texts?: Record<string, string>;
 }
 
 export interface TimelineNoteCreate {

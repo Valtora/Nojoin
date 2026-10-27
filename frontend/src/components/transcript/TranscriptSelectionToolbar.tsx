@@ -1,7 +1,7 @@
 "use client";
 
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { useEffect, useLayoutEffect, useMemo, useState, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Copy, StickyNote } from "lucide-react";
 
@@ -107,11 +107,13 @@ export function TranscriptSelectionToolbar({
   const anchorRef = useMemo(() => ({ current: anchor }), [anchor]);
   const { panelRef, panelStyle, reposition } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
   const { selection } = captured;
+  const reasonId = useId();
+  const visibleReason = selection ? disabledReason : undefined;
 
-  // Placed again once the selection's place has moved with a scroll.
+  // Follow the selection and remeasure when its explanation changes the panel's height.
   useLayoutEffect(() => {
     reposition();
-  }, [box, reposition]);
+  }, [box, reposition, visibleReason]);
 
   const addNote = () => {
     if (!selection || disabledReason) return;
@@ -144,30 +146,38 @@ export function TranscriptSelectionToolbar({
         aria-label="Selected text"
         data-selection-ui
         style={panelStyle}
-        className="z-[var(--z-dropdown)] flex gap-1 rounded-lg border border-surface-border bg-surface-card p-1 shadow-float"
+        className="z-[var(--z-dropdown)] flex flex-col gap-1 rounded-lg border border-surface-border bg-surface-card p-1 shadow-float"
       >
-        {selection ? (
+        <div className="flex gap-1">
+          {selection ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconLeft={<StickyNote aria-hidden="true" className="h-4 w-4" />}
+              onClick={addNote}
+              disabled={!!disabledReason}
+              title={disabledReason}
+              aria-describedby={visibleReason ? reasonId : undefined}
+              className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
+            >
+              Add note
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
-            iconLeft={<StickyNote aria-hidden="true" className="h-4 w-4" />}
-            onClick={addNote}
-            disabled={!!disabledReason}
-            title={disabledReason}
+            iconLeft={<Copy aria-hidden="true" className="h-4 w-4" />}
+            onClick={() => void copy()}
             className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
           >
-            Add note
+            Copy
           </Button>
+        </div>
+        {visibleReason ? (
+          <p id={reasonId} className="max-w-64 px-2 pb-1 text-xs text-contrast-helper">
+            {visibleReason}
+          </p>
         ) : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          iconLeft={<Copy aria-hidden="true" className="h-4 w-4" />}
-          onClick={() => void copy()}
-          className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
-        >
-          Copy
-        </Button>
       </SurfaceBase>
     </>,
     document.body,
