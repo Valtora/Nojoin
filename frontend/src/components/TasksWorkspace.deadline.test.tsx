@@ -1,7 +1,8 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useNotificationStore } from "@/lib/notificationStore";
 import { setCachedUserTimeZone } from "@/lib/timezone";
 import { withProcessTimeZone } from "@/test/processTimeZone";
 import type { UserTask } from "@/types";
@@ -138,5 +139,19 @@ describe("Tasks page deadline picker in New York with the setting in Tokyo", () 
     await waitFor(() => expect(api.createUserTask).toHaveBeenCalled());
     // 09:00 on 28 October in Tokyo, today there, is 00:00 UTC on the 28th.
     expect(api.createUserTask.mock.calls[0][0].due_at).toBe("2026-10-28T00:00:00.000Z");
+  });
+
+  it("keeps a pick when a notification arrives while the picker is open", async () => {
+    useNotificationStore.setState({ activeNotifications: [], history: [] });
+    const dialog = await openEditPicker();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Tomorrow" }));
+    const title = within(dialog).getByTestId("modal-title");
+    expect(title).toHaveTextContent("Thursday, 29 October at 11:30 AM");
+
+    act(() => {
+      useNotificationStore.getState().addNotification({ type: "info", message: "Backup ready" });
+    });
+
+    expect(title).toHaveTextContent("Thursday, 29 October at 11:30 AM");
   });
 });

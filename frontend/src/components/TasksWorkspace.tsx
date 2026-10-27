@@ -263,7 +263,7 @@ export default function TasksWorkspace() {
   const [deadlineTarget, setDeadlineTarget] = useState<"create" | "edit" | null>(
     null,
   );
-  const { addNotification } = useNotificationStore();
+  const addNotification = useNotificationStore((state) => state.addNotification);
 
   useEffect(() => {
     let cancelled = false;
