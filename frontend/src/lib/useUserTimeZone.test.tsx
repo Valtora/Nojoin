@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { withProcessTimeZone } from "@/test/processTimeZone";
+
 const getSettings = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api", () => ({ getSettings }));
 
@@ -53,5 +55,39 @@ describe("useUserTimeZone", () => {
 
     expect(result.current).toBe("America/New_York");
     expect(getSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe("a setting that cannot be loaded", () => {
+  // The browser's zone, which stands in when the setting cannot be loaded.
+  withProcessTimeZone("America/New_York");
+
+  beforeEach(() => {
+    getSettings.mockReset();
+    getSettings
+      .mockRejectedValueOnce(new Error("Network Error"))
+      .mockResolvedValue({ timezone: "Asia/Tokyo" });
+  });
+
+  it("falls back to the browser's zone without caching it, so the next call asks again", async () => {
+    const { getCachedUserTimeZone, getUserTimeZone } = await freshModules();
+
+    expect(await getUserTimeZone()).toBe("America/New_York");
+    expect(getCachedUserTimeZone()).toBeNull();
+
+    expect(await getUserTimeZone()).toBe("Asia/Tokyo");
+    expect(getCachedUserTimeZone()).toBe("Asia/Tokyo");
+    expect(getSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the browser's zone meanwhile, and the setting once a later view loads it", async () => {
+    const { useUserTimeZone } = await freshModules();
+
+    const first = renderHook(() => useUserTimeZone());
+    await waitFor(() => expect(first.result.current).toBe("America/New_York"));
+
+    const second = renderHook(() => useUserTimeZone());
+    await waitFor(() => expect(second.result.current).toBe("Asia/Tokyo"));
+    expect(first.result.current).toBe("Asia/Tokyo");
   });
 });

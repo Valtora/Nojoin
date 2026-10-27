@@ -140,7 +140,9 @@ export async function getUserTimeZone(): Promise<string> {
 
   pendingUserTimeZone = getSettings()
     .then((settings) => setCachedUserTimeZone(settings.timezone))
-    .catch(() => setCachedUserTimeZone(getBrowserTimeZone()))
+    // Not cached, so the next caller asks again rather than this page keeping
+    // the browser's zone after one failed request.
+    .catch(() => getBrowserTimeZone())
     .finally(() => {
       pendingUserTimeZone = null;
     });
