@@ -1,5 +1,5 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -30,12 +30,8 @@ vi.mock("./ui/Modal", () => ({
   default: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div role="dialog">{children}</div> : null,
 }));
-// The modal's own zone handling has its own tests. What matters here is which
-// zone the Tasks page hands it.
-vi.mock("./ui/TaskDeadlineModal", () => ({
-  default: ({ isOpen, timeZone }: { isOpen: boolean; timeZone?: string }) =>
-    isOpen ? <div role="dialog">Deadline in {timeZone ?? "no zone"}</div> : null,
-}));
+// TasksWorkspace.deadline.test.tsx covers the deadline picker itself.
+vi.mock("./ui/TaskDeadlineModal", () => ({ default: () => null }));
 
 import NotificationHistoryModal from "./NotificationHistoryModal";
 import TasksWorkspace from "./TasksWorkspace";
@@ -78,16 +74,6 @@ describe.each([
       timeZone: settingZone,
     });
     expect(await screen.findByText(expected)).toBeVisible();
-  });
-
-  it("opens the Tasks page's deadline picker in the setting's zone", async () => {
-    api.getUserTasks.mockResolvedValue([task()]);
-    render(<TasksWorkspace />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("button", { name: /^Edit deadline, / }));
-
-    expect(screen.getByRole("dialog")).toHaveTextContent(`Deadline in ${settingZone}`);
   });
 
   it("dates the notification history in the setting's zone", () => {
