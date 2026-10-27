@@ -1,7 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useLiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import { ClientStatus, RecordingStatus, type Recording, type TranscriptUtteranceList } from "@/types";
 import { IDLE_RECORDING_POLL_INTERVAL_MS, useRecordingDetail } from "./useRecordingDetail";
 
@@ -51,7 +50,7 @@ const params = Promise.resolve({ id: "rec-1" });
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const mount = () => renderHook(() => {
   const detail = useRecordingDetail({ params });
-  const live = useLiveTranscript(detail.recording);
+  const live = detail.liveTranscript;
   return { detail, live };
 });
 

@@ -12,6 +12,7 @@ import {
 } from "@/test/renderWithProviders";
 import {
   RecordingStatus,
+  ClientStatus,
   type Recording,
   type TranscriptSegment,
   type TranscriptUtteranceList,
@@ -40,6 +41,8 @@ const getUserMe = vi.fn();
 let activePanel = "transcript";
 // Both side panels collapsed unless a test opens them, so desktop shows the rail.
 let sidePanelsCollapsed = true;
+let localCaptureId: string | null = null;
+let localCaptureStatus = "idle";
 
 // Stable across renders, like Next's own router: the page's load callback
 // depends on it, and a fresh object per render would reload in a loop.
@@ -58,10 +61,10 @@ vi.mock("@/lib/notificationStore", () => ({
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
-    recordingId: null,
+    recordingId: localCaptureId,
     pausedRecording: null,
     runtimeActive: false,
-    status: "idle",
+    status: localCaptureStatus,
     stop: vi.fn(),
     uploadQueue: { seconds: 0 },
   }),
@@ -199,6 +202,9 @@ vi.mock("@/components/RecordingStatusDisplay", () => ({
     </div>
   ),
 }));
+vi.mock("@/components/RecordingCaptureSlot", () => ({
+  default: () => <div data-testid="recording-capture-slot" />,
+}));
 vi.mock("@/components/ExportModal", () => ({
   default: ({
     hasAudio,
@@ -232,10 +238,14 @@ vi.mock("./_components/AnalyticsSection", () => ({
   ),
 }));
 vi.mock("@/components/RecordingTagEditor", () => ({
-  default: () => <div data-testid="recording-tag-editor" />,
+  default: ({ onTagsUpdated }: { onTagsUpdated: () => void }) => (
+    <button data-testid="recording-tag-editor" onClick={onTagsUpdated}>Edit tags</button>
+  ),
 }));
 vi.mock("@/components/LinkedEventPanel", () => ({
-  default: () => <div data-testid="linked-event-panel" />,
+  default: ({ onLinkChanged }: { onLinkChanged: () => void }) => (
+    <button data-testid="linked-event-panel" onClick={onLinkChanged}>Link event</button>
+  ),
 }));
 
 import SessionSignInDialog from "@/components/SessionSignInDialog";
@@ -306,6 +316,8 @@ describe("RecordingPage (detail)", () => {
   beforeEach(() => {
     activePanel = "transcript";
     sidePanelsCollapsed = true;
+    localCaptureId = null;
+    localCaptureStatus = "idle";
     routerPush.mockReset();
     routerRefresh.mockReset();
     addNotification.mockReset();
@@ -374,19 +386,89 @@ describe("RecordingPage (detail)", () => {
     expect(screen.getByTestId("documents-view")).toBeInTheDocument();
   });
 
-  it("renders the live status display while the recording is in flight", async () => {
-    getRecording.mockResolvedValue(
-      buildRecording({ status: RecordingStatus.PROCESSING }),
-    );
-
+  it.each([
+    ["recording", RecordingStatus.UPLOADING, ClientStatus.RECORDING, true],
+    ["paused", RecordingStatus.PAUSED, ClientStatus.PAUSED, true],
+    ["uploading", RecordingStatus.UPLOADING, ClientStatus.UPLOADING, true],
+    ["queued", RecordingStatus.QUEUED, undefined, true],
+    ["processing", RecordingStatus.PROCESSING, undefined, true],
+    ["processed", RecordingStatus.PROCESSED, undefined, false],
+    ["error", RecordingStatus.ERROR, undefined, false],
+  ] as const)("keeps the shared header and tabs when %s", async (_state, status, client_status, inFlight) => {
+    getRecording.mockResolvedValue(buildRecording({ status, client_status }));
     renderPage();
 
-    expect(
-      await screen.findByTestId("recording-status-display"),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("transcript-view")).not.toBeInTheDocument();
-    // In-flight recordings must not request transcript utterances.
-    expect(getTranscriptUtterances).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: /Quarterly sync/ })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "Meeting panels" })).toBeInTheDocument();
+    expect(screen.getByTestId("recording-tag-editor")).toBeInTheDocument();
+    expect(screen.getByTestId("linked-event-panel")).toBeInTheDocument();
+    if (inFlight) {
+      expect(screen.getByTestId("recording-capture-slot")).toBeInTheDocument();
+      expect(screen.getByTestId("recording-status-display")).toBeInTheDocument();
+      expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("notes-view")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByTestId("audio-player")).toBeInTheDocument();
+      expect(screen.queryByTestId("recording-capture-slot")).not.toBeInTheDocument();
+    }
+  });
+
+  it.each([360, 1440])("keeps Chat unavailable during processing at %i px", async (width) => {
+    vi.stubGlobal("innerWidth", width);
+    sidePanelsCollapsed = false;
+    getRecording.mockResolvedValue(buildRecording({ status: RecordingStatus.PROCESSING }));
+    renderPage();
+    await screen.findByRole("heading", { name: /Quarterly sync/ });
+    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Meeting Chat" })).not.toBeInTheDocument();
+  });
+
+  it.each(["recording", "paused", "finalizing"])("keeps the %s slot when local capture leads the server metadata", async (status) => {
+    localCaptureId = "rec-1";
+    localCaptureStatus = status;
+    sidePanelsCollapsed = false;
+    getRecording.mockResolvedValue(buildRecording());
+    renderPage();
+    await screen.findByRole("heading", { name: /Quarterly sync/ });
+    expect(screen.getByTestId("recording-capture-slot")).toBeInTheDocument();
+    expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("notes-view")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
+  });
+
+  it.each(["recording-tag-editor", "linked-event-panel"])("rejects a late %s refresh after newer metadata settles", async (action) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const active = buildRecording({ status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING });
+      getRecording.mockResolvedValue(active);
+      renderPage();
+      await screen.findByTestId("recording-capture-slot");
+      let resolveRefresh!: (recording: Recording) => void;
+      getRecording.mockImplementationOnce(() => new Promise<Recording>((resolve) => { resolveRefresh = resolve; }));
+      fireEvent.click(screen.getByTestId(action));
+      await act(async () => {});
+      getRecording.mockResolvedValue(buildRecording());
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.getByTestId("audio-player")).toBeInTheDocument();
+
+      await act(async () => resolveRefresh({ ...active, processing_progress: 17 }));
+
+      expect(screen.getByTestId("audio-player")).toBeInTheDocument();
+      expect(screen.queryByTestId("recording-capture-slot")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not replace another recording's settled player with the local finishing capture", async () => {
+    localCaptureId = "another-recording";
+    localCaptureStatus = "finalizing";
+    renderPage();
+    await screen.findByRole("heading", { name: /Quarterly sync/ });
+    expect(screen.getByTestId("audio-player")).toBeInTheDocument();
+    expect(screen.queryByTestId("recording-capture-slot")).not.toBeInTheDocument();
   });
 
   it("fetches the notes list when the recording opens, and again only when a poll says it changed", async () => {

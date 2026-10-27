@@ -443,6 +443,32 @@ describe("transcript toolbar", () => {
 });
 
 describe("transcript play buttons", () => {
+  it("blocks playback and export independently of editing, then enables them after processing", () => {
+    const onPlaySegment = vi.fn();
+    const onExport = vi.fn();
+    const view = renderView({ disableSegmentPlayback: true, disableExport: true, onPlaySegment, onExport });
+
+    expect(screen.queryByRole("button", { name: "Play Alex at 00:00" })).not.toBeInTheDocument();
+    const exportButton = button("Export transcript disabled");
+    expect(exportButton).toBeDisabled();
+    fireEvent.click(exportButton);
+    fireEvent.click(button("Actions for Alex's line at 00:00"));
+    expect(screen.queryByRole("menuitem", { name: "Play from here" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Edit text" })).toBeEnabled();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(onPlaySegment).not.toHaveBeenCalled();
+    expect(onExport).not.toHaveBeenCalled();
+
+    view.rerender(transcriptView({ onPlaySegment, onExport }));
+    fireEvent.click(button("Play Alex at 00:00"));
+    expect(onPlaySegment).toHaveBeenCalledWith(0, 2);
+    fireEvent.click(button("Export transcript"));
+    expect(onExport).toHaveBeenCalledTimes(1);
+    fireEvent.click(button("Actions for Alex's line at 00:00"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Play from here" }));
+    expect(onPlaySegment).toHaveBeenLastCalledWith(0);
+  });
+
   it("name each group's button by speaker and time, ring it and give it a full target", () => {
     renderView();
 

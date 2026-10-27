@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { getTranscriptUtterances } from "@/lib/api/transcript";
-import { isLiveCaptureInProgress } from "@/lib/liveCapture";
+import { RecordingStatus } from "@/types";
 import {
   applyTranscriptDelta,
   LocalTranscriptState,
@@ -91,9 +91,12 @@ function sameOrNext(
  */
 export function useLiveTranscript(
   recording: Recording | null | undefined,
+  enabled = recording?.status === RecordingStatus.UPLOADING ||
+    recording?.status === RecordingStatus.PAUSED ||
+    recording?.status === RecordingStatus.QUEUED ||
+    recording?.status === RecordingStatus.PROCESSING,
 ): LiveTranscript {
   const recordingId = recording?.id ?? null;
-  const isLive = isLiveCaptureInProgress(recording);
   const refreshRef = useRef<(() => void) | null>(null);
 
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
@@ -105,8 +108,8 @@ export function useLiveTranscript(
 
   // A feed that starts, or restarts for another recording, shows nothing until
   // its first fetch lands, so one recording's lines never sit under another's.
-  useOnDepsChange([recordingId, isLive], () => {
-    if (recordingId && isLive) {
+  useOnDepsChange([recordingId, enabled], () => {
+    if (!recordingId || enabled) {
       setSegments([]);
       setHasLoaded(false);
       setLiveSpeakerNames(NO_NAMES);
@@ -115,7 +118,7 @@ export function useLiveTranscript(
   });
 
   useEffect(() => {
-    if (!recordingId || !isLive) {
+    if (!recordingId || !enabled) {
       return;
     }
 
@@ -210,7 +213,7 @@ export function useLiveTranscript(
       refreshRef.current = null;
       clearInterval(interval);
     };
-  }, [recordingId, isLive]);
+  }, [recordingId, enabled]);
 
   const applyLiveSpeakerNames = useCallback(
     (names: Record<string, string>) =>

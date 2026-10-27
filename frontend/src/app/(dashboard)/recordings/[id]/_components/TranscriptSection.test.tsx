@@ -1,5 +1,6 @@
 import { fireEvent, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 
 import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import { renderWithProviders, screen } from "@/test/renderWithProviders";
@@ -47,12 +48,16 @@ const failedRecording = (transcript: Partial<Recording["transcript"]> = {}) =>
 const renderSection = (
   recording: Recording,
   transcriptSegments: TranscriptSegment[] = [],
+  transcriptIsAuthoritative = false,
+  inFlightContent?: ReactNode,
 ) =>
   renderWithProviders(
     <TranscriptSection
       active
       recording={recording}
       transcriptSegments={transcriptSegments}
+      transcriptIsAuthoritative={transcriptIsAuthoritative}
+      inFlightContent={inFlightContent}
       currentTime={0}
       isPlaying={false}
       speakerMap={{}}
@@ -109,6 +114,13 @@ describe("TranscriptSection transcription failure", () => {
     expect(screen.getByText("hello from the live lane")).toBeInTheDocument();
   });
 
+  it("reports failure while the last feed is retained after a failed settled read", () => {
+    renderSection(failedRecording(), [], false, <p>Retained live words</p>);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(OOM_MESSAGE);
+    expect(screen.getByText("Retained live words")).toBeInTheDocument();
+  });
+
   it("drops the notice once the recording is being processed again", () => {
     renderSection(
       recordingWith(
@@ -122,6 +134,12 @@ describe("TranscriptSection transcription failure", () => {
 });
 
 describe("TranscriptSection empty states", () => {
+  it("does not revive stale metadata text after an authoritative empty handoff", () => {
+    renderSection(recordingWith({ transcript_status: "completed", text: "Stale live words" }), [], true);
+
+    expect(screen.queryByText("Stale live words")).not.toBeInTheDocument();
+    expect(screen.getByText(NO_SPEECH)).toBeInTheDocument();
+  });
   it("says no speech was detected for a completed, empty transcript", () => {
     renderSection(recordingWith({ transcript_status: "completed", text: "" }));
 

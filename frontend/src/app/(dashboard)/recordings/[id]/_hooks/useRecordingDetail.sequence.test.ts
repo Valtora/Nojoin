@@ -18,6 +18,11 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   getTranscriptUtterances: (...args: unknown[]) => mocks.getTranscript(...args),
   getGlobalSpeakers: async () => [], getSettings: async () => ({}),
 }));
+// This suite isolates the settled reader. The independent feed stays unknown
+// on resume, without issuing real HTTP requests or changing settled call counts.
+vi.mock("@/lib/api/transcript", () => ({
+  getTranscriptUtterances: () => new Promise(() => {}),
+}));
 vi.mock("@/lib/notificationStore", () => ({ useNotificationStore: () => ({ addNotification: mocks.notify }) }));
 vi.mock("@/lib/store", () => ({ useNavigationStore: () => mocks.navigation }));
 vi.mock("@/lib/notes/useNoteOutbox", () => ({ useRecordingNotes: () => mocks.notes }));

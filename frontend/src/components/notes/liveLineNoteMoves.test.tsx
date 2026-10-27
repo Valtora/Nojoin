@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
+import { useLiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
 import { resetNotesServer, server } from "@/test/fakeNotesServer";
@@ -39,10 +40,11 @@ const RECORDING: Recording = {
 };
 
 function LivePage() {
+  const liveTranscript = useLiveTranscript(RECORDING);
   const noteEdits = useNoteEdits(RECORDING.id);
   const applied = noteEdits.apply([...server.notes.values()]);
   return <>
-    <RecordingStatusDisplay recording={RECORDING} onSaveMeetingEdgeFocus={vi.fn()}
+    <RecordingStatusDisplay recording={RECORDING} liveTranscript={liveTranscript} onSaveMeetingEdgeFocus={vi.fn()}
       timelineNotes={[]} noteEdits={noteEdits} showMeetingEdge={false} />
     <output data-testid="applied-span">{applied.map((note) => `${note.start_ms}:${note.end_ms}`).join(",")}</output>
   </>;

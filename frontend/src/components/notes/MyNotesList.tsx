@@ -33,6 +33,7 @@ interface MyNotesListProps {
   noteEdits: NoteEdits;
   /** Plays the audio from a time in seconds. */
   onPlay: (seconds: number) => void;
+  disablePlayback?: boolean;
   /** Called on a jump to a note, before the transcript scrolls: a phone opens it. */
   onShowTranscript?: () => void;
   className?: string;
@@ -54,6 +55,7 @@ export default function MyNotesList({
   segments,
   noteEdits,
   onPlay,
+  disablePlayback = false,
   onShowTranscript,
   className,
 }: MyNotesListProps) {
@@ -128,7 +130,10 @@ export default function MyNotesList({
                 aria-label={`Play from ${time}`}
                 title="Play from here"
                 icon={<Play aria-hidden="true" />}
-                onClick={() => onPlay(startMsOf(note) / 1000)}
+                disabled={disablePlayback}
+                onClick={() => {
+                  if (!disablePlayback) onPlay(startMsOf(note) / 1000);
+                }}
                 className={`-my-1.5 ${TOUCH_TARGET_SQUARE}`}
               />
             ) : null}

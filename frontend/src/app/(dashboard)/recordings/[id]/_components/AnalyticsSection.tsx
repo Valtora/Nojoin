@@ -11,6 +11,7 @@ const AnalyticsView = lazy(() => import("@/components/analytics/AnalyticsView"))
 
 interface AnalyticsSectionProps {
   active: boolean;
+  inFlight?: boolean;
   recordingId: RecordingId;
   /**
    * The meeting's speaker colours, so a person is the same colour here as in
@@ -24,6 +25,7 @@ interface AnalyticsSectionProps {
 
 export default function AnalyticsSection({
   active,
+  inFlight = false,
   recordingId,
   speakerColors,
   onPlaySegment,
@@ -38,7 +40,9 @@ export default function AnalyticsSection({
     >
       {/* Mounted only once the tab has been opened, so an unopened tab costs
           neither the chunk nor the request behind it. */}
-      {active && (
+      {inFlight ? (
+        <p className="m-auto p-6 text-center text-sm text-contrast-helper">Analytics will be available once processing finishes.</p>
+      ) : active && (
         <Suspense
           fallback={
             <div className="flex h-full items-center justify-center text-sm text-contrast-helper">

@@ -140,6 +140,17 @@ function renderPanel(
 }
 
 describe("SpeakerPanel", () => {
+  it("blocks voice previews and next snippets while playback is unavailable", () => {
+    const onPause = vi.fn();
+    const { onPlaySegment } = renderPanel({ disablePlayback: true, currentTime: 1, isPlaying: true, onPause });
+    const preview = screen.getByTitle("Pause");
+    expect(preview).toBeDisabled();
+    fireEvent.click(preview);
+    expect(screen.queryByTitle("Next Snippet")).not.toBeInTheDocument();
+    expect(onPause).not.toHaveBeenCalled();
+    expect(onPlaySegment).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     addNotification.mockReset();
     updateSpeaker.mockReset().mockResolvedValue([]);

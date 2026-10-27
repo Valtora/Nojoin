@@ -39,6 +39,7 @@ interface TranscriptToolbarProps {
   onExport: () => void;
   /** An edit is open or saving. */
   exportDisabled: boolean;
+  exportUnavailable?: boolean;
   showSearch: boolean;
   setShowSearch: (value: boolean) => void;
   showReplace: boolean;
@@ -57,6 +58,7 @@ export default function TranscriptToolbar({
   canRedo,
   onExport,
   exportDisabled,
+  exportUnavailable = false,
   showSearch,
   setShowSearch,
   showReplace,
@@ -139,7 +141,9 @@ export default function TranscriptToolbar({
     if (searchRowRef.current?.contains(active)) focusIfDisabled(active, findRef.current);
   });
 
-  const exportTitle = exportDisabled
+  const exportTitle = exportUnavailable
+    ? "Export is available when processing finishes"
+    : exportDisabled
     ? "Finish the current transcript edit before exporting"
     : "Export";
 

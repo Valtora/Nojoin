@@ -12,9 +12,11 @@ import CapturesGallery from "@/components/notes/CapturesGallery";
 import MyNotesList from "@/components/notes/MyNotesList";
 import { NoteFilesProvider } from "@/components/notes/NoteFiles";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
+import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
 import ExportModal from "@/components/ExportModal";
 import { RecordingStatus } from "@/types";
 import { useNavigationStore } from "@/lib/store";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
 import { getAutoSpeakerReplacementName } from "./_hooks/recordingDetailUtils";
@@ -28,7 +30,8 @@ interface PageProps {
 }
 
 export default function RecordingPage({ params }: PageProps) {
-  const detail = useRecordingDetail({ params });
+  const capture = useCapture();
+  const detail = useRecordingDetail({ params, capture });
   const isSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.isSpeakerPanelCollapsed,
   );
@@ -38,7 +41,6 @@ export default function RecordingPage({ params }: PageProps) {
 
   const {
     recording,
-    setRecording,
     audioClock,
     timelineNotes,
     noteEdits,
@@ -47,6 +49,11 @@ export default function RecordingPage({ params }: PageProps) {
     meetingEdgeEnabled,
     meetingEdgeContextLevel,
     isInFlightRecording,
+    liveTranscript,
+    usesInFlightTranscript,
+    transcriptIsAuthoritative,
+    canPlayback: detailCanPlayback,
+    canExport: detailCanExport,
     transcriptSegments,
     deferredTranscriptUtteranceIds,
     speakerMap,
@@ -115,6 +122,12 @@ export default function RecordingPage({ params }: PageProps) {
     return null;
   }
 
+  const isLocalCaptureActive = capture.recordingId === recording.id &&
+    (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
+  const showCaptureSlot = isInFlightRecording || isLocalCaptureActive;
+  const canPlayback = detailCanPlayback && !isLocalCaptureActive;
+  const canExport = detailCanExport && !isLocalCaptureActive;
+
   // Renaming a speaker propagates into the generated notes (shared by the
   // desktop side panel and the mobile Speakers tab).
   const handleSpeakerRenamed = async (oldName: string, newName: string) => {
@@ -129,7 +142,26 @@ export default function RecordingPage({ params }: PageProps) {
 
   const mainContent = (
     <RecordingMainContent
+      key={recording.id}
       recording={recording}
+      inFlight={showCaptureSlot}
+      canPlayback={canPlayback}
+      canExport={canExport}
+      transcriptIsAuthoritative={transcriptIsAuthoritative}
+      playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording} onDiscarded={navigateToRecordings} /> : undefined}
+      inFlightContent={usesInFlightTranscript ? (
+        <RecordingStatusDisplay
+          recording={recording}
+          liveTranscript={liveTranscript}
+          onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
+          meetingEdgeContextLevel={meetingEdgeContextLevel}
+          onSaveMeetingEdgeContextLevel={handleMeetingEdgeContextLevelChange}
+          showMeetingEdge={meetingEdgeEnabled}
+          audioClock={audioClock}
+          timelineNotes={timelineNotes}
+          noteEdits={noteEdits}
+        />
+      ) : undefined}
       timelineNotes={timelineNotes}
       noteEdits={noteEdits}
       isMobile={isMobile}
@@ -141,7 +173,6 @@ export default function RecordingPage({ params }: PageProps) {
       currentTime={currentTime}
       isPlaying={isPlaying}
       audioRef={audioRef}
-      setRecording={setRecording}
       setTitleValue={setTitleValue}
       setIsEditingTitle={setIsEditingTitle}
       setIsMobileHeaderActionsOpen={setIsMobileHeaderActionsOpen}
@@ -169,7 +200,7 @@ export default function RecordingPage({ params }: PageProps) {
       onUndo={handleUndo}
       onRedo={handleRedo}
       onActiveEditUtteranceChange={setActiveTranscriptEditId}
-      onExport={() => setShowExportModal(true)}
+      onExport={() => { if (canExport) setShowExportModal(true); }}
       isGeneratingNotes={
         isGeneratingNotes || recording.transcript?.notes_status === "generating"
       }
@@ -189,30 +220,12 @@ export default function RecordingPage({ params }: PageProps) {
       recordingId={recording.id}
       notes={timelineNotes}
       noteEdits={noteEdits}
-      onPlay={isInFlightRecording ? undefined : (seconds) => handlePlaySegment(seconds)}
+      onPlay={canPlayback ? (seconds) => handlePlaySegment(seconds) : undefined}
       onChanged={fetchRecording}
     >
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-1 flex min-h-0 overflow-hidden">
-        {isInFlightRecording ? (
-          <div className="h-full flex-1 min-w-0 overflow-y-auto bg-surface-page">
-            <RecordingStatusDisplay
-              recording={recording}
-              onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
-              meetingEdgeContextLevel={meetingEdgeContextLevel}
-              onSaveMeetingEdgeContextLevel={
-                handleMeetingEdgeContextLevelChange
-              }
-              showMeetingEdge={meetingEdgeEnabled}
-              onBack={navigateToRecordings}
-              onDiscarded={navigateToRecordings}
-              showMobileBackButton={isMobile}
-              audioClock={audioClock}
-              timelineNotes={timelineNotes}
-              noteEdits={noteEdits}
-            />
-          </div>
-        ) : isMobile ? (
+        {isMobile ? (
           // The chat button below floats over whichever tab is open, so the
           // tabs' scroll regions (pb-clear-floating-*) end with this much
           // room: the button's 3.5rem, its 1rem offset, a 0.5rem gap and the
@@ -220,7 +233,7 @@ export default function RecordingPage({ params }: PageProps) {
           <SurfaceBase data-ui-fill="card" kind="pane" className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)]">
             <div className="min-h-0 flex-1">{mainContent}</div>
 
-            {!isMobileChatOpen && (
+            {!showCaptureSlot && !isMobileChatOpen && (
               <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-[var(--z-sticky)]">
                 <ButtonBase
                   data-ui-fill="action"
@@ -236,7 +249,7 @@ export default function RecordingPage({ params }: PageProps) {
             )}
 
             {/* Mobile Chat Full-Screen Modal */}
-            {isMobileChatOpen && (
+            {!showCaptureSlot && isMobileChatOpen && (
               <SurfaceBase data-ui-fill="card" kind="pane" className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
                 <header className="flex shrink-0 items-center justify-between border-b-2 border-surface-border bg-surface-inset px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
                   <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
@@ -289,11 +302,13 @@ export default function RecordingPage({ params }: PageProps) {
                     minSize={18}
                   >
                     <RecordingSideColumn
+                      allowChat={!showCaptureSlot}
                       speakers={
-                        <SpeakerPanel
+                        showCaptureSlot ? <p className="p-4 text-sm text-contrast-helper">Name speakers from the live transcript.</p> : <SpeakerPanel
                           speakers={recording.speakers || []}
                           segments={transcriptSegments}
                           onPlaySegment={handlePlaySegment}
+                          disablePlayback={!canPlayback}
                           recordingId={recording.id}
                           speakerColors={speakerColors}
                           onColorChange={handleColorChange}
@@ -313,6 +328,7 @@ export default function RecordingPage({ params }: PageProps) {
                           segments={transcriptSegments}
                           noteEdits={noteEdits}
                           onPlay={handlePlaySegment}
+                          disablePlayback={!canPlayback}
                           onShowTranscript={() => setActivePanel("transcript")}
                           className="h-full bg-surface-inset"
                         />
@@ -337,12 +353,12 @@ export default function RecordingPage({ params }: PageProps) {
               )}
             </PanelGroup>
 
-            {isSpeakerPanelCollapsed && isChatPanelCollapsed && <RecordingSideRail />}
+            {isSpeakerPanelCollapsed && isChatPanelCollapsed && <RecordingSideRail allowChat={!showCaptureSlot} />}
           </div>
         )}
       </div>
 
-      <ExportModal
+      {canExport && <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
@@ -350,7 +366,7 @@ export default function RecordingPage({ params }: PageProps) {
         hasTimelineNotes={(timelineNotes?.length ?? 0) > 0}
         hasAnalytics={recording?.status === RecordingStatus.PROCESSED}
         hasAudio={recording?.has_audio !== false}
-      />
+      />}
     </div>
     </NoteFilesProvider>
     </SpeakerTurnHighlightProvider>

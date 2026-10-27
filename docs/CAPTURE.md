@@ -58,6 +58,10 @@ Brave may need its shields or site settings relaxed before it shows capture prom
 
 Selecting the browser's own **Stop sharing** button, or closing its sharing indicator, stops and saves the recording with everything captured so far, and Nojoin tells you it did.
 
+The recording keeps the same header and tabs through every stage. Its header shows the waveform and transport only when this tab owns that recording's capture. Opening another recording cannot control the capture from that recording's header; the global recording badge remains available. A second device sees server status, the transcript, notes and documents, with recovery actions in the global dialog.
+
+After **Stop**, the header's player area shows the upload stage and backlog, then queue or pipeline progress, estimated time remaining and discard. The transcript continues updating below it through uploading, queued and processing. Unsent notes and drafts, manual notes, attachments and Meeting Edge remain available there until the finished transcript loads. A failed final read keeps the feed visible while Nojoin retries; an empty successful read replaces it too. Playback and export remain unavailable while the recording is in flight.
+
 Switching tabs or windows, using another application or moving between Nojoin pages does not pause recording. On every page except the recording itself, a floating badge at the top of the screen shows the status and elapsed time, with pause, resume, stop and discard controls, and opens the recording when clicked.
 
 ### Closing Or Reloading The Tab
@@ -228,7 +232,7 @@ The recording was stopped in another tab or on another device and sent for proce
 
 ### Stop did not finish
 
-The meeting button names the stage while stopping. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. You can then stop it again from the controls on the recording's page or from the resume-or-discard dialog. Stopping does not need the original capture, so it works after a reload.
+The meeting button and the recording header name the stage while stopping. The header keeps the upload backlog visible even if the server still reports recording or paused; its transport is disabled while Stop finishes. The transcript remains visible. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. You can then stop it again from this tab's controls on the recording's page or from the global resume-or-discard dialog. Stopping does not need the original capture, so it works after a reload.
 
 ### Browser recording unavailable
 

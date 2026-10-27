@@ -27,6 +27,7 @@ const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
 ];
 
 interface RecordingSideColumnProps {
+  allowChat?: boolean;
   /** The speaker panel, as the page builds it. */
   speakers: ReactNode;
   /** The My notes list, as the page builds it. */
@@ -159,6 +160,7 @@ function SideTabs({
  * between them while both are open.
  */
 export default function RecordingSideColumn({
+  allowChat = true,
   speakers,
   myNotes,
   captures,
@@ -179,6 +181,10 @@ export default function RecordingSideColumn({
   const setChatPanelCollapsed = useNavigationStore(
     (state) => state.setChatPanelCollapsed,
   );
+
+  if (!allowChat) {
+    return <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} />;
+  }
 
   if (isSpeakerPanelCollapsed) {
     return (
@@ -268,7 +274,7 @@ export default function RecordingSideColumn({
 }
 
 /** The rail left when both parts of the side column are collapsed. */
-export function RecordingSideRail() {
+export function RecordingSideRail({ allowChat = true }: { allowChat?: boolean }) {
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
   );
@@ -303,13 +309,13 @@ export function RecordingSideRail() {
         title="Show captures"
         onClick={() => show("captures")}
       />
-      <IconButton
+      {allowChat && <IconButton
         size="sm"
         icon={<MessageSquare />}
         aria-label="Show meeting chat panel"
         title="Show meeting chat panel"
         onClick={() => setChatPanelCollapsed(false)}
-      />
+      />}
     </div>
   );
 }

@@ -10,6 +10,8 @@ import type { Recording } from "@/types";
 interface NotesSectionProps {
   active: boolean;
   recording: Recording;
+  canExport?: boolean;
+  inFlight?: boolean;
   isGenerating: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -28,6 +30,8 @@ interface NotesSectionProps {
 export default function NotesSection({
   active,
   recording,
+  canExport = true,
+  inFlight = false,
   isGenerating,
   canUndo,
   canRedo,
@@ -42,6 +46,7 @@ export default function NotesSection({
   // not a task, and it reappears on reload while the notes remain stale.
   const [dismissed, setDismissed] = useState(false);
   const showStaleBanner =
+    !inFlight &&
     !isGenerating &&
     !dismissed &&
     !!recording.transcript?.notes_stale_documents &&
@@ -81,7 +86,7 @@ export default function NotesSection({
           </ButtonBase>
         </div>
       )}
-      <NotesView
+      {inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the live transcript.</p> : <NotesView
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
         onNotesChange={onNotesChange}
@@ -93,7 +98,8 @@ export default function NotesSection({
         canRedo={canRedo}
         isGenerating={isGenerating}
         onExport={onExport}
-      />
+        disableExport={!canExport}
+      />}
     </div>
   );
 }

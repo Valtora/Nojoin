@@ -14,6 +14,13 @@ import {
 } from "@/types";
 
 import RecordingStatusDisplay from "./RecordingStatusDisplay";
+import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
+
+// The shared page owns this reader now; keep these tests at that boundary.
+function LiveBody(props: Omit<Parameters<typeof RecordingStatusDisplay>[0], "liveTranscript">) {
+  const liveTranscript = useLiveTranscript(props.recording);
+  return <RecordingStatusDisplay {...props} liveTranscript={liveTranscript} />;
+}
 
 const getTranscriptUtterances = vi.fn();
 const createTimelineNote = vi.fn();
@@ -102,7 +109,7 @@ const renderLive = (
   const clock = new AudioClock(() => monotonicMs);
   clock.observe(recording);
   const view = render(
-    <RecordingStatusDisplay
+    <LiveBody
       recording={recording}
       onSaveMeetingEdgeFocus={vi.fn()}
       audioClock={clock}
@@ -113,7 +120,7 @@ const renderLive = (
     clock.observe(next);
     await act(async () => {
       view.rerender(
-        <RecordingStatusDisplay
+        <LiveBody
           recording={next}
           onSaveMeetingEdgeFocus={vi.fn()}
           audioClock={clock}
@@ -204,7 +211,7 @@ describe("RecordingStatusDisplay live notes", () => {
     );
     // A clock that has read nothing yet: the page had no answer from the server.
     render(
-      <RecordingStatusDisplay
+      <LiveBody
         recording={buildRecording()}
         onSaveMeetingEdgeFocus={vi.fn()}
         audioClock={new AudioClock(() => monotonicMs)}
@@ -274,7 +281,7 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(document.activeElement).toBe(box());
   });
 
-  it("keeps a half-typed note when capture stops, and adds it at its anchor from the progress card", async () => {
+  it("keeps a half-typed note when capture stops, and adds it at its anchor from transcript recovery", async () => {
     createTimelineNote.mockImplementation(async (_id: string, payload: TimelineNoteCreate) =>
       savedNote(payload),
     );
@@ -283,7 +290,7 @@ describe("RecordingStatusDisplay live notes", () => {
     monotonicMs = 2_000;
     fireEvent.change(box(), { target: { value: "Half a thought about the budget" } });
 
-    // Stop, pressed here or on another device: the next poll ends the live view.
+    // Stop retains the transcript and offers the carried draft in its recovery footer.
     await show(stopped());
 
     const draft = screen.getByTestId("unsaved-draft");
@@ -317,7 +324,7 @@ describe("RecordingStatusDisplay live notes", () => {
     ).toBeInTheDocument();
   });
 
-  it("moves focus to the next unsaved note on Discard, and to the progress card after the last", async () => {
+  it("moves focus to the next unsaved note on Discard, and to the retained transcript after the last", async () => {
     createTimelineNote.mockRejectedValue(NO_ANSWER);
     const { show } = renderLive();
     await screen.findByText("We need the budget.");
@@ -334,7 +341,7 @@ describe("RecordingStatusDisplay live notes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Discard note at 01:01, “Second note”" }));
     expect(screen.queryByTestId("unsaved-note")).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Progress" }));
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Live transcript and notes" }));
   });
 
   it("lists a meeting-wide note on its way with the Notes box, not in the live card", async () => {

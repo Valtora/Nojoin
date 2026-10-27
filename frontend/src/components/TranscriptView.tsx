@@ -83,6 +83,8 @@ interface TranscriptViewProps {
   readOnly?: boolean;
   allowProvisionalEdits?: boolean;
   disableSegmentPlayback?: boolean;
+  /** Playback and export have separate availability from transcript editing. */
+  disableExport?: boolean;
   emptyStateTitle?: string;
   emptyStateDescription?: string;
   onActiveEditUtteranceChange?: (utteranceId: string | null) => void;
@@ -142,6 +144,7 @@ export default function TranscriptView({
   readOnly = false,
   allowProvisionalEdits = false,
   disableSegmentPlayback = false,
+  disableExport = false,
   emptyStateTitle = "No transcript segments",
   emptyStateDescription,
   onActiveEditUtteranceChange,
@@ -336,7 +339,9 @@ export default function TranscriptView({
   // keeps its identity until it means something new, so a playback tick
   // redraws only the groups and lines it enters or leaves. The recording page
   // builds these four handlers anew on every tick; the lines get stable ones.
-  const playSegment = useStableCallback(onPlaySegment);
+  const playSegment = useStableCallback((start: number, end?: number) => {
+    if (!disableSegmentPlayback) onPlaySegment(start, end);
+  });
   const pause = useStableCallback(onPause);
   const resume = useStableCallback(onResume);
   const updateSegmentSpeaker = useStableCallback(onUpdateSegmentSpeaker);
@@ -346,7 +351,9 @@ export default function TranscriptView({
       onReviewSpeakerName?.(label, name, decision),
   );
   // "Play from here" on a line plays on, rather than to the group's end.
-  const playFrom = useStableCallback((startSeconds: number) => onPlaySegment(startSeconds));
+  const playFrom = useStableCallback((startSeconds: number) => {
+    if (!disableSegmentPlayback) onPlaySegment(startSeconds);
+  });
   const canAddNote = onAddNote !== undefined;
   const addNote = useStableCallback((note: OutboxDraft) => onAddNote?.(note) ?? null);
   const canSplit = onSplitSegment !== undefined;
@@ -410,8 +417,11 @@ export default function TranscriptView({
         onRedo={onRedo}
         canUndo={canUndo}
         canRedo={canRedo}
-        onExport={onExport}
-        exportDisabled={editing.editInProgress}
+        onExport={() => {
+          if (!disableExport) onExport();
+        }}
+        exportDisabled={disableExport || editing.editInProgress}
+        exportUnavailable={disableExport}
         showSearch={showSearch}
         setShowSearch={setShowSearch}
         showReplace={showReplace}

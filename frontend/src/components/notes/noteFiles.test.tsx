@@ -208,6 +208,31 @@ describe("a note's file", () => {
     expect(onPlay).toHaveBeenCalledWith(90);
   });
 
+  it("removes playback from an already-open file viewer when processing starts", async () => {
+    const shown = note("still", 65_000, file());
+    const onPlay = vi.fn();
+    const Opener = () => {
+      const open = useOpenNoteFile();
+      return <button onClick={() => open?.(shown.id)}>Open</button>;
+    };
+    const page = (canPlayback: boolean) => (
+      <NoteFilesProvider recordingId={RECORDING} notes={[shown]} noteEdits={noteEdits}
+        onPlay={canPlayback ? onPlay : undefined}>
+        <Opener />
+      </NoteFilesProvider>
+    );
+    const view = render(page(true));
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(within(await screen.findByRole("dialog")).getByRole("button", { name: "Play from 01:05" })).toBeEnabled();
+
+    view.rerender(page(false));
+
+    const viewer = screen.getByRole("dialog");
+    expect(within(viewer).queryByRole("button", { name: "Play from 01:05" })).not.toBeInTheDocument();
+    expect(within(viewer).getByRole("button", { name: "Download" })).toBeEnabled();
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
   it("keeps a file Nojoin can't read to download, its switch off with the reason", async () => {
     const Opener = () => {
       const open = useOpenNoteFile();

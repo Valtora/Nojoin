@@ -82,7 +82,11 @@ const conflict = (current: TimelineNote) => ({
 });
 
 /** The list and the transcript sharing one set of edits, as on the recording page. */
-function Page({ notes, onPlay = vi.fn() }: { notes: TimelineNote[] | null; onPlay?: (s: number) => void }) {
+function Page({ notes, onPlay = vi.fn(), disablePlayback = false }: {
+  notes: TimelineNote[] | null;
+  onPlay?: (s: number) => void;
+  disablePlayback?: boolean;
+}) {
   const noteEdits = useNoteEdits(RECORDING.id);
   return (
     <>
@@ -92,6 +96,7 @@ function Page({ notes, onPlay = vi.fn() }: { notes: TimelineNote[] | null; onPla
         segments={SEGMENTS}
         noteEdits={noteEdits}
         onPlay={onPlay}
+        disablePlayback={disablePlayback}
       />
       <TranscriptSection
         active
@@ -146,6 +151,21 @@ afterEach(() => {
 });
 
 describe("My notes", () => {
+  it("keeps note navigation and editing while blocking playback until processing finishes", () => {
+    const onPlay = vi.fn();
+    const view = render(<Page notes={[POINT]} onPlay={onPlay} disablePlayback />);
+    const play = within(row(POINT.id)).getByRole("button", { name: "Play from 01:06" });
+    expect(play).toBeDisabled();
+    fireEvent.click(play);
+    expect(onPlay).not.toHaveBeenCalled();
+    expect(within(row(POINT.id)).getByRole("button", { name: /^Show in the transcript/ })).toBeEnabled();
+    expect(within(row(POINT.id)).getByRole("button", { name: /^Edit note/ })).toBeEnabled();
+
+    view.rerender(<Page notes={[POINT]} onPlay={onPlay} />);
+    fireEvent.click(within(row(POINT.id)).getByRole("button", { name: "Play from 01:06" }));
+    expect(onPlay).toHaveBeenCalledWith(66);
+  });
+
   it("lists notes before the transcript first, the rest by time, ties by creation, then notes after it", () => {
     const sameMomentLater = note("n-a", "point", "Second at 01:06", {
       anchor_ms: 66_000,

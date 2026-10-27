@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, type ReactNode } from "react";
 import { AlertCircle } from "lucide-react";
 
 import TranscriptView from "@/components/TranscriptView";
@@ -31,6 +31,10 @@ const LISTED_NOTES = ["point", "head", "tail"] as const;
 interface TranscriptSectionProps {
   active: boolean;
   recording: Recording;
+  inFlightContent?: ReactNode;
+  canPlayback?: boolean;
+  canExport?: boolean;
+  transcriptIsAuthoritative?: boolean;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes?: readonly TimelineNote[] | null;
   /** The page's note edits, which My notes shares. */
@@ -72,6 +76,10 @@ interface TranscriptSectionProps {
 export default function TranscriptSection({
   active,
   recording,
+  inFlightContent,
+  canPlayback = true,
+  canExport = true,
+  transcriptIsAuthoritative = false,
   timelineNotes,
   noteEdits,
   transcriptSegments,
@@ -188,6 +196,9 @@ export default function TranscriptSection({
           </div>
         </div>
       ) : null}
+      {inFlightContent ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">{inFlightContent}</div>
+      ) : <>
       {/* A note from the live note box that never saved, or text left in it,
           outlives processing: listed here until saved or discarded. */}
       <RecordingUnsavedNotes
@@ -225,6 +236,8 @@ export default function TranscriptSection({
             canUndo={canUndo}
             canRedo={canRedo}
             onExport={onExport}
+            disableSegmentPlayback={!canPlayback}
+            disableExport={!canExport}
             onActiveEditUtteranceChange={onActiveEditUtteranceChange}
             pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
             timelineNotes={notes}
@@ -238,7 +251,7 @@ export default function TranscriptSection({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center space-y-4">
-          {recording.transcript?.text ? (
+          {!transcriptIsAuthoritative && recording.transcript?.text ? (
             <>
               <div className="p-4 rounded-lg bg-surface-inset border border-surface-border max-w-md">
                 <p className="text-lg font-medium text-contrast-muted">
@@ -264,6 +277,7 @@ export default function TranscriptSection({
           )}
         </div>
       )}
+      </>}
     </div>
   );
 }

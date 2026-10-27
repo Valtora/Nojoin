@@ -14,9 +14,8 @@ import { RECORDING_ACTION_IDS } from "./useRecordingActions";
  * This used to name Sidebar and RecordingCard. RecordingCard was deleted: it
  * was written for a recordings grid view that no route ever rendered, in the
  * entire history of the repository. The invariant itself is real and survives
- * with the two surfaces that actually exist, `Sidebar` and
- * `RecordingStatusDisplay`, which is why this test was rewritten rather than
- * removed along with the component.
+ * with `Sidebar` and the recording detail surfaces. The header slot now owns
+ * discard; the retained transcript body still uses the shared line actions.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -27,6 +26,7 @@ const readComponent = (name: string): string =>
 
 const sidebarSource = readComponent("Sidebar.tsx");
 const statusDisplaySource = readComponent("RecordingStatusDisplay.tsx");
+const captureSlotSource = readComponent("RecordingCaptureSlot.tsx");
 
 const usedActionIds = (source: string): string[] =>
   RECORDING_ACTION_IDS.filter((id) =>
@@ -42,9 +42,13 @@ describe("shared recording action model", () => {
     expect(statusDisplaySource).toContain("useRecordingActions");
   });
 
-  it("both surfaces draw their actions from the same shared set", () => {
+  it("RecordingCaptureSlot consumes the shared useRecordingActions hook", () => {
+    expect(captureSlotSource).toContain("useRecordingActions");
+  });
+
+  it("the rail and header discard draw their actions from the same shared set", () => {
     const sidebarActions = usedActionIds(sidebarSource);
-    const statusActions = usedActionIds(statusDisplaySource);
+    const statusActions = usedActionIds(captureSlotSource);
 
     // Both surfaces must actually use the shared hook's actions...
     expect(sidebarActions.length).toBeGreaterThan(0);
@@ -52,7 +56,7 @@ describe("shared recording action model", () => {
 
     // ...and every action they use must be a member of the single shared set,
     // so neither surface can introduce a divergent, locally-defined action.
-    for (const id of [...sidebarActions, ...statusActions]) {
+    for (const id of [...sidebarActions, ...statusActions, ...usedActionIds(statusDisplaySource)]) {
       expect(RECORDING_ACTION_IDS).toContain(id);
     }
 

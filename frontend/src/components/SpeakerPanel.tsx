@@ -55,6 +55,7 @@ interface SpeakerPanelProps {
   onRefresh: () => void;
   globalSpeakers: GlobalSpeaker[];
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
+  disablePlayback?: boolean;
 }
 
 export default function SpeakerPanel({
@@ -71,6 +72,7 @@ export default function SpeakerPanel({
   onRefresh,
   globalSpeakers,
   onSpeakerRenamed,
+  disablePlayback = false,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const highlight = useSpeakerTurnHighlight();
@@ -377,6 +379,7 @@ export default function SpeakerPanel({
                   </div>
                   <div className="flex items-center gap-1 shrink-0 self-start">
                   <ButtonBase
+                    disabled={disablePlayback}
                     className={`p-1.5 rounded-full transition-colors ${
                       isSpeakerActive && isPlaying
                         ? "text-status-info-fg bg-status-info-bg"
@@ -385,9 +388,9 @@ export default function SpeakerPanel({
                     title={
                       isSpeakerActive && isPlaying ? "Pause" : "Preview Voice"
                     }
-                    onClick={() =>
-                      handlePlaySnippet(entry.labels, isSpeakerActive)
-                    }
+                    onClick={() => {
+                      if (!disablePlayback) handlePlaySnippet(entry.labels, isSpeakerActive);
+                    }}
                   >
                     {isSpeakerActive && isPlaying ? (
                       <Pause className="w-3 h-3 fill-current" />
@@ -395,7 +398,7 @@ export default function SpeakerPanel({
                       <Play className="w-3 h-3 fill-current" />
                     )}
                   </ButtonBase>
-                  {isSpeakerActive && isPlaying && (
+                  {!disablePlayback && isSpeakerActive && isPlaying && (
                     <ButtonBase
                       className="p-1.5 text-contrast-icon-muted hover:text-status-info-fg hover:bg-status-info-bg rounded-full transition-colors"
                       title="Next Snippet"
