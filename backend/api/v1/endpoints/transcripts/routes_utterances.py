@@ -31,6 +31,7 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline import (
     update_utterance_text as update_canonical_utterance_text,
 )
+from backend.utils.canonical_pipeline.guards import conflict_detail, settling_required
 from backend.utils.canonical_pipeline.live_settling import settling_enabled
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.speaker_names.live import live_speaker_names
@@ -70,7 +71,7 @@ async def get_transcript_utterances(
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    if not _canonical_transcript_writes_enabled():
+    if not _canonical_transcript_writes_enabled() and not settling_required(transcript):
         utterances = build_transient_utterance_payloads_from_segments(transcript)
         if after_revision is not None and after_revision >= 0:
             utterances = []
@@ -92,6 +93,7 @@ async def get_transcript_utterances(
         return TranscriptUtteranceListRead(
             recording_id=recording.public_id,
             revision=0,
+            settling_required=settling_required(transcript),
             utterances=[TranscriptUtteranceRead(**payload) for payload in utterances],
             tombstones=[],
             speakers=[
@@ -141,6 +143,7 @@ async def get_transcript_utterances(
     return TranscriptUtteranceListRead(
         recording_id=recording.public_id,
         revision=revision,
+        settling_required=settling_required(transcript),
         utterances=[TranscriptUtteranceRead(**payload) for payload in utterances],
         tombstones=tombstones,
         speakers=[
@@ -173,7 +176,7 @@ async def update_transcript_utterance_text(
 
     _require_recording_transcript_mutations_supported(recording)
 
-    if not _canonical_transcript_writes_enabled():
+    if not _canonical_transcript_writes_enabled() and not settling_required(transcript):
         segment_index = _find_segment_index_by_public_id(transcript, utterance_id)
         if segment_index is None:
             raise HTTPException(status_code=404, detail="Utterance not found")
@@ -248,7 +251,7 @@ async def apply_canonical_utterance_text_update(  # noqa: PLR0913 - one keyword 
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
 
     await db.commit()
     await db.refresh(transcript)
@@ -290,7 +293,7 @@ async def update_transcript_utterance_speaker(
 
     _require_recording_transcript_mutations_supported(recording)
 
-    if not _canonical_transcript_writes_enabled():
+    if not _canonical_transcript_writes_enabled() and not settling_required(transcript):
         segment_index = _find_segment_index_by_public_id(transcript, utterance_id)
         if segment_index is None:
             raise HTTPException(status_code=404, detail="Utterance not found")
@@ -378,7 +381,7 @@ async def apply_canonical_utterance_speaker_update(  # noqa: PLR0913 - one keywo
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
 
     await db.commit()
     await db.refresh(transcript)
@@ -435,7 +438,7 @@ async def clear_utterance_locks(
 
     _require_recording_transcript_mutations_supported(recording)
 
-    if not _canonical_transcript_writes_enabled():
+    if not _canonical_transcript_writes_enabled() and not settling_required(transcript):
         raise HTTPException(
             status_code=409,
             detail="Manual-edit locks require canonical transcript writes",

@@ -6,6 +6,7 @@ import { moveTargets, targetBeside, type MoveTarget } from "@/lib/notes/noteMove
 import { holdPendingNoteWrite } from "@/lib/notes/noteOutboxes";
 import { shownLineAt, type NotePlacement, type PlacementNote, type PlacementSegment } from "@/lib/notes/placement";
 import type { EditableNote, NoteEditRefusal } from "@/lib/notes/useNoteEdits";
+import type { TranscriptSegment, TranscriptSourceReference } from "@/types";
 
 import type { NoteLineMove } from "../../notes/TimelineNoteLine";
 import { formatTime } from "../transcriptDisplay";
@@ -13,13 +14,13 @@ import { formatTime } from "../transcriptDisplay";
 import { useNoteDrag } from "./useNoteDrag";
 
 /** Saves a point note's new moment; resolves to why it was refused, or null. */
-export type MoveNoteHandler = (note: EditableNote, anchorMs: number) => Promise<NoteEditRefusal>;
+export type MoveNoteHandler = (note: EditableNote, anchorMs: number, target?: TranscriptSourceReference) => Promise<NoteEditRefusal>;
 
 type MovableNote = EditableNote & PlacementNote;
 
 interface UseNoteMovesOptions<N extends MovableNote> {
   /** Every line, hidden ones included, as the notes were placed on them. */
-  segments: readonly (PlacementSegment & { start: number })[];
+  segments: readonly (PlacementSegment & Partial<TranscriptSegment> & { start: number })[];
   /** The list indexes of the shown lines, ascending. */
   visibleIndexes: readonly number[];
   placements: readonly NotePlacement<N>[];
@@ -86,7 +87,9 @@ export function useNoteMoves<N extends MovableNote>({
     if (direction) pendingFocus.current = { noteId: note.id, direction };
     const release = holdPendingNoteWrite();
     try {
-      const refused = await onMoveNote(note, target.anchorMs);
+      const refused = await (target.source
+        ? onMoveNote(note, target.anchorMs, target.source)
+        : onMoveNote(note, target.anchorMs));
       if (refused) {
         setRefusal({ noteId: note.id, message: refused });
         setAnnouncement(`Note not moved. ${refused}`);

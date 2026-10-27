@@ -266,6 +266,29 @@ describe("selected text in the finished transcript", () => {
 });
 
 describe("selected text in the live transcript", () => {
+  it("refuses a selection crossing an unlocked line but keeps Copy, without changing unmarked behaviour", () => {
+    const onNoteOnLine = vi.fn();
+    const segments = SEGMENTS.map((segment, index) => ({ ...segment, revision: 5,
+      provisional: true, settling_required: true, locked: index === 0 }));
+    render(<LiveTranscriptPanel segments={segments} hasLoaded onNoteOnLine={onNoteOnLine} />);
+    drag([0, 0], [1, 8]);
+    expect(within(toolbar()).getByRole("button", { name: "Add note" })).toBeDisabled();
+    expect(within(toolbar()).getByRole("button", { name: "Copy" })).toBeEnabled();
+    fireEvent.click(within(toolbar()).getByRole("button", { name: "Add note" }));
+    expect(onNoteOnLine).not.toHaveBeenCalled();
+  });
+
+  it("captures the current identities and revisions of all selected locked lines", () => {
+    const onNoteOnLine = vi.fn();
+    const segments = SEGMENTS.map((segment) => ({ ...segment, revision: 5,
+      provisional: true, settling_required: true, locked: true }));
+    render(<LiveTranscriptPanel segments={segments} hasLoaded onNoteOnLine={onNoteOnLine} />);
+    drag([0, 0], [1, 8]);
+    fireEvent.click(within(toolbar()).getByRole("button", { name: "Add note" }));
+    expect(onNoteOnLine).toHaveBeenCalledWith(expect.objectContaining({ sourceUtterances: [
+      { id: "u1", revision: 5 }, { id: "u2", revision: 5 },
+    ] }));
+  });
   it("hands the selected words to the note box", () => {
     const onNoteOnLine = vi.fn();
     render(<LiveTranscriptPanel segments={SEGMENTS} hasLoaded onNoteOnLine={onNoteOnLine} />);

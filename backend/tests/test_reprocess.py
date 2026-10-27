@@ -828,7 +828,13 @@ def _transcription_config(
 ) -> dict:
     """The config transcribe_audio sees when process_recording_task runs with
     ``engine_override``, for a recording and owner with these languages."""
+    from types import SimpleNamespace
+    from typing import Any
+
+    from sqlmodel import select
+
     from backend.models.recording import RecordingStatus
+    from backend.models.transcript import Transcript
     from backend.worker import tasks as tasks_module
 
     captured: dict = {}
@@ -871,6 +877,9 @@ def _transcription_config(
         transcription_language = recording_language
 
     class _FakeSession:
+        def __init__(self) -> None:
+            self._provenance_query_seen: bool = False
+
         def get(self, model, recording_id):
             return _FakeRecording()
 
@@ -883,7 +892,13 @@ def _transcription_config(
         def refresh(self, obj):
             pass
 
-        def exec(self, *a, **k):
+        def exec(self, statement: Any, *args: Any, **kwargs: Any) -> Any:
+            # This recording has no settled provenance. Preserve the stop
+            # sentinel for every query after the task's initial contract check.
+            provenance_query = select(Transcript).where(Transcript.recording_id == 301)
+            if not self._provenance_query_seen and statement.compare(provenance_query):
+                self._provenance_query_seen = True
+                return SimpleNamespace(first=lambda: None)
             raise _StopPipeline()
 
         def close(self):

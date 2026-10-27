@@ -2,6 +2,7 @@
 
 from .assignment import _resolve_recording_speaker_for_value
 from .constants import *
+from .preservation import preserve_human_segments, protected_final_payload
 from .projection_segments import _build_projection_segment
 from .public_ids import UtterancePublicIds
 from .queries import (
@@ -70,6 +71,15 @@ def _settled_final_confidence_payload(
     """Replace superseded word evidence for a recording with settled provenance."""
     from backend.processing.live_asr_payload import _build_live_confidence_payload
 
+    if (
+        segment.get("text_manually_edited") is True
+        or (
+            isinstance(segment.get("confidence_payload"), dict)
+            and segment["confidence_payload"].get("human_protection")
+        )
+        or (matched and isinstance(existing, dict) and existing.get("human_protection"))
+    ):
+        return protected_final_payload(segment, existing)
     payload = dict(existing or {})
     incoming = segment.get("confidence_payload")
     if isinstance(incoming, dict):
@@ -151,6 +161,9 @@ def finalize_utterances_from_segments(
         ),
         idempotency_key=run_idempotency_key,
     )
+
+    if (transcript.settling_state or {}).get("settled") is True:
+        segments = preserve_human_segments(active_utterances, segments)
 
     recording_speakers = ensure_recording_speaker_aliases(
         session,
@@ -292,6 +305,10 @@ def finalize_utterances_from_segments(
             }
             old_text_locked = bool(matched_utterance.manual_text_locked)
             old_speaker_locked = bool(matched_utterance.manual_speaker_locked)
+            protected_wording = bool(
+                (transcript.settling_state or {}).get("settled") is True
+                and (matched_utterance.confidence_payload or {}).get("human_protection")
+            )
 
             effective_segment = dict(segment)
             effective_segment["segment_source"] = matched_utterance.source_kind or str(
@@ -299,7 +316,7 @@ def finalize_utterances_from_segments(
             )
             effective_segment["text"] = (
                 matched_utterance.text
-                if old_text_locked
+                if old_text_locked or protected_wording
                 else str(segment.get("text", "") or "")
             )
             effective_segment["text_manually_edited"] = old_text_locked or bool(

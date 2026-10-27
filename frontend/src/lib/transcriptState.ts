@@ -106,15 +106,20 @@ export const applyTranscriptDelta = ({
   mode = "delta",
   activeEditUtteranceId,
 }: ApplyTranscriptDeltaOptions): LocalTranscriptState => {
-  const baseState =
+  const previousState =
     currentState && currentState.recordingId === recordingId
       ? currentState
       : createLocalTranscriptState(recordingId, fallbackSegments);
+  const baseState = delta.settling_required && previousState.segments.some((segment) => !segment.settling_required)
+    ? { ...previousState, segments: previousState.segments.map((segment) => ({ ...segment, settling_required: true })) }
+    : previousState;
   if (mode === "delta" && delta.revision < baseState.revision) {
     return baseState;
   }
   const nextDeferred = { ...baseState.deferredById };
-  let utterancesToApply = delta.utterances;
+  let utterancesToApply = delta.settling_required
+    ? delta.utterances.map((utterance) => ({ ...utterance, settling_required: true }))
+    : delta.utterances;
   let tombstonesToApply = delta.tombstones;
 
   if (activeEditUtteranceId) {
@@ -148,7 +153,7 @@ export const applyTranscriptDelta = ({
             baseState.segments,
             sortTranscriptSegments(utterancesToApply.map(transcriptSegmentFromUtterance)),
           )
-        : sortTranscriptSegments(fallbackSegments)
+        : delta.settling_required ? [] : sortTranscriptSegments(fallbackSegments)
       : utterancesToApply.length === 0 && tombstonesToApply.length === 0
         ? baseState.segments
         : mergeTranscriptUtteranceDelta(

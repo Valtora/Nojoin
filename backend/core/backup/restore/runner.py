@@ -22,6 +22,7 @@ from backend.core.backup.format import (
     SKIP_REASON_INSERT_FAILED,
     SKIP_REASON_UNRESOLVED_OWNER,
 )
+from backend.core.backup.live_transcripts import restore_transcript_name_anchors
 from backend.core.backup.paths import _get_recording_match_keys
 from backend.core.backup.records import (
     _adapt_record,
@@ -237,6 +238,10 @@ def _resolve_and_insert_row(ctx: _RowContext) -> bool:
 
     if ctx.table_name == "recordings" and getattr(instance, "audio_path", None):
         _record_restored_recording(ctx, instance)
+    if ctx.table_name == "transcripts" and (
+        ctx.item_data.get("settling_state") or {}
+    ).get("name_anchors"):
+        state.recordings_with_name_anchors.add(instance.recording_id)
 
     return True
 
@@ -424,6 +429,11 @@ def _restore_backup_sync(request: _RestoreRequest):
 
                 _apply_deferred_speaker_merges(session, state)
                 _remap_user_notes_template_settings(session, state)
+                restore_transcript_name_anchors(
+                    session,
+                    state.recordings_with_name_anchors,
+                    state.id_map.get("global_speakers", {}),
+                )
 
                 stages._normalise_restored_recording_state(session, state)
                 stages._keep_document_files_still_named(session, state)

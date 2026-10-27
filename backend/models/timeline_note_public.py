@@ -44,6 +44,8 @@ class TimelineNoteErrorCode(str, Enum):
     NOTE_ID_IN_USE = "note_id_in_use"
     # An edit moved a note that is not a point note.
     NOTE_NOT_MOVABLE = "note_not_movable"
+    LINE_SETTLING = "line_settling"
+    LINE_STALE = "line_stale"
 
 
 def _clean_body(value: str) -> str:
@@ -111,6 +113,13 @@ class NoteFileRemovedRead(BaseModel):
     note: Optional[TimelineNoteRead] = None
 
 
+class SourceUtteranceReference(BaseModel):
+    """The source line as the person saw it, checked only when acting on it."""
+
+    id: str
+    revision: int = Field(ge=1)
+
+
 class TimelineNoteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -124,6 +133,9 @@ class TimelineNoteCreate(BaseModel):
     start_ms: Optional[int] = Field(default=None, ge=0, le=TIMELINE_MS_MAX)
     end_ms: Optional[int] = Field(default=None, ge=0, le=TIMELINE_MS_MAX)
     quoted_text: Optional[str] = None
+    source_utterances: Optional[list[SourceUtteranceReference]] = None
+    target_utterance_id: Optional[str] = None
+    target_utterance_revision: Optional[int] = Field(default=None, ge=1)
 
     @field_validator("body")
     @classmethod
@@ -146,8 +158,18 @@ class TimelineNoteCreate(BaseModel):
 
     @model_validator(mode="after")
     def _shape(self) -> "TimelineNoteCreate":
+        if (self.target_utterance_id is None) != (
+            self.target_utterance_revision is None
+        ):
+            raise ValueError(
+                "target_utterance_id and target_utterance_revision must be supplied together"
+            )
         point = self.kind == TimelineNoteKind.POINT
         selection = self.kind == TimelineNoteKind.SELECTION
+        if self.target_utterance_id is not None and not point:
+            raise ValueError("a destination line is for a point note only")
+        if self.source_utterances is not None and not selection:
+            raise ValueError("source_utterances are for a selection note only")
         if (self.anchor_ms is not None) != point:
             raise ValueError("anchor_ms is required for a point note and only for one")
         has_range = (
@@ -179,6 +201,8 @@ class TimelineNoteUpdate(BaseModel):
     body: Optional[str] = None
     # Moves a point note (B4 drags it); refused for any other kind.
     anchor_ms: Optional[int] = Field(default=None, ge=0, le=TIMELINE_MS_MAX)
+    target_utterance_id: Optional[str] = None
+    target_utterance_revision: Optional[int] = Field(default=None, ge=1)
 
     @field_validator("body")
     @classmethod
@@ -187,6 +211,14 @@ class TimelineNoteUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _changes_something(self) -> "TimelineNoteUpdate":
+        if (self.target_utterance_id is None) != (
+            self.target_utterance_revision is None
+        ):
+            raise ValueError(
+                "target_utterance_id and target_utterance_revision must be supplied together"
+            )
+        if self.target_utterance_id is not None and self.anchor_ms is None:
+            raise ValueError("a destination line requires anchor_ms")
         if self.body is None and self.anchor_ms is None:
             raise ValueError("an update needs body or anchor_ms")
         return self

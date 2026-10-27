@@ -266,9 +266,12 @@ export interface LiveTranscriptWord {
 
 /** Present only when the live line carries word settling evidence. */
 export interface LiveTranscriptSettling {
+  /** Sticky recording policy, copied onto local segments by the delta reader. */
+  settling_required?: boolean;
   words?: LiveTranscriptWord[];
   text_locked?: boolean;
   locked?: boolean;
+  final_review?: { text: string; reason: "ambiguous_alignment" } | null;
 }
 
 export interface TranscriptUtterance extends LiveTranscriptSettling {
@@ -320,6 +323,7 @@ export interface TranscriptUtterance extends LiveTranscriptSettling {
 }
 
 export interface TranscriptUtteranceList {
+  settling_required?: boolean;
   recording_id: RecordingId;
   revision: number;
   utterances: TranscriptUtterance[];
@@ -462,7 +466,15 @@ export interface NoteFileRemoval {
   note: TimelineNote | null;
 }
 
+export interface TranscriptSourceReference {
+  id: string;
+  revision: number;
+}
+
 export interface TimelineNoteCreate {
+  source_utterances?: TranscriptSourceReference[];
+  target_utterance_id?: string;
+  target_utterance_revision?: number;
   /** Chosen by the client, so a retried create returns the first note. */
   id?: string;
   /** Chosen by the client; kept on the note, and on its tombstone once deleted. */
@@ -476,6 +488,8 @@ export interface TimelineNoteCreate {
 }
 
 export interface TimelineNoteUpdate {
+  target_utterance_id?: string;
+  target_utterance_revision?: number;
   expected_revision: number;
   write_token?: string;
   body?: string;
@@ -489,6 +503,8 @@ export interface TimelineNoteUpdate {
  * `backend/tests/fixtures/timeline_note_error_codes.json`.
  */
 export const TIMELINE_NOTE_ERROR_CODES = [
+  "line_settling",
+  "line_stale",
   "recording_not_found",
   "note_not_found",
   "note_deleted_by_you",
@@ -513,6 +529,8 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
 }
 
 export interface Transcript extends BaseDBModel {
+  /** Captured settling policy or settled history; independent of current settings. */
+  settling_required?: boolean;
   recording_id: RecordingId;
   change_sequence?: number;
   text?: string;

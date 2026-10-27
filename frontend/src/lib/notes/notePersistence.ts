@@ -50,7 +50,13 @@ const readSelection = (value: unknown): NoteSelection | null => {
   if (!isRecord(value)) return null;
   const { startMs, endMs, quotedText } = value;
   if (!isTime(startMs) || !isTime(endMs) || !isText(quotedText)) return null;
-  return selectionOf({ startMs, endMs, quotedText });
+  const sourceUtterances = Array.isArray(value.sourceUtterances)
+    ? value.sourceUtterances.flatMap((source) =>
+        isRecord(source) && isId(source.id) && Number.isInteger(source.revision) && Number(source.revision) >= 0
+          ? [{ id: source.id, revision: Number(source.revision) }] : [],
+      )
+    : undefined;
+  return selectionOf({ startMs, endMs, quotedText, ...(sourceUtterances ? { sourceUtterances } : {}) });
 };
 
 const readNote = (value: Record<string, unknown>): RestoredNote | null => {

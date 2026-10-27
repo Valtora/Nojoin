@@ -1,7 +1,7 @@
 import { attachFileToNote, createTimelineNote, deleteTimelineNote } from "@/lib/api";
-import { getErrorStatus, isRecord } from "@/lib/errors";
+import { getErrorDetail, getErrorStatus, isRecord } from "@/lib/errors";
 import { useSessionStore, waitForSignInAfter } from "@/lib/session";
-import type { NoteAttachment, RecordingId, TimelineNote, TimelineNoteCreate } from "@/types";
+import type { NoteAttachment, RecordingId, TimelineNote, TimelineNoteCreate, TranscriptSourceReference } from "@/types";
 
 import { NOTE_BODY_MAX_CHARS, newNoteId, noteLength, stripNote } from "./headNoteSync";
 import { formatTimelineMs } from "./placement";
@@ -58,6 +58,7 @@ export type NoteInsertMode = (typeof NOTE_INSERT_MODES)[number];
 
 /** The words a selection note quotes, and their span on the audio timeline. */
 export interface NoteSelection {
+  sourceUtterances?: TranscriptSourceReference[];
   startMs: number;
   endMs: number;
   quotedText: string;
@@ -195,7 +196,10 @@ export const selectionOf = (selection: NoteSelection | null | undefined): NoteSe
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs < 0 || endMs <= startMs) {
     return null;
   }
-  return quotedText ? { startMs, endMs, quotedText } : null;
+  return quotedText ? {
+    startMs, endMs, quotedText,
+    ...(selection.sourceUtterances ? { sourceUtterances: selection.sourceUtterances } : {}),
+  } : null;
 };
 const NO_ANSWER_ERROR = "Not saved: no answer from Nojoin.";
 const NO_ANSWER_YET_ERROR = "No answer from Nojoin yet.";
@@ -275,6 +279,7 @@ const createOf = (entry: OutboxEntry): TimelineNoteCreate => ({
         start_ms: entry.selection.startMs,
         end_ms: entry.selection.endMs,
         quoted_text: entry.selection.quotedText,
+        ...(entry.selection.sourceUtterances ? { source_utterances: entry.selection.sourceUtterances } : {}),
       }
     : {}),
 });
@@ -708,7 +713,8 @@ export class NoteOutbox {
         );
         return;
       }
-      this.fail(key, FAILURE_ERRORS[failure]);
+      this.fail(key, (refusalCode(error) === "line_settling" || refusalCode(error) === "line_stale")
+        ? getErrorDetail(error) ?? FAILURE_ERRORS[failure] : FAILURE_ERRORS[failure]);
     } finally {
       clearTimeout(slow);
     }

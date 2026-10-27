@@ -7,6 +7,11 @@ from backend.models.live_settling_public import public_settling_fields
 from .assignment import *
 from .constants import *
 from .finalization import finalize_utterances_from_segments
+from .guards import (
+    protect_text_replacement,
+    require_action_lines,
+    settling_required,
+)
 from .live_compatibility import capture_segment_sort_key
 from .persistence import (
     apply_compatibility_segment_replace,
@@ -204,9 +209,12 @@ def update_utterance_text(
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
         raise RuntimeError("Utterance revision conflict")
+    require_action_lines(transcript, [utterance])
 
     old_values = {"text": utterance.text, "revision": utterance.revision}
     old_text_locked = bool(utterance.manual_text_locked)
+    if settling_required(transcript):
+        protect_text_replacement(utterance, text)
     utterance.text = text
     utterance.manual_text_locked = True
     utterance.text_last_edit_source = source
@@ -244,6 +252,11 @@ def update_utterance_text(
                 "revision": utterance.revision,
                 "state": utterance.state.value,
                 "updated_at": utterance.updated_at.isoformat(),
+                **(
+                    {"confidence_payload": utterance.confidence_payload}
+                    if settling_required(transcript)
+                    else {}
+                ),
             },
         )
         transcript.text = " ".join(
@@ -286,6 +299,16 @@ def update_utterance_speaker(
         else None
     )
 
+    current_key = utterance.recording_speaker_id or utterance.speaker_label
+    target_utterances = _select_utterances_for_scope(
+        session,
+        recording_id=recording_id,
+        anchor_utterance=utterance,
+        scope=scope,
+        current_key=current_key,
+    )
+    require_action_lines(transcript, [utterance, *target_utterances])
+
     target_speaker = resolve_assignment_target(
         session,
         recording_id=recording_id,
@@ -297,15 +320,7 @@ def update_utterance_speaker(
         scope=scope,
     )
 
-    current_key = utterance.recording_speaker_id or utterance.speaker_label
     target_key = target_speaker.id
-    target_utterances = _select_utterances_for_scope(
-        session,
-        recording_id=recording_id,
-        anchor_utterance=utterance,
-        scope=scope,
-        current_key=current_key,
-    )
 
     updated_segments = [dict(segment) for segment in (transcript.segments or [])]
     index_by_public_id = {

@@ -65,7 +65,21 @@ def _complete_without_speech(session, recording: Recording) -> None:
     if not transcript:
         transcript = Transcript(recording_id=recording.id)
 
-    mark_transcript_without_speech(transcript)
+    if (getattr(transcript, "settling_state", None) or {}).get("settled") is True:
+        from backend.utils.canonical_pipeline import (
+            finalize_utterances_from_segments,
+            refresh_transcript_projection_from_canonical,
+        )
+
+        # An empty successful pass is still a replacement. Reconcile protected
+        # human work and retire unprotected canonical lines under this fence.
+        finalize_utterances_from_segments(
+            session, recording_id=recording.id, segments=[], trigger_source="worker"
+        )
+        refresh_transcript_projection_from_canonical(session, recording.id)
+        transcript.complete_transcription()
+    else:
+        mark_transcript_without_speech(transcript)
 
     mark_recording_audio_chunks_ready_for_cleanup(
         session,

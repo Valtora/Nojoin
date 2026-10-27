@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
@@ -89,7 +89,10 @@ async def _prepare_live_transcript_mutation(
     db: AsyncSession, recording_id: int
 ) -> bool:
     if not _canonical_transcript_writes_enabled():
-        return False
+        from backend.utils.canonical_pipeline.guards import settling_required
+
+        if not settling_required(await _get_recording_transcript(db, recording_id)):
+            return False
     return await db.run_sync(prepare_live_compatibility_mutation, recording_id)
 
 
@@ -190,6 +193,9 @@ class TranscriptUtteranceRead(LiveSettlingPublicRead):
 
 class TranscriptUtteranceListRead(BaseModel):
     recording_id: str
+    settling_required: bool = Field(
+        default=False, exclude_if=lambda value: value is False
+    )
     revision: int
     utterances: List[TranscriptUtteranceRead]
     tombstones: List[str] = []
@@ -197,6 +203,13 @@ class TranscriptUtteranceListRead(BaseModel):
     # Live label -> the name the user gave it during capture. Sent whole on every
     # read, delta or not: naming a live speaker changes no utterance.
     live_speaker_names: dict[str, str] = {}
+
+
+class TranscriptUtteranceSplit(BaseModel):
+    """Split immediately before a current genuine word identity."""
+
+    before_word_id: str
+    expected_revision: int = Field(ge=1)
 
 
 class NotesUpdate(BaseModel):

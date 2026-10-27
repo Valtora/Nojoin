@@ -20,6 +20,13 @@ class LiveWordPublicRead(BaseModel):
     lock_reason: Literal["agreement", "expiry", "closure"] | None = None
 
 
+class FinalReviewPublicRead(BaseModel):
+    """Machine wording offered once beside an ambiguously remapped human line."""
+
+    text: str
+    reason: Literal["ambiguous_alignment"]
+
+
 class LiveSettlingPublicRead(BaseModel):
     """Optional settling facts, absent from older recordings' public contract."""
 
@@ -30,23 +37,34 @@ class LiveSettlingPublicRead(BaseModel):
         default=None, exclude_if=lambda value: value is None
     )
     locked: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    final_review: FinalReviewPublicRead | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 def public_settling_fields(payload: dict[str, Any] | None) -> dict[str, Any]:
     """Expose only typed word facts for lines carrying the settling marker."""
     payload = payload or {}
+    review = payload.get("final_review")
+    public_review = (
+        {"final_review": FinalReviewPublicRead.model_validate(review).model_dump()}
+        if isinstance(review, dict)
+        else {}
+    )
     metadata = payload.get("live_text_settling")
-    if not isinstance(metadata, dict):
-        return {}
+    protected = bool(payload.get("human_protection"))
+    if not isinstance(metadata, dict) and not protected:
+        return public_review
     words = [
         LiveWordPublicRead.model_validate(word).model_dump()
         for segment in payload.get("asr_segments") or []
         for word in segment.get("words") or []
     ]
     return {
+        **public_review,
         "words": words,
         "text_locked": bool(words) and all(word["locked"] for word in words),
-        "locked": bool(metadata.get("line_locked")),
+        "locked": protected or bool((metadata or {}).get("line_locked")),
     }
 
 

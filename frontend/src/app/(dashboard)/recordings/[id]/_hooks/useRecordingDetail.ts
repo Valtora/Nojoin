@@ -25,7 +25,7 @@ import {
   clampMeetingEdgeContextLevel,
   DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
 } from "@/lib/meetingEdgeContext";
-import { getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
+import { getErrorDetail, getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
 import { notesErrorDetail } from "@/lib/transcriptErrors";
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import {
@@ -184,8 +184,13 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const recordingNotFound = useRecordingNotFound(addNotification, navigateToRecordings);
 
   const transcriptSegments = useMemo(
-    () => transcriptState?.segments || recording?.transcript?.segments || [],
-    [recording?.transcript?.segments, transcriptState?.segments],
+    () => {
+      const segments = transcriptState?.segments || recording?.transcript?.segments || [];
+      return recording?.transcript?.settling_required
+        ? segments.map((segment) => segment.settling_required ? segment : { ...segment, settling_required: true })
+        : segments;
+    },
+    [recording?.transcript?.segments, recording?.transcript?.settling_required, transcriptState?.segments],
   );
   const deferredTranscriptUtteranceIds = useMemo(
     () => Object.keys(transcriptState?.deferredById || {}),
@@ -888,7 +893,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       console.error("Failed to update segment speaker:", error);
       addNotification({
         type: "error",
-        message: "Failed to update segment speaker. Please try again.",
+        message: getErrorDetail(error) ?? "Failed to update segment speaker. Please try again.",
       });
     }
   };
@@ -951,7 +956,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
         } catch (error: unknown) {
       console.error("Failed to update segment text:", error);
-      addNotification({ type: "error", message: "Failed to update segment text." });
+      addNotification({ type: "error", message: getErrorDetail(error) ?? "Failed to update segment text." });
     }
   };
 
@@ -973,7 +978,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
         } catch (error: unknown) {
       console.error("Failed to find and replace:", error);
-      addNotification({ type: "error", message: "Failed to find and replace." });
+      addNotification({ type: "error", message: getErrorDetail(error) ?? "Failed to find and replace." });
     }
   };
 

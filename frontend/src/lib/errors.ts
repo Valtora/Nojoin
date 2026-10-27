@@ -66,6 +66,9 @@ export function getErrorDetail(error: unknown): string | null {
   }
 
   const detail = data.detail;
+  if (isRecord(detail) && (detail.code === "line_settling" || detail.code === "line_stale")) {
+    return typeof detail.message === "string" ? detail.message : null;
+  }
   return typeof detail === "string" && detail.trim().length > 0 ? detail : null;
 }
 

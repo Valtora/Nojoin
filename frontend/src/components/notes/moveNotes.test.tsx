@@ -168,6 +168,17 @@ afterEach(() => {
 });
 
 describe("Moving a point note with Move up and Move down", () => {
+  it("skips settling destinations and sends the locked destination's identity and revision", async () => {
+    updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
+    const segments = SEGMENTS.map((segment, index) => ({ ...segment, settling_required: true,
+      revision: 8, provisional: true, locked: index !== 2 }));
+    render(<Page notes={[POINT]} segments={segments} />);
+    fireEvent.click(moveButton("n-point", "down"));
+    await waitFor(() => expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-point", {
+      expected_revision: 2, anchor_ms: 200_000, target_utterance_id: "u3", target_utterance_revision: 8,
+    }));
+    expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "line:3", "note:n-point"]);
+  });
   it("moves it after the next line, anchored at that line's start, and keeps focus on the button", async () => {
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
     render(<Page notes={[POINT]} />);

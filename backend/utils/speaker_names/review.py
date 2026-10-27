@@ -92,11 +92,13 @@ def dismiss_pending_name(
 
     recording_id = speaker.recording_id
     from backend.utils.canonical_pipeline.constants import _load_transcript
+    from backend.utils.canonical_pipeline.guards import require_label_lines
 
     _load_transcript(session, recording_id, lock=True)
     _refresh_clean_speaker(session, speaker)
     if speaker.identity_locked:
         return shown_name(speaker)
+    require_label_lines(session, recording_id, speaker.diarization_label)
     dismissed = shown_name(speaker)
     anchor = longest_turn(speaker_lines(session, recording_id), speaker.id)
     if anchor is not None:

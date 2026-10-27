@@ -405,15 +405,17 @@ async def _load_recording_for_correction(db, recording_id: str, user_id: int):
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
     _require_recording_transcript_mutations_supported(recording)
+    _require_canonical_writes(transcript)
     return recording, transcript
 
 
-def _require_canonical_writes() -> None:
+def _require_canonical_writes(transcript: Any = None) -> None:
     from backend.api.v1.endpoints.transcripts.helpers import (
         _canonical_transcript_writes_enabled,
     )
+    from backend.utils.canonical_pipeline.guards import settling_required
 
-    if not _canonical_transcript_writes_enabled():
+    if not _canonical_transcript_writes_enabled() and not settling_required(transcript):
         raise ToolError(
             "Transcript corrections are not available: this deployment has "
             "canonical transcript writes disabled."
@@ -463,7 +465,6 @@ async def correct_utterance_text(
 
     user = get_current_mcp_user()
     _require_write_scope("transcript corrections")
-    _require_canonical_writes()
     if not text.strip():
         raise ToolError("text must not be empty.")
 
@@ -538,7 +539,6 @@ async def correct_utterance_speaker(
 
     user = get_current_mcp_user()
     _require_write_scope("transcript corrections")
-    _require_canonical_writes()
     if not speaker_name.strip():
         raise ToolError("speaker_name must not be empty.")
 
@@ -610,8 +610,6 @@ async def unlock_utterance(
 
     user = get_current_mcp_user()
     _require_write_scope("manual-lock clearing")
-    _require_canonical_writes()
-
     async with async_session_maker() as db:
         recording, transcript = await _load_recording_for_correction(
             db, recording_id, user.id

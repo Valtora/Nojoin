@@ -6,6 +6,7 @@ import { lineSelection } from "@/lib/notes/lineSelection";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import { lineActionsFor, type LineActionId } from "@/lib/transcript/actions";
 import type { TranscriptSegment } from "@/types";
+import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
 
 import NoteOnSelectionPopover from "../notes/NoteOnSelectionPopover";
 
@@ -74,14 +75,17 @@ export default function TranscriptLineMenu({
       actions.openSpeakerPopover(segmentId, trigger);
     },
     play: () => onPlayFrom?.(segment.start),
+    split: () => {},
   };
 
   const items = lineActionsFor({
     view: "finished",
     canNote: onAddNote !== null && selection !== null,
-    canEdit: !isSegmentReadOnly,
+    canEdit: !isSegmentReadOnly || lineIsSettling(segment),
     provisional: segment.provisional === true,
     canPlay: onPlayFrom !== null,
+    settlingRequired: segment.settling_required,
+    disabledReason: lineIsSettling(segment) ? LINE_SETTLING_REASON : undefined,
   }).map((action) => ({ ...action, onSelect: run[action.id] }));
 
   return (
@@ -97,7 +101,8 @@ export default function TranscriptLineMenu({
           quote={selection.quotedText}
           title={`Note on the line at ${formatTime(segment.start)}`}
           anchor={noteAnchor}
-          onSubmit={(body) => onAddNote({ kind: "selection", body, anchorMs: null, selection })}
+          onSubmit={(body) => lineIsSettling(segment) ? LINE_SETTLING_REASON
+            : onAddNote({ kind: "selection", body, anchorMs: null, selection })}
           onClose={() => setNoteAnchor(null)}
         />
       ) : null}

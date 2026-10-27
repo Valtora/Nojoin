@@ -684,6 +684,28 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
     existing_transcript = await db.run_sync(
         lambda session: _load_transcript(session, recording_id, lock=True)
     )
+    preserve_live_work = bool(
+        existing_transcript is not None
+        and (existing_transcript.settling_state or {}).get("settled") is True
+    )
+    if preserve_live_work:
+        from backend.utils.canonical_pipeline import (
+            ensure_canonical_backfill,
+            refresh_transcript_projection_from_canonical,
+        )
+        from backend.utils.speaker_names.durability import persist_name_anchors
+
+        await db.run_sync(lambda session: persist_name_anchors(session, recording_id))
+        # Restore may have queued, but not yet run, its derived-state backfill.
+        # Rebuild archived protected lines before replacing their projection.
+        await db.run_sync(
+            lambda session: ensure_canonical_backfill(session, recording_id)
+        )
+        await db.run_sync(
+            lambda session: refresh_transcript_projection_from_canonical(
+                session, recording_id
+            )
+        )
 
     await db.execute(
         delete(ChatMessage).where(ChatMessage.recording_id == recording_id)
@@ -693,25 +715,32 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         .where(ContextChunk.recording_id == recording_id)
         .where(ContextChunk.document_id.is_(None))
     )
-    await db.execute(
-        delete(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
-    )
+    if not preserve_live_work:
+        await db.execute(
+            delete(RecordingSpeaker).where(
+                RecordingSpeaker.recording_id == recording_id
+            )
+        )
     await db.execute(
         delete(ProcessingRun).where(ProcessingRun.recording_id == recording_id)
     )
-    await db.execute(
-        delete(TranscriptUtterance).where(
-            TranscriptUtterance.recording_id == recording_id
+    if not preserve_live_work:
+        await db.execute(
+            delete(TranscriptUtterance).where(
+                TranscriptUtterance.recording_id == recording_id
+            )
         )
-    )
     await db.execute(
         delete(SpeakerCorrectionEvent).where(
             SpeakerCorrectionEvent.recording_id == recording_id
         )
     )
-    await db.execute(
-        delete(SpeakerNameEvent).where(SpeakerNameEvent.recording_id == recording_id)
-    )
+    if not preserve_live_work:
+        await db.execute(
+            delete(SpeakerNameEvent).where(
+                SpeakerNameEvent.recording_id == recording_id
+            )
+        )
     await db.execute(
         delete(DiarizationWindowResult).where(
             DiarizationWindowResult.recording_id == recording_id
@@ -725,6 +754,8 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
             existing_transcript.settling_state
         )
         retained = {"id", "recording_id", "created_at", "updated_at", "change_sequence"}
+        if preserve_live_work:
+            retained.update({"text", "segments"})
         for field in Transcript.model_fields:
             if field not in retained:
                 setattr(existing_transcript, field, getattr(defaults, field))

@@ -15,6 +15,20 @@ vi.mock("@/lib/notificationStore", () => ({
 }));
 
 describe("useLiveSpeakerNaming", () => {
+  it("names the marked line's explicit anchor revision and displays a settling conflict", async () => {
+    nameLiveSpeaker.mockRejectedValue({ response: { status: 409, data: { detail: {
+      code: "line_settling", message: "This line is still settling.",
+    } } } });
+    const applyNames = vi.fn();
+    const { result } = renderHook(() => useLiveSpeakerNaming("rec-1", applyNames));
+    await act(async () => result.current.renameLiveSpeaker("LIVE_PROVISIONAL_1", "Alex", {
+      id: "u1", revision: 8, start: 0, end: 2, text: "Words", speaker: "LIVE_PROVISIONAL_1",
+      settling_required: true, locked: true,
+    }));
+    expect(nameLiveSpeaker).toHaveBeenCalledWith("rec-1", "LIVE_PROVISIONAL_1", "Alex", { id: "u1", revision: 8 });
+    expect(addNotification).toHaveBeenCalledWith({ type: "error", message: "This line is still settling." });
+    expect(applyNames).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     nameLiveSpeaker.mockReset();
     addNotification.mockReset();

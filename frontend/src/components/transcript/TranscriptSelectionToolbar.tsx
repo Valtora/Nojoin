@@ -6,6 +6,8 @@ import { createPortal } from "react-dom";
 import { Copy, StickyNote } from "lucide-react";
 
 import type { NoteSelection, OutboxDraft } from "@/lib/notes/noteOutbox";
+import type { TranscriptSegment } from "@/types";
+import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
 import { formatTimelineMs } from "@/lib/notes/placement";
 
 import NoteOnSelectionPopover from "../notes/NoteOnSelectionPopover";
@@ -79,6 +81,7 @@ const lineTrigger = (root: HTMLElement | null, segmentId: string) => {
 };
 
 interface TranscriptSelectionToolbarProps {
+  disabledReason?: string;
   captured: CapturedSelection;
   onClose: () => void;
   /** The processed view: starts a note on the selection, from where it is now. */
@@ -97,6 +100,7 @@ export function TranscriptSelectionToolbar({
   onClose,
   onWrite,
   onNoteOnText,
+  disabledReason,
 }: TranscriptSelectionToolbarProps) {
   const box = useFollowedBox(captured.range, captured.box);
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
@@ -110,7 +114,7 @@ export function TranscriptSelectionToolbar({
   }, [box, reposition]);
 
   const addNote = () => {
-    if (!selection) return;
+    if (!selection || disabledReason) return;
     if (onWrite) {
       onWrite(box);
       return;
@@ -148,6 +152,8 @@ export function TranscriptSelectionToolbar({
             size="sm"
             iconLeft={<StickyNote aria-hidden="true" className="h-4 w-4" />}
             onClick={addNote}
+            disabled={!!disabledReason}
+            title={disabledReason}
             className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
           >
             Add note
@@ -220,7 +226,8 @@ export default function TranscriptSelectionNotes({
   root,
   onAddNote,
   onNoteOnText,
-}: NoteHandlers & { root: RefObject<HTMLElement | null> }) {
+  segments,
+}: NoteHandlers & { root: RefObject<HTMLElement | null>; segments?: readonly TranscriptSegment[] }) {
   const [writing, setWriting] = useState<Writing | null>(null);
   const writingNote = writing && onAddNote ? writing : null;
   const { captured, clear } = useCapturedSelection(root, writingNote !== null);
@@ -238,10 +245,15 @@ export default function TranscriptSelectionNotes({
   }
   if (!captured || (!onAddNote && !onNoteOnText)) return null;
   const { selection } = captured;
+  const disabledReason = selection?.sourceUtterances?.some((source) => {
+    const segment = segments?.find((line) => line.id === source.id);
+    return segments ? !segment || lineIsSettling(segment) || segment.revision !== source.revision : captured.settling;
+  }) ? LINE_SETTLING_REASON : undefined;
   return (
     <TranscriptSelectionToolbar
       key={captured.seq}
       captured={captured}
+      disabledReason={disabledReason}
       onClose={clear}
       onWrite={
         onAddNote && selection

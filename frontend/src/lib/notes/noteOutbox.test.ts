@@ -41,6 +41,21 @@ const settle = async () => {
 };
 
 describe("NoteOutbox", () => {
+  it("keeps a rejected source command and retries its original line revision", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    server.failures.push({ response: { status: 409, data: { detail: { code: "line_stale", message: "Select this line again." } } } });
+    outbox.submit({ kind: "selection", body: "Keep this thought", anchorMs: null, selection: {
+      startMs: 0, endMs: 2000, quotedText: "source words", sourceUtterances: [{ id: "u1", revision: 7 }],
+    } });
+    await settle();
+    const [entry] = outbox.getSnapshot().entries;
+    expect(entry.error).toBe("Select this line again.");
+    expect(entry.body).toBe("Keep this thought");
+    outbox.retry(entry.key);
+    await settle();
+    expect(server.creates[1]).toEqual(server.creates[0]);
+    expect(server.creates[1]).toMatchObject({ source_utterances: [{ id: "u1", revision: 7 }] });
+  });
   beforeEach(() => {
     server.notes.clear();
     server.tombstones.clear();

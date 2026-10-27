@@ -426,6 +426,24 @@ export default function RecordingStatusDisplay({
               <LiveTranscriptPanel
                 segments={liveTranscript.segments}
                 hasLoaded={liveTranscript.hasLoaded}
+                speakers={liveTranscript.speakers}
+                lineHandlers={{
+                  editText: async (segment, text) => {
+                    const saved = await actions.editTranscriptLine(recording.id, segment, text);
+                    if (saved) liveTranscript.refresh();
+                    return saved;
+                  },
+                  changeSpeaker: async (segment, assignment) => {
+                    const saved = await actions.assignTranscriptLine(recording.id, segment, assignment);
+                    if (saved) liveTranscript.refresh();
+                    return saved;
+                  },
+                  split: async (segment, wordId) => {
+                    const saved = await actions.splitTranscriptLine(recording.id, segment, wordId);
+                    if (saved) liveTranscript.refresh();
+                    return saved;
+                  },
+                }}
                 isPaused={isPaused}
                 notes={liveNotes}
                 onRetryNote={outbox.retry}

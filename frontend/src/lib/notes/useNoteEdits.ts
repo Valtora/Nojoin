@@ -3,8 +3,8 @@
 import { useCallback, useRef, useState } from "react";
 
 import { deleteTimelineNote, updateTimelineNote } from "@/lib/api";
-import { getErrorStatus, isRecord } from "@/lib/errors";
-import type { RecordingId, TimelineNote } from "@/types";
+import { getErrorDetail, getErrorStatus, isRecord } from "@/lib/errors";
+import type { RecordingId, TimelineNote, TranscriptSourceReference } from "@/types";
 
 import { NOTE_BODY_MAX_CHARS, noteLength, stripNote } from "./headNoteSync";
 import { NOTE_TOO_LONG_ERROR, noteSnippet } from "./noteOutbox";
@@ -50,7 +50,7 @@ const isGone = (error: unknown) => {
 
 const otherFailure = (error: unknown): string => {
   const status = getErrorStatus(error);
-  return status === null || status >= 500 ? NO_ANSWER : REFUSED;
+  return status === null || status >= 500 ? NO_ANSWER : getErrorDetail(error) ?? REFUSED;
 };
 
 /**
@@ -155,7 +155,7 @@ export function useNoteEdits(recordingId: RecordingId | null) {
   );
 
   const move = useCallback(
-    (note: EditableNote, anchorMs: number): Promise<NoteEditRefusal> => {
+    (note: EditableNote, anchorMs: number, target?: TranscriptSourceReference): Promise<NoteEditRefusal> => {
       const revision = note.revision;
       if (revision === undefined || recordingId === null) return Promise.resolve(NOT_SAVED_YET);
       const seq = ++moveSeq.current;
@@ -177,6 +177,7 @@ export function useNoteEdits(recordingId: RecordingId | null) {
           settle(await updateTimelineNote(recordingId, note.id, {
             expected_revision: expected,
             anchor_ms: anchorMs,
+            ...(target ? { target_utterance_id: target.id, target_utterance_revision: target.revision } : {}),
           }));
           return null;
         } catch (error) {

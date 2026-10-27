@@ -45,6 +45,11 @@ async def _defer(session_maker: Any) -> None:
             "phase": "live",
             "policy": {"enabled": True},
         }
+        # These edit fixtures represent completed whole lines. Unlocked
+        # sources are refused by the shared action guard in commit 6.
+        for row in await session.run_sync(list_active_utterances, 1):
+            row.state = TranscriptUtteranceState.STABLE
+            session.add(row)
         session.add(
             RecordingSpeaker(recording_id=1, diarization_label=ONE, global_speaker_id=1)
         )
@@ -131,6 +136,7 @@ async def test_live_replacement_keeps_capture_order_when_next_window_adds_a_line
             "capture_epoch": 0,
             "phase": "live",
             "policy": {"enabled": True, "k": 1, "window_s": 10},
+            "speaker_enabled": False,
         }
         await session.commit()
         await session.run_sync(_replace_then_publish_next_line)

@@ -738,9 +738,10 @@ def update_recording_speaker_identity(
         recording_ready_for_canonical_backfill,
         refresh_transcript_projection_from_canonical,
     )
+    from .guards import require_label_lines
     from .startup import ensure_canonical_backfill
 
-    _load_transcript(session, recording_id, lock=True)
+    require_label_lines(session, recording_id, diarization_label)
     recording = session.get(Recording, recording_id)
     if recording is None:
         raise LookupError("Recording not found")
@@ -865,11 +866,10 @@ def merge_recording_speakers_by_label(
         refresh_transcript_projection_from_canonical,
         update_utterance_speaker,
     )
-    from .scope import _lock_active_lines
+    from .guards import require_label_lines
     from .startup import ensure_canonical_backfill
 
-    _load_transcript(session, recording_id, lock=True)
-    _lock_active_lines(session, recording_id)
+    require_label_lines(session, recording_id, source_diarization_label)
     recording = session.get(Recording, recording_id)
     if recording is None:
         raise LookupError("Recording not found")

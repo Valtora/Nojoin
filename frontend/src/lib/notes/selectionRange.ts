@@ -40,6 +40,8 @@ export const interpolatedTokens = (text: string, startMs: number, endMs: number)
 
 /** A line as the page draws it. */
 export interface DrawnLine {
+  revision?: number;
+  settling?: boolean;
   segmentId: string;
   text: string;
   startMs: number;
@@ -82,6 +84,10 @@ export const selectionFromPicks = (picks: readonly LinePick[]): NoteSelection | 
     startMs: Math.min(...spans.map((span) => span.startMs)),
     endMs: Math.max(...spans.map((span) => span.endMs)),
     quotedText: clampQuote(spans.map((span) => span.text).join(" ")),
+    ...(picks.some((pick) => pick.line.revision !== undefined) ? {
+      sourceUtterances: picks.flatMap(({ line }) => line.revision !== undefined
+        ? [{ id: line.segmentId, revision: line.revision }] : []),
+    } : {}),
   });
 };
 
@@ -113,5 +119,8 @@ export const linePicksOfRange = (range: Range, root: Element): LinePick[] =>
     // A boundary outside this line is before it (the start) or after it (the end).
     const from = offsetIn(paragraph, range.startContainer, range.startOffset, 0);
     const to = offsetIn(paragraph, range.endContainer, range.endOffset, text.length);
-    return from < to ? [{ line: { segmentId, text, startMs, endMs }, from, to }] : [];
+    const revision = paragraph.dataset.revision === undefined ? undefined : Number(paragraph.dataset.revision);
+    return from < to ? [{
+      line: { segmentId, text, startMs, endMs, revision, settling: paragraph.dataset.settling === "true" }, from, to,
+    }] : [];
   });

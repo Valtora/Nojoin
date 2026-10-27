@@ -138,6 +138,12 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
         "TranscriptPublicRead",
     ),
     (
+        "/{recording_id}/utterances/{utterance_id}/split",
+        ("POST",),
+        "split_transcript_utterance",
+        "TranscriptPublicRead",
+    ),
+    (
         "/{recording_id}/utterances/{utterance_id}/text",
         ("PATCH",),
         "update_transcript_utterance_text",

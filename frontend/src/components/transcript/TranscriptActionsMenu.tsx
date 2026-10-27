@@ -16,6 +16,7 @@ export interface TranscriptMenuItem {
   id: string;
   label: string;
   icon: LucideIcon;
+  disabledReason?: string;
   /**
    * Runs once the menu has closed and focus is back on its trigger, which is
    * handed over so a popover can sit against it: it stays mounted, unlike
@@ -150,6 +151,7 @@ export default function TranscriptActionsMenu({
   };
 
   const select = (item: TranscriptMenuItem) => {
+    if (item.disabledReason) return;
     close();
     if (triggerRef.current) item.onSelect(triggerRef.current);
   };
@@ -233,6 +235,8 @@ export default function TranscriptActionsMenu({
                   itemRefs.current[index] = button;
                 }}
                 role="menuitem"
+                aria-disabled={!!item.disabledReason}
+                title={item.disabledReason}
                 tabIndex={-1}
                 variant="ghost"
                 size="sm"
@@ -244,6 +248,7 @@ export default function TranscriptActionsMenu({
                 className={cn("w-full justify-start text-sm", TOUCH_TARGET_HEIGHT)}
               >
                 {item.label}
+                {item.disabledReason ? <span className="text-xs text-contrast-helper">{item.disabledReason}</span> : null}
               </Button>
             );
           })}

@@ -64,6 +64,7 @@ from .helpers import (
     SpeakerSplitRequest,
     _canonical_transcript_writes_enabled,
     _carry_drift_refusals,
+    _guard_linked_speakers,
     _lift_drift_refusals,
     _merge_local_speakers,
     _require_recordings_support_speaker_mutations,
@@ -262,6 +263,7 @@ async def merge_speakers(
         lock_transcript_publications,
         [rs.recording_id for rs in source_recording_speakers],
     )
+    marked_recordings = await _guard_linked_speakers(db, source_recording_speakers)
 
     for rs in source_recording_speakers:
         # Check if target already has a speaker in this recording
@@ -285,7 +287,7 @@ async def merge_speakers(
                 )
         else:
             recording = await db.get(Recording, rs.recording_id)
-            if (
+            if rs.recording_id in marked_recordings or (
                 recording is not None
                 and _canonical_transcript_writes_enabled()
                 and recording_ready_for_canonical_backfill(recording.status)

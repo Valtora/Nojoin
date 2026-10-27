@@ -171,6 +171,11 @@ export const transcriptSegmentFromUtterance = (
 ): TranscriptSegment => {
   return {
     id: utterance.id,
+    ...(utterance.settling_required ? { settling_required: true } : {}),
+    ...(utterance.words !== undefined ? { words: utterance.words } : {}),
+    ...(utterance.text_locked !== undefined ? { text_locked: utterance.text_locked } : {}),
+    ...(utterance.locked !== undefined ? { locked: utterance.locked } : {}),
+    ...(utterance.final_review !== undefined ? { final_review: utterance.final_review } : {}),
     start: utterance.start,
     end: utterance.end,
     text: utterance.text,

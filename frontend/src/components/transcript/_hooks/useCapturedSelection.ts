@@ -20,6 +20,7 @@ export interface Box {
 
 /** A text selection in a transcript, as it was when it was made. */
 export interface CapturedSelection {
+  settling?: boolean;
   /** Counts captures, so a view can tell a new selection from the one it shows. */
   seq: number;
   /** The note it would make; null when it takes no words with a span. */
@@ -80,6 +81,7 @@ export function useCapturedSelection(root: RefObject<HTMLElement | null>, paused
       setCaptured({
         seq: seqRef.current,
         selection: selectionFromPicks(picks),
+        settling: picks.some((pick) => pick.line.settling),
         text: selection.toString(),
         segmentId: picks[0].line.segmentId,
         box: boxOf(range),

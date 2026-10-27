@@ -1,4 +1,4 @@
-"""The real generated-state reset preserves only durable settling provenance."""
+"""A settled reset retains the last published view until a final pass succeeds."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from backend.utils.canonical_pipeline.queries import list_active_utterances
 
 @pytest.mark.parametrize("engine", ["whisper", "parakeet", "canary"])
 @pytest.mark.parametrize("marker", [True, False, 1, None])
-def test_actual_reprocess_reset_retains_only_literal_settled_provenance(
+def test_actual_reprocess_reset_retains_settled_view_and_only_durable_provenance(
     publication_database: Database,
     live_labels: str,
     engine: str,
@@ -47,6 +47,10 @@ def test_actual_reprocess_reset_retains_only_literal_settled_provenance(
         session.commit()
         identity = transcript.id
         sequence = transcript.change_sequence
+        previous_lines = serialize_canonical_utterances(
+            session, recording_id, include_confidence_payload=True
+        )
+        previous_text = transcript.text
     asyncio.run(_reset(database, recording_id, threading.Event()))
     with Session(database) as session:
         transcript = _load_transcript(session, recording_id)
@@ -55,8 +59,20 @@ def test_actual_reprocess_reset_retains_only_literal_settled_provenance(
         assert transcript.settling_state == (
             {"settled": True} if marker is True else None
         )
-        assert transcript.segments == []
-        assert serialize_canonical_utterances(session, recording_id) == []
+        if marker is True:
+            # The old empty-reset assertion pinned eager deletion of the last
+            # good view before inference. A failed reprocess must retain it.
+            assert transcript.segments == previous_lines
+            assert transcript.text == previous_text
+            assert (
+                serialize_canonical_utterances(
+                    session, recording_id, include_confidence_payload=True
+                )
+                == previous_lines
+            )
+        else:
+            assert transcript.segments == []
+            assert serialize_canonical_utterances(session, recording_id) == []
         for run, first in enumerate(("Goodbye", "Farewell", "Farewell")):
             segment = _final_segment(engine, first)
             if run == 2:

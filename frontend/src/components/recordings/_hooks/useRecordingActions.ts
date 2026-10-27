@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { transcriptLineActions, type TranscriptRecordingActions } from "./transcriptLineActions";
 
 import {
   batchAddTagToRecordings,
@@ -76,6 +77,9 @@ export const RECORDING_ACTION_IDS = [
   "exportAudio",
   "setTranscriptionLanguage",
   "reprocessInLanguage",
+  "editTranscriptLine",
+  "assignTranscriptLine",
+  "splitTranscriptLine",
 ] as const;
 
 export type RecordingActionId = (typeof RECORDING_ACTION_IDS)[number];
@@ -103,7 +107,7 @@ export interface MoveToBinCallbacks extends RecordingListActionCallbacks {
   from?: "recordings" | "archived";
 }
 
-export interface RecordingActions {
+export interface RecordingActions extends TranscriptRecordingActions {
   rename: (
     id: RecordingId,
     name: string,
@@ -269,6 +273,7 @@ export function useRecordingActions(): RecordingActions {
     };
 
     return {
+      ...transcriptLineActions((message) => addNotification({ type: "error", message })),
       rename: async (id, name, callbacks) => {
         try {
           await renameRecording(id, name);

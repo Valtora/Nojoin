@@ -2,6 +2,11 @@
 
 from .assignment import _resolve_recording_speaker_for_value, _state_for_segment
 from .constants import *
+from .guards import (
+    protect_text_replacement,
+    require_compatibility_lines,
+    settling_required,
+)
 from .live_compatibility import capture_segment_sort_key
 from .projection_segments import _build_projection_segment
 from .public_ids import public_ids_for_write
@@ -245,6 +250,7 @@ def apply_compatibility_segment_replace(
         return []
 
     active_utterances = _lock_active_lines(session, recording_id)
+    require_compatibility_lines(transcript, active_utterances, list(segments))
     active_by_public_id = {
         utterance.public_id: utterance for utterance in active_utterances
     }
@@ -338,6 +344,18 @@ def apply_compatibility_segment_replace(
                 if recording_speaker is not None
                 else str(effective_segment.get("speaker") or UNKNOWN_SPEAKER)
             )
+            if settling_required(transcript):
+                if effective_text != utterance.text:
+                    effective_segment.update(
+                        text_manually_edited=True, text_edit_source="api"
+                    )
+                if effective_speaker_label != utterance.speaker_label:
+                    effective_segment.update(
+                        speaker_manually_edited=True,
+                        speaker_edit_source="api",
+                        speaker_assignment_source=SPEAKER_ASSIGNMENT_SOURCE_MANUAL,
+                        speaker_assignment_authority=SPEAKER_ASSIGNMENT_AUTHORITY_MANUAL,
+                    )
             effective_manual_text_locked = bool(
                 effective_segment.get("text_manually_edited") is True
             )
@@ -395,6 +413,8 @@ def apply_compatibility_segment_replace(
             )
 
             if changed:
+                if settling_required(transcript) and utterance.text != effective_text:
+                    protect_text_replacement(utterance, effective_text)
                 utterance.sort_key = effective_sort_key
                 utterance.start_ms = effective_start_ms
                 utterance.end_ms = effective_end_ms

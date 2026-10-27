@@ -51,6 +51,7 @@ from backend.models.timeline_note_public import (
 )
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.services.timeline_note_anchors import guard_note_anchor
 from backend.services.timeline_note_service import (
     load_attachments_async,
     load_author_names_async,
@@ -58,6 +59,7 @@ from backend.services.timeline_note_service import (
     serialize_recording_timeline_notes,
     serialize_timeline_note,
 )
+from backend.utils.canonical_pipeline.guards import LineActionConflict
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.document_storage import delete_document_files
 from backend.utils.time import utc_now
@@ -477,6 +479,11 @@ async def create_timeline_note(
             await db.rollback()
             return current
 
+    try:
+        await db.run_sync(guard_note_anchor, recording_pk, payload)
+    except LineActionConflict as error:
+        raise HTTPException(status_code=409, detail=error.detail) from error
+
     fields: dict[str, Any] = {
         "recording_id": recording_pk,
         "created_by_user_id": user_id,
@@ -531,6 +538,10 @@ async def update_timeline_note(
     recording = await _owned_recording(db, recording_id, current_user.id)
     recording_pk, recording_public_id = recording.id, recording.public_id
     write_token = _token(payload.write_token)
+    try:
+        await db.run_sync(guard_note_anchor, recording_pk, payload)
+    except LineActionConflict as error:
+        raise HTTPException(status_code=409, detail=error.detail) from error
     note = await _locked_note(db, recording_pk, note_id)
     if note is None:
         raise _missing(await _tombstone_on(db, recording_pk, note_id), write_token)

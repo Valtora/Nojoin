@@ -1,3 +1,4 @@
+import copy
 import logging
 import uuid
 from typing import Optional
@@ -30,7 +31,7 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline import (
     update_utterance_text as update_canonical_utterance_text,
 )
-from backend.utils.canonical_pipeline.public_ids import SegmentIdConflictError
+from backend.utils.canonical_pipeline.guards import conflict_detail, settling_required
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
@@ -67,8 +68,8 @@ async def _apply_segment_replace(
                 sync_session, recording_id=recording_id, segments=segments
             )
         )
-    except SegmentIdConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
 
 
 @router.put("/{recording_id}/segments/{segment_index}")
@@ -104,9 +105,13 @@ async def update_segment_speaker(
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
 
-    if _canonical_transcript_writes_enabled() and (
-        transcript.segments[segment_index].get("id")
-        or recording_ready_for_canonical_backfill(recording.status)
+    if (
+        settling_required(transcript)
+        or _canonical_transcript_writes_enabled()
+        and (
+            transcript.segments[segment_index].get("id")
+            or recording_ready_for_canonical_backfill(recording.status)
+        )
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
@@ -143,7 +148,7 @@ async def update_segment_speaker(
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
 
         await db.commit()
         await db.refresh(transcript)
@@ -469,9 +474,13 @@ async def update_transcript_segment_text(
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
 
-    if _canonical_transcript_writes_enabled() and (
-        transcript.segments[segment_index].get("id")
-        or recording_ready_for_canonical_backfill(recording.status)
+    if (
+        settling_required(transcript)
+        or _canonical_transcript_writes_enabled()
+        and (
+            transcript.segments[segment_index].get("id")
+            or recording_ready_for_canonical_backfill(recording.status)
+        )
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
@@ -500,7 +509,7 @@ async def update_transcript_segment_text(
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
 
         await db.commit()
         await db.refresh(transcript)
@@ -586,10 +595,19 @@ async def find_and_replace(
     if not find_text:
         raise HTTPException(status_code=400, detail="Find text cannot be empty")
 
-    _apply_find_replace(transcript, find_text, replace_text, case_sensitive, use_regex)
+    staged = transcript
+    if settling_required(transcript):
+        staged = Transcript(
+            segments=copy.deepcopy(transcript.segments), notes=transcript.notes
+        )
+    _apply_find_replace(staged, find_text, replace_text, case_sensitive, use_regex)
 
-    if _canonical_transcript_writes_enabled() and (
-        live_projection or recording_ready_for_canonical_backfill(recording.status)
+    if (
+        settling_required(transcript)
+        or _canonical_transcript_writes_enabled()
+        and (
+            live_projection or recording_ready_for_canonical_backfill(recording.status)
+        )
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
@@ -597,8 +615,11 @@ async def find_and_replace(
         await _apply_segment_replace(
             db,
             recording_id=recording.id,
-            segments=[dict(segment) for segment in (transcript.segments or [])],
+            segments=[dict(segment) for segment in (staged.segments or [])],
         )
+
+    if staged is not transcript:
+        transcript.notes = staged.notes
 
     db.add(transcript)
     await db.commit()
@@ -640,10 +661,14 @@ async def update_transcript_segments(
 
     live_projection = await _prepare_live_transcript_mutation(db, recording.id)
 
-    if _canonical_transcript_writes_enabled() and (
-        live_projection
-        or any(segment.get("id") for segment in update.segments)
-        or recording_ready_for_canonical_backfill(recording.status)
+    if (
+        settling_required(transcript)
+        or _canonical_transcript_writes_enabled()
+        and (
+            live_projection
+            or any(segment.get("id") for segment in update.segments)
+            or recording_ready_for_canonical_backfill(recording.status)
+        )
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)

@@ -190,7 +190,12 @@ async def dismiss_speaker_name(
             ensure_canonical_backfill(sync_session, recording.id)
         dismiss_pending_name(sync_session, speaker, current_user.id)
 
-    await db.run_sync(_dismiss)
+    try:
+        await db.run_sync(_dismiss)
+    except RuntimeError as exc:
+        from backend.utils.canonical_pipeline.guards import conflict_detail
+
+        raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
     await db.commit()
     _record_review(recording, diarization_label, "dismissed", source)
     refreshed = (

@@ -16,6 +16,9 @@ interface TranscriptLineTextProps {
   /** The line's span on the audio timeline, in ms. */
   startMs: number;
   endMs: number;
+  revision?: number;
+  settlingRequired?: boolean;
+  settling?: boolean;
   decorations?: readonly TextDecoration[];
   className: string;
 }
@@ -136,6 +139,9 @@ export default function TranscriptLineText({
   segmentId,
   startMs,
   endMs,
+  revision,
+  settlingRequired,
+  settling,
   decorations = NO_DECORATIONS,
   className,
 }: TranscriptLineTextProps) {
@@ -147,6 +153,8 @@ export default function TranscriptLineText({
       data-segment-id={segmentId}
       data-start-ms={startMs}
       data-end-ms={endMs}
+      data-revision={settlingRequired ? revision : undefined}
+      data-settling={settlingRequired ? String(!!settling) : undefined}
       className={className}
     >
       {isPlain ? text : runs.map((run, index) => renderRun(text, run, index))}

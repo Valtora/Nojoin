@@ -494,7 +494,7 @@ export default function TranscriptView({
       <p role="status" className="sr-only">
         {moves.announcement}
       </p>
-      <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} />
+      <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} segments={segments} />
       {onEditNote ? (
         <TranscriptNoteEditor
           editing={shownEditor}

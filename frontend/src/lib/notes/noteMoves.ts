@@ -1,10 +1,13 @@
 import { lineFollowedAt, segmentStartMs, shownLineAt, type PlacementSegment } from "./placement";
+import { lineIsSettling, sourceReference } from "@/lib/transcript/settling";
+import type { TranscriptSegment, TranscriptSourceReference } from "@/types";
 
 /**
  * A place a point note can be moved to: after the shown line `afterIndex`,
  * by anchoring the note at that line's start.
  */
 export interface MoveTarget {
+  source?: TranscriptSourceReference;
   /** The list index of the shown line the note will follow. */
   afterIndex: number;
   anchorMs: number;
@@ -25,16 +28,21 @@ export interface MoveTarget {
  * `bodyNotesAmongLines`.
  */
 export function moveTargets(
-  segments: readonly PlacementSegment[],
+  segments: readonly (PlacementSegment & Partial<Pick<TranscriptSegment,
+    "id" | "revision" | "settling_required" | "provisional" | "locked">>)[],
   visibleIndexes: readonly number[],
 ): MoveTarget[] {
   const followed = lineFollowedAt(segments);
   const targets: MoveTarget[] = [];
   for (const index of visibleIndexes) {
+    const segment = segments[index] as TranscriptSegment;
+    if (lineIsSettling(segment)) continue;
+    const source = sourceReference(segment);
+    if (segment.settling_required && !source) continue;
     const anchorMs = segmentStartMs(segments[index]);
     if (anchorMs < 0) continue;
     if (shownLineAt(visibleIndexes, followed(anchorMs)) === index) {
-      targets.push({ afterIndex: index, anchorMs });
+      targets.push({ afterIndex: index, anchorMs, ...(source ? { source } : {}) });
     }
   }
   return targets;

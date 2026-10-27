@@ -4,6 +4,7 @@ Word comparison lives in live_word_settling; this module owns the captured
 policy and publication boundary shared with capture lifecycle operations.
 """
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, TypedDict
 from uuid import uuid4
@@ -69,9 +70,14 @@ class CapturePublicationToken:
     generation: str | None
 
 
-def durable_settling_state(state: dict[str, Any] | None) -> dict[str, bool] | None:
+def durable_settling_state(state: dict[str, Any] | None) -> dict[str, Any] | None:
     """Retain only actual word-publication provenance when runtime state resets."""
-    return {"settled": True} if (state or {}).get("settled") is True else None
+    if (state or {}).get("settled") is not True:
+        return None
+    durable: dict[str, Any] = {"settled": True}
+    if state and state.get("name_anchors"):
+        durable["name_anchors"] = deepcopy(state["name_anchors"])
+    return durable
 
 
 def new_capture_settling_state(*, capture_epoch: int) -> CaptureSettlingState | None:

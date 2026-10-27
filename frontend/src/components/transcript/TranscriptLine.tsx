@@ -34,6 +34,8 @@ import SpeakerNameReviewPopover from "./SpeakerNameReviewPopover";
 import TranscriptLineBadges from "./TranscriptLineBadges";
 import TranscriptLineMenu from "./TranscriptLineMenu";
 import TranscriptLineText from "./TranscriptLineText";
+import FinalWordingReview from "./FinalWordingReview";
+import { lineIsSettling } from "@/lib/transcript/settling";
 
 /**
  * The line, its place among all the lines and its key, as separate props:
@@ -127,7 +129,8 @@ function TranscriptLine({
     [decorations, noteDecorations],
   );
   const isProvisional = segment.provisional === true;
-  const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
+  const isSegmentReadOnly = readOnly || lineIsSettling(segment) ||
+    (isProvisional && !allowProvisionalEdits && !segment.settling_required);
   const speakerName = segmentSpeakerDisplayName(speakerMap, segment.speaker);
   // A live label is no speaker of the recording yet, so it has no name to
   // change; the line can still be assigned to a speaker.
@@ -292,11 +295,15 @@ function TranscriptLine({
             segmentId={segmentId}
             startMs={segmentStartMs(segment)}
             endMs={segmentEndMs(segment)}
+            revision={segment.revision}
+            settlingRequired={segment.settling_required}
+            settling={lineIsSettling(segment)}
             decorations={textDecorations}
             className="leading-relaxed whitespace-pre-wrap text-contrast-muted"
           />
         )}
       </div>
+      <FinalWordingReview segment={segment} />
     </div>
   );
 }
