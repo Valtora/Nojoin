@@ -8,6 +8,7 @@ import type { LiveTranscript } from "@/components/transcript/_hooks/useLiveTrans
 import type { LiveTranscriptPresentation } from "@/components/transcript/liveTranscriptPresentation";
 import type { LiveLineHandlers } from "@/components/transcript/LiveLineEditor";
 import { useLiveSpeakerNaming } from "@/components/transcript/_hooks/useLiveSpeakerNaming";
+import { useStableCallback } from "@/components/transcript/_hooks/useStableCallback";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { isNoteSelection, type NoteTarget } from "@/lib/notes/noteOutbox";
@@ -20,6 +21,7 @@ import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import { useSpeakerNameReview } from "@/lib/useSpeakerNameReview";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { transcriptLineActions } from "@/components/recordings/_hooks/transcriptLineActions";
+import { isRecordingInFlight } from "../_hooks/recordingDetailUtils";
 import {
   RecordingStatus,
   type GlobalSpeaker,
@@ -127,9 +129,23 @@ export default function TranscriptSection({
     addNotification({ type: "error", message })), [addNotification]);
   const applyLiveNames = liveTranscript?.applyLiveSpeakerNames ?? IGNORE_LIVE_NAMES;
   const liveNaming = useLiveSpeakerNaming(recording.id, applyLiveNames);
+  const activeCapture = isLiveCaptureInProgress(recording);
+  const readOnly = isRecordingInFlight(recording) && !activeCapture;
+  // A replacement reader must not remount a finished recording's drafts.
+  // Capture keeps its live presentation through processing until handoff.
+  const [presentFeed, setPresentFeed] = useState(usesLiveFeed);
+  useOnDepsChange([usesLiveFeed, readOnly], () => {
+    if (!usesLiveFeed) setPresentFeed(false);
+    else if (!readOnly) setPresentFeed(true);
+  });
+  // Editors retain their mutation and revision, but capability and refresh
+  // follow the selected reader, including after an awaited write completes.
+  const canWrite = useStableCallback(() => !readOnly);
+  const refreshSelectedReader = useStableCallback(liveTranscript?.refresh ?? onRefresh);
   const splitLine = async (segment: TranscriptSegment, wordId: string) => {
+    if (!canWrite()) return false;
     const saved = await lineActions.splitTranscriptLine(recording.id, segment, wordId);
-    if (saved) onRefresh();
+    if (saved) refreshSelectedReader();
     return saved;
   };
   const nameReview = useSpeakerNameReview({ recordingId: recording.id, onRefresh });
@@ -175,33 +191,34 @@ export default function TranscriptSection({
     liveNoteBoxRef?.current?.focus();
   }, [outbox, liveNoteBoxRef]);
   const recordingId = recording.id;
-  const refreshLive = liveTranscript?.refresh;
   const liveLineHandlers = useMemo<LiveLineHandlers>(() => ({
     editText: async (segment, text) => {
+      if (!canWrite()) return false;
       const saved = await lineActions.editTranscriptLine(recordingId, segment, text);
-      if (saved) refreshLive?.();
+      if (saved) refreshSelectedReader();
       return saved;
     },
     changeSpeaker: async (segment, assignment) => {
+      if (!canWrite()) return false;
       const saved = await lineActions.assignTranscriptLine(recordingId, segment, assignment);
-      if (saved) refreshLive?.();
+      if (saved) refreshSelectedReader();
       return saved;
     },
     split: async (segment, wordId) => {
+      if (!canWrite()) return false;
       const saved = await lineActions.splitTranscriptLine(recordingId, segment, wordId);
-      if (saved) refreshLive?.();
+      if (saved) refreshSelectedReader();
       return saved;
     },
-  }), [recordingId, refreshLive, lineActions]);
-  const activeCapture = isLiveCaptureInProgress(recording);
+  }), [recordingId, refreshSelectedReader, canWrite, lineActions]);
   const paused = recording.status === RecordingStatus.PAUSED || recording.client_status === ClientStatus.PAUSED;
   const hasLoaded = liveTranscript?.hasLoaded ?? false;
-  const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed ? ({
+  const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed && presentFeed ? ({
     hasLoaded, isPaused: paused, lineHandlers: liveLineHandlers,
     onNoteOnLine: activeCapture ? noteOnLine : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,
     loadPeopleNames: liveNaming.loadPeopleNames,
-  }) : undefined, [usesLiveFeed, hasLoaded, paused, liveLineHandlers, activeCapture,
+  }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveLineHandlers, activeCapture,
     noteOnLine, liveNaming.renameLiveSpeaker, liveNaming.loadPeopleNames]);
   const selectedSpeakerMap = useMemo(() => ({ ...speakerMap, ...liveTranscript?.liveSpeakerNames }),
     [speakerMap, liveTranscript?.liveSpeakerNames]);
@@ -271,6 +288,7 @@ export default function TranscriptSection({
         <div className="min-h-0 flex-1">
           <TranscriptView
             live={live}
+            readOnly={readOnly}
             emptyStateTitle={transcriptionError ? "" : transcriptStatus === "completed"
               ? "No speech was detected in this recording." : "No transcript available yet."}
             recordingId={recording.id}
@@ -283,10 +301,10 @@ export default function TranscriptSection({
             speakerMap={selectedSpeakerMap}
             speakers={liveTranscript?.speakers ?? recording.speakers ?? NO_SPEAKERS}
             globalSpeakers={globalSpeakers}
-            onRenameSpeaker={onRenameSpeaker}
-            onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}
+            onRenameSpeaker={(label, name) => canWrite() ? onRenameSpeaker(label, name) : false}
+            onUpdateSegmentSpeaker={(segment, assignment) => canWrite() ? onUpdateSegmentSpeaker(segment, assignment) : false}
             onReviewSpeakerName={reviewSpeakerName}
-            onUpdateSegmentText={onUpdateSegmentText}
+            onUpdateSegmentText={(segment, text) => canWrite() ? onUpdateSegmentText(segment, text) : false}
             onSplitSegment={splitLine}
             onFindAndReplace={onFindAndReplace}
             speakerColors={speakerColors}

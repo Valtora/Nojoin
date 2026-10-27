@@ -286,7 +286,7 @@ function TranscriptLine({
               {speakerName}
             </ButtonBase>
 
-            {popoverAnchor && !isSegmentReadOnly && (
+            {popoverAnchor && (!isSegmentReadOnly || readOnly) && (
               <CapturedSpeakerAssignment
                 segment={segment}
                 onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}

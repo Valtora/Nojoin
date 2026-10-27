@@ -70,10 +70,12 @@ describe("shared section in-flight source", () => {
     expect(editText).toHaveBeenLastCalledWith("rec-1", "u1", "My correction", 3);
     await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
     expect(editor).toHaveValue("My correction");
+    expect(props.onRefresh).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(editText).toHaveBeenLastCalledWith("rec-1", "u1", "My correction", 3);
     expect(props.onUpdateSegmentText).not.toHaveBeenCalled();
+    expect(props.onRefresh).toHaveBeenCalledTimes(1);
   });
 
   it("keeps only the open draft context after an authoritative empty handoff, then shows the empty result", () => {
