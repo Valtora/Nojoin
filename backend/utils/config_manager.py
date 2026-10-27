@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
 from backend.processing.processing_tuning import TUNING_KEYS
 from backend.processing.vad_muting import (
     VAD_MUTE_DEFAULTS,
@@ -202,12 +203,11 @@ DEFAULT_SYSTEM_CONFIG = {
     "ollama_context_window": 32768,
     "secondary_ollama_context_window": 32768,
     "enable_live_transcription": True,
-    # No cap unless an administrator sets one.
-    AI_ANALYSIS_DAILY_LIMIT_KEY: None,
+    AI_ANALYSIS_DAILY_LIMIT_KEY: None,  # No cap unless an administrator sets one.
     EXPORT_BRANDING_KEY: True,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,
-    "live_max_segment_s": 20.0,
+    "live_max_segment_s": DEFAULT_MAX_SEGMENT_S,
     "live_speech_pad_ms": 300,
     # Provisional speaker labels in the live transcript: "off", or "auto" to run
     # them when the live lane is on CUDA. See docs/DEPLOYMENT.md.

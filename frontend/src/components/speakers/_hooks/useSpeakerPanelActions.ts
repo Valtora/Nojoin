@@ -38,6 +38,7 @@ export interface SpeakerPanelActions {
   setRenameValue: (value: string) => void;
   startRename: (entry: SpeakerPanelEntry) => void;
   submitRename: () => Promise<void>;
+  assignIdentity: (entry: SpeakerPanelEntry, name: string) => Promise<boolean>;
 
   // Merge
   mergingSpeaker: SpeakerPanelEntry | null;
@@ -150,16 +151,15 @@ export function useSpeakerPanelActions(
     closeContextMenu();
   };
 
-  const submitRename = async () => {
-    if (!renamingSpeaker || !renameValue.trim() || isSubmitting) return;
-
+  const assignIdentity = async (entry: SpeakerPanelEntry, name: string): Promise<boolean> => {
+    if (!name.trim() || isSubmitting) return false;
     setIsSubmitting(true);
     try {
-      const oldName = renamingSpeaker.displayName;
-      const newName = renameValue.trim();
+      const oldName = entry.displayName;
+      const newName = name.trim();
 
       const renamed = [];
-      for (const speaker of renamingSpeaker.members) {
+      for (const speaker of entry.members) {
         renamed.push(
           ...(await updateSpeaker(recordingId, speaker.diarization_label, newName)),
         );
@@ -174,12 +174,18 @@ export function useSpeakerPanelActions(
       for (const message of libraryVoiceprintNotices(renamed)) {
         addNotification({ type: "info", message });
       }
+      return true;
     } catch (e: unknown) {
       console.error("Failed to rename speaker", e);
       addNotification({ type: "error", message: "Failed to rename speaker." });
+      return false;
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const submitRename = async () => {
+    if (renamingSpeaker) await assignIdentity(renamingSpeaker, renameValue);
   };
 
   const submitMerge = async () => {
@@ -335,6 +341,7 @@ export function useSpeakerPanelActions(
     setRenameValue,
     startRename,
     submitRename,
+    assignIdentity,
 
     mergingSpeaker,
     setMergingSpeaker,

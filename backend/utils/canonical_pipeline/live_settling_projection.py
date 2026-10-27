@@ -29,6 +29,12 @@ def line_is_locked(row: TranscriptUtterance) -> bool:
 
 def row_words(row: TranscriptUtterance) -> list[dict[str, Any]]:
     """Read the stored ordered words without changing their dictionaries."""
+    if row.state == TranscriptUtteranceState.FINALIZED and not (
+        row.confidence_payload or {}
+    ).get("human_protection"):
+        from backend.utils.final_word_boundaries import final_words
+
+        return final_words(row.confidence_payload or {}, row.public_id, text=row.text)
     return [
         dict(word)
         for segment in (row.confidence_payload or {}).get("asr_segments", [])

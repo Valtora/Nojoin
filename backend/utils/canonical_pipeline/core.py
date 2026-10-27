@@ -527,7 +527,16 @@ def serialize_canonical_utterances(
             ),
         }
         alignment_error = (utterance.confidence_payload or {}).get("alignment_error")
-        payload.update(public_settling_fields(utterance.confidence_payload))
+        payload.update(
+            public_settling_fields(
+                utterance.confidence_payload,
+                final_utterance_id=utterance.public_id
+                if settling_required(transcript)
+                and utterance.state == TranscriptUtteranceState.FINALIZED
+                else None,
+                final_text=utterance.text,
+            )
+        )
         if alignment_error:
             payload["alignment_error"] = alignment_error
         if include_confidence_payload:

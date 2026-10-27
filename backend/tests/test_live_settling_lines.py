@@ -271,7 +271,7 @@ def test_default_maximum_is_the_legacy_line_limit_and_never_splits_a_word() -> N
             "id": str(index),
             "locked": True,
         }
-        for index in range(48)
+        for index in range(68)
     ]
     decisions = [LiveLabelDecision("A", True, 1.0) for _word in words]
     parts = partition_words(words, decisions)
@@ -293,7 +293,7 @@ def test_default_maximum_closes_a_long_run_without_losing_words_or_deltas(
     client: dict[str, Any] = {}
     cursor = 0
     with Session(settling_engine) as session:
-        for step in range(12):
+        for step in range(17):
             end = (step + 1) * 2000
             assert publish_live_settling(
                 session,
@@ -302,7 +302,7 @@ def test_default_maximum_closes_a_long_run_without_losing_words_or_deltas(
             ).accepted
             session.commit()
             rows = _active(session, recording_id)
-            assert len(rows) == (1 if end <= 20000 else 2)
+            assert len(rows) == (1 if end <= DEFAULT_MAX_SEGMENT_S * 1000 else 2)
             assert all(
                 row.end_ms - row.start_ms <= DEFAULT_MAX_SEGMENT_S * 1000
                 for row in rows

@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from backend.utils.final_word_boundaries import final_words
+
 
 class LiveWordPublicRead(BaseModel):
     """A word identity and its current exact wording and timing."""
@@ -28,7 +30,7 @@ class FinalReviewPublicRead(BaseModel):
 
 
 class LiveSettlingPublicRead(BaseModel):
-    """Optional settling facts, absent from older recordings' public contract."""
+    """Live settling facts, or timed final word identities on settled recordings."""
 
     words: list[LiveWordPublicRead] | None = Field(
         default=None, exclude_if=lambda value: value is None
@@ -42,8 +44,13 @@ class LiveSettlingPublicRead(BaseModel):
     )
 
 
-def public_settling_fields(payload: dict[str, Any] | None) -> dict[str, Any]:
-    """Expose only typed word facts for lines carrying the settling marker."""
+def public_settling_fields(
+    payload: dict[str, Any] | None,
+    *,
+    final_utterance_id: str | None = None,
+    final_text: str | None = None,
+) -> dict[str, Any]:
+    """Expose typed live facts or final boundaries; never private comparisons."""
     payload = payload or {}
     review = payload.get("final_review")
     public_review = (
@@ -54,6 +61,16 @@ def public_settling_fields(payload: dict[str, Any] | None) -> dict[str, Any]:
     metadata = payload.get("live_text_settling")
     protected = bool(payload.get("human_protection"))
     if not isinstance(metadata, dict) and not protected:
+        if final_utterance_id:
+            words = final_words(payload, final_utterance_id, text=final_text)
+            if words:
+                return {
+                    **public_review,
+                    "words": [
+                        LiveWordPublicRead.model_validate(word).model_dump()
+                        for word in words
+                    ],
+                }
         return public_review
     words = [
         LiveWordPublicRead.model_validate(word).model_dump()
@@ -68,9 +85,17 @@ def public_settling_fields(payload: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def public_transcript_segment(segment: dict[str, Any]) -> dict[str, Any]:
+def public_transcript_segment(
+    segment: dict[str, Any], *, include_final_words: bool = False
+) -> dict[str, Any]:
     """Strip private evidence while preserving the typed settling projection."""
     return {
         **{key: value for key, value in segment.items() if key != "confidence_payload"},
-        **public_settling_fields(segment.get("confidence_payload")),
+        **public_settling_fields(
+            segment.get("confidence_payload"),
+            final_utterance_id=segment.get("id")
+            if include_final_words and not segment.get("provisional")
+            else None,
+            final_text=segment.get("text"),
+        ),
     }

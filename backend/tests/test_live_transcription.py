@@ -37,7 +37,7 @@ def test_config_default_live_transcription_keys_present():
     """Live transcription is enabled and uses the shared transcription backend."""
     assert DEFAULT_SYSTEM_CONFIG["enable_live_transcription"] is True
     assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
-    assert DEFAULT_SYSTEM_CONFIG["live_max_segment_s"] == 20.0
+    assert DEFAULT_SYSTEM_CONFIG["live_max_segment_s"] == 30.0
 
 
 def test_live_transcription_keys_survive_reload(tmp_path):
@@ -655,7 +655,6 @@ def test_detect_speech_segments_device_cpu(monkeypatch):
     import torch
 
     from backend.processing import vad as vad_module
-    from backend.utils.config_manager import config_manager
 
     # Configured for "cpu"
     monkeypatch.setattr(
@@ -699,7 +698,6 @@ def test_detect_speech_segments_device_cuda_fallback_to_cpu(monkeypatch):
     import torch
 
     from backend.processing import vad as vad_module
-    from backend.utils.config_manager import config_manager
 
     # Configured for "cuda" but unavailable
     monkeypatch.setattr(
@@ -746,7 +744,6 @@ def test_detect_speech_segments_device_cuda_migration_failure_fallback(
     import torch
 
     from backend.processing import vad as vad_module
-    from backend.utils.config_manager import config_manager
 
     # Configured for "cuda"
     monkeypatch.setattr(
@@ -1431,8 +1428,8 @@ def test_live_forced_cut(monkeypatch, tmp_path):
 
     assert len(transcript.segments) == 2
     assert transcript.segments[0]["start"] == 0.0
-    assert transcript.segments[0]["end"] == 20.0
-    assert transcript.segments[1]["start"] == 20.0
+    assert transcript.segments[0]["end"] == 30.0
+    assert transcript.segments[1]["start"] == 30.0
     assert transcript.segments[1]["end"] == 31.0
 
 
@@ -2889,7 +2886,6 @@ def test_mute_non_speech_segments_uses_configured_vad_parameters(tmp_path, monke
     import soundfile as sf
 
     from backend.processing import vad as vad_module
-    from backend.utils.config_manager import config_manager
 
     custom = {
         "threshold": 0.8,

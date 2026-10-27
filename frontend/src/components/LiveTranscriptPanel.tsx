@@ -33,6 +33,7 @@ import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling"
 import LiveSpeakerChip from "./transcript/LiveSpeakerChip";
 import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptLineText from "./transcript/TranscriptLineText";
+import OverlapIndicator, { indexOverlaps, NO_OVERLAPS } from "./transcript/OverlapIndicator";
 import { useNoteMoves, type MoveNoteHandler } from "./transcript/_hooks/useNoteMoves";
 
 /**
@@ -152,6 +153,12 @@ export default function LiveTranscriptPanel({
 }: LiveTranscriptPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
+  const overlaps = useMemo(() => indexOverlaps(segments), [segments]);
+  const speakerMap = useMemo(() => ({
+    ...Object.fromEntries((speakers ?? []).map((speaker) => [
+      speaker.diarization_label, getRecordingSpeakerDisplayName(speaker, new Map()),
+    ])), ...liveSpeakerNames,
+  }), [speakers, liveSpeakerNames]);
 
   // Show the source and speaker labels only where they change, so a run of
   // consecutive lines from one channel or voice reads as one block and a
@@ -359,6 +366,7 @@ export default function LiveTranscriptPanel({
                           loadPeopleNames={loadPeopleNames}
                         />
                       ) : null}
+                      <OverlapIndicator segment={segment} overlaps={overlaps.get(segment) ?? NO_OVERLAPS} speakerMap={speakerMap} />
                       {showSourceLabel && sourceChannel ? (
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
                           {SOURCE_CHANNEL_LABELS[sourceChannel]}

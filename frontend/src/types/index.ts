@@ -264,10 +264,11 @@ export interface LiveTranscriptWord {
   lock_reason?: "agreement" | "expiry" | "closure" | null;
 }
 
-/** Present only when the live line carries word settling evidence. */
+/** Live settling evidence, or timed final words on a recording that used settling. */
 export interface LiveTranscriptSettling {
   /** Sticky recording policy, copied onto local segments by the delta reader. */
   settling_required?: boolean;
+  /** Final words retain identities and timings, with locked=true and no live lock reason. */
   words?: LiveTranscriptWord[];
   text_locked?: boolean;
   locked?: boolean;

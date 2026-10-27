@@ -16,6 +16,7 @@ import {
   UserCheck,
   Loader2,
   Sparkles,
+  Users,
 } from "lucide-react";
 import { useState } from "react";
 import ContextMenu from "./ContextMenu";
@@ -37,6 +38,8 @@ import {
 import { useMergedSpeakerClusters } from "./speakers/_hooks/useMergedSpeakerClusters";
 import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton";
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
+import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
+import { useSpeakerTurnHighlight } from "./speakers/SpeakerTurnHighlight";
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -70,6 +73,8 @@ export default function SpeakerPanel({
   onSpeakerRenamed,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
+  const highlight = useSpeakerTurnHighlight();
+  const [picker, setPicker] = useState<{ entry: SpeakerPanelEntry; anchor: HTMLElement } | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -309,20 +314,23 @@ export default function SpeakerPanel({
                         />
                       ) : (
                         <>
-                          <p
-                            className="flex min-w-0 text-sm font-medium text-foreground cursor-pointer hover:text-status-info-fg"
+                          <ButtonBase
+                            type="button"
+                            aria-pressed={entry.labels.every((label) => highlight.labels.includes(label))}
+                            className={`flex min-w-0 max-w-full text-left text-sm font-medium text-foreground cursor-pointer hover:text-status-info-fg ${TOUCH_TARGET_HEIGHT}`}
                             title={
                               entry.pendingName
-                                ? "Suggested name, not confirmed yet. Double-click to rename"
-                                : "Double-click to rename"
+                                ? "Suggested name, not confirmed yet. Click to highlight turns. Double-click to rename"
+                                : "Click to highlight turns. Double-click to rename"
                             }
-                            onDoubleClick={() => handleRenameStart(entry)}
+                            onClick={(event) => { if (event.detail < 2) highlight.toggle(entry.labels); }}
+                            onDoubleClick={() => { setPicker(null); handleRenameStart(entry); }}
                           >
                             <span className="truncate">{entry.displayName}</span>
                             {/* Outside the truncated name, so a long one
                                 never hides that it is a suggestion. */}
                             {entry.pendingName && <span className="shrink-0">?</span>}
-                          </p>
+                          </ButtonBase>
                           {/* A rename relabels every line this speaker holds,
                               so it is disclosed once here rather than on each
                               utterance in the transcript. */}
@@ -374,6 +382,19 @@ export default function SpeakerPanel({
                     </ButtonBase>
                   )}
                   </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <ButtonBase type="button" aria-label={`Change identity for ${entry.displayName}`}
+                    onClick={(event) => setPicker({ entry, anchor: event.currentTarget })}
+                    className={`inline-flex items-center gap-1 rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT}`}>
+                    <Users className="h-3.5 w-3.5" aria-hidden="true" /> Change identity
+                  </ButtonBase>
+                  {!getResolvedGlobalSpeakerId(speaker) && !globalSpeakers.some((person) => person.name === entry.displayName) && (
+                    <ButtonBase type="button" disabled={isSubmitting} onClick={() => handlePromoteToGlobal(entry)}
+                      className={`rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}>
+                      Add to People
+                    </ButtonBase>
+                  )}
                 </div>
                 {/* A suggested name shows at once but links nobody to People
                     until it is confirmed here or on a transcript line. */}
@@ -448,6 +469,17 @@ export default function SpeakerPanel({
           })
         )}
       </div>
+      {picker && <SpeakerAssignmentPopover
+        availableSpeakers={speakers.filter((speaker) => !picker.entry.labels.includes(speaker.diarization_label))}
+        globalSpeakers={globalSpeakers} currentSpeakerLabel={picker.entry.speaker.diarization_label}
+        speakerColors={speakerColors} targetElement={picker.anchor} fixedScope="speaker_everywhere_in_recording"
+        onSelect={async (assignment) => {
+          if (await actions.assignIdentity(picker.entry, assignment.name)) {
+            setPicker(null); picker.anchor.focus();
+          }
+        }}
+        onClose={() => { setPicker(null); picker.anchor.focus(); }}
+      />}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

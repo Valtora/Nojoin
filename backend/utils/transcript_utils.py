@@ -3,6 +3,7 @@ import logging
 import os
 import re
 
+from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
 from backend.processing.processing_tuning import (
     TUNING_SPECS,
     WORD_FLIP_MAX_DURATION_KEY,
@@ -628,7 +629,7 @@ def _smooth_isolated_word_speaker_flips(
 
 
 def consolidate_diarized_transcript(
-    segments, min_duration_s: float = 0.1, max_duration_s: float = 10.0
+    segments, min_duration_s: float = 0.1, max_duration_s: float = DEFAULT_MAX_SEGMENT_S
 ):
     """
     Consolidate diarized transcript segments by speaker, merging consecutive segments by the same speaker,
@@ -664,12 +665,11 @@ def consolidate_diarized_transcript(
         # Split a segment longer than max_duration_s; Whisper can return 30s blocks.
         if exceeds(curr_end - curr_start, max_duration_s):
             if curr_words:
-                # Split within an 8-12s window centred on a 10s target: prefer the
-                # sentence break (.!?) nearest the target, otherwise the nearest word
-                # boundary in the window, otherwise the first word ending past 10s.
-                soft_min = curr_start + 8.0
-                soft_max = curr_start + 12.0
-                hard_target = curr_start + 10.0
+                # Scale the existing sentence-preference window with the cap:
+                # 24-36 s around the default 30 s target, never fixed 8/10/12 s.
+                soft_min = curr_start + max_duration_s * 0.8
+                soft_max = curr_start + max_duration_s * 1.2
+                hard_target = curr_start + max_duration_s
 
                 # Track best sentence break vs best word break separately
                 best_sentence_idx = -1
@@ -706,13 +706,17 @@ def consolidate_diarized_transcript(
                 elif best_word_idx != -1:
                     split_idx = best_word_idx
                 else:
-                    # No candidate in the 8-12s window: split at the first word
-                    # ending past 10s.
+                    # Sparse timings: keep the last boundary below the cap.
+                    # One indivisible word may itself exceed the cap.
                     split_idx = -1
                     for idx, w in enumerate(curr_words):
-                        if has_word_timing(w) and w["end"] >= hard_target:
-                            split_idx = idx + 1
+                        if not has_word_timing(w):
+                            continue
+                        if exceeds(w["end"], hard_target):
+                            if split_idx == -1:
+                                split_idx = idx + 1
                             break
+                        split_idx = idx + 1
                     if split_idx == -1:
                         split_idx = len(curr_words)
 
@@ -831,9 +835,9 @@ def consolidate_diarized_transcript(
             if exceeds(potential_end - curr_start, max_duration_s):
                 break
 
+            if next_speaker != curr_speaker:
+                break  # Crosstalk retains its own credited words and line actions.
             if next_seg["start"] < curr_end:
-                if next_speaker != curr_speaker:
-                    curr_overlapping.add(next_speaker)
                 curr_overlapping.update(next_overlapping)
                 curr_end = potential_end
                 curr_text += " " + next_seg["text"]

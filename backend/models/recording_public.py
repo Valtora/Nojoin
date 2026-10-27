@@ -350,7 +350,9 @@ def serialize_transcript(
         # The durable projection retains inference/protection evidence for
         # backfill and backup; public reads expose the ordinary segment fields.
         segments=[
-            public_transcript_segment(segment)
+            public_transcript_segment(
+                segment, include_final_words=settling_required(transcript)
+            )
             for segment in (
                 transcript.segments if segments_override is None else segments_override
             )

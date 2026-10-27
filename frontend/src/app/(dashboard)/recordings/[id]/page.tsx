@@ -7,6 +7,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import ChatPanel from "@/components/ChatPanel";
 import SpeakerPanel from "@/components/SpeakerPanel";
+import { SpeakerTurnHighlightProvider } from "@/components/speakers/SpeakerTurnHighlight";
 import CapturesGallery from "@/components/notes/CapturesGallery";
 import MyNotesList from "@/components/notes/MyNotesList";
 import { NoteFilesProvider } from "@/components/notes/NoteFiles";
@@ -183,6 +184,7 @@ export default function RecordingPage({ params }: PageProps) {
 
   return (
     // Notes' files open one viewer, from a note's line or the Captures tab.
+    <SpeakerTurnHighlightProvider key={recording.id}>
     <NoteFilesProvider
       recordingId={recording.id}
       notes={timelineNotes}
@@ -351,5 +353,6 @@ export default function RecordingPage({ params }: PageProps) {
       />
     </div>
     </NoteFilesProvider>
+    </SpeakerTurnHighlightProvider>
   );
 }

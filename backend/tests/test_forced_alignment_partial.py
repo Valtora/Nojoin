@@ -442,7 +442,8 @@ def test_split_keeps_unknown_words_with_previous_timed_anchor() -> None:
                 "words": words,
                 "text": reconstruct_text_from_words(words),
             }
-        ]
+        ],
+        max_duration_s=10.0,
     )
     assert [(s["start"], s["end"], s["text"]) for s in final] == [
         (0, 9, "Leading timed. unknown"),

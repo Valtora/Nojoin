@@ -135,7 +135,8 @@ def test_overlapping_remainder_starts_at_first_remaining_word() -> None:
                 "text": "First. Second last.",
                 "words": words,
             }
-        ]
+        ],
+        max_duration_s=10.0,
     )
     assert len(final) == 2
     assert final[0]["end"] == 10.08

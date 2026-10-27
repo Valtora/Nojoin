@@ -310,7 +310,8 @@ def test_sustained_alignment_failures_respect_maximum_without_splitting_atoms(
     frozen: dict[str, dict[str, Any]] = {}
     cursor = 0
     with Session(settling_engine) as session:
-        for step in range(25):
+        # Cross two 30 s line limits, retaining the original three-line check.
+        for step in range(35):
             end_ms = (step + 1) * 2000
             previous = load_live_settling_words(session, recording_id=recording_id)
             input_start = plan_settling_window(

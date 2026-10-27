@@ -16,8 +16,9 @@ export const sourceReference = (segment: TranscriptSegment): TranscriptSourceRef
 /** Split boundaries are word identities, never whitespace guesses or interpolated times. */
 export const splitWords = (segment: TranscriptSegment) =>
   (segment.words ?? []).filter((word, index, words) =>
-    word.start_ms !== null && word.end_ms !== null && !word.join_left &&
+    typeof word.id === "string" && word.id.length > 0 &&
+    word.start_ms != null && word.end_ms != null && !word.join_left &&
     /^[\p{L}\p{N}_]/u.test(word.word.trim()) &&
-    words.slice(0, index).some((previous) => previous.start_ms !== null && previous.end_ms !== null &&
+    words.slice(0, index).some((previous) => previous.start_ms != null && previous.end_ms != null &&
       /^[\p{L}\p{N}_]/u.test(previous.word.trim())),
   );
