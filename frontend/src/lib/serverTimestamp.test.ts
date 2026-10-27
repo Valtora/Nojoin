@@ -1,18 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { withProcessTimeZone } from "@/test/processTimeZone";
 import { parseServerTimestamp } from "./serverTimestamp";
 
-const originalTimeZone = process.env.TZ;
-
 describe.each(["America/New_York", "Asia/Tokyo"])("parseServerTimestamp in %s", (timeZone) => {
-  beforeEach(() => {
-    process.env.TZ = timeZone;
-  });
-
-  afterEach(() => {
-    if (originalTimeZone === undefined) delete process.env.TZ;
-    else process.env.TZ = originalTimeZone;
-  });
+  withProcessTimeZone(timeZone);
 
   it.each([
     "2026-10-27T16:08:13.123",

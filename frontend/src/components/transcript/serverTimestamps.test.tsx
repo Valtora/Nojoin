@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TranscriptView from "@/components/TranscriptView";
+import { withProcessTimeZone } from "@/test/processTimeZone";
 import type { TranscriptSegment } from "@/types";
 
 vi.mock("@/lib/notificationStore", () => ({
@@ -10,7 +11,6 @@ vi.mock("@/lib/notificationStore", () => ({
 }));
 
 const NOW = Date.parse("2026-10-27T16:08:13Z");
-const originalTimeZone = process.env.TZ;
 const PROPS: ComponentProps<typeof TranscriptView> = {
   recordingId: "rec-utc",
   segments: [],
@@ -44,8 +44,9 @@ const segment = (id: string, updatedAt: string, speaker = "SPEAKER_0"): Transcri
 });
 
 describe.each(["America/New_York", "Asia/Tokyo"])("Revised badge for server timestamps in %s", (timeZone) => {
+  withProcessTimeZone(timeZone);
+
   beforeEach(() => {
-    process.env.TZ = timeZone;
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     vi.setSystemTime(NOW);
   });
@@ -53,8 +54,6 @@ describe.each(["America/New_York", "Asia/Tokyo"])("Revised badge for server time
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
-    if (originalTimeZone === undefined) delete process.env.TZ;
-    else process.env.TZ = originalTimeZone;
   });
 
   it("expires the badge while playback is paused without another render", () => {

@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 
 import { UserRole, type CliOAuthStatus, type CliUsageRow, type Invitation } from "@/types";
 import type { ConnectedApp, Document } from "@/lib/api";
+import { withProcessTimeZone } from "@/test/processTimeZone";
 
 const mocks = vi.hoisted(() => ({
   getInvitations: vi.fn(),
@@ -31,19 +32,16 @@ import ConnectedAppsSettings from "./ConnectedAppsSettings";
 import InvitesTab from "./InvitesTab";
 import DocumentsView from "../DocumentsView";
 
-const originalTimeZone = process.env.TZ;
-
 describe.each(["America/New_York", "Asia/Tokyo"])("server timestamps in settings and documents in %s", (timeZone) => {
+  withProcessTimeZone(timeZone);
+
   beforeEach(() => {
-    process.env.TZ = timeZone;
     vi.restoreAllMocks();
     vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 9, 27, 12));
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    if (originalTimeZone === undefined) delete process.env.TZ;
-    else process.env.TZ = originalTimeZone;
   });
 
   // Both sides of midnight matter: New York crosses the earlier UTC midnight,

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 
+import { withProcessTimeZone } from "@/test/processTimeZone";
 import { RecordingStatus, type Recording } from "@/types";
 import LinkedEventPanel from "./LinkedEventPanel";
 import RecordingInfoModal from "./RecordingInfoModal";
@@ -43,19 +44,13 @@ const eventLabel = () =>
   `${eventInstant.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ` +
   eventInstant.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
-const originalTimeZone = process.env.TZ;
-
 describe.each(["America/New_York", "Asia/Tokyo"])("recording server timestamps in %s", (timeZone) => {
+  withProcessTimeZone(timeZone);
+
   beforeEach(() => {
-    process.env.TZ = timeZone;
     vi.clearAllMocks();
     api.getRecordingInfo.mockResolvedValue({ proxy: null });
     api.getRecordingCalendarEventCandidates.mockResolvedValue([event]);
-  });
-
-  afterEach(() => {
-    if (originalTimeZone === undefined) delete process.env.TZ;
-    else process.env.TZ = originalTimeZone;
   });
 
   it("shows the recording info clock at the UTC instant returned without a zone", async () => {

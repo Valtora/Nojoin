@@ -1,6 +1,7 @@
 import type { ComponentPropsWithoutRef } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { withProcessTimeZone } from "@/test/processTimeZone";
 import { renderWithProviders, screen, within } from "@/test/renderWithProviders";
 import { useNavigationStore } from "@/lib/store";
 import { RecordingStatus, type Recording } from "@/types";
@@ -60,11 +61,10 @@ const formatClock = (date: Date) => date.toLocaleTimeString([], {
   hour: "2-digit", minute: "2-digit", hour12: false,
 });
 
-const originalTimeZone = process.env.TZ;
-
 describe.each(["America/New_York", "Asia/Tokyo"])("sidebar server timestamps in %s", (timeZone) => {
+  withProcessTimeZone(timeZone);
+
   beforeEach(() => {
-    process.env.TZ = timeZone;
     useNavigationStore.setState({
       currentView: "recordings", selectedTagIds: [], selectedRecordingIds: [],
       isRecordingsSidebarCollapsed: false,
@@ -73,11 +73,6 @@ describe.each(["America/New_York", "Asia/Tokyo"])("sidebar server timestamps in 
       recording("early", "2026-10-27T02:30:00"),
       recording("late", "2026-10-27T20:30:00"),
     ]);
-  });
-
-  afterEach(() => {
-    if (originalTimeZone === undefined) delete process.env.TZ;
-    else process.env.TZ = originalTimeZone;
   });
 
   it("labels recording days from UTC even when the local day crosses midnight", async () => {
