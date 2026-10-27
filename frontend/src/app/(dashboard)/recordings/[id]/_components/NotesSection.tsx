@@ -63,6 +63,7 @@ export default function NotesSection({
             Regenerating will overwrite any edits you have made.
           </p>
           <ButtonBase
+            data-ui-fill="status-warning"
             type="button"
             onClick={() => void onGenerateNotes()}
             className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-status-warning-bg px-3 py-1.5 text-xs font-semibold text-status-warning-fg transition-colors hover:bg-status-warning-bg"

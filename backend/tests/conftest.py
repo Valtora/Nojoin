@@ -7,11 +7,20 @@ import os
 # once, on import.
 os.environ["HF_HUB_OFFLINE"] = "1"
 
+# Points NOJOIN_DATA_DIR at a temporary directory. Imported ahead of the
+# backend, which fixes its data paths on import; data_dir.py says why. Without
+# it the suite wrote into the checkout's data/, and a read-only checkout failed
+# on import.
+from backend.tests.data_dir import SUITE_DATA_DIR
+
+# isort: split
+import shutil
 import sqlite3
 import sys
 import tempfile
 import traceback
 import types
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -344,6 +353,21 @@ def model_cache_env(
     monkeypatch.setattr(constants, "HF_HUB_CACHE", hub)
     monkeypatch.setattr(constants, "HUGGINGFACE_HUB_CACHE", hub)
     return home
+
+
+@pytest.fixture(scope="session", autouse=True)
+def suite_data_dir() -> Iterator[Path]:
+    """The data directory the whole session shares, under the temp directory.
+
+    data_dir.py points NOJOIN_DATA_DIR at it, imported at the top of this
+    file because the backend fixes its data paths on import. There is one per
+    session because
+    config_manager loads config.json once. A test that needs a data directory
+    of its own patches path_manager onto tmp_path, as the keyring and
+    telemetry tests do. Removed when the session ends.
+    """
+    yield SUITE_DATA_DIR
+    shutil.rmtree(SUITE_DATA_DIR, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")

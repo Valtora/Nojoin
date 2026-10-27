@@ -42,15 +42,18 @@ export default function DashboardLayout({
             the nav <-> main row filling the rest. `h-dvh` (dynamic viewport)
             keeps the shell inside the visible area so the browser toolbar never
             clips the bottom of scroll views. On desktop TopBar is hidden, so the
-            column collapses to a single row. */}
+            column collapses to a single row. The shell clips rather than
+            hides its overflow: an overflow-hidden box is still scrolled by
+            scrollIntoView and focus, which moved every column but the sticky
+            nav off screen. Only <main> and the panes inside it scroll. */}
         <div
-          className="flex flex-col h-dvh w-full overflow-hidden"
+          className="flex flex-col h-dvh w-full overflow-clip"
           style={DEMO_BANNER_STYLE}
         >
           <TourGuide />
           <DemoBanner />
           <TopBar />
-          <div className="flex flex-1 min-h-0 w-full overflow-hidden">
+          <div className="flex flex-1 min-h-0 w-full overflow-clip">
             <MainNav />
             {!isSettingsPage && !isPeoplePage && showSidebar && <Sidebar />}
 

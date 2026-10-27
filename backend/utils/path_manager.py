@@ -90,7 +90,11 @@ class PathManager:
 
         return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
 
-    def _get_container_data_directory(self, project_root: Path) -> Path:
+    def _get_project_data_directory(self, project_root: Path) -> Path:
+        """``data/`` in the project root, unless NOJOIN_DATA_DIR moves it.
+
+        A relative NOJOIN_DATA_DIR is taken from the project root.
+        """
         configured_data_dir = os.getenv("NOJOIN_DATA_DIR", "").strip()
         if configured_data_dir:
             configured_path = Path(configured_data_dir).expanduser()
@@ -108,12 +112,13 @@ class PathManager:
             # Containerized deployments persist application data under /app/data.
             self._executable_directory = project_root
             self._app_directory = project_root
-            self._user_data_directory = self._get_container_data_directory(project_root)
+            self._user_data_directory = self._get_project_data_directory(project_root)
         elif self._deployment_mode == "development":
-            # Development mode: everything in project directory
+            # Development mode: everything in project directory. NOJOIN_DATA_DIR
+            # moves the data directory, as in a container; the test suite sets it.
             self._executable_directory = project_root  # Assets are in project root
             self._app_directory = project_root  # Keep for backward compatibility
-            self._user_data_directory = project_root / "data"
+            self._user_data_directory = self._get_project_data_directory(project_root)
         else:
             # Production mode: executable has assets, user data in Documents
             self._executable_directory = (
