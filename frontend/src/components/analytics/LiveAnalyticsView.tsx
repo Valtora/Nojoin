@@ -1,23 +1,21 @@
 "use client";
 
 import { useMemo } from "react";
-import type { RecordingId } from "@/types";
+import type { LiveRecordingAnalytics } from "@/types";
 
 import { Band, Note, Section, StatTile } from "./Section";
 import { formatDuration, formatShare, formatTimestamp } from "./formatDuration";
 import { buildSpeakerColors } from "./speakerPalette";
-import { useLiveAnalytics } from "./useLiveAnalytics";
 
 export default function LiveAnalyticsView({
-  recordingId,
-  refreshKey,
+  analytics,
+  error,
   speakerColors,
 }: {
-  recordingId: RecordingId;
-  refreshKey: string;
+  analytics: LiveRecordingAnalytics | null;
+  error: string | null;
   speakerColors: Record<string, string>;
 }) {
-  const { analytics, error } = useLiveAnalytics(recordingId, refreshKey);
   const colors = useMemo(() => buildSpeakerColors(analytics?.speakers ?? [], speakerColors),
     [analytics?.speakers, speakerColors]);
 

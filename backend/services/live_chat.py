@@ -9,7 +9,7 @@ from typing import Any
 from backend.processing.llm_backends.base import LLMBackend
 from backend.utils.chat_prompt import LiveChatTranscript
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.llm_transcript import NOTES_LEGEND
+from backend.utils.llm_transcript import NOTES_LEGEND, RenderedTranscript
 
 ChatChunk = str | dict[str, Any]
 
@@ -40,11 +40,16 @@ def _recent_text(text: str, budget: int) -> str:
     lines: list[str] = []
     size = 0
     carries_note = False
+    note_lines = (
+        text.note_line_indices if isinstance(text, RenderedTranscript) else frozenset()
+    )
     # The legend is prompt metadata, not an old meeting passage.
-    candidates = [line for line in text.splitlines() if line != NOTES_LEGEND]
-    for line in reversed(candidates):
+    candidates = list(enumerate(text.splitlines()))
+    if note_lines and candidates and candidates[0][1] == NOTES_LEGEND:
+        candidates = candidates[1:]
+    for index, line in reversed(candidates):
         cost = len(line.encode("utf-8")) + bool(lines)
-        has_note = carries_note or line.startswith("[Note")
+        has_note = carries_note or index in note_lines
         legend = len(NOTES_LEGEND.encode("utf-8")) + 1 if has_note else 0
         if size + cost + legend > budget:
             remaining = budget - size - legend - bool(lines)

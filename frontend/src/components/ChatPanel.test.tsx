@@ -14,13 +14,15 @@ import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 const getSettings = vi.fn();
 const getUserMe = vi.fn();
 const getCliOAuthStatus = vi.fn();
+const addNotification = vi.fn();
+let currentRecordingId = "rec-1";
 const getChatHistory = vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]);
 const streamChatMessage = vi.fn<(...args: unknown[]) => AbortController>(
   () => new AbortController(),
 );
 
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "rec-1" }),
+  useParams: () => ({ id: currentRecordingId }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -37,8 +39,13 @@ vi.mock("@/lib/api/cliOauth", () => ({
 }));
 
 vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification: vi.fn() }),
+  useNotificationStore: () => ({ addNotification }),
 }));
+
+beforeEach(() => {
+  currentRecordingId = "rec-1";
+  addNotification.mockClear();
+});
 
 const SERVER_READY: Partial<Settings> = {
   llm_provider: "gemini",
@@ -146,6 +153,110 @@ describe("ChatPanel provisional context", () => {
       (callbacks[3] as () => void)();
     });
     expect(screen.getByText(/Only the most recent part of the transcript/i)).toBeInTheDocument();
+  });
+});
+
+describe("ChatPanel stream lifecycle", () => {
+  type StreamArguments = Parameters<typeof import("@/lib/api").streamChatMessage>;
+  const callbacks = (index = 0) => streamChatMessage.mock.calls[index] as StreamArguments;
+  const send = (text: string) => {
+    const input = screen.getByPlaceholderText("Ask a question...");
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  };
+  const lateEvents = (request: StreamArguments) => act(() => {
+    request[2]("Stale answer.");
+    request[7]?.({ provisional: true, transcript_trimmed: true });
+    request[6]?.();
+    request[4]("Stale error");
+    request[3]();
+  });
+
+  beforeEach(() => {
+    getSettings.mockResolvedValue(SERVER_READY);
+    getUserMe.mockResolvedValue(SETUP_ACCOUNT);
+    getChatHistory.mockReset().mockResolvedValue([]);
+    streamChatMessage.mockReset().mockImplementation(() => new AbortController());
+  });
+
+  it.each([
+    { inFlight: true, departure: "unmount" }, { inFlight: false, departure: "unmount" },
+    { inFlight: true, departure: "collapse" }, { inFlight: false, departure: "collapse" },
+  ])("keeps generation running on $departure with inFlight=$inFlight", async ({ inFlight, departure }) => {
+    const notesUpdated = vi.fn();
+    const view = render(<ChatPanel inFlight={inFlight} onNotesUpdate={notesUpdated}
+      onCollapse={() => view.rerender(<></>)} />);
+    await waitFor(() => expect(screen.queryByText("Loading chat history...")).not.toBeInTheDocument());
+    send("Who spoke?");
+    const controller = streamChatMessage.mock.results[0].value;
+    if (departure === "collapse") fireEvent.click(screen.getByRole("button", { name: "Collapse chat panel" }));
+    else view.unmount();
+    lateEvents(callbacks());
+    expect(controller.signal.aborted).toBe(false);
+    expect(notesUpdated).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+  });
+
+  it("aborts only the explicitly stopped request and fences its late callbacks", async () => {
+    const notesUpdated = vi.fn();
+    render(<ChatPanel onNotesUpdate={notesUpdated} />);
+    await waitFor(() => expect(screen.queryByText("Loading chat history...")).not.toBeInTheDocument());
+    send("First question");
+    const stopped = streamChatMessage.mock.results[0].value;
+    fireEvent.click(screen.getByTitle("Stop Generation"));
+    expect(stopped.signal.aborted).toBe(true);
+    expect(addNotification).toHaveBeenCalledWith({ type: "info", message: "Generation stopped" });
+    addNotification.mockClear();
+    send("Second question");
+    lateEvents(callbacks());
+    expect(screen.getByTitle("Stop Generation")).toBeInTheDocument();
+    expect(screen.queryByText(/Stale|Only the most recent part/)).not.toBeInTheDocument();
+    expect(notesUpdated).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+    expect(streamChatMessage.mock.results[1].value.signal.aborted).toBe(false);
+    act(() => { callbacks(1)[2]("Current answer."); callbacks(1)[3](); });
+    expect(screen.getByText("Current answer.")).toBeInTheDocument();
+    expect(screen.queryByTitle("Stop Generation")).not.toBeInTheDocument();
+  });
+
+  it("detaches the old recording stream and accepts a new request without stale callbacks", async () => {
+    const notesUpdated = vi.fn();
+    const view = render(<ChatPanel onNotesUpdate={notesUpdated} />);
+    await waitFor(() => expect(screen.queryByText("Loading chat history...")).not.toBeInTheDocument());
+    send("Old recording question");
+    const oldController = streamChatMessage.mock.results[0].value;
+    currentRecordingId = "rec-2";
+    view.rerender(<ChatPanel onNotesUpdate={notesUpdated} />);
+    await waitFor(() => expect(screen.queryByText("Loading chat history...")).not.toBeInTheDocument());
+    expect(screen.queryByTitle("Stop Generation")).not.toBeInTheDocument();
+    send("New recording question");
+    expect(streamChatMessage).toHaveBeenCalledTimes(2);
+    expect(callbacks(1)[0]).toBe("rec-2");
+    lateEvents(callbacks());
+    expect(oldController.signal.aborted).toBe(false);
+    expect(screen.queryByText(/Stale|Old recording question|Only the most recent part/)).not.toBeInTheDocument();
+    expect(screen.getByTitle("Stop Generation")).toBeInTheDocument();
+    expect(notesUpdated).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+    act(() => { callbacks(1)[2]("New recording answer."); callbacks(1)[3](); });
+    expect(screen.getByText("New recording answer.")).toBeInTheDocument();
+  });
+
+  it("reloads history when returning before the intervening recording has loaded", async () => {
+    const view = render(<ChatPanel />);
+    await waitFor(() => expect(screen.queryByText("Loading chat history...")).not.toBeInTheDocument());
+    let finishHistory!: (history: unknown[]) => void;
+    getChatHistory.mockImplementation(() => new Promise((resolve) => { finishHistory = resolve; }));
+    currentRecordingId = "rec-2";
+    view.rerender(<ChatPanel />);
+    currentRecordingId = "rec-1";
+    view.rerender(<ChatPanel />);
+    send("Wait for history");
+    expect(streamChatMessage).not.toHaveBeenCalled();
+    expect(screen.getByText("Loading chat history...")).toBeInTheDocument();
+    await act(async () => { finishHistory([]); });
+    fireEvent.keyDown(screen.getByPlaceholderText("Ask a question..."), { key: "Enter" });
+    expect(streamChatMessage).toHaveBeenCalledTimes(1);
   });
 });
 

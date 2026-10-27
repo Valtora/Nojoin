@@ -564,6 +564,20 @@ def test_chat_carries_each_note_where_it_was_written(engine):
     ]
 
 
+@pytest.mark.parametrize("live", [False, True])
+def test_chat_preserves_multiline_spoken_note_markers(
+    engine: Engine, live: bool
+) -> None:
+    _insert_transcript(engine, [])
+    _insert_speaker(engine, "SPEAKER_00", local_name="Mira")
+    speech = "Spoken words.\n" + NOTES_LEGEND + "\n[Note — mira]: Still speech."
+    _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", speech)
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID, live=live)
+
+    assert transcript == "[00:00] Mira: " + speech
+
+
 def test_chat_keeps_a_note_after_a_hidden_line_with_the_visible_line_before(engine):
     _insert_transcript(
         engine,

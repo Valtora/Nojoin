@@ -1,7 +1,7 @@
 "use client";
 
 import { ButtonBase } from '@/components/ui/nativeBases';
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BarChart3 } from "lucide-react";
 
 import {
@@ -24,6 +24,9 @@ import { formatDuration, formatShare } from "./formatDuration";
 
 interface AnalyticsViewProps {
   recordingId: RecordingId;
+  /** Retain transcript estimates until the initial final read succeeds. */
+  initialFallback?: ReactNode;
+  onLoaded?: () => void;
   /** Seek the player, so a named monologue can be listened to. */
   onPlaySegment?: (startMs: number) => void;
   onReviewSpeakers?: () => void;
@@ -41,27 +44,36 @@ export default function AnalyticsView({
   onPlaySegment,
   onReviewSpeakers,
   speakerColors,
+  initialFallback,
+  onLoaded,
 }: AnalyticsViewProps) {
   const [analytics, setAnalytics] = useState<RecordingAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [analysing, setAnalysing] = useState(false);
+  const loadGeneration = useRef(0);
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError(null);
     try {
-      setAnalytics(await getRecordingAnalytics(recordingId));
+      const next = await getRecordingAnalytics(recordingId);
+      if (generation !== loadGeneration.current) return;
+      setAnalytics(next);
+      onLoaded?.();
     } catch {
+      if (generation !== loadGeneration.current) return;
       setError("Analytics could not be loaded for this meeting.");
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
-  }, [recordingId]);
+  }, [recordingId, onLoaded]);
 
   useEffect(() => {
     void load();
+    return () => { loadGeneration.current += 1; };
   }, [load]);
 
   // Both generated tiers run on a worker, so the POST returns as soon as the
@@ -118,6 +130,7 @@ export default function AnalyticsView({
   );
 
   if (loading) {
+    if (!analytics && initialFallback) return initialFallback;
     return (
       <div className="flex h-full items-center justify-center text-sm text-contrast-helper">
         Loading analytics...
@@ -126,8 +139,11 @@ export default function AnalyticsView({
   }
 
   if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+    const retainingEstimates = !analytics && initialFallback;
+    const errorContent = (
+      <div className={`flex flex-col items-center justify-center gap-2 p-6 text-center ${
+        retainingEstimates ? "shrink-0" : "h-full"
+      }`}>
         <p className="text-sm text-contrast-helper">{error}</p>
         <ButtonBase
           type="button"
@@ -138,6 +154,12 @@ export default function AnalyticsView({
         </ButtonBase>
       </div>
     );
+    return retainingEstimates ? (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1">{initialFallback}</div>
+        {errorContent}
+      </div>
+    ) : errorContent;
   }
 
   // No attributed speech is the normal state for a recording that captured

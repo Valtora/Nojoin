@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { getLiveRecordingAnalytics } from "@/lib/api";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
@@ -7,8 +7,8 @@ import type { LiveRecordingAnalytics, RecordingId } from "@/types";
 const POLL_MS = 3000;
 const TIMEOUT_MS = 15000;
 
-/** One bounded read at a time; a refresh replaces the reader's entire generation. */
-export function useLiveAnalytics(recordingId: RecordingId, refreshKey: string) {
+/** One bounded read at a time; disabling retains the last snapshot and stops reads. */
+export function useLiveAnalytics(recordingId: RecordingId, refreshKey: string, enabled = true) {
   const [analytics, setAnalytics] = useState<LiveRecordingAnalytics | null>(null);
   const [error, setError] = useState<string | null>(null);
   useOnDepsChange([recordingId], () => {
@@ -17,6 +17,7 @@ export function useLiveAnalytics(recordingId: RecordingId, refreshKey: string) {
   });
 
   useEffect(() => {
+    if (!enabled) return;
     let disposed = false;
     let request: { controller: AbortController; timeout: ReturnType<typeof setTimeout> } | null = null;
 
@@ -60,7 +61,12 @@ export function useLiveAnalytics(recordingId: RecordingId, refreshKey: string) {
         request.controller.abort();
       }
     };
-  }, [recordingId, refreshKey]);
+  }, [recordingId, refreshKey, enabled]);
 
-  return { analytics, error };
+  const clearAnalytics = useCallback(() => {
+    setAnalytics(null);
+    setError(null);
+  }, []);
+
+  return { analytics, error, clearAnalytics };
 }

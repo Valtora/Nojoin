@@ -43,6 +43,19 @@ NOTES_LEGEND = (
 )
 
 
+class RenderedTranscript(str):
+    """Prompt text with note provenance supplied by the timeline renderer."""
+
+    note_line_indices: frozenset[int]
+
+    def __new__(
+        cls, text: str, *, note_line_indices: frozenset[int]
+    ) -> RenderedTranscript:
+        rendered = super().__new__(cls, text)
+        rendered.note_line_indices = note_line_indices
+        return rendered
+
+
 def _view_hides_unknown(segments: list[dict]) -> bool:
     # TranscriptView hides finalised UNKNOWN (unattributed) lines, such as a
     # removed speaker's, once any line has a known speaker. Sending them would
@@ -127,12 +140,25 @@ def render_transcript_for_llm(
     if not segments and not live:
         return None
     timeline = _chat_timeline(session, recording_id, segments, live=live)
-    lines = [NOTES_LEGEND] if timeline.has_notes else []
-    lines.extend(timeline.opening)
+    parts = [(NOTES_LEGEND, False)] if timeline.has_notes else []
+    parts.extend((note, True) for note in timeline.opening)
     for block in timeline.blocks:
-        lines.extend(block)
-    lines.extend(timeline.tail)
-    return "\n".join(lines)
+        parts.append((block[0], False))
+        parts.extend((note, True) for note in block[1:])
+    parts.extend((note, True) for note in timeline.tail)
+    note_line_indices: set[int] = set()
+    line_count = 0
+    for part, is_note in parts:
+        # Count the physical lines trimming reads, including embedded speech
+        # line breaks and the separator inserted between renderer parts.
+        count = len((part + "\n").splitlines())
+        if is_note:
+            note_line_indices.update(range(line_count, line_count + count))
+        line_count += count
+    return RenderedTranscript(
+        "\n".join(part for part, _ in parts),
+        note_line_indices=frozenset(note_line_indices),
+    )
 
 
 # Written between passages that are not consecutive in the transcript.

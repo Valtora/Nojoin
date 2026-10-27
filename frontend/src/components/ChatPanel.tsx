@@ -129,6 +129,8 @@ export default function ChatPanel({
   // Load chat history
   useEffect(() => {
     let current = true;
+    setLoadedHistoryRecordingId(null);
+    setIsStreaming(false);
     if (recordingId) {
       setMessages([]);
       getChatHistory(recordingId).then((history) => {
@@ -142,7 +144,7 @@ export default function ChatPanel({
     return () => {
       current = false;
       generation.current += 1;
-      abortController.current?.abort();
+      // Leaving the panel detaches its callbacks; only Stop cancels generation.
       abortController.current = null;
     };
   }, [recordingId]);

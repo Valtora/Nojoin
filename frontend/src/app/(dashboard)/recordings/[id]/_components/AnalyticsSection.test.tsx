@@ -1,9 +1,8 @@
-import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithProviders, screen, waitFor } from "@/test/renderWithProviders";
-import type { LiveRecordingAnalytics } from "@/types";
+import { act, fireEvent, renderWithProviders, screen, waitFor } from "@/test/renderWithProviders";
+import type { LiveRecordingAnalytics, RecordingAnalytics } from "@/types";
 
-const getRecordingAnalytics = vi.fn<(...args: unknown[]) => Promise<never>>(() => new Promise(() => {}));
+const getRecordingAnalytics = vi.fn<(...args: unknown[]) => Promise<RecordingAnalytics>>();
 const getLiveRecordingAnalytics = vi.fn();
 vi.mock("@/lib/api", () => ({
   getRecordingAnalytics: (...args: unknown[]) => getRecordingAnalytics(...args),
@@ -26,14 +25,34 @@ const live = (name = "Alex"): LiveRecordingAnalytics => ({
     excluded_short: 0, excluded_overlapping: 0 } },
 });
 
+const finished = (): RecordingAnalytics => ({
+  recording_id: "rec-1", transcript_revision: 3, speakers: live("Final Alex").speakers,
+  metrics: { ...live().metrics, duration_ms: 30_000,
+    turn_taking: { transitions: [], response_latency: {}, immediate_transitions: 0, lapse_transitions: 0 },
+    timeline: { bucket_ms: 60_000, buckets: [] },
+    silence: { speech_ms: 30_000, silence_ms: 0, silence_share: 0 },
+    unattributed: { utterance_count: 0, speech_ms: 0 },
+    overlap: { overlapped_ms: 0, overlap_share: 0, overlapping_speech_present: false } },
+  attribution_warning: null, delivery: null, delivery_status: "pending",
+  delivery_error_message: null, delivery_stale: false,
+  ai: null, ai_status: "pending", ai_error_message: null, ai_stale: false,
+  ai_budget: { limit: null, used: 0, remaining: null, resets_at: "2026-10-12T00:00:00+00:00" },
+  audio_overlap: null, audio_overlap_status: "pending", audio_overlap_error_message: null,
+  delivery_baselines: {},
+});
+
 describe("AnalyticsSection live lifecycle", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    getRecordingAnalytics.mockReset();
+    getLiveRecordingAnalytics.mockReset();
+    getRecordingAnalytics.mockImplementation(() => new Promise(() => {}));
     getLiveRecordingAnalytics.mockResolvedValue(live());
   });
   afterEach(() => vi.useRealTimers());
 
-  it("requests estimates only while active and switches to final analytics on completion", async () => {
+  it("retains estimates after completion until the delayed final response succeeds", async () => {
+    let resolveFinal!: (value: RecordingAnalytics) => void;
+    getRecordingAnalytics.mockImplementationOnce(() => new Promise((resolve) => { resolveFinal = resolve; }));
     const view = renderWithProviders(
       <AnalyticsSection active={false} inFlight recordingId="rec-1" speakerColors={{}} />,
     );
@@ -47,8 +66,112 @@ describe("AnalyticsSection live lifecycle", () => {
     expect(screen.queryByRole("button", { name: /Play|Generate|Analyse/i })).not.toBeInTheDocument();
     expect(screen.getAllByText("After processing").length).toBeGreaterThanOrEqual(4);
     view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    // The final view is lazy: its chunk must retain the same snapshot too.
+    expect(screen.getByRole("cell", { name: "Alex" })).toBeVisible();
     await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledWith("rec-1"));
+    expect(screen.getByText("Alex")).toBeInTheDocument();
+    expect(screen.getByText(/transcript estimates/i)).toBeInTheDocument();
+    await act(async () => { resolveFinal(finished()); });
+    expect((await screen.findAllByText("Final Alex")).length).toBeGreaterThan(0);
     expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+    expect(screen.queryByText(/transcript estimates/i)).not.toBeInTheDocument();
+  });
+
+  it("retains estimates through a failed final read and a pending retry", async () => {
+    let resolveRetry!: (value: RecordingAnalytics) => void;
+    getRecordingAnalytics.mockRejectedValueOnce(new Error("unavailable"));
+    getRecordingAnalytics.mockImplementationOnce(() => new Promise((resolve) => { resolveRetry = resolve; }));
+    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    await screen.findByText("Alex");
+    view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    expect(await screen.findByText("Analytics could not be loaded for this meeting.")).toBeInTheDocument();
+    expect(screen.getByText("Alex")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(getRecordingAnalytics).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Alex")).toBeInTheDocument();
+    await act(async () => { resolveRetry(finished()); });
+    expect((await screen.findAllByText("Final Alex")).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/transcript estimates/i)).not.toBeInTheDocument();
+  });
+
+  it("accepts an empty final response and does not restore estimates when reopening the tab", async () => {
+    getRecordingAnalytics.mockResolvedValueOnce({ ...finished(), speakers: [] });
+    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    await screen.findByText("Alex");
+    view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    expect(await screen.findByText("No analytics yet")).toBeInTheDocument();
+    expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+    view.rerender(<AnalyticsSection active={false} recordingId="rec-1" speakerColors={{}} />);
+    view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Loading analytics...")).toBeInTheDocument();
+    expect(screen.queryByText(/transcript estimates/i)).not.toBeInTheDocument();
+  });
+
+  it("stops live polling at completion and retains the snapshot across tab switches", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    await screen.findByText("Alex");
+    const liveReads = getLiveRecordingAnalytics.mock.calls.length;
+    view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(1));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(liveReads);
+    expect(screen.getByText("Alex")).toBeInTheDocument();
+    view.rerender(<AnalyticsSection active={false} recordingId="rec-1" speakerColors={{}} />);
+    view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    expect(screen.getByText("Alex")).toBeInTheDocument();
+    await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(2));
+    expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(liveReads);
+  });
+
+  it("clears estimates on recording changes and ignores the previous final response", async () => {
+    let resolveOldFinal!: (value: RecordingAnalytics) => void;
+    getRecordingAnalytics.mockImplementationOnce(() => new Promise((resolve) => { resolveOldFinal = resolve; }));
+    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    await screen.findByText("Alex");
+    view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(1));
+    let resolveNewLive!: (value: LiveRecordingAnalytics) => void;
+    getLiveRecordingAnalytics.mockImplementationOnce(() => new Promise((resolve) => { resolveNewLive = resolve; }));
+    view.rerender(<AnalyticsSection active inFlight recordingId="rec-2" speakerColors={{}} />);
+    expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+    await act(async () => { resolveNewLive({ ...live("Blair"), recording_id: "rec-2" }); });
+    expect(await screen.findByText("Blair")).toBeInTheDocument();
+    await act(async () => { resolveOldFinal(finished()); });
+    view.rerender(<AnalyticsSection active recordingId="rec-2" speakerColors={{}} />);
+    await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Blair")).toBeInTheDocument();
+    expect(screen.queryByText("Final Alex")).not.toBeInTheDocument();
+  });
+
+  it("keeps normal loading and error behavior for an already finished recording", async () => {
+    let rejectFinal!: (reason: Error) => void;
+    getRecordingAnalytics.mockImplementationOnce(() => new Promise((_, reject) => { rejectFinal = reject; }));
+    renderWithProviders(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    expect(await screen.findByText("Loading analytics...")).toBeInTheDocument();
+    await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(1));
+    await act(async () => { rejectFinal(new Error("unavailable")); });
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText(/transcript estimates/i)).not.toBeInTheDocument();
+    expect(getLiveRecordingAnalytics).not.toHaveBeenCalled();
+  });
+
+  it("ignores a final response when the same recording enters a new processing pass", async () => {
+    let resolveOldFinal!: (value: RecordingAnalytics) => void;
+    getRecordingAnalytics.mockImplementationOnce(() => new Promise((resolve) => { resolveOldFinal = resolve; }));
+    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    await screen.findByText("Alex");
+    view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(1));
+    getLiveRecordingAnalytics.mockResolvedValue(live("New pass"));
+    view.rerender(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    await screen.findByText("New pass");
+    await act(async () => { resolveOldFinal(finished()); });
+    view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
+    await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("New pass")).toBeInTheDocument();
+    expect(screen.queryByText("Final Alex")).not.toBeInTheDocument();
   });
 
   it("polls unchanged live data every three seconds and stops when inactive", async () => {
@@ -93,6 +216,7 @@ describe("AnalyticsSection live lifecycle", () => {
     await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(1));
     await act(async () => { resolvePoll(live("Late live")); });
     expect(screen.queryByText("Late live")).not.toBeInTheDocument();
+    expect(screen.getByText("Dana")).toBeInTheDocument();
   });
 
   it("recovers from a stalled request without overlapping reads", async () => {

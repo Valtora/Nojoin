@@ -20,6 +20,7 @@ from .metrics import (
     build_turns,
     compute_talk_time,
     compute_turn_structure,
+    merge_intervals,
 )
 from .query import _build_speaker_directory, _describe_unlisted_key
 
@@ -126,6 +127,21 @@ def _resolve_projection_speakers(
     return resolved
 
 
+def _live_talk_time(
+    rows: Sequence[UtteranceRow], duration_ms: int
+) -> dict[str, dict[str, float]]:
+    """Count a resolved speaker's speech once, retaining overlap with others."""
+    by_speaker: dict[str, list[UtteranceRow]] = {}
+    for row in rows:
+        by_speaker.setdefault(row.speaker_key, []).append(row)
+    united = [
+        UtteranceRow(key, start, end)
+        for key, speaker_rows in by_speaker.items()
+        for start, end in (merge_intervals(speaker_rows) or [(0, 0)])
+    ]
+    return compute_talk_time(united, duration_ms)
+
+
 def compute_live_recording_analytics(
     session: Session, recording: Recording, transcript: Transcript | None
 ) -> dict[str, Any]:
@@ -148,7 +164,7 @@ def compute_live_recording_analytics(
         for segment in segments
     ]
     duration_ms = max((row.end_ms for row in rows), default=0)
-    talk_time = compute_talk_time(rows, duration_ms)
+    talk_time = _live_talk_time(rows, duration_ms)
     names = live_speaker_names(
         session,
         recording.id,

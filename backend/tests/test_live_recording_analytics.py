@@ -113,6 +113,114 @@ def test_live_projection_fallback_and_authoritative_empty(
     assert _live(session)["metrics"]["utterance_count"] == 0
 
 
+@pytest.mark.parametrize(
+    ("cleo_start_ms", "cleo_end_ms", "ana_share", "cleo_share"),
+    [(15_000, 20_000, 0.75, 0.25), (10_000, 20_000, 0.6, 0.4)],
+)
+def test_live_reassignment_unions_each_speakers_overlapping_speech(
+    session: Session,
+    cleo_start_ms: int,
+    cleo_end_ms: int,
+    ana_share: float,
+    cleo_share: float,
+) -> None:
+    session.add_all(
+        [
+            RecordingSpeaker(
+                id=90, recording_id=1, diarization_label="SPEAKER_90", local_name="Ana"
+            ),
+            RecordingSpeaker(
+                id=91, recording_id=1, diarization_label="SPEAKER_91", local_name="Cleo"
+            ),
+        ]
+    )
+    lines = (
+        session.execute(select(TranscriptUtterance).order_by(TranscriptUtterance.id))
+        .scalars()
+        .all()
+    )
+    for line in lines[3:]:
+        line.state = TranscriptUtteranceState.SUPERSEDED
+    for line, (speaker_id, start, end) in zip(
+        lines[:3],
+        [(90, 0, 10_000), (90, 5_000, 15_000), (91, cleo_start_ms, cleo_end_ms)],
+    ):
+        line.recording_speaker_id = speaker_id
+        line.start_ms, line.end_ms = start, end
+        line.manual_speaker_locked = True
+    session.commit()
+
+    result = _live(session)
+
+    assert {speaker["name"] for speaker in result["speakers"]} == {"Ana", "Cleo"}
+    assert result["metrics"]["talk_time"] == {
+        "rs:90": {
+            "speech_ms": 15_000,
+            "share_of_speech": ana_share,
+            "share_of_duration": 0.75,
+        },
+        "rs:91": {
+            "speech_ms": cleo_end_ms - cleo_start_ms,
+            "share_of_speech": cleo_share,
+            "share_of_duration": (cleo_end_ms - cleo_start_ms) / 20_000,
+        },
+    }
+    assert result["metrics"]["utterance_count"] == 3
+
+
+def test_live_projection_unions_resolved_aliases_without_filling_gaps(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import backend.utils.canonical_pipeline.core as core
+
+    session.add(
+        RecordingSpeaker(
+            id=90, recording_id=1, diarization_label="SPEAKER_90", local_name="Ana"
+        )
+    )
+    transcript = session.execute(
+        select(Transcript).where(Transcript.recording_id == 1)
+    ).scalar_one()
+    intervals = [
+        (5, 15),
+        (0, 10),
+        (0, 10),
+        (2, 3),
+        (15, 17),
+        (20, 22),
+        (23, 23),
+        (25, 24),
+    ]
+    transcript.segments = [
+        {
+            "speaker": "SPEAKER_90",
+            "recording_speaker_id": 90 if index % 2 else None,
+            "start": start,
+            "end": end,
+            "text": "speech",
+        }
+        for index, (start, end) in enumerate(intervals)
+    ] + [{"speaker": "B", "start": 10, "end": 25, "text": "other speech"}]
+    session.commit()
+    monkeypatch.setattr(core, "serialize_canonical_utterances", lambda *args: [])
+
+    result = _live(session)
+
+    assert result["metrics"]["talk_time"] == {
+        "rs:90": {
+            "speech_ms": 19_000,
+            "share_of_speech": 0.5588,
+            "share_of_duration": 0.76,
+        },
+        "label:B": {
+            "speech_ms": 15_000,
+            "share_of_speech": 0.4412,
+            "share_of_duration": 0.6,
+        },
+    }
+    assert result["metrics"]["utterance_count"] == 9
+
+
 def test_live_wpm_uses_median_threshold_and_exclusions() -> None:
     from backend.services.meeting_analytics.live import transcript_wpm
 
