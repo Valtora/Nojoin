@@ -8,6 +8,7 @@ here writes, and core.py calls none of it, so the dependency runs one way.
 
 from typing import Any
 
+from backend.models.live_settling_public import public_settling_fields
 from backend.models.pipeline import TranscriptUtteranceState
 from backend.models.transcript import Transcript
 
@@ -100,6 +101,7 @@ def build_transient_utterance_payloads_from_segments(
                 "start_ms": _segment_to_ms(segment.get("start", 0.0)),
                 "end_ms": _segment_to_ms(segment.get("end", 0.0)),
                 "text": str(segment.get("text", "") or ""),
+                **public_settling_fields(segment.get("confidence_payload")),
                 **(
                     {"alignment_error": segment["alignment_error"]}
                     if segment.get("alignment_error")

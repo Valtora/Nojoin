@@ -13,6 +13,7 @@ from backend.models.document import (
     DocumentStatus,
     parse_looks_stalled,
 )
+from backend.models.live_settling_public import public_transcript_segment
 from backend.models.recording import (
     ClientStatus,
     Recording,
@@ -343,11 +344,7 @@ def serialize_transcript(
         # The durable projection retains inference/protection evidence for
         # backfill and backup; public reads expose the ordinary segment fields.
         segments=[
-            {
-                key: value
-                for key, value in segment.items()
-                if key != "confidence_payload"
-            }
+            public_transcript_segment(segment)
             for segment in (
                 transcript.segments if segments_override is None else segments_override
             )

@@ -1,7 +1,4 @@
-# Live transcription lane: a Celery task that transcribes recording segments
-# as they arrive, producing provisional transcript segments. A sequence-gated
-# buffer re-imposes ordering on concurrently uploaded segments and carries the
-# trailing (incomplete) utterance forward across runs.
+# Sequence-gated live transcription with completed-region and rolling word lanes.
 
 import logging
 import os
@@ -79,6 +76,7 @@ from backend.processing.live_persistence import (
     _persist_live_run,
     logger,
 )
+from backend.processing.live_settling import SettlingStep, run_settling_step
 from backend.processing.live_state import (
     _LIVE_SEQUENCE_OUTCOMES as _LIVE_SEQUENCE_OUTCOMES,
 )
@@ -583,11 +581,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         log=logger,
     )
 
-    # The live lane is still meaningful for already-uploaded tail segments
-    # while a recording is paused. Once finalize() or a terminal state flips
-    # the recording out of the in-flight states, queued live work must stop
-    # even though uploaded chunk files may remain on disk until lifecycle
-    # cleanup. The final pipeline is authoritative after that status flip.
+    # Legacy tails can run while paused; marked rolling episodes close on pause.
+    # Final/terminal states reject queued work even while chunk files remain.
     session = get_sync_session()
     try:
         recording = session.get(Recording, recording_id)
@@ -616,6 +611,14 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             return
         expected_token = capture_publication_token(
             recording, getattr(recording, "transcript", None)
+        )
+        settling_state = (
+            getattr(getattr(recording, "transcript", None), "settling_state", None)
+            or {}
+        )
+        settling_capture = bool(
+            settling_state.get("eligible")
+            and settling_state.get("policy", {}).get("enabled") is not False
         )
     finally:
         session.close()
@@ -727,7 +730,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         )
         return
 
-    # --- Drain: contiguous run starting at next_expected ---
+    # Drain capture ingestion; rolling ASR observes only the latest chunk step.
     run = []
     n = next_expected
     while os.path.exists(str(temp_dir / f"{n}.wav")):
@@ -775,6 +778,9 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         context_path=context_path,
     )
 
+    labels_ready = False
+    combined = None
+    label_retention_s = 0.0
     try:
         record_pipeline_metric(
             stage="live_run_started",
@@ -793,6 +799,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         )
         live_run.combined_len = combined_len
         combined_abs_start = buffer_abs_start
+        labels_ready = settling_capture
+        label_retention_s = 10.0 if settling_capture else 0.0
         logger.info(
             "Live capture channel analysis for recording %s sequence %s run %s: %s",
             recording_id,
@@ -801,7 +809,6 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             combined_source_activity,
         )
 
-        # --- Build the live engine config (needed before the VAD call) ---
         live_config = _build_live_config()
         W = int(live_config["context_window_s"] * LIVE_SAMPLE_RATE)
         # Load user-aware overrides once for live speaker matching.
@@ -810,7 +817,6 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             live_config,
             warn_unusable=not _live_lane_has_consumed(state),
         )
-        # --- Detect speech and classify ---
         speech = detect_speech_segments(
             combined,
             min_silence_duration_ms=LIVE_MIN_SILENCE_MS,
@@ -837,7 +843,6 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             log=logger,
         )
 
-        # --- Read the rolling left-context buffer (already-consumed audio) ---
         if os.path.exists(context_path):
             prev_context_channels = _read_live_audio_channels(context_path)
         else:
@@ -848,22 +853,47 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         )
         prev_context = _mix_live_audio_channels(prev_context_channels)
 
-        # --- ASR: transcribe each completed speech region ---
         live_config_hash = build_asr_config_hash(live_config)
         live_model_name = get_transcription_model_name(live_config)
-        new_segments = _transcribe_live_regions(
-            recording_id=recording_id,
-            sequence=sequence,
-            complete=complete,
-            combined=combined,
-            combined_channels=combined_channels,
-            combined_abs_start=combined_abs_start,
-            prev_context=prev_context,
-            context_window_samples=W,
-            live_dir=live_dir,
-            live_config=live_config,
-            source_channel_labels=source_channel_labels,
-            state=state,
+        settling = run_settling_step(
+            SettlingStep(
+                recording_id,
+                run[-1],
+                temp_dir,
+                live_dir,
+                round((combined_abs_start + combined_len) * 1000),
+                combined_abs_start,
+                speech,
+                expected_token,
+                source_channel_labels,
+                run[0],
+            ),
+            live_config,
+        )
+        labels_ready = settling.handled
+        if not settling.accepted:
+            return
+        live_config["_settling_public_changed"] = settling.public_changed
+        label_retention_s = settling.window_s if settling.handled else 0.0
+        if settling.handled:
+            complete, cut_point = [], combined_len
+        new_segments = (
+            []
+            if settling.handled
+            else _transcribe_live_regions(
+                recording_id=recording_id,
+                sequence=sequence,
+                complete=complete,
+                combined=combined,
+                combined_channels=combined_channels,
+                combined_abs_start=combined_abs_start,
+                prev_context=prev_context,
+                context_window_samples=W,
+                live_dir=live_dir,
+                live_config=live_config,
+                source_channel_labels=source_channel_labels,
+                state=state,
+            )
         )
 
         # --- Carry over the unconsumed trailing audio and context run-up ---
@@ -904,7 +934,6 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         if publication.dispatch_meeting_edge:
             _dispatch_meeting_edge_refresh_best_effort(recording_id)
 
-        # --- Advance the lane ---
         for consumed_sequence in run:
             _record_live_sequence_outcome(
                 state,
@@ -917,6 +946,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         state["buffer_abs_start"] = new_abs_start
         state["buffer_len_s"] = combined_len - cut_point
         write_live_state(live_dir, state)
+        labels_ready = True
         _record_live_sequence_outcome_metric(
             recording_id=recording_id,
             sequence=sequence,
@@ -938,8 +968,17 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             log=logger,
         )
 
-        try:  # labels last, in a try block of their own: text and lane state are saved
-            if live_speaker_labels_requested():  # off, none of their code is imported
+    except Exception as exc:  # noqa: BLE001 -- boundary: live failures are non-fatal
+        # Non-fatal: log and move on. Finalize transcribes the whole recording,
+        # so the failed run's audio still reaches the final transcript.
+        record_live_run_failure(live_run, exc, state)
+    finally:
+        try:  # labels remain independent of failed/skipped settling ASR
+            if (
+                labels_ready
+                and combined is not None
+                and live_speaker_labels_requested()
+            ):
                 from backend.processing.live_diarization import step as live_labels
 
                 live_labels.run_live_speaker_labels(
@@ -949,14 +988,11 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         live_dir=live_dir,
                         audio=combined,
                         audio_start_s=combined_abs_start,
-                        next_text_start_s=new_abs_start,
+                        next_text_start_s=max(
+                            0.0, float(state["buffer_abs_start"]) - label_retention_s
+                        ),
                         expected_token=expected_token,
                     )
                 )
         except Exception:  # noqa: BLE001 -- boundary: labels are best-effort
             logger.exception("Live speaker labels failed for %s", recording_id)
-
-    except Exception as exc:  # noqa: BLE001 -- boundary: live failures are non-fatal
-        # Non-fatal: log and move on. Finalize transcribes the whole recording,
-        # so the failed run's audio still reaches the final transcript.
-        record_live_run_failure(live_run, exc, state)

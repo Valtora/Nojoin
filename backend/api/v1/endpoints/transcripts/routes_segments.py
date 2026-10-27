@@ -49,6 +49,7 @@ from .helpers import (
     _dispatch_meeting_edge_refresh,
     _get_owned_recording,
     _get_recording_speaker_display_name,
+    _prepare_live_transcript_mutation,
     _require_recording_transcript_mutations_supported,
 )
 from .router import router
@@ -97,6 +98,8 @@ async def update_segment_speaker(
         raise HTTPException(status_code=404, detail="Transcript not found")
 
     _require_recording_transcript_mutations_supported(recording)
+
+    await _prepare_live_transcript_mutation(db, recording.id)
 
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
@@ -461,6 +464,8 @@ async def update_transcript_segment_text(
 
     _require_recording_transcript_mutations_supported(recording)
 
+    await _prepare_live_transcript_mutation(db, recording.id)
+
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
 
@@ -571,6 +576,8 @@ async def find_and_replace(
 
     _require_recording_transcript_mutations_supported(recording)
 
+    live_projection = await _prepare_live_transcript_mutation(db, recording.id)
+
     find_text = replace_request.find_text
     replace_text = replace_request.replace_text
     case_sensitive = replace_request.case_sensitive
@@ -581,9 +588,8 @@ async def find_and_replace(
 
     _apply_find_replace(transcript, find_text, replace_text, case_sensitive, use_regex)
 
-    if (
-        _canonical_transcript_writes_enabled()
-        and recording_ready_for_canonical_backfill(recording.status)
+    if _canonical_transcript_writes_enabled() and (
+        live_projection or recording_ready_for_canonical_backfill(recording.status)
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
@@ -632,8 +638,11 @@ async def update_transcript_segments(
 
     _require_recording_transcript_mutations_supported(recording)
 
+    live_projection = await _prepare_live_transcript_mutation(db, recording.id)
+
     if _canonical_transcript_writes_enabled() and (
-        any(segment.get("id") for segment in update.segments)
+        live_projection
+        or any(segment.get("id") for segment in update.segments)
         or recording_ready_for_canonical_backfill(recording.status)
     ):
         await db.run_sync(

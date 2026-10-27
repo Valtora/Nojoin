@@ -1,16 +1,29 @@
 """Capture eligibility and immutable provenance for live publication.
 
-This module stores the policy and episode boundary only. Word comparison and
-settling passes belong to the later live projector.
+Word comparison lives in live_word_settling; this module owns the captured
+policy and publication boundary shared with capture lifecycle operations.
 """
 
 from dataclasses import dataclass
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 from uuid import uuid4
 
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.utils.config_manager import config_manager
+from backend.utils.live_settling_settings import (
+    LIVE_SETTLING_DEFAULTS,
+    normalise_live_settling_settings,
+)
+
+
+def _capture_policy_settings() -> dict[str, Any]:
+    return normalise_live_settling_settings(
+        {
+            key: config_manager.get(key, default)
+            for key, default in LIVE_SETTLING_DEFAULTS.items()
+        }
+    )
 
 
 class SettlingPolicy(TypedDict):
@@ -21,8 +34,18 @@ class SettlingPolicy(TypedDict):
     enabled: bool | None
 
 
+class GateChunk(TypedDict):
+    """One retained chunk and whether its first speech opportunity was spent."""
+
+    sequence: int
+    start_ms: int
+    end_ms: int
+    missed: bool
+    consumed: bool
+
+
 class CaptureSettlingState(TypedDict):
-    """Runtime state carried by a settling-capable capture."""
+    """Episode runtime state plus durable word-publication provenance."""
 
     version: int
     eligible: bool
@@ -31,6 +54,11 @@ class CaptureSettlingState(TypedDict):
     capture_epoch: int
     sealed: bool
     phase: str
+    last_step_index: NotRequired[int]
+    last_decode_id: NotRequired[str]
+    speaker_enabled: NotRequired[bool]
+    gate_chunks: NotRequired[list[GateChunk]]
+    settled: NotRequired[bool]
 
 
 @dataclass(frozen=True)
@@ -41,18 +69,24 @@ class CapturePublicationToken:
     generation: str | None
 
 
+def durable_settling_state(state: dict[str, Any] | None) -> dict[str, bool] | None:
+    """Retain only actual word-publication provenance when runtime state resets."""
+    return {"settled": True} if (state or {}).get("settled") is True else None
+
+
 def new_capture_settling_state(*, capture_epoch: int) -> CaptureSettlingState | None:
     """Mark explicitly enabled new captures; old recordings remain unmarked."""
-    if config_manager.get("live_text_settling", "off") != "auto":
+    settings = _capture_policy_settings()
+    if settings["live_text_settling"] != "auto" or not config_manager.get(
+        "enable_canonical_transcript_writes", True
+    ):
         return None
     return {
         "version": 1,
         "eligible": True,
         "policy": {
-            "k": max(1, int(config_manager.get("live_text_settling_k", 3))),
-            "window_s": max(
-                0.1, float(config_manager.get("live_text_settling_window_s", 10))
-            ),
+            "k": settings["live_text_settling_k"],
+            "window_s": settings["live_text_settling_window_s"],
             "enabled": None,
         },
         "generation": str(uuid4()),
@@ -97,23 +131,43 @@ def update_capture_settling_state(
 ) -> None:
     """Publish a lifecycle boundary under the same fence as live results."""
     state = getattr(transcript, "settling_state", None)
-    if not state:
+    if transcript is None or not state:
         return
     updated = dict(state)
     if phase == "live" and (
         state.get("phase") != "live" or state.get("capture_epoch") != capture_epoch
     ):
         updated["generation"] = str(uuid4())
+        settings = _capture_policy_settings()
+        updated["policy"] = {
+            "k": settings["live_text_settling_k"],
+            "window_s": settings["live_text_settling_window_s"],
+            "enabled": None
+            if settings["live_text_settling"] == "auto"
+            and config_manager.get("enable_canonical_transcript_writes", True)
+            else False,
+        }
+        updated.pop("last_step_index", None)
+        updated.pop("last_decode_id", None)
+        updated.pop("speaker_enabled", None)
+        updated.pop("gate_chunks", None)
     updated.update(capture_epoch=capture_epoch, sealed=sealed, phase=phase)
     transcript.settling_state = updated
 
 
 def resolve_capture_settling_policy(
-    transcript: Transcript | None, *, device: Literal["cpu", "cuda"] | None
+    transcript: Transcript | None,
+    *,
+    device: Literal["cpu", "cuda"] | None,
+    disable_on_cpu: bool = False,
 ) -> None:
     """Freeze effective eligibility only after actual worker placement is known."""
     state = getattr(transcript, "settling_state", None)
-    if not state or device is None or state["policy"].get("enabled") is not None:
+    if transcript is None or not state or device is None:
+        return
+    if state["policy"].get("enabled") is not None and not (
+        disable_on_cpu and device == "cpu"
+    ):
         return
     transcript.settling_state = {
         **state,

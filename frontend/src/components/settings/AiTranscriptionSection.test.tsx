@@ -42,7 +42,7 @@ const renderSection = () => {
 };
 
 const selectParakeet = () =>
-  fireEvent.change(screen.getByRole("combobox"), {
+  fireEvent.change(screen.getByRole("combobox", { name: "Engine" }), {
     target: { value: "parakeet" },
   });
 

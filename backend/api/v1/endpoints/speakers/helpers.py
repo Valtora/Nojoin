@@ -41,6 +41,10 @@ from backend.utils.canonical_pipeline import (
     merge_recording_speakers_by_label,
     recording_ready_for_canonical_backfill,
 )
+from backend.utils.canonical_pipeline.live_compatibility import (
+    has_deferred_live_projection,
+    prepare_live_compatibility_mutation,
+)
 from backend.utils.canonical_pipeline.public_ids import SegmentIdConflictError
 from backend.utils.speaker_name_suggestions import (
     supersede_pending_transcript_speaker_suggestions,
@@ -131,9 +135,13 @@ async def _load_segments_for_speaker_work(
 ) -> list[dict]:
     if transcript is None:
         return []
-    if (
-        _canonical_transcript_writes_enabled()
-        and recording_ready_for_canonical_backfill(recording.status)
+    if _canonical_transcript_writes_enabled() and has_deferred_live_projection(
+        transcript
+    ):
+        await db.run_sync(prepare_live_compatibility_mutation, recording.id)
+    if _canonical_transcript_writes_enabled() and (
+        has_deferred_live_projection(transcript)
+        or recording_ready_for_canonical_backfill(recording.status)
     ):
         return await db.run_sync(
             lambda sync_session: build_transcript_segments_for_read(
@@ -152,9 +160,9 @@ async def _persist_segments_for_speaker_work(
 ) -> None:
     if transcript is None:
         return
-    if (
-        _canonical_transcript_writes_enabled()
-        and recording_ready_for_canonical_backfill(recording.status)
+    if _canonical_transcript_writes_enabled() and (
+        has_deferred_live_projection(transcript)
+        or recording_ready_for_canonical_backfill(recording.status)
     ):
         try:
             await db.run_sync(

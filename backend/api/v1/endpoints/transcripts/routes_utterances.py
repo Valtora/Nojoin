@@ -31,6 +31,7 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline import (
     update_utterance_text as update_canonical_utterance_text,
 )
+from backend.utils.canonical_pipeline.live_settling import settling_enabled
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.speaker_names.live import live_speaker_names
 
@@ -47,6 +48,7 @@ from .helpers import (
     _get_owned_recording,
     _get_recording_transcript,
     _get_segment_revision,
+    _prepare_live_transcript_mutation,
     _require_recording_transcript_mutations_supported,
 )
 from .router import router
@@ -114,7 +116,7 @@ async def get_transcript_utterances(
     await db.commit()
     await db.refresh(transcript)
 
-    if not utterances and transcript.segments:
+    if not utterances and transcript.segments and not settling_enabled(transcript):
         utterances = build_transient_utterance_payloads_from_segments(transcript)
         if after_revision is not None and after_revision >= 0:
             utterances = []
@@ -219,6 +221,7 @@ async def apply_canonical_utterance_text_update(  # noqa: PLR0913 - one keyword 
     (source="mcp"), so the event log records which surface authored the
     edit while everything else stays identical.
     """
+    await _prepare_live_transcript_mutation(db, recording.id)
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
     )
@@ -345,6 +348,7 @@ async def apply_canonical_utterance_speaker_update(  # noqa: PLR0913 - one keywo
     (source="mcp"), so the event log records which surface authored the
     edit while everything else stays identical.
     """
+    await _prepare_live_transcript_mutation(db, recording.id)
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
     )
@@ -463,6 +467,7 @@ async def apply_canonical_utterance_lock_clear(  # noqa: PLR0913 - one keyword p
     (source="mcp"), so the event log records which surface released the
     lock.
     """
+    await _prepare_live_transcript_mutation(db, recording.id)
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
     )

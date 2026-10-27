@@ -2,9 +2,12 @@
 
 import logging
 
+from backend.models.live_settling_public import public_settling_fields
+
 from .assignment import *
 from .constants import *
 from .finalization import finalize_utterances_from_segments
+from .live_compatibility import capture_segment_sort_key
 from .persistence import (
     apply_compatibility_segment_replace,
     replace_utterances_from_segments,
@@ -106,7 +109,11 @@ def append_utterances_from_segments(
         utterance = TranscriptUtterance(
             public_id=str(segment.get("id") or uuid4()),
             recording_id=recording_id,
-            sort_key=_sort_key_for_index(next_sort_index + offset),
+            sort_key=capture_segment_sort_key(
+                transcript,
+                next_sort_index + offset,
+                _segment_to_ms(segment.get("start", 0.0)),
+            ),
             start_ms=_segment_to_ms(segment.get("start", 0.0)),
             end_ms=_segment_to_ms(segment.get("end", 0.0)),
             text=str(segment.get("text", "") or ""),
@@ -505,6 +512,7 @@ def serialize_canonical_utterances(
             ),
         }
         alignment_error = (utterance.confidence_payload or {}).get("alignment_error")
+        payload.update(public_settling_fields(utterance.confidence_payload))
         if alignment_error:
             payload["alignment_error"] = alignment_error
         if include_confidence_payload:
@@ -561,9 +569,17 @@ def build_transcript_segments_for_read(
         )
         return fallback_segments
 
-    if canonical_segments:
+    if canonical_segments or _settling_read_is_authoritative(transcript):
         return [dict(segment) for segment in canonical_segments]
     return fallback_segments
+
+
+def _settling_read_is_authoritative(transcript: Transcript | None) -> bool:
+    """An empty marked live projection means no current words, not old JSON."""
+    state = getattr(transcript, "settling_state", None) or {}
+    return bool(
+        state.get("eligible") and state.get("policy", {}).get("enabled") is True
+    )
 
 
 def build_transcript_text_for_read(
@@ -592,6 +608,8 @@ def build_transcript_text_for_read(
         if transcript is not None
         else _load_transcript(session, recording_id)
     )
+    if _settling_read_is_authoritative(transcript):
+        return ""
     return str(getattr(transcript, "text", "") or "") if transcript is not None else ""
 
 

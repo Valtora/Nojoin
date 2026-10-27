@@ -195,6 +195,13 @@ def apply_live_speaker_labels(
 ) -> LiveLabelWrite:
     """Bring every unsettled live line's label up to date. The caller commits."""
     transcript = _load_transcript(session, recording_id, lock=True)
+    from .live_settling import project_live_settling_speakers, settling_enabled
+
+    if transcript is not None and settling_enabled(transcript):
+        result, settled, open_from = project_live_settling_speakers(
+            session, transcript, decide
+        )
+        return LiveLabelWrite(result.changed, max(settled_ms, settled), open_from)
     held = {
         utterance.id: utterance
         for utterance in session.execute(

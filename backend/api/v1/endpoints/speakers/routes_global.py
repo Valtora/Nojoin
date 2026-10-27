@@ -46,6 +46,7 @@ from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.services.recording_identity_service import get_recordings_by_public_ids
 from backend.services.tag_ownership import require_own_tag_ids
 from backend.utils.canonical_pipeline import (
+    build_transcript_segments_for_read,
     recording_ready_for_canonical_backfill,
     update_recording_speaker_identity,
 )
@@ -485,8 +486,11 @@ async def get_speaker_segments(
 
     segments = []
     for rs, rec, trans in rows:
-        if not trans or not trans.segments:
+        if not trans:
             continue
+        transcript_segments = await db.run_sync(
+            lambda sync: build_transcript_segments_for_read(sync, rec.id)
+        )
 
         labels = {rs.diarization_label}
         if rs.local_name:
@@ -496,7 +500,7 @@ async def get_speaker_segments(
         labels.add(speaker.name)
 
         rec_segments = []
-        for seg in trans.segments:
+        for seg in transcript_segments:
             if seg.get("speaker") in labels:
                 duration = seg["end"] - seg["start"]
                 if duration > 10.0:

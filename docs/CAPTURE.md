@@ -92,6 +92,10 @@ To take notes on a second device, such as a phone while a laptop records, sign i
 
 ## Naming Speakers During Capture
 
+Optional [live word settling](USAGE.md#live-transcription) revises only recent transcript words and speaker boundaries. Pause and Stop lock the last accepted words without another decode; Resume starts a fresh settling episode. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
+
+Settling checks speech on each new chunk. When a backlog drains, speech still inside the settling window shares one decode at the latest step, even if the newest chunk is silent. If VAD misses speech and the diariser finds it later while that audio is still unlocked inside the settling window, the next chunk step revisits it once within the same audio cap. ASR never waits for the diariser; evidence arriving after the audio leaves the window cannot reopen it.
+
 With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with the stretch of the meeting it was given for, the label's longest locked turn, or its longest turn when none is locked or the locked one is under a second, and processing gives it to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
 
 ## Paused Recording Lock

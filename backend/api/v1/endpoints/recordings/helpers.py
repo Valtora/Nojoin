@@ -58,6 +58,7 @@ from backend.utils.recording_storage import (
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
 from backend.utils.transcript_publication import bump_transcript_change
+from backend.utils.transcript_settling import durable_settling_state
 
 from .constants import (
     ACTIVE_RECORDING_CONFLICT_MESSAGE,
@@ -720,6 +721,9 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         # Keep the publication identity and monotonic counter. All generated
         # products still return to the defaults a replacement row used to get.
         defaults = Transcript(recording_id=recording_id)
+        defaults.settling_state = durable_settling_state(
+            existing_transcript.settling_state
+        )
         retained = {"id", "recording_id", "created_at", "updated_at", "change_sequence"}
         for field in Transcript.model_fields:
             if field not in retained:

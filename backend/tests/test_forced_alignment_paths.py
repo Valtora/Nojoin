@@ -244,6 +244,7 @@ def test_native_live_lane_retains_head_repetition_and_confidence_payload(
     assert len(lines) == 1
     assert lines[0]["text"] == "yes please"
     evidence = lines[0]["confidence_payload"]["asr_segments"][0]
+    # Settling off retains upstream's textual filtering and unmodified evidence.
     assert evidence["text"] == "yes yes yes please"
     assert evidence["words"] == [
         {"word": "yes", "start_ms": 10000, "end_ms": 10500},

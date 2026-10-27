@@ -42,6 +42,10 @@ def reconstruct_text_from_words(words: list[dict]) -> str:
             previous_source = word.get("source_id")
             continue
         source = word.get("source_id")
+        if word.get("join_left") is True:
+            text_parts.append(token)
+            previous_source = source
+            continue
         if source and source == previous_source:
             text_parts.append(token)
             continue

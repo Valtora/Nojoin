@@ -508,7 +508,9 @@ async def test_capture_eligibility_policy_and_lifecycle_are_persisted(
     resumed = await state()
     assert resumed["capture_epoch"] == 1
     assert resumed["generation"] != initial["generation"]
-    assert resumed["policy"] == initial["policy"]
+    # Pause closed the old hypothesis; the new episode captures today's policy
+    # without reinterpreting any previous episode's comparison counts.
+    assert resumed["policy"] == {"k": 9, "window_s": 10.0, "enabled": None}
     response = await client.post(
         f"/api/v1/recordings/{public_id}/segment",
         params={"sequence": 0, "epoch": 1},

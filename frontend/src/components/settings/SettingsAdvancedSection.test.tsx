@@ -22,6 +22,21 @@ afterEach(() => {
 });
 
 describe("SettingsAdvancedSection", () => {
+  it.each([
+    "transcription-live-settling",
+    "transcription-live-settling-k",
+    "transcription-live-settling-window",
+  ])("opens the live settling controls from a search link to %s", async (id) => {
+    render(
+      <SettingsAdvancedSection categoryId="transcription">
+        <p>Live settling controls</p>
+      </SettingsAdvancedSection>,
+    );
+    expect(screen.queryByText("Live settling controls")).toBeNull();
+    followLink(`#${id}`);
+    expect(await screen.findByText("Live settling controls")).toBeTruthy();
+  });
+
   it("opens when an in-page link points inside, and again after being closed", async () => {
     render(
       <SettingsAdvancedSection categoryId="integrations">

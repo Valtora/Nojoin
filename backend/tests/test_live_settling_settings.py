@@ -1,0 +1,174 @@
+"""Settling settings persist installation-wide and freeze per capture episode."""
+
+import asyncio
+from typing import Any
+
+import pytest
+
+from backend.models.transcript import Transcript
+from backend.tests.test_install_wide_transcription_settings import (
+    _call_settings,
+    _config_file,
+)
+from backend.tests.test_install_wide_transcription_settings import (
+    install_config as install_config,
+)
+from backend.utils.config_manager import ConfigManager
+from backend.utils.transcript_settling import (
+    new_capture_settling_state,
+    resolve_capture_settling_policy,
+    update_capture_settling_state,
+)
+
+SETTINGS = {
+    "live_text_settling": "auto",
+    "live_text_settling_k": 5,
+    "live_text_settling_window_s": 12.5,
+}
+
+
+def test_admin_policy_is_install_wide_and_non_admin_stale_values_are_ignored(
+    install_config: ConfigManager,
+) -> None:
+    status, body, row = asyncio.run(_call_settings("admin", {}, "POST", SETTINGS))
+    assert status == 200
+    assert {key: _config_file(install_config)[key] for key in SETTINGS} == SETTINGS
+    assert {key: body[key] for key in SETTINGS} == SETTINGS
+    assert not set(SETTINGS).intersection(row)
+    status, body, row = asyncio.run(
+        _call_settings("user", SETTINGS, "POST", {key: "invalid" for key in SETTINGS})
+    )
+    assert status == 200
+    assert {key: body[key] for key in SETTINGS} == SETTINGS
+    assert not set(SETTINGS).intersection(row)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("live_text_settling", "on"),
+        ("live_text_settling_k", 0),
+        ("live_text_settling_k", 11),
+        ("live_text_settling_k", True),
+        ("live_text_settling_k", 2.5),
+        ("live_text_settling_window_s", 1.9),
+        ("live_text_settling_window_s", 31),
+        ("live_text_settling_window_s", True),
+    ],
+)
+def test_invalid_policy_cannot_change_saved_settings(
+    install_config: ConfigManager, key: str, value: Any
+) -> None:
+    before = _config_file(install_config)
+    status, _, row = asyncio.run(_call_settings("admin", {}, "POST", {key: value}))
+    assert status == 422
+    assert _config_file(install_config) == before
+    assert row == {}
+    with pytest.raises(ValueError):
+        install_config.validate_config_value(key, value)
+
+
+def test_default_off_and_null_update_preserves_explicit_policy(
+    install_config: ConfigManager,
+) -> None:
+    status, body, _ = asyncio.run(_call_settings("admin", {}, "GET"))
+    assert status == 200
+    assert body["live_text_settling"] == "off"
+    assert body["live_text_settling_k"] == 3
+    assert body["live_text_settling_window_s"] == 10
+    asyncio.run(_call_settings("admin", {}, "POST", SETTINGS))
+    status, body, _ = asyncio.run(
+        _call_settings("admin", {}, "POST", {key: None for key in SETTINGS})
+    )
+    assert status == 200
+    assert {key: body[key] for key in SETTINGS} == SETTINGS
+
+
+def test_capture_counts_keep_policy_until_next_episode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.utils.config_manager import config_manager
+
+    settings = dict(SETTINGS)
+    monkeypatch.setattr(
+        config_manager, "get", lambda key, default=None: settings.get(key, default)
+    )
+    transcript = Transcript(
+        recording_id=1, settling_state=new_capture_settling_state(capture_epoch=0)
+    )
+    resolve_capture_settling_policy(transcript, device="cuda")
+    transcript.settling_state = {
+        **transcript.settling_state,
+        "speaker_enabled": True,
+        "gate_chunks": [
+            {
+                "sequence": 0,
+                "start_ms": 0,
+                "end_ms": 2000,
+                "missed": True,
+                "consumed": False,
+            }
+        ],
+    }
+    initial = dict(transcript.settling_state)
+    settings.update(live_text_settling_k=2, live_text_settling_window_s=6)
+    resolve_capture_settling_policy(transcript, device="cuda")
+    assert transcript.settling_state == initial
+    update_capture_settling_state(
+        transcript, capture_epoch=0, sealed=False, phase="paused"
+    )
+    update_capture_settling_state(
+        transcript, capture_epoch=1, sealed=False, phase="live"
+    )
+    assert transcript.settling_state["generation"] != initial["generation"]
+    assert transcript.settling_state["policy"] == {
+        "k": 2,
+        "window_s": 6,
+        "enabled": None,
+    }
+    assert "speaker_enabled" not in transcript.settling_state
+    assert "gate_chunks" not in transcript.settling_state
+
+
+@pytest.mark.parametrize("resumed", [False, True])
+def test_canonical_write_rollback_disables_new_and_resumed_settling_episodes(
+    monkeypatch: pytest.MonkeyPatch, resumed: bool
+) -> None:
+    from backend.utils.config_manager import config_manager
+
+    settings = {**SETTINGS, "enable_canonical_transcript_writes": True}
+    monkeypatch.setattr(
+        config_manager, "get", lambda key, default=None: settings.get(key, default)
+    )
+    transcript = Transcript(
+        recording_id=1, settling_state=new_capture_settling_state(capture_epoch=0)
+    )
+    settings["enable_canonical_transcript_writes"] = False
+    if resumed:
+        update_capture_settling_state(
+            transcript, capture_epoch=0, sealed=False, phase="paused"
+        )
+        update_capture_settling_state(
+            transcript, capture_epoch=1, sealed=False, phase="live"
+        )
+        resolve_capture_settling_policy(transcript, device="cuda")
+        assert transcript.settling_state["policy"]["enabled"] is False
+    else:
+        assert new_capture_settling_state(capture_epoch=0) is None
+
+
+def test_actual_cpu_fallback_disables_repeated_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.utils.config_manager import config_manager
+
+    monkeypatch.setattr(
+        config_manager, "get", lambda key, default=None: SETTINGS.get(key, default)
+    )
+    transcript = Transcript(
+        recording_id=1, settling_state=new_capture_settling_state(capture_epoch=0)
+    )
+    resolve_capture_settling_policy(transcript, device="cuda")
+    resolve_capture_settling_policy(transcript, device="cpu", disable_on_cpu=True)
+    resolve_capture_settling_policy(transcript, device="cuda")
+    assert transcript.settling_state["policy"]["enabled"] is False

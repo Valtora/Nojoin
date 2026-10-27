@@ -8,6 +8,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from backend.core.task_dispatch import dispatch_task_best_effort
+from backend.models.live_settling_public import LiveSettlingPublicRead
 from backend.models.pipeline import SpeakerCorrectionScope
 from backend.models.recording import (
     LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL,
@@ -20,6 +21,9 @@ from backend.models.recording_public import (
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
+from backend.utils.canonical_pipeline.live_compatibility import (
+    prepare_live_compatibility_mutation,
+)
 from backend.utils.config_manager import config_manager
 from backend.utils.live_speaker_labels import speaker_display_name
 
@@ -81,6 +85,14 @@ def _canonical_transcript_writes_enabled() -> bool:
     return bool(config_manager.get("enable_canonical_transcript_writes", True))
 
 
+async def _prepare_live_transcript_mutation(
+    db: AsyncSession, recording_id: int
+) -> bool:
+    if not _canonical_transcript_writes_enabled():
+        return False
+    return await db.run_sync(prepare_live_compatibility_mutation, recording_id)
+
+
 def _require_recording_transcript_mutations_supported(recording: Recording) -> None:
     if recording_supports_unified_mutations(recording):
         return
@@ -138,7 +150,7 @@ class TranscriptUtteranceSpeakerPatch(BaseModel):
     expected_revision: Optional[int] = None
 
 
-class TranscriptUtteranceRead(BaseModel):
+class TranscriptUtteranceRead(LiveSettlingPublicRead):
     id: str
     start: float
     end: float

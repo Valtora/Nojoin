@@ -1,5 +1,6 @@
 """Context trimming, repetition filtering, and payloads for live ASR results."""
 
+import hashlib
 import re
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -243,22 +244,80 @@ def _build_live_confidence_payload(
     return payload
 
 
+def _native_text_spans(segment: dict[str, Any]) -> dict[str, Any]:
+    """Map native tokens back to exact source spans without guessing wording."""
+    words = segment.get("words") or []
+    if not words or any(word.get("source_id") for word in words):
+        return segment
+    text = str(segment.get("text") or "")
+    cursor = 0
+    boundaries = [0]
+    for index, word in enumerate(words):
+        token = str(word.get("word") or "").strip()
+        start = text.find(token, cursor) if token else -1
+        if start < 0 or any(
+            char.isalnum() or char in "'’" for char in text[cursor:start]
+        ):
+            return segment
+        if index:
+            gap = text[cursor:start]
+            separator = next(
+                (offset for offset, char in enumerate(gap) if char.isspace()), len(gap)
+            )
+            boundaries.append(cursor + separator)
+        cursor = start + len(token)
+    if any(char.isalnum() or char in "'’" for char in text[cursor:]):
+        return segment
+    boundaries.append(len(text))
+    source_id = hashlib.sha256(
+        f"native:{segment.get('start')}:{text}".encode()
+    ).hexdigest()
+    mapped = [
+        {
+            **word,
+            "word": text[start:end],
+            "source_start": start,
+            "source_end": end,
+            "source_id": source_id,
+        }
+        for word, start, end in zip(words, boundaries, boundaries[1:])
+    ]
+    return {**segment, "words": mapped}
+
+
 def _prepare_live_region(
-    result: dict, prefix_s: float
+    result: dict, prefix_s: float, *, exact_spans: bool = False
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Keep the native live path; filter forced wording and evidence together."""
-    segments = _extract_region_segment_payloads(result, prefix_s)
-    forced = any(
-        segment.get("alignment_error")
-        or any(word.get("source_id") for word in segment.get("words") or [])
-        for segment in segments
-    )
-    if not forced:
-        return _strip_repetition(_extract_region_text(result, prefix_s)), segments
+    """Filter text and word evidence together, retaining original text spans.
+
+    The legacy lane (``exact_spans=False``) keeps upstream's textual filtering
+    for native timings, whose tokens need not match the engine text, and filters
+    forced wording and its evidence together.
+    """
+    mapped = result
+    if not exact_spans:
+        native = _extract_region_segment_payloads(result, prefix_s)
+        forced = any(
+            segment.get("alignment_error")
+            or any(word.get("source_id") for word in segment.get("words") or [])
+            for segment in native
+        )
+        if not forced:
+            return _strip_repetition(_extract_region_text(result, prefix_s)), native
+    if exact_spans:
+        mapped = {
+            **result,
+            "segments": [
+                _native_text_spans(segment) for segment in result.get("segments") or []
+            ],
+        }
+    segments = _extract_region_segment_payloads(mapped, prefix_s)
     segments = _filter_region_repetitions(segments)
-    text = re.sub(
-        r"\s+", " ", " ".join(str(segment.get("text") or "") for segment in segments)
-    ).strip()
+    if exact_spans:
+        segments = [_native_text_spans(segment) for segment in segments]
+    text = " ".join(str(segment.get("text") or "") for segment in segments).strip()
+    if not exact_spans:
+        text = re.sub(r"\s+", " ", text)
     return text, segments
 
 
@@ -304,6 +363,10 @@ def _select_region_tokens(
             continue
         word_tokens = [str(word.get("word") or "").split() for word in words]
         if [token for group in word_tokens for token in group] != tokens:
+            target = [token for token, keep in zip(tokens, flags) if keep]
+            if [token for group in word_tokens for token in group] == target:
+                filtered.append({**segment, "text": reconstruct_text_from_words(words)})
+                continue
             return segments
         kept_words = _select_whole_words(words, word_tokens, flags)
         if kept_words is None:

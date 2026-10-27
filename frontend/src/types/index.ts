@@ -251,7 +251,27 @@ export interface TranscriptSpeakerAssignment {
 /** A browser capture channel: the local microphone or the shared system audio. */
 export type CaptureSourceChannel = "microphone" | "system";
 
-export interface TranscriptUtterance {
+export interface LiveTranscriptWord {
+  id: string;
+  order: number;
+  word: string;
+  start_ms: number | null;
+  end_ms: number | null;
+  source_start?: number | null;
+  source_end?: number | null;
+  join_left?: boolean | null;
+  locked: boolean;
+  lock_reason?: "agreement" | "expiry" | "closure" | null;
+}
+
+/** Present only when the live line carries word settling evidence. */
+export interface LiveTranscriptSettling {
+  words?: LiveTranscriptWord[];
+  text_locked?: boolean;
+  locked?: boolean;
+}
+
+export interface TranscriptUtterance extends LiveTranscriptSettling {
   id: string;
   start: number;
   end: number;
@@ -317,7 +337,7 @@ export interface LiveSpeakerNames {
   live_speaker_names: Record<string, string>;
 }
 
-export interface TranscriptSegment {
+export interface TranscriptSegment extends LiveTranscriptSettling {
   id?: string;
   start: number;
   end: number;
@@ -683,6 +703,10 @@ export interface Settings {
   enable_live_transcription?: boolean;
   /** Install-wide, admin-only: provisional labels require CUDA. */
   live_speaker_labels?: "off" | "auto";
+  /** Install-wide: rolling word agreement on confirmed CUDA; defaults off. */
+  live_text_settling?: "off" | "auto";
+  live_text_settling_k?: number;
+  live_text_settling_window_s?: number;
   /** Install-wide, admin-only: selected when a capture's live labels start. */
   speaker_engine?: "auto" | "classic";
   enable_meeting_edge?: boolean;

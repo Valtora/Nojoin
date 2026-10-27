@@ -30,6 +30,7 @@ def test_native_repetition_keeps_head_text_and_unfiltered_confidence_words(
         },
         0,
     )
+    # The legacy lane keeps upstream's textual filter for native timings.
     assert text == "yes please"
     assert segments[0]["text"] == "yes yes yes please"
     assert segments[0]["words"] == words

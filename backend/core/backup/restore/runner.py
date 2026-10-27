@@ -92,9 +92,15 @@ def _prepare_row(
     elif table_name == "calendar_connections":
         item_data = _prepare_calendar_connection_for_restore(item_data)
     elif table_name == "transcripts":
-        # Runtime publication state belongs to this installation. Durable text
-        # and segment metadata remain in the ordinary version-3 archive.
-        item_data = {**item_data, "change_sequence": 0, "settling_state": None}
+        from backend.utils.transcript_settling import durable_settling_state
+
+        # Runtime publication state belongs to this installation. Retain only
+        # recording-level provenance alongside the archived text and segments.
+        item_data = {
+            **item_data,
+            "change_sequence": 0,
+            "settling_state": durable_settling_state(item_data.get("settling_state")),
+        }
 
     return _adapt_record(model_cls, item_data)
 

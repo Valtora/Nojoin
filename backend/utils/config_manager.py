@@ -24,6 +24,11 @@ from backend.utils.languages import (
     validate_notes_language,
     validate_transcription_language,
 )
+from backend.utils.live_settling_settings import (
+    LIVE_SETTLING_DEFAULTS,
+    LIVE_SETTLING_KEYS,
+    validate_live_settling_setting,
+)
 from backend.utils.llm_provider_env import provider_of_only_llm_key
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
@@ -148,6 +153,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     # Not an AI setting: listed for the same admin-only, install-wide handling.
     EXPORT_BRANDING_KEY,
     "live_speaker_labels",
+    *LIVE_SETTLING_KEYS,
     "speaker_engine",
     *TRANSCRIPTION_SETTING_KEYS,
 )
@@ -155,13 +161,6 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
 MEETING_EDGE_CONTEXT_LEVEL_MAX = 5
 MEETING_EDGE_CONTEXT_LEVEL_DEFAULT = 2
-
-
-def _get_default_device():
-    """Determine default processing device safely."""
-    # Always default to 'auto' so the worker can decide at runtime based on availability.
-    # This prevents 'cpu' from being hardcoded if the config is generated in a non-GPU environment (like CI or build).
-    return "auto"
 
 
 def _get_default_models():
@@ -190,7 +189,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "web_app_url": "https://localhost:14443",
     "enable_canonical_transcript_writes": True,
     "recordings_directory": "recordings",  # Relative to user data directory
-    "processing_device": _get_default_device(),  # Default to GPU if available
+    "processing_device": "auto",  # Resolve hardware in the worker, never the API.
     "default_input_device_index": None,  # None means system default
     "default_output_device_index": None,  # None means system default
     "whisper_model_size": "turbo",  # Default model size (e.g., tiny, base, small, medium, large)
@@ -213,6 +212,7 @@ DEFAULT_SYSTEM_CONFIG = {
     # Provisional speaker labels in the live transcript: "off", or "auto" to run
     # them when the live lane is on CUDA. See docs/DEPLOYMENT.md.
     "live_speaker_labels": "auto",
+    **LIVE_SETTLING_DEFAULTS,
     "speaker_engine": "auto",
     "vad_parameters": {
         "threshold": 0.5,
@@ -594,6 +594,8 @@ class ConfigManager:
 
     def validate_config_value(self, key, value):
         """Validates a configuration value."""
+        if key in LIVE_SETTLING_KEYS:
+            validate_live_settling_setting(key, value)
         if key == "whisper_model_size" and value not in WHISPER_MODEL_SIZES:
             raise ValueError(
                 f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}"

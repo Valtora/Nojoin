@@ -2,6 +2,7 @@
 
 from .assignment import _resolve_recording_speaker_for_value, _state_for_segment
 from .constants import *
+from .live_compatibility import capture_segment_sort_key
 from .projection_segments import _build_projection_segment
 from .public_ids import public_ids_for_write
 from .queries import (
@@ -128,7 +129,9 @@ def replace_utterances_from_segments(
         utterance = TranscriptUtterance(
             public_id=utterance_ids.assign(segment),
             recording_id=recording_id,
-            sort_key=_sort_key_for_index(index),
+            sort_key=capture_segment_sort_key(
+                transcript, index, _segment_to_ms(segment.get("start", 0.0))
+            ),
             start_ms=_segment_to_ms(segment.get("start", 0.0)),
             end_ms=_segment_to_ms(segment.get("end", 0.0)),
             text=str(segment.get("text", "") or ""),
@@ -317,7 +320,13 @@ def apply_compatibility_segment_replace(
                 else segment.get("speaker_edit_source")
             )
 
-            effective_sort_key = _sort_key_for_index(index)
+            # Rolling lines use capture-clock keys so later windows can append
+            # between existing lines. An explicit edit must retain that order.
+            effective_sort_key = (
+                utterance.sort_key
+                if (transcript.settling_state or {}).get("eligible")
+                else _sort_key_for_index(index)
+            )
             effective_start_ms = _segment_to_ms(segment.get("start", 0.0))
             effective_end_ms = _segment_to_ms(segment.get("end", 0.0))
             effective_text = str(effective_segment.get("text", "") or "")

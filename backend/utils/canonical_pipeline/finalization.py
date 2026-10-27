@@ -61,6 +61,44 @@ def _final_confidence_payload(
     return payload if payload or isinstance(incoming, dict) else None
 
 
+def _settled_final_confidence_payload(
+    segment: dict[str, Any],
+    existing: dict[str, Any] | None = None,
+    *,
+    matched: bool = False,
+) -> dict[str, Any] | None:
+    """Replace superseded word evidence for a recording with settled provenance."""
+    from backend.processing.live_asr_payload import _build_live_confidence_payload
+
+    payload = dict(existing or {})
+    incoming = segment.get("confidence_payload")
+    if isinstance(incoming, dict):
+        payload.update(incoming)
+    payload.pop("live_text_settling", None)
+    payload.pop("live_speaker_label", None)
+    if (
+        segment.get("words")
+        or segment.get("alignment_error")
+        or not (
+            isinstance(incoming, dict)
+            and incoming.get("asr_segments")
+            and not isinstance(incoming.get("live_text_settling"), dict)
+        )
+    ):
+        evidence = _build_live_confidence_payload(
+            region_segment_payloads=[segment],
+            region_start_ms=0,
+            region_end_ms=round(segment["end"] * 1000),
+        )
+        evidence["utterance_start_ms"] = round(segment["start"] * 1000)
+        payload.update(evidence)
+    if segment.get("alignment_error"):
+        payload["alignment_error"] = segment["alignment_error"]
+    else:
+        payload.pop("alignment_error", None)
+    return payload or None
+
+
 def finalize_utterances_from_segments(
     session,
     *,
@@ -74,6 +112,11 @@ def finalize_utterances_from_segments(
     recording = session.get(Recording, recording_id)
     if transcript is None or recording is None:
         return []
+    final_confidence_payload = (
+        _settled_final_confidence_payload
+        if (transcript.settling_state or {}).get("settled") is True
+        else _final_confidence_payload
+    )
     active_utterances = sorted(
         _lock_active_lines(session, recording_id),
         key=lambda utterance: (utterance.sort_key, utterance.id),
@@ -336,8 +379,10 @@ def finalize_utterances_from_segments(
             )
             if effective_speaker_confidence is None:
                 effective_speaker_confidence = matched_utterance.speaker_confidence
-            effective_confidence_payload = _final_confidence_payload(
-                effective_segment, matched_utterance.confidence_payload, matched=True
+            effective_confidence_payload = final_confidence_payload(
+                effective_segment,
+                matched_utterance.confidence_payload,
+                matched=True,
             )
             effective_speaker_assignment_source = (
                 _resolve_segment_speaker_assignment_source(
@@ -538,7 +583,7 @@ def finalize_utterances_from_segments(
             speaker_confidence=_to_optional_float(
                 effective_segment.get("speaker_confidence")
             ),
-            confidence_payload=_final_confidence_payload(effective_segment),
+            confidence_payload=final_confidence_payload(effective_segment),
         )
         session.add(utterance)
         session.flush()

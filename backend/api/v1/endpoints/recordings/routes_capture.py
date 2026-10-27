@@ -67,6 +67,20 @@ async def _lock_capture_publication(
     return transcript
 
 
+async def _close_live_words(
+    db: AsyncSession, transcript: Transcript | None, recording_id: int
+) -> None:
+    """Lock the last accepted hypothesis inside the lifecycle transaction."""
+    state = getattr(transcript, "settling_state", None) or {}
+    if not state.get("last_decode_id") or state.get("phase") != "live":
+        return
+    from backend.utils.canonical_pipeline.live_settling import close_live_settling
+
+    await db.run_sync(
+        lambda session: close_live_settling(session, recording_id=recording_id)
+    )
+
+
 def _capture_wall_span_seconds(recording: Recording) -> float | None:
     """Wall-clock seconds between the capture starting and its last activity."""
     started_at = recording.created_at
@@ -198,6 +212,7 @@ async def pause_upload(
         )
 
     if recording.status != RecordingStatus.PAUSED:
+        await _close_live_words(db, transcript, recording.id)
         update_capture_settling_state(
             transcript,
             capture_epoch=recording.capture_epoch,
@@ -273,8 +288,11 @@ async def resume_upload(
         recordings_module._ensure_capture_epoch(recording, epoch)
         _ensure_holder_can_resume(recording)
         resumed_after_stall = False
+        if (getattr(transcript, "settling_state", None) or {}).get("phase") != "live":
+            await _close_live_words(db, transcript, recording.id)
     else:
         resumed_after_stall = _ensure_capture_can_be_taken_over(recording)
+        await _close_live_words(db, transcript, recording.id)
         recording.capture_epoch += 1
 
     stalled_last_activity = recording.last_activity_at
@@ -645,6 +663,7 @@ async def finalize_upload(
         transcript = await _lock_capture_publication(db, recording)
         await db.refresh(recording, with_for_update=True)
         await prepared.validate(db, recording, master=False)
+        await _close_live_words(db, transcript, recording.id)
         update_capture_settling_state(
             transcript,
             capture_epoch=recording.capture_epoch,
@@ -668,6 +687,7 @@ async def finalize_upload(
         transcript = await _lock_capture_publication(db, recording)
         await db.refresh(recording, with_for_update=True)
         await prepared.validate(db, recording, master=False)
+        await _close_live_words(db, transcript, recording.id)
         update_capture_settling_state(
             transcript,
             capture_epoch=recording.capture_epoch,
@@ -707,6 +727,7 @@ async def finalize_upload(
         await recordings_module._seal_recording_audio_cursor(
             db, recording_id=recording.id
         )
+        await _close_live_words(db, transcript, recording.id)
         update_capture_settling_state(
             transcript,
             capture_epoch=recording.capture_epoch,

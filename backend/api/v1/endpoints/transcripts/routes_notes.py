@@ -13,6 +13,7 @@ from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.models.user import User
+from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import resolve_notes_template_async
@@ -154,7 +155,16 @@ async def generate_notes(
     if transcript and transcript.transcription_failed():
         raise HTTPException(status_code=409, detail=TRANSCRIPTION_FAILED_NOTES_MESSAGE)
 
-    if not transcript or not transcript.segments:
+    segments = (
+        await db.run_sync(
+            lambda sync_session: build_transcript_segments_for_read(
+                sync_session, recording.id, transcript=transcript
+            )
+        )
+        if transcript is not None
+        else []
+    )
+    if not segments:
         raise HTTPException(status_code=404, detail="Transcript not found or empty")
 
     if transcript.notes_status == "generating":

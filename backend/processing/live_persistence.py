@@ -134,6 +134,7 @@ def _persist_live_run(
                         flag_modified(transcript, "segments")
                         session.add(transcript)
 
+            if new_segments or live_config.get("_settling_public_changed"):
                 user_settings = getattr(
                     getattr(recording, "user", None),
                     "settings",
