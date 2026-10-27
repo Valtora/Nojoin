@@ -231,9 +231,14 @@ def _set_meeting_edge_state(
     payload: dict | None = None,
     source_revision: int | None = None,
     source_capture: CapturePublicationToken | None = None,
+    expected_signature: str | None = None,
 ) -> bool:
     if not meeting_edge_source_is_current(
-        session, transcript.recording_id, source_revision, source_capture
+        session,
+        transcript.recording_id,
+        source_revision,
+        source_capture,
+        expected_signature,
     ):
         return False
     transcript.meeting_edge_status = status
@@ -286,6 +291,7 @@ def _refresh_meeting_edge(self, recording_id: int):
     session = self.session
     source_revision = None
     source_capture = None
+    source_signature = None
 
     try:
         recording = session.get(Recording, recording_id)
@@ -517,6 +523,7 @@ def _refresh_meeting_edge(self, recording_id: int):
             payload=payload,
             source_revision=source_revision,
             source_capture=source_capture,
+            expected_signature=source_signature,
         ):
             return None
         return payload
@@ -541,6 +548,7 @@ def _refresh_meeting_edge(self, recording_id: int):
                 or "Meeting Edge could not be updated.",
                 source_revision=source_revision,
                 source_capture=source_capture,
+                expected_signature=source_signature,
             )
         return None
 

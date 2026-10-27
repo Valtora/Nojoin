@@ -20,6 +20,8 @@ import {
 } from "@/lib/notes/headNoteSync";
 import type { OutboxEntry } from "@/lib/notes/noteOutbox";
 import type { TimelineNote } from "@/types";
+import type { RetainedHeadNoteDraft } from "@/lib/notes/HeadNoteOwner";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import UnsavedNotesList from "./notes/UnsavedNotesList";
 
@@ -29,6 +31,10 @@ const LENGTH_WARNING_CHARS = NOTE_BODY_MAX_CHARS - 5_000;
 
 interface ProcessingNotesPanelProps {
   value?: string | null;
+  /** Recording-level draft owner, retained while the panel is absent. */
+  retainedDraft?: RetainedHeadNoteDraft | null;
+  onDraftTextChange?: (text: string) => void;
+  onDraftSavedChange?: (savedText: string | null) => void;
   onSave: (notes: string) => Promise<void>;
   /** Told whenever the box starts or stops holding unsaved text. */
   onDirtyChange?: (dirty: boolean) => void;
@@ -172,6 +178,9 @@ function ConflictNotice({
 
 function ProcessingNotesPanel({
   value,
+  retainedDraft,
+  onDraftTextChange,
+  onDraftSavedChange,
   onSave,
   onDirtyChange,
   conflict = null,
@@ -187,21 +196,30 @@ function ProcessingNotesPanel({
   retrySaves = 0,
 }: ProcessingNotesPanelProps) {
   const normalisedValue = value ?? "";
+  const restoredText = retainedDraft?.text ?? normalisedValue;
+  const restoredSaved = retainedDraft ? retainedDraft.lastSaved : normalisedValue;
+  const restoredDirty = !isSaved(restoredText, restoredSaved);
   const headingId = useId();
   const countId = useId();
   const otherNotesHeadingId = useId();
   const lockTitleId = useId();
   const lockMessageId = useId();
-  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [saveState, setSaveState] = useState<SaveState>(restoredSaved === null ? "error" : "idle");
   const [announcement, setAnnouncement] = useState<Announcement>("");
   // The box's text at mount. Later text is written by the effect below:
   // were `defaultValue` to follow it, React would change an untouched box
   // without its change tracking seeing it, and clearing that box would then
   // fire no change at all.
-  const [initialValue] = useState(normalisedValue);
+  const [initialValue] = useState(restoredText);
   // What the box holds, for the character count and the conflict buttons.
-  const [draftText, setDraftText] = useState(normalisedValue);
-  const [dirty, setDirty] = useState(false);
+  const [draftText, setDraftText] = useState(restoredText);
+  const [dirty, setDirty] = useState(restoredDirty);
+  useOnDepsChange([retainedDraft?.lastSaved], () => {
+    if (!retainedDraft) return;
+    setDirty(!isSaved(draftText, retainedDraft.lastSaved));
+    setSaveState(retainedDraft.lastSaved === null ? "error"
+      : isSaved(draftText, retainedDraft.lastSaved) ? "saved" : "idle");
+  });
   // The box takes new text from the server only while it holds no unsaved
   // text and differs from it (the effect below); the count follows suit.
   const [syncedValue, setSyncedValue] = useState(normalisedValue);
@@ -217,15 +235,15 @@ function ProcessingNotesPanel({
   // holds focus, so focus can be handed on rather than dropped to the page.
   const boxFocusedRef = useRef(false);
   const lockFocusedRef = useRef(false);
-  const lastSaveFailedRef = useRef(false);
+  const lastSaveFailedRef = useRef(restoredSaved === null);
   const disabledRef = useRef(disabled);
   const conflictRef = useRef(conflict);
-  const draftRef = useRef(normalisedValue);
-  const lastSavedRef = useRef<string | null>(normalisedValue);
+  const draftRef = useRef(restoredText);
+  const lastSavedRef = useRef<string | null>(restoredSaved);
   const lastPropValueRef = useRef(normalisedValue);
   const unmountedRef = useRef(false);
-  const reportedDirtyRef = useRef(false);
-  const saveStateRef = useRef<SaveState>("idle");
+  const reportedDirtyRef = useRef(restoredDirty);
+  const saveStateRef = useRef<SaveState>(restoredSaved === null ? "error" : "idle");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushSaveRef = useRef<
     (valueToSave: string, force?: boolean) => Promise<void>
@@ -281,6 +299,7 @@ function ProcessingNotesPanel({
     try {
       await onSave(valueToSave);
       lastSavedRef.current = valueToSave;
+      onDraftSavedChange?.(valueToSave);
       lastPropValueRef.current = valueToSave;
       reportDirty();
       setVisibleSaveState(
@@ -303,12 +322,22 @@ function ProcessingNotesPanel({
       }
     } catch {
       lastSavedRef.current = null;
+      onDraftSavedChange?.(null);
       lastSaveFailedRef.current = true;
       reportDirty();
       setVisibleSaveState("error");
       setAnnouncement("Save failed");
     }
-  }, [clearPendingSave, onSave, reportDirty, setVisibleSaveState]);
+  }, [clearPendingSave, onSave, onDraftSavedChange, reportDirty, setVisibleSaveState]);
+
+  useLayoutEffect(() => {
+    if (!retainedDraft) return;
+    lastSavedRef.current = retainedDraft.lastSaved;
+    lastSaveFailedRef.current = retainedDraft.lastSaved === null;
+    saveStateRef.current = retainedDraft.lastSaved === null ? "error"
+      : isSaved(draftRef.current, retainedDraft.lastSaved) ? "saved" : "idle";
+    reportedDirtyRef.current = !isSaved(draftRef.current, retainedDraft.lastSaved);
+  }, [retainedDraft]);
 
   useEffect(() => {
     flushSaveRef.current = flushSave;
@@ -341,10 +370,12 @@ function ProcessingNotesPanel({
 
     draftRef.current = normalisedValue;
     lastSavedRef.current = normalisedValue;
+    onDraftTextChange?.(normalisedValue);
+    onDraftSavedChange?.(normalisedValue);
     if (textareaRef.current && textareaRef.current.value !== normalisedValue) {
       textareaRef.current.value = normalisedValue;
     }
-  }, [normalisedValue]);
+  }, [normalisedValue, onDraftTextChange, onDraftSavedChange]);
 
   useEffect(() => {
     if (disabled) {
@@ -410,6 +441,7 @@ function ProcessingNotesPanel({
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       const nextValue = event.target.value;
       draftRef.current = nextValue;
+      onDraftTextChange?.(nextValue);
       setDraftText(nextValue);
       reportDirty();
 
@@ -432,7 +464,7 @@ function ProcessingNotesPanel({
         void flushSave(draftRef.current);
       }, SAVE_DEBOUNCE_MS);
     },
-    [clearPendingSave, flushSave, reportDirty, setVisibleSaveState],
+    [clearPendingSave, flushSave, onDraftTextChange, reportDirty, setVisibleSaveState],
   );
 
   const handleBlur = useCallback(
@@ -503,6 +535,8 @@ function ProcessingNotesPanel({
       (conflictRef.current?.kind === "changed" ? conflictRef.current.note.body : "");
     draftRef.current = theirs;
     lastSavedRef.current = theirs;
+    onDraftTextChange?.(theirs);
+    onDraftSavedChange?.(theirs);
     lastPropValueRef.current = theirs;
     if (textareaRef.current) {
       textareaRef.current.value = theirs;
@@ -513,7 +547,7 @@ function ProcessingNotesPanel({
     setAnnouncement("");
     reportDirty();
     focusBox();
-  }, [focusBox, onResolveConflict, reportDirty, setVisibleSaveState]);
+  }, [focusBox, onResolveConflict, onDraftTextChange, onDraftSavedChange, reportDirty, setVisibleSaveState]);
 
   const shownLength = lengthToShow(draftText);
   const overLimit = shownLength !== null && shownLength > NOTE_BODY_MAX_CHARS;

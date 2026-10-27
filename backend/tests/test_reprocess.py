@@ -1212,6 +1212,21 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         session.needs_rollback = True
         raise RuntimeError("finalize exploded")
 
+    from backend.worker.tasks import intelligence_source
+
+    def load_recovery_source(session: _FakeSession, recording_id: int) -> None:
+        # This fake has no Transcript row. Assert the recovery boundary rather
+        # than imitating SQLAlchemy's row locking; real locks have database tests.
+        assert session is fake_session
+        assert recording_id == 601
+        assert session.rollback_called
+        assert not session.needs_rollback
+        return None
+
+    monkeypatch.setattr(
+        intelligence_source, "load_intelligence_source", load_recovery_source
+    )
+
     monkeypatch.setattr(
         tasks_module, "finalize_utterances_from_segments", _explode_finalize
     )

@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from backend.utils.final_word_boundaries import final_words
+from backend.utils.live_speaker_labels import live_speaker_display_name
 
 
 class LiveWordPublicRead(BaseModel):
@@ -49,15 +50,19 @@ def public_settling_fields(
     *,
     final_utterance_id: str | None = None,
     final_text: str | None = None,
+    include_live_label_lock: bool = False,
 ) -> dict[str, Any]:
     """Expose typed live facts or final boundaries; never private comparisons."""
     payload = payload or {}
     review = payload.get("final_review")
-    public_review = (
+    public_review: dict[str, Any] = (
         {"final_review": FinalReviewPublicRead.model_validate(review).model_dump()}
         if isinstance(review, dict)
         else {}
     )
+    label = payload.get("live_speaker_label")
+    if include_live_label_lock and isinstance(label, dict):
+        public_review["locked"] = label.get("locked") is True
     metadata = payload.get("live_text_settling")
     protected = bool(payload.get("human_protection"))
     if not isinstance(metadata, dict) and not protected:
@@ -97,5 +102,7 @@ def public_transcript_segment(
             if include_final_words and not segment.get("provisional")
             else None,
             final_text=segment.get("text"),
+            include_live_label_lock=live_speaker_display_name(segment.get("speaker"))
+            is not None,
         ),
     }

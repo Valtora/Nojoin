@@ -695,6 +695,9 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
     existing_transcript = await db.run_sync(
         lambda session: _load_transcript(session, recording_id, lock=True)
     )
+    from backend.worker.tasks.intelligence_source import clear_meeting_edge_error
+
+    await db.run_sync(lambda session: clear_meeting_edge_error(session, recording_id))
     preserve_live_work = bool(
         existing_transcript is not None
         and (existing_transcript.settling_state or {}).get("settled") is True
@@ -780,6 +783,15 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
             existing_transcript.settling_state
         )
         retained = {"id", "recording_id", "created_at", "updated_at", "change_sequence"}
+        retained.update(
+            {
+                "meeting_edge_focus",
+                "meeting_edge_payload",
+                "meeting_edge_status",
+                "meeting_edge_error_message",
+                "meeting_edge_source_signature",
+            }
+        )
         if preserve_live_work:
             retained.update({"text", "segments"})
         for field in Transcript.model_fields:

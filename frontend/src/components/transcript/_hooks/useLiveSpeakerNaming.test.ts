@@ -55,4 +55,51 @@ describe("useLiveSpeakerNaming", () => {
     });
     expect(applyNames).not.toHaveBeenCalled();
   });
+
+  it("passes explicit create-person intent only with the locked source and refreshes after acceptance", async () => {
+    nameLiveSpeaker.mockResolvedValue({ LIVE_PROVISIONAL_1: "Alex" });
+    const refresh = vi.fn();
+    const apply = vi.fn();
+    const { result } = renderHook(() => useLiveSpeakerNaming("rec-1", apply, refresh));
+    const segment = { id: "u1", revision: 8, start: 0, end: 2, text: "Words", speaker: "LIVE_PROVISIONAL_1",
+      settling_required: true, locked: true };
+    await act(async () => result.current.renameLiveSpeaker("LIVE_PROVISIONAL_1", "Alex", segment, true));
+    expect(nameLiveSpeaker).toHaveBeenCalledWith("rec-1", "LIVE_PROVISIONAL_1", "Alex", { id: "u1", revision: 8 }, true);
+    expect(apply).toHaveBeenCalledWith({ LIVE_PROVISIONAL_1: "Alex" });
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("sends an ordinary locked live source revision even when word settling is disabled", async () => {
+    nameLiveSpeaker.mockResolvedValue({ LIVE_PROVISIONAL_1: "Alex" });
+    const { result } = renderHook(() => useLiveSpeakerNaming("rec-1", vi.fn()));
+    const segment = { id: "ordinary", revision: 3, start: 0, end: 2, text: "Words", speaker: "LIVE_PROVISIONAL_1",
+      locked: true };
+    await act(async () => result.current.renameLiveSpeaker("LIVE_PROVISIONAL_1", "Alex", segment));
+    expect(nameLiveSpeaker).toHaveBeenLastCalledWith("rec-1", "LIVE_PROVISIONAL_1", "Alex", { id: "ordinary", revision: 3 });
+    await act(async () => result.current.renameLiveSpeaker("LIVE_PROVISIONAL_1", "Alex", segment, true));
+    expect(nameLiveSpeaker).toHaveBeenLastCalledWith("rec-1", "LIVE_PROVISIONAL_1", "Alex", { id: "ordinary", revision: 3 }, true);
+  });
+
+  it("refuses malformed locked source identity before sending creation intent to the API", async () => {
+    nameLiveSpeaker.mockResolvedValue({});
+    const refresh = vi.fn();
+    const { result } = renderHook(() => useLiveSpeakerNaming("rec-1", vi.fn(), refresh));
+    const malformed = { id: "", revision: 0, start: 0, end: 2, text: "Words", speaker: "LIVE_PROVISIONAL_1", locked: true };
+    let accepted: unknown;
+    await act(async () => { accepted = await result.current.renameLiveSpeaker("LIVE_PROVISIONAL_1", "Alex", malformed, true); });
+    expect(accepted).toBe(false);
+    expect(nameLiveSpeaker).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, { id: "u1", revision: 8, start: 0, end: 2, text: "Words", speaker: "LIVE_PROVISIONAL_1",
+    settling_required: true, locked: false }])("refuses creation without a locked source before any request", async (segment) => {
+    const refresh = vi.fn();
+    const { result } = renderHook(() => useLiveSpeakerNaming("rec-1", vi.fn(), refresh));
+    let accepted: unknown;
+    await act(async () => { accepted = await result.current.renameLiveSpeaker("LIVE_PROVISIONAL_1", "Alex", segment, true); });
+    expect(accepted).toBe(false);
+    expect(nameLiveSpeaker).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });

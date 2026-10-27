@@ -11,7 +11,7 @@ import {
   Target,
 } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   clampMeetingEdgeContextLevel,
@@ -19,10 +19,7 @@ import {
   MEETING_EDGE_CONTEXT_OPTIONS,
 } from "@/lib/meetingEdgeContext";
 import { MeetingEdgePayload } from "@/types";
-
-const SAVE_DEBOUNCE_MS = 1200;
-
-type SaveState = "idle" | "saving" | "saved" | "error";
+import { useMeetingEdgeFocus } from "./useMeetingEdgeFocus";
 
 interface MeetingEdgePanelProps {
   readOnly?: boolean;
@@ -104,123 +101,28 @@ function MeetingEdgePanel({
   contextLevel,
   onSaveContextLevel,
 }: MeetingEdgePanelProps) {
-  const normalisedFocus = focusText ?? "";
   const resolvedContextLevel = clampMeetingEdgeContextLevel(
     contextLevel ?? payload?.context_level ?? DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
   );
   const contextStepCount = MEETING_EDGE_CONTEXT_OPTIONS.length - 1;
-  const [draftFocus, setDraftFocus] = useState(normalisedFocus);
-  const [focusSaveState, setFocusSaveState] = useState<SaveState>("idle");
+  const { draftFocus, focusSaveState, handleChange, handleBlur } = useMeetingEdgeFocus(
+    focusText, readOnly, onSaveFocus,
+  );
   const [draftContextLevel, setDraftContextLevel] = useState(resolvedContextLevel);
   const [isGuidanceOpen, setIsGuidanceOpen] = useState(true);
   const toggleGuidance = useCallback(
     () => setIsGuidanceOpen((open) => !open),
     [],
   );
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const draftFocusRef = useRef(normalisedFocus);
-  const lastSavedRef = useRef(normalisedFocus);
-  const lastPropValueRef = useRef(normalisedFocus);
-  const focusSaveStateRef = useRef<SaveState>("idle");
-  const flushSaveRef = useRef<(valueToSave: string) => Promise<void>>(
-    async () => {},
-  );
+  const contextSaveGenerationRef = useRef(0);
 
-  const setVisibleFocusSaveState = useCallback((nextState: SaveState) => {
-    if (focusSaveStateRef.current === nextState) {
-      return;
-    }
-
-    focusSaveStateRef.current = nextState;
-    setFocusSaveState(nextState);
-  }, []);
-
-  const clearPendingSave = useCallback(() => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-  }, []);
-
-  const flushSave = useCallback(
-    async (valueToSave: string) => {
-      clearPendingSave();
-
-      if (readOnly || valueToSave === lastSavedRef.current) {
-        return;
-      }
-
-      setVisibleFocusSaveState("saving");
-      try {
-        await onSaveFocus(valueToSave);
-        lastSavedRef.current = valueToSave;
-        lastPropValueRef.current = valueToSave;
-        setVisibleFocusSaveState(
-          draftFocusRef.current === valueToSave ? "saved" : "idle",
-        );
-      } catch {
-        setVisibleFocusSaveState("error");
-      }
-    },
-    [clearPendingSave, onSaveFocus, readOnly, setVisibleFocusSaveState],
-  );
-
-  useEffect(() => {
-    flushSaveRef.current = flushSave;
-  }, [flushSave]);
-
-  useEffect(() => {
-    if (normalisedFocus === lastPropValueRef.current) {
-      return;
-    }
-
-    lastPropValueRef.current = normalisedFocus;
-
-    if (draftFocusRef.current !== lastSavedRef.current) {
-      return;
-    }
-
-    setDraftFocus(normalisedFocus);
-    draftFocusRef.current = normalisedFocus;
-    lastSavedRef.current = normalisedFocus;
-  }, [normalisedFocus]);
-
-  useEffect(() => {
-    return () => {
-      clearPendingSave();
-    };
-  }, [clearPendingSave]);
+  useLayoutEffect(() => {
+    return () => { contextSaveGenerationRef.current += 1; };
+  }, [readOnly, resolvedContextLevel]);
 
   useEffect(() => {
     setDraftContextLevel(resolvedContextLevel);
   }, [resolvedContextLevel]);
-
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
-      if (readOnly) return;
-      const nextValue = event.target.value;
-      draftFocusRef.current = nextValue;
-      setDraftFocus(nextValue);
-      if (focusSaveStateRef.current !== "idle") {
-        setVisibleFocusSaveState("idle");
-      }
-
-      clearPendingSave();
-      if (nextValue === lastSavedRef.current) {
-        return;
-      }
-
-      saveTimeoutRef.current = setTimeout(() => {
-        saveTimeoutRef.current = null;
-        void flushSaveRef.current(draftFocusRef.current);
-      }, SAVE_DEBOUNCE_MS);
-    },
-    [clearPendingSave, readOnly, setVisibleFocusSaveState],
-  );
-
-  const handleBlur = useCallback(() => {
-    void flushSaveRef.current(draftFocusRef.current);
-  }, []);
 
   const handleContextLevelChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -235,10 +137,13 @@ function MeetingEdgePanel({
         return;
       }
 
+      const generation = ++contextSaveGenerationRef.current;
       try {
         await onSaveContextLevel(nextLevel);
       } catch {
-        setDraftContextLevel(resolvedContextLevel);
+        if (generation === contextSaveGenerationRef.current) {
+          setDraftContextLevel(resolvedContextLevel);
+        }
       }
     },
     [onSaveContextLevel, readOnly, resolvedContextLevel],
@@ -409,7 +314,7 @@ function MeetingEdgePanel({
             </span>
           </div>
           <p className="mt-2 text-sm leading-6 text-contrast-helper">
-            Add a short goal, concern, or angle you want this guidance to optimize for.
+            Add a short goal, concern, or angle you want this guidance to optimise for.
           </p>
           <TextareaBase
             data-ui-fill="card"

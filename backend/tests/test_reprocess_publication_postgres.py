@@ -243,6 +243,17 @@ def test_reprocess_and_retry_keep_sequence_after_a_concurrent_edit(
         assert transcript is not None, "Reprocess deleted the publication identity"
         assert (transcript.id, transcript.change_sequence) == (transcript_id, 52)
         assert transcript.transcript_status == "pending"
+        # Meeting Edge is retained after capture, including retry from ERROR.
+        # This fixture's metadata-only payload contains no useful guidance.
+        edge_expected = {
+            "meeting_edge_focus": before["meeting_edge_focus"],
+            "meeting_edge_payload": before["meeting_edge_payload"],
+            "meeting_edge_status": "idle",
+            "meeting_edge_error_message": None,
+            "meeting_edge_source_signature": None,
+        }
+        for field, value in edge_expected.items():
+            assert getattr(transcript, field) == value, field
         if status == RecordingStatus.PROCESSED:
             # #749 replaces queue-time clearing with retention for completed
             # publications; the concurrent-edit fence/counter contract is unchanged.
@@ -258,6 +269,7 @@ def test_reprocess_and_retry_keep_sequence_after_a_concurrent_edit(
                 "settling_state",
                 "updated_at",
                 "change_sequence",
+                *edge_expected,
             }
             for field, value in before.items():
                 if field not in changed:
@@ -278,14 +290,12 @@ def test_reprocess_and_retry_keep_sequence_after_a_concurrent_edit(
                 "notes",
                 "notes_template_id",
                 "notes_template_sections",
-                "meeting_edge_focus",
                 "meeting_edge_error_message",
                 "meeting_edge_source_signature",
                 "error_message",
                 "analytics_error_message",
                 "analytics_ai_error_message",
                 "language_detection",
-                "meeting_edge_payload",
                 "analytics_payload",
                 "settling_state",
             ):

@@ -6,12 +6,12 @@ import { ArrowLeft, MessageSquare } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import ChatPanel from "@/components/ChatPanel";
-import SpeakerPanel from "@/components/SpeakerPanel";
+import RecordingSpeakers from "@/components/speakers/RecordingSpeakers";
 import { SpeakerTurnHighlightProvider } from "@/components/speakers/SpeakerTurnHighlight";
 import CapturesGallery from "@/components/notes/CapturesGallery";
-import MyNotesList from "@/components/notes/MyNotesList";
+import RecordingMyNotes from "@/components/notes/RecordingMyNotes";
+import RecordingNoteComposer from "@/components/notes/RecordingNoteComposer";
 import { NoteFilesProvider } from "@/components/notes/NoteFiles";
-import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import MeetingEdgePanel from "@/components/MeetingEdgePanel";
 import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
 import ExportModal from "@/components/ExportModal";
@@ -19,6 +19,8 @@ import { RecordingStatus } from "@/types";
 import { useRef } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
+import { HeadNoteOwnerProvider } from "@/lib/notes/HeadNoteOwner";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
 import { getAutoSpeakerReplacementName } from "./_hooks/recordingDetailUtils";
@@ -49,7 +51,6 @@ export default function RecordingPage({ params }: PageProps) {
     noteEdits,
     globalSpeakers,
     loading,
-    meetingEdgeEnabled,
     meetingEdgeContextLevel,
     isInFlightRecording,
     liveTranscript,
@@ -92,6 +93,7 @@ export default function RecordingPage({ params }: PageProps) {
     navigateToRecordings,
     fetchRecording,
     refreshRecordingView,
+    refreshPeople,
     handleTimeUpdate,
     handlePlaySegment,
     handlePause,
@@ -145,6 +147,51 @@ export default function RecordingPage({ params }: PageProps) {
     }
   };
 
+  const speakersContent = <RecordingSpeakers
+    recording={recording}
+    liveTranscript={usesInFlightTranscript ? liveTranscript : undefined}
+    speakers={usesInFlightTranscript ? liveTranscript.speakers : recording.speakers || []}
+    segments={transcriptSegments}
+    onPlaySegment={handlePlaySegment}
+    disablePlayback={!canPlayback}
+    recordingId={recording.id}
+    speakerColors={speakerColors}
+    onColorChange={handleColorChange}
+    currentTime={currentTime}
+    isPlaying={isPlaying}
+    onPause={handlePause}
+    onResume={handleResume}
+    onRefresh={refreshRecordingView}
+    globalSpeakers={globalSpeakers}
+    onSpeakerRenamed={handleSpeakerRenamed}
+    onPeopleChanged={refreshPeople}
+    readOnly={!isLiveCaptureInProgress(recording) && (showCaptureSlot ||
+      (hasRetainedPublication && (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0)))}
+  />;
+  const showTranscript = () => {
+    setActivePanel("transcript");
+    requestAnimationFrame(() => document.getElementById("panel-transcript")?.focus({ preventScroll: true }));
+  };
+  const myNotesContent = <RecordingMyNotes
+    recording={recording}
+    timelineNotes={timelineNotes}
+    segments={transcriptSegments}
+    noteEdits={noteEdits}
+    onPlay={handlePlaySegment}
+    disablePlayback={!canPlayback}
+    onShowTranscript={showTranscript}
+    className="bg-surface-inset"
+  />;
+  const meetingEdgeContent = <MeetingEdgePanel
+    readOnly={!isLiveCaptureInProgress(recording)}
+    payload={recording.transcript?.meeting_edge_payload}
+    focusText={recording.transcript?.meeting_edge_focus}
+    status={recording.transcript?.meeting_edge_status}
+    onSaveFocus={handleMeetingEdgeFocusChange}
+    contextLevel={meetingEdgeContextLevel}
+    onSaveContextLevel={handleMeetingEdgeContextLevelChange}
+  />;
+
   const mainContent = (
     <RecordingMainContent
       liveTranscript={usesInFlightTranscript ? liveTranscript : undefined}
@@ -156,30 +203,12 @@ export default function RecordingPage({ params }: PageProps) {
       canExport={canExport}
       transcriptIsAuthoritative={transcriptIsAuthoritative}
       hasRetainedPublication={hasRetainedPublication}
+      speakersContent={speakersContent}
+      myNotesContent={myNotesContent}
+      meetingEdgeContent={meetingEdgeContent}
       playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording} onDiscarded={navigateToRecordings} /> : undefined}
-      inFlightContent={usesInFlightTranscript ? (
-        <RecordingStatusDisplay
-          composerBoxRef={liveNoteBoxRef}
-          recording={recording}
-          liveTranscript={liveTranscript}
-          onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
-          meetingEdgeContextLevel={meetingEdgeContextLevel}
-          onSaveMeetingEdgeContextLevel={handleMeetingEdgeContextLevelChange}
-          showMeetingEdge={meetingEdgeEnabled}
-          audioClock={audioClock}
-          timelineNotes={timelineNotes}
-        />
-      ) : showCaptureSlot && hasRetainedPublication && meetingEdgeEnabled &&
-        (recording.transcript?.meeting_edge_payload || recording.transcript?.meeting_edge_focus) ? (
-          <MeetingEdgePanel readOnly
-            payload={recording.transcript?.meeting_edge_payload}
-            focusText={recording.transcript?.meeting_edge_focus}
-            status={recording.transcript?.meeting_edge_status}
-            onSaveFocus={handleMeetingEdgeFocusChange}
-            contextLevel={meetingEdgeContextLevel}
-            onSaveContextLevel={handleMeetingEdgeContextLevelChange}
-          />
-        ) : undefined}
+      inFlightContent={<RecordingNoteComposer recording={recording} segments={transcriptSegments}
+        audioClock={audioClock} boxRef={liveNoteBoxRef} />}
       timelineNotes={timelineNotes}
       noteEdits={noteEdits}
       isMobile={isMobile}
@@ -234,6 +263,7 @@ export default function RecordingPage({ params }: PageProps) {
   return (
     // Notes' files open one viewer, from a note's line or the Captures tab.
     <SpeakerTurnHighlightProvider key={recording.id}>
+    <HeadNoteOwnerProvider key={recording.id} recordingId={recording.id} timelineNotes={timelineNotes}>
     <NoteFilesProvider
       recordingId={recording.id}
       notes={timelineNotes}
@@ -322,35 +352,12 @@ export default function RecordingPage({ params }: PageProps) {
                     <RecordingSideColumn
                       allowChat={!showCaptureSlot}
                       speakers={
-                        showCaptureSlot ? <p className="p-4 text-sm text-contrast-helper">Name speakers from the live transcript.</p> : <SpeakerPanel
-                          speakers={recording.speakers || []}
-                          segments={transcriptSegments}
-                          onPlaySegment={handlePlaySegment}
-                          disablePlayback={!canPlayback}
-                          recordingId={recording.id}
-                          speakerColors={speakerColors}
-                          onColorChange={handleColorChange}
-                          currentTime={currentTime}
-                          isPlaying={isPlaying}
-                          onPause={handlePause}
-                          onResume={handleResume}
-                          onRefresh={refreshRecordingView}
-                          globalSpeakers={globalSpeakers}
-                          onSpeakerRenamed={handleSpeakerRenamed}
-                        />
+                        speakersContent
                       }
                       myNotes={
-                        <MyNotesList
-                          recordingId={recording.id}
-                          timelineNotes={timelineNotes}
-                          segments={transcriptSegments}
-                          noteEdits={noteEdits}
-                          onPlay={handlePlaySegment}
-                          disablePlayback={!canPlayback}
-                          onShowTranscript={() => setActivePanel("transcript")}
-                          className="h-full bg-surface-inset"
-                        />
+                        myNotesContent
                       }
+                      meetingEdge={meetingEdgeContent}
                       captures={
                         <CapturesGallery
                           recordingId={recording.id}
@@ -387,6 +394,7 @@ export default function RecordingPage({ params }: PageProps) {
       />}
     </div>
     </NoteFilesProvider>
+    </HeadNoteOwnerProvider>
     </SpeakerTurnHighlightProvider>
   );
 }

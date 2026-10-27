@@ -9,6 +9,7 @@ import type {
 } from "@/types";
 
 import HeadNotePanel from "./HeadNotePanel";
+import { HeadNoteOwnerProvider } from "@/lib/notes/HeadNoteOwner";
 
 const RECORDING = "rec-1";
 
@@ -294,16 +295,22 @@ const signature = (notes: TimelineNote[]) =>
 
 const settle = () => vi.advanceTimersByTimeAsync(0);
 
-const mount = (props: { disabled?: boolean } = {}) => {
+const mount = (props: { disabled?: boolean; retained?: boolean } = {}) => {
   let shown = server.list();
   let disabled = props.disabled;
-  const element = () => (
+  let mounted = true;
+  let layout = 0;
+  const panel = () => mounted ? (
     <HeadNotePanel
+      key={layout}
       recordingId={RECORDING}
       timelineNotes={shown}
       disabled={disabled}
     />
-  );
+  ) : null;
+  const element = () => props.retained
+    ? <HeadNoteOwnerProvider recordingId={RECORDING} timelineNotes={shown}>{panel()}</HeadNoteOwnerProvider>
+    : panel();
   const view = render(element());
   // Like useRecordingDetail, the page takes a polled recording only when its
   // notes signature (or something else it shows) changed.
@@ -314,6 +321,16 @@ const mount = (props: { disabled?: boolean } = {}) => {
       await settle();
     });
   return {
+    remount: () => act(async () => {
+      layout += 1;
+      view.rerender(element());
+      await settle();
+    }),
+    show: (visible: boolean) => act(async () => {
+      mounted = visible;
+      view.rerender(element());
+      await settle();
+    }),
     poll: () => answer(server.list()),
     /** A poll answering with these notes, such as a late one. */
     answer,
@@ -358,6 +375,69 @@ describe("HeadNotePanel", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("retains a conflicting head-note draft when the terminal sidebar layout remounts", async () => {
+    server.add("h1", "head", "Original");
+    const view = mount({ retained: true });
+    type("My unresolved version");
+    server.edit("h1", "Other device's version");
+    await view.poll();
+    await waitForSave();
+    expect(screen.getByRole("alert")).toHaveTextContent("Other device's version");
+    await view.remount();
+    expect(box()).toHaveValue("My unresolved version");
+    expect(screen.getByRole("alert")).toHaveTextContent("Other device's version");
+    await click("Keep mine");
+    expect(bodies()).toEqual(["My unresolved version"]);
+  });
+
+  it("retains a failed head-note save across collapsing and reopening its panel", async () => {
+    server.add("h1", "head", "Original");
+    server.refuse.push(...Array.from({ length: 2 }, () => ({ write: "update" as const, error: new Error("Offline") })));
+    const view = mount({ retained: true });
+    type("Unsaved offline version");
+    await waitForSave();
+    await view.show(false);
+    await view.show(true);
+    expect(box()).toHaveValue("Unsaved offline version");
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
+    await blur();
+    expect(bodies()).toEqual(["Unsaved offline version"]);
+  });
+
+  it("takes a clean server update received while the notes panel is collapsed", async () => {
+    server.add("h1", "head", "Original");
+    const view = mount({ retained: true });
+    type("Saved version");
+    await waitForSave();
+    await view.show(false);
+    server.edit("h1", "Updated while collapsed");
+    await view.poll();
+    await view.show(true);
+    expect(box()).toHaveValue("Updated while collapsed");
+  });
+
+  it("keeps locked conflicting text through responsive remounts and retains Use theirs", async () => {
+    server.add("h1", "head", "Original");
+    const view = mount({ retained: true });
+    type("My locked version");
+    server.edit("h1", "Theirs");
+    await view.poll();
+    await waitForSave();
+    await view.lock(true);
+    await view.remount();
+    expect(box()).toHaveValue("My locked version");
+    expect(box()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep mine" })).toBeDisabled();
+    await click("Use theirs");
+    await view.remount();
+    expect(box()).toHaveValue("Theirs");
+    await view.lock(false);
+    server.edit("h1", "Later clean version");
+    await view.poll();
+    await view.remount();
+    expect(box()).toHaveValue("Later clean version");
   });
 
   it("refuses an edit made while another device's change arrived, and shows theirs", async () => {

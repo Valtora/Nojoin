@@ -21,9 +21,7 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 
-import SpeakerPanel from "@/components/SpeakerPanel";
 import CapturesGallery from "@/components/notes/CapturesGallery";
-import MyNotesList from "@/components/notes/MyNotesList";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 
 import RecordingHeader from "./RecordingHeader";
@@ -40,6 +38,9 @@ interface RecordingMainContentProps {
   recording: Recording;
   playerSlot?: ReactNode;
   inFlightContent?: ReactNode;
+  speakersContent?: ReactNode;
+  myNotesContent?: ReactNode;
+  meetingEdgeContent?: ReactNode;
   inFlight?: boolean;
   canPlayback?: boolean;
   canExport?: boolean;
@@ -131,6 +132,7 @@ const MOBILE_TABS: { panel: ActivePanel; label: string }[] = [
   { panel: "captures", label: "Captures" },
   ...TABS.slice(2),
   { panel: "speakers", label: "Speakers" },
+  { panel: "meeting-edge", label: "Meeting Edge" },
 ];
 
 // Marks a side of the mobile tab row with tabs scrolled out of view. Decorative:
@@ -159,6 +161,9 @@ export default function RecordingMainContent({
   recording,
   playerSlot,
   inFlightContent,
+  speakersContent,
+  myNotesContent,
+  meetingEdgeContent,
   inFlight = false,
   canPlayback = true,
   canExport = true,
@@ -193,9 +198,7 @@ export default function RecordingMainContent({
   onPause,
   onResume,
   onRenameSpeaker,
-  onColorChange,
   onRefresh,
-  onSpeakerRenamed,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
@@ -242,8 +245,6 @@ export default function RecordingMainContent({
     tablistRef.current?.querySelector<HTMLElement>(`#tab-${panel}`)?.focus();
   };
 
-  // A jump from My notes opens the transcript, and focus goes with it once
-  // it shows: the list's row is hidden from then on.
   const showTranscript = () => {
     setActivePanel("transcript");
     requestAnimationFrame(() =>
@@ -408,16 +409,7 @@ export default function RecordingMainContent({
             aria-labelledby="tab-my-notes"
             className={`absolute inset-0 flex flex-col ${activePanel === "my-notes" ? "z-10 visible" : "z-0 invisible"}`}
           >
-            <MyNotesList
-              recordingId={recording.id}
-              timelineNotes={timelineNotes}
-              segments={transcriptSegments}
-              noteEdits={noteEdits}
-              onPlay={onPlaySegment}
-              disablePlayback={!canPlayback}
-              onShowTranscript={showTranscript}
-              className="flex-1"
-            />
+            {myNotesContent}
           </div>
         )}
 
@@ -446,24 +438,14 @@ export default function RecordingMainContent({
             aria-labelledby="tab-speakers"
             className={`absolute inset-0 flex flex-col ${activePanel === "speakers" ? "z-10 visible" : "z-0 invisible"}`}
           >
-            {inFlight ? <p className="p-4 text-sm text-contrast-helper">Name speakers from the live transcript.</p> : <SpeakerPanel
-              speakers={recording.speakers || []}
-              segments={transcriptSegments}
-              onPlaySegment={onPlaySegment}
-              disablePlayback={!canPlayback}
-              recordingId={recording.id}
-              speakerColors={speakerColors}
-              onColorChange={onColorChange}
-              currentTime={currentTime}
-              isPlaying={isPlaying}
-              onPause={onPause}
-              onResume={onResume}
-              onRefresh={onRefresh}
-              globalSpeakers={globalSpeakers}
-              onSpeakerRenamed={onSpeakerRenamed}
-            />}
+            {speakersContent}
           </div>
         )}
+
+        {isMobile && <div role="tabpanel" id="panel-meeting-edge" aria-labelledby="tab-meeting-edge"
+          className={`absolute inset-0 flex flex-col overflow-y-auto ${activePanel === "meeting-edge" ? "z-10 visible" : "z-0 invisible"}`}>
+          {meetingEdgeContent}
+        </div>}
       </SurfaceBase>
     </div>
   );

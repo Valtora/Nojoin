@@ -9,7 +9,7 @@ from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
-from backend.models.recording import Recording
+from backend.models.recording import Recording, is_live_capture
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.models.user import User
@@ -17,6 +17,10 @@ from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import resolve_notes_template_async
+from backend.utils.transcript_settling import (
+    load_capture_publication,
+    publication_is_current,
+)
 
 from .helpers import (
     MeetingEdgeFocusUpdate,
@@ -73,12 +77,16 @@ async def update_meeting_edge_focus(
     Update the user-provided Meeting Edge focus prompt for a live meeting.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
-    result = await db.execute(stmt)
-    transcript = result.scalar_one_or_none()
-
-    if not transcript:
+    transcript, recording = await db.run_sync(
+        lambda session: load_capture_publication(session, recording.id)
+    )
+    if not publication_is_current(recording, transcript, None) or not is_live_capture(
+        recording
+    ):
+        raise HTTPException(
+            status_code=409, detail="Meeting Edge focus is read-only after capture."
+        )
+    if transcript is None:
         transcript = Transcript(recording_id=recording.id)
 
     transcript.meeting_edge_focus = update.meeting_edge_focus.strip() or None

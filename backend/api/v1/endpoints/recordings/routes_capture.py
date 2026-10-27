@@ -47,6 +47,7 @@ from backend.utils.time import utc_now
 from backend.utils.transcript_publication import bump_transcript_change
 from backend.utils.transcript_settling import update_capture_settling_state
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
+from backend.worker.tasks.intelligence_source import clear_meeting_edge_error
 
 from .capture_master import prepare_capture_master
 from .router import router
@@ -672,6 +673,9 @@ async def finalize_upload(
         await db.refresh(recording, with_for_update=True)
         await prepared.validate(db, recording, master=False)
         await _close_live_words(db, transcript, recording.id)
+        await db.run_sync(
+            lambda session: clear_meeting_edge_error(session, recording.id)
+        )
         update_capture_settling_state(
             transcript,
             capture_epoch=recording.capture_epoch,
@@ -696,6 +700,9 @@ async def finalize_upload(
         await db.refresh(recording, with_for_update=True)
         await prepared.validate(db, recording, master=False)
         await _close_live_words(db, transcript, recording.id)
+        await db.run_sync(
+            lambda session: clear_meeting_edge_error(session, recording.id)
+        )
         update_capture_settling_state(
             transcript,
             capture_epoch=recording.capture_epoch,
@@ -736,6 +743,9 @@ async def finalize_upload(
             db, recording_id=recording.id
         )
         await _close_live_words(db, transcript, recording.id)
+        await db.run_sync(
+            lambda session: clear_meeting_edge_error(session, recording.id)
+        )
         update_capture_settling_state(
             transcript,
             capture_epoch=recording.capture_epoch,

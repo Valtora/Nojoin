@@ -122,18 +122,25 @@ def record_live_speaker_name(
     The row supersedes the label's previous live name, so only the newest one
     stands at the final pass. ``act.surface`` is ``live``.
     """
-    from backend.utils.canonical_pipeline.constants import _load_transcript
+    from backend.utils.canonical_pipeline.constants import (
+        ACTIVE_UTTERANCE_STATES,
+        _load_transcript,
+    )
     from backend.utils.canonical_pipeline.guards import (
         LineActionConflict,
         require_source_line,
-        settling_required,
     )
 
     transcript = _load_transcript(session, recording_id, lock=True)
     anchor: Span | None
-    if anchor_reference is not None and settling_required(transcript):
+    if anchor_reference is not None:
         source_row = require_source_line(session, transcript, *anchor_reference)
-        if source_row is None or source_row.speaker_label != label:
+        if (
+            source_row is None
+            or source_row.state not in ACTIVE_UTTERANCE_STATES
+            or source_row.speaker_label != label
+            or source_row.revision != anchor_reference[1]
+        ):
             raise LineActionConflict(
                 "line_stale", "This speaker's line changed. Reload it and try again."
             )
@@ -170,6 +177,41 @@ def record_live_speaker_name(
 
     persist_name_anchors(session, recording_id)
     return row
+
+
+def require_live_person_anchor(
+    session: Any, recording_id: int, label: str, reference: tuple[str, int]
+) -> None:
+    """Validate creation intent before recording a name or creating a Person."""
+    from backend.utils.canonical_pipeline.constants import (
+        ACTIVE_UTTERANCE_STATES,
+        _load_transcript,
+    )
+    from backend.utils.canonical_pipeline.guards import (
+        LineActionConflict,
+        require_source_line,
+        settling_required,
+    )
+
+    transcript = _load_transcript(session, recording_id, lock=True)
+    row = require_source_line(session, transcript, *reference)
+    if (
+        row is None
+        or row.state not in ACTIVE_UTTERANCE_STATES
+        or row.end_ms <= row.start_ms
+        or row.speaker_label != label
+        or row.revision != reference[1]
+    ):
+        raise LineActionConflict(
+            "line_stale", "This speaker's line changed. Reload it and try again."
+        )
+    if not settling_required(transcript) and not _live_label_locked(
+        row.confidence_payload
+    ):
+        raise LineActionConflict(
+            "line_settling",
+            "This speaker's line is still settling. Try again once it locks.",
+        )
 
 
 def live_speaker_names(session: Any, recording_id: int) -> dict[str, str]:

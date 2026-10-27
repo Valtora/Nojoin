@@ -90,7 +90,8 @@ describe("moving a newly saved note during live capture", () => {
     await waitFor(() => expect(server.creates).toHaveLength(1));
     expect(server.creates[0]).toMatchObject({ kind: "point", anchor_ms: 12_000,
       start_ms: 12_000, end_ms: 15_500, body: "Check this figure" });
-    const note = (await screen.findByText("Check this figure")).closest<HTMLElement>('[data-testid="timeline-note"]')!;
+    const note = (await within(screen.getByTestId("live-transcript-scroll")).findByText("Check this figure"))
+      .closest<HTMLElement>('[data-testid="timeline-note"]')!;
     await waitFor(() => expect(note).toHaveAttribute("data-note-status", "saved"));
     expect(within(note).queryByTestId("timeline-note-quote")).toBeNull();
     const grip = note.querySelector<HTMLElement>("[data-note-grip]")!;
@@ -108,7 +109,8 @@ describe("moving a newly saved note during live capture", () => {
     expect(screen.getByTestId("applied-span")).toHaveTextContent("20000:23500");
     await act(async () => answer({ ...created, anchor_ms: 20_000, start_ms: 20_000, end_ms: 23_500, revision: 2 }));
     expect(screen.getByTestId("applied-span")).toHaveTextContent("20000:23500");
-    const saved = screen.getByText("Check this figure").closest<HTMLElement>('[data-testid="timeline-note"]')!;
+    const saved = within(screen.getByTestId("live-transcript-scroll")).getByText("Check this figure")
+      .closest<HTMLElement>('[data-testid="timeline-note"]')!;
     expect(saved).toHaveTextContent("00:20");
     expect(within(saved).queryByTestId("timeline-note-quote")).toBeNull();
     const rows = Array.from(screen.getByTestId("live-transcript-scroll")

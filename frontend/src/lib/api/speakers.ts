@@ -118,10 +118,12 @@ export const nameLiveSpeaker = async (
   label: string,
   name: string,
   anchor?: TranscriptSourceReference,
+  createPerson = false,
 ): Promise<Record<string, string>> => {
   const response = await api.put<LiveSpeakerNames>(
     `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}`,
-    { name, ...(anchor ? { anchor_utterance_id: anchor.id, expected_revision: anchor.revision } : {}) },
+    { name, ...(anchor ? { anchor_utterance_id: anchor.id, expected_revision: anchor.revision } : {}),
+      ...(createPerson ? { create_person: true } : {}) },
   );
   return response.data.live_speaker_names;
 };

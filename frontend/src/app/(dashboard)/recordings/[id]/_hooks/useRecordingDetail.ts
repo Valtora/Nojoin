@@ -51,6 +51,7 @@ import {
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { AudioClock } from "@/lib/notes/audioClock";
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
 import { useRecordingNotes } from "@/lib/notes/useNoteOutbox";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
@@ -153,7 +154,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // The notes error already showing when a recording opens is not news: only a
   // change after that raises a toast. Keyed by recording so each one primes.
   const lastNotesErrorRef = useRef<{ recordingId: string; error: string | null } | null>(null);
-  const lastMeetingEdgeErrorRef = useRef<string | null>(null);
+  const meetingEdgeErrorsShownRef = useRef(new Set<string>());
   // When the page first saw the audio as unavailable. It bounds how long the
   // page keeps re-checking for it.
   const audioUnavailableSinceRef = useRef<number | null>(null);
@@ -265,14 +266,14 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     }
   }, [isMobile]);
 
-  // The "speakers", "my-notes" and "captures" panels exist only on mobile,
+  // The "speakers", "my-notes", "captures" and "meeting-edge" panels exist only on mobile,
   // where they have tabs; desktop shows them in the side column. Leaving
   // mobile while one is active would blank the main content, so fall back to
   // the transcript.
   useEffect(() => {
     if (
       !isMobile &&
-      (activePanel === "speakers" || activePanel === "my-notes" || activePanel === "captures")
+      (activePanel === "speakers" || activePanel === "my-notes" || activePanel === "captures" || activePanel === "meeting-edge")
     ) {
       setActivePanel("transcript");
     }
@@ -420,22 +421,21 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   }, [addNotification, recording]);
 
   useEffect(() => {
+    if (!recording || !isLiveCaptureInProgress(recording)) return;
     const meetingEdgeError =
       recording?.transcript?.meeting_edge_status === "error"
         ? recording.transcript?.meeting_edge_error_message ||
           "Meeting Edge is temporarily unavailable."
         : null;
 
-    if (meetingEdgeError && meetingEdgeError !== lastMeetingEdgeErrorRef.current) {
+    const errorKey = JSON.stringify([recording.id, meetingEdgeError]);
+    if (meetingEdgeError && !meetingEdgeErrorsShownRef.current.has(errorKey)) {
+      meetingEdgeErrorsShownRef.current.add(errorKey);
       addNotification({ type: "error", message: meetingEdgeError });
-      lastMeetingEdgeErrorRef.current = meetingEdgeError;
-    }
-
-    if (!meetingEdgeError) {
-      lastMeetingEdgeErrorRef.current = null;
     }
   }, [
     addNotification,
+    recording,
     recording?.transcript?.meeting_edge_error_message,
     recording?.transcript?.meeting_edge_status,
   ]);
@@ -930,6 +930,10 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     // A live label has no speaker of the recording, so no name is replaced.
     return { ...transcriptSpeakerNames, ...speakers };
   }, [globalSpeakerById, transcriptSpeakers, transcriptSpeakerNames]);
+  const refreshPeople = useCallback(async () => {
+    try { setGlobalSpeakers(await getGlobalSpeakers()); }
+    catch (error) { console.error("Failed to refresh People after speaker naming", error); }
+  }, []);
   const presentedRecording = useMemo(() => recording && hasRetainedPublication
     ? { ...recording, speakers: transcriptSpeakers ? [...transcriptSpeakers] : recording.speakers }
     : recording, [recording, hasRetainedPublication, transcriptSpeakers]);
@@ -942,6 +946,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     timelineNotes,
     noteEdits,
     globalSpeakers,
+    refreshPeople,
     loading,
     meetingEdgeEnabled,
     meetingEdgeContextLevel,

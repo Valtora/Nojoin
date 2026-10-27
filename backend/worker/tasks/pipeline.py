@@ -22,7 +22,7 @@ from .final_publication import (
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
-from .intelligence_source import load_intelligence_source
+from .intelligence_source import clear_meeting_edge_error, load_intelligence_source
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
 from .vad_stage import (
@@ -141,6 +141,7 @@ def _resolve_input_audio(
             temp_files.append(repaired_path)
         else:
             logger.error("Audio repair failed for %s", audio_path)
+            clear_meeting_edge_error(session, recording.id)
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"Invalid audio (Repair failed): {str(e)}"
             session.add(recording)
@@ -660,6 +661,7 @@ def process_recording_task(
             upload_status="finalized",
         )
         recording.client_status = ClientStatus.IDLE
+        clear_meeting_edge_error(session, recording.id)
         recording.processing_step = "Completed"
         recording.processing_progress = 100
         recording.processing_completed_at = utc_now()
@@ -702,6 +704,7 @@ def process_recording_task(
                 )
         recording = session.get(Recording, recording_id)
         if recording:
+            clear_meeting_edge_error(session, recording_id)
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"Error: {str(e)}"
             recording.processing_completed_at = None
@@ -732,6 +735,7 @@ def process_recording_task(
                 )
         recording = session.get(Recording, recording_id)
         if recording:
+            clear_meeting_edge_error(session, recording_id)
             recording.status = RecordingStatus.ERROR
             # A transcription failure's message already says what failed.
             recording.processing_step = (

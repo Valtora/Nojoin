@@ -60,7 +60,7 @@ Selecting the browser's own **Stop sharing** button, or closing its sharing indi
 
 The recording keeps the same header and tabs through every stage. Its header shows the waveform and transport only when this tab owns that recording's capture. Opening another recording cannot control the capture from that recording's header; the global recording badge remains available. A second device sees server status, the transcript, notes and documents, with recovery actions in the global dialog.
 
-After **Stop**, the header's player area shows the upload stage and backlog, then queue or pipeline progress, estimated time remaining and discard. The transcript continues updating below it through uploading, queued and processing. Unsent notes and drafts, manual notes, attachments and Meeting Edge remain available there until the finished transcript loads. A failed final read keeps the feed visible while Nojoin retries; an empty successful read replaces it too. Playback and export remain unavailable while the recording is in flight.
+After **Stop**, the header's player area shows the upload stage and backlog, then queue or pipeline progress, estimated time remaining and discard. The transcript continues updating below it through uploading, queued and processing, with its note composer underneath. **Speakers**, **My notes**, **Captures** and **Meeting Edge** stay in the side column on desktop and the main tab row on a phone; attached documents stay in **Documents**. A failed final read keeps the feed visible while Nojoin retries; an empty successful read replaces it too. Playback and export remain unavailable while the recording is in flight.
 
 Switching tabs or windows, using another application or moving between Nojoin pages does not pause recording. On every page except the recording itself, a floating badge at the top of the screen shows the status and elapsed time, with pause, resume, stop and discard controls, and opens the recording when clicked.
 
@@ -94,6 +94,10 @@ Notes typed under the live transcript ([Live Notes](USAGE.md#live-notes)) are pl
 
 To take notes on a second device, such as a phone while a laptop records, sign in there and open the recording from the recordings list. That device shows the live transcript and the note box too, places notes on the same clock, and each device shows the other's notes within a couple of seconds. Taking notes never affects what is captured.
 
+The composer remains beneath **Transcript** after Stop. A carried draft keeps its text, attached file and displayed placement through uploading and processing; **At send** uses the stopped audio clock, or the recording's end if necessary. Changing **Place note** deliberately retargets it. A new blank draft after capture defaults to **Before the transcript**, with **After the transcript** also available. The autosaving Notes box is now at the top of **My notes**: it waits for saved notes to load, keeps both versions on a conflicting edit and locks while notes generation uses it. Notes that have not saved and files that have not uploaded retain **Retry** and **Discard**, without duplicating the composer's draft.
+
+Use the camera button beside the composer or the screen-capture shortcut to take a still. One key press takes one still, including after changing tabs. Files still accept paste/drop into the composer, and saved files remain in **Captures**.
+
 ## Naming Speakers During Capture
 
 Optional [live word settling](USAGE.md#live-transcription) revises only recent transcript words and speaker boundaries. Pause and Stop lock the last accepted words without another decode; Resume starts a fresh settling episode. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
@@ -107,6 +111,8 @@ Settling checks speech on each new chunk. When a backlog drains, speech still in
 With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. Settled captures require a locked line before naming and keep the name with the label's longest locked turn, even if it is under a second. Ordinary captures use the label's longest locked turn, or its longest turn when none is locked or the locked one is under a second. Processing gives the name to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
 
 Live speech uses the same speaker-coloured cards as the finished transcript, with **Microphone** and **Shared audio** labels where the capture channel changes. A speaker header appears only when the speaker changes, with spacing between that speaker's separate lines. On recordings using word settling, naming a shared header uses a locked line within its contiguous speaker run; a run with no locked line explains that it is still settling. The rename keeps that anchor and its revision from when it opened. Refused names and corrections keep their drafts, including across Stop and the final transcript handoff. Scrolling away stops live following; **Jump to latest** follows new lines and in-place growth again. Play buttons remain visible but disabled until playback is available, and export has its own disabled control.
+
+The **Speakers** tab also shows live labels, with **Change identity** and **Add to People** once a locked line is available. An ordinary name can link an existing person; only **Add to People** explicitly creates one. Name the label first. This creates no live voiceprint, and final processing still checks the speaker identity and can ask for confirmation. If Stop closes the recording, the line changes or the anchor is unlocked, the action is refused without creating a person.
 
 ## Paused Recording Lock
 
@@ -169,9 +175,11 @@ After 20 seconds without sound, Nojoin shows an "Audio has been quiet for a bit"
 
 Meeting Edge needs AI configured and enough completed speech to work from, so a short test can show waveform activity and live transcript lines before any guidance appears.
 
-### The Live Transcript panel stays empty
+Open the **Meeting Edge** tab in the desktop side column or the phone's main tab row. It retains earlier guidance, questions, tracked-term history and focus after Stop, processing success or failure, and after an administrator switches the feature off. Focus and the recording-specific context slider become read-only after capture ends; any pending focus autosave is cancelled. Guidance can continue while uploading, queued or processing, and an update already running can finish while paused. Stale guidance errors clear at capture finalisation and when processing ends. Error notifications appear only during recording or a pause; an old update finishing late must not replace a newer result or restore an old error.
 
-Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. The panel is always empty for an imported file, which is transcribed after upload.
+### The Transcript tab stays empty
+
+Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. Imported files have no browser capture feed; wait for upload and transcription to finish.
 
 ### Linux screen audio does not work
 

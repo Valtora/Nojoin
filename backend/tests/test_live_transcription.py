@@ -368,7 +368,7 @@ async def test_meeting_edge_focus_endpoint_persists_focus_and_dispatches_refresh
                 ) VALUES (
                     1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Live meeting',
                     'rec-public', 'meeting-public', '/tmp/audio.wav', NULL,
-                    NULL, 120.0, NULL, 'UPLOADING', NULL, 0, 0, NULL,
+                    NULL, 120.0, NULL, 'UPLOADING', 'RECORDING', 0, 0, NULL,
                     NULL, NULL, 0, 0, 1, NULL
                 )
                 """
@@ -437,7 +437,7 @@ async def test_meeting_edge_focus_endpoint_skips_refresh_when_feature_disabled(
                 ) VALUES (
                     2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Live meeting',
                     'rec-public-disabled', 'meeting-public-disabled', '/tmp/audio.wav', NULL,
-                    NULL, 120.0, NULL, 'UPLOADING', NULL, 0, 0, NULL,
+                    NULL, 120.0, NULL, 'UPLOADING', 'RECORDING', 0, 0, NULL,
                     NULL, NULL, 0, 0, 1, NULL
                 )
                 """

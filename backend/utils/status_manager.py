@@ -17,6 +17,8 @@ def update_recording_status(session: Session, recording_id: int):
     - If transcript is error -> ERROR
     - If transcript is completed -> PROCESSED (unless notes are processing)
     """
+    from backend.worker.tasks.intelligence_source import clear_meeting_edge_error
+
     recording = session.get(Recording, recording_id)
     if not recording:
         logger.error(f"Recording {recording_id} not found during status update.")
@@ -59,6 +61,8 @@ def update_recording_status(session: Session, recording_id: int):
             new_status = RecordingStatus.QUEUED
 
     if new_status != recording.status:
+        if new_status in {RecordingStatus.PROCESSED, RecordingStatus.ERROR}:
+            clear_meeting_edge_error(session, recording_id)
         logger.info(
             f"Transitioning Recording {recording_id} from {recording.status} to {new_status}"
         )

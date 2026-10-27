@@ -138,7 +138,8 @@ vi.mock("@/components/AudioPlayer", () => ({
   ),
 }));
 vi.mock("@/components/SpeakerPanel", () => ({
-  default: () => <div data-testid="speaker-panel" />,
+  default: ({ disableEditing }: { disableEditing?: boolean }) =>
+    <div data-testid="speaker-panel" data-editing-disabled={String(!!disableEditing)} />,
 }));
 vi.mock("@/components/TranscriptView", () => ({
   default: ({
@@ -197,13 +198,6 @@ vi.mock("@/components/NotesView", () => ({
 }));
 vi.mock("@/components/DocumentsView", () => ({
   default: () => <div data-testid="documents-view" />,
-}));
-vi.mock("@/components/RecordingStatusDisplay", () => ({
-  default: ({ timelineNotes }: { timelineNotes?: readonly unknown[] | null }) => (
-    <div data-testid="recording-status-display">
-      notes:{timelineNotes === null ? "loading" : (timelineNotes?.length ?? "none")}
-    </div>
-  ),
 }));
 vi.mock("@/components/RecordingCaptureSlot", () => ({
   default: () => <div data-testid="recording-capture-slot" />,
@@ -372,7 +366,45 @@ describe("RecordingPage (detail)", () => {
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 
+  it.each([
+    [RecordingStatus.UPLOADING, ClientStatus.RECORDING],
+    [RecordingStatus.PAUSED, ClientStatus.PAUSED],
+    [RecordingStatus.UPLOADING, ClientStatus.UPLOADING],
+    [RecordingStatus.QUEUED, undefined],
+    [RecordingStatus.PROCESSING, undefined],
+    [RecordingStatus.PROCESSED, undefined],
+    [RecordingStatus.ERROR, undefined],
+  ] as const)("mounts one composer and all four side tabs in %s/%s", async (status, client_status) => {
+    vi.stubGlobal("innerWidth", 1440);
+    sidePanelsCollapsed = false;
+    getRecording.mockResolvedValue(buildRecording({ status, client_status }));
+    renderPage();
+    await screen.findByRole("heading", { name: /Quarterly sync/ });
+    expect(screen.getAllByRole("textbox", { name: "New note" })).toHaveLength(1);
+    const tabs = within(screen.getByRole("tablist", { name: "Side panels" })).getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Speakers", "My notes", "Captures", "Meeting Edge"]);
+    expect(screen.getByTestId("speaker-panel")).toBeInTheDocument();
+  });
+
+  it.each([360, 1440])("keeps stored Edge guidance read-only when the installation toggle is off at %i px", async (width) => {
+    vi.stubGlobal("innerWidth", width);
+    activePanel = "meeting-edge";
+    sideTab = "meeting-edge";
+    sidePanelsCollapsed = false;
+    getSettings.mockResolvedValue({ enable_meeting_edge: false, meeting_edge_context_level: 2 });
+    const recording = buildRecording();
+    recording.transcript = { ...recording.transcript!, meeting_edge_focus: "Keep the goal",
+      meeting_edge_payload: { summary: "Stored guidance", questions: ["Who owns it?"], points: [], concepts: [] } };
+    getRecording.mockResolvedValue(recording);
+    renderPage();
+    expect(await screen.findByText("Stored guidance")).toBeVisible();
+    expect(screen.getByText("Who owns it?")).toBeVisible();
+    expect(screen.getByDisplayValue("Keep the goal")).toHaveAttribute("readonly");
+  });
+
   it("shows retained Meeting Edge guidance and focus read-only beside processing progress on reload", async () => {
+    sidePanelsCollapsed = false;
+    sideTab = "meeting-edge";
     const retained = buildRecording({ status: RecordingStatus.PROCESSING, previous_publication_available: true });
     retained.transcript = { ...retained.transcript!, meeting_edge_focus: "Keep the delivery goal",
       meeting_edge_payload: { summary: "Previous guidance", questions: ["Who owns delivery?"], points: [], concepts: [] } };
@@ -383,6 +415,16 @@ describe("RecordingPage (detail)", () => {
     expect(screen.getByText("Who owns delivery?")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Keep the delivery goal")).toHaveAttribute("readonly");
     expect(screen.getByTestId("recording-capture-slot")).toBeInTheDocument();
+  });
+
+  it("keeps retained speaker actions read-only when terminal metadata precedes the replacement snapshot", async () => {
+    sidePanelsCollapsed = false;
+    sideTab = "speakers";
+    getRecording.mockResolvedValue(buildRecording({ reprocess_publication_complete: true }));
+    getTranscriptUtterances.mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const panel = await screen.findByTestId("speaker-panel");
+    expect(panel).toHaveAttribute("data-editing-disabled", "true");
   });
 
   it("loads the recording and renders the transcript section by default", async () => {
@@ -423,7 +465,7 @@ describe("RecordingPage (detail)", () => {
     expect(screen.getByTestId("linked-event-panel")).toBeInTheDocument();
     if (inFlight) {
       expect(screen.getByTestId("recording-capture-slot")).toBeInTheDocument();
-      expect(screen.getByTestId("recording-status-display")).toBeInTheDocument();
+      expect(screen.getByTestId("live-note-composer")).toBeInTheDocument();
       expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
       expect(screen.queryByTestId("notes-view")).not.toBeInTheDocument();
       expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
@@ -452,7 +494,7 @@ describe("RecordingPage (detail)", () => {
       const view = renderWithProviders(<RecordingPage params={params} />);
       await screen.findByRole("heading", { name: /Quarterly sync/ });
 
-      fireEvent.click(screen.getByRole("button", { name: "Collapse speakers and notes panel" }));
+      fireEvent.click(screen.getByRole("button", { name: "Collapse side panels" }));
       expect(setSpeakerPanelCollapsed).toHaveBeenLastCalledWith(true);
       // The store emits the new preference; rerender the controlled store mock.
       view.rerender(<RecordingPage params={params} />);
@@ -540,6 +582,7 @@ describe("RecordingPage (detail)", () => {
   });
 
   it("fetches the notes list when the recording opens, and again only when a poll says it changed", async () => {
+    sidePanelsCollapsed = false;
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       let signature = "1:aaaa";
@@ -563,8 +606,8 @@ describe("RecordingPage (detail)", () => {
 
       renderPage();
 
-      const display = await screen.findByTestId("recording-status-display");
-      await waitFor(() => expect(display).toHaveTextContent("notes:1"));
+      const display = await screen.findByTestId("my-notes");
+      await waitFor(() => expect(within(display).getAllByTestId("my-note")).toHaveLength(1));
       expect(listTimelineNotes).toHaveBeenCalledTimes(1);
 
       // A poll with the same signature brings no notes and fetches none.
@@ -580,7 +623,7 @@ describe("RecordingPage (detail)", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3_000);
       });
-      await waitFor(() => expect(display).toHaveTextContent("notes:2"));
+      await waitFor(() => expect(within(display).getAllByTestId("my-note")).toHaveLength(2));
       expect(listTimelineNotes).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
@@ -846,7 +889,7 @@ describe("RecordingPage (detail)", () => {
     const tablist = await openTabs(360);
 
     expect(tabLabels(tablist)).toEqual([
-      "Transcript", "Notes", "My notes", "Captures", "Documents", "Analytics", "Speakers",
+      "Transcript", "Notes", "My notes", "Captures", "Documents", "Analytics", "Speakers", "Meeting Edge",
     ]);
     expect(within(tablist).getAllByRole("tab", { selected: true })).toEqual([
       within(tablist).getByRole("tab", { name: "Speakers" }),
@@ -1087,9 +1130,9 @@ describe("RecordingPage (detail)", () => {
   it.each([
     [360, "analytics", "ArrowRight", "speakers"],
     [1440, "analytics", "ArrowRight", "transcript"],
-    [360, "transcript", "ArrowLeft", "speakers"],
+    [360, "transcript", "ArrowLeft", "meeting-edge"],
     [360, "analytics", "Home", "transcript"],
-    [360, "notes", "End", "speakers"],
+    [360, "notes", "End", "meeting-edge"],
     [1440, "speakers", "ArrowRight", "notes"],
     [360, "notes", "ArrowRight", "my-notes"],
     [360, "documents", "ArrowLeft", "captures"],
@@ -1206,7 +1249,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
   /** A recording still processing, which the page polls every 3 s. */
   const open = async () => {
     renderPage();
-    await screen.findByTestId("recording-status-display");
+    await screen.findByTestId("live-note-composer");
   };
   /** A processed recording waiting for its proxy: polled every second, with its title on screen. */
   const openWithTitle = async () => {
@@ -1356,7 +1399,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
         <SessionSignInDialog />
       </>,
     );
-    await screen.findByTestId("recording-status-display");
+    await screen.findByTestId("live-note-composer");
     cookie = BOB;
     await poll();
     expect(elsewhereMessages()).toHaveLength(1);
@@ -1519,7 +1562,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
       () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
     );
     const view = renderPage();
-    await screen.findByTestId("recording-status-display");
+    await screen.findByTestId("live-note-composer");
     exists = false;
     await poll();
     expect(getUserMe).toHaveBeenCalledTimes(1);

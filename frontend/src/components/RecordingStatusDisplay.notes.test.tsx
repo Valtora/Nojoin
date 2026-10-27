@@ -182,6 +182,27 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added at 01:02.");
   });
 
+  it("keeps one editable draft, file and placement through Stop and processing without duplicate recovery", async () => {
+    const { show } = renderLive();
+    await screen.findByText("We need the budget.");
+    fireEvent.change(screen.getByLabelText("Place note"), { target: { value: "send" } });
+    fireEvent.change(box(), { target: { value: "Thought with a file" } });
+    const file = new File(["capture"], "context.png", { type: "image/png" });
+    act(() => noteOutboxFor("rec-1").setDraftFile(file));
+    const originalBox = box();
+    await show(stopped());
+    expect(screen.getAllByRole("textbox", { name: "New note" })).toHaveLength(1);
+    expect(box()).toBe(originalBox);
+    expect(box()).toHaveValue("Thought with a file");
+    expect(screen.getByLabelText("Place note")).toHaveValue("send");
+    expect(screen.getByTestId("note-draft-file")).toHaveTextContent("context.png");
+    expect(screen.queryByTestId("unsaved-draft")).toBeNull();
+    await show(buildRecording({ status: RecordingStatus.PROCESSED, client_status: undefined, duration_seconds: 600 }));
+    expect(box()).toBe(originalBox);
+    expect(noteOutboxFor("rec-1").getSnapshot().draftFile).toBe(file);
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("stopped audio clock");
+  });
+
   it("empties the box in the same change that queues its note", async () => {
     createTimelineNote.mockImplementation(async (_id: string, payload: TimelineNoteCreate) =>
       savedNote(payload),
@@ -252,9 +273,7 @@ describe("RecordingStatusDisplay live notes", () => {
     await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(2));
     expect(createTimelineNote.mock.calls[1][1]).toEqual(createTimelineNote.mock.calls[0][1]);
     await waitFor(() =>
-      expect(
-        screen.getByText("Ask about headcount").closest("[data-testid='timeline-note']"),
-      ).toHaveAttribute("data-note-status", "saved"),
+      expect(line).toHaveAttribute("data-note-status", "saved"),
     );
   });
 
@@ -281,7 +300,7 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(document.activeElement).toBe(box());
   });
 
-  it("keeps a half-typed note when capture stops, and adds it at its anchor from transcript recovery", async () => {
+  it("keeps a half-typed note in the composer when capture stops, and adds it at its anchor", async () => {
     createTimelineNote.mockImplementation(async (_id: string, payload: TimelineNoteCreate) =>
       savedNote(payload),
     );
@@ -290,13 +309,12 @@ describe("RecordingStatusDisplay live notes", () => {
     monotonicMs = 2_000;
     fireEvent.change(box(), { target: { value: "Half a thought about the budget" } });
 
-    // Stop retains the transcript and offers the carried draft in its recovery footer.
+    // Stop keeps the same composer rather than duplicating its draft in recovery.
     await show(stopped());
 
-    const draft = screen.getByTestId("unsaved-draft");
-    expect(draft).toHaveTextContent("Half a thought about the budget");
-    expect(draft).toHaveTextContent("Not sent: at 01:03");
-    fireEvent.click(within(draft).getByRole("button", { name: /^Add note/ }));
+    expect(box()).toHaveValue("Half a thought about the budget");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:03");
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
 
     await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(1));
     expect(createTimelineNote.mock.calls[0][1]).toMatchObject({
@@ -316,15 +334,14 @@ describe("RecordingStatusDisplay live notes", () => {
 
     await show(stopped());
 
-    expect(screen.getByText("Notes not saved yet")).toBeInTheDocument();
-    const unsaved = screen.getByTestId("unsaved-note");
+    const unsaved = screen.getByTestId("timeline-note");
     expect(unsaved).toHaveTextContent("Send the deck");
     expect(
       within(unsaved).getByRole("button", { name: "Retry note at 01:01, “Send the deck”" }),
     ).toBeInTheDocument();
   });
 
-  it("moves focus to the next unsaved note on Discard, and to the retained transcript after the last", async () => {
+  it("retains failed notes on their lines after Stop and returns focus to the composer on Discard", async () => {
     createTimelineNote.mockRejectedValue(NO_ANSWER);
     const { show } = renderLive();
     await screen.findByText("We need the budget.");
@@ -335,13 +352,14 @@ describe("RecordingStatusDisplay live notes", () => {
     );
     await show(stopped());
 
-    const [, second] = screen.getAllByTestId("unsaved-note");
+    const [, second] = screen.getAllByTestId("timeline-note");
     fireEvent.click(screen.getByRole("button", { name: "Discard note at 01:01, “First note”" }));
-    expect(document.activeElement).toBe(second);
+    expect(second).toBeInTheDocument();
+    expect(document.activeElement).toBe(box());
 
     fireEvent.click(screen.getByRole("button", { name: "Discard note at 01:01, “Second note”" }));
-    expect(screen.queryByTestId("unsaved-note")).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Live transcript and notes" }));
+    expect(screen.queryByTestId("timeline-note")).toBeNull();
+    expect(document.activeElement).toBe(box());
   });
 
   it("lists a meeting-wide note on its way with the Notes box, not in the live card", async () => {
@@ -383,7 +401,7 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(screen.queryByTestId("notes-box-pending")).toBeNull();
 
     await show(stopped());
-    expect(screen.getByTestId("unsaved-note")).toHaveTextContent("Who signs?");
+    expect(screen.getByTestId("timeline-note")).toHaveTextContent("Who signs?");
     expect(screen.queryByTestId("notes-box-pending")).toBeNull();
   });
 

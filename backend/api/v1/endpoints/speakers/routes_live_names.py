@@ -3,8 +3,8 @@
 A live label is no speaker of the recording, so the name is kept as the
 user's name event anchored on the label's speech
 (``backend/utils/speaker_names/live.py``) and carried to the final speaker
-when the recording is processed. As a rename does, a name that is exactly a
-person's in People links that person; nothing creates one.
+when the recording is processed. A matching owned Person is linked. Explicit
+``create_person`` intent can create a Person without learning a live voiceprint.
 
 Names are taken only while the capture runs or is paused. The check holds the
 transcript's row lock until the event commits: a stop that has not committed
@@ -14,24 +14,29 @@ the final pass has read the events.
 """
 
 import logging
+from typing import Any
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlmodel import select
 
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
 from backend.models.recording import RecordingStatus
 from backend.models.speaker import GlobalSpeaker
+from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.user import User
 from backend.utils.canonical_pipeline.guards import LineActionConflict
 from backend.utils.live_speaker_labels import live_speaker_display_name
+from backend.utils.speaker_names.durability import persist_name_anchors
 from backend.utils.speaker_names.events import UserNameAct
 from backend.utils.speaker_names.live import (
     SURFACE_LIVE,
     live_speaker_names,
     record_live_speaker_name,
+    require_live_person_anchor,
 )
 from backend.utils.transcript_settling import (
     load_capture_publication,
@@ -59,6 +64,7 @@ class LiveSpeakerNameUpdate(BaseModel):
     name: str = Field(max_length=255)
     anchor_utterance_id: str | None = None
     expected_revision: int | None = Field(default=None, ge=1)
+    create_person: bool = False
     model_config = ConfigDict(extra="ignore")
 
     @model_validator(mode="after")
@@ -76,6 +82,32 @@ class LiveSpeakerNamesRead(BaseModel):
     live_speaker_names: dict[str, str]
 
 
+def _create_person_for_event(session: Session, event: SpeakerNameEvent) -> None:
+    """An accepted event and its owned Person share one commit."""
+    person = GlobalSpeaker(name=event.name, user_id=event.created_by_user_id)
+    session.add(person)
+    session.flush()
+    event.global_speaker_id = person.id
+    session.add(event)
+    session.flush()
+    persist_name_anchors(session, event.recording_id)
+
+
+def _validate_name_update(update: LiveSpeakerNameUpdate, label: str) -> str:
+    name = update.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Enter a name")
+    if PLACEHOLDER_NAME_PATTERN.match(name):
+        raise HTTPException(status_code=422, detail=PLACEHOLDER_NAME_DETAIL)
+    if live_speaker_display_name(label) is None:
+        raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)
+    if update.create_person and update.anchor_utterance_id is None:
+        raise HTTPException(
+            status_code=422, detail="Choose a locked speaker line first"
+        )
+    return name
+
+
 @router.put(
     "/recordings/{recording_id}/live/{label}", response_model=LiveSpeakerNamesRead
 )
@@ -87,13 +119,7 @@ async def name_live_speaker(
     current_user: User = Depends(get_current_user),
 ):
     """Name live speaker ``label`` ("Speaker 3") during capture."""
-    name = update.name.strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="Enter a name")
-    if PLACEHOLDER_NAME_PATTERN.match(name):
-        raise HTTPException(status_code=422, detail=PLACEHOLDER_NAME_DETAIL)
-    if live_speaker_display_name(label) is None:
-        raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)
+    name = _validate_name_update(update, label)
 
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     transcript, recording = await db.run_sync(
@@ -111,7 +137,15 @@ async def name_live_speaker(
         )
     ).scalar_one_or_none()
 
-    def _record(sync_session):
+    def _record(sync_session: Session) -> tuple[dict[str, Any], dict[str, str]] | None:
+        reference = (
+            (update.anchor_utterance_id, update.expected_revision)
+            if update.anchor_utterance_id is not None
+            and update.expected_revision is not None
+            else None
+        )
+        if update.create_person and reference is not None:
+            require_live_person_anchor(sync_session, recording.id, label, reference)
         event = record_live_speaker_name(
             sync_session,
             recording.id,
@@ -122,17 +156,16 @@ async def name_live_speaker(
                 actor_user_id=current_user.id,
                 surface=SURFACE_LIVE,
             ),
-            (update.anchor_utterance_id, update.expected_revision)
-            if update.anchor_utterance_id is not None
-            and update.expected_revision is not None
-            else None,
+            reference,
         )
         if event is None:
             return None
+        if update.create_person and person_id is None:
+            _create_person_for_event(sync_session, event)
         metric = {
             "event_id": event.id,
             "label": label,
-            "linked_person": person_id is not None,
+            "linked_person": event.global_speaker_id is not None,
             "anchor_ms": event.anchor_end_ms - event.anchor_start_ms,
         }
         return metric, live_speaker_names(sync_session, recording.id)
@@ -140,6 +173,7 @@ async def name_live_speaker(
     try:
         recorded = await db.run_sync(_record)
     except LineActionConflict as error:
+        await db.rollback()
         raise HTTPException(status_code=409, detail=error.detail) from error
     if recorded is None:
         await db.rollback()

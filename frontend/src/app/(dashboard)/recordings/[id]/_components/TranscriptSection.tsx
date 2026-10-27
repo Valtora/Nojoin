@@ -36,8 +36,8 @@ import {
 const NO_SPEAKERS: readonly RecordingSpeaker[] = Object.freeze([]);
 const IGNORE_LIVE_NAMES = () => {};
 /** Unsaved notes shown on their line; the rest are listed above the transcript. */
-const SELECTION_NOTES = ["selection"] as const;
-const LISTED_NOTES = ["point", "head", "tail"] as const;
+const INLINE_NOTES = ["point", "selection"] as const;
+const LISTED_NOTES = ["head", "tail"] as const;
 
 interface TranscriptSectionProps {
   liveTranscript?: LiveTranscript;
@@ -176,10 +176,10 @@ export default function TranscriptSection({
         inlineNotes(
           timelineNotes,
           { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded },
-          usesLiveFeed ? undefined : SELECTION_NOTES,
+          INLINE_NOTES,
         ),
       ),
-    [applyEdits, timelineNotes, outboxEntries, outboxSaved, outboxDiscarded, usesLiveFeed],
+    [applyEdits, timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
   );
   const sectionRef = useRef<HTMLDivElement>(null);
   const durationSeconds = recording.duration_seconds;
@@ -279,16 +279,17 @@ export default function TranscriptSection({
       ) : null}
       {/* A note from the live note box that never saved, or text left in it,
           outlives processing: listed here until saved or discarded. */}
-      {!liveTranscript ? <RecordingUnsavedNotes
+      <RecordingUnsavedNotes
         recordingId={recording.id}
         // With no lines to show a note on its line, every kind is listed here.
         kinds={transcriptSegments.length > 0 ? LISTED_NOTES : undefined}
         // Files show on their notes' lines, where there are lines.
         listUploads={transcriptSegments.length === 0}
+        composerOwnsDraft={inFlightContent !== undefined}
         readEndMs={readEndMs}
         onEmptied={focusSection}
         className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
-      /> : null}
+      />
       {transcriptSegments.length > 0 || liveTranscript || hasShownLive ? (
         <div className="min-h-0 flex-1">
           <TranscriptView
@@ -322,8 +323,7 @@ export default function TranscriptSection({
             disableExport={!canExport}
             onActiveEditUtteranceChange={onActiveEditUtteranceChange}
             pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
-            timelineNotes={liveTranscript && !isLiveCaptureInProgress(recording)
-              ? notes.filter((note) => note.status === "saved") : notes}
+            timelineNotes={notes}
             onAddNote={addNote}
             onRetryNote={outbox.retry}
             onDiscardNote={discardNote}

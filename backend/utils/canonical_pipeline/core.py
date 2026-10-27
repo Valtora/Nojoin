@@ -535,6 +535,10 @@ def serialize_canonical_utterances(
                 and utterance.state == TranscriptUtteranceState.FINALIZED
                 else None,
                 final_text=utterance.text,
+                include_live_label_lock=live_speaker_display_name(
+                    utterance.speaker_label
+                )
+                is not None,
             )
         )
         if alignment_error:

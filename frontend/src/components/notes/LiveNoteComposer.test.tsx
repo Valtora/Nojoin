@@ -29,6 +29,46 @@ describe("LiveNoteComposer", () => {
     onSubmit.mockReturnValue(null);
   });
 
+  it("offers Before and After on a finished recording and keeps an explicit After choice for the next note", () => {
+    render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false} />);
+    const box = screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement;
+    const mode = screen.getByRole("combobox", { name: "Place note" });
+    expect(mode).toHaveValue("head");
+    expect(Array.from(mode.querySelectorAll("option")).map((option) => option.value)).toEqual(["head", "tail"]);
+    type(box, "Agenda");
+    pressEnter(box);
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "head", body: "Agenda", anchorMs: null });
+    fireEvent.change(mode, { target: { value: "tail" } });
+    type(box, "Follow up");
+    pressEnter(box);
+    type(box, "Another follow up");
+    pressEnter(box);
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "tail", body: "Another follow up", anchorMs: null });
+  });
+
+  it("shows a carried send placement after Stop until a deliberate change retargets it", () => {
+    const draft = { text: "Carried thought", mode: "send" as const, typingStartMs: 12_000 };
+    const onDraftChange = vi.fn();
+    render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false}
+      draft={draft} onDraftChange={onDraftChange} />);
+    expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("send");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("stopped audio clock");
+    expect(onDraftChange).not.toHaveBeenCalled();
+    audioNowMs = 63_000;
+    pressEnter(screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement);
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "Carried thought", anchorMs: 63_000 });
+  });
+
+  it("shows the retained time for a carried file without caption after Stop", () => {
+    const file = new File(["picture"], "context.png", { type: "image/png" });
+    render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false}
+      draft={{ text: "", mode: "typing", typingStartMs: 12_000 }} draftFile={file} onDraftFileChange={vi.fn()} />);
+    expect(screen.getByTestId("note-draft-file")).toHaveTextContent("context.png");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 00:12");
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "", anchorMs: 12_000 });
+  });
+
   it("anchors a note where the recording was at the first keystroke, however long it takes to write", () => {
     const box = renderComposer();
 

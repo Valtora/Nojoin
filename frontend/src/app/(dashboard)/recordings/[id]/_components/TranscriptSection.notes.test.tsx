@@ -114,6 +114,29 @@ describe("a note on a line of the processed transcript", () => {
     expect(createTimelineNote.mock.calls[1][1].id).toBe(createTimelineNote.mock.calls[0][1].id);
   });
 
+  // Ported from TranscriptSection.test: pending point notes now belong among
+  // real transcript lines, so the renderer must participate in this check.
+  it("retains capture point notes on their lines and recovers a draft at its original anchor", async () => {
+    createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
+    const outbox = noteOutboxFor("rec-1");
+    outbox.submit({ kind: "point", body: "Send the deck", anchorMs: 61_000 });
+    outbox.setDraft({ text: "Half a thought", mode: "typing", typingStartMs: 63_000 });
+    await waitFor(() => expect(outbox.getSnapshot().entries[0]?.status).toBe("failed"));
+    renderSection();
+    const failed = screen.getByTestId("timeline-note");
+    expect(failed).toHaveTextContent("Send the deck");
+    expect(within(failed).getByRole("button", { name: "Retry note at 01:01, “Send the deck”" })).toBeInTheDocument();
+    expect(screen.queryByTestId("unsaved-note")).toBeNull();
+    createTimelineNote.mockImplementationOnce(async (_id: string, payload: { id: string }) => ({
+      ...payload, recording_id: "rec-1", revision: 1,
+      created_at: "2026-10-21T10:01:00", updated_at: "2026-10-21T10:01:00",
+    }));
+    const draft = screen.getByTestId("unsaved-draft");
+    fireEvent.click(within(draft).getByRole("button", { name: /^Add note/ }));
+    await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(2));
+    expect(createTimelineNote.mock.calls[1][1]).toMatchObject({ kind: "point", body: "Half a thought", anchor_ms: 63_000 });
+  });
+
   it("puts focus on the transcript when a failed note on a line is discarded", async () => {
     createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
     renderSection();

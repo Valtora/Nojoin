@@ -40,11 +40,17 @@ export default function HeadNotePanel({
     saveHeadNote,
     setDirty,
     resolveConflict,
+    retainedDraft,
+    onDraftTextChange,
+    onDraftSavedChange,
   } = useHeadNote(recordingId, timelineNotes);
 
   return (
     <ProcessingNotesPanel
       value={body}
+      retainedDraft={retainedDraft}
+      onDraftTextChange={onDraftTextChange}
+      onDraftSavedChange={onDraftSavedChange}
       onSave={saveHeadNote}
       onDirtyChange={setDirty}
       conflict={conflict}

@@ -11,6 +11,7 @@ from typing import Any
 from backend.models.live_settling_public import public_settling_fields
 from backend.models.pipeline import TranscriptUtteranceState
 from backend.models.transcript import Transcript
+from backend.utils.live_speaker_labels import live_speaker_display_name
 
 from .core import (
     ACTIVE_UTTERANCE_STATES,
@@ -108,6 +109,10 @@ def build_transient_utterance_payloads_from_segments(
                     if settling_required(transcript) and not segment.get("provisional")
                     else None,
                     final_text=segment.get("text"),
+                    include_live_label_lock=live_speaker_display_name(
+                        segment.get("speaker")
+                    )
+                    is not None,
                 ),
                 **(
                     {"alignment_error": segment["alignment_error"]}

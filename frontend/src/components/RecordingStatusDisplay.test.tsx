@@ -14,14 +14,6 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 vi.mock("./MeetingEdgePanel", () => ({
   default: () => <div data-testid="meeting-edge-panel" />,
 }));
-vi.mock("./ProcessingNotesPanel", () => ({
-  default: () => <div data-testid="processing-notes-panel" />,
-}));
-vi.mock("./LiveDocumentsPanel", () => ({
-  default: ({ documents }: { documents: { id: number; original_filename: string }[] }) => (
-    <div data-testid="live-documents">{documents.map((document) => document.original_filename).join(",")}</div>
-  ),
-}));
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(), recordingId: null, pausedRecording: null, runtimeActive: false,
@@ -48,10 +40,10 @@ describe("RecordingStatusDisplay shared-shell body", () => {
     getDocuments.mockReset().mockResolvedValue([]);
   });
 
-  it("retains Meeting Edge and notes while pipeline progress moves to the header", () => {
+  it("retains Meeting Edge and My notes in their panels while progress occupies the header", () => {
     show();
     expect(screen.getByTestId("meeting-edge-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("processing-notes-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("my-notes")).toBeInTheDocument();
     expect(screen.getByText("The meeting continues")).toBeInTheDocument();
     expect(screen.queryByText("Progress")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Back to Recordings" })).not.toBeInTheDocument();
@@ -78,16 +70,17 @@ describe("RecordingStatusDisplay shared-shell body", () => {
     expect(transcript).toHaveTextContent("The meeting continues");
   });
 
-  it("does not render a documents panel with nothing attached", async () => {
+  it("shows the empty Documents state when nothing is attached", async () => {
     show();
     await waitFor(() => expect(getDocuments).toHaveBeenCalledWith("rec-1"));
-    expect(screen.queryByTestId("live-documents")).not.toBeInTheDocument();
+    expect(await screen.findByText("No documents yet")).toBeInTheDocument();
   });
 
   it("refreshes attached documents from the header upload without reopening the page", async () => {
     show();
     await waitFor(() => expect(getDocuments).toHaveBeenCalledTimes(1));
-    getDocuments.mockResolvedValue([{ id: 7, original_filename: "Agenda.pdf" }]);
+    getDocuments.mockResolvedValue([{ id: 7, title: "Agenda.pdf", original_filename: "Agenda.pdf",
+      status: "PENDING", pages_parsed: 0, created_at: "2026-05-26T10:00:00Z" }]);
     act(() => window.dispatchEvent(new CustomEvent("recording-documents-updated", {
       detail: { recordingId: "another-recording" },
     })));
@@ -96,14 +89,15 @@ describe("RecordingStatusDisplay shared-shell body", () => {
       detail: { recordingId: "rec-1" },
     })));
     expect(await screen.findByText("Agenda.pdf")).toBeInTheDocument();
+    expect(screen.getByText("Starting")).toBeInTheDocument();
     expect(getDocuments).toHaveBeenCalledTimes(2);
   });
 
-  it("hides Meeting Edge when disabled and preserves notes", () => {
+  it("keeps the Meeting Edge panel when disabled and preserves the composer", () => {
     render(<RecordingStatusDisplay recording={buildRecording()} liveTranscript={feed}
       onSaveMeetingEdgeFocus={vi.fn()} showMeetingEdge={false} />);
-    expect(screen.queryByTestId("meeting-edge-panel")).not.toBeInTheDocument();
-    expect(screen.getByTestId("processing-notes-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("meeting-edge-panel")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "New note" })).toBeInTheDocument();
   });
 
   it("still recognises a capture paused before client status was recorded", () => {
@@ -112,9 +106,10 @@ describe("RecordingStatusDisplay shared-shell body", () => {
     expect(screen.getByRole("textbox", { name: "New note" })).toBeInTheDocument();
   });
 
-  it("shows the in-flight feed for a file import without adding a capture composer", () => {
+  it("shows the in-flight feed and general composer for a file import", () => {
     show(buildRecording({ status: RecordingStatus.UPLOADING, client_status: undefined }));
     expect(screen.getByText("The meeting continues")).toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "New note" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "New note" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("head");
   });
 });

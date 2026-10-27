@@ -68,6 +68,8 @@ const ON_LINE = "line";
 const ON_LINE_LABEL = "On the chosen line's time";
 
 interface LiveNoteComposerProps {
+  /** Active and paused captures retain the timeline placement choices. */
+  captureActive?: boolean;
   /** Where capture is on the audio timeline now, in ms. */
   readAudioNow: () => number;
   /** Queues a note; returns why it was refused, or null once it is on its way. */
@@ -102,14 +104,14 @@ interface Message {
 
 const isBlank = (text: string) => stripNote(text) === "";
 
-const modeHint = (draft: ComposerDraft) => {
+const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
   if (draft.selection) {
     return `On the text at ${formatTimelineMs(draft.selection.startMs)}, which the note quotes.`;
   }
   if (draft.lineSpan) return `On the timeline at ${formatTimelineMs(draft.lineSpan.startMs)}.`;
   switch (draft.mode) {
     case "typing":
-      return draft.typingStartMs !== null && !isBlank(draft.text)
+      return draft.typingStartMs !== null && (!isBlank(draft.text) || hasFile)
         ? `Placed at ${formatTimelineMs(draft.typingStartMs)}, where you started typing.`
         : "Placed where you start typing. Shift+Enter starts a new line.";
     case "send":
@@ -149,6 +151,7 @@ const modeHint = (draft: ComposerDraft) => {
  * live region, so a refusal, a note added and the outbox's news are read out.
  */
 export default function LiveNoteComposer({
+  captureActive = true,
   readAudioNow,
   onSubmit,
   draft: controlledDraft,
@@ -163,7 +166,14 @@ export default function LiveNoteComposer({
   captureMessage = null,
 }: LiveNoteComposerProps) {
   const [ownDraft, setOwnDraft] = useState<ComposerDraft>(EMPTY_DRAFT);
-  const draft = controlledDraft ?? ownDraft;
+  const sourceDraft = controlledDraft ?? ownDraft;
+  // A carried draft keeps its placement. Only a new, blank finished draft
+  // defaults to Before; an explicit After choice persists between notes.
+  const draft = !captureActive && isBlank(sourceDraft.text) && !draftFile &&
+    !sourceDraft.selection && !sourceDraft.lineSpan &&
+    (sourceDraft.mode === "typing" || sourceDraft.mode === "send")
+    ? { ...sourceDraft, mode: "head" as const }
+    : sourceDraft;
   const setDraft = onDraftChange ?? setOwnDraft;
   const [message, setMessage] = useState<Message | null>(null);
   const [dismissedNoticeSeq, setDismissedNoticeSeq] = useState(notice?.seq ?? 0);
@@ -249,7 +259,8 @@ export default function LiveNoteComposer({
       say(refusal, "error");
       return;
     }
-    setDraft({ text: "", mode: draft.mode, typingStartMs: null });
+    setDraft({ text: "", mode: !captureActive && (draft.mode === "typing" || draft.mode === "send")
+      ? "head" : draft.mode, typingStartMs: null });
     const place = notePlace(note);
     say(
       note.kind === "head" || note.kind === "tail"
@@ -277,7 +288,9 @@ export default function LiveNoteComposer({
 
   const status = showNotice
     ? { text: notice.text, tone: notice.tone }
-    : (message ?? { text: modeHint(draft), tone: "info" as const });
+    : (message ?? { text: !captureActive && draft.mode === "send" && !selection && !lineSpan
+      ? "Carried placement: at send, using the stopped audio clock (or the recording's end)."
+      : modeHint(draft, draftFile !== null), tone: "info" as const });
 
   return (
     <form
@@ -374,7 +387,9 @@ export default function LiveNoteComposer({
           >
             {selection ? <option value={ON_SELECTION}>{ON_SELECTION_LABEL}</option> : null}
             {lineSpan ? <option value={ON_LINE}>{ON_LINE_LABEL}</option> : null}
-            {(Object.keys(MODE_LABELS) as NoteInsertMode[]).map((value) => (
+            {(Object.keys(MODE_LABELS) as NoteInsertMode[])
+              .filter((value) => captureActive || value === "head" || value === "tail" || value === draft.mode)
+              .map((value) => (
               <option key={value} value={value}>
                 {MODE_LABELS[value]}
               </option>

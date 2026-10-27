@@ -6,11 +6,11 @@ import { getGlobalSpeakers, nameLiveSpeaker } from "@/lib/api/speakers";
 import { getErrorDetail } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import type { RecordingId, TranscriptSegment } from "@/types";
-import { sourceReference } from "@/lib/transcript/settling";
+import { liveSpeakerSourceReference } from "@/lib/transcript/liveSpeakerSource";
 
 export interface LiveSpeakerNaming {
   /** Names live speaker `label`; a failure is reported, never thrown. */
-  renameLiveSpeaker: (label: string, name: string, segment?: TranscriptSegment) => Promise<boolean>;
+  renameLiveSpeaker: (label: string, name: string, segment?: TranscriptSegment, createPerson?: boolean) => Promise<boolean>;
   /** People's names, read once on the first rename and kept. */
   loadPeopleNames: () => Promise<readonly string[]>;
 }
@@ -24,17 +24,28 @@ export interface LiveSpeakerNaming {
 export function useLiveSpeakerNaming(
   recordingId: RecordingId,
   applyNames: (names: Record<string, string>) => void,
+  onAccepted?: () => Promise<void> | void,
 ): LiveSpeakerNaming {
   const { addNotification } = useNotificationStore();
   const peopleNames = useRef<Promise<readonly string[]> | null>(null);
 
   const renameLiveSpeaker = useCallback(
-    async (label: string, name: string, segment?: TranscriptSegment) => {
+    async (label: string, name: string, segment?: TranscriptSegment, createPerson = false) => {
       try {
-        const anchor = segment ? sourceReference(segment) : null;
-        applyNames(await (anchor
+        const anchor = segment ? liveSpeakerSourceReference(segment) : null;
+        if (createPerson && (!anchor || segment?.locked !== true)) {
+          addNotification({ type: "error", message: "Wait for a locked transcript line before adding this speaker to People." });
+          return false;
+        }
+        const names = await (createPerson
+          ? nameLiveSpeaker(recordingId, label, name, anchor!, true)
+          : anchor
           ? nameLiveSpeaker(recordingId, label, name, anchor)
-          : nameLiveSpeaker(recordingId, label, name)));
+          : nameLiveSpeaker(recordingId, label, name));
+        applyNames(names);
+        peopleNames.current = null;
+        try { await onAccepted?.(); }
+        catch (error) { console.error("Failed to refresh accepted speaker naming", error); }
         return true;
       } catch (error) {
         console.error("Failed to name the live speaker", error);
@@ -46,7 +57,7 @@ export function useLiveSpeakerNaming(
         return false;
       }
     },
-    [recordingId, applyNames, addNotification],
+    [recordingId, applyNames, addNotification, onAccepted],
   );
 
   const loadPeopleNames = useCallback(() => {
