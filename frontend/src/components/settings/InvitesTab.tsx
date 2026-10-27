@@ -197,7 +197,7 @@ export default function InvitesTab() {
         invitations.map((inv) => {
           const role = inv.role.charAt(0).toUpperCase() + inv.role.slice(1);
           const expires = inv.expires_at
-            ? (parseServerTimestamp(inv.expires_at)?.toLocaleDateString() ?? "Invalid Date")
+            ? (parseServerTimestamp(inv.expires_at)?.toLocaleDateString() ?? "Unknown date")
             : null;
           return (
             <SettingsRow

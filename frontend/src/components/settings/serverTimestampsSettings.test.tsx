@@ -79,6 +79,25 @@ describe.each(["America/New_York", "Asia/Tokyo"])("server timestamps in settings
     },
   );
 
+  it("shows Unknown date for an unreadable invitation expiry and document date", async () => {
+    mocks.getInvitations.mockResolvedValue([{
+      id: 1, code: "invite", role: UserRole.USER, expires_at: "not-a-timestamp",
+      max_uses: 1, used_count: 0, is_revoked: false, created_by_id: 1,
+      link: "https://example.test/invite", users: [],
+    } satisfies Invitation]);
+    mocks.getDocuments.mockResolvedValue([{
+      id: 1, recording_id: "rec-1", title: "Agenda.pdf", file_path: "agenda.pdf",
+      file_type: "application/pdf", status: "READY", parse_mode: "STRUCTURAL",
+      pages_parsed: 1, created_at: "not-a-timestamp", updated_at: "not-a-timestamp",
+    } satisfies Document]);
+    render(<InvitesTab />);
+    render(<DocumentsView recordingId="rec-1" />);
+
+    expect(await screen.findByText("Used 0 of 1. Expires Unknown date.")).toBeVisible();
+    const row = (await screen.findByText("Agenda.pdf")).closest("tr")!;
+    expect(within(row).getByText("Unknown date")).toBeVisible();
+  });
+
   it("preserves both explicit offsets in connected-app connection and last-use clocks", async () => {
     const app: ConnectedApp = {
       grant_id: "grant", client_name: "Assistant", scope: "mcp:read",

@@ -368,7 +368,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                         {doc.title}
                       </p>
                       <p className="mt-0.5 text-xs text-contrast-helper">
-                        {parseServerTimestamp(doc.created_at)?.toLocaleDateString() ?? "Invalid Date"}
+                        {parseServerTimestamp(doc.created_at)?.toLocaleDateString() ?? "Unknown date"}
                       </p>
                     </td>
                     <td className="px-2 py-3">
