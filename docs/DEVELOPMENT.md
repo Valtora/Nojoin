@@ -204,7 +204,7 @@ x-worker-runtime: &worker-runtime
 
 services:
   api:
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 7
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     volumes:
       - .:/app
       - ./data:/app/data
@@ -368,7 +368,6 @@ Capture code lives in `frontend/src/lib/capture/`. After a capture change, check
 - With live speaker labels on: rename a label from its chip during capture, and again while paused (pause first, name, then resume), on desktop and on a phone. The name shows on every line of that label and in Meeting Edge; after **Stop** the processed transcript gives it to the speaker holding that speech, and a rename sent after **Stop** from a second device is refused with a notice.
 - With live word settling explicitly enabled on CUDA: check recent wording revisions and a speaker handover within one sentence, then pause/resume and Stop. Accepted words lock without another decode at closure. Repeat with speaker labels off and with a muted chunk. Block uploads briefly to create a backlog: the lane drops intermediate settling passes and final audio retains every uploaded chunk. Repeat on CPU to confirm ordinary whole-line transcription. The shipped default remains off until integrated hardware acceptance.
 - On that settled capture, check one growing line updates in place: locked words look normal and unlocked words dimmed/italic. **Note on this line** works while open, captures that moment's line span without a quote, and stays draggable onto another open line. Type a note while audio advances and check its time is when the empty box first gained content. Select only locked words in an open line, then include an unlocked word: **Add note** is available only for the first selection, while **Copy** always works. Text edits, speaker assignment, naming and splitting still wait for a line lock. After lock, correct text, assign/name a speaker and split between timed words; replacement text cannot split internally. Stop and reprocess with changed boundaries, an empty result and a failed pass: accepted work stays, ambiguous final wording appears once for review, and failure ends in Error. Export/restore format 3 and repeat; an interrupted capture asks for deliberate reprocessing. Repeat ordinary actions with settling off to check parity, including the existing quoted line note.
-- Run the [transcript stream two-tab smoke](#transcript-stream-two-tab-smoke) through bundled nginx: two transcript streams, capture uploads, status reads and a chat stream must coexist without an increasing upload backlog or delayed Pause/Stop controls. Check fallback polling and reconnection too.
 - Captures: with a screen shared, the camera button beside the note box and Alt+Shift+C each add a **Screen capture** note holding a still, at the recording's time, and a file pasted or dropped into the note box goes with the note being typed; a microphone-only capture offers no button. Ending the share still stops the recording, so taking a still must never stop the video track. A failed upload keeps **Retry** and **Discard** on its note, and after **Stop** in the unsaved notes list. **Remove** in the viewer asks first, takes a **Screen capture** note, or a note reading only its file's name, with its file and leaves a captioned note as text, and the line updates without a reload, in another tab too.
 
 ```bash
@@ -378,17 +377,6 @@ npm run build
 ```
 
 On the containerised stack, rebuild with `docker compose up -d --build frontend`. Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibility or troubleshooting guidance.
-
-### Transcript Stream Two-Tab Smoke
-
-Run on a source stack behind the bundled nginx (the [localhost Compose template](#localhost-dev-compose-template)), with every request on the nginx origin; automated tests use a fake Redis and don't cover the connection budget.
-
-1. Start a microphone capture in tab A and open the same recording in tab B. Each tab has exactly one pending `/events` request (`text/event-stream`, an initial `transcript.changed` hint, a heartbeat at least every 15 seconds, no transcript data in the body).
-2. With both streams open and a chat answer streaming from another recording, segment uploads, status reads and new lines keep up: the pending-upload count and upload times stay bounded. **Pause** and **Stop and process** respond promptly, and both tabs converge after finalisation and after an edit.
-3. Block `*/transcripts/*/events` in tab B: it reads at once, then polls `/utterances` about every 3 seconds while reconnecting; unblocked, it makes one full read, then uses deltas again.
-4. Leaving the recording or signing out closes its streams; with `EventSource` unavailable the page polls as before.
-
-A growing upload backlog or delayed Pause/Stop fails the smoke.
 
 ### Spellcheck Dictionaries
 

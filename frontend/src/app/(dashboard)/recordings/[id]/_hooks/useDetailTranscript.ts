@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, useCallback, type Dispatch, type 
 
 import { getTranscriptUtterances, updateTranscriptUtteranceText, updateTranscriptUtteranceSpeaker } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import {
   buildSpeakerHistoryAssignment, diffTranscriptSegments, extendRollingSpeakerHistoryWithSegments,
   type RollingSpeakerCorrectionHistory, type TranscriptSegmentChange,
@@ -10,32 +9,18 @@ import {
 import {
   applyTranscriptDelta, createLocalTranscriptState, flushDeferredTranscriptState, type LocalTranscriptState,
 } from "@/lib/transcriptState";
-import { supportsTranscriptEvents } from "@/lib/transcriptEvents";
-import { serialiseTranscriptReads, transcriptReadWithTimeout } from "@/lib/transcriptReadQueue";
-import { useTranscriptEvents } from "@/lib/useTranscriptEvents";
 import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
 
 import { isRecordingInFlight, shouldPollRecordingUpdates, type TranscriptHistoryItem } from "./recordingDetailUtils";
 
-/** Transcript state, edit deferral and history stay independent of stream ownership. */
+/** Transcript state, edit deferral, history and polling for the detail editor. */
 export function useDetailTranscript(
   recording: Recording | null,
   setRecording: Dispatch<SetStateAction<Recording | null>>,
 ) {
   const transcriptStateRef = useRef<LocalTranscriptState | null>(null);
-  const viewedIdRef = useRef<string | null>(null);
-  const lifecycleAbortRef = useRef<AbortController | null>(null);
   const { addNotification } = useNotificationStore();
   const isInFlightRecording = isRecordingInFlight(recording);
-  const hasOtherTranscriptReader = supportsTranscriptEvents()
-    ? isLiveCaptureInProgress(recording)
-    : isInFlightRecording;
-  useEffect(() => {
-    const controller = new AbortController();
-    lifecycleAbortRef.current = controller;
-    viewedIdRef.current = recording?.id ?? null;
-    return () => { viewedIdRef.current = null; controller.abort(); };
-  }, [recording?.id]);
   // Undo/Redo State
   const [history, setHistory] = useState<TranscriptHistoryItem[]>([]);
   const [future, setFuture] = useState<TranscriptHistoryItem[]>([]);
@@ -115,7 +100,7 @@ export function useDetailTranscript(
     [],
   );
 
-  const syncTranscriptStateNow = useCallback(
+  const syncTranscriptState = useCallback(
     async (
       mode: "full" | "delta" = "delta",
       options: { deferActiveEdit?: boolean } = {},
@@ -129,13 +114,7 @@ export function useDetailTranscript(
         mode === "delta" && currentTranscriptState?.recordingId === recording.id
           ? currentTranscriptState.revision
           : undefined;
-      const transcriptDelta = supportsTranscriptEvents()
-        ? await transcriptReadWithTimeout(
-          (signal) => getTranscriptUtterances(recording.id, afterRevision, signal),
-          lifecycleAbortRef.current?.signal,
-        )
-        : await getTranscriptUtterances(recording.id, afterRevision);
-      if (supportsTranscriptEvents() && viewedIdRef.current !== recording.id) return null;
+      const transcriptDelta = await getTranscriptUtterances(recording.id, afterRevision);
 
       const latestTranscriptState = transcriptStateRef.current;
       if (
@@ -215,22 +194,8 @@ export function useDetailTranscript(
     });
   }, [activeTranscriptEditId]);
 
-  const readRef = useRef(syncTranscriptStateNow);
-  useEffect(() => { readRef.current = syncTranscriptStateNow; }, [syncTranscriptStateNow]);
-  const recordingId = recording?.id ?? null;
-  const serialRead = useMemo(() => serialiseTranscriptReads(
-    (mode: "full" | "delta" = "delta", options: { deferActiveEdit?: boolean } = {}) =>
-      viewedIdRef.current === recordingId ? readRef.current(mode, options) : Promise.resolve(null),
-  ), [recordingId]);
-  // Without a stream, preserve the existing reader and polling behaviour.
-  const syncTranscriptState = supportsTranscriptEvents() ? serialRead : syncTranscriptStateNow;
-  const { healthy: streamHealthy, request: requestStreamRead } = useTranscriptEvents(recordingId, (mode) =>
-    hasOtherTranscriptReader ? Promise.resolve(null) : syncTranscriptState(mode),
-    () => lifecycleAbortRef.current?.abort(),
-  );
-
   useEffect(() => {
-    if (!recording?.id || hasOtherTranscriptReader) {
+    if (!recording?.id || isInFlightRecording) {
       return;
     }
 
@@ -240,33 +205,26 @@ export function useDetailTranscript(
     // syncTranscriptState intentionally runs once per recording load; later
     // delta polling and explicit mutation refreshes keep this state current.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording?.id, hasOtherTranscriptReader, isInFlightRecording]);
+  }, [recording?.id, isInFlightRecording]);
 
   useEffect(() => {
-    if (!recording || hasOtherTranscriptReader || streamHealthy ||
-      (!supportsTranscriptEvents() && !shouldPollRecordingUpdates(recording))) {
+    if (!recording || isInFlightRecording || !shouldPollRecordingUpdates(recording)) {
       return;
     }
 
     const pollIntervalMs =
-      !supportsTranscriptEvents() && (
-        recording.status === RecordingStatus.UPLOADING || recording.status === RecordingStatus.PAUSED
-      )
+      recording.status === RecordingStatus.UPLOADING || recording.status === RecordingStatus.PAUSED
         ? 1000
         : 3000;
 
     const interval = setInterval(() => {
-      if (supportsTranscriptEvents()) {
-        requestStreamRead("delta");
-        return;
-      }
       syncTranscriptState("delta").catch((e) => {
         console.error("Transcript polling failed", e);
       });
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [hasOtherTranscriptReader, recording, requestStreamRead, streamHealthy, syncTranscriptState]);
+  }, [isInFlightRecording, recording, syncTranscriptState]);
 
   // History Management
   const applyTranscriptHistory = useCallback(

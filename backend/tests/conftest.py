@@ -128,20 +128,6 @@ def rate_limits_in_memory(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def stub_transcript_publication(
-    monkeypatch: pytest.MonkeyPatch,
-) -> list[dict[int, int]]:
-    """Ordinary ORM tests record hints; transport tests replace Redis clients."""
-    from backend.utils import transcript_publication
-
-    published: list[dict[int, int]] = []
-    monkeypatch.setattr(
-        transcript_publication, "publish_transcript_changes", published.append
-    )
-    return published
-
-
-@pytest.fixture(autouse=True)
 def network_contact_guard(monkeypatch):
     """Fail any test that resolves or connects to a host outside the suite.
 

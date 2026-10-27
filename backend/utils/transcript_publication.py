@@ -20,7 +20,6 @@ from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceEven
 from backend.models.speaker import GlobalSpeaker, GlobalSpeakerRead, RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
-from backend.services.transcript_events_publish import publish_transcript_changes
 
 _PUBLICATION_SCOPES = "transcript_publication_scopes"
 _LINE_FIELDS = (
@@ -282,7 +281,7 @@ def bump_transcript_change(session: Session, recording_id: int) -> None:
     scope = session.get_nested_transaction() or session.get_transaction()
     if scope is None:
         raise RuntimeError("Transcript publication requires a transaction")
-    scopes: dict[SessionTransaction, dict[int, int]] = session.info.setdefault(
+    scopes: dict[SessionTransaction, set[int]] = session.info.setdefault(
         _PUBLICATION_SCOPES, {}
     )
     ancestor: SessionTransaction | None = scope
@@ -301,7 +300,6 @@ def bump_transcript_change(session: Session, recording_id: int) -> None:
     )
     if pending is not None:
         pending.change_sequence = 1
-        sequence = 1
     else:
         connection = session.connection()
         stored = connection.execute(
@@ -320,7 +318,7 @@ def bump_transcript_change(session: Session, recording_id: int) -> None:
         for row in session.identity_map.values():
             if isinstance(row, Transcript) and row.id == stored.id:
                 set_committed_value(row, "change_sequence", sequence)
-    scopes.setdefault(scope, {})[recording_id] = sequence
+    scopes.setdefault(scope, set()).add(recording_id)
 
 
 @event.listens_for(Session, "before_flush")
@@ -336,13 +334,7 @@ def _merge_publications(session: Session) -> None:
     scope = session.get_nested_transaction()
     scopes = session.info.get(_PUBLICATION_SCOPES, {})
     if scope is not None and scope.parent is not None:
-        scopes.setdefault(scope.parent, {}).update(scopes.pop(scope, {}))
-    elif scope is None:
-        # The transaction is committed: querying here is forbidden. Capture
-        # sequences at the flush boundary and send only primitive values.
-        changes = scopes.get(session.get_transaction(), {})
-        if changes:
-            publish_transcript_changes(dict(changes))
+        scopes.setdefault(scope.parent, set()).update(scopes.pop(scope, set()))
 
 
 @event.listens_for(Session, "after_rollback")

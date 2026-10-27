@@ -73,6 +73,9 @@ interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
 }
 
+// A quiet page still notices a capture started from another tab or device.
+export const IDLE_RECORDING_POLL_INTERVAL_MS = 15_000;
+
 /**
  * Owns the entire data-orchestration, live-state, transcript, notes and action
  * logic for the recording detail page, so the page component itself stays
@@ -269,7 +272,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
           ? 0
           : Date.now() - audioUnavailableSinceRef.current,
         filesBeingRead,
-      );
+      ) ?? (isAudioUnavailable(recording) ? null : IDLE_RECORDING_POLL_INTERVAL_MS);
 
     const pollIntervalMs = currentPollIntervalMs();
     if (pollIntervalMs === null) {

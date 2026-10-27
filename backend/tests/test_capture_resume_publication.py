@@ -1,9 +1,12 @@
 """Capture status transitions publish once, even without transcript words."""
 
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session
 from sqlmodel import select
 
 from backend.api.v1.endpoints.recordings import routes_capture as capture
@@ -19,6 +22,44 @@ lifecycle_sessions = lifecycle.lifecycle_sessions
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture
+async def committed_transcript_changes(
+    lifecycle_sessions: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[list[dict[int, int]]]:
+    """Observe actual committed sequence changes through a separate connection.
+
+    The old fixture recorded Redis publication calls. Keep the exact commit,
+    no-op and rollback expectations against the durable facts polling reads.
+    """
+    async with lifecycle_sessions() as db:
+        engine = db.sync_session.get_bind()
+    previous: dict[int, int] = {}
+    committed: list[dict[int, int]] = []
+
+    def observe_commit(session: Session) -> None:
+        if session.get_bind() is not engine or session.get_nested_transaction():
+            return
+        with engine.connect() as connection:
+            current = dict(
+                connection.execute(
+                    select(Transcript.recording_id, Transcript.change_sequence)
+                ).all()
+            )
+        changes = {
+            key: value for key, value in current.items() if previous.get(key) != value
+        }
+        if changes:
+            committed.append(changes)
+        previous.clear()
+        previous.update(current)
+
+    event.listen(Session, "after_commit", observe_commit)
+    try:
+        yield committed
+    finally:
+        event.remove(Session, "after_commit", observe_commit)
 
 
 async def _empty_capture(
@@ -69,7 +110,7 @@ async def _status(
 @pytest.mark.parametrize("initially_paused", [False, True])
 async def test_empty_capture_lifecycle_publishes_only_status_changes(
     lifecycle_sessions: async_sessionmaker[AsyncSession],
-    stub_transcript_publication: list[dict[int, int]],
+    committed_transcript_changes: list[dict[int, int]],
     marked: bool,
     initially_paused: bool,
 ) -> None:
@@ -82,7 +123,7 @@ async def test_empty_capture_lifecycle_publishes_only_status_changes(
             recording.client_status = ClientStatus.PAUSED
             await db.commit()
     sequence, _, _ = await _status(sessions, recording_id)
-    stub_transcript_publication.clear()
+    committed_transcript_changes.clear()
     user = SimpleNamespace(id=user_id)
     transitions = [
         (capture.pause_upload, RecordingStatus.PAUSED, 1),
@@ -104,27 +145,27 @@ async def test_empty_capture_lifecycle_publishes_only_status_changes(
             expected,
             client_status,
         )
-        assert stub_transcript_publication == (
+        assert committed_transcript_changes == (
             [{recording_id: sequence}] if increment else []
         )
-        stub_transcript_publication.clear()
+        committed_transcript_changes.clear()
 
 
 @pytest.mark.anyio
 async def test_pause_word_closure_and_status_share_one_publication(
     lifecycle_sessions: async_sessionmaker[AsyncSession],
-    stub_transcript_publication: list[dict[int, int]],
+    committed_transcript_changes: list[dict[int, int]],
 ) -> None:
     sessions = lifecycle_sessions
     user_id, recording_id, public_id = await lifecycle._seed(sessions)
     sequence, _, _ = await _status(sessions, recording_id)
-    stub_transcript_publication.clear()
+    committed_transcript_changes.clear()
     async with sessions() as db:
         await capture.pause_upload(
             public_id, epoch=4, db=db, current_user=SimpleNamespace(id=user_id)
         )
     assert (await _status(sessions, recording_id))[0] == sequence + 1
-    assert stub_transcript_publication == [{recording_id: sequence + 1}]
+    assert committed_transcript_changes == [{recording_id: sequence + 1}]
     _, rows = await lifecycle._snapshot(sessions, recording_id)
     assert rows[0][1][0]["locked"] is True
     assert rows[0][1][0]["lock_reason"] == "closure"
@@ -134,7 +175,7 @@ async def test_pause_word_closure_and_status_share_one_publication(
 @pytest.mark.parametrize("transition", ["pause", "resume"])
 async def test_failed_lifecycle_transaction_rolls_back_status_and_hint(
     lifecycle_sessions: async_sessionmaker[AsyncSession],
-    stub_transcript_publication: list[dict[int, int]],
+    committed_transcript_changes: list[dict[int, int]],
     monkeypatch: pytest.MonkeyPatch,
     transition: str,
 ) -> None:
@@ -145,7 +186,7 @@ async def test_failed_lifecycle_transaction_rolls_back_status_and_hint(
         async with sessions() as db:
             await capture.pause_upload(public_id, epoch=4, db=db, current_user=user)
     before = await _status(sessions, recording_id)
-    stub_transcript_publication.clear()
+    committed_transcript_changes.clear()
 
     async def fail_commit(db: AsyncSession) -> None:
         await db.flush()
@@ -158,4 +199,4 @@ async def test_failed_lifecycle_transaction_rolls_back_status_and_hint(
             await action(public_id, epoch=4, db=db, current_user=user)
         await db.rollback()
     assert await _status(sessions, recording_id) == before
-    assert stub_transcript_publication == []
+    assert committed_transcript_changes == []

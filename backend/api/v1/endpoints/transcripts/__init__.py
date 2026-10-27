@@ -8,7 +8,6 @@ from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from . import (
     routes_analytics,
     routes_chat,
-    routes_events,
     routes_export,
     routes_line_split,
     routes_note_attachments,
