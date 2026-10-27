@@ -1,5 +1,6 @@
 """Explicit live reads and edits work while compatibility JSON is deferred."""
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -149,7 +150,13 @@ def _replace_then_publish_next_line(session: Any) -> None:
     ]
     for step in range(2):
         assert publish_live_settling(
-            session, request=_request(session, 1, step, end_ms=3000), words=words
+            session,
+            # Both edit targets are completed speech; the final silence closes
+            # the second line independently of its agreement count.
+            request=replace(
+                _request(session, 1, step, end_ms=3000), silence_start_ms=2500
+            ),
+            words=words,
         ).accepted
         session.commit()
     original_keys = [row.sort_key for row in list_active_utterances(session, 1)]

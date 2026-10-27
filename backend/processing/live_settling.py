@@ -18,6 +18,7 @@ from backend.processing.live_audio_buffer import (
     _build_live_source_channel_evidence,
 )
 from backend.processing.live_diarization.setting import live_speaker_labels_requested
+from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
 from backend.processing.live_settling_audio import (
     drained_chunk_bounds,
     rolling_audio_tail,
@@ -247,6 +248,8 @@ def _publish_step(
         input_start_ms=metadata.get("utterance_start_ms"),
         metadata=metadata,
         gate_chunks=snapshot.gate_chunks,
+        max_segment_ms=snapshot.policy.get("max_segment_ms"),
+        silence_start_ms=_silence_start(step, evidence),
     )
     session = get_sync_session()
     try:
@@ -292,6 +295,17 @@ def _publish_step(
         session.close()
 
 
+def _silence_start(step: SettlingStep, evidence: Any) -> int:
+    """Find trailing silence from VAD and already available diariser evidence."""
+    ends = [
+        round((step.combined_start_s + region["end"]) * 1000)
+        for region in step.vad_regions
+    ]
+    if evidence is not None:
+        ends.extend(round(end * 1000) for _start, end in evidence.speech_spans())
+    return max([round(step.combined_start_s * 1000), *ends])
+
+
 def run_settling_step(step: SettlingStep, config: dict[str, Any]) -> SettlingStepResult:
     """Decode the latest capture step once; failures retain the accepted hypothesis."""
     import torch
@@ -301,6 +315,15 @@ def run_settling_step(step: SettlingStep, config: dict[str, Any]) -> SettlingSte
     snapshot = _episode_snapshot(step)
     if isinstance(snapshot, SettlingStepResult):
         return snapshot
+    snapshot = replace(
+        snapshot,
+        policy={
+            **snapshot.policy,
+            "max_segment_ms": round(
+                float(config.get("max_segment_s", DEFAULT_MAX_SEGMENT_S)) * 1000
+            ),
+        },
+    )
     device = loaded_transcription_device(config)
     if (
         config.get("processing_device") == "cpu"

@@ -68,6 +68,15 @@ from backend.processing.live_audio_buffer import (
     _source_channel_speaker_confidence as _source_channel_speaker_confidence,
 )
 from backend.processing.live_diarization.setting import live_speaker_labels_requested
+from backend.processing.live_limits import (
+    DEFAULT_FORCED_MAX as DEFAULT_FORCED_MAX,
+)
+from backend.processing.live_limits import (
+    DEFAULT_MAX_SEGMENT_S as DEFAULT_MAX_SEGMENT_S,
+)
+from backend.processing.live_limits import (
+    LIVE_MIN_SILENCE_MS as LIVE_MIN_SILENCE_MS,
+)
 from backend.processing.live_persistence import (
     _load_recording_audio_chunks as _load_recording_audio_chunks,
 )
@@ -126,19 +135,6 @@ from backend.utils.transcript_settling import capture_publication_token
 
 # Tolerance (seconds) for treating a speech region as touching the buffer end.
 TRAIL_EPS = 0.20
-# Default maximum length (seconds) of a trailing utterance before a forced cut.
-DEFAULT_FORCED_MAX = 8.0
-# Absolute maximum length (seconds) of any emitted provisional live segment.
-DEFAULT_MAX_SEGMENT_S = 20.0
-# Silence threshold (ms) for the live lane. Set tight enough that natural
-# Q&A handovers (e.g. a host's question followed immediately by a guest's
-# answer with a < 500 ms pause) cleave into separate live utterances rather
-# than arriving at reconciliation as one merged segment that absorbs both
-# speakers' words. A longer threshold produces cross-speaker bleed at
-# conversational transitions; a shorter one fragments a single speaker's normal
-# pauses into many short utterances.
-LIVE_MIN_SILENCE_MS = 320
-
 _BUFFER_FILENAME = "buffer.wav"
 _CONTEXT_FILENAME = "context.wav"
 

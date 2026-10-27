@@ -8,6 +8,8 @@ from sqlmodel import col, func, select
 
 from backend.models.pipeline import TranscriptUtterance
 from backend.models.transcript import Transcript
+from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S, LIVE_MIN_SILENCE_MS
+from backend.utils.config_manager import config_manager
 from backend.utils.live_word_settling import (
     close_word_state,
     expire_word_state,
@@ -24,6 +26,7 @@ from backend.utils.transcript_settling import (
 from .live_settling_projection import (
     SETTLING_KEY,
     DecideSpeaker,
+    LineBoundaries,
     PartitionWrite,
     live_rows,
     mutable_row,
@@ -58,6 +61,8 @@ class SettlingPass:
     input_start_ms: int | None = None
     metadata: dict[str, Any] | None = None
     gate_chunks: list[GateChunk] | None = None
+    max_segment_ms: int | None = None
+    silence_start_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,7 @@ class _Projection:
     closing: bool = False
     metadata: dict[str, Any] | None = None
     decode_id: str | None = None
+    silence_start_ms: int | None = None
 
 
 def settling_enabled(transcript: Transcript | None) -> bool:
@@ -133,6 +139,38 @@ def _speaker_enabled() -> bool:
     return live_speaker_labels_requested()
 
 
+def _line_boundaries(
+    rows: list[TranscriptUtterance], state: dict[str, Any], silence_start_ms: int | None
+) -> LineBoundaries:
+    """Keep captured pause cutoffs independent of mutable token identities."""
+    closed_ends: list[str] = []
+    cutoffs: set[int] = set()
+    for row in rows:
+        stored = (row.confidence_payload or {}).get(SETTLING_KEY, {})
+        if (
+            not stored.get("boundary_locked")
+            or stored.get("closure_reason") == "speaker"
+        ):
+            continue
+        point = stored.get("closed_at_ms", row.end_ms)
+        if point is not None:
+            cutoffs.add(point)
+        words = row_words(row)
+        if stored.get("line_closed") and words and words[-1].get("locked"):
+            closed_ends.append(words[-1]["id"])
+    return LineBoundaries(
+        max_segment_ms=state.get(
+            "max_segment_ms",
+            round(
+                config_manager.get("live_max_segment_s", DEFAULT_MAX_SEGMENT_S) * 1000
+            ),
+        ),
+        closed_ends=closed_ends,
+        closed_at_ms=sorted(cutoffs),
+        silence_start_ms=silence_start_ms,
+    )
+
+
 def _project(
     session: Session,
     context: _Projection,
@@ -161,6 +199,7 @@ def _project(
         decisions,
         closing=context.closing,
         barriers=[row.start_ms for row in rows if not mutable_row(row)],
+        boundaries=_line_boundaries(mutable, state, context.silence_start_ms),
     )
     tombstones, ids, changed = write_partitions(
         session,
@@ -265,6 +304,18 @@ def publish_live_settling(
     protected = [row for row in rows if not mutable_row(row)]
     frontier = live_settling_frontier(session, recording_id=request.recording_id)
     hypothesis = _unprotected_hypothesis(words, protected, frontier)
+    # Observation bounds describe capture coverage, never invented word times.
+    hypothesis = [
+        {
+            **word,
+            "observed_audio_start_ms": request.input_start_ms
+            if request.input_start_ms is not None
+            else max(0, request.window_start_ms),
+        }
+        if word.get("start_ms") is None
+        else word
+        for word in hypothesis
+    ]
     settled = reconcile_word_state(
         existing,
         hypothesis,
@@ -277,6 +328,11 @@ def publish_live_settling(
     state = {
         **state,
         "speaker_enabled": state.get("speaker_enabled", _speaker_enabled()),
+        **(
+            {"max_segment_ms": request.max_segment_ms}
+            if request.max_segment_ms is not None
+            else {}
+        ),
     }
     transcript.settling_state = state
     metadata = {
@@ -294,6 +350,7 @@ def publish_live_settling(
             decide_speaker,
             metadata=metadata,
             decode_id=request.decode_id,
+            silence_start_ms=_confirmed_silence(request),
         ),
         settled,
     )
@@ -311,6 +368,14 @@ def publish_live_settling(
     if result.changed:
         bump_transcript_change(session, request.recording_id)
     return result
+
+
+def _confirmed_silence(request: SettlingPass) -> int | None:
+    """A short ASR hypothesis alone is never evidence of trailing silence."""
+    start = request.silence_start_ms
+    if start is not None and request.audio_end_ms - start >= LIVE_MIN_SILENCE_MS:
+        return start
+    return None
 
 
 def expire_live_settling(
@@ -345,7 +410,11 @@ def expire_live_settling(
         [word for row in rows for word in row_words(row)],
         window_start_ms=request.window_start_ms,
     )
-    result = _project(session, _Projection(transcript, rows), words)
+    result = _project(
+        session,
+        _Projection(transcript, rows, silence_start_ms=_confirmed_silence(request)),
+        words,
+    )
     transcript.settling_state = {
         **(transcript.settling_state or {}),
         "last_step_index": request.step_index,
@@ -356,6 +425,8 @@ def expire_live_settling(
         ),
     }
     session.add(transcript)
+    if result.changed:
+        bump_transcript_change(session, request.recording_id)
     return result
 
 

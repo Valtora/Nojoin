@@ -15,6 +15,7 @@ from backend.utils.word_text import reconstruct_text_from_words
 
 from .constants import LIVE_SPEAKER_LABEL_PAYLOAD_KEY, _append_utterance_event
 from .live_labels import LiveLabelDecision
+from .live_settling_lines import LineBoundaries, Partition, partition_words, word_extent
 from .live_settling_sources import partition_source_metadata
 
 SETTLING_KEY = "live_text_settling"
@@ -51,6 +52,11 @@ def live_rows(
     if window_start_ms is not None:
         mutable = (
             col(TranscriptUtterance.confidence_payload)[SETTLING_KEY]["text_locked"]
+            .as_boolean()
+            .is_not(True)
+        ) | (
+            mutable
+            & col(TranscriptUtterance.confidence_payload)[SETTLING_KEY]["line_closed"]
             .as_boolean()
             .is_not(True)
         )
@@ -116,26 +122,15 @@ def word_decisions(
 ) -> list[LiveLabelDecision]:
     """Assign timed words independently; untimed atoms follow their neighbour."""
     previous = {
-        word.get("id"): LiveLabelDecision(
-            row.speaker_label or "UNKNOWN",
-            bool(
-                (row.confidence_payload or {})
-                .get(LIVE_SPEAKER_LABEL_PAYLOAD_KEY, {})
-                .get("locked")
-            ),
-            None,
-        )
+        word.get("id"): _stored_speaker(row, word)
         for row in rows
         for word in row_words(row)
     }
     immutable_speakers = {
         word.get("id")
         for row in rows
-        if (row.confidence_payload or {})
-        .get(LIVE_SPEAKER_LABEL_PAYLOAD_KEY, {})
-        .get("locked")
         for word in row_words(row)
-        if word.get("locked")
+        if word.get("locked") and previous[word.get("id")].locked
     }
     decisions: list[LiveLabelDecision | None] = []
     for word in words:
@@ -172,75 +167,33 @@ def word_decisions(
     ]
 
 
-@dataclass
-class Partition:
-    """A contiguous speaker run with the original word identities."""
-
-    words: list[dict[str, Any]]
-    speaker: str
-    speaker_locked: bool
-    line_locked: bool = False
-
-
-def partition_words(
-    words: list[dict[str, Any]],
-    decisions: list[LiveLabelDecision],
-    *,
-    closing: bool = False,
-    barriers: Sequence[int] = (),
-) -> list[Partition]:
-    """Group speaker runs in bounded pieces and freeze only immutable frontiers.
-
-    Agreement locks a monotone word prefix. A boundary after such a prefix is
-    permanent: subsequent hypotheses cannot insert words to its left. Two-second
-    buckets also bound row payloads when speaker evidence takes longer to settle.
-    """
-    partitions: list[Partition] = []
-    for word, decision in zip(words, decisions, strict=True):
-        previous = partitions[-1].words[-1] if partitions else None
-        start = word.get("start_ms")
-        previous_start = previous.get("start_ms") if previous else None
-        new_bucket = (
-            start is not None
-            and previous_start is not None
-            and start // 2000 != previous_start // 2000
-        )
-        protected_boundary = start is not None and any(
-            previous_start is not None and previous_start < barrier <= start
-            for barrier in barriers
-        )
-        if (
-            not partitions
-            or partitions[-1].speaker != decision.speaker
-            or new_bucket
-            or protected_boundary
-            or (
-                previous is not None
-                and bool(previous.get("locked")) != bool(word.get("locked"))
-            )
-        ):
-            partitions.append(Partition([], decision.speaker, True))
-        partition = partitions[-1]
-        partition.words.append(word)
-        partition.speaker_locked = partition.speaker_locked and decision.locked
-    for partition in partitions:
-        partition.line_locked = (
-            all(word.get("locked") for word in partition.words)
-            and partition.speaker_locked
-        )
-    return partitions
+def _stored_speaker(
+    row: TranscriptUtterance, word: dict[str, Any]
+) -> LiveLabelDecision:
+    """Retain settled word speakers when an open run gains pending words."""
+    stored = (row.confidence_payload or {}).get(LIVE_SPEAKER_LABEL_PAYLOAD_KEY, {})
+    return LiveLabelDecision(
+        row.speaker_label or "UNKNOWN",
+        bool(
+            stored.get("locked") or word.get("id") in stored.get("locked_word_ids", [])
+        ),
+        None,
+    )
 
 
 def _bounds(
     words: list[dict[str, Any]], rows: Sequence[TranscriptUtterance]
 ) -> tuple[int, int]:
-    starts = [
-        int(word["start_ms"]) for word in words if word.get("start_ms") is not None
-    ]
-    ends = [int(word["end_ms"]) for word in words if word.get("end_ms") is not None]
+    extents = [extent for word in words if (extent := word_extent(word)) is not None]
     return (
-        min(starts, default=min((row.start_ms for row in rows), default=0)),
-        max(ends, default=max((row.end_ms for row in rows), default=0)),
+        min(
+            (item[0] for item in extents),
+            default=min((row.start_ms for row in rows), default=0),
+        ),
+        max(
+            (item[1] for item in extents),
+            default=max((row.end_ms for row in rows), default=0),
+        ),
     )
 
 
@@ -251,7 +204,7 @@ def _payload(
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
     start, end = _bounds(partition.words, rows)
-    if not any(word.get("start_ms") is not None for word in partition.words):
+    if not any(word_extent(word) is not None for word in partition.words):
         start = metadata.get("utterance_start_ms", start)
         end = metadata.get("utterance_end_ms", end)
     return {
@@ -275,10 +228,15 @@ def _payload(
             "version": 1,
             "generation": generation,
             "text_locked": all(word.get("locked") for word in partition.words),
+            "line_closed": partition.closed,
+            "boundary_locked": partition.boundary_locked,
+            "closure_reason": partition.closure_reason,
+            "closed_at_ms": partition.closed_at_ms,
             "line_locked": partition.line_locked,
         },
         LIVE_SPEAKER_LABEL_PAYLOAD_KEY: {
             "locked": partition.speaker_locked,
+            "locked_word_ids": partition.locked_speaker_words,
             "share": None,
         },
     }

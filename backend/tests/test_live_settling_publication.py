@@ -3,6 +3,7 @@
 import copy
 import threading
 from collections.abc import Iterator
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -342,7 +343,11 @@ def test_private_comparisons_do_not_emit_deltas_but_lock_transition_does(
     recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         publish_live_settling(
-            session, request=_request(session, recording_id, 0), words=_words()
+            session,
+            # This test exercises a closed line's lock transition. Agreement
+            # alone locks words; explicit trailing silence closes their line.
+            request=replace(_request(session, recording_id, 0), silence_start_ms=850),
+            words=_words(),
         )
         session.commit()
         revision, _, _ = serialize_canonical_delta(session, recording_id)
