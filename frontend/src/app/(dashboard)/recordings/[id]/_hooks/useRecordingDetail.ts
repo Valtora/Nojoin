@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import {
   getRecording,
   getSettings,
-  getTranscriptUtterances,
   updateSettings,
   updateSpeaker,
   updateTranscriptSegmentSpeaker,
@@ -30,7 +29,6 @@ import { notesErrorDetail } from "@/lib/transcriptErrors";
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import {
   Recording,
-  RecordingStatus,
   TranscriptSegment,
   GlobalSpeaker,
   RecordingSpeaker,
@@ -49,19 +47,8 @@ import {
 } from "@/lib/recordingSpeakerUtils";
 import {
   buildRollingSpeakerCorrectionHistory,
-  buildSpeakerHistoryAssignment,
-  diffTranscriptSegments,
-  extendRollingSpeakerHistoryWithSegments,
   sortTranscriptSegments,
-  type RollingSpeakerCorrectionHistory,
-  type TranscriptSegmentChange,
 } from "@/lib/transcriptSegments";
-import {
-  applyTranscriptDelta,
-  createLocalTranscriptState,
-  flushDeferredTranscriptState,
-  type LocalTranscriptState,
-} from "@/lib/transcriptState";
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 import { AudioClock } from "@/lib/notes/audioClock";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
@@ -78,9 +65,9 @@ import {
   pollFailureMeansRemoved,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
-  type TranscriptHistoryItem,
 } from "./recordingDetailUtils";
 import { useRecordingNotFound } from "./useRecordingNotFound";
+import { useDetailTranscript } from "./useDetailTranscript";
 
 interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
@@ -114,27 +101,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
-  const transcriptStateRef = useRef<LocalTranscriptState | null>(null);
   const { addNotification } = useNotificationStore();
   const recordingActions = useRecordingActions();
   const { chatPanelHeight, setChatPanelHeight, activePanel, setActivePanel } = useNavigationStore();
-
-  // Undo/Redo State
-  const [history, setHistory] = useState<TranscriptHistoryItem[]>([]);
-  const [future, setFuture] = useState<TranscriptHistoryItem[]>([]);
-  const [isUndoing, setIsUndoing] = useState(false);
-  // The names given to live labels during capture, which a transcript still
-  // made of live lines (processing, or processing failed) shows.
-  const [liveSpeakerNames, setLiveSpeakerNames] = useState<{
-    recordingId: string;
-    names: Record<string, string>;
-  } | null>(null);
-  const [transcriptState, setTranscriptState] = useState<LocalTranscriptState | null>(
-    null,
-  );
-  const [activeTranscriptEditId, setActiveTranscriptEditId] = useState<
-    string | null
-  >(null);
 
   // Player State
   const [currentTime, setCurrentTime] = useState(0);
@@ -175,6 +144,11 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   // page keeps re-checking for it.
   const audioUnavailableSinceRef = useRef<number | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
+  const {
+    transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
+    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
+    setActiveTranscriptEditId, handleUndo, handleRedo,
+  } = useDetailTranscript(recording, setRecording);
   const compactChatPanelHeight = isCompact
     ? Math.min(chatPanelHeight, 42)
     : chatPanelHeight;
@@ -182,20 +156,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     router.push("/recordings");
   }, [router]);
   const recordingNotFound = useRecordingNotFound(addNotification, navigateToRecordings);
-
-  const transcriptSegments = useMemo(
-    () => {
-      const segments = transcriptState?.segments || recording?.transcript?.segments || [];
-      return recording?.transcript?.settling_required
-        ? segments.map((segment) => segment.settling_required ? segment : { ...segment, settling_required: true })
-        : segments;
-    },
-    [recording?.transcript?.segments, recording?.transcript?.settling_required, transcriptState?.segments],
-  );
-  const deferredTranscriptUtteranceIds = useMemo(
-    () => Object.keys(transcriptState?.deferredById || {}),
-    [transcriptState?.deferredById],
-  );
 
   const globalSpeakerById = useMemo(
     () => buildGlobalSpeakerById(globalSpeakers),
@@ -212,151 +172,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     },
     [globalSpeakerById],
   );
-
-  useEffect(() => {
-    transcriptStateRef.current = transcriptState;
-  }, [transcriptState]);
-
-  useEffect(() => {
-    if (!recording) {
-      return;
-    }
-
-    setTranscriptState((prev) => {
-      if (prev && prev.recordingId === recording.id && prev.revision > 0) {
-        transcriptStateRef.current = prev;
-        return prev;
-      }
-
-      const nextState = createLocalTranscriptState(
-        recording.id,
-        isRecordingInFlight(recording) ? [] : (recording.transcript?.segments || []),
-        prev?.recordingId === recording.id ? prev.revision : 0,
-        prev?.recordingId === recording.id ? prev.deferredById : {},
-      );
-      transcriptStateRef.current = nextState;
-      return nextState;
-    });
-  }, [recording]);
-
-  const pushTranscriptHistory = useCallback(
-    (
-      description: string,
-      previousSegments: TranscriptSegment[],
-      nextSegments: TranscriptSegment[],
-      rollingSpeakerCorrection?: RollingSpeakerCorrectionHistory,
-    ) => {
-      const patches = diffTranscriptSegments(previousSegments, nextSegments);
-
-      if (patches.length === 0) {
-        return;
-      }
-
-      setHistory((prev) => [
-        ...prev,
-        { patches, description, rollingSpeakerCorrection },
-      ]);
-      setFuture([]);
-    },
-    [],
-  );
-
-  const syncTranscriptState = useCallback(
-    async (
-      mode: "full" | "delta" = "delta",
-      options: { deferActiveEdit?: boolean } = {},
-    ) => {
-      if (!recording) {
-        return null;
-      }
-
-      const currentTranscriptState = transcriptStateRef.current;
-      const afterRevision =
-        mode === "delta" && currentTranscriptState?.recordingId === recording.id
-          ? currentTranscriptState.revision
-          : undefined;
-      const transcriptDelta = await getTranscriptUtterances(
-        recording.id,
-        afterRevision,
-      );
-
-      const latestTranscriptState = transcriptStateRef.current;
-      if (
-        mode === "delta" &&
-        latestTranscriptState?.recordingId === recording.id &&
-        transcriptDelta.revision < latestTranscriptState.revision
-      ) {
-        return {
-          revision: latestTranscriptState.revision,
-          segments: latestTranscriptState.segments,
-          speakers: transcriptDelta.speakers,
-        };
-      }
-
-      const previousSegments = latestTranscriptState?.segments || [];
-      const nextState = applyTranscriptDelta({
-        currentState: latestTranscriptState,
-        recordingId: recording.id,
-        fallbackSegments: recording.transcript?.segments || [],
-        delta: transcriptDelta,
-        mode,
-        activeEditUtteranceId:
-          options.deferActiveEdit === false ? null : activeTranscriptEditId,
-      });
-      const nextSegments = nextState.segments;
-      transcriptStateRef.current = nextState;
-      setTranscriptState(nextState);
-      const liveNames = transcriptDelta.live_speaker_names ?? {};
-      setLiveSpeakerNames((current) =>
-        current?.recordingId === recording.id &&
-        JSON.stringify(current.names) === JSON.stringify(liveNames)
-          ? current
-          : { recordingId: recording.id, names: liveNames },
-      );
-
-      if (mode === "delta" && nextSegments.length > 0) {
-        setHistory((currentHistory) =>
-          extendRollingSpeakerHistoryWithSegments(
-            currentHistory,
-            previousSegments,
-            nextSegments,
-          ),
-        );
-      }
-
-      setRecording((prev) => {
-        if (!prev || prev.id !== recording.id) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          speakers: transcriptDelta.speakers,
-        };
-      });
-
-      return {
-        revision: transcriptDelta.revision,
-        segments: nextSegments,
-        speakers: transcriptDelta.speakers,
-      };
-    },
-    [activeTranscriptEditId, recording],
-  );
-
-  useEffect(() => {
-    if (activeTranscriptEditId !== null) {
-      return;
-    }
-
-    setTranscriptState((prev) => {
-      if (!prev || Object.keys(prev.deferredById).length === 0) {
-        return prev;
-      }
-
-      return flushDeferredTranscriptState(prev);
-    });
-  }, [activeTranscriptEditId]);
 
   const fetchRecording = useCallback(async () => {
     let id: string | null = null;
@@ -419,19 +234,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   useEffect(() => {
     fetchRecording();
   }, [fetchRecording]);
-
-  useEffect(() => {
-    if (!recording?.id || isInFlightRecording) {
-      return;
-    }
-
-    syncTranscriptState("full").catch((e) => {
-      console.error("Failed to load transcript utterances:", e);
-    });
-    // syncTranscriptState intentionally runs once per recording load; later
-    // delta polling and explicit mutation refreshes keep this state current.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording?.id, isInFlightRecording]);
 
   useEffect(() => {
     if (!isMobile) {
@@ -508,26 +310,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
     return () => clearInterval(interval);
   }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead]);
-
-  useEffect(() => {
-    if (!recording || isInFlightRecording || !shouldPollRecordingUpdates(recording)) {
-      return;
-    }
-
-    const pollIntervalMs =
-      recording.status === RecordingStatus.UPLOADING ||
-      recording.status === RecordingStatus.PAUSED
-        ? 1000
-        : 3000;
-
-    const interval = setInterval(() => {
-      syncTranscriptState("delta").catch((e) => {
-        console.error("Transcript polling failed", e);
-      });
-    }, pollIntervalMs);
-
-    return () => clearInterval(interval);
-  }, [isInFlightRecording, recording, syncTranscriptState]);
 
   // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {
@@ -679,95 +461,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const handleResume = () => {
     if (audioRef.current) {
       audioRef.current.play();
-    }
-  };
-
-  // History Management
-  const applyTranscriptHistory = useCallback(
-    async (patches: TranscriptSegmentChange[], direction: "undo" | "redo") => {
-      if (!recording) {
-        return;
-      }
-
-      for (const patch of patches) {
-        const targetSegment = direction === "undo" ? patch.before : patch.after;
-        if (!targetSegment.id) {
-          continue;
-        }
-
-        const currentSegment = transcriptStateRef.current?.segments.find(
-          (segment) => segment.id === targetSegment.id,
-        );
-        if (!currentSegment) {
-          continue;
-        }
-
-        if (
-          patch.changedFields.includes("text") &&
-          currentSegment.text !== targetSegment.text
-        ) {
-          await updateTranscriptUtteranceText(
-            recording.id,
-            targetSegment.id,
-            targetSegment.text,
-            currentSegment.revision,
-          );
-        }
-
-        if (
-          patch.changedFields.includes("speaker") &&
-          currentSegment.speaker !== targetSegment.speaker
-        ) {
-          await updateTranscriptUtteranceSpeaker(
-            recording.id,
-            targetSegment.id,
-            buildSpeakerHistoryAssignment(targetSegment),
-          );
-        }
-      }
-    },
-    [recording],
-  );
-
-  const handleUndo = async () => {
-    if (history.length === 0 || !recording || isUndoing) return;
-
-    const previousState = history[history.length - 1];
-
-    setIsUndoing(true);
-    try {
-      await applyTranscriptHistory(previousState.patches, "undo");
-      await syncTranscriptState("full");
-      setHistory((prev) => prev.slice(0, -1));
-      setFuture((prev) => [previousState, ...prev]);
-
-        } catch (e: unknown) {
-      console.error("Undo failed", e);
-      await syncTranscriptState("full").catch(() => undefined);
-      addNotification({ type: "error", message: "Undo failed." });
-    } finally {
-      setIsUndoing(false);
-    }
-  };
-
-  const handleRedo = async () => {
-    if (future.length === 0 || !recording || isUndoing) return;
-
-    const nextState = future[0];
-
-    setIsUndoing(true);
-    try {
-      await applyTranscriptHistory(nextState.patches, "redo");
-      await syncTranscriptState("full");
-      setFuture((prev) => prev.slice(1));
-      setHistory((prev) => [...prev, nextState]);
-
-        } catch (e: unknown) {
-      console.error("Redo failed", e);
-      await syncTranscriptState("full").catch(() => undefined);
-      addNotification({ type: "error", message: "Redo failed." });
-    } finally {
-      setIsUndoing(false);
     }
   };
 

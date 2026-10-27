@@ -25,6 +25,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
+import redis.asyncio.connection
 import redis.connection
 
 # Relationships name their targets by string, so a module that builds its own
@@ -78,9 +79,9 @@ def redis_contact_guard(monkeypatch):
     where the caller's `except Exception` cannot reach it.
 
     The broker, the result backend and every application client (rate limiting,
-    download progress, the chat relay) funnel through
-    `redis.connection.AbstractConnection.connect`, so the seam is
-    binding-agnostic: re-splitting a module cannot route around it.
+    download progress, the chat relay) funnel through the synchronous or
+    asynchronous `AbstractConnection.connect`, so re-splitting a module
+    cannot route around the guard.
 
     Yields the recorded call sites. A test that means to exercise the
     Redis-unavailable path can assert on them and then clear the list to
@@ -89,6 +90,11 @@ def redis_contact_guard(monkeypatch):
     attempts: list[str] = []
     monkeypatch.setattr(
         redis.connection.AbstractConnection, "connect", record_and_refuse(attempts)
+    )
+    monkeypatch.setattr(
+        redis.asyncio.connection.AbstractConnection,
+        "connect",
+        record_and_refuse(attempts),
     )
 
     yield attempts
@@ -101,6 +107,38 @@ def redis_contact_guard(monkeypatch):
             f"{attempts[-1]}",
             pytrace=False,
         )
+
+
+@pytest.fixture(autouse=True)
+def rate_limits_in_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Select the limiter's real in-memory implementation without a Redis probe.
+
+    Older upload/auth tests implicitly selected this path after failed async
+    Redis contact, which the synchronous-only guard could not see. Keep their
+    limits and assertions intact while making that boundary explicit.
+    """
+    from backend.utils import rate_limit
+
+    async def no_redis() -> None:
+        return None
+
+    monkeypatch.setattr(rate_limit, "_get_redis", no_redis)
+    rate_limit._fallback_windows.clear()
+    rate_limit._fallback_concurrency.clear()
+
+
+@pytest.fixture(autouse=True)
+def stub_transcript_publication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[dict[int, int]]:
+    """Ordinary ORM tests record hints; transport tests replace Redis clients."""
+    from backend.utils import transcript_publication
+
+    published: list[dict[int, int]] = []
+    monkeypatch.setattr(
+        transcript_publication, "publish_transcript_changes", published.append
+    )
+    return published
 
 
 @pytest.fixture(autouse=True)

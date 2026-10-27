@@ -1,5 +1,6 @@
 import { clearStoredNotes, storedNotesSignedIn } from "@/lib/notes/noteStore";
 import { noteSignedIn } from "@/lib/session";
+import { closeTranscriptEventStreams } from "@/lib/transcriptEvents";
 import type { User } from "@/types";
 import api from "./client";
 
@@ -39,6 +40,7 @@ export const login = async (
 };
 
 export const logout = async (): Promise<void> => {
+  closeTranscriptEventStreams();
   try {
     await api.post("/login/logout");
 

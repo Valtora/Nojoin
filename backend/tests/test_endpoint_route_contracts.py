@@ -48,6 +48,8 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
     ("/{recording_id}/chat", ("DELETE",), "clear_chat_history", None),
     ("/{recording_id}/chat", ("GET",), "get_chat_history", "List"),
     ("/{recording_id}/chat", ("POST",), "chat_with_meeting", None),
+    # Additive wake-up route; retain the exact contract for every existing route.
+    ("/{recording_id}/events", ("GET",), "stream_transcript_events", None),
     ("/{recording_id}/export", ("GET",), "export_content", None),
     (
         "/{recording_id}/meeting-edge-focus",

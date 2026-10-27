@@ -5,6 +5,7 @@ import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { getTranscriptUtterances } from "@/lib/api/transcript";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
+import { subscribeTranscriptEvents, type TranscriptReadMode } from "@/lib/transcriptEvents";
 import {
   applyTranscriptDelta,
   LocalTranscriptState,
@@ -120,6 +121,9 @@ export function useLiveTranscript(
     }
 
     let cancelled = false;
+    let streamHealthy = false;
+    let activeController: AbortController | undefined;
+    let activeTimer: ReturnType<typeof setTimeout> | undefined;
     stateRef.current = null;
 
     const sync = async (mode: "full" | "delta") => {
@@ -130,12 +134,14 @@ export function useLiveTranscript(
           : undefined;
 
       const controller = new AbortController();
+      activeController = controller;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timedOut = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           controller.abort();
           reject(new Error("Live transcript read timed out"));
         }, LIVE_TRANSCRIPT_READ_TIMEOUT_MS);
+        activeTimer = timer;
       });
       let delta;
       try {
@@ -172,7 +178,7 @@ export function useLiveTranscript(
     // One read at a time: a slow full read landing after a newer delta would
     // put the older transcript back. A tick that finds one running is skipped.
     let inFlight = false;
-    let pendingFullRead = false;
+    let pendingRead: TranscriptReadMode | null = null;
     // A poll failure is not worth surfacing over a running meeting: it does not
     // affect the capture or the final transcript, and the next tick retries.
     const poll = (mode: "full" | "delta") => {
@@ -183,32 +189,52 @@ export function useLiveTranscript(
         })
         .finally(() => {
           inFlight = false;
-          if (!cancelled && pendingFullRead) {
-            pendingFullRead = false;
-            poll("full");
+          if (!cancelled && pendingRead) {
+            const next = pendingRead;
+            pendingRead = null;
+            poll(next);
           }
         });
     };
 
-    refreshRef.current = () => {
-      if (inFlight) pendingFullRead = true;
-      else poll("full");
+    const requestRead = (mode: TranscriptReadMode) => {
+      if (cancelled) return;
+      if (inFlight) pendingRead = pendingRead === "full" || mode === "full" ? "full" : "delta";
+      else poll(mode);
     };
+    refreshRef.current = () => requestRead("full");
 
     poll("full");
     let polls = 0;
     const interval = setInterval(() => {
-      if (inFlight) {
+      if (inFlight || streamHealthy) {
         return;
       }
       polls += 1;
       poll(polls % LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS === 0 ? "full" : "delta");
     }, LIVE_TRANSCRIPT_POLL_INTERVAL_MS);
+    const unsubscribe = subscribeTranscriptEvents(recordingId, {
+      read: requestRead,
+      health: (healthy) => { streamHealthy = healthy; },
+      close: () => {
+        cancelled = true;
+        refreshRef.current = null;
+        pendingRead = null;
+        clearInterval(interval);
+        activeController?.abort();
+        clearTimeout(activeTimer);
+      },
+    });
 
     return () => {
       cancelled = true;
       refreshRef.current = null;
       clearInterval(interval);
+      unsubscribe?.();
+      if (unsubscribe) {
+        activeController?.abort();
+        clearTimeout(activeTimer);
+      }
     };
   }, [recordingId, isLive]);
 

@@ -474,9 +474,11 @@ Do not add a second `Strict-Transport-Security` header at the edge, because a br
 
 Browser capture uploads its segments as ordinary HTTP requests. Three things need proxy support:
 
-- **Server-sent events.** Meeting chat answers stream as `text/event-stream`. A buffering proxy holds the whole answer until it ends, so replies arrive all at once or time out. Turn off response buffering and allow read timeouts of several minutes. The bundled proxy uses `proxy_buffering off` and 300 second timeouts.
+- **Server-sent events.** Meeting chat answers and transcript wake-ups stream as `text/event-stream`. A buffering proxy holds data until the response ends, so replies arrive all at once or time out. Turn off response buffering and caching, and allow read timeouts of several minutes. The transcript route is `/api/v1/transcripts/<recording_id>/events`; give it an ordinary HTTP/1.1 connection, without `Connection: upgrade`. It sends a comment and a repeated sequence hint every 15 seconds. The bundled and demo proxies use `proxy_buffering off`, `proxy_cache off` and a 300 second read timeout on that route. Apply these settings at every proxy hop, including a CDN; a healthy stream stays open through pause, finalisation, failure and later edits.
 - **WebSocket upgrades.** Only `/api/v1/system/logs/live`, the live log viewer in **Settings > System and logs**, uses a WebSocket. Without upgrades, that panel fails to connect and nothing else is affected.
 - **Request body size.** The bundled proxy accepts bodies up to 500 MB. A smaller limit at the edge rejects uploads with `413`. Nginx defaults to 1 MB, below the 15 MB live capture segment limit and far below document and backup uploads.
+
+Shipped Uvicorn commands allow 7 seconds for graceful request shutdown, leaving 3 seconds before Docker's default 10-second stop grace for stream cancellation, Redis cleanup and application shutdown; open transcript tabs therefore cannot hold the API drain indefinitely.
 
 Caddy streams responses, forwards upgrades and has no body limit by default. Nginx needs all three configured.
 
@@ -503,7 +505,7 @@ Put the `map` block in the `http` context, outside `server`. It sends `Connectio
 ```nginx
 map $http_upgrade $connection_upgrade {
     default upgrade;
-    ''      close;
+    ''      '';
 }
 ```
 
@@ -526,8 +528,9 @@ location / {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
 
-    # Server-sent events: stream chat responses instead of buffering them.
+    # Server-sent events: stream chat and transcript wake-ups immediately.
     proxy_buffering off;
+    proxy_cache off;
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
     proxy_connect_timeout 300s;
