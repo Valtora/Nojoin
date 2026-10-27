@@ -1,7 +1,7 @@
 "use client";
 
-import { lineSelection } from "@/lib/notes/lineSelection";
-import type { NoteSelection } from "@/lib/notes/noteOutbox";
+import { noteTargetForLine } from "@/lib/notes/lineSelection";
+import type { NoteTarget } from "@/lib/notes/noteOutbox";
 import { formatTimelineMs, segmentStartMs } from "@/lib/notes/placement";
 import { lineActionsFor } from "@/lib/transcript/actions";
 import { lineIsSettling, LINE_SETTLING_REASON, splitWords } from "@/lib/transcript/settling";
@@ -16,18 +16,18 @@ interface LiveLineMenuProps {
   speakers?: readonly RecordingSpeaker[];
   segment: TranscriptSegment;
   /** Puts the note box's next note on the line. */
-  onNoteOnLine: (selection: NoteSelection) => void;
+  onNoteOnLine: (selection: NoteTarget) => void;
 }
 
 /**
- * The live view's line menu. Source actions wait for marked lines to lock;
- * unmarked recordings retain the note-only menu.
+ * Corrections wait for marked lines to lock. Timeline notes stay available;
+ * unmarked recordings retain the note-only menu with its whole-line quote.
  */
 export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers }: LiveLineMenuProps) {
   const [editing, setEditing] = useState<{
     kind: LiveEditKind; anchor: HTMLElement; segment: TranscriptSegment;
   } | null>(null);
-  const selection = lineSelection(segment);
+  const selection = noteTargetForLine(segment);
   const canEdit = !!handlers && segment.settling_required === true && !!segment.id;
   const settling = lineIsSettling(segment);
   const items = lineActionsFor({
@@ -42,8 +42,8 @@ export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers
   }).map((action) => ({
     ...action,
     onSelect: (anchor: HTMLButtonElement) => {
-      if (settling) return;
       if (action.id === "note" && selection) onNoteOnLine(selection);
+      if (settling) return;
       if (action.id === "editText" || action.id === "changeSpeaker" || action.id === "split") {
         setEditing({ kind: action.id, anchor, segment });
       }

@@ -469,6 +469,8 @@ export interface NoteFileRemoval {
 export interface TranscriptSourceReference {
   id: string;
   revision: number;
+  /** Exact words selected on a recording using word settling. */
+  word_ids?: string[];
 }
 
 export interface TimelineNoteCreate {
@@ -482,6 +484,7 @@ export interface TimelineNoteCreate {
   kind: TimelineNoteKind;
   body: string;
   anchor_ms?: number;
+  /** Optional captured line span on a point note; anchor_ms equals start_ms. */
   start_ms?: number;
   end_ms?: number;
   quoted_text?: string;

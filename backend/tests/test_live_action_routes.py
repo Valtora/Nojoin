@@ -113,7 +113,7 @@ async def test_rest_refuses_each_unlocked_action_with_a_readable_409(
     assert response.json()["detail"]["message"]
 
 
-async def test_selection_note_and_drag_refuse_unlocked_but_typed_note_succeeds(
+async def test_selection_refuses_unlocked_but_typed_note_and_drag_succeed(
     client: AsyncClient, session_maker: Any
 ) -> None:
     ids = await _marked(session_maker)
@@ -143,9 +143,11 @@ async def test_selection_note_and_drag_refuse_unlocked_but_typed_note_succeeds(
             "target_utterance_revision": 2,
         },
     )
-    assert moved.status_code == 409
+    # The corrected policy permits timeline moves onto open lines.
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["revision"] == typed.json()["revision"] + 1
     stored = await client.get(path)
-    assert len(stored.json()) == 1 and stored.json()[0]["anchor_ms"] == 2200
+    assert len(stored.json()) == 1 and stored.json()[0]["anchor_ms"] == 2000
 
 
 async def test_full_and_delta_envelopes_keep_sticky_policy_and_naming_checks_anchor(

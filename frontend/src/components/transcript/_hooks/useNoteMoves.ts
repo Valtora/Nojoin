@@ -31,7 +31,7 @@ interface UseNoteMovesOptions<N extends MovableNote> {
 type Direction = "up" | "down";
 
 /**
- * Moving the finished transcript's point notes between lines: Move up and
+ * Moving point notes between lines in the finished or marked live transcript: Move up and
  * Move down on each, a step to the next gap a note can go to, and a drag of
  * its grip (`useNoteDrag`). Each move anchors the note at the start of the
  * line it now follows (`moveTargets`). After a step, focus stays on the same

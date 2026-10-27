@@ -44,9 +44,13 @@ describe("settling policy and projection", () => {
     expect(legacy.segments).toEqual([segment]);
   });
 
-  it("omits unlocked move targets and names the locked destination revision", () => {
+  it("allows timeline moves before word lock and names every marked destination revision", () => {
     const segments = [segment, { ...segment, id: "u2", start: 4, end: 6, locked: true, revision: 9 }];
-    expect(moveTargets(segments, [0, 1])).toEqual([{ afterIndex: 1, anchorMs: 4000, source: { id: "u2", revision: 9 } }]);
+    // Timeline placement is independent of word locks; stale destinations still carry their revision.
+    expect(moveTargets(segments, [0, 1])).toEqual([
+      { afterIndex: 0, anchorMs: 0, source: { id: "u1", revision: 1 } },
+      { afterIndex: 1, anchorMs: 4000, source: { id: "u2", revision: 9 } },
+    ]);
     expect(moveTargets(segments.map((line) => ({ ...line, settling_required: undefined })), [0, 1]))
       .toEqual([{ afterIndex: 0, anchorMs: 0 }, { afterIndex: 1, anchorMs: 4000 }]);
   });

@@ -85,7 +85,8 @@ def test_twelve_steps_extend_one_open_line_through_word_locks_and_window_expiry(
         for step in range(12):
             end = (step + 1) * 2000
             old = _active(session, recording_id)
-            old_snapshot = copy.deepcopy(old[0].confidence_payload) if old else None
+            old_id = old[0].public_id if old else None
+            old_revision = old[0].revision if old else None
             result = publish_live_settling(
                 session,
                 request=_request(session, recording_id, step, end_ms=end),
@@ -112,9 +113,19 @@ def test_twelve_steps_extend_one_open_line_through_word_locks_and_window_expiry(
                 if word["locked"]:
                     locked[word["id"]] = copy.deepcopy(word)
             if old:
-                assert result.tombstones == (old[0].public_id,)
-                session.refresh(old[0])
-                assert old[0].confidence_payload == old_snapshot
+                # Growing open lines now retain identity so selections survive;
+                # the former supersession assertion pinned the replaced policy.
+                assert result.tombstones == ()
+                assert rows[0].public_id == old_id
+                assert old_revision is not None
+                assert rows[0].revision == old_revision + 1
+                _, changed, tombstones = serialize_canonical_delta(
+                    session, recording_id, after_revision=cursor
+                )
+                assert tombstones == []
+                assert len(changed) == 1
+                assert changed[0]["id"] == old_id
+                assert changed[0]["revision"] == rows[0].revision
             cursor = _apply_delta(session, recording_id, cursor, client)
         assert locked
         retained = load_live_settling_words(

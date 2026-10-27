@@ -44,6 +44,7 @@ from backend.models.timeline_note import (
     TimelineNoteTombstone,
 )
 from backend.models.timeline_note_public import (
+    TIMELINE_MS_MAX,
     TimelineNoteCreate,
     TimelineNoteErrorCode,
     TimelineNoteRead,
@@ -523,6 +524,23 @@ async def create_timeline_note(
     return await _read(db, note, recording_public_id)
 
 
+async def _move_point_anchor(
+    db: AsyncSession, note: TimelineNote, anchor_ms: int
+) -> None:
+    """Translate a retained line span together with its point anchor."""
+    if note.start_ms is not None and note.end_ms is not None:
+        assert note.anchor_ms is not None
+        delta = anchor_ms - note.anchor_ms
+        if note.end_ms + delta > TIMELINE_MS_MAX:
+            await db.rollback()
+            raise HTTPException(
+                status_code=422, detail="The moved note span is too large"
+            )
+        note.start_ms += delta
+        note.end_ms += delta
+    note.anchor_ms = anchor_ms
+
+
 @router.patch(
     "/{recording_id}/timeline-notes/{note_id}", response_model=TimelineNoteRead
 )
@@ -571,7 +589,7 @@ async def update_timeline_note(
     if payload.body is not None:
         note.body = payload.body
     if payload.anchor_ms is not None:
-        note.anchor_ms = payload.anchor_ms
+        await _move_point_anchor(db, note, payload.anchor_ms)
     note.revision += 1
     note.last_write_token = write_token
     # Set here as well as by the column's onupdate, so the response carries it

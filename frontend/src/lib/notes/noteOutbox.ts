@@ -64,6 +64,17 @@ export interface NoteSelection {
   quotedText: string;
 }
 
+/** A timeline span captured when a line's note action is chosen. */
+export interface NoteLineSpan {
+  startMs: number;
+  endMs: number;
+}
+
+export type NoteTarget = NoteSelection | NoteLineSpan;
+
+export const isNoteSelection = (target: NoteTarget): target is NoteSelection =>
+  "quotedText" in target && typeof target.quotedText === "string";
+
 /**
  * What the box hands over: the text as typed, a point note's anchor, and a
  * selection note's span and quote.
@@ -73,6 +84,7 @@ export interface OutboxDraft {
   body: string;
   anchorMs: number | null;
   selection?: NoteSelection | null;
+  span?: NoteLineSpan | null;
 }
 
 /** The text in the note box, kept here so it outlives the box. */
@@ -87,6 +99,7 @@ export interface ComposerDraft {
    * the mode back.
    */
   selection?: NoteSelection | null;
+  lineSpan?: NoteLineSpan | null;
 }
 
 export const EMPTY_DRAFT: ComposerDraft = { text: "", mode: "typing", typingStartMs: null };
@@ -103,6 +116,9 @@ export const noteFromDraft = (
   const { mode, selection } = draft;
   if (selection) {
     return { kind: "selection", body: draft.text, anchorMs: null, selection };
+  }
+  if (draft.lineSpan) {
+    return { kind: "point", body: draft.text, anchorMs: draft.lineSpan.startMs, span: draft.lineSpan };
   }
   if (mode === "head" || mode === "tail") {
     return { kind: mode, body: draft.text, anchorMs: null };
@@ -124,6 +140,7 @@ export interface OutboxEntry {
   anchorMs: number | null;
   /** A selection note's span and quote; absent or null for every other kind. */
   selection?: NoteSelection | null;
+  span?: NoteLineSpan | null;
   /** When it was sent; stands in for the server's creation time until listed. */
   createdAt: string;
   status: "saving" | "failed";
@@ -133,7 +150,7 @@ export interface OutboxEntry {
 /** A note not saved yet, as a stored copy of the outbox keeps it (`noteStore`). */
 export type RestoredNote = Pick<
   OutboxEntry,
-  "id" | "writeToken" | "kind" | "body" | "anchorMs" | "selection" | "createdAt"
+  "id" | "writeToken" | "kind" | "body" | "anchorMs" | "selection" | "span" | "createdAt"
 >;
 
 /** What a stored copy of an outbox hands back after a reload. */
@@ -272,7 +289,8 @@ const createOf = (entry: OutboxEntry): TimelineNoteCreate => ({
   kind: entry.kind,
   body: entry.body,
   ...(entry.kind === "point" && entry.anchorMs !== null
-    ? { anchor_ms: entry.anchorMs }
+    ? { anchor_ms: entry.anchorMs,
+      ...(entry.span ? { start_ms: entry.span.startMs, end_ms: entry.span.endMs } : {}) }
     : {}),
   ...(entry.kind === "selection" && entry.selection
     ? {
@@ -354,8 +372,8 @@ export const inlineNotes = (
       kind: entry.kind,
       body: entry.body,
       anchor_ms: entry.anchorMs,
-      start_ms: entry.selection?.startMs ?? null,
-      end_ms: entry.selection?.endMs ?? null,
+      start_ms: entry.selection?.startMs ?? entry.span?.startMs ?? null,
+      end_ms: entry.selection?.endMs ?? entry.span?.endMs ?? null,
       quoted_text: entry.selection?.quotedText ?? null,
       created_at: entry.createdAt,
       status: entry.status,
@@ -476,6 +494,10 @@ export class NoteOutbox {
     if (draft.kind === "point" && (draft.anchorMs === null || draft.anchorMs < 0)) {
       return "There is no point in the recording to anchor this note to yet.";
     }
+    if (draft.span && (draft.kind !== "point" || !Number.isFinite(draft.span.startMs) ||
+      !Number.isFinite(draft.span.endMs) || draft.span.startMs < 0 || draft.span.endMs < draft.span.startMs)) {
+      return "There is no valid line span to put this note on.";
+    }
     const selection = draft.kind === "selection" ? selectionOf(draft.selection) : null;
     if (draft.kind === "selection" && !selection) {
       return "There is no text to put this note on.";
@@ -493,6 +515,9 @@ export class NoteOutbox {
       body,
       anchorMs: draft.kind === "point" ? Math.round(draft.anchorMs ?? 0) : null,
       ...(selection ? { selection } : {}),
+      ...(draft.kind === "point" && draft.span ? {
+        span: { startMs: Math.round(draft.span.startMs), endMs: Math.round(draft.span.endMs) },
+      } : {}),
       createdAt: new Date().toISOString(),
       status: "saving",
       error: null,

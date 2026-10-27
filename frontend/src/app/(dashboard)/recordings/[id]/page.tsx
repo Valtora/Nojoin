@@ -207,6 +207,7 @@ export default function RecordingPage({ params }: PageProps) {
               showMobileBackButton={isMobile}
               audioClock={audioClock}
               timelineNotes={timelineNotes}
+              noteEdits={noteEdits}
             />
           </div>
         ) : isMobile ? (

@@ -7,7 +7,7 @@ import { Copy, StickyNote } from "lucide-react";
 
 import type { NoteSelection, OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { TranscriptSegment } from "@/types";
-import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
+import { lineIsSettling } from "@/lib/transcript/settling";
 import { formatTimelineMs } from "@/lib/notes/placement";
 
 import NoteOnSelectionPopover from "../notes/NoteOnSelectionPopover";
@@ -247,8 +247,17 @@ export default function TranscriptSelectionNotes({
   const { selection } = captured;
   const disabledReason = selection?.sourceUtterances?.some((source) => {
     const segment = segments?.find((line) => line.id === source.id);
-    return segments ? !segment || lineIsSettling(segment) || segment.revision !== source.revision : captured.settling;
-  }) ? LINE_SETTLING_REASON : undefined;
+    if (!segments) return captured.settling;
+    if (!segment) return true;
+    if (source.word_ids?.length) {
+      return source.word_ids.some((id) => {
+        const word = segment.words?.find((word) => word.id === id);
+        return !word?.locked || (captured.wordTexts?.[id] !== undefined &&
+          word.word.trim() !== captured.wordTexts[id]);
+      });
+    }
+    return lineIsSettling(segment) || segment.revision !== source.revision;
+  }) ? "Selected words are still settling or have changed." : undefined;
   return (
     <TranscriptSelectionToolbar
       key={captured.seq}

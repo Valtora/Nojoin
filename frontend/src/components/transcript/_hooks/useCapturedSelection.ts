@@ -21,6 +21,8 @@ export interface Box {
 /** A text selection in a transcript, as it was when it was made. */
 export interface CapturedSelection {
   settling?: boolean;
+  /** Pending words can retain an ID while their wording changes. */
+  wordTexts?: Readonly<Record<string, string>>;
   /** Counts captures, so a view can tell a new selection from the one it shows. */
   seq: number;
   /** The note it would make; null when it takes no words with a span. */
@@ -81,7 +83,12 @@ export function useCapturedSelection(root: RefObject<HTMLElement | null>, paused
       setCaptured({
         seq: seqRef.current,
         selection: selectionFromPicks(picks),
-        settling: picks.some((pick) => pick.line.settling),
+        wordTexts: Object.fromEntries(picks.flatMap(({ line, from, to }) => (line.words ?? [])
+          .filter((word) => word.id && word.from < to && word.to > from)
+          .map((word) => [word.id!, word.text.trim()]))),
+        settling: picks.some(({ line, from, to }) => line.words
+          ? line.words.some((word) => word.from < to && word.to > from && !word.locked)
+          : line.settling),
         text: selection.toString(),
         segmentId: picks[0].line.segmentId,
         box: boxOf(range),

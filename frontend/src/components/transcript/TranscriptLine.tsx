@@ -298,6 +298,7 @@ function TranscriptLine({
             revision={segment.revision}
             settlingRequired={segment.settling_required}
             settling={lineIsSettling(segment)}
+            words={segment.words}
             decorations={textDecorations}
             className="leading-relaxed whitespace-pre-wrap text-contrast-muted"
           />

@@ -16,6 +16,8 @@ export interface EditableNote {
   revision?: number;
   /** A point note's moment, which a move changes. */
   anchor_ms?: number | null;
+  start_ms?: number | null;
+  end_ms?: number | null;
 }
 
 /** Why an edit or delete was refused, or null once it is done. */
@@ -96,7 +98,8 @@ export function useNoteEdits(recordingId: RecordingId | null) {
       const last = held.get(note.id);
       if (!last) return [];
       if (note.revision === undefined || note.revision >= last.revision) return [note];
-      return [{ ...note, body: last.body, revision: last.revision, anchor_ms: last.anchor_ms }];
+      return [{ ...note, body: last.body, revision: last.revision, anchor_ms: last.anchor_ms,
+        start_ms: last.start_ms, end_ms: last.end_ms }];
     },
     [held],
   );
@@ -105,7 +108,12 @@ export function useNoteEdits(recordingId: RecordingId | null) {
     <N extends EditableNote>(notes: readonly N[]): N[] =>
       notes.flatMap(known).map((note) => {
         const move = moving.get(note.id);
-        return move ? { ...note, anchor_ms: move.anchorMs } : note;
+        if (!move) return note;
+        const delta = move.anchorMs - (note.anchor_ms ?? move.anchorMs);
+        return { ...note, anchor_ms: move.anchorMs,
+          ...(note.anchor_ms != null && note.start_ms != null && note.end_ms != null ? {
+            start_ms: note.start_ms + delta, end_ms: note.end_ms + delta,
+          } : {}) };
       }),
     [known, moving],
   );

@@ -1,5 +1,5 @@
 import { lineFollowedAt, segmentStartMs, shownLineAt, type PlacementSegment } from "./placement";
-import { lineIsSettling, sourceReference } from "@/lib/transcript/settling";
+import { sourceReference } from "@/lib/transcript/settling";
 import type { TranscriptSegment, TranscriptSourceReference } from "@/types";
 
 /**
@@ -36,7 +36,6 @@ export function moveTargets(
   const targets: MoveTarget[] = [];
   for (const index of visibleIndexes) {
     const segment = segments[index] as TranscriptSegment;
-    if (lineIsSettling(segment)) continue;
     const source = sourceReference(segment);
     if (segment.settling_required && !source) continue;
     const anchorMs = segmentStartMs(segments[index]);

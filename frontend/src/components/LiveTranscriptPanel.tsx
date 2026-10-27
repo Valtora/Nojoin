@@ -12,7 +12,7 @@ import {
 } from "react";
 import { ArrowDown, Radio } from "lucide-react";
 
-import type { InlineNote, NoteSelection } from "@/lib/notes/noteOutbox";
+import type { InlineNote, NoteTarget } from "@/lib/notes/noteOutbox";
 import {
   bodyNotesAmongLines,
   formatTimelineMs,
@@ -33,6 +33,7 @@ import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling"
 import LiveSpeakerChip from "./transcript/LiveSpeakerChip";
 import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptLineText from "./transcript/TranscriptLineText";
+import { useNoteMoves, type MoveNoteHandler } from "./transcript/_hooks/useNoteMoves";
 
 /**
  * How close to the bottom counts as "following the conversation".
@@ -95,13 +96,15 @@ interface LiveTranscriptPanelProps {
   notes?: readonly InlineNote[];
   onRetryNote?: (key: string) => void;
   onDiscardNote?: (key: string) => void;
+  /** Moves saved timeline notes while a marked capture is still in progress. */
+  onMoveNote?: MoveNoteHandler;
   /** Rendered under the transcript window: the note box. */
   footer?: ReactNode;
   /**
    * Puts the note box's next note on a line, or on selected text; without it
    * lines have no menu and a selection no toolbar.
    */
-  onNoteOnLine?: (selection: NoteSelection) => void;
+  onNoteOnLine?: (target: NoteTarget) => void;
   /** Live label -> the name the user gave it; others read "Speaker <n>". */
   liveSpeakerNames?: Readonly<Record<string, string>>;
   /** Names a live speaker from its label chip; without it the chip is text. */
@@ -138,6 +141,7 @@ export default function LiveTranscriptPanel({
   notes = NO_NOTES,
   onRetryNote,
   onDiscardNote,
+  onMoveNote,
   footer,
   onNoteOnLine,
   liveSpeakerNames = NO_NAMES,
@@ -181,14 +185,11 @@ export default function LiveTranscriptPanel({
   );
 
   // Placed on the lines as listed, which is also the order they render in.
-  const notesAmongLines = useMemo(
-    () =>
-      bodyNotesAmongLines(
-        placeTimelineNotes(segments, notes),
-        segments.map((_, index) => index),
-      ),
-    [segments, notes],
-  );
+  const visibleIndexes = useMemo(() => segments.map((_, index) => index), [segments]);
+  const placements = useMemo(() => placeTimelineNotes(segments, notes), [segments, notes]);
+  const notesAmongLines = useMemo(() => bodyNotesAmongLines(placements, visibleIndexes), [placements, visibleIndexes]);
+  const moves = useNoteMoves({ segments, visibleIndexes, placements, regionRef: scrollContainerRef,
+    onMoveNote: segments.some((segment) => segment.settling_required) ? onMoveNote : undefined });
 
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -235,7 +236,7 @@ export default function LiveTranscriptPanel({
   const isEmpty = lines.length === 0 && notes.length === 0;
 
   const renderNote = (note: InlineNote) => (
-    <li key={note.key} data-testid="live-transcript-note">
+    <li key={note.key} data-testid="live-transcript-note" data-note-gap={moves.gapOf(note.id)}>
       <TimelineNoteLine
         noteId={note.id}
         body={note.body}
@@ -246,6 +247,7 @@ export default function LiveTranscriptPanel({
         onRetry={onRetryNote ? () => onRetryNote(note.key) : undefined}
         onDiscard={onDiscardNote ? () => onDiscardNote(note.key) : undefined}
         attachment={note.attachment}
+        move={moves.controlsFor(note, isSavedNote(note) && note.revision !== undefined)}
       />
     </li>
   );
@@ -309,6 +311,11 @@ export default function LiveTranscriptPanel({
             // the notes card, so `min-h-0` lets the window take the card exactly.
             className="relative min-h-[14rem] flex-1 overflow-y-auto outline-none @min-[54rem]:min-h-0"
           >
+            {moves.drag?.bar ? (
+              <div aria-hidden="true" data-testid="note-drop-bar"
+                className="pointer-events-none absolute h-0.5 rounded-pill bg-action"
+                style={{ top: moves.drag.bar.top, left: moves.drag.bar.left, width: moves.drag.bar.width }} />
+            ) : null}
             <div className="flex min-h-full flex-col py-4 pl-4 pr-8">
               {isEmpty ? (
                 <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
@@ -329,6 +336,7 @@ export default function LiveTranscriptPanel({
                       key={key}
                       data-testid="live-transcript-line"
                       data-line-index={index}
+                      data-order-index={index}
                       data-line-actions
                       className="group/line"
                     >
@@ -368,7 +376,9 @@ export default function LiveTranscriptPanel({
                           revision={segment.revision}
                           settlingRequired={segment.settling_required}
                           settling={lineIsSettling(segment)}
-                          className="min-w-0 flex-1 text-sm italic leading-6 text-contrast-helper"
+                          words={segment.words}
+                          className={`min-w-0 flex-1 text-sm leading-6 ${segment.settling_required
+                            ? "text-contrast-muted" : "italic text-contrast-helper"}`}
                         />
                         {onNoteOnLine ? (
                           <LiveLineMenu
@@ -386,7 +396,7 @@ export default function LiveTranscriptPanel({
                       key={`${key}-notes`}
                       as="li"
                       notes={notesAmongLines.afterLine.get(index) ?? NO_NOTES}
-                      isSaved={isSavedNote}
+                      isSaved={(note) => isSavedNote(note) && !moves.wasMoved(note.id)}
                       renderNote={renderNote}
                       lineTime={() => formatElapsed(segment.start)}
                     />,
@@ -414,6 +424,7 @@ export default function LiveTranscriptPanel({
 
         {footer}
       </div>
+      <p role="status" className="sr-only">{moves.announcement}</p>
       <TranscriptSelectionNotes root={scrollContainerRef} onNoteOnText={onNoteOnLine} segments={segments} />
     </SurfaceBase>
   );

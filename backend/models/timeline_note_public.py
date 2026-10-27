@@ -59,6 +59,15 @@ def _clean_body(value: str) -> str:
     return cleaned
 
 
+def _validate_point_span(
+    anchor_ms: int | None, start_ms: int | None, end_ms: int | None
+) -> None:
+    if start_ms is None and end_ms is None:
+        return
+    if start_ms is None or end_ms is None or start_ms != anchor_ms or start_ms > end_ms:
+        raise ValueError("a point span needs start_ms = anchor_ms <= end_ms")
+
+
 class TimelineNoteAuthorRead(BaseModel):
     id: int
     username: str
@@ -118,6 +127,7 @@ class SourceUtteranceReference(BaseModel):
 
     id: str
     revision: int = Field(ge=1)
+    word_ids: Optional[list[str]] = Field(default=None, min_length=1)
 
 
 class TimelineNoteCreate(BaseModel):
@@ -157,13 +167,17 @@ class TimelineNoteCreate(BaseModel):
         return cleaned
 
     @model_validator(mode="after")
-    def _shape(self) -> "TimelineNoteCreate":
+    def _target_reference(self) -> "TimelineNoteCreate":
         if (self.target_utterance_id is None) != (
             self.target_utterance_revision is None
         ):
             raise ValueError(
                 "target_utterance_id and target_utterance_revision must be supplied together"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _shape(self) -> "TimelineNoteCreate":
         point = self.kind == TimelineNoteKind.POINT
         selection = self.kind == TimelineNoteKind.SELECTION
         if self.target_utterance_id is not None and not point:
@@ -172,14 +186,14 @@ class TimelineNoteCreate(BaseModel):
             raise ValueError("source_utterances are for a selection note only")
         if (self.anchor_ms is not None) != point:
             raise ValueError("anchor_ms is required for a point note and only for one")
-        has_range = (
-            self.start_ms is not None
-            or self.end_ms is not None
-            or self.quoted_text is not None
-        )
-        if has_range != selection:
+        has_range = self.start_ms is not None or self.end_ms is not None
+        if point:
+            _validate_point_span(self.anchor_ms, self.start_ms, self.end_ms)
+        if self.quoted_text is not None and not selection:
+            raise ValueError("quoted_text is for a selection note only")
+        if has_range and not (point or selection):
             raise ValueError(
-                "start_ms, end_ms and quoted_text are for a selection note only"
+                "start_ms and end_ms are for a point or selection note only"
             )
         if selection:
             if self.start_ms is None or self.end_ms is None or self.quoted_text is None:

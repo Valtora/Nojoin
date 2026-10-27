@@ -31,7 +31,7 @@ describe("settling line actions", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     expect(submit).toHaveBeenCalledWith({ kind: "point", body: "My thought", anchorMs: 1500 });
   });
-  it("keeps all source actions disabled, then enables them after a lock-only delta", () => {
+  it("keeps corrections locked while line timeline notes stay available before and after locking", () => {
     const actions = handlers();
     const note = vi.fn();
     const delta = (locked: boolean): TranscriptUtteranceList => ({
@@ -45,8 +45,8 @@ describe("settling line actions", () => {
     const items = screen.getAllByRole("menuitem");
     expect(items).toHaveLength(4);
     for (const item of items) {
-      expect(item).toHaveAttribute("aria-disabled", "true");
-      fireEvent.click(item);
+      expect(item).toHaveAttribute("aria-disabled", item.textContent === "Note on this line" ? "false" : "true");
+      if (item.textContent !== "Note on this line") fireEvent.click(item);
     }
     expect(note).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -54,7 +54,7 @@ describe("settling line actions", () => {
     view.rerender(<LiveTranscriptPanel segments={locked.segments} hasLoaded onNoteOnLine={note} lineHandlers={actions} />);
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
-    expect(note).toHaveBeenCalledWith(expect.objectContaining({ sourceUtterances: [{ id: "u1", revision: 4 }] }));
+    expect(note).toHaveBeenCalledWith({ startMs: 0, endMs: 2000 });
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
     expect(screen.getByRole("textbox", { name: "Line text" })).toHaveValue("Alpha beta.");

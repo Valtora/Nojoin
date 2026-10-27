@@ -265,32 +265,67 @@ class PartitionWrite:
     decode_id: str | None = None
 
 
+def _partition_rows(
+    rows: list[TranscriptUtterance], partitions: list[Partition]
+) -> list[TranscriptUtterance | None]:
+    """Retain an open line on growth, but never carry its identity over a split or merge."""
+    memberships = [tuple(word.get("id") for word in row_words(row)) for row in rows]
+    incoming = [tuple(word.get("id") for word in part.words) for part in partitions]
+    exact = dict(zip(memberships, rows, strict=True))
+    matches = [exact.get(membership) for membership in incoming]
+    retained = {row.public_id for row in matches if row is not None}
+    owners = {
+        word_id: index for index, words in enumerate(memberships) for word_id in words
+    }
+    contributors = [
+        {owners[word_id] for word_id in words if word_id in owners}
+        for words in incoming
+    ]
+    destinations = [
+        {index for index, sources in enumerate(contributors) if row_index in sources}
+        for row_index in range(len(rows))
+    ]
+    for index, sources in enumerate(contributors):
+        if matches[index] is not None or len(sources) != 1:
+            continue
+        source = next(iter(sources))
+        row = rows[source]
+        metadata = (row.confidence_payload or {}).get(SETTLING_KEY, {})
+        if (
+            row.public_id not in retained
+            and destinations[source] == {index}
+            and memberships[source]
+            and incoming[index]
+            and memberships[source][0] == incoming[index][0]
+            and mutable_row(row)
+            and not metadata.get("line_closed")
+        ):
+            matches[index] = row
+            retained.add(row.public_id)
+    return matches
+
+
 def write_partitions(
     session: Session,
     context: PartitionWrite,
     partitions: list[Partition],
 ) -> tuple[list[str], list[str], int]:
-    """Update equal memberships in place, otherwise supersede only this tail."""
+    """Update continuing open lines in place; supersede split or merged tails."""
     recording_id, rows = context.recording_id, context.rows
-    by_membership = {
-        tuple(word.get("id") for word in row_words(row)): row for row in rows
-    }
+    matches = _partition_rows(rows, partitions)
+    retained_ids = {row.public_id for row in matches if row is not None}
     owner_by_word = {word.get("id"): row for row in rows for word in row_words(row)}
-    new_memberships = {
-        tuple(word.get("id") for word in part.words) for part in partitions
-    }
     tombstones: list[str] = []
     active_ids: list[str] = []
     changed = 0
-    for membership, row in by_membership.items():
-        if membership not in new_memberships:
+    for row in rows:
+        if row.public_id not in retained_ids:
             row.state = TranscriptUtteranceState.SUPERSEDED
             session.add(row)
             _event(session, row, "supersede")
             tombstones.append(row.public_id)
-    for partition in partitions:
-        matching = by_membership.get(tuple(word.get("id") for word in partition.words))
-        same_memberships = matching is not None
+    for partition, matching in zip(partitions, matches, strict=True):
+        retained = matching is not None
         row = (
             matching
             if matching is not None
@@ -333,7 +368,7 @@ def write_partitions(
         if not any(word.get("start_ms") is not None for word in partition.words):
             start, end = payload["utterance_start_ms"], payload["utterance_end_ms"]
         text = reconstruct_text_from_words(partition.words)
-        public_changed = not same_memberships or (
+        public_changed = not retained or (
             row.text,
             row.speaker_label,
             row.start_ms,
@@ -352,7 +387,7 @@ def write_partitions(
             payload.get("alignment_error") or None,
             payload.get(LIVE_SPEAKER_LABEL_PAYLOAD_KEY),
         )
-        dirty = not same_memberships or (
+        dirty = not retained or (
             row.text,
             row.speaker_label,
             row.start_ms,
@@ -369,11 +404,11 @@ def write_partitions(
             end,
         )
         row.confidence_payload = payload
-        if same_memberships and public_changed:
+        if retained and public_changed:
             row.revision += 1
         session.add(row)
         session.flush()
         if public_changed:
-            _event(session, row, "live_settling" if same_memberships else "created")
+            _event(session, row, "live_settling" if retained else "created")
             changed += 1
     return tombstones, active_ids, changed + len(tombstones)

@@ -1,5 +1,5 @@
 import { noteLength } from "./headNoteSync";
-import { NOTE_QUOTE_MAX_CHARS, selectionOf, type NoteSelection } from "./noteOutbox";
+import { NOTE_QUOTE_MAX_CHARS, selectionOf, type NoteSelection, type NoteTarget } from "./noteOutbox";
 import { segmentEndMs, segmentStartMs, type PlacementSegment } from "./placement";
 import type { TranscriptSegment } from "@/types";
 import { sourceReference } from "@/lib/transcript/settling";
@@ -25,4 +25,13 @@ export const lineSelection = (segment: PlacementSegment & Partial<TranscriptSegm
     quotedText: clampQuote((segment.text ?? "").trim()),
     ...(reference ? { sourceUtterances: [reference] } : {}),
   });
+};
+
+/** Marked lines take a timeline snapshot; legacy lines retain their quote. */
+export const noteTargetForLine = (segment: PlacementSegment & Partial<TranscriptSegment>): NoteTarget | null => {
+  if (!segment.settling_required) return lineSelection(segment);
+  const startMs = segmentStartMs(segment);
+  const endMs = segmentEndMs(segment);
+  return Number.isFinite(startMs) && Number.isFinite(endMs) && startMs >= 0 && endMs >= startMs
+    ? { startMs, endMs } : null;
 };

@@ -296,7 +296,7 @@ def test_human_text_is_one_untimed_atom_and_cannot_be_split(
             )
 
 
-def test_selection_and_drag_guard_all_sources_but_typed_notes_remain_available(
+def test_selection_guards_words_but_drag_and_typed_notes_remain_available(
     settling_engine: Engine,
 ) -> None:
     recording_id, ids = _lines(settling_engine)
@@ -310,17 +310,17 @@ def test_selection_and_drag_guard_all_sources_but_typed_notes_remain_available(
         )
         with pytest.raises(LineActionConflict, match="settling"):
             guard_note_anchor(session, recording_id, selection)
-        with pytest.raises(LineActionConflict, match="settling"):
-            guard_note_anchor(
-                session,
-                recording_id,
-                TimelineNoteUpdate(
-                    expected_revision=1,
-                    anchor_ms=2000,
-                    target_utterance_id=ids[1],
-                    target_utterance_revision=1,
-                ),
-            )
+        # Timeline moves no longer require a line lock; source selections do.
+        guard_note_anchor(
+            session,
+            recording_id,
+            TimelineNoteUpdate(
+                expected_revision=1,
+                anchor_ms=2000,
+                target_utterance_id=ids[1],
+                target_utterance_revision=1,
+            ),
+        )
         for kind, kwargs in (
             (TimelineNoteKind.HEAD, {}),
             (TimelineNoteKind.TAIL, {}),

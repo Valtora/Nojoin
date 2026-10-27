@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { lineSelection } from "@/lib/notes/lineSelection";
-import type { OutboxDraft } from "@/lib/notes/noteOutbox";
+import { noteTargetForLine } from "@/lib/notes/lineSelection";
+import { isNoteSelection, type NoteTarget, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import { lineActionsFor, type LineActionId } from "@/lib/transcript/actions";
 import type { TranscriptSegment } from "@/types";
 import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
@@ -48,9 +48,11 @@ export default function TranscriptLineMenu({
   isChangingSpeaker,
 }: TranscriptLineMenuProps) {
   const [noteAnchor, setNoteAnchor] = useState<HTMLElement | null>(null);
+  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   /** The ⋯ button, while an editor or popover an item opened is open. */
   const returnFocusTo = useRef<HTMLElement | null>(null);
-  const selection = useMemo(() => lineSelection(segment), [segment]);
+  const selection = useMemo(() => noteTargetForLine(segment), [segment]);
+  const activeNoteTarget = noteTarget && !isNoteSelection(noteTarget) ? noteTarget : selection;
 
   // Back to the ⋯ button once what an item opened has closed, unless focus
   // went somewhere on purpose (a click elsewhere).
@@ -65,7 +67,7 @@ export default function TranscriptLineMenu({
   }, [opened]);
 
   const run: Record<LineActionId, (trigger: HTMLButtonElement) => void> = {
-    note: (trigger) => setNoteAnchor(trigger),
+    note: (trigger) => { setNoteTarget(selection); setNoteAnchor(trigger); },
     editText: (trigger) => {
       returnFocusTo.current = trigger;
       actions.startTextEdit(segment, segmentId);
@@ -96,13 +98,15 @@ export default function TranscriptLineMenu({
         active={noteAnchor !== null || opened}
         triggerClassName="ml-auto self-center -my-1 pointer-coarse:-my-2.5"
       />
-      {noteAnchor && selection && onAddNote ? (
+      {noteAnchor && activeNoteTarget && onAddNote ? (
         <NoteOnSelectionPopover
-          quote={selection.quotedText}
-          title={`Note on the line at ${formatTime(segment.start)}`}
+          quote={isNoteSelection(activeNoteTarget) ? activeNoteTarget.quotedText : null}
+          title={`Note on the line at ${formatTime(isNoteSelection(activeNoteTarget)
+            ? segment.start : activeNoteTarget.startMs / 1000)}`}
           anchor={noteAnchor}
-          onSubmit={(body) => lineIsSettling(segment) ? LINE_SETTLING_REASON
-            : onAddNote({ kind: "selection", body, anchorMs: null, selection })}
+          onSubmit={(body) => onAddNote(isNoteSelection(activeNoteTarget)
+            ? { kind: "selection", body, anchorMs: null, selection: activeNoteTarget }
+            : { kind: "point", body, anchorMs: activeNoteTarget.startMs, span: activeNoteTarget })}
           onClose={() => setNoteAnchor(null)}
         />
       ) : null}

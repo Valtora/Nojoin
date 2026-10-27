@@ -12,9 +12,10 @@ import {
 } from "@/lib/captures/useCaptureActions";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import type { AudioClock } from "@/lib/notes/audioClock";
-import { inlineNotes, type NoteSelection } from "@/lib/notes/noteOutbox";
+import { inlineNotes, isNoteSelection, type NoteTarget } from "@/lib/notes/noteOutbox";
 import { segmentStartMs } from "@/lib/notes/placement";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 import { ClientStatus, Recording, RecordingStatus, type TimelineNote } from "@/types";
 
 import Workspace from "./Workspace";
@@ -84,6 +85,7 @@ interface RecordingStatusDisplayProps {
    * knows whether there is one.
    */
   timelineNotes?: readonly TimelineNote[] | null;
+  noteEdits?: NoteEdits;
 }
 
 const NO_TIMELINE_NOTES: readonly TimelineNote[] = [];
@@ -100,6 +102,7 @@ export default function RecordingStatusDisplay({
   showMobileBackButton = false,
   audioClock,
   timelineNotes = NO_TIMELINE_NOTES,
+  noteEdits,
 }: RecordingStatusDisplayProps) {
   const actions = useRecordingActions();
   const [isDiscarding, setIsDiscarding] = useState(false);
@@ -116,13 +119,16 @@ export default function RecordingStatusDisplay({
   const { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded } =
     outboxState;
   const liveNotes = useMemo(
-    () =>
-      inlineNotes(timelineNotes, {
+    () => {
+      const notes = inlineNotes(timelineNotes, {
         entries: outboxEntries,
         saved: outboxSaved,
         discarded: outboxDiscarded,
-      }),
-    [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
+      });
+      return noteEdits && liveTranscript.segments.some((segment) => segment.settling_required)
+        ? noteEdits.apply(notes) : notes;
+    },
+    [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded, noteEdits, liveTranscript.segments],
   );
   const pendingMeetingNotes = useMemo(
     () => outboxEntries.filter((entry) => entry.kind === "head" || entry.kind === "tail"),
@@ -171,8 +177,10 @@ export default function RecordingStatusDisplay({
   // "Note on this line": the box's next note goes on the line, and the box
   // takes focus to write it.
   const noteOnLine = useCallback(
-    (selection: NoteSelection) => {
-      outbox.setDraft({ ...outbox.getSnapshot().draft, selection });
+    (target: NoteTarget) => {
+      outbox.setDraft({ ...outbox.getSnapshot().draft,
+        selection: isNoteSelection(target) ? target : null,
+        lineSpan: isNoteSelection(target) ? null : target });
       composerBoxRef.current?.focus();
     },
     [outbox],
@@ -446,6 +454,7 @@ export default function RecordingStatusDisplay({
                 }}
                 isPaused={isPaused}
                 notes={liveNotes}
+                onMoveNote={liveSegments.some((segment) => segment.settling_required) ? noteEdits?.move : undefined}
                 onRetryNote={outbox.retry}
                 onDiscardNote={discardInlineNote}
                 onNoteOnLine={noteOnLine}
