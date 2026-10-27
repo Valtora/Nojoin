@@ -1,4 +1,5 @@
 import { TranscriptSegment } from "@/types";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
 
 /** `mm:ss` for the finished transcript's time column. */
 export const formatTime = (seconds: number) => {
@@ -7,10 +8,11 @@ export const formatTime = (seconds: number) => {
   return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
 
-/** Revised in the last 15 s: the line shows "Revised", and its lane keeps room for it. */
-export const isRecentlyUpdatedSegment = (segment: TranscriptSegment) => {
-  return (
-    typeof segment.updated_at === "string" &&
-    Date.now() - new Date(segment.updated_at).getTime() < 15000
-  );
+/** Expiry of a visible "Revised" badge, or null when the revision is not recent. */
+export const recentSegmentExpiry = (segment: TranscriptSegment, now = Date.now()): number | null => {
+  const updatedAt = parseServerTimestamp(segment.updated_at);
+  if (!updatedAt) return null;
+  const age = now - updatedAt.getTime();
+  // Allow a small difference between browser and server clocks, not future revisions.
+  return age >= -5000 && age < 15000 ? updatedAt.getTime() + 15000 : null;
 };

@@ -15,13 +15,14 @@ import { useTranscriptScroll } from "./transcript/_hooks/useTranscriptScroll";
 import { useTranscriptEditing } from "./transcript/_hooks/useTranscriptEditing";
 import { useStableCallback } from "./transcript/_hooks/useStableCallback";
 import { useContentStable } from "./transcript/_hooks/useContentStable";
+import { useRecentSegmentKeys } from "./transcript/_hooks/useRecentSegmentKeys";
 import {
   buildTranscriptGroups,
   indexSegments,
   LINE_KEY_SEPARATOR,
   type IndexedTranscriptSegment,
 } from "./transcript/transcriptGroups";
-import { formatTime, isRecentlyUpdatedSegment } from "./transcript/transcriptDisplay";
+import { formatTime } from "./transcript/transcriptDisplay";
 import TranscriptGroup, { type TranscriptLineShared } from "./transcript/TranscriptGroup";
 import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptToolbar from "./transcript/TranscriptToolbar";
@@ -187,6 +188,8 @@ export default function TranscriptView({
         )
       : indexedSegments;
   }, [segments]);
+
+  const recentSegmentKeys = new Set(useRecentSegmentKeys(displaySegments).split(LINE_KEY_SEPARATOR));
 
   // Playback-follow keeps the first shown line playback is in in view.
   const activeSegmentKey =
@@ -390,10 +393,10 @@ export default function TranscriptView({
   );
   const lineKeys = (
     items: readonly IndexedTranscriptSegment[],
-    keep: (segment: TranscriptSegment) => boolean,
+    keep: (segment: TranscriptSegment, segmentId: string) => boolean,
   ) =>
     items
-      .filter(({ segment }) => keep(segment))
+      .filter(({ segment, segmentId }) => keep(segment, segmentId))
       .map(({ segmentId }) => segmentId)
       .join(LINE_KEY_SEPARATOR);
   const holdsTheEditor = (items: readonly IndexedTranscriptSegment[]) =>
@@ -481,7 +484,7 @@ export default function TranscriptView({
                     group.items,
                     (segment) => currentTime >= segment.start && currentTime < segment.end,
                   )}
-                  recentLineKeys={lineKeys(group.items, isRecentlyUpdatedSegment)}
+                  recentLineKeys={lineKeys(group.items, (_segment, segmentId) => recentSegmentKeys.has(segmentId))}
                   searchDecorations={search.searchDecorations}
                   noteDecorations={noteDecorations}
                   editingSpeakerLineId={editing.editingSpeakerLineId}

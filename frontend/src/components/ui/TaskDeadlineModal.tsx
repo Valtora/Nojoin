@@ -136,13 +136,15 @@ export default function TaskDeadlineModal({
   const zonedValue = value ? toTimeZoneDate(value, resolvedTimeZone) : null;
 
   // The draft starts from the saved deadline, or a suggestion, each time the
-  // modal opens, and clears when it closes.
+  // modal opens, and clears when it closes. It follows the deadline's instant,
+  // not the Date object: callers build a new one on every render, and a
+  // re-render must not throw away a pick.
   const openingDraft = (): Date | null => {
     if (!isOpen) return null;
     return zonedValue ? new Date(zonedValue) : buildSuggestedDeadline(zonedNow);
   };
   const [draftValue, setDraftValue] = useState<Date | null>(openingDraft);
-  useOnDepsChange([isOpen, resolvedTimeZone, value, valueTimestamp], () => {
+  useOnDepsChange([isOpen, resolvedTimeZone, valueTimestamp], () => {
     setDraftValue(openingDraft());
   });
 

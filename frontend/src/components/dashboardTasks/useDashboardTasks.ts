@@ -8,7 +8,7 @@ import {
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { DEFAULT_TIME_ZONE, getUserTimeZone } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import { UserTask } from "@/types";
 
 import { parseTaskDeadline, sortTasks } from "./taskUtils";
@@ -24,7 +24,7 @@ export function useDashboardTasks() {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [now, setNow] = useState(() => new Date());
-  const [timeZone, setTimeZone] = useState(DEFAULT_TIME_ZONE);
+  const timeZone = useUserTimeZone();
   const [deadlineModalTaskId, setDeadlineModalTaskId] = useState<number | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const editingFormRef = useRef<HTMLFormElement>(null);
@@ -66,20 +66,6 @@ export function useDashboardTasks() {
       cancelled = true;
     };
   }, [addNotification]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void getUserTimeZone().then((resolvedTimeZone) => {
-      if (!cancelled) {
-        setTimeZone(resolvedTimeZone);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {

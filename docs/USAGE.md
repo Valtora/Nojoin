@@ -408,6 +408,8 @@ Most settings belong to your account. One marked **This browser** is kept in the
 
 For Canary, administrators can prepare the **Qwen3 forced aligner** in **Settings > AI providers > Advanced > Model downloads**. It supplies word timings for live and processed transcripts and downloads on first use if needed. Whisper and Parakeet already supply word timings. See [Forced Aligner Assets](DEPLOYMENT.md#forced-aligner-assets) for storage and CPU fallback details.
 
+**Settings > Appearance > Date and time** sets the timezone Nojoin shows dates and times in, and reads the date you give an imported recording in. It can differ from your computer's timezone. Until you choose one it is UTC, or the timezone your administrator set with `DEFAULT_TIMEZONE`. System logs show UTC, as `docker logs` does, and a date with no time of day, such as a subscription's last-used date, is shown as it is.
+
 ### Language Preferences
 
 Two per-user settings:

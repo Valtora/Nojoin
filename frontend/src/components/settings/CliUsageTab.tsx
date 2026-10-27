@@ -20,6 +20,9 @@ import {
   SETTINGS_INPUT_CLASS,
 } from "./settingsControls";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneLocale } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 
 const PAGE_SIZE = 10;
 
@@ -30,14 +33,6 @@ function formatTokens(value: number): string {
   return String(value);
 }
 
-// Backend datetimes are naive UTC; ensure Date parses them as UTC.
-function parseUtcDate(value?: string | null): Date | null {
-  if (!value) return null;
-  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 type QuotaTone = "success" | "warning" | "error" | "neutral";
 
 
@@ -46,8 +41,8 @@ type QuotaTone = "success" | "warning" | "error" | "neutral";
  * quota, so this reflects the rate-limit signal (status + reset time) plus the
  * best-effort utilisation percentage of the current window when known.
  */
-function quotaPill(row: CliUsageRow): { label: string; tone: QuotaTone } {
-  const limitedUntil = parseUtcDate(row.usage_limited_until);
+function quotaPill(row: CliUsageRow, timeZone: string): { label: string; tone: QuotaTone } {
+  const limitedUntil = parseServerTimestamp(row.usage_limited_until);
   const util =
     typeof row.utilization === "number"
       ? Math.round(row.utilization * 100)
@@ -55,7 +50,7 @@ function quotaPill(row: CliUsageRow): { label: string; tone: QuotaTone } {
 
   if (limitedUntil && limitedUntil.getTime() > Date.now()) {
     return {
-      label: `Limited until ${limitedUntil.toLocaleString()}`,
+      label: `Limited until ${formatTimeZoneLocale(limitedUntil, timeZone)}`,
       tone: "error",
     };
   }
@@ -77,6 +72,7 @@ function quotaPill(row: CliUsageRow): { label: string; tone: QuotaTone } {
  * inference through their own subscriptions.
  */
 export default function CliUsageTab() {
+  const timeZone = useUserTimeZone();
   const [rows, setRows] = useState<CliUsageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -193,17 +189,19 @@ export default function CliUsageTab() {
               </tr>
             ) : (
               rows.map((row) => {
-                const pill = quotaPill(row);
-                const lastUsed = parseUtcDate(row.last_used_on);
+                const pill = quotaPill(row, timeZone);
+                const lastUsed = parseServerTimestamp(row.last_used_on);
                 return (
                   <tr key={row.user_id}>
                     <td className="py-3 pr-4">
                       <div className="font-medium text-foreground">
                         {row.username}
                       </div>
+                      {/* A calendar date, parsed as UTC midnight, so it is read
+                          back in UTC rather than the time-zone setting. */}
                       {lastUsed && (
                         <div className="text-xs contrast-helper">
-                          Last used {lastUsed.toLocaleDateString()}
+                          Last used {formatTimeZoneLocale(lastUsed, "UTC", "date")}
                         </div>
                       )}
                     </td>

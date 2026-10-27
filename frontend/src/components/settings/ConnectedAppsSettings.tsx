@@ -11,6 +11,9 @@ import {
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneLocale } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
@@ -24,18 +27,19 @@ const SCOPE_LABELS: Record<string, string> = {
   "mcp:read mcp:write": "Read · Write",
 };
 
-function formatTimestamp(value: string | null): string {
+function formatTimestamp(value: string | null, timeZone: string): string {
   if (!value) {
     return "Never";
   }
-  const parsed = new Date(value.endsWith("Z") ? value : `${value}Z`);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseServerTimestamp(value);
+  if (!parsed) {
     return value;
   }
-  return parsed.toLocaleString();
+  return formatTimeZoneLocale(parsed, timeZone);
 }
 
 export default function ConnectedAppsSettings() {
+  const timeZone = useUserTimeZone();
   const [apps, setApps] = useState<ConnectedApp[] | null>(null);
   const [revokingGrantId, setRevokingGrantId] = useState<string | null>(null);
   const { addNotification } = useNotificationStore();
@@ -103,7 +107,7 @@ export default function ConnectedAppsSettings() {
           <SettingsRow
             key={app.grant_id}
             label={app.client_name}
-            description={`${SCOPE_LABELS[app.scope] ?? app.scope} · Connected ${formatTimestamp(app.created_at)} · Last used ${formatTimestamp(app.last_used_at)}`}
+            description={`${SCOPE_LABELS[app.scope] ?? app.scope} · Connected ${formatTimestamp(app.created_at, timeZone)} · Last used ${formatTimestamp(app.last_used_at, timeZone)}`}
             controlClassName={SETTINGS_CONTROL_END}
           >
             <ButtonBase

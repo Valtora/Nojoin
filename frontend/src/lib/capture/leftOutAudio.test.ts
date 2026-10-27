@@ -2,6 +2,8 @@ import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNotificationStore } from "@/lib/notificationStore";
+import { setCachedUserTimeZone } from "@/lib/timezone";
+import { withProcessTimeZone } from "@/test/processTimeZone";
 
 import {
   IndexedDbLeftOutAudioStore,
@@ -209,6 +211,24 @@ describe("offering left-out audio", () => {
     closed = new Set();
     await offer();
     expect(active()).toHaveLength(1);
+  });
+
+  describe("with the time-zone setting ahead of the browser's zone", () => {
+    withProcessTimeZone("America/New_York");
+
+    it("dates the deletion in the setting's zone", async () => {
+      setCachedUserTimeZone("Asia/Tokyo");
+      // 28 October in New York, 29 October in Tokyo.
+      const deletesAt = Date.parse("2026-10-29T02:30:00Z");
+      await store.put(audio("a", { keptAt: deletesAt - LEFT_OUT_AUDIO_KEEP_MS }));
+
+      await offer();
+
+      const inZone = (timeZone: string) =>
+        new Date(deletesAt).toLocaleDateString(undefined, { day: "numeric", month: "long", timeZone });
+      expect(inZone("Asia/Tokyo")).not.toBe(inZone("America/New_York"));
+      expect(active()[0].message).toContain(`This browser deletes it on ${inZone("Asia/Tokyo")}.`);
+    });
   });
 });
 

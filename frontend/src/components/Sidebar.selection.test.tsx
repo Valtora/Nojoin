@@ -80,10 +80,14 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     runtimeActive: false,
   }),
 }));
-vi.mock("@/lib/timezone", () => ({
-  getUserTimeZone: () => Promise.resolve("Europe/London"),
-  localDayRangeToUtc: () => ({ startISO: "", endISO: "" }),
-}));
+vi.mock("@/lib/timezone", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/timezone")>();
+  return {
+    ...actual,
+    getUserTimeZone: async () => actual.setCachedUserTimeZone("Europe/London"),
+    localDayRangeToUtc: () => ({ startISO: "", endISO: "" }),
+  };
+});
 // Search matches on the name, so a query hides the rows it does not name.
 vi.mock("@/lib/searchUtils", () => ({
   createFuse: (items: Recording[]) => ({
