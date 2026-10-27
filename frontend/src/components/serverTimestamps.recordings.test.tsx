@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 
+import { setCachedUserTimeZone } from "@/lib/timezone";
 import { withProcessTimeZone } from "@/test/processTimeZone";
 import { RecordingStatus, type Recording } from "@/types";
 import LinkedEventPanel from "./LinkedEventPanel";
@@ -40,34 +41,41 @@ const recording = (id: string, created_at: string): Recording => ({
 
 const event = { id: 1, title: "Project meeting", starts_at: "2026-10-27T02:30:00", ends_at: null };
 const eventInstant = new Date("2026-10-27T02:30:00Z");
-const eventLabel = () =>
-  `${eventInstant.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ` +
-  eventInstant.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const eventLabel = (timeZone: string) =>
+  `${eventInstant.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone })}, ` +
+  eventInstant.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone });
 
-describe.each(["America/New_York", "Asia/Tokyo"])("recording server timestamps in %s", (timeZone) => {
-  withProcessTimeZone(timeZone);
+// The browser's zone and the Nojoin setting differ, and the date and time
+// shown must be the setting's.
+describe.each([
+  ["America/New_York", "Asia/Tokyo"],
+  ["Asia/Tokyo", "America/New_York"],
+])("recording server timestamps in %s with the setting in %s", (processZone, settingZone) => {
+  withProcessTimeZone(processZone);
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setCachedUserTimeZone(settingZone);
     api.getRecordingInfo.mockResolvedValue({ proxy: null });
     api.getRecordingCalendarEventCandidates.mockResolvedValue([event]);
   });
 
   it("shows the recording info clock at the UTC instant returned without a zone", async () => {
     render(<RecordingInfoModal isOpen onClose={vi.fn()} recording={recording("info", event.starts_at)} />);
-    expect(await screen.findByText(eventInstant.toLocaleString())).toBeInTheDocument();
+    const expected = eventInstant.toLocaleString(undefined, { timeZone: settingZone });
+    expect(await screen.findByText(expected)).toBeInTheDocument();
   });
 
   it("shows the linked calendar event at its UTC instant", () => {
     render(<LinkedEventPanel recordingId="linked" linkedEvent={event} />);
-    expect(screen.getByText(eventLabel())).toBeInTheDocument();
+    expect(screen.getByText(eventLabel(settingZone))).toBeInTheDocument();
   });
 
   it("shows candidate calendar event clocks at their UTC instants", async () => {
     render(<LinkedEventPanel recordingId="candidate" />);
     fireEvent.click(screen.getByRole("button", { name: "Link calendar event" }));
     const candidate = await screen.findByRole("button", { name: /Project meeting/ });
-    expect(within(candidate).getByText(eventLabel())).toBeInTheDocument();
+    expect(within(candidate).getByText(eventLabel(settingZone))).toBeInTheDocument();
   });
 
   it.each([

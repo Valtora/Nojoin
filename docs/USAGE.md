@@ -386,6 +386,8 @@ Each settings category is its own page. Every user has **Profile and security**,
 
 Most settings belong to your account. One marked **This browser** is kept in the browser you set it in, such as the theme and the microphone and its levels. One marked **Everyone** applies to the whole installation, and only an administrator can change it.
 
+**Settings > Appearance > Date and time** sets the timezone of every date and time Nojoin shows: the dashboard, the recordings list, recording details, documents, tasks, notifications and the settings pages. It can differ from your computer's timezone. A date with no time of day, such as a subscription's last-used date, is shown as it is.
+
 ### Language Preferences
 
 Two per-user settings:

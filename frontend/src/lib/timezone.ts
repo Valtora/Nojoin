@@ -34,6 +34,7 @@ const FALLBACK_TIME_ZONES = [
 
 let cachedUserTimeZone: string | null = null;
 let pendingUserTimeZone: Promise<string> | null = null;
+const userTimeZoneListeners = new Set<() => void>();
 
 export function isValidTimeZone(value: string | null | undefined): value is string {
   if (!value) {
@@ -108,13 +109,24 @@ export function getSupportedTimeZones(): string[] {
 
 export function setCachedUserTimeZone(value: string | null | undefined): string {
   const resolved = resolveTimeZone(value, DEFAULT_TIME_ZONE);
-  cachedUserTimeZone = resolved;
+  if (resolved !== cachedUserTimeZone) {
+    cachedUserTimeZone = resolved;
+    userTimeZoneListeners.forEach((listener) => listener());
+  }
   return resolved;
 }
 
 /** The user's time zone if it has been loaded, for code that cannot wait for it. */
 export function getCachedUserTimeZone(): string | null {
   return cachedUserTimeZone;
+}
+
+/** Calls `listener` whenever the cached user time zone changes. */
+export function subscribeUserTimeZone(listener: () => void): () => void {
+  userTimeZoneListeners.add(listener);
+  return () => {
+    userTimeZoneListeners.delete(listener);
+  };
 }
 
 export async function getUserTimeZone(): Promise<string> {
@@ -142,6 +154,30 @@ export function formatTimeZoneDate(
   pattern: string,
 ): string {
   return formatInTimeZone(value, resolveTimeZone(timeZone), pattern);
+}
+
+/**
+ * What `toLocaleDateString` (`part` "date"), `toLocaleTimeString` ("time") or
+ * `toLocaleString` ("dateTime") shows for `value`, in the browser's locale
+ * but in `timeZone` rather than the browser's own zone. Parse a server value
+ * with `parseServerTimestamp` first.
+ */
+export function formatTimeZoneLocale(
+  value: Date | number,
+  timeZone: string,
+  part: "date" | "time" | "dateTime" = "dateTime",
+  options: Intl.DateTimeFormatOptions = {},
+  locales?: string | string[],
+): string {
+  const date = new Date(value);
+  const zoned = { ...options, timeZone: resolveTimeZone(timeZone) };
+  if (part === "date") {
+    return date.toLocaleDateString(locales, zoned);
+  }
+  if (part === "time") {
+    return date.toLocaleTimeString(locales, zoned);
+  }
+  return date.toLocaleString(locales, zoned);
 }
 
 export function toTimeZoneDate(

@@ -86,13 +86,17 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   }),
 }));
 
-vi.mock("@/lib/timezone", () => ({
-  getUserTimeZone: () => Promise.resolve("Europe/London"),
-  localDayRangeToUtc: () => ({
-    startISO: "2026-05-25T00:00:00Z",
-    endISO: "2026-05-25T23:59:59Z",
-  }),
-}));
+vi.mock("@/lib/timezone", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/timezone")>();
+  return {
+    ...actual,
+    getUserTimeZone: async () => actual.setCachedUserTimeZone("Europe/London"),
+    localDayRangeToUtc: () => ({
+      startISO: "2026-05-25T00:00:00Z",
+      endISO: "2026-05-25T23:59:59Z",
+    }),
+  };
+});
 
 vi.mock("@/lib/store", () => ({
   useNavigationStore: () => ({

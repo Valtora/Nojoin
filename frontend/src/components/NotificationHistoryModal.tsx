@@ -3,7 +3,8 @@
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Trash2, Bell } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
-import { format } from 'date-fns';
+import { formatTimeZoneDate } from '@/lib/timezone';
+import { useUserTimeZone } from '@/lib/useUserTimeZone';
 
 import { Badge, type BadgeTone } from './ui/Badge';
 import Button from './ui/Button';
@@ -24,6 +25,7 @@ const TONES: Record<string, BadgeTone> = {
 
 export default function NotificationHistoryModal({ isOpen, onClose }: NotificationHistoryModalProps) {
   const { history, clearHistory } = useNotificationStore();
+  const timeZone = useUserTimeZone();
 
   return (
     <Modal
@@ -73,7 +75,7 @@ export default function NotificationHistoryModal({ isOpen, onClose }: Notificati
                       {notification.type}
                     </Badge>
                     <span className="text-xs text-contrast-helper">
-                      {format(notification.timestamp, 'MMM d, h:mm a')}
+                      {formatTimeZoneDate(notification.timestamp, timeZone, 'MMM d, h:mm a')}
                     </span>
                   </div>
                   <p className="text-sm text-foreground">
