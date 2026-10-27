@@ -60,6 +60,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         currentUser &&
         publicPaths.some(p => pathname?.startsWith(p))
       ) {
+        // The setup page settles a signed-in visit itself: a wizard reloaded
+        // after its account step resumes there, and anything else goes on to
+        // the dashboard. Sending it away here would skip the AI and Finish
+        // steps on every reload.
+        if (pathname?.startsWith('/setup') && !currentUser.force_password_change) {
+          setChecked(true);
+          return;
+        }
         router.push(
           currentUser.force_password_change
             ? '/settings/profile'

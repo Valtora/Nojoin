@@ -22,6 +22,7 @@ const updateSettings = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush }),
+  usePathname: () => "/setup",
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -59,6 +60,8 @@ vi.mock("@/components/settings/CliOAuthPanel", () => ({
     </button>
   ),
 }));
+
+import AuthGuard from "@/components/AuthGuard";
 
 import SetupPage from "./page";
 
@@ -457,13 +460,18 @@ describe("SetupPage", () => {
       force_password_change: false,
     };
 
-    /** Unmounts the wizard and renders it again signed in, as a reload does. */
+    /** Unmounts the wizard and renders it again signed in, as a reload does,
+     * inside the AuthGuard the root layout wraps every page in. */
     function reload(unmount: () => void) {
       unmount();
       routerPush.mockClear();
       getInitialConfig.mockClear();
       getCurrentUser.mockResolvedValue(SIGNED_IN_OWNER);
-      renderWithProviders(<SetupPage />);
+      renderWithProviders(
+        <AuthGuard>
+          <SetupPage />
+        </AuthGuard>,
+      );
     }
 
     it("resumes at the AI step once the account exists", async () => {

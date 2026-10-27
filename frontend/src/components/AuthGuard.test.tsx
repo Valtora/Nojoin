@@ -62,6 +62,46 @@ describe("AuthGuard with a pending password change", () => {
   });
 });
 
+describe("AuthGuard when already signed in", () => {
+  beforeEach(() => {
+    getCurrentUser.mockResolvedValue({
+      username: "alice",
+      force_password_change: false,
+    });
+  });
+
+  it("leaves /setup to the setup page, which can resume its wizard", async () => {
+    visit("/setup");
+
+    const { findByText } = renderWithProviders(<AuthGuard>wizard</AuthGuard>);
+
+    expect(await findByText("wizard")).toBeInTheDocument();
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it("still sends the sign-in page on to the dashboard", async () => {
+    visit("/login");
+
+    renderWithProviders(<AuthGuard>sign in</AuthGuard>);
+
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/"));
+  });
+
+  it("still sends /setup to a pending password change", async () => {
+    getCurrentUser.mockResolvedValue({
+      username: "alice",
+      force_password_change: true,
+    });
+    visit("/setup");
+
+    renderWithProviders(<AuthGuard>wizard</AuthGuard>);
+
+    await waitFor(() =>
+      expect(routerPush).toHaveBeenCalledWith("/settings/profile"),
+    );
+  });
+});
+
 describe("AuthGuard once the session has ended", () => {
   const refused = () =>
     Object.assign(new Error("Request failed with status code 401"), {
