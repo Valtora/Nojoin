@@ -27,9 +27,6 @@ from backend.utils.canonical_pipeline.live_labels import (
     LiveLabelWrite,
     apply_live_speaker_labels,
 )
-from backend.utils.canonical_pipeline.live_unknown_metrics import (
-    log_covered_unknown_words,
-)
 from backend.utils.config_manager import config_manager
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
@@ -165,7 +162,6 @@ def _write_labels(
             decide=decide,
         )
         session.commit()
-        log_covered_unknown_words(recording_id, write.covered_unknown_words, log=logger)
         return write
     finally:
         session.close()

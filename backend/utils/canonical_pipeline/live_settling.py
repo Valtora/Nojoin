@@ -51,7 +51,6 @@ class SettlingPublicationResult:
     changed: int = 0
     tombstones: tuple[str, ...] = ()
     new_public_ids: tuple[str, ...] = ()
-    covered_unknown_words: int | None = None
 
 
 @dataclass(frozen=True)
@@ -233,14 +232,6 @@ def _project(
         speaker_enabled=speaker_enabled,
         closing=context.closing,
     )
-    unknown_count = (
-        sum(
-            decision.speaker == "UNKNOWN" and not decision.diarisation_pending
-            for decision in decisions
-        )
-        if speaker_enabled and context.decide is not None and not context.closing
-        else None
-    )
     partitions = partition_words(
         words,
         decisions,
@@ -263,9 +254,7 @@ def _project(
         # Recording-level provenance outlives the first final's line metadata.
         transcript.settling_state = {**state, "settled": True}
         session.add(transcript)
-    return SettlingPublicationResult(
-        True, changed, tuple(tombstones), tuple(ids), unknown_count
-    )
+    return SettlingPublicationResult(True, changed, tuple(tombstones), tuple(ids))
 
 
 def _fresh(

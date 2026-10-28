@@ -280,14 +280,6 @@ def _publish_step(
                 and state.get("phase") == "live"
             )
         session.commit()
-        if publication.accepted:
-            from backend.utils.canonical_pipeline.live_unknown_metrics import (
-                log_covered_unknown_words,
-            )
-
-            log_covered_unknown_words(
-                step.recording_id, publication.covered_unknown_words, log=logger
-            )
         return SettlingStepResult(True, accepted, window_s, bool(publication.changed))
     finally:
         session.close()
