@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useLiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import { ClientStatus, RecordingStatus, type Recording, type TranscriptUtteranceList } from "@/types";
-import { useRecordingDetail } from "./useRecordingDetail";
+import { IDLE_RECORDING_POLL_INTERVAL_MS, useRecordingDetail } from "./useRecordingDetail";
 
 const mocks = vi.hoisted(() => ({
-  getRecording: vi.fn(), getTranscript: vi.fn(), notify: vi.fn(),
+  getRecording: vi.fn(), getRecordingIfChanged: vi.fn(), getTranscript: vi.fn(), notify: vi.fn(),
   router: { push: vi.fn(), refresh: vi.fn() },
   navigation: { activePanel: "transcript", chatPanelHeight: 30, setChatPanelHeight: vi.fn(), setActivePanel: vi.fn() },
   notes: [],
@@ -16,6 +16,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => mocks.router }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api")>(),
   getRecording: (...args: unknown[]) => mocks.getRecording(...args),
+  getRecordingIfChanged: (...args: unknown[]) => mocks.getRecordingIfChanged(...args),
   getTranscriptUtterances: (...args: unknown[]) => mocks.getTranscript(...args),
   getGlobalSpeakers: async () => [], getSettings: async () => ({}),
 }));
@@ -59,12 +60,53 @@ describe("recording detail polling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.getRecording.mockReset().mockResolvedValue(recording());
+    mocks.getRecordingIfChanged.mockReset().mockResolvedValue(null);
     mocks.getTranscript.mockReset().mockResolvedValue(delta());
     mocks.notify.mockReset();
   });
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  it("checks a finished recording with its ETag and re-reads the transcript only when it moved", async () => {
+    const { result } = mount();
+    await advance(0);
+    expect(result.current.detail.loading).toBe(false);
+    mocks.getRecordingIfChanged.mockResolvedValueOnce({ recording: recording(), etag: 'W/"PROCESSED-0"' });
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    // The first check has no ETag yet; its answer matches what the page shows.
+    expect(mocks.getRecordingIfChanged).toHaveBeenLastCalledWith("rec-1", null);
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(mocks.getRecordingIfChanged).toHaveBeenLastCalledWith("rec-1", 'W/"PROCESSED-0"');
+    expect(mocks.getTranscript).toHaveBeenCalledTimes(1);
+
+    mocks.getRecordingIfChanged.mockResolvedValueOnce({
+      recording: recording({ transcript: { change_sequence: 1 } as Recording["transcript"] }),
+      etag: 'W/"PROCESSED-1"',
+    });
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(mocks.getTranscript).toHaveBeenCalledTimes(2);
+    expect(mocks.getTranscript).toHaveBeenLastCalledWith("rec-1", undefined);
+    expect(mocks.getRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("discovers a live capture on the slow check and starts three-second delta reads", async () => {
+    const { result } = mount();
+    await advance(0);
+    mocks.getRecordingIfChanged.mockResolvedValueOnce({
+      recording: recording({ status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING }),
+      etag: 'W/"UPLOADING-0"',
+    });
+    mocks.getRecording.mockResolvedValue(recording({
+      status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
+    }));
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(result.current.detail.recording?.client_status).toBe(ClientStatus.RECORDING);
+    const reads = mocks.getTranscript.mock.calls.length;
+    await advance(3_000);
+    expect(mocks.getTranscript.mock.calls.length).toBeGreaterThan(reads);
+    expect(mocks.getTranscript).toHaveBeenLastCalledWith("rec-1", 4, expect.any(AbortSignal));
   });
 
   it.each([

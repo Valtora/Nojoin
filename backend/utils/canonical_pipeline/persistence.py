@@ -1,5 +1,7 @@
 """Canonical utterance replacement and compatibility segment writes."""
 
+from backend.utils.transcript_change import change_sequence_bump
+
 from .assignment import _resolve_recording_speaker_for_value, _state_for_segment
 from .constants import *
 from .guards import freeze_live_line, protect_text_replacement, settling_required
@@ -222,6 +224,7 @@ def replace_utterances_from_segments(
     ).strip()
     flag_modified(transcript, "segments")
     session.add(transcript)
+    session.execute(change_sequence_bump(recording_id))
     refresh_recording_speaker_usage_state(session, recording_id)
 
     _append_boundary_revision_events(
@@ -476,6 +479,7 @@ def apply_compatibility_segment_replace(
         ).strip()
         flag_modified(transcript, "segments")
         session.add(transcript)
+        session.execute(change_sequence_bump(recording_id))
         return utterances
 
     return replace_utterances_from_segments(

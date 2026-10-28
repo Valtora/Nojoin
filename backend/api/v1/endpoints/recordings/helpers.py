@@ -56,6 +56,7 @@ from backend.utils.recording_storage import (
 )
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
+from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import durable_settling_state
 
 from .constants import (
@@ -750,13 +751,14 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         defaults.settling_state = durable_settling_state(
             existing_transcript.settling_state
         )
-        retained = {"id", "recording_id", "created_at", "updated_at"}
+        retained = {"id", "recording_id", "created_at", "updated_at", "change_sequence"}
         if preserve_live_work:
             retained.update({"text", "segments"})
         for field in Transcript.model_fields:
             if field not in retained:
                 setattr(existing_transcript, field, getattr(defaults, field))
         db.add(existing_transcript)
+        await db.execute(change_sequence_bump(recording_id))
         await db.flush()
 
 

@@ -20,6 +20,7 @@ from backend.utils.live_word_settling import (
     expire_word_state,
     reconcile_word_state,
 )
+from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     GateChunk,
@@ -390,6 +391,8 @@ def publish_live_settling(
         ),
     }
     session.add(transcript)
+    if result.changed:
+        session.execute(change_sequence_bump(request.recording_id))
     return result
 
 
@@ -468,6 +471,8 @@ def expire_live_settling(
         ),
     }
     session.add(transcript)
+    if result.changed:
+        session.execute(change_sequence_bump(request.recording_id))
     return result
 
 

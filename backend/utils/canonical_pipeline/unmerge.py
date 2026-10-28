@@ -9,6 +9,8 @@ by hand.
 
 from dataclasses import dataclass
 
+from backend.utils.transcript_change import change_sequence_bump
+
 from .constants import *
 from .scope import _lock_active_lines
 from .speaker import (
@@ -347,6 +349,7 @@ def unmerge_recording_speaker(
         transcript.segments = projection_segments
         flag_modified(transcript, "segments")
         session.add(transcript)
+        session.execute(change_sequence_bump(recording_id))
     refresh_recording_speaker_usage_state(session, recording_id)
 
     return restored, survivor, len(moving)

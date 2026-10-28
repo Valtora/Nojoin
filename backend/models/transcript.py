@@ -19,6 +19,10 @@ class Transcript(BaseDBModel, table=True):
         )
     )
 
+    change_sequence: int = Field(
+        default=0,
+        sa_column=Column(BigInteger, nullable=False, server_default="0"),
+    )
     settling_state: Optional[Dict[str, Any]] = Field(
         default=None,
         sa_column=Column(

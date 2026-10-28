@@ -5,6 +5,8 @@ write surface: releasing a lock is an audited utterance event exactly like
 the edits that set it.
 """
 
+from backend.utils.transcript_change import change_sequence_bump
+
 from .core import (
     TranscriptUtterance,
     _append_utterance_event,
@@ -98,5 +100,6 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
             },
         )
         session.add(transcript)
+        session.execute(change_sequence_bump(recording_id))
 
     return utterance

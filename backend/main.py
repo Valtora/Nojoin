@@ -418,12 +418,19 @@ def create_app(*, app_lifespan=lifespan) -> FastAPI:
         allow_origins=get_cors_origin_list(),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept", "Range"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "Range",
+            "If-None-Match",
+        ],
         expose_headers=[
             "Accept-Ranges",
             "Content-Disposition",
             "Content-Length",
             "Content-Range",
+            "ETag",
         ],
     )
 

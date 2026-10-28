@@ -53,6 +53,7 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.utils.speaker_names.preferences import library_learns_automatically
 from backend.utils.speaker_names.review import link_voice_match
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -368,6 +369,8 @@ async def update_global_speaker(
         for rs in linked_speakers:
             rs.name = speaker_in.name
             db.add(rs)
+        renamed = {rs.recording_id for rs in linked_speakers}
+        await db.execute(change_sequence_bump(*renamed))
 
     if speaker_in.color is not None:
         speaker.color = speaker_in.color

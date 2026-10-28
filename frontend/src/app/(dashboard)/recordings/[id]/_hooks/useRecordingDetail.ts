@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 
 import {
   getRecording,
+  getRecordingIfChanged,
   getSettings,
   updateSettings,
   updateSpeaker,
@@ -72,6 +73,11 @@ import { useDetailTranscript } from "./useDetailTranscript";
 interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
 }
+
+// A finished page still notices changes made from another tab or device: a
+// capture started, a reprocess, or a transcript edit. Each check is a 304
+// until the status or the transcript change counter moves.
+export const IDLE_RECORDING_POLL_INTERVAL_MS = 15_000;
 
 /**
  * Owns the entire data-orchestration, live-state, transcript, notes and action
@@ -143,6 +149,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   // When the page first saw the audio as unavailable. It bounds how long the
   // page keeps re-checking for it.
   const audioUnavailableSinceRef = useRef<number | null>(null);
+  const idleEtagRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
   const {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
@@ -271,27 +278,38 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         filesBeingRead,
       );
 
-    const pollIntervalMs = currentPollIntervalMs();
+    const idle = currentPollIntervalMs() === null;
+    const pollIntervalMs = idle
+      ? isAudioUnavailable(recording) ? null : IDLE_RECORDING_POLL_INTERVAL_MS
+      : currentPollIntervalMs();
     if (pollIntervalMs === null) {
       return;
     }
 
     const interval = setInterval(async () => {
-      if (currentPollIntervalMs() === null) {
+      if (!idle && currentPollIntervalMs() === null) {
         clearInterval(interval);
         return;
       }
       try {
         const { id } = await params;
         const sentAt = audioClock.stamp();
-        const data = await getRecording(id);
-        audioClock.observe(data, sentAt);
+        const polled = idle
+          ? await getRecordingIfChanged(id, idleEtagRef.current)
+          : { recording: await getRecording(id), etag: idleEtagRef.current };
         recordingNotFound.found();
+        if (!polled) return;
+        const data = polled.recording;
+        idleEtagRef.current = polled.etag;
+        audioClock.observe(data, sentAt);
 
-        if (hasPolledRecordingChanged(recording, data)) {
+        const transcriptMoved = idle &&
+          data.transcript?.change_sequence !== recording.transcript?.change_sequence;
+        if (transcriptMoved || hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
           if (!isEditingTitle) setTitleValue(data.name);
         }
+        if (transcriptMoved) await syncTranscriptState("full");
 
             } catch (e: unknown) {
         console.error("Polling failed", e);
@@ -309,7 +327,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead]);
+  }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead, syncTranscriptState]);
 
   // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {

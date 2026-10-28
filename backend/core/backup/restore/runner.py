@@ -99,6 +99,7 @@ def _prepare_row(
         # recording-level provenance alongside the archived text and segments.
         item_data = {
             **item_data,
+            "change_sequence": 0,
             "settling_state": durable_settling_state(item_data.get("settling_state")),
         }
 

@@ -75,6 +75,7 @@ CREATE TABLE recordings (
 );
 
 CREATE TABLE transcripts (
+    change_sequence BIGINT NOT NULL DEFAULT 0,
     settling_state JSON,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,

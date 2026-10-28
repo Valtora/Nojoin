@@ -3,6 +3,7 @@
 import logging
 
 from backend.models.live_settling_public import public_settling_fields
+from backend.utils.transcript_change import change_sequence_bump
 
 from .assignment import *
 from .constants import *
@@ -268,6 +269,7 @@ def update_utterance_text(
             for segment in (transcript.segments or [])
         ).strip()
         session.add(transcript)
+        session.execute(change_sequence_bump(recording_id))
 
     return utterance
 
@@ -449,6 +451,7 @@ def update_utterance_speaker(
     transcript.segments = updated_segments
     flag_modified(transcript, "segments")
     session.add(transcript)
+    session.execute(change_sequence_bump(recording_id))
     refresh_recording_speaker_usage_state(session, recording_id)
 
     return utterance, target_speaker
@@ -665,6 +668,7 @@ def refresh_transcript_projection_from_canonical(
     ).strip()
     flag_modified(transcript, "segments")
     session.add(transcript)
+    session.execute(change_sequence_bump(recording_id))
     refresh_recording_speaker_usage_state(session, recording_id)
     return projection_segments
 

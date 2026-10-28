@@ -45,6 +45,7 @@ from backend.utils.speaker_names.events import (
     record_user_name_events,
 )
 from backend.utils.speaker_names.sources import SOURCE_USER
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     MergedRecordingSpeakerRead,
@@ -756,6 +757,7 @@ async def update_speaker_color(
 
     recording_speaker.color = update.color
     db.add(recording_speaker)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
 
     return {"status": "success", "color": update.color}
