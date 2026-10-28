@@ -53,8 +53,7 @@ describe("useRecordingStatusNotifications transcription failures", () => {
     expect(errorToasts()).toEqual([`"Weekly sync": ${OOM_MESSAGE}`]);
   });
 
-  it("raises it for a retry, whose failed transcript row is new", () => {
-    // Reprocessing deletes the transcript, so the failure arrives on a fresh row.
+  it("raises it for a run first seen without a transcript", () => {
     const { rerender } = watch(recording(RecordingStatus.QUEUED));
 
     rerender({
@@ -67,6 +66,27 @@ describe("useRecordingStatusNotifications transcription failures", () => {
     });
 
     expect(errorToasts()).toEqual([`"Weekly sync": ${OOM_MESSAGE}`]);
+  });
+
+  it("reports a failed reprocess of a kept transcript, never as ready", () => {
+    const { rerender } = watch(
+      recording(RecordingStatus.PROCESSED, { transcript_status: "completed" }),
+    );
+    rerender({
+      recordings: [recording(RecordingStatus.PROCESSING, { transcript_status: "pending" })],
+    });
+    rerender({
+      recordings: [
+        recording(RecordingStatus.ERROR, {
+          transcript_status: "error",
+          error_message: OOM_MESSAGE,
+        }),
+      ],
+    });
+
+    expect(errorToasts()).toEqual([`"Weekly sync": ${OOM_MESSAGE}`]);
+    expect(useNotificationStore.getState().activeNotifications.map((n) => n.message))
+      .not.toContain('Transcript ready for "Weekly sync"');
   });
 
   it("stays quiet about a failure that was already there on load", () => {

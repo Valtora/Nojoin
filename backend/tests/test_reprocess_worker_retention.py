@@ -27,6 +27,7 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing import embedding
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
+from backend.processing.engines.errors import TranscriptionError
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_DIMENSIONS
 from backend.tests.postgres_setup import fresh_schema
 from backend.tests.test_pipeline_stages import _install_happy_path_modules, _run_task
@@ -369,6 +370,51 @@ def test_failure_boundary_and_retry(
     with Session(engine) as session:
         update_recording_status(session, recording_id)
     assert _view(engine, recording_id)["status"] == RecordingStatus.PROCESSED
+
+
+@pytest.mark.parametrize("canonical", [False, True])
+@pytest.mark.parametrize("gpu_out_of_memory", [False, True])
+def test_failed_transcription_reports_its_error_over_the_retained_publication(
+    worker_database: tuple[Engine, int],
+    monkeypatch: pytest.MonkeyPatch,
+    canonical: bool,
+    gpu_out_of_memory: bool,
+) -> None:
+    engine, recording_id = worker_database
+    asr_stage = pipeline._run_final_asr_stage
+    _configure(monkeypatch, canonical)
+    monkeypatch.setattr(pipeline, "_run_final_asr_stage", asr_stage)
+    attempts: list[str] = []
+
+    def transcribe(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        attempts.append("asr")
+        if gpu_out_of_memory:
+            raise TranscriptionError(
+                "Out of GPU memory", engine="whisper", gpu_out_of_memory=True
+            )
+        raise RuntimeError("engine crashed")
+
+    monkeypatch.setattr(
+        sys.modules["backend.processing.transcribe"], "transcribe_audio", transcribe
+    )
+    before = _view(engine, recording_id)
+    with Session(engine) as session:
+        _run_task(monkeypatch, session, recording_id=recording_id)
+    after = _view(engine, recording_id)
+    # The OOM path frees the card and tries once more before giving up.
+    assert attempts == (["asr", "asr"] if gpu_out_of_memory else ["asr"])
+    assert after.pop("status") == RecordingStatus.ERROR
+    assert after.pop("transcript_status") == "error"
+    before.pop("status")
+    before.pop("transcript_status")
+    # Still marked, so the next Retry retains the old transcript again.
+    assert after == before
+    with Session(engine) as session:
+        message = session.exec(select(Transcript)).one().error_message
+        assert message and ("GPU" in message) is gpu_out_of_memory
+        # A later status update (a notes run ending) keeps it in ERROR, not QUEUED.
+        update_recording_status(session, recording_id)
+    assert _view(engine, recording_id)["status"] == RecordingStatus.ERROR
 
 
 @pytest.mark.parametrize("canonical", [False, True])
