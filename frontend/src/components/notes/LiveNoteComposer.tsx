@@ -68,6 +68,8 @@ const ON_SELECTION_LABEL = "On the chosen text";
 interface LiveNoteComposerProps {
   /** Active and paused captures retain the timeline placement choices. */
   captureActive?: boolean;
+  /** The recording has finished processing, so a new note waits for the next notes run. */
+  finished?: boolean;
   /** Where capture is on the audio timeline now, in ms. */
   readAudioNow: () => number;
   /** Queues a note; returns why it was refused, or null once it is on its way. */
@@ -157,6 +159,7 @@ export default function LiveNoteComposer({
   boxRef,
   onCapture,
   capturing = false,
+  finished = false,
   captureShortcut,
   draftFile = null,
   onDraftFileChange,
@@ -438,7 +441,9 @@ export default function LiveNoteComposer({
         {status.text}
       </p>
       <p className="mt-1 text-xs text-contrast-helper">
-        These notes are fed into note generation and the final notes will label them as user-authored.
+        {finished
+          ? "New notes are included, labelled as yours, the next time meeting notes are generated."
+          : "These notes are fed into note generation and the final notes will label them as user-authored."}
       </p>
     </form>
   );
