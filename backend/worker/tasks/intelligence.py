@@ -432,7 +432,7 @@ def index_transcript_task(self, recording_id: int):
         ).all()
 
         for chunk in existing_chunks:
-            if chunk.meta.get("source") == "transcript":
+            if chunk.meta and chunk.meta.get("source") == "transcript":
                 session.delete(chunk)
 
         # Small segments are grouped, which improves embedding quality.
