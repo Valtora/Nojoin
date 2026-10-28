@@ -82,6 +82,7 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     cancel: vi.fn(),
     recordingId: null,
     pausedRecording,
+    refreshPausedRecording: async () => null,
     runtimeActive: false,
   }),
 }));
@@ -118,7 +119,8 @@ vi.mock("@/lib/store", () => ({
 }));
 
 vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification }),
+  useNotificationStore: (selector?: (state: { addNotification: typeof addNotification }) => unknown) =>
+    selector ? selector({ addNotification }) : { addNotification },
 }));
 
 vi.mock("@/lib/searchUtils", () => ({
@@ -385,7 +387,7 @@ describe("Sidebar", () => {
 
       fireEvent.click(button);
 
-      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+      expect(await screen.findByTestId("import-modal")).toBeInTheDocument();
     });
 
     it("offers a short Import in the phone list header, named in full", async () => {
@@ -396,7 +398,7 @@ describe("Sidebar", () => {
       expect(button).toBeDefined();
       fireEvent.click(button as HTMLElement);
 
-      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+      expect(await screen.findByTestId("import-modal")).toBeInTheDocument();
     });
 
     it.each<ViewType>(["archived", "deleted"])(
@@ -448,7 +450,7 @@ describe("Sidebar", () => {
         await within(emptyState()).findByRole("button", { name: "Import Audio" }),
       );
 
-      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+      expect(await screen.findByTestId("import-modal")).toBeInTheDocument();
     });
 
     it("keeps the empty-list button back until the first fetch lands", async () => {

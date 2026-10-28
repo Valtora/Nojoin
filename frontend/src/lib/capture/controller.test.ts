@@ -2078,23 +2078,31 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
     expect(sendPauseBeacon).toHaveBeenCalledWith("rec-1", 0);
   });
 
-  it("a stop that fails pauses the capture on the server, so it is offered rather than read as live", async () => {
+  it("a failed stop offers recovery only in its owning tab while its capture lock is held", async () => {
     const { controller } = await startCapture();
     apiMocks.finalizeRecordingCapture.mockRejectedValue(unreachable());
     apiMocks.getUnfinishedCaptures.mockResolvedValue([
       { id: "rec-1", name: "Weekly sync", status: "PAUSED", client_status: "PAUSED" },
     ]);
 
-    await expect(controller.stop()).rejects.toThrow("Network Error");
+    // Failed Stop releases media but keeps the owner's uploader and lock so
+    // retrying can flush it. Only that tab may offer the recovery decision.
+    await captureLockMocks.isCaptureHeldInThisBrowser.withImplementation(async () => true, async () => {
+      await expect(controller.stop()).rejects.toThrow("Network Error");
 
-    await vi.waitFor(() =>
-      expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 0 }),
-    );
-    await vi.waitFor(() =>
-      expect(controller.getState().pausedRecording).toMatchObject({ id: "rec-1" }),
-    );
-    expect(controller.getState().status).toBe("paused");
-    expect(controller.getState().runtimeActive).toBe(false);
+      await vi.waitFor(() =>
+        expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 0 }),
+      );
+      expect(controller.getState().pausedRecording).toMatchObject({ id: "rec-1" });
+      expect(controller.getState().status).toBe("paused");
+      expect(controller.getState().runtimeActive).toBe(false);
+      expect(captureLockMocks.release).not.toHaveBeenCalled();
+
+      const watcher = new CaptureController();
+      controllers.push(watcher);
+      await expect(watcher.refreshPausedRecording()).resolves.toBeNull();
+      expect(watcher.getState().pausedRecording).toBeNull();
+    });
   });
 });
 

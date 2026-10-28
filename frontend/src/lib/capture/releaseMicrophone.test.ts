@@ -530,13 +530,16 @@ describe("releasing only the microphone while paused", () => {
     expect(replacement.stop).toHaveBeenCalledOnce();
   });
 
-  it.each(["denied", "missing"] as const)("uses opted-in recovery in a new tab, mic=%s", async (problem) => {
+  it.each(["denied", "missing"] as const)("uses opted-in on-demand recovery in a new tab, mic=%s", async (problem) => {
     environment.mode = "microphone_only";
     const fresh = controller();
     fresh.updateSettings({ releaseMicrophoneOnPause: true, microphoneDeviceId: "mic-a" });
     expect(readCaptureSettings().releaseMicrophoneOnPause).toBe(true);
     expect(readPausedCaptureContext()).toBeNull();
     api.getUnfinishedCaptures.mockResolvedValue([paused]);
+    // A fresh tab has no recovery context, so it requests the decision first.
+    await expect(fresh.refreshPausedRecording()).resolves.toBeNull();
+    await fresh.refreshPausedRecording({ onDemand: true });
     hookCapture.current = fresh;
     const { result } = renderHook(() => usePausedRecordingGuard());
     await waitFor(() => expect(result.current.hasPausedRecording).toBe(true));

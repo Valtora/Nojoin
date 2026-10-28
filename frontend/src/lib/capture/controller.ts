@@ -463,6 +463,9 @@ export class CaptureController {
    */
   private captureActionTicket = 0;
 
+  /** A paused recording explicitly requested here, retained across watcher checks. */
+  private requestedPausedRecordingId: RecordingId | null = null;
+
   private unconfirmedPause: UnconfirmedPause | null = null;
 
   /** The attempt to send the unconfirmed pause under way, so only one runs. */
@@ -546,20 +549,37 @@ export class CaptureController {
   /**
    * Finds the capture the user must decide about before starting anything new.
    *
-   * A paused capture always counts. A capture still marked as uploading counts
-   * once the server judges it stalled: its tab closed without the pause
-   * arriving, because it was signed out or offline at the time (issue #519).
+   * A paused capture is offered automatically only to its runtime or a tab with
+   * matching recovery context. An explicit request can offer it without context,
+   * unless another tab of this browser holds it. A capture still marked as
+   * uploading counts once the server judges it stalled:
+   * its tab closed without the pause arriving, because it was signed out or
+   * offline at the time (issue #519).
    * One this tab runs, or any tab of this browser holds, is live however quiet
    * it looks, since that tab may only be waiting for a sign-in or a connection.
    */
-  refreshPausedRecording = async () => {
+  refreshPausedRecording = async (options: { onDemand?: boolean } = {}) => {
+    if (options.onDemand) {
+      this.captureActionTicket += 1;
+    }
     const ticket = this.captureActionTicket;
     const unfinished = await getUnfinishedCaptures();
     const captures = unfinished.filter(isLiveCaptureInProgress);
-    const decision = await this.selectCaptureNeedingDecision(captures);
+    const decision = await this.selectCaptureNeedingDecision(captures, options.onDemand);
     if (ticket !== this.captureActionTicket) {
       // An action began meanwhile and will look again itself when it ends.
       return decision;
+    }
+    if (options.onDemand) {
+      // A watcher check may also have begun while this explicit request waited.
+      this.captureActionTicket += 1;
+    }
+    if (
+      options.onDemand || decision?.status !== RecordingStatus.PAUSED ||
+      decision.id !== this.requestedPausedRecordingId
+    ) {
+      this.requestedPausedRecordingId =
+        options.onDemand && decision?.status === RecordingStatus.PAUSED ? decision.id : null;
     }
     void this.settleAudioKeptForFinishedCaptures(unfinished);
     this.setState({ pausedRecording: decision });
@@ -573,12 +593,22 @@ export class CaptureController {
 
   private selectCaptureNeedingDecision = async (
     captures: Recording[],
+    onDemand = false,
   ): Promise<Recording | null> => {
     const paused = captures.find(
       (recording) => recording.status === RecordingStatus.PAUSED,
     );
     if (paused) {
-      return paused;
+      // A failed stop keeps this tab's runtime and lock so its uploads can retry.
+      if (this.runtime?.recordingId === paused.id) {
+        return paused;
+      }
+      if (await isCaptureHeldInThisBrowser(paused.id)) {
+        return null;
+      }
+      const localContext = readPausedCaptureContext();
+      return onDemand || this.requestedPausedRecordingId === paused.id || localContext?.recordingId === paused.id
+        ? paused : null;
     }
 
     for (const recording of captures) {
@@ -681,7 +711,7 @@ export class CaptureController {
         error instanceof AxiosError ? error.response?.data?.detail : null;
 
       if (isActiveRecordingConflictDetail(detail)) {
-        await this.refreshPausedRecording().catch(() => {});
+        await this.refreshPausedRecording({ onDemand: true }).catch(() => {});
         this.setState({
           status: "paused",
           recordingId: detail.recording_id,

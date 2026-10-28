@@ -64,7 +64,7 @@ The release setting also works on Chrome for Android and iOS, which record the m
 
 ### Closing Or Reloading The Tab
 
-Closing or reloading the Nojoin tab pauses the recording. Audio the server already has stays there, and audio recorded but not yet uploaded is kept in this browser's storage for the Nojoin site. Only the unfinished last segment, under two seconds, is lost. Next time you open Nojoin, it asks you to resume, stop and process, or discard; resuming or stopping in the same browser uploads the kept audio first.
+Closing or reloading the Nojoin tab pauses the recording. Audio the server already has stays there, and audio recorded but not yet uploaded is kept in this browser's storage for the Nojoin site. Only the unfinished last segment, under two seconds, is lost. Reloading or restoring the capturing tab offers Resume, Stop and process, or Discard when that tab still has its recovery context. Opening a different tab after closing the capture offers that decision when you select **Start Meeting** or **Import Audio** ([Paused Recording Lock](#paused-recording-lock)). Resuming or stopping in the same browser uploads the kept audio first.
 
 The pause can fail to arrive: the tab closed while signed out, or with no connection to the server. The recording then stays in progress with no tab capturing it. Once no audio has reached the server for two minutes, Nojoin offers it in the same dialog as an interrupted recording, in any tab or on any device, without a reload. Until then, **Start Meeting** reports that a recording is still in progress. A recording still open in another tab of the same browser is never offered, however long it has gone without uploading, since that tab may only be waiting for you to sign in again or for the connection to return.
 
@@ -98,7 +98,13 @@ With live speaker labels on, a speaker's label in the live transcript can be ren
 
 ## Paused Recording Lock
 
-Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
+Each user can run one browser capture at a time. A recording paused in another open tab of the same browser stays with that tab: watching tabs show no recovery dialog, even when you select **Start Meeting** or **Import Audio**. **Start Meeting** still refuses a new capture and reports **Handle the existing active recording before starting a new one.** Imports remain available while that tab holds the capture. Resume, stop or discard in the capturing tab.
+
+When you watch from another browser or device, a paused recording also shows no unsolicited recovery dialog. Its recording page still shows that it is paused. Select **Start Meeting** or **Import Audio** to open the recovery decision before starting anything new. The dialog warns that the recording may still be open on another device: finish it there if so.
+
+Automatic paused recovery uses context saved in the capturing tab's `sessionStorage`, not a browser-wide ownership record. After a reload, or restoration of that tab with its context intact, recovery is offered once no tab of this browser holds the capture. An ordinary close followed by a new tab, or another watching tab without that context, needs **Start Meeting** or **Import Audio** to request recovery. Nojoin checks unfinished captures again normally within 30 seconds; interrupted recordings still marked as uploading are offered automatically after the server's stall threshold as described above.
+
+When a paused recording is offered for recovery, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
 
 - **Resume recording** continues the same recording. The browser asks you to share again.
 - **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.

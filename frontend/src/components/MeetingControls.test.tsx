@@ -14,6 +14,7 @@ const captureState = {
   pausedRecording: null as { id: string; status: string } | null,
   runtimeActive: false,
   start: (...args: unknown[]) => start(...args),
+  refreshPausedRecording: vi.fn(async () => null),
   status: "idle",
   support: {
     supported: true,
