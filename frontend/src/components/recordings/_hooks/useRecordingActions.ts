@@ -210,6 +210,7 @@ export function useRecordingActions(): RecordingActions {
     cancel: cancelCapture,
     recordingId: captureRecordingId,
     pausedRecording,
+    attentionRecordings,
     runtimeActive,
   } = useCapture();
 
@@ -313,7 +314,8 @@ export function useRecordingActions(): RecordingActions {
           // recording, or one owned by another tab, a plain discard is correct.
           const ownsLiveCapture =
             runtimeActive && captureRecordingId === id;
-          const ownsPausedCapture = pausedRecording?.id === id;
+          const ownsPausedCapture = pausedRecording?.id === id ||
+            attentionRecordings.some((recording) => recording.id === id);
           if (ownsLiveCapture || ownsPausedCapture) {
             // The controller announces the removal itself once the capture is
             // torn down, so this branch must not announce it a second time.
@@ -472,6 +474,7 @@ export function useRecordingActions(): RecordingActions {
     cancelCapture,
     captureRecordingId,
     pausedRecording,
+    attentionRecordings,
     runtimeActive,
   ]);
 }

@@ -55,11 +55,13 @@ const captureState: {
   cancel: ReturnType<typeof vi.fn>;
   recordingId: string | null;
   pausedRecording: { id: string } | null;
+  attentionRecordings: { id: string }[];
   runtimeActive: boolean;
 } = {
   cancel: vi.fn(),
   recordingId: null,
   pausedRecording: null,
+  attentionRecordings: [],
   runtimeActive: false,
 };
 
@@ -78,6 +80,7 @@ describe("useRecordingActions", () => {
     captureState.cancel.mockReset().mockResolvedValue(undefined);
     captureState.recordingId = null;
     captureState.pausedRecording = null;
+    captureState.attentionRecordings = [];
     captureState.runtimeActive = false;
   });
 
@@ -166,6 +169,18 @@ describe("useRecordingActions", () => {
     });
 
     expect(captureState.cancel).toHaveBeenCalledWith("rec-paused");
+    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
+  });
+
+  it("routes discard through the capture controller for a badged recording that is not offered", async () => {
+    captureState.attentionRecordings = [{ id: "rec-attention" }];
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      await result.current.discard("rec-attention");
+    });
+
+    expect(captureState.cancel).toHaveBeenCalledWith("rec-attention");
     expect(api.discardRecordingCapture).not.toHaveBeenCalled();
   });
 
