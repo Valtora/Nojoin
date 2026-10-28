@@ -152,8 +152,7 @@ async def get_transcript_utterances(
         ],
         live_speaker_names=live_names,
     )
-    # Backfill can write. Keep its publication fence until words and speaker
-    # identities have both been copied into the response.
+    # Backfill can write, under the fence it takes itself; commit what it wrote.
     await db.commit()
     return response
 

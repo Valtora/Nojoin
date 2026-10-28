@@ -12,13 +12,13 @@ import {
   type TimelineNoteCreate,
 } from "@/types";
 
-import RecordingStatusDisplay from "@/test/RecordingTranscriptWithLiveBody";
+import RecordingTranscriptWithLiveBody from "@/test/RecordingTranscriptWithLiveBody";
 import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
 
 // The shared page owns this reader now; keep these tests at that boundary.
-function LiveBody(props: Omit<Parameters<typeof RecordingStatusDisplay>[0], "liveTranscript">) {
+function LiveBody(props: Omit<Parameters<typeof RecordingTranscriptWithLiveBody>[0], "liveTranscript">) {
   const liveTranscript = useLiveTranscript(props.recording);
-  return <RecordingStatusDisplay {...props} liveTranscript={liveTranscript} />;
+  return <RecordingTranscriptWithLiveBody {...props} liveTranscript={liveTranscript} />;
 }
 
 const getTranscriptUtterances = vi.fn();
@@ -126,7 +126,7 @@ const addNote = (text: string) => {
   fireEvent.keyDown(box(), { key: "Enter" });
 };
 
-describe("RecordingStatusDisplay live notes", () => {
+describe("RecordingTranscriptWithLiveBody live notes", () => {
   beforeEach(() => {
     forgetNoteOutboxes();
     monotonicMs = 0;

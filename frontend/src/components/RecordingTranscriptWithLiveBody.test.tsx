@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import RecordingStatusDisplay from "@/test/RecordingTranscriptWithLiveBody";
+import RecordingTranscriptWithLiveBody from "@/test/RecordingTranscriptWithLiveBody";
 import type { LiveTranscript } from "./transcript/_hooks/useLiveTranscript";
 import { ClientStatus, type Recording, RecordingStatus } from "@/types";
 
@@ -33,9 +33,9 @@ const feed: LiveTranscript = {
   speakers: [], hasLoaded: true, liveSpeakerNames: {}, refresh: vi.fn(), applyLiveSpeakerNames: vi.fn(),
 };
 const show = (recording = buildRecording()) =>
-  render(<RecordingStatusDisplay recording={recording} liveTranscript={feed} onSaveMeetingEdgeFocus={vi.fn()} />);
+  render(<RecordingTranscriptWithLiveBody recording={recording} liveTranscript={feed} onSaveMeetingEdgeFocus={vi.fn()} />);
 
-describe("RecordingStatusDisplay shared-shell body", () => {
+describe("RecordingTranscriptWithLiveBody shared-shell body", () => {
   beforeEach(() => {
     getDocuments.mockReset().mockResolvedValue([]);
   });
@@ -64,7 +64,7 @@ describe("RecordingStatusDisplay shared-shell body", () => {
   it("keeps transcript identity across Stop and pipeline updates", () => {
     const view = show(buildRecording({ status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING }));
     const transcript = screen.getByTestId("live-transcript-panel");
-    view.rerender(<RecordingStatusDisplay recording={buildRecording({ status: RecordingStatus.QUEUED })}
+    view.rerender(<RecordingTranscriptWithLiveBody recording={buildRecording({ status: RecordingStatus.QUEUED })}
       liveTranscript={feed} onSaveMeetingEdgeFocus={vi.fn()} />);
     expect(screen.getByTestId("live-transcript-panel")).toBe(transcript);
     expect(transcript).toHaveTextContent("The meeting continues");
@@ -94,7 +94,7 @@ describe("RecordingStatusDisplay shared-shell body", () => {
   });
 
   it("keeps the Meeting Edge panel when disabled and preserves the composer", () => {
-    render(<RecordingStatusDisplay recording={buildRecording()} liveTranscript={feed}
+    render(<RecordingTranscriptWithLiveBody recording={buildRecording()} liveTranscript={feed}
       onSaveMeetingEdgeFocus={vi.fn()} showMeetingEdge={false} />);
     expect(screen.getByTestId("meeting-edge-panel")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "New note" })).toBeInTheDocument();

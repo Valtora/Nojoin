@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import RecordingStatusDisplay from "@/test/RecordingTranscriptWithLiveBody";
+import RecordingTranscriptWithLiveBody from "@/test/RecordingTranscriptWithLiveBody";
 import { useLiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
@@ -41,7 +41,7 @@ const RECORDING: Recording = {
 function LivePage() {
   const liveTranscript = useLiveTranscript(RECORDING);
   const noteEdits = useNoteEdits(RECORDING.id);
-  return <RecordingStatusDisplay recording={RECORDING} liveTranscript={liveTranscript} onSaveMeetingEdgeFocus={vi.fn()}
+  return <RecordingTranscriptWithLiveBody recording={RECORDING} liveTranscript={liveTranscript} onSaveMeetingEdgeFocus={vi.fn()}
     timelineNotes={[]} noteEdits={noteEdits} showMeetingEdge={false} />;
 }
 

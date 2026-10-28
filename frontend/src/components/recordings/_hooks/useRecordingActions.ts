@@ -40,7 +40,7 @@ import {
 
 /**
  * Shared action model for the per-recording actions used by the sidebar list
- * (`Sidebar.tsx`), the live view (`RecordingStatusDisplay.tsx`) and the
+ * (`Sidebar.tsx`), the header's capture slot (`RecordingCaptureSlot.tsx`) and the
  * recording page (`useRecordingDetail.ts`, for the audio export, and
  * `LanguageNoticeBanner.tsx`, for the language notice's answers).
  *
