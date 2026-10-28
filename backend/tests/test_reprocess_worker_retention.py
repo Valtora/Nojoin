@@ -32,6 +32,8 @@ from backend.tests.postgres_setup import fresh_schema
 from backend.tests.test_pipeline_stages import _install_happy_path_modules, _run_task
 from backend.utils.canonical_pipeline import finalize_utterances_from_segments
 from backend.utils.config_manager import config_manager
+from backend.utils.reprocess_publication import mark_reprocess_pending
+from backend.utils.status_manager import update_recording_status
 from backend.worker import tasks
 from backend.worker.tasks import followups, pipeline, speaker_assignment
 
@@ -146,6 +148,16 @@ def worker_database(
         engine.dispose()
 
 
+def mark_for_retry(engine: Engine) -> None:
+    """Mark the retained publication pending again, as Retry's requeue does."""
+    with Session(engine) as session:
+        transcript = session.exec(select(Transcript)).one()
+        mark_reprocess_pending(transcript)
+        transcript.transcript_status = "pending"
+        session.add(transcript)
+        session.commit()
+
+
 def _view(engine: Engine, recording_id: int) -> dict[str, Any]:
     with Session(engine) as reader:
         transcript = reader.exec(
@@ -156,6 +168,11 @@ def _view(engine: Engine, recording_id: int) -> dict[str, Any]:
                 "text": transcript.text,
                 "pending": (transcript.settling_state or {}).get("reprocess_pending")
                 is True,
+                "published": (transcript.settling_state or {}).get(
+                    "reprocess_published"
+                )
+                is True,
+                "transcript_status": transcript.transcript_status,
                 "notes": transcript.notes,
                 "focus": transcript.meeting_edge_focus,
                 "edge": transcript.meeting_edge_payload,
@@ -274,6 +291,7 @@ def test_replacement_is_fresh_and_committed_before_notes(
         "_run_automatic_meeting_intelligence_stage",
         lambda **k: observed.append(_view(engine, recording_id)),
     )
+    monkeypatch.setattr(tasks, "update_recording_status", update_recording_status)
     with Session(engine) as session:
         _run_task(monkeypatch, session, recording_id=recording_id)
     after = _view(engine, recording_id)
@@ -281,6 +299,10 @@ def test_replacement_is_fresh_and_committed_before_notes(
         assert view.pop("status") == RecordingStatus.PROCESSING
         assert view == {key: value for key, value in before.items() if key != "status"}
     assert observed[2]["pending"] is False
+    # Readable while notes run, then an ordinary transcript again.
+    assert observed[2]["published"] is True
+    assert after["published"] is False
+    assert after["status"] == RecordingStatus.PROCESSED
     assert after["text"] == ("" if empty else "Replacement words Changed cluster")
     assert after["canonical"] == (
         [] if empty or not canonical else ["Replacement words", "Changed cluster"]
@@ -334,11 +356,16 @@ def test_failure_boundary_and_retry(
         return
     assert after.pop("status") == RecordingStatus.ERROR
     before.pop("status")
+    # The retained publication is handed back as the completed transcript it was.
+    assert after.pop("pending") is False
+    assert after.pop("transcript_status") == "completed"
+    before.pop("pending")
+    before.pop("transcript_status")
     assert after == before
-    # A reclaimed/retried task has a fresh session and no process-local staging flag.
+    # Regenerating notes on the failed recording ends with this status update.
     with Session(engine) as session:
-        _run_task(monkeypatch, session, recording_id=recording_id)
-    assert not _view(engine, recording_id)["pending"]
+        update_recording_status(session, recording_id)
+    assert _view(engine, recording_id)["status"] == RecordingStatus.PROCESSED
 
 
 @pytest.mark.parametrize("canonical", [False, True])
@@ -376,79 +403,6 @@ def test_vad_empty_replacement_retires_old_authority(
     assert after["focus"] == "Keep my focus"
     with Session(engine) as session:
         assert session.exec(select(Transcript)).one().language_detection is None
-
-
-@pytest.mark.parametrize("canonical", [False, True])
-def test_restart_after_publication_stages_a_fresh_replacement(
-    worker_database: tuple[Engine, int],
-    monkeypatch: pytest.MonkeyPatch,
-    canonical: bool,
-) -> None:
-    engine, recording_id = worker_database
-    _configure(monkeypatch, canonical)
-
-    def interrupted_notes(**kwargs: Any) -> None:
-        transcript, session = kwargs["transcript"], kwargs["session"]
-        transcript.notes_status = "generating"
-        session.add(transcript)
-        session.commit()
-        raise SystemExit("Worker stopped after publication while notes were running")
-
-    monkeypatch.setattr(
-        tasks, "_run_automatic_meeting_intelligence_stage", interrupted_notes
-    )
-    with Session(engine) as session, pytest.raises(SystemExit):
-        _run_task(monkeypatch, session, recording_id=recording_id)
-    published = _view(engine, recording_id)
-    assert published["status"] == RecordingStatus.PROCESSING
-    assert published["pending"] is False
-    with Session(engine) as session:
-        old_ids = {row.id for row in session.exec(select(RecordingSpeaker)).all()}
-
-    segments = [
-        {"start": 4, "end": 5, "text": "Restart replacement", "speaker": "SPEAKER_00"}
-    ]
-    monkeypatch.setattr(
-        pipeline, "combine_and_consolidate_segments", lambda *a, **k: deepcopy(segments)
-    )
-    monkeypatch.setattr(
-        pipeline,
-        "_run_final_asr_stage",
-        lambda *a, **k: {
-            "text": "Restart replacement",
-            "segments": deepcopy(segments),
-        },
-    )
-    assign = speaker_assignment.assign_and_identify_speakers
-
-    def failed_identity(*args: Any, **kwargs: Any) -> None:
-        assign(*args, **kwargs)
-        raise RuntimeError("Replacement failed after resolving identity")
-
-    monkeypatch.setattr(pipeline, "assign_and_identify_speakers", failed_identity)
-    # Simulate startup reclaim/direct redelivery: the new session has no local
-    # memory of the previous attempt's successful publication.
-    with Session(engine) as session:
-        _run_task(monkeypatch, session, recording_id=recording_id)
-    failed = _view(engine, recording_id)
-    assert failed["text"] == published["text"]
-    assert failed["canonical"] == published["canonical"]
-    assert failed["speakers"] == published["speakers"]
-    assert failed["pending"] is True
-    assert failed["status"] == RecordingStatus.ERROR
-
-    monkeypatch.setattr(pipeline, "assign_and_identify_speakers", assign)
-    monkeypatch.setattr(
-        tasks, "_run_automatic_meeting_intelligence_stage", lambda **k: None
-    )
-    with Session(engine) as session:
-        _run_task(monkeypatch, session, recording_id=recording_id)
-    assert _view(engine, recording_id)["text"] == "Restart replacement"
-    assert _view(engine, recording_id)["pending"] is False
-    with Session(engine) as session:
-        assert not old_ids.intersection(
-            row.id for row in session.exec(select(RecordingSpeaker)).all()
-        )
 
 
 def test_embedding_progress_commit_precedes_replacement_cleanup(
@@ -571,8 +525,9 @@ def test_failed_real_learning_and_drift_cleanup_roll_back(
         assert reader.get(GlobalSpeaker, person_id).embedding == [1.0, 0.0]
         assert len(reader.exec(select(RecordingSpeakerDriftRefusal)).all()) == 1
     assert mutations_observed == [True]
-    assert _view(engine, recording_id)["pending"]
+    assert _view(engine, recording_id)["transcript_status"] == "completed"
     monkeypatch.setattr(pipeline, "assign_and_identify_speakers", original)
+    mark_for_retry(engine)
     with Session(engine) as session:
         _run_task(monkeypatch, session, recording_id=recording_id)
     with Session(engine) as reader:

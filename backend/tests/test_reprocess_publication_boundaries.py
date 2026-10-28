@@ -1,6 +1,7 @@
 """Late publication failures preserve the complete previous committed result."""
 
 from collections.abc import Callable
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
@@ -18,7 +19,7 @@ from backend.tests.reprocess_publication_helpers import (
     seed_dependencies,
 )
 from backend.tests.test_pipeline_stages import _run_task
-from backend.tests.test_reprocess_worker_retention import _configure
+from backend.tests.test_reprocess_worker_retention import _configure, mark_for_retry
 from backend.tests.test_reprocess_worker_retention import (
     worker_database as worker_database,
 )
@@ -105,11 +106,12 @@ def test_late_failure_rolls_back_complete_publication_and_real_learning(
     )
     assert learning_changed == [True]
     assert reader_observations == [before]
-    assert publication_snapshot(engine) == before
+    assert _settled(publication_snapshot(engine)) == _settled(before, restored=True)
     with Session(engine) as reader:
         assert reader.get(Recording, recording_id).status == RecordingStatus.ERROR
     # Retry in a new worker session: committed dependencies disappear together
     # with the old words, and the previously rolled-back learning now persists.
+    mark_for_retry(engine)
     with Session(engine) as session:
         _run_task(monkeypatch, session, recording_id=recording_id)
     after = publication_snapshot(engine)
@@ -119,6 +121,17 @@ def test_late_failure_rolls_back_complete_publication_and_real_learning(
         transcript = reader.exec(select(Transcript)).one()
         assert transcript.text == "Replacement words Changed cluster"
         assert (transcript.settling_state or {}).get("reprocess_pending") is not True
+
+
+def _settled(snapshot: Snapshot, *, restored: bool = False) -> Snapshot:
+    """The snapshot without write bookkeeping; `restored` applies the hand-back."""
+    settled = deepcopy(snapshot)
+    for row in settled["transcripts"].values():
+        row.pop("updated_at")
+        row.pop("change_sequence")
+        if restored:
+            row.update(transcript_status="completed", settling_state=None)
+    return settled
 
 
 def _fail_publication_commit(

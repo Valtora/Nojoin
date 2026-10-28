@@ -6,6 +6,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
+from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
 
 from .constants import *
@@ -14,7 +15,6 @@ from .final_asr import (
     transcribe_with_gpu_oom_retry,
 )
 from .final_publication import (
-    begin_transcript_attempt,
     canonical_finalization_required,
     finish_reprocess_projection,
     prepare_reprocess_speakers,
@@ -140,6 +140,7 @@ def _resolve_input_audio(
             temp_files.append(repaired_path)
         else:
             logger.error("Audio repair failed for %s", audio_path)
+            restore_retained_publication(session, recording.id)
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"Invalid audio (Repair failed): {str(e)}"
             session.add(recording)
@@ -551,7 +552,9 @@ def process_recording_task(
         logger.info("Recording %s was cancelled. Aborting task.", recording_id)
         return
 
-    transcript = begin_transcript_attempt(session, recording_id)
+    transcript = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording_id)
+    ).first()
     staged = staged_publication_required(transcript)
     ctx = None
     if not staged:
@@ -695,6 +698,7 @@ def process_recording_task(
                     recording_id,
                     rollback_exc,
                 )
+        restore_retained_publication(session, recording_id)
         recording = session.get(Recording, recording_id)
         if recording:
             recording.status = RecordingStatus.ERROR
@@ -725,6 +729,8 @@ def process_recording_task(
                     recording_id,
                     rollback_exc,
                 )
+        if not interrupted:
+            restore_retained_publication(session, recording_id)
         recording = session.get(Recording, recording_id)
         if recording:
             recording.status = RecordingStatus.ERROR

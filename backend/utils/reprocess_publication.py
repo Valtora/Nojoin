@@ -1,7 +1,7 @@
 """Retain an ordinary publication while its replacement is being computed."""
 
 from sqlalchemy import delete
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
@@ -42,11 +42,36 @@ def mark_reprocess_pending(transcript: Transcript) -> None:
     }
 
 
+def _drop_marker(transcript: Transcript, key: str) -> None:
+    state = dict(transcript.settling_state or {})
+    state.pop(key, None)
+    transcript.settling_state = state or None
+
+
 def clear_reprocess_pending(transcript: Transcript) -> None:
     """Retire the marker in the same transaction that publishes its replacement."""
-    state = dict(transcript.settling_state or {})
-    state.pop("reprocess_pending", None)
-    transcript.settling_state = state or None
+    _drop_marker(transcript, "reprocess_pending")
+
+
+def clear_reprocess_published(transcript: Transcript) -> None:
+    """Retire the post-publication marker once the run has finished."""
+    _drop_marker(transcript, "reprocess_published")
+
+
+def restore_retained_publication(session: Session, recording_id: int) -> None:
+    """Hand a failed replacement's recording back the publication it retained.
+
+    Requeue set the retained transcript to pending. Left so, notes regenerated
+    on the failed recording would move it to QUEUED with no task to finish it.
+    Requeue only retains a completed transcript, so that is what it goes back to.
+    """
+    transcript = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording_id)
+    ).first()
+    if reprocess_publication_pending(transcript):
+        clear_reprocess_pending(transcript)
+        transcript.transcript_status = "completed"
+        session.add(transcript)
 
 
 def clear_previous_reprocess_state(session: Session, recording_id: int) -> None:

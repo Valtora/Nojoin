@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
+from backend.utils.reprocess_publication import clear_reprocess_published
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,8 @@ def update_recording_status(session: Session, recording_id: int):
             new_status = RecordingStatus.QUEUED
 
     if new_status != recording.status:
+        if new_status in {RecordingStatus.PROCESSED, RecordingStatus.ERROR}:
+            clear_reprocess_published(transcript)
         logger.info(
             f"Transitioning Recording {recording_id} from {recording.status} to {new_status}"
         )

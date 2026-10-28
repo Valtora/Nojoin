@@ -23,6 +23,7 @@ from backend.processing.vad_muting import (
 from backend.utils.reprocess_publication import (
     clear_previous_reprocess_state,
     clear_reprocess_pending,
+    clear_reprocess_published,
     reprocess_publication_pending,
 )
 
@@ -73,6 +74,7 @@ def _complete_without_speech(session, recording: Recording) -> None:
     if reprocess_publication_pending(transcript):
         clear_previous_reprocess_state(session, recording.id)
         clear_reprocess_pending(transcript)
+        clear_reprocess_published(transcript)
         transcript.language_detection = None
 
     if (getattr(transcript, "settling_state", None) or {}).get("settled") is True:

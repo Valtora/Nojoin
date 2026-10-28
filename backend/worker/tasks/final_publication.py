@@ -11,46 +11,11 @@ from backend.utils.language_notice import language_detection_record
 from backend.utils.reprocess_publication import (
     clear_previous_reprocess_state,
     clear_reprocess_pending,
-    mark_reprocess_pending,
     reprocess_publication_pending,
 )
 
 if TYPE_CHECKING:
     from .pipeline import _PipelineRunContext
-
-
-def _completed_reprocess_publication(transcript: Transcript | None) -> bool:
-    state = getattr(transcript, "settling_state", None) or {}
-    return (
-        transcript is not None
-        and state.get("reprocess_published") is True
-        and state.get("settled") is not True
-        and transcript.transcript_status == "completed"
-    )
-
-
-def begin_transcript_attempt(session: Any, recording_id: int) -> Transcript | None:
-    """Restage a redelivered attempt whose transcript already published before notes.
-
-    A worker can stop after publication while Recording is still PROCESSING.
-    Startup reclaim and direct task redelivery must retain that completed result
-    while their new candidate resolves fresh identity, just like manual requeue.
-    """
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording_id)
-    ).first()
-    if not _completed_reprocess_publication(transcript):
-        return transcript
-    from backend.utils.canonical_pipeline.constants import _load_transcript
-
-    transcript = _load_transcript(session, recording_id, lock=True)
-    if transcript is not None and _completed_reprocess_publication(transcript):
-        mark_reprocess_pending(transcript)
-        transcript.transcript_status = "pending"
-        session.add(transcript)
-    # Release the publication fence before long-running inference begins.
-    session.commit()
-    return transcript
 
 
 def staged_publication_required(transcript: Transcript | None) -> bool:
