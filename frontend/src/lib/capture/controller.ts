@@ -475,7 +475,8 @@ export class CaptureController {
   /** The owed pause's next attempt, held back until its delay has passed. */
   private owedPauseRetryTimerId: ReturnType<typeof setTimeout> | null = null;
 
-  private microphoneResumePending = false;
+  /** A live Resume in flight. A second request shares its outcome. */
+  private pendingResume: Promise<StartCaptureResult> | null = null;
 
   constructor() {
     const pausedContext = readPausedCaptureContext();
@@ -870,8 +871,8 @@ export class CaptureController {
     if (!targetRecordingId) {
       throw new Error("No paused recording is available to resume.");
     }
-    if (this.microphoneResumePending) {
-      throw new Error("The recording is still resuming. Wait for this Resume attempt to finish.");
+    if (this.pendingResume) {
+      return this.pendingResume;
     }
     this.captureActionTicket += 1;
     const ticket = this.captureActionTicket;
@@ -885,7 +886,8 @@ export class CaptureController {
       !this.runtime.mediaReleased &&
       this.state.status === "paused"
     ) {
-      return this.resumeRuntime(this.runtime, targetRecordingId, ticket);
+      this.pendingResume = this.resumeRuntime(this.runtime, targetRecordingId, ticket);
+      return this.pendingResume;
     }
 
     const support = detectCaptureSupport();
@@ -1003,7 +1005,6 @@ export class CaptureController {
       this.state.status === "paused" && ticket === this.captureActionTicket;
     let usedDefault = false;
     let response;
-    this.microphoneResumePending = true;
     try {
       await this.confirmUnconfirmedPause();
       if (released) {
@@ -1026,11 +1027,14 @@ export class CaptureController {
     } catch (error: unknown) {
       if (isCurrent()) {
         if (released) releasePausedMicrophone(runtime, true);
-        this.setState({ status: "paused", error: formatCaptureError(error) });
+        // A capture that ended elsewhere reports its own message below.
+        if (!isEndedForThisTab(error)) {
+          this.setState({ status: "paused", error: formatCaptureError(error) });
+        }
       }
       throw await this.ifEndedElsewhere(error, runtime);
     } finally {
-      this.microphoneResumePending = false;
+      this.pendingResume = null;
     }
     this.startElapsedTimer(this.state.elapsedSeconds);
     clearPausedCaptureContext();

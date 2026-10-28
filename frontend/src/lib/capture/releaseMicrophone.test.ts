@@ -398,17 +398,19 @@ describe("releasing only the microphone while paused", () => {
     expect(recorder.resume).toHaveBeenCalledOnce();
   });
 
-  it("makes only one microphone request for concurrent Resume clicks", async () => {
+  it("shares one Resume between concurrent clicks, with one microphone request and no error", async () => {
     const { capture, recorder } = await start();
     await capture.pause();
     const grant = deferred<MediaStream>();
     getUserMedia.mockReturnValueOnce(grant.promise);
     const first = capture.resume();
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
-    const second = capture.resume().catch((error: unknown) => error);
+    const second = capture.resume();
     grant.resolve(mediaStream(replacement));
-    await Promise.all([first, second]);
+    await expect(first).resolves.toMatchObject({ recordingId: "rec-1", resumed: true });
+    await expect(second).resolves.toMatchObject({ recordingId: "rec-1", resumed: true });
     expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(api.resumeRecordingCapture).toHaveBeenCalledOnce();
     expect(recorder.resume).toHaveBeenCalledOnce();
     expect(capture.getState().status).toBe("recording");
   });
