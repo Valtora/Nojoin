@@ -6,6 +6,12 @@ import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import type { TranscriptSegment } from "@/types";
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 
+/**
+ * The least shared time, in seconds, that counts as crosstalk. Ordinary
+ * handovers between speakers overlap by tenths of a second.
+ */
+export const MIN_CROSSTALK_OVERLAP_S = 0.25;
+
 /** Actual simultaneous lines, indexed once when the transcript changes. */
 export function indexOverlaps(segments: readonly TranscriptSegment[]): Map<TranscriptSegment, TranscriptSegment[]> {
   const result = new Map<TranscriptSegment, TranscriptSegment[]>();
@@ -14,7 +20,8 @@ export function indexOverlaps(segments: readonly TranscriptSegment[]): Map<Trans
     if (segment.end <= segment.start) continue;
     active = active.filter((other) => other.end > segment.start);
     for (const other of active) {
-      if (other.speaker === segment.speaker || segment.end <= other.start) continue;
+      const shared = Math.min(segment.end, other.end) - segment.start;
+      if (other.speaker === segment.speaker || shared < MIN_CROSSTALK_OVERLAP_S) continue;
       result.set(segment, [...(result.get(segment) ?? []), other]);
       result.set(other, [...(result.get(other) ?? []), segment]);
     }
