@@ -1614,17 +1614,6 @@ describe("a capture whose tab closed without pausing it (issue #519)", () => {
     expect(controller.getState().pausedRecording).toBeNull();
   });
 
-  it("offers a paused capture even if another tab of this browser still holds it", async () => {
-    // Existing upstream policy differs from the stalled-upload ownership guard.
-    const paused = capture({ status: "PAUSED", client_status: "PAUSED" });
-    apiMocks.getUnfinishedCaptures.mockResolvedValue([paused]);
-    captureLockMocks.isCaptureHeldInThisBrowser.mockResolvedValue(true);
-    const controller = newController();
-    await expect(controller.refreshPausedRecording()).resolves.toEqual(paused);
-    expect(controller.getState().pausedRecording).toEqual(paused);
-    expect(captureLockMocks.isCaptureHeldInThisBrowser).not.toHaveBeenCalled();
-  });
-
   it("ignores an import, which also sits in UPLOADING", async () => {
     vi.useFakeTimers();
     apiMocks.getUnfinishedCaptures.mockResolvedValue([

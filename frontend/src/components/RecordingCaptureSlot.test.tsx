@@ -12,6 +12,7 @@ const stop = vi.fn();
 const capture = {
   controller: { getState: () => ({ error: null }) },
   recordingId: null as string | null,
+  ownedRecordingId: null as string | null,
   status: "idle",
   runtimeActive: false,
   elapsedSeconds: 12,
@@ -52,12 +53,12 @@ const recording = (overrides: Partial<Recording> = {}): Recording => ({
 });
 
 const ownCapture = (status = "recording") => Object.assign(capture, {
-  recordingId: "rec-1", runtimeActive: true, status,
+  recordingId: "rec-1", ownedRecordingId: "rec-1", runtimeActive: true, status,
 });
 
 describe("RecordingCaptureSlot", () => {
   beforeEach(() => {
-    Object.assign(capture, { recordingId: null, status: "idle", runtimeActive: false,
+    Object.assign(capture, { recordingId: null, ownedRecordingId: null, status: "idle", runtimeActive: false,
       coverageWarning: null, stopStage: null, uploadQueue: { segments: 0, seconds: 0 } });
     discard.mockReset().mockResolvedValue(undefined);
     cancel.mockReset();
