@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Users } from "lucide-react";
-import type { GlobalSpeaker, RecordingSpeaker, TranscriptSegment } from "@/types";
+import type { GlobalSpeaker, RecordingSpeaker } from "@/types";
 import { liveSpeakerDisplayName, segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
@@ -15,7 +15,6 @@ export type RenameLiveSpeaker = (label: string, name: string, createPerson?: boo
 interface Props {
   labels: string[];
   names: Record<string, string>;
-  segments: TranscriptSegment[];
   speakers: RecordingSpeaker[];
   globalSpeakers: GlobalSpeaker[];
   speakerColors: Record<string, string>;
@@ -24,16 +23,13 @@ interface Props {
 }
 
 /** Live identities are source labels, never invented recording-speaker records. */
-export default function LiveSpeakerRows({ labels, names, segments, speakers, globalSpeakers,
+export default function LiveSpeakerRows({ labels, names, speakers, globalSpeakers,
   speakerColors, onRename, readOnly }: Props) {
   const highlight = useSpeakerTurnHighlight();
   const [picker, setPicker] = useState<{ label: string; anchor: HTMLElement } | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // Naming waits for a locked line, as the transcript's line actions do.
-  const anchorFor = (label: string) => segments.findLast((segment) =>
-    segment.speaker === label && segment.locked === true);
-  const canName = (label: string) => !readOnly && !!onRename &&
-    liveSpeakerDisplayName(label) !== null && !!anchorFor(label);
+  // As the transcript's live header chip: no line needs to have locked.
+  const canName = (label: string) => !readOnly && !!onRename && liveSpeakerDisplayName(label) !== null;
   const displayName = (label: string) => segmentSpeakerDisplayName(names, label);
   const assign = async (label: string, name: string, createPerson: boolean) => {
     if (submitting || !canName(label) || !onRename) return false;
@@ -55,9 +51,7 @@ export default function LiveSpeakerRows({ labels, names, segments, speakers, glo
       </ButtonBase>
       <div className="mt-2 flex flex-wrap gap-2">
         <ButtonBase type="button" aria-label={`Change identity for ${name}`} disabled={disabled}
-          onClick={(event) => {
-            if (anchorFor(label)) setPicker({ label, anchor: event.currentTarget });
-          }}
+          onClick={(event) => setPicker({ label, anchor: event.currentTarget })}
           className={`inline-flex items-center gap-1 rounded px-2 text-xs text-action-text hover:bg-action-tint disabled:opacity-50 ${TOUCH_TARGET_HEIGHT}`}>
           <Users className="h-3.5 w-3.5" aria-hidden="true" /> Change identity
         </ButtonBase>
@@ -70,7 +64,7 @@ export default function LiveSpeakerRows({ labels, names, segments, speakers, glo
           </ButtonBase>}
       </div>
       {!canName(label) && <p className="mt-1 text-xs text-contrast-helper">
-        {readOnly || !onRename ? "Speaker naming is unavailable in this state." : "Waiting for a locked transcript line."}
+        Speaker naming is unavailable in this state.
       </p>}
     </SurfaceBase>;
   })}

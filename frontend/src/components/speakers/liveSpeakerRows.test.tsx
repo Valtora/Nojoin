@@ -35,9 +35,8 @@ describe("live speaker rows", () => {
     expect(mocks.promote).not.toHaveBeenCalled();
   });
 
-  it.each(["unlocked", "closed", "read-only"])("keeps %s live labels visible with mutations unavailable", (kind) => {
+  it.each(["closed", "read-only"])("keeps %s live labels visible with mutations unavailable", (kind) => {
     const options = props();
-    if (kind === "unlocked") options.segments = [{ ...anchor, locked: false }];
     render(<SpeakerPanel {...options} onRenameLiveSpeaker={kind === "closed" ? undefined : mocks.rename}
       disableEditing={kind === "read-only"} />);
     expect(screen.getByRole("button", { name: "Alex" })).toBeInTheDocument();
@@ -47,7 +46,7 @@ describe("live speaker rows", () => {
     expect(mocks.rename).not.toHaveBeenCalled();
   });
 
-  it("names ordinary locked live labels and adds them to People without enabling word settling", async () => {
+  it("names ordinary live labels and adds them to People without enabling word settling", async () => {
     const ordinary = { ...anchor, settling_required: false };
     render(<SpeakerPanel {...props()} segments={[ordinary]} globalSpeakers={[person(9, "Robin")]} />);
     fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));

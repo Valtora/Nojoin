@@ -185,7 +185,7 @@ export default function SpeakerPanel({
       className="@container flex h-full min-w-0 flex-col bg-surface-inset"
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
-        <LiveSpeakerRows labels={liveLabels} names={liveSpeakerNames} segments={segments} speakers={speakers}
+        <LiveSpeakerRows labels={liveLabels} names={liveSpeakerNames} speakers={speakers}
           globalSpeakers={globalSpeakers} speakerColors={speakerColors} onRename={onRenameLiveSpeaker}
           readOnly={disableEditing} />
         {pendingEntries.length >= 2 && !disableEditing && (
