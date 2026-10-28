@@ -10,6 +10,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
+from backend.processing.live_diarization import step as live_diarization_step
 from backend.tests.canonical_engine import _recording, _transcript
 from backend.tests.canonical_engine import (
     publication_engine as publication_engine,
@@ -92,6 +93,12 @@ def live_labels(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch)
         config_manager,
         "get",
         lambda key, default=None: labels if key == "live_speaker_labels" else default,
+    )
+    # ``auto`` runs labels only on a CUDA lane; pin it so CPU-only CI matches.
+    monkeypatch.setattr(
+        live_diarization_step,
+        "live_speaker_labels_device",
+        lambda: "cuda" if labels == "auto" else None,
     )
     return labels
 
