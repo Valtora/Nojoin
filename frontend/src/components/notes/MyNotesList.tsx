@@ -75,10 +75,9 @@ export default function MyNotesList({
 
   // A deleted note's row is going, so focus moves to the list.
   const deleteNote = useCallback(
-    async (note: EditableNote, answer?: Parameters<NoteEdits["remove"]>[1]) => {
-      const editor = document.activeElement?.closest('[data-testid="note-on-selection"]');
-      const refusal = await remove(note, answer);
-      if (refusal === null && editor?.isConnected) listRef.current?.focus();
+    async (note: EditableNote) => {
+      const refusal = await remove(note);
+      if (refusal === null) listRef.current?.focus();
       return refusal;
     },
     [remove],
@@ -143,7 +142,11 @@ export default function MyNotesList({
               aria-label={`Edit note ${name}`}
               title="Edit or delete this note"
               icon={<Pencil aria-hidden="true" />}
-              onClick={(event) => setEditing({ noteId: note.id, anchor: event.currentTarget })}
+              // An editor still open holds unsaved text: an unchanged one closed on the press.
+              onClick={(event) => {
+                const next = { noteId: note.id, anchor: event.currentTarget };
+                setEditing((open) => open ?? next);
+              }}
               className={`-my-1.5 ${TOUCH_TARGET_SQUARE}`}
             />
           </div>
@@ -194,7 +197,6 @@ export default function MyNotesList({
         editing={editing}
         notes={notes}
         onEditNote={edit}
-        noteDrafts={noteEdits.drafts}
         onDeleteNote={deleteNote}
         onClose={() => setEditing(null)}
       />

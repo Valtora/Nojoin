@@ -112,7 +112,6 @@ interface TranscriptViewProps {
   onEditNote?: NoteEditHandlers["onEditNote"];
   /** Deletes a saved note: the caller moves focus somewhere that stays. */
   onDeleteNote?: NoteEditHandlers["onDeleteNote"];
-  noteDrafts?: NoteEditHandlers["noteDrafts"];
   /** Moves a saved point note to a line's start; without it, notes stay put. */
   onMoveNote?: MoveNoteHandler;
 }
@@ -166,7 +165,6 @@ export default function TranscriptView({
   onDiscardNote,
   onEditNote,
   onDeleteNote,
-  noteDrafts,
   onMoveNote,
 }: TranscriptViewProps) {
   // Find & Replace toolbar visibility (search match state lives in the hook)
@@ -349,8 +347,7 @@ export default function TranscriptView({
   // The editor shows only while its note is a saved one in the list.
   const shownEditor =
     editingNote !== null &&
-    ((timelineNotes ?? []).some((note) => note.id === editingNote.noteId && isSavedNote(note)) ||
-      noteDrafts?.getSnapshot().has(editingNote.noteId))
+    (timelineNotes ?? []).some((note) => note.id === editingNote.noteId && isSavedNote(note))
       ? editingNote
       : null;
   // An editor still open holds typed text or a write, so another note's marks
@@ -660,7 +657,6 @@ export default function TranscriptView({
           editing={shownEditor}
           notes={timelineNotes}
           onEditNote={onEditNote}
-          noteDrafts={noteDrafts}
           onDeleteNote={onDeleteNote}
           onClose={() => setEditingNote(null)}
         />

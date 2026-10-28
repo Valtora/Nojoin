@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { deleteTimelineNote, updateTimelineNote } from "@/lib/api";
 import { getErrorDetail, getErrorStatus, isRecord } from "@/lib/errors";
@@ -8,17 +8,12 @@ import type { RecordingId, TimelineNote, TranscriptSourceReference } from "@/typ
 
 import { NOTE_BODY_MAX_CHARS, noteLength, stripNote } from "./headNoteSync";
 import { NOTE_TOO_LONG_ERROR, noteSnippet } from "./noteOutbox";
-import { useNoteOutbox } from "./useNoteOutbox";
-import { NoteEditDrafts, type NoteEditAnswer } from "./noteEditDrafts";
 
 /** What an edit reads of a note: a saved note has a revision. */
 export interface EditableNote {
   id: string;
   body: string;
   revision?: number;
-  /** Kept with a draft so its editor remains meaningful if a listing removes it. */
-  kind?: TimelineNote["kind"];
-  quoted_text?: string | null;
   /** A point note's moment, which a move changes. */
   anchor_ms?: number | null;
   start_ms?: number | null;
@@ -61,9 +56,7 @@ const otherFailure = (error: unknown): string => {
 };
 
 /**
- * Edits and deletes of a recording's saved notes in every recording state.
- * Body edits appear through the recording's shared outbox while awaiting an
- * answer. A refusal removes that preview and keeps the editor's draft open.
+ * Edits and deletes of a recording's saved notes from the finished view.
  *
  * Each write names the revision it was made against, so another device's
  * change since is a 409 rather than overwritten; the 409 carries the note as
@@ -85,45 +78,19 @@ const otherFailure = (error: unknown): string => {
  * place the note never reached.
  */
 export function useNoteEdits(recordingId: RecordingId | null) {
-  const { outbox, snapshot } = useNoteOutbox(recordingId);
-  const [heldByRecording, setHeld] = useState<ReadonlyMap<RecordingId | null, ReadonlyMap<string, TimelineNote | null>>>(() => new Map());
-  const held = useMemo(() => heldByRecording.get(recordingId) ?? new Map<string, TimelineNote | null>(), [heldByRecording, recordingId]);
+  const [held, setHeld] = useState<ReadonlyMap<string, TimelineNote | null>>(() => new Map());
   const hold = useCallback(
-    (id: string, note: TimelineNote | null) => setHeld((previous) => {
-      const notes = previous.get(recordingId) ?? new Map<string, TimelineNote | null>();
-      const last = notes.get(id);
-      if (last && note && last.revision > note.revision) return previous;
-      return new Map(previous).set(recordingId, new Map(notes).set(id, note));
-    }),
-    [recordingId],
+    (id: string, note: TimelineNote | null) => setHeld((previous) => new Map(previous).set(id, note)),
+    [],
   );
 
-  const [movingByRecording, setMoves] = useState<ReadonlyMap<RecordingId | null, ReadonlyMap<string, Move>>>(() => new Map());
-  const moving = useMemo(() => movingByRecording.get(recordingId) ?? new Map<string, Move>(), [movingByRecording, recordingId]);
-  const setMoving = useCallback((change: (previous: ReadonlyMap<string, Move>) => ReadonlyMap<string, Move>) => {
-    setMoves((previous) => new Map(previous).set(recordingId, change(previous.get(recordingId) ?? new Map())));
-  }, [recordingId]);
-  const owners = useRef(new Map<RecordingId | null, {
-    drafts: NoteEditDrafts; moveQueue: Map<string, Promise<unknown>>; answeredRevision: Map<string, number>;
-    moveSeq: { current: number }; refusedMove: Map<string, { through: number; refusal: string }>;
-  }>());
-  const owner = useMemo(() => {
-    let known = owners.current.get(recordingId);
-    if (!known) {
-      known = { drafts: new NoteEditDrafts(), moveQueue: new Map(), answeredRevision: new Map(),
-        moveSeq: { current: 0 }, refusedMove: new Map() };
-      owners.current.set(recordingId, known);
-    }
-    return known;
-  }, [recordingId]);
-  useEffect(() => {
-    const retained = owners.current;
-    for (const value of retained.values()) value.drafts.resume();
-    return () => { for (const value of retained.values()) value.drafts.dispose(); };
-  }, []);
+  const [moving, setMoving] = useState<ReadonlyMap<string, Move>>(() => new Map());
   // Per note: the last move sent, and the revision the last answer carried.
-  const { moveQueue, answeredRevision, moveSeq, refusedMove } = owner;
+  const moveQueue = useRef(new Map<string, Promise<unknown>>());
+  const answeredRevision = useRef(new Map<string, number>());
+  const moveSeq = useRef(0);
   // Per note: the last refusal, and the last move asked for when it came.
+  const refusedMove = useRef(new Map<string, { through: number; refusal: string }>());
 
   const known = useCallback(
     <N extends EditableNote>(note: N): N[] => {
@@ -141,50 +108,42 @@ export function useNoteEdits(recordingId: RecordingId | null) {
     <N extends EditableNote>(notes: readonly N[]): N[] =>
       notes.flatMap(known).map((note) => {
         const move = moving.get(note.id);
-        const body = snapshot.bodyEdits?.get(note.id) ?? note.body;
-        if (!move) return body === note.body ? note : { ...note, body };
+        if (!move) return note;
         const delta = move.anchorMs - (note.anchor_ms ?? move.anchorMs);
-        return { ...note, body, anchor_ms: move.anchorMs,
+        return { ...note, anchor_ms: move.anchorMs,
           ...(note.anchor_ms != null && note.start_ms != null && note.end_ms != null ? {
             start_ms: note.start_ms + delta, end_ms: note.end_ms + delta,
           } : {}) };
       }),
-    [known, moving, snapshot.bodyEdits],
+    [known, moving],
   );
 
   const edit = useCallback(
-    async (note: EditableNote, text: string, answer?: (result: NoteEditAnswer) => void): Promise<NoteEditRefusal> => {
+    async (note: EditableNote, text: string): Promise<NoteEditRefusal> => {
       const body = stripNote(text);
-      if (note.revision === undefined || recordingId === null || outbox === null) return NOT_SAVED_YET;
+      if (note.revision === undefined || recordingId === null) return NOT_SAVED_YET;
       if (noteLength(body) > NOTE_BODY_MAX_CHARS) return NOTE_TOO_LONG_ERROR;
-      // Explicit Save asks the server even for the opening text: a previous
-      // unanswered write may have landed with a different body.
-      const finish = outbox.beginBodyEdit(note.id, body);
+      if (body === note.body) return null;
       try {
-        const saved = await updateTimelineNote(recordingId, note.id, {
+        hold(note.id, await updateTimelineNote(recordingId, note.id, {
           expected_revision: note.revision,
           body,
-        });
-        hold(note.id, saved);
-        answer?.({ note: saved, conflict: false });
+        }));
         return null;
       } catch (error) {
         const current = conflictNote(error);
         if (current) {
           hold(note.id, current);
-          answer?.({ note: current, conflict: true });
           return current.body === body ? null : changedElsewhere(current, "Save again to keep yours.");
         }
         return isGone(error) ? DELETED_ELSEWHERE : otherFailure(error);
-      } finally {
-        finish();
       }
     },
-    [recordingId, hold, outbox],
+    [recordingId, hold],
   );
 
   const remove = useCallback(
-    async (note: EditableNote, answer?: (result: NoteEditAnswer) => void): Promise<NoteEditRefusal> => {
+    async (note: EditableNote): Promise<NoteEditRefusal> => {
       if (note.revision === undefined || recordingId === null) return NOT_SAVED_YET;
       try {
         await deleteTimelineNote(recordingId, note.id, { expectedRevision: note.revision });
@@ -192,7 +151,6 @@ export function useNoteEdits(recordingId: RecordingId | null) {
         const current = conflictNote(error);
         if (current) {
           hold(note.id, current);
-          answer?.({ note: current, conflict: true });
           return changedElsewhere(current, "Delete again to remove it anyway.");
         }
         // Gone already: deleted elsewhere, or by this delete's lost answer.
@@ -211,18 +169,18 @@ export function useNoteEdits(recordingId: RecordingId | null) {
       const seq = ++moveSeq.current;
       setMoving((previous) => new Map(previous).set(note.id, { anchorMs, seq }));
       const send = async (): Promise<NoteEditRefusal> => {
-        const expected = Math.max(revision, answeredRevision.get(note.id) ?? 0);
+        const expected = Math.max(revision, answeredRevision.current.get(note.id) ?? 0);
         const settle = (answer: TimelineNote) => {
-          answeredRevision.set(note.id, answer.revision);
+          answeredRevision.current.set(note.id, answer.revision);
           hold(note.id, answer);
         };
         const refuse = (refusal: string) => {
-          refusedMove.set(note.id, { through: moveSeq.current, refusal });
+          refusedMove.current.set(note.id, { through: moveSeq.current, refusal });
           return refusal;
         };
         try {
           // Asked for before an earlier move was refused: it goes with that one.
-          const refused = refusedMove.get(note.id);
+          const refused = refusedMove.current.get(note.id);
           if (refused && seq <= refused.through) return refused.refusal;
           settle(await updateTimelineNote(recordingId, note.id, {
             expected_revision: expected,
@@ -246,14 +204,14 @@ export function useNoteEdits(recordingId: RecordingId | null) {
           });
         }
       };
-      const sent = (moveQueue.get(note.id) ?? Promise.resolve()).then(send);
-      moveQueue.set(note.id, sent);
+      const sent = (moveQueue.current.get(note.id) ?? Promise.resolve()).then(send);
+      moveQueue.current.set(note.id, sent);
       return sent;
     },
-    [recordingId, hold, setMoving, answeredRevision, moveQueue, moveSeq, refusedMove],
+    [recordingId, hold],
   );
 
-  return { apply, edit, remove, move, drafts: owner.drafts };
+  return { apply, edit, remove, move };
 }
 
 /** A recording's note edits, shared by the views that show its notes. */

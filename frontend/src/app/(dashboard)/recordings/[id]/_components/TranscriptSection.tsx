@@ -228,10 +228,9 @@ export default function TranscriptSection({
     [outbox, focusSection, liveNoteBoxRef],
   );
   const deleteNote = useCallback(
-    async (note: EditableNote, answer?: Parameters<NoteEdits["remove"]>[1]) => {
-      const editor = document.activeElement?.closest('[data-testid="note-on-selection"]');
-      const refusal = await removeNote(note, answer);
-      if (refusal === null && editor?.isConnected) focusSection();
+    async (note: EditableNote) => {
+      const refusal = await removeNote(note);
+      if (refusal === null) focusSection();
       return refusal;
     },
     [removeNote, focusSection],
@@ -321,7 +320,6 @@ export default function TranscriptSection({
             onRetryNote={outbox.retry}
             onDiscardNote={discardNote}
             onEditNote={editNote}
-            noteDrafts={noteEdits.drafts}
             onDeleteNote={deleteNote}
             onMoveNote={!liveTranscript || transcriptSegments.some((segment) => segment.settling_required) ? moveNote : undefined}
           />

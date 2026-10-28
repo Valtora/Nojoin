@@ -164,136 +164,56 @@ afterEach(() => {
 });
 
 describe("My notes", () => {
-  it.each([HEAD, POINT, SELECTION, TAIL].flatMap((saved) =>
-    [false, true].flatMap((live) => ["list", "transcript"].map((origin) => ({ saved, live, origin }))),
-  ))("retains a $saved.kind dirty base and conflict across origins, live=$live from=$origin", async ({ saved, live, origin }) => {
-    const view = render(<Page notes={[saved]} live={live} />);
-    const openTranscript = () => {
-      fireEvent.click(within(noteLine(saved.id)!).getByRole("button", { name: /^Edit note/ }));
-      return screen.getByRole("dialog");
+  it("asks before the page is left while an edit is unsaved, and not once it is saved", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<><a href="/people">People</a><Page notes={[HEAD]} /></>);
+    const leave = () => {
+      const unload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(unload);
+      return unload.defaultPrevented;
     };
-    let editor = origin === "list" ? openFromList(saved.id) : openTranscript();
-    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Retained across origins" } });
-    const current = { ...saved, body: "A newer server revision", revision: 5 };
-    view.rerender(<Page notes={[current]} live={live} showList={origin !== "list"} showTranscript={origin !== "transcript"} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    editor = origin === "list" ? openTranscript() : openFromList(saved.id);
-    expect(within(editor).getByRole("textbox")).toHaveValue("Retained across origins");
-    updateTimelineNote.mockRejectedValueOnce(conflict(current));
-    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    await within(editor).findByRole("alert");
-    expect(updateTimelineNote).toHaveBeenLastCalledWith(RECORDING.id, saved.id,
-      { body: "Retained across origins", expected_revision: saved.revision });
-    view.rerender(<Page notes={[current]} live={live} showList={false} showTranscript={false} />);
-    view.rerender(<Page notes={[{ ...current, revision: 8 }]} live={live} />);
-    editor = origin === "list" ? openFromList(saved.id) : openTranscript();
-    expect(within(editor).getByRole("alert")).toHaveTextContent("Save again to keep yours");
-    expect(within(editor).getByRole("textbox")).toHaveValue("Retained across origins");
-    updateTimelineNote.mockResolvedValueOnce({ ...current, body: "Retained across origins", revision: 9 });
-    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    // The deliberate retry acknowledges revision 5, never unseen revision 8.
-    expect(updateTimelineNote).toHaveBeenLastCalledWith(RECORDING.id, saved.id,
-      { body: "Retained across origins", expected_revision: 5 });
-  });
+    const editor = openFromList(HEAD.id);
+    expect(leave()).toBe(false);
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Not saved yet" } });
+    expect(leave()).toBe(true);
+    // An in-app link asks too, and staying keeps the editor and its text.
+    expect(fireEvent.click(screen.getByRole("link", { name: "People" }))).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(within(editor).getByRole("textbox")).toHaveValue("Not saved yet");
 
-  it("keeps text typed during a pending save dirty against its confirmed revision", async () => {
     let answer!: (note: TimelineNote) => void;
     updateTimelineNote.mockReturnValueOnce(new Promise<TimelineNote>((resolve) => { answer = resolve; }));
-    render(<Page notes={[HEAD]} />);
-    const editor = openFromList(HEAD.id);
-    const box = within(editor).getByRole("textbox");
-    fireEvent.change(box, { target: { value: "Sent first" } });
     fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    fireEvent.change(box, { target: { value: "Typed after Save" } });
-    await act(async () => answer({ ...HEAD, body: "Sent first", revision: 3 }));
-    expect(editor).toBeInTheDocument();
-    expect(box).toHaveValue("Typed after Save");
-    const unload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(unload);
-    expect(unload.defaultPrevented).toBe(true);
-    updateTimelineNote.mockResolvedValueOnce({ ...HEAD, body: "Typed after Save", revision: 4 });
-    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(updateTimelineNote).toHaveBeenLastCalledWith(RECORDING.id, HEAD.id,
-      { body: "Typed after Save", expected_revision: 3 });
+    // Text typed now would not be in the save on its way.
+    expect(within(editor).getByRole("textbox")).toHaveAttribute("readonly");
+    expect(leave()).toBe(true);
+    await act(async () => answer({ ...HEAD, body: "Not saved yet", revision: 3 }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(leave()).toBe(false);
+    expect(fireEvent.click(screen.getByRole("link", { name: "People" }))).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["success", "refusal"])("ignores an old %s after Cancel opens a different editor", async (outcome) => {
-    let answer!: (note: TimelineNote) => void;
-    let reject!: (error: unknown) => void;
-    updateTimelineNote.mockReturnValueOnce(new Promise<TimelineNote>((resolve, refuse) => { answer = resolve; reject = refuse; }));
+  it("keeps an editor with unsaved text open when another note's pencil is pressed", () => {
     render(<Page notes={[HEAD, TAIL]} />);
     let editor = openFromList(HEAD.id);
-    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "First editor" } });
-    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Still typing" } });
     editor = openFromList(TAIL.id);
-    const box = within(editor).getByRole("textbox");
-    fireEvent.change(box, { target: { value: "Newer editor" } });
-    box.focus();
-    await act(async () => {
-      if (outcome === "success") answer({ ...HEAD, body: "First editor", revision: 3 });
-      else reject(new Error("offline"));
-    });
-    expect(editor).toBeInTheDocument();
-    expect(box).toHaveValue("Newer editor");
-    expect(box).toHaveFocus();
-    expect(within(editor).queryByRole("alert")).toBeNull();
-  });
-
-  it("keeps the remaining dirty note's hold when another draft is discarded", () => {
-    render(<Page notes={[HEAD, TAIL]} />);
-    let editor = openFromList(HEAD.id);
-    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "First unsaved draft" } });
-    editor = openFromList(TAIL.id);
-    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Second unsaved draft" } });
+    expect(within(editor).getByRole("textbox")).toHaveValue("Still typing");
     fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
-    const unload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(unload);
-    expect(unload.defaultPrevented).toBe(true);
+    // An unchanged editor closes on the press, so the next pencil opens its note.
+    openFromList(TAIL.id);
+    fireEvent.pointerDown(within(row(HEAD.id)).getByRole("button", { name: /^Edit note/ }));
     editor = openFromList(HEAD.id);
-    expect(within(editor).getByRole("textbox")).toHaveValue("First unsaved draft");
-    fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
-    const clean = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(clean);
-    expect(clean.defaultPrevented).toBe(false);
+    expect(within(editor).getByRole("textbox")).toHaveValue(HEAD.body);
   });
 
-  it("does not reacquire the leave hold when an abandoned page's save settles late", async () => {
-    let reject!: (error: unknown) => void;
-    updateTimelineNote.mockReturnValueOnce(new Promise<TimelineNote>((_resolve, refuse) => { reject = refuse; }));
-    const view = render(<Page notes={[HEAD]} />);
+  it("lets the page go when leaving with an unsaved edit is confirmed", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<><a href="/people">People</a><Page notes={[HEAD]} /></>);
     const editor = openFromList(HEAD.id);
-    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "An abandoned draft" } });
-    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    view.unmount();
-    await act(async () => reject(new Error("offline")));
-    const unload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(unload);
-    expect(unload.defaultPrevented).toBe(false);
-  });
-
-  it("keeps an unanswered save unresolved when text returns to its opening body", async () => {
-    updateTimelineNote.mockRejectedValueOnce(new Error("answer lost"));
-    render(<Page notes={[HEAD]} />);
-    const editor = openFromList(HEAD.id);
-    const box = within(editor).getByRole("textbox");
-    fireEvent.change(box, { target: { value: "May have saved" } });
-    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    await within(editor).findByRole("alert");
-    fireEvent.change(box, { target: { value: HEAD.body } });
-    fireEvent.pointerDown(document.body);
-    expect(editor).toBeInTheDocument();
-    const unload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(unload);
-    expect(unload.defaultPrevented).toBe(true);
-    updateTimelineNote.mockResolvedValueOnce({ ...HEAD, revision: 3 });
-    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(updateTimelineNote).toHaveBeenCalledTimes(2);
-    expect(updateTimelineNote).toHaveBeenLastCalledWith(RECORDING.id, HEAD.id,
-      { body: HEAD.body, expected_revision: HEAD.revision });
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Given up" } });
+    expect(fireEvent.click(screen.getByRole("link", { name: "People" }))).toBe(true);
   });
 
   it.each([false, true])("lists each saved note once and keeps whole-meeting notes around an empty transcript, live=%s", (live) => {
@@ -306,55 +226,6 @@ describe("My notes", () => {
     expect(transcriptNotes[0]).toHaveTextContent("Before the transcript");
     expect(transcriptNotes[1]).toHaveTextContent("After the transcript");
   });
-
-  it.each([HEAD, POINT, SELECTION, TAIL].flatMap((saved) =>
-    [false, true].flatMap((live) => ["list", "transcript"].map((origin) => ({ saved, live, origin }))),
-  ))("shows $saved.kind edits immediately in both places from $origin, live=$live", async ({ saved, live, origin }) => {
-    let answer!: (note: TimelineNote) => void;
-    updateTimelineNote.mockReturnValue(new Promise<TimelineNote>((resolve) => { answer = resolve; }));
-    render(<Page notes={[saved]} live={live} />);
-    if (origin === "list") openFromList(saved.id);
-    else fireEvent.click(within(noteLine(saved.id)!).getByRole("button", { name: /^Edit note/ }));
-    const editor = screen.getByRole("dialog");
-    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Changed before the answer" } });
-    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-    expect(row(saved.id)).toHaveTextContent("Changed before the answer");
-    expect(noteLine(saved.id)).toHaveTextContent("Changed before the answer");
-    expect(within(editor).getByRole("button", { name: "Save note" })).toBeDisabled();
-    await act(async () => answer({ ...saved, body: "Changed before the answer", revision: 3 }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(row(saved.id)).toHaveTextContent("Changed before the answer");
-    expect(noteLine(saved.id)).toHaveTextContent("Changed before the answer");
-  });
-
-  it.each([false, true].flatMap((live) => [500, 409].map((status) => ({ live, status }))))(
-    "rolls a refused save back in both places and keeps its editor draft, live=$live status=$status",
-    async ({ live, status }) => {
-      let reject!: (error: unknown) => void;
-      updateTimelineNote.mockReturnValue(new Promise<TimelineNote>((_resolve, refuse) => { reject = refuse; }));
-      render(<Page notes={[HEAD]} live={live} />);
-      const editor = openFromList(HEAD.id);
-      fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "My retained draft" } });
-      fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-      expect(row(HEAD.id)).toHaveTextContent("My retained draft");
-      expect(noteLine(HEAD.id)).toHaveTextContent("My retained draft");
-      const current = { ...HEAD, body: "Changed on another device", revision: 5 };
-      await act(async () => reject(status === 409 ? conflict(current)
-        : { isAxiosError: true, response: { status: 500 } }));
-      const restored = status === 409 ? current.body : HEAD.body;
-      expect(row(HEAD.id)).toHaveTextContent(restored);
-      expect(noteLine(HEAD.id)).toHaveTextContent(restored);
-      expect(within(editor).getByRole("textbox")).toHaveValue("My retained draft");
-      expect(within(editor).getByRole("alert")).toHaveTextContent(status === 409 ? "changed elsewhere" : "No answer");
-      if (status === 409) {
-        updateTimelineNote.mockResolvedValueOnce({ ...current, body: "My retained draft", revision: 6 });
-        fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
-        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-        expect(updateTimelineNote).toHaveBeenLastCalledWith(RECORDING.id, HEAD.id,
-          { expected_revision: 5, body: "My retained draft" });
-      }
-    },
-  );
 
   it("keeps note navigation and editing while blocking playback until processing finishes", () => {
     const onPlay = vi.fn();

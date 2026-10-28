@@ -86,6 +86,7 @@ export default function RecordingHeader({
                 icon={<ArrowLeft />}
                 aria-label="Back to Recordings"
                 title="Back to Recordings"
+                data-leaves-page
                 onClick={onBack}
               />
               <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-icon-muted">

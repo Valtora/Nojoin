@@ -6,7 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { createPortal } from "react-dom";
 
 import { stripNote } from "@/lib/notes/headNoteSync";
-import { draftIsUnchanged, type NoteEditDraft } from "@/lib/notes/noteEditDrafts";
+import { useUnsavedNoteWarning } from "@/lib/notes/useUnsavedNoteWarning";
 
 import Button from "../ui/Button";
 import { useAnchoredPanel } from "../ui/useAnchoredPanel";
@@ -14,19 +14,15 @@ import { useAnchoredPanel } from "../ui/useAnchoredPanel";
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
 /** Why a write was refused, or null once it is done or on its way. */
-type Refusal = string | null | undefined;
+type Refusal = string | null;
 
 interface NoteOnSelectionPopoverProps {
   /** The words the note is on; null for a note on a point in time. */
   quote: string | null;
   /** Names the popover: "Note on the line at 01:05". */
   title: string;
-  notice?: string;
   /** The note's text when it opens: an edit's, or empty for a new note. */
   initialText?: string;
-  /** Saved-note edits are owned above layouts; new-note popovers stay local. */
-  draft?: NoteEditDraft;
-  onTextChange?: (text: string) => void;
   /**
    * What it sits against, which stays mounted while it is open: a line's ⋯
    * button, or the place of a text selection. Focus goes back there when it
@@ -49,36 +45,22 @@ interface NoteOnSelectionPopoverProps {
  * A note in the finished view: the quote it is on, a box and Save, and for a
  * note being edited, Delete. Enter saves and Shift+Enter starts a new line, as
  * in the live note box; Escape and Cancel close it. A press outside closes it
- * only while the text is as it opened, so a stray tap never throws a note away.
+ * only while the text is as it opened, so a stray tap never throws a note away,
+ * and until it is saved, leaving the page asks first (`useUnsavedNoteWarning`).
  */
 export default function NoteOnSelectionPopover({
   quote,
   title,
-  notice,
   initialText = "",
-  draft,
-  onTextChange,
   anchor,
   returnFocus,
   onSubmit,
   onDelete,
   onClose,
 }: NoteOnSelectionPopoverProps) {
-  // An optimistic body update must not make the unsaved draft appear clean.
-  // Keep the same opening baseline as the text state, until this editor closes.
-  const [openingText] = useState(initialText);
-  const [localText, setText] = useState(initialText);
-  const [localError, setError] = useState<string | null>(null);
-  const [localBusy, setBusy] = useState(false);
-  const text = draft ? draft.text : localText;
-  const error = draft ? draft.refusal : localError;
-  const busy = draft ? draft.pending !== undefined : localBusy;
-  const active = useRef(true);
-  const textVersion = useRef(0);
-  useEffect(() => {
-    active.current = true;
-    return () => { active.current = false; };
-  }, []);
+  const [text, setText] = useState(initialText);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const anchorRef = useMemo(() => ({ current: anchor }), [anchor]);
   const { panelRef, panelStyle } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
@@ -87,7 +69,8 @@ export default function NoteOnSelectionPopover({
   const titleId = useId();
   const errorId = useId();
   const isBlank = stripNote(text) === "";
-  const isUnchanged = draft ? draftIsUnchanged(draft) : stripNote(text) === stripNote(openingText);
+  const isUnchanged = stripNote(text) === stripNote(initialText);
+  useUnsavedNoteWarning(!isUnchanged);
 
   const close = () => {
     onClose();
@@ -115,7 +98,6 @@ export default function NoteOnSelectionPopover({
   // A refused write keeps the popover open. The button pressed was disabled
   // while it ran, which dropped focus to the page, so it goes to the box.
   const finish = (refusal: Refusal) => {
-    if (refusal === undefined) return;
     if (!refusal) {
       close();
       return;
@@ -129,7 +111,6 @@ export default function NoteOnSelectionPopover({
    * keeps the text. A queued note answers at once; a save waits for Nojoin.
    */
   const settle = (write: () => Refusal | Promise<Refusal>) => {
-    const submittedVersion = textVersion.current;
     const outcome = write();
     if (!(outcome instanceof Promise)) {
       finish(outcome);
@@ -137,9 +118,7 @@ export default function NoteOnSelectionPopover({
     }
     setBusy(true);
     void outcome.then((refusal) => {
-      if (!active.current) return;
       setBusy(false);
-      if (refusal === null && submittedVersion !== textVersion.current) return;
       finish(refusal);
     });
   };
@@ -210,7 +189,6 @@ export default function NoteOnSelectionPopover({
       <p id={titleId} className="text-xs font-semibold text-contrast-helper">
         {title}
       </p>
-      {notice ? <p className="mt-1 text-xs text-contrast-helper">{notice}</p> : null}
       {quote ? (
         <blockquote className="mt-1 line-clamp-3 border-l-2 border-action-border pl-2 text-sm italic leading-5 text-contrast-muted">
           {quote}
@@ -222,10 +200,10 @@ export default function NoteOnSelectionPopover({
         ref={boxRef}
         rows={3}
         value={text}
+        // Text typed while a save is on its way would not be in it.
+        readOnly={busy}
         onChange={(event) => {
-          textVersion.current += 1;
-          if (onTextChange) onTextChange(event.target.value);
-          else setText(event.target.value);
+          setText(event.target.value);
           setError(null);
           setConfirmingDelete(false);
         }}

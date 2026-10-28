@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef } from "react";
 
 import type { InlineNote } from "@/lib/notes/noteOutbox";
-import { NoteEditDrafts, type NoteEditAnswer, type NoteWriter } from "@/lib/notes/noteEditDrafts";
+import { holdPendingNoteWrite } from "@/lib/notes/noteOutboxes";
 import type { EditableNote, NoteEditRefusal } from "@/lib/notes/useNoteEdits";
 import type { TimelineNote } from "@/types";
 
@@ -20,20 +20,19 @@ export interface EditingNote {
 }
 
 export interface NoteEditHandlers {
-  onEditNote: NoteWriter;
-  onDeleteNote?: (note: EditableNote, answer?: (result: NoteEditAnswer) => void) => Promise<NoteEditRefusal>;
-  noteDrafts?: NoteEditDrafts;
+  onEditNote: (note: EditableNote, body: string) => Promise<NoteEditRefusal>;
+  onDeleteNote?: (note: EditableNote) => Promise<NoteEditRefusal>;
 }
 
 interface TranscriptNoteEditorProps extends NoteEditHandlers {
   editing: EditingNote | null;
-  /** The shown notes locate the editor; retained drafts own their save baseline. */
+  /** The notes as shown, so the editor always writes against the latest revision. */
   notes: readonly (TimelineNote | InlineNote)[] | null | undefined;
   onClose: () => void;
 }
 
 /** Where a note is, for its editor's name: "at 01:05", or on the whole meeting. */
-export const noteWhere = (note: EditableNote): string => {
+export const noteWhere = (note: TimelineNote | InlineNote): string => {
   if (note.kind === "head") return "before the transcript";
   if (note.kind === "tail") return "after the transcript";
   const startMs = note.kind === "selection" ? note.start_ms : note.anchor_ms;
@@ -60,38 +59,38 @@ function Editor({
   anchor,
   onEditNote,
   onDeleteNote,
-  noteDrafts,
   onClose,
-  unavailable,
-}: NoteEditHandlers & { note: EditableNote; anchor: HTMLElement; onClose: () => void; unavailable: boolean }) {
+}: NoteEditHandlers & { note: TimelineNote | InlineNote; anchor: HTMLElement; onClose: () => void }) {
   // A deleted note's line is going: the caller has moved focus somewhere that stays.
   const removed = useRef(false);
-  const owner = noteDrafts!;
-  const drafts = useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot);
-  useEffect(() => { owner.open(note); }, [owner, note]);
+  // From the first Save or Delete until the editor closes, saved or given up:
+  // a write on its way, or refused and still open, holds the page.
+  const release = useRef<(() => void) | null>(null);
+  useEffect(() => () => release.current?.(), []);
+  const holding = <T,>(write: () => Promise<T>) => {
+    release.current ??= holdPendingNoteWrite();
+    return write();
+  };
   return (
     <NoteOnSelectionPopover
       quote={note.kind === "selection" ? (note.quoted_text ?? null) : null}
       title={`Edit the note ${noteWhere(note)}`}
-      notice={unavailable ? "This note is no longer listed. Your unsaved edit is kept; you can copy it or cancel." : undefined}
       initialText={note.body}
-      draft={drafts.get(note.id)}
-      onTextChange={(text) => owner.change(note, text)}
       anchor={anchor}
       returnFocus={() => {
         if (!removed.current) focusAfter(anchor);
       }}
-      onSubmit={() => owner.save(note, onEditNote)}
+      onSubmit={(body) => holding(() => onEditNote(note, body))}
       onDelete={
         onDeleteNote
           ? async () => {
-              const refusal = await owner.remove(note, (base, _text, answer) => onDeleteNote(base, answer));
+              const refusal = await holding(() => onDeleteNote(note));
               removed.current = refusal === null;
               return refusal;
             }
           : undefined
       }
-      onClose={() => { owner.discard(note.id); onClose(); }}
+      onClose={onClose}
     />
   );
 }
@@ -100,20 +99,12 @@ function Editor({
  * The editor of a saved note in the finished view, opened from its note
  * line's Edit button, a click on its marked words, or its row in My notes:
  * its text to change, and
- * Delete. Dirty drafts keep their opening revision; only an own save or a
- * deliberate retry of a shown conflict advances it.
+ * Delete. Writes go against the revision shown now, so a change made
+ * elsewhere meanwhile is refused rather than overwritten.
  */
 export default function TranscriptNoteEditor({ editing, notes, onClose, ...handlers }: TranscriptNoteEditorProps) {
-  const [fallback] = useState(() => new NoteEditDrafts());
-  const owner = handlers.noteDrafts ?? fallback;
-  const drafts = useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot);
-  useEffect(() => {
-    fallback.resume();
-    return () => fallback.dispose();
-  }, [fallback]);
-  const listed = editing ? notes?.find((candidate) => candidate.id === editing.noteId) : undefined;
-  const note = listed ?? (editing ? drafts.get(editing.noteId)?.base : undefined);
-  if (!editing || !note || note.revision === undefined || (listed && !isSavedNote(listed))) return null;
+  const note = editing ? notes?.find((candidate) => candidate.id === editing.noteId) : undefined;
+  if (!editing || !note || !isSavedNote(note)) return null;
   return (
     <Editor
       key={note.id}
@@ -121,8 +112,6 @@ export default function TranscriptNoteEditor({ editing, notes, onClose, ...handl
       anchor={editing.anchor}
       onClose={onClose}
       {...handlers}
-      noteDrafts={owner}
-      unavailable={notes != null && !listed}
     />
   );
 }
