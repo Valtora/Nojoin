@@ -14,7 +14,6 @@ const AnalyticsView = lazy(() => import("@/components/analytics/AnalyticsView"))
 interface AnalyticsSectionProps {
   active: boolean;
   inFlight?: boolean;
-  refreshKey?: string;
   recordingId: RecordingId;
   /**
    * The meeting's speaker colours, so a person is the same colour here as in
@@ -29,7 +28,6 @@ interface AnalyticsSectionProps {
 export default function AnalyticsSection({
   active,
   inFlight = false,
-  refreshKey = "",
   recordingId,
   speakerColors,
   onPlaySegment,
@@ -37,7 +35,7 @@ export default function AnalyticsSection({
 }: AnalyticsSectionProps) {
   // Keep the reader's last snapshot outside either view: completion and tab
   // switches stop its requests without discarding estimates still on screen.
-  const { analytics, error, clearAnalytics } = useLiveAnalytics(recordingId, refreshKey, active && inFlight);
+  const { analytics, error, clearAnalytics } = useLiveAnalytics(recordingId, active && inFlight);
   const estimates = analytics ? (
     <LiveAnalyticsView analytics={analytics} error={inFlight ? error : null} speakerColors={speakerColors} />
   ) : undefined;

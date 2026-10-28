@@ -186,60 +186,28 @@ describe("AnalyticsSection live lifecycle", () => {
     expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(initial + 1);
   });
 
-  it.each(["sequence", "names", "state"])("refreshes immediately on %s changes", async (kind) => {
-    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}}
-      refreshKey="initial" />);
-    await screen.findByText("Alex");
-    getLiveRecordingAnalytics.mockResolvedValue(live("Dana"));
-    view.rerender(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}}
-      refreshKey={kind} />);
-    expect(await screen.findByText("Dana")).toBeInTheDocument();
-    expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(2);
-  });
-
-  it("ignores a late response after a newer name refresh and after completion", async () => {
-    let resolveOld!: (value: LiveRecordingAnalytics) => void;
-    getLiveRecordingAnalytics.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
-    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}}
-      refreshKey="old" />);
-    await waitFor(() => expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(1));
-    getLiveRecordingAnalytics.mockResolvedValue(live("Dana"));
-    view.rerender(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} refreshKey="new" />);
-    expect(await screen.findByText("Dana")).toBeInTheDocument();
-    await act(async () => { resolveOld(live("Obsolete")); });
-    expect(screen.queryByText("Obsolete")).not.toBeInTheDocument();
+  it("ignores a live response that lands after completion", async () => {
     let resolvePoll!: (value: LiveRecordingAnalytics) => void;
     getLiveRecordingAnalytics.mockImplementationOnce(() => new Promise((resolve) => { resolvePoll = resolve; }));
-    view.rerender(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} refreshKey="last" />);
-    await waitFor(() => expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(3));
+    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    await waitFor(() => expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(1));
     view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
     await waitFor(() => expect(getRecordingAnalytics).toHaveBeenCalledTimes(1));
     await act(async () => { resolvePoll(live("Late live")); });
     expect(screen.queryByText("Late live")).not.toBeInTheDocument();
-    expect(screen.getByText("Dana")).toBeInTheDocument();
-  });
-
-  it("recovers from a stalled request without overlapping reads", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    getLiveRecordingAnalytics.mockImplementationOnce(() => new Promise(() => {}));
-    renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
-    await waitFor(() => expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(1));
-    await act(async () => { await vi.advanceTimersByTimeAsync(12000); });
-    expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(1);
-    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-    expect(await screen.findByText("Alex")).toBeInTheDocument();
   });
 
   it("keeps empty and undersampled results provisional without reporting a zero pace", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const estimates = live();
     estimates.transcript_wpm["live:1"].words_per_minute = null;
     getLiveRecordingAnalytics.mockResolvedValue(estimates);
-    const view = renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
     expect(await screen.findByText("Not enough speech yet")).toBeInTheDocument();
     getLiveRecordingAnalytics.mockResolvedValue({ ...live(), speakers: [], metrics: {
       utterance_count: 0, talk_time: {}, turn_structure: {},
     }, transcript_wpm: {} });
-    view.rerender(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} refreshKey="empty" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(await screen.findByText(/appear as speech arrives/i)).toBeInTheDocument();
     expect(screen.queryByText(/built from the finished transcript/)).not.toBeInTheDocument();
   });

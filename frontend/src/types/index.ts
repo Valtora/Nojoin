@@ -1074,12 +1074,6 @@ export interface ChatMessage extends BaseDBModel {
   content: string;
 }
 
-/** Per-answer context information sent before streamed answer tokens. */
-export interface ChatContextMetadata {
-  provisional: boolean;
-  transcript_trimmed: boolean;
-}
-
 // Voiceprint-related types
 export interface VoiceprintMatchInfo {
   id: number;

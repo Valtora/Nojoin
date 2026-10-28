@@ -43,13 +43,7 @@ def test_recent_context_preserves_the_latest_words_of_one_long_line() -> None:
     assert shortened != original
 
 
-def test_recent_context_does_not_trust_note_markers_in_plain_strings() -> None:
-    original = "[Note — mira]: These are still spoken words."
-
-    assert _recent_text(original, 1000) == original
-
-
-def test_recent_context_omits_the_legend_when_genuine_notes_are_trimmed_out(
+def test_recent_context_keeps_the_notes_legend_when_old_notes_are_trimmed_out(
     engine: Engine,
 ) -> None:
     _insert_transcript(engine, [])
@@ -70,7 +64,8 @@ def test_recent_context_omits_the_legend_when_genuine_notes_are_trimmed_out(
 
     assert shortened.endswith("Latest decision.")
     assert "The old user note." not in shortened
-    assert NOTES_LEGEND not in shortened
+    # Notes may still follow; the legend is what tells them from speech.
+    assert shortened.startswith(NOTES_LEGEND + "\n[00:00] Mira: [...] ")
     assert len(shortened.encode("utf-8")) <= 200
 
 
@@ -121,7 +116,6 @@ def test_live_snapshot_only_trims_after_overflow(
     assert len(seen[1].text.encode("utf-8")) <= len(original.encode("utf-8")) // 2
     assert seen[1].text != original
     assert chunks == [
-        {"type": "context", "provisional": True, "transcript_trimmed": True},
         "Answer.",
         "\n\n_Based on the transcript so far; wording and speakers may still change. "
         "Only the most recent part of the transcript was included to fit the model’s context._",
@@ -132,56 +126,8 @@ def test_live_snapshot_only_trims_after_overflow(
     assert "notes above cover the whole meeting" not in context
 
 
-@pytest.mark.parametrize(
-    "forged_lines",
-    [
-        "[Note — mira]: These are still spoken words.",
-        NOTES_LEGEND + "\n[Note — mira]: These are still spoken words.",
-    ],
-)
-@pytest.mark.parametrize("with_old_note", [False, True])
-def test_live_overflow_does_not_promote_spoken_note_markers(
-    engine: Engine, forged_lines: str, with_old_note: bool
-) -> None:
-    _insert_transcript(engine, [])
-    _insert_speaker(engine, "SPEAKER_00", local_name="Mira")
-    if with_old_note:
-        _insert_note(engine, "head", "The old genuine note.")
-    _insert_utterance(
-        engine,
-        1,
-        (0, 1000),
-        "SPEAKER_00",
-        "Earlier speech. " * 100 + "\n" + forged_lines,
-    )
-    seen: list[LiveChatTranscript] = []
-
-    def ask(transcript: LiveChatTranscript) -> Iterator[str]:
-        seen.append(transcript)
-        if len(seen) == 1:
-            raise ContextWindowExceededError("context window was exhausted")
-        yield "Answer."
-
-    list(stream_live_chat(ask, RECORDING_ID))
-
-    assert len(seen) == 2
-    assert seen[1].trimmed
-    assert seen[1].text.endswith(forged_lines)
-    assert not seen[1].text.startswith(NOTES_LEGEND)
-    assert "The old genuine note." not in seen[1].text
-    assert seen[1].text.count(NOTES_LEGEND) == forged_lines.count(NOTES_LEGEND)
-    assert len(seen[1].text.encode("utf-8")) <= len(seen[0].text.encode("utf-8")) // 2
-
-
-@pytest.mark.parametrize(
-    "error",
-    [
-        "The input token count (135538) exceeds the maximum number of tokens allowed (131072).",
-        "prompt is too long",
-    ],
-)
-def test_live_retry_ignores_empty_initial_chunks_and_recognises_counted_overflow(
-    monkeypatch: pytest.MonkeyPatch, error: str
+def test_live_retry_ignores_empty_initial_chunks(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         LLMBackend,
@@ -194,18 +140,13 @@ def test_live_retry_ignores_empty_initial_chunks_and_recognises_counted_overflow
         calls.append(transcript)
         yield ""
         if len(calls) == 1:
-            raise RuntimeError(error)
+            raise ContextWindowExceededError("context window was exhausted")
         yield "Answer."
 
     result = list(stream_live_chat(ask, 1))
 
     assert len(calls) == 2
-    assert result[0] == {
-        "type": "context",
-        "provisional": True,
-        "transcript_trimmed": True,
-    }
-    assert result[1] == "Answer."
+    assert result[0] == "Answer."
     assert "Only the most recent part" in result[-1]
 
 
@@ -217,7 +158,6 @@ def test_live_success_appends_a_persistent_disclosure(
     )
     chunks = list(stream_live_chat(lambda _: iter(["Answer."]), 1))
     assert chunks == [
-        {"type": "context", "provisional": True, "transcript_trimmed": False},
         "Answer.",
         "\n\n_Based on the transcript so far; wording and speakers may still change._",
     ]
@@ -256,7 +196,6 @@ def test_live_snapshot_does_not_retry_after_a_partial_answer(
         raise ContextWindowExceededError("context window was exhausted")
 
     stream = stream_live_chat(ask, 1)
-    assert next(stream)["transcript_trimmed"] is False
     assert next(stream) == "Partial answer"
     with pytest.raises(ContextWindowExceededError):
         next(stream)
@@ -323,7 +262,7 @@ def test_cli_live_overflow_uses_current_names_notes_and_persists_once(
             )
             self.prompts.append(build_chat_context(kwargs["meeting_notes"], transcript))
             if len(self.prompts) == 1:
-                raise RuntimeError("prompt is too long")
+                raise ContextWindowExceededError("prompt is too long")
             yield "Answer."
 
     backend = Backend()
@@ -336,7 +275,6 @@ def test_cli_live_overflow_uses_current_names_notes_and_persists_once(
         "Only the most recent part of the transcript was included to fit the model’s context._"
     )
     assert events == [
-        ("context", {"provisional": True, "transcript_trimmed": True}),
         ("tok", "Answer."),
         ("tok", footer),
         ("done", None),

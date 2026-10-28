@@ -96,13 +96,10 @@ def test_chat_streams_while_the_recording_is_in_flight(
         return frames, [(row[0], row[1]) for row in rows]
 
     frames, rows = asyncio.run(run())
-    assert json.loads(frames[0].removeprefix("data: ")) == {
-        "context": {"provisional": True, "transcript_trimmed": False}
-    }
     footer = (
         "\n\n_Based on the transcript so far; wording and speakers may still change._"
     )
-    assert frames[1:] == [
+    assert frames == [
         'data: {"token": "Answer."}\n\n',
         f"data: {json.dumps({'token': footer})}\n\n",
         "data: [DONE]\n\n",

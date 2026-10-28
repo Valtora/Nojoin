@@ -74,7 +74,11 @@ def meeting_chat_task(
             # Only a degraded secondary backend can emit control dicts (e.g.
             # notes_update); its DB side effect already ran. CLI itself never
             # does — skip framing non-text chunks.
-            full_response += _publish_chunk(publisher, chunk)
+            if isinstance(chunk, dict):
+                continue
+            text = str(chunk)
+            full_response += text
+            publisher.publish_token(text)
 
         if full_response.strip():
             session.add(
@@ -99,15 +103,3 @@ def meeting_chat_task(
         publisher.publish_done()
     finally:
         publisher.close()
-
-
-def _publish_chunk(publisher: ChatStreamPublisher, chunk: str | dict[str, Any]) -> str:
-    if isinstance(chunk, dict):
-        if chunk.get("type") == "context":
-            publisher.publish_context(
-                {key: value for key, value in chunk.items() if key != "type"}
-            )
-        return ""
-    text = str(chunk)
-    publisher.publish_token(text)
-    return text

@@ -89,35 +89,11 @@ describe("ChatPanel provisional context", () => {
     streamChatMessage.mockClear();
   });
 
-  it("shows the live warning and retains a trimmed answer through completion without resending", async () => {
+  it("says answers use the transcript so far only while the recording is in flight", async () => {
     const view = render(<ChatPanel inFlight />);
-    expect(await screen.findByText(/transcript so far; wording and speakers may still change/i)).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText("Ask a question..."), { target: { value: "Who spoke?" } });
-    fireEvent.keyDown(screen.getByPlaceholderText("Ask a question..."), { key: "Enter" });
-    const callbacks = streamChatMessage.mock.calls[0];
-    act(() => {
-      (callbacks[7] as (metadata: unknown) => void)({ provisional: true, transcript_trimmed: true });
-      (callbacks[2] as (token: string) => void)("Alex spoke.");
-    });
-    expect(screen.getByText(/Only the most recent part of the transcript/i)).toBeInTheDocument();
-    act(() => {
-      (callbacks[2] as (token: string) => void)("\n\n_Based on the transcript so far; wording and speakers may still change. Only the most recent part of the transcript was included to fit the model’s context._");
-      (callbacks[3] as () => void)();
-    });
-    expect(screen.getAllByText(/Only the most recent part of the transcript/i)).toHaveLength(1);
+    expect(await screen.findByText(/Answers use the transcript so far/i)).toBeInTheDocument();
     view.rerender(<ChatPanel inFlight={false} />);
-    expect(screen.getByText("Alex spoke.")).toBeInTheDocument();
     expect(screen.queryByText(/Answers use the transcript so far/i)).not.toBeInTheDocument();
-    expect(streamChatMessage).toHaveBeenCalledTimes(1);
-    fireEvent.change(screen.getByPlaceholderText("Ask a question..."), { target: { value: "And now?" } });
-    fireEvent.keyDown(screen.getByPlaceholderText("Ask a question..."), { key: "Enter" });
-    const next = streamChatMessage.mock.calls[1];
-    act(() => {
-      (next[7] as (metadata: unknown) => void)({ provisional: false, transcript_trimmed: false });
-      (next[2] as (token: string) => void)("Final answer.");
-      (next[3] as () => void)();
-    });
-    expect(screen.getAllByText(/Only the most recent part of the transcript/i)).toHaveLength(1);
   });
 
   it("waits for nonempty initial history before sending and preserves the typed question", async () => {
@@ -139,21 +115,6 @@ describe("ChatPanel provisional context", () => {
     expect(screen.getByText("Earlier answer.")).toBeInTheDocument();
   });
 
-  it("keeps the trimming warning when the stream ends with an error instead of a saved footer", async () => {
-    render(<ChatPanel inFlight />);
-    await waitFor(() => expect(getSettings).toHaveBeenCalled());
-    fireEvent.change(screen.getByPlaceholderText("Ask a question..."), { target: { value: "Now?" } });
-    fireEvent.keyDown(screen.getByPlaceholderText("Ask a question..."), { key: "Enter" });
-    const callbacks = streamChatMessage.mock.calls[0];
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    act(() => {
-      (callbacks[7] as (metadata: unknown) => void)({ provisional: true, transcript_trimmed: true });
-      (callbacks[2] as (token: string) => void)("Partial answer.");
-      (callbacks[4] as (error: string) => void)("Connection lost");
-      (callbacks[3] as () => void)();
-    });
-    expect(screen.getByText(/Only the most recent part of the transcript/i)).toBeInTheDocument();
-  });
 });
 
 describe("ChatPanel stream lifecycle", () => {
@@ -166,7 +127,6 @@ describe("ChatPanel stream lifecycle", () => {
   };
   const lateEvents = (request: StreamArguments) => act(() => {
     request[2]("Stale answer.");
-    request[7]?.({ provisional: true, transcript_trimmed: true });
     request[6]?.();
     request[4]("Stale error");
     request[3]();

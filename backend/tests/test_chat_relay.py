@@ -10,8 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import pytest
-
 import backend.services.chat_relay as chat_relay
 from backend.services.chat_relay import ChatStreamPublisher
 
@@ -143,26 +141,6 @@ def test_relay_handles_single_whole_message(monkeypatch):
 
     assert _collect("t1") == [
         'data: {"token": "Whole answer."}\n\n',
-        "data: [DONE]\n\n",
-    ]
-
-
-def test_relay_preserves_live_context_before_tokens(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    store = _FakeStore()
-    store.lists["nojoin:cli_chat:t1"] = [
-        json.dumps(
-            {"t": "context", "v": {"provisional": True, "transcript_trimmed": True}}
-        ),
-        json.dumps({"t": "tok", "v": "Recent answer."}),
-        json.dumps({"t": "done"}),
-    ]
-    _use_async_store(monkeypatch, store)
-
-    assert _collect("t1") == [
-        'data: {"context": {"provisional": true, "transcript_trimmed": true}}\n\n',
-        'data: {"token": "Recent answer."}\n\n',
         "data: [DONE]\n\n",
     ]
 

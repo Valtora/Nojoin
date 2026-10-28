@@ -449,14 +449,7 @@ async def chat_with_meeting(
                     # threadpool to prevent blocking the asyncio event loop
                     async for chunk in iterate_in_threadpool(generator):
                         answered = True
-                        if isinstance(chunk, dict) and chunk.get("type") == "context":
-                            context = {
-                                key: value
-                                for key, value in chunk.items()
-                                if key != "type"
-                            }
-                            yield f"data: {json.dumps({'context': context})}\n\n"
-                        elif (
+                        if (
                             isinstance(chunk, dict)
                             and chunk.get("type") == "notes_update"
                         ):

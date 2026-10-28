@@ -27,7 +27,7 @@ import {
 import { getCliOAuthStatus } from "@/lib/api/cliOauth";
 import { AiAvailability, resolveAiAvailability } from "@/lib/aiAvailability";
 import { isAdministrator } from "@/lib/roles";
-import { ChatContextMetadata, ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
+import { ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
 import Link from "next/link";
 import MarkdownBubble from "./MarkdownBubble";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -35,8 +35,6 @@ import { useStickToBottom } from "@/lib/useStickToBottom";
 import ConfirmationModal from "./ConfirmationModal";
 import MultiSelect, { Option } from "@/components/ui/MultiSelect";
 import IconButton from "@/components/ui/IconButton";
-
-type DisplayChatMessage = ChatMessage & { context?: ChatContextMetadata; contextFooterComplete?: boolean };
 
 export default function ChatPanel({
   onNotesUpdate,
@@ -55,7 +53,7 @@ export default function ChatPanel({
       : Array.isArray(params?.id)
         ? params.id[0] ?? null
         : null;
-  const [messages, setMessages] = useState<DisplayChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadedHistoryRecordingId, setLoadedHistoryRecordingId] = useState<RecordingId | null>(null);
   const historyReady = loadedHistoryRecordingId === recordingId;
   const [inputValue, setInputValue] = useState("");
@@ -202,8 +200,6 @@ export default function ChatPanel({
       },
       () => {
         if (!isCurrent()) return;
-        setMessages((previous) => previous.map((message) => message.id === assistantMsgId
-          ? { ...message, contextFooterComplete: true } : message));
         setIsStreaming(false);
         abortController.current = null;
       },
@@ -228,11 +224,6 @@ export default function ChatPanel({
       },
       selectedTagIds.length > 0 ? (selectedTagIds as number[]) : undefined,
       () => { if (isCurrent()) onNotesUpdate?.(); },
-      (context) => {
-        if (!isCurrent()) return;
-        setMessages((previous) => previous.map((message) =>
-          message.id === assistantMsgId ? { ...message, context } : message));
-      },
     );
     abortController.current = controller;
   };
@@ -389,9 +380,6 @@ export default function ChatPanel({
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   ) : (
                     <div className="w-full">
-                      {msg.context?.transcript_trimmed && !msg.contextFooterComplete && <p className="mb-2 text-xs text-contrast-helper">
-                        Only the most recent part of the transcript was included for this answer.
-                      </p>}
                       {msg.content ? (
                         <>
                           <MarkdownBubble content={msg.content} />
