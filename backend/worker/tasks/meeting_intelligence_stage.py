@@ -14,6 +14,7 @@ from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.meeting_notes import append_user_notes_section
 from backend.utils.timeline_notes import render_timeline_for_llm
+from backend.utils.transcript_change import change_sequence_bump
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,9 @@ def _apply_automatic_meeting_intelligence_result(
         transcript.notes_template_sections = resolved_template.sections
     session.add(recording)
     session.add(transcript)
+    # As in generate_notes_task: the notes status can be back where another
+    # tab last saw it.
+    session.execute(change_sequence_bump(recording.id))
     session.commit()
     record_pipeline_metric(
         stage="speaker_name_suggestions_generated",
@@ -206,6 +210,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
             replaced_reason="automatic_meeting_intelligence_refresh",
         )
         if suggestion_count:
+            session.execute(change_sequence_bump(recording.id))
             session.commit()
             record_pipeline_metric(
                 stage="speaker_name_suggestions_generated",
@@ -242,6 +247,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
             replaced_reason="automatic_meeting_intelligence_refresh",
         )
         if suggestion_count:
+            session.execute(change_sequence_bump(recording.id))
             session.commit()
             record_pipeline_metric(
                 stage="speaker_name_suggestions_generated",

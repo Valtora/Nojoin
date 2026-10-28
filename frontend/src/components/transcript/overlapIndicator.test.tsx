@@ -16,6 +16,13 @@ describe("overlap on the credited line", () => {
     const sameSpeaker = line({ id: "same", start: 6, end: 7 });
     expect(indexOverlaps([first, touching, point, sameSpeaker]).size).toBe(0);
   });
+  it("treats a handover's slight overlap as no crosstalk, and a longer one as crosstalk", () => {
+    const first = line({ end: 10 });
+    const handover = line({ id: "handover", speaker: "B", start: 9.8, end: 12 });
+    expect(indexOverlaps([first, handover]).size).toBe(0);
+    const crosstalk = line({ id: "crosstalk", speaker: "B", start: 9.5, end: 12 });
+    expect(indexOverlaps([first, crosstalk]).get(first)).toEqual([crosstalk]);
+  });
   it("discloses metadata on hover, keyboard activation or touch click, without empty lanes", () => {
     const { container } = render(<TranscriptView {...viewProps([line({ overlapping_speakers: ["B"] })])} />);
     const trigger = screen.getByRole("button", { name: "Overlap" });

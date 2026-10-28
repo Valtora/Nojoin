@@ -358,10 +358,11 @@ def test_worker_uses_merged_maximum_and_does_not_mistake_short_asr_for_silence(
         ]["line_closed"]
 
 
-def test_entire_ami_smoke_wording_is_preserved_across_rolling_publications(
+def test_entire_smoke_wording_is_preserved_across_rolling_publications(
     settling_engine: Engine,
 ) -> None:
-    # AMI CC BY 4.0 line times; word times below are synthetic for replay only.
+    # Line times from an AMI Meeting Corpus meeting (AMI Consortium, CC BY 4.0);
+    # the text is synthetic, and word times are spread evenly for replay only.
     fixture_path = Path(__file__).parent / "fixtures" / "settling-smoke-A.json"
     fixture_bytes = fixture_path.read_bytes()
     fixture = json.loads(fixture_bytes)

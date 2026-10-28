@@ -165,8 +165,10 @@ max-complexity = 10
 "backend/processing/embedding_core.py" = ["C901"]
 "backend/processing/engines/onnx_asr_engine.py" = ["C901", "PLR0912"]
 "backend/processing/engines/whisper_engine.py" = ["C901"]
-# Pure moves from live_transcribe.py retain only the rules their unchanged
-# functions already exceeded; no new complexity is introduced by this split.
+# Split out of live_transcribe.py for the file-size gate. Each carries only the
+# rules its moved functions already exceeded there. Settling adds one branch to
+# _extract_region_segment_payloads and one argument to _persist_live_run, and
+# the new stage_live_audio takes eight keyword arguments.
 "backend/processing/live_asr_payload.py" = ["C901", "PLR0912"]
 "backend/processing/live_audio_buffer.py" = ["PLR0913"]
 "backend/processing/live_persistence.py" = ["PLR0913"]
@@ -184,8 +186,11 @@ max-complexity = 10
 "backend/services/jwt_revocation_service.py" = ["PLR0913"]
 "backend/utils/audio_windows.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/constants.py" = ["PLR0913"]
-# Pure moves from core.py carry only their existing violations; no new logic
-# or exemptions beyond that baseline. Core no longer needs C901/PLR0912.
+# Split out of core.py for the file-size gate. Each carries only the rules its
+# moved functions already exceeded there; core.py no longer needs C901/PLR0912.
+# Settling adds statements to update_utterance_speaker,
+# apply_compatibility_segment_replace and finalize_utterances_from_segments,
+# but none of them exceeds a rule that upstream's version did not.
 "backend/utils/canonical_pipeline/core.py" = ["PLR0913", "PLR0915"]
 "backend/utils/canonical_pipeline/assignment.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/finalization.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]

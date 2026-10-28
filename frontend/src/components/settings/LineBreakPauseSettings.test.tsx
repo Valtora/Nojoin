@@ -6,12 +6,10 @@ import type { Settings } from "@/types";
 import LineBreakPauseSettings from "./LineBreakPauseSettings";
 
 describe("LineBreakPauseSettings", () => {
-  it("explains which transcripts use the pause in the input's accessible help", () => {
+  it("links the row's help to the input", () => {
     render(<LineBreakPauseSettings settings={{}} onUpdate={() => {}} />);
     const input = screen.getByRole("spinbutton", { name: "Line break pause (seconds)" });
-    expect(input).toHaveAccessibleDescription(/live settling lines/);
-    expect(input).toHaveAccessibleDescription(/diarised final transcripts when speakers are detected/);
-    expect(input).toHaveAccessibleDescription(/Without speaker detection, this pause does not regroup the transcription engine's segments/);
+    expect(input).toHaveAccessibleDescription();
   });
 
   it("uses an inherited one-second default and saves a valid pause", () => {

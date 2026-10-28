@@ -202,7 +202,8 @@ DEFAULT_SYSTEM_CONFIG = {
     "ollama_context_window": 32768,
     "secondary_ollama_context_window": 32768,
     "enable_live_transcription": True,
-    AI_ANALYSIS_DAILY_LIMIT_KEY: None,  # No cap unless an administrator sets one.
+    # No cap unless an administrator sets one.
+    AI_ANALYSIS_DAILY_LIMIT_KEY: None,
     EXPORT_BRANDING_KEY: True,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,

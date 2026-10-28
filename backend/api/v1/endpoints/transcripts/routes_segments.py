@@ -40,6 +40,7 @@ from backend.utils.speaker_assignment import (
     segment_references_label,
 )
 from backend.utils.speaker_names.events import UserNameAct, record_user_link
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     FindReplaceRequest,
@@ -398,6 +399,7 @@ async def update_segment_speaker(
                 await db.delete(old_speaker_entry)
                 # The GlobalSpeaker stays; only the local association goes.
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     record_pipeline_metric(
         stage="speaker_correction_applied",
@@ -540,6 +542,7 @@ async def update_transcript_segment_text(
     transcript.text = full_text
 
     db.add(transcript)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(transcript)
     record_pipeline_metric(
@@ -623,6 +626,7 @@ async def find_and_replace(
         transcript.notes = staged.notes
 
     db.add(transcript)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(transcript)
     await _dispatch_meeting_edge_refresh(
@@ -705,6 +709,7 @@ async def update_transcript_segments(
     transcript.text = full_text
 
     db.add(transcript)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(transcript)
     await _dispatch_meeting_edge_refresh(

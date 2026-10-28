@@ -564,6 +564,9 @@ def _complete_speaker_inference_task(
         recording.processing_step = "Completed"
     recording.client_status = ClientStatus.IDLE
     session.add(recording)
+    # The status returns to where another tab last saw it, so only the counter
+    # tells that tab the speakers and suggestions changed.
+    session.execute(change_sequence_bump(recording.id))
     session.commit()
 
 

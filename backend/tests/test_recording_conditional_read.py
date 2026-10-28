@@ -145,3 +145,17 @@ async def test_a_status_change_ends_the_304s(
 
     assert response.status_code == 200
     assert response.headers["etag"] != etag
+
+
+@pytest.mark.anyio
+async def test_a_notes_edit_elsewhere_ends_the_304s(client: AsyncClient) -> None:
+    etag = (await client.get(URL)).headers["etag"]
+
+    write = await client.put(
+        "/api/v1/transcripts/rec-1/notes", json={"notes": "Edited elsewhere"}
+    )
+    response = await client.get(URL, headers={"If-None-Match": etag})
+
+    assert write.status_code == 200
+    assert response.status_code == 200
+    assert response.json()["transcript"]["notes"] == "Edited elsewhere"
