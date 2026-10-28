@@ -200,6 +200,8 @@ function TranscriptLine({
       <div className="flex flex-wrap items-baseline gap-2 mb-1">
         {pendingDiarisation ? null : live ? (liveLine?.speakerLabel ? (
           <LiveSpeakerChip
+            // A header that moves to another label closes a name typed for the old one.
+            key={liveLine.speakerLabel}
             label={liveLine.speakerLabel}
             name={speakerName}
             locked={liveLine.speakerLocked}

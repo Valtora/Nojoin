@@ -279,4 +279,19 @@ describe("transcript saves", () => {
     expect(text.save).toHaveBeenCalledTimes(1);
     expect(textEditor()).toBeNull();
   });
+
+  it("closes open edits when the view turns read-only, without bringing them back", async () => {
+    const onUpdateSegmentText = vi.fn(async () => {});
+    const rerender = renderView({ onUpdateSegmentText });
+    await openText("u0");
+    fireEvent.change(textEditor()!, { target: { value: "Typed before reprocessing" } });
+
+    await rerender({ readOnly: true });
+    expect(textEditor()).toBeNull();
+    await rerender({ readOnly: false });
+
+    expect(textEditor()).toBeNull();
+    expect(onUpdateSegmentText).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Export transcript" })).toBeEnabled();
+  });
 });

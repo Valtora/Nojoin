@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import { useNotificationStore } from "@/lib/notificationStore";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { TranscriptSegment } from "@/types";
 import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
@@ -136,6 +137,13 @@ export function useTranscriptEditing(
     null,
   );
   const [savesInFlight, setSavesInFlight] = useState(0);
+  // When the view turns read-only (a reprocess starting), open edits close,
+  // as the line menus' editors do: their line may not survive the new result.
+  useOnDepsChange([readOnly], () => {
+    if (!readOnly) return;
+    setEdit(null);
+    setActivePopover(null);
+  });
 
   const editingTextId = edit?.kind === "text" ? edit.segmentId : null;
   const isSubmitting = savesInFlight > 0;

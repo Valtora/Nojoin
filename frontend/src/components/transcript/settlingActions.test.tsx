@@ -138,4 +138,17 @@ describe("settling line actions", () => {
     await waitFor(() => expect(rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex"));
     expect(rename).toHaveBeenCalledTimes(1);
   });
+
+  it("closes a header's name box when the line moves to another live label", () => {
+    const rename = vi.fn().mockResolvedValue(true);
+    const view = render(<LiveTranscriptPanel hasLoaded onRenameLiveSpeaker={rename} segments={[line(false)]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 1" }));
+    fireEvent.change(within(screen.getByTestId("live-transcript-scroll")).getByRole("combobox"),
+      { target: { value: "Alex" } });
+    view.rerender(<LiveTranscriptPanel hasLoaded onRenameLiveSpeaker={rename}
+      segments={[{ ...line(false), speaker: "LIVE_PROVISIONAL_2" }]} />);
+    expect(within(screen.getByTestId("live-transcript-scroll")).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rename Speaker 2" })).toBeInTheDocument();
+    expect(rename).not.toHaveBeenCalled();
+  });
 });
