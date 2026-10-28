@@ -14,6 +14,7 @@ import { RecordingStatus } from "@/types";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
+import IconButton from "./ui/IconButton";
 
 type MeetingControlsProps =
   | {
@@ -27,7 +28,7 @@ type MeetingControlsProps =
     }
   | {
       onMeetingEnd?: () => void;
-      variant: "dashboard";
+      variant: "dashboard" | "rail";
       pairedAction?: never;
     };
 
@@ -140,6 +141,14 @@ export default function MeetingControls({
                         : "Nojoin is finalizing the current meeting recording."
                     : "Nojoin is preparing browser capture.",
               }
+          : runtimeActive
+            ? {
+                buttonLabel: "Meeting in progress",
+                buttonMode: "wait",
+                buttonDisabled: true,
+                buttonTooltip:
+                  "A meeting recording is already running. Use the recording controls to pause or stop it.",
+              }
           : {
               buttonLabel: "Start Meeting",
               buttonMode: "start",
@@ -182,6 +191,20 @@ export default function MeetingControls({
       void handleStart();
     }
   };
+
+  if (variant === "rail") {
+    return (
+      <IconButton
+        size="sm"
+        icon={<Mic aria-hidden="true" />}
+        onClick={handlePrimaryAction}
+        disabled={meetingSurfaceState.buttonDisabled}
+        title={meetingSurfaceState.buttonTooltip}
+        aria-label={meetingSurfaceState.buttonLabel}
+        className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
+      />
+    );
+  }
 
   if (variant === "dashboard") {
     return (
