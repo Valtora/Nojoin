@@ -188,6 +188,15 @@ export default function RecordingStatusDisplay({
     },
     [outbox],
   );
+  // On a line still settling: the box's next note is a typed note anchored at
+  // the line's start, quoting nothing.
+  const noteAtTime = useCallback(
+    (atMs: number) => {
+      outbox.setDraft({ ...outbox.getSnapshot().draft, selection: null, mode: "typing", typingStartMs: atMs });
+      composerBoxRef.current?.focus();
+    },
+    [outbox],
+  );
 
   // Discard path for a recording shown on the processing/queued screen. Routed
   // through the shared action so that, if this browser still owns the capture
@@ -452,6 +461,7 @@ export default function RecordingStatusDisplay({
                 onRetryNote={outbox.retry}
                 onDiscardNote={discardInlineNote}
                 onNoteOnLine={noteOnLine}
+                onNoteAtTime={noteAtTime}
                 liveSpeakerNames={liveTranscript.liveSpeakerNames}
                 onRenameLiveSpeaker={liveNaming.renameLiveSpeaker}
                 loadPeopleNames={liveNaming.loadPeopleNames}

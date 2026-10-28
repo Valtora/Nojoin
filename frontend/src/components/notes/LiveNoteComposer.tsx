@@ -106,9 +106,10 @@ const modeHint = (draft: ComposerDraft) => {
   }
   switch (draft.mode) {
     case "typing":
-      return draft.typingStartMs !== null && !isBlank(draft.text)
-        ? `Placed at ${formatTimelineMs(draft.typingStartMs)}, where you started typing.`
-        : "Placed where you start typing. Shift+Enter starts a new line.";
+      if (draft.typingStartMs === null) return "Placed where you start typing. Shift+Enter starts a new line.";
+      return isBlank(draft.text)
+        ? `Placed at ${formatTimelineMs(draft.typingStartMs)}.`
+        : `Placed at ${formatTimelineMs(draft.typingStartMs)}, where you started typing.`;
     case "send":
       return "Placed where the recording is when you press Enter.";
     case "head":
@@ -134,7 +135,8 @@ const modeHint = (draft: ComposerDraft) => {
  * "Note on this line", from a line's ⋯ menu, puts the next note on that
  * line's text: the quote shows above the box and the mode reads "On the
  * chosen text" until the note is sent or the quote removed, when the mode
- * before it comes back.
+ * before it comes back. On a line still settling it instead sets an
+ * "At typing start" anchor at the line's start, which the first character keeps.
  *
  * A file pasted or dropped into the box goes with the note being typed, whose
  * text captions it; the note saves first, then the file uploads. The camera
@@ -223,14 +225,13 @@ export default function LiveNoteComposer({
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const text = event.target.value;
-    // With a file in the box the note has begun, so its anchor holds.
+    // With a file in the box the note has begun, so its anchor holds, as does
+    // one a line's menu set; clearing the box otherwise starts again.
     const typingStartMs = isBlank(text)
       ? draftFile
         ? draft.typingStartMs
         : null
-      : (isBlank(draft.text) && !draftFile) || draft.typingStartMs === null
-        ? readAudioNow()
-        : draft.typingStartMs;
+      : (draft.typingStartMs ?? readAudioNow());
     setDraft({ ...draft, text, typingStartMs });
     setMessage(null);
     setDismissedNoticeSeq(latestNoticeSeq);
@@ -329,6 +330,7 @@ export default function LiveNoteComposer({
             title="Don't attach this file"
             onClick={() => {
               onDraftFileChange(null);
+              if (isBlank(draft.text)) setDraft({ ...draft, typingStartMs: null });
               setMessage(null);
               box.current?.focus();
             }}

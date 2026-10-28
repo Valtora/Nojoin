@@ -17,16 +17,18 @@ interface LiveLineMenuProps {
   segment: TranscriptSegment;
   /** Puts the note box's next note on the line. */
   onNoteOnLine: (selection: NoteSelection) => void;
+  /** Puts the note box's next note at a time, quoting nothing; without it a settling line takes no note. */
+  onNoteAtTime?: (atMs: number) => void;
 }
 
 /**
  * The live view's ⋯ menu on a line. Every line can take the note box's next
- * note, quoting the line. Lines of a recording using word settling also take
- * corrections, speaker assignment and word splits. On those recordings every
- * action but Play waits for the line to lock, as a note from a selection waits
- * for its words.
+ * note: a locked line's quotes it, and a line still settling places it at the
+ * line's start, as a typed note. Lines of a recording using word settling also
+ * take corrections, speaker assignment and word splits, which wait for the
+ * line to lock.
  */
-export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers }: LiveLineMenuProps) {
+export default function LiveLineMenu({ segment, onNoteOnLine, onNoteAtTime, handlers, speakers }: LiveLineMenuProps) {
   const [editing, setEditing] = useState<{
     kind: LiveEditKind; anchor: HTMLElement; segment: TranscriptSegment;
   } | null>(null);
@@ -35,7 +37,7 @@ export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers
   const settling = lineIsSettling(segment);
   const items = lineActionsFor({
     view: "live",
-    canNote: selection !== null,
+    canNote: settling ? onNoteAtTime !== undefined : selection !== null,
     canEdit,
     provisional: true,
     canPlay: false,
@@ -45,8 +47,12 @@ export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers
   }).map((action) => ({
     ...action,
     onSelect: (anchor: HTMLButtonElement) => {
+      if (action.id === "note") {
+        if (settling) onNoteAtTime?.(segmentStartMs(segment));
+        else if (selection) onNoteOnLine(selection);
+        return;
+      }
       if (settling) return;
-      if (action.id === "note" && selection) onNoteOnLine(selection);
       if (action.id === "editText" || action.id === "changeSpeaker" || action.id === "split") {
         setEditing({ kind: action.id, anchor, segment });
       }

@@ -111,6 +111,8 @@ interface LiveTranscriptPanelProps {
    * lines have no menu and a selection no toolbar.
    */
   onNoteOnLine?: (selection: NoteSelection) => void;
+  /** Puts the note box's next note at a line's start: the note from a line still settling. */
+  onNoteAtTime?: (atMs: number) => void;
   /** Live label -> the name the user gave it; others read "Speaker <n>". */
   liveSpeakerNames?: Readonly<Record<string, string>>;
   /** Names a live speaker from its label chip; without it the chip is text. */
@@ -150,6 +152,7 @@ export default function LiveTranscriptPanel({
   onMoveNote,
   footer,
   onNoteOnLine,
+  onNoteAtTime,
   liveSpeakerNames = NO_NAMES,
   onRenameLiveSpeaker,
   loadPeopleNames,
@@ -393,6 +396,7 @@ export default function LiveTranscriptPanel({
                           <LiveLineMenu
                             segment={segment}
                             onNoteOnLine={onNoteOnLine}
+                            onNoteAtTime={onNoteAtTime}
                             handlers={lineHandlers}
                             speakers={speakers}
                           />

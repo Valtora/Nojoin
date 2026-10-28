@@ -16,7 +16,7 @@ export interface LineActionContext {
   canPlay: boolean;
   /** The recording uses word settling, whose live lines take corrections once locked. */
   settlingRequired?: boolean;
-  /** Why every action but Play is unavailable: on a settling line they wait for its lock. */
+  /** Why the edits are unavailable: on a settling line they wait for its lock; a note and Play don't. */
   disabledReason?: string;
   canSplit?: boolean;
 }
@@ -74,6 +74,6 @@ export const LINE_ACTIONS: readonly LineAction[] = [
 /** The actions a line offers, in menu order; empty when it offers none. */
 export const lineActionsFor = (context: LineActionContext): LineAction[] =>
   LINE_ACTIONS.filter((action) => action.when(context)).map((action) =>
-    action.id !== "play" && context.disabledReason
+    action.id !== "play" && action.id !== "note" && context.disabledReason
       ? { ...action, disabledReason: context.disabledReason } : action,
   );

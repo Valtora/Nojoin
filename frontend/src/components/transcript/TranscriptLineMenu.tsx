@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { lineSelection } from "@/lib/notes/lineSelection";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
+import { segmentStartMs } from "@/lib/notes/placement";
 import { lineActionsFor, type LineActionId } from "@/lib/transcript/actions";
 import type { TranscriptSegment } from "@/types";
 import { lineIsSettling, LINE_SETTLING_REASON, splitWords } from "@/lib/transcript/settling";
@@ -54,7 +55,9 @@ export default function TranscriptLineMenu({
   const [splitEdit, setSplitEdit] = useState<{ anchor: HTMLElement; segment: TranscriptSegment } | null>(null);
   /** The ⋯ button, while an editor or popover an item opened is open. */
   const returnFocusTo = useRef<HTMLElement | null>(null);
-  const selection = useMemo(() => lineSelection(segment), [segment]);
+  const settling = lineIsSettling(segment);
+  // A locked line's note quotes it; a settling line's is a timeline note at its start.
+  const quoted = useMemo(() => (settling ? null : lineSelection(segment)), [settling, segment]);
 
   // Back to the ⋯ button once what an item opened has closed, unless focus
   // went somewhere on purpose (a click elsewhere).
@@ -84,14 +87,14 @@ export default function TranscriptLineMenu({
 
   const items = lineActionsFor({
     view: "finished",
-    canNote: onAddNote !== null && selection !== null,
-    canEdit: !isSegmentReadOnly || lineIsSettling(segment),
+    canNote: onAddNote !== null && (settling || quoted !== null),
+    canEdit: !isSegmentReadOnly || settling,
     provisional: segment.provisional === true,
     canPlay: onPlayFrom !== null,
     canSplit: !isSegmentReadOnly && !!segment.id && segment.revision !== undefined &&
       onSplitSegment !== null && splitWords(segment).length > 0,
     settlingRequired: segment.settling_required,
-    disabledReason: lineIsSettling(segment) ? LINE_SETTLING_REASON : undefined,
+    disabledReason: settling ? LINE_SETTLING_REASON : undefined,
   }).map((action) => ({ ...action, onSelect: run[action.id] }));
 
   return (
@@ -107,12 +110,14 @@ export default function TranscriptLineMenu({
         handlers={{ split: onSplitSegment, editText: async () => false, changeSpeaker: async () => false }}
         onClose={() => { setSplitEdit(null); splitEdit.anchor.focus(); }}
       /> : null}
-      {noteAnchor && selection && onAddNote ? (
+      {noteAnchor && (settling || quoted) && onAddNote ? (
         <NoteOnSelectionPopover
-          quote={selection.quotedText}
+          quote={quoted?.quotedText ?? null}
           title={`Note on the line at ${formatTime(segment.start)}`}
           anchor={noteAnchor}
-          onSubmit={(body) => onAddNote({ kind: "selection", body, anchorMs: null, selection })}
+          onSubmit={(body) => onAddNote(quoted
+            ? { kind: "selection", body, anchorMs: null, selection: quoted }
+            : { kind: "point", body, anchorMs: segmentStartMs(segment) })}
           onClose={() => setNoteAnchor(null)}
         />
       ) : null}
