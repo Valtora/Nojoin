@@ -70,7 +70,8 @@ async def test_live_name_creates_only_an_explicit_owned_person_without_voiceprin
         assert len(people) == int(create_person)
         assert event.created_by_user_id == user_id
         assert event.recording_id == recording_id
-        assert (event.anchor_start_ms, event.anchor_end_ms) == (0, 4000)
+        # The label's longest locked turn: its first two lines, 0-6 s.
+        assert (event.anchor_start_ms, event.anchor_end_ms) == (0, 6000)
         assert event.global_speaker_id == (people[0].id if create_person else None)
         assert (await db.execute(select(RecordingSpeaker))).scalars().all() == []
         if create_person:
