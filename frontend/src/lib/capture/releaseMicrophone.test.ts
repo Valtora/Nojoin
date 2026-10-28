@@ -50,7 +50,7 @@ vi.mock("./captureLock", () => ({
 vi.mock("./mixer", () => ({
   createCaptureMixer: vi.fn(async () => ({
     pcmSource: {}, systemAnalyser: {}, microphoneAnalyser: {}, mixedAnalyser: {},
-    detachMicrophone: vi.fn(), replaceMicrophone: vi.fn(async () => {}),
+    detachMicrophone: vi.fn(), replaceMicrophone: vi.fn(async () => {}), resumeContext: vi.fn(async () => {}),
     applySettings: vi.fn(), updateAutomaticGain: vi.fn(), dispose: vi.fn(async () => {}),
   })),
 }));
@@ -243,20 +243,6 @@ describe("releasing only the microphone while paused", () => {
     await expect(capture.resume()).resolves.toMatchObject({ recordingId: "rec-1", resumed: true });
     expect(recorder.resume).toHaveBeenCalledOnce();
   });
-  it.each([true, false])("retains the paused capture when the audio boundary fails, release=%s", async (release) => {
-    const { capture, recorder } = await start("shared_audio", release);
-    await capture.pause();
-    vi.mocked(recorder.resume).mockRejectedValueOnce(new Error("Audio capture did not answer. Try Resume again."));
-    await expect(capture.resume()).rejects.toThrow(/Audio capture did not answer/);
-    expect(capture.getState()).toMatchObject({ status: "paused", runtimeActive: true, error: expect.any(String) });
-    expect(readPausedCaptureContext()).toMatchObject({ recordingId: "rec-1" });
-    expect(api.pauseRecordingCapture).toHaveBeenCalledTimes(2);
-    expect(api.pauseRecordingCapture).toHaveBeenLastCalledWith("rec-1", { epoch: 3 });
-    if (release) expect(replacement.readyState).toBe("ended");
-    getUserMedia.mockResolvedValueOnce(mediaStream(audioTrack()));
-    await capture.resume();
-    expect(capture.getState().status).toBe("recording");
-  });
   it.each(["stop", "cancel"] as const)("%s supersedes a pending audio resume boundary", async (action) => {
     const { capture, recorder } = await start();
     await capture.pause();
@@ -390,6 +376,8 @@ describe("releasing only the microphone while paused", () => {
     await capture.resume();
     expect(getUserMedia).toHaveBeenCalledTimes(1);
     expect(mixer.replaceMicrophone).not.toHaveBeenCalled();
+    // A context the browser suspended during the pause renders again.
+    expect(mixer.resumeContext).toHaveBeenCalledOnce();
     expect(capture.getState().status).toBe("recording");
   });
   it("reacquires a released mic after the release setting is disabled", async () => {

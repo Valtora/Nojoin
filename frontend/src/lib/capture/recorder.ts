@@ -148,10 +148,9 @@ export class BrowserRecorder {
     return this.enqueueOperation(async () => {
       if (this.stateValue === "paused") {
         // The tap keeps rendering during pause. Drop its partial block while
-        // still paused; PCM precedes the acknowledgement on the same port.
-        if (!await this.source.flush()) {
-          throw new Error("Audio capture did not answer. The recording is still paused. Try Resume again.");
-        }
+        // still paused; PCM precedes the acknowledgement on the same port. A
+        // suspended context renders nothing, so a timeout has nothing to drop.
+        await this.source.flush();
         this.beginRecording();
       }
     });

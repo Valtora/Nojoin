@@ -80,7 +80,7 @@ describe("worklet pause boundary", () => {
     }
   });
 
-  it("stays paused on timeout and needs a new acknowledgement to retry", async () => {
+  it("resumes when a suspended audio thread never acknowledges the boundary", async () => {
     vi.useFakeTimers();
     const worklet = new CaptureWorklet();
     const source = createPortPcmSource(worklet.port, 16_000, 2);
@@ -89,18 +89,9 @@ describe("worklet pause boundary", () => {
       recorder.start();
       await recorder.pause();
       worklet.holdAcknowledgements = true;
-      const failed = expect(recorder.resume()).rejects.toThrow(/still paused.*Resume/i);
+      const resuming = recorder.resume();
       await vi.advanceTimersByTimeAsync(1000);
-      await failed;
-      expect(recorder.state).toBe("paused");
-      worklet.acknowledge();
-      expect(recorder.state).toBe("paused");
-      const retry = recorder.resume();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(worklet.pendingAcknowledgements).toBe(1);
-      expect(recorder.state).toBe("paused");
-      worklet.acknowledge();
-      await retry;
+      await resuming;
       expect(recorder.state).toBe("recording");
     } finally {
       worklet.holdAcknowledgements = false;

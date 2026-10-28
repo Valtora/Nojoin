@@ -1061,16 +1061,15 @@ export class CaptureController {
       assertMicrophoneResumeCurrent(isCurrent);
       // A stalled uploader retries its retained queue before new audio.
       runtime.uploader.recover();
+      // Not awaited: a context the browser keeps interrupted must not hold
+      // Resume. The recorder's flush gives it a moment to start rendering.
+      void runtime.mixer.resumeContext().catch(() => {});
       await runtime.recorder.resume();
       assertMicrophoneResumeCurrent(isCurrent);
     } catch (error: unknown) {
       if (isCurrent()) {
         if (released) releasePausedMicrophone(runtime, true);
         this.setState({ status: "paused", error: formatCaptureError(error) });
-        if (response) {
-          this.unconfirmedPause = owePause(recordingId);
-          await this.sendServerPause({ drainFirst: false });
-        }
       }
       throw await this.ifEndedElsewhere(error, runtime);
     } finally {
