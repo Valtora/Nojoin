@@ -1,4 +1,4 @@
-"""Line actions on settling recordings: human edits and words stay protected."""
+"""Line actions on settling recordings: edits freeze lines, words stay protected."""
 
 from typing import Any
 from uuid import uuid4
@@ -7,13 +7,15 @@ import pytest
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
+from backend.models.live_settling_public import public_settling_fields
 from backend.models.pipeline import (
     ProcessingRunKind,
+    SpeakerCorrectionScope,
     TranscriptUtterance,
     TranscriptUtteranceState,
 )
 from backend.models.transcript import Transcript
-from backend.tests.test_live_settling_publication import _request, _seed
+from backend.tests.test_live_settling_publication import _active, _request, _seed
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
 )
@@ -93,7 +95,7 @@ def _lines(
 
 
 @pytest.mark.parametrize("action", ["text", "speaker"])
-def test_a_human_edit_holds_against_later_decodes(
+def test_an_edit_on_a_settling_line_freezes_it_against_later_decodes(
     settling_engine: Engine, action: str
 ) -> None:
     recording_id, ids = _lines(settling_engine)
@@ -123,6 +125,11 @@ def test_a_human_edit_holds_against_later_decodes(
         session.commit()
         before = [(line.public_id, line.text, line.speaker_label) for line in frozen]
         assert not any(mutable_row(line) for line in frozen)
+        # It reads as locked too, so the page stops showing its words as settling.
+        for line in frozen:
+            public = public_settling_fields(line.confidence_payload)
+            assert public["locked"] is True
+            assert all(word["locked"] for word in public["words"])
         request = _request(session, recording_id, 0, end_ms=4000)
         words = [{"word": "Machine", "start_ms": 2100, "end_ms": 2400}]
         publish_live_settling(session, request=request, words=words)
@@ -132,6 +139,77 @@ def test_a_human_edit_holds_against_later_decodes(
         assert [
             (line.public_id, line.text, line.speaker_label) for line in frozen
         ] == before
+
+
+@pytest.mark.parametrize("action", ["text", "speaker"])
+def test_freezing_a_later_open_line_keeps_the_earlier_one_settling(
+    settling_engine: Engine, action: str
+) -> None:
+    recording_id = _seed(settling_engine)
+    words = [
+        {"word": "Alpha", "start_ms": 100, "end_ms": 400},
+        {"word": " beta.", "start_ms": 500, "end_ms": 900},
+        {"word": " Gamma", "start_ms": 3000, "end_ms": 3400},
+        {"word": " delta.", "start_ms": 3500, "end_ms": 3900},
+    ]
+    with Session(settling_engine) as session:
+        publish_live_settling(
+            session,
+            request=_request(session, recording_id, 0, end_ms=4000),
+            words=words,
+        )
+        session.commit()
+        first, second = _active(session, recording_id)
+        assert (first.text, second.text) == ("Alpha beta.", "Gamma delta.")
+        if action == "text":
+            update_utterance_text(
+                session,
+                recording_id=recording_id,
+                utterance_public_id=second.public_id,
+                text="Gamma delta, corrected.",
+            )
+        else:
+            update_utterance_speaker(
+                session,
+                recording_id=recording_id,
+                utterance_public_id=second.public_id,
+                new_speaker_name="Alex",
+            )
+        session.commit()
+        publish_live_settling(
+            session,
+            request=_request(session, recording_id, 1, end_ms=4200),
+            words=words,
+        )
+        session.commit()
+        lines = _active(session, recording_id)
+        assert first.public_id in [line.public_id for line in lines]
+        assert lines[0].text == "Alpha beta."
+        assert mutable_row(lines[0])
+
+
+def test_a_whole_transcript_assignment_freezes_the_speakers_settling_lines(
+    settling_engine: Engine,
+) -> None:
+    # The client offers the action on the locked line only; its scope still
+    # reaches the speaker's open line, which must not stay "settling".
+    recording_id, ids = _lines(settling_engine)
+    with Session(settling_engine) as session:
+        update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=ids[0],
+            new_speaker_name="Alex",
+            scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+        )
+        session.commit()
+        open_line = session.exec(
+            select(TranscriptUtterance).where(TranscriptUtterance.public_id == ids[1])
+        ).one()
+
+        assert open_line.manual_speaker_locked
+        assert not mutable_row(open_line)
+        assert public_settling_fields(open_line.confidence_payload)["locked"] is True
 
 
 def test_locked_bulk_edit_preserves_word_protection(

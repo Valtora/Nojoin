@@ -8,7 +8,7 @@ from backend.utils.transcript_change import change_sequence_bump
 from .assignment import *
 from .constants import *
 from .finalization import finalize_utterances_from_segments
-from .guards import protect_text_replacement, settling_required
+from .guards import freeze_live_line, protect_text_replacement, settling_required
 from .live_compatibility import capture_segment_sort_key
 from .persistence import (
     apply_compatibility_segment_replace,
@@ -213,6 +213,7 @@ def update_utterance_text(
         protect_text_replacement(utterance, text)
     utterance.text = text
     utterance.manual_text_locked = True
+    freeze_live_line(utterance)
     utterance.text_last_edit_source = source
     utterance.revision += 1
     session.add(utterance)
@@ -336,6 +337,7 @@ def update_utterance_speaker(
         target_utterance.recording_speaker_id = target_key
         target_utterance.speaker_label = target_speaker.diarization_label
         target_utterance.manual_speaker_locked = True
+        freeze_live_line(target_utterance)
         target_utterance.speaker_last_edit_source = source
         target_utterance.speaker_assignment_source = SPEAKER_ASSIGNMENT_SOURCE_MANUAL
         target_utterance.speaker_assignment_authority = (
