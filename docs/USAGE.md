@@ -45,7 +45,7 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 
 **Recordings** in the navigation lists your meetings, with **Archived** and **Deleted** views beside it.
 
-On desktop, **Collapse recordings list** leaves a narrow rail. In **Recordings**, its microphone button starts a meeting and **Import Audio** imports a file, with the same availability as the expanded controls. In **Archived** and **Deleted**, the archive and bin icons label the view. **Expand recordings list** brings the list back.
+On desktop, **Collapse recordings list** leaves a narrow rail. In **Recordings**, its microphone button starts a meeting and **Import Audio** imports a file, and each is unavailable whenever its full-size button is. In **Archived** and **Deleted**, the archive and bin icons label the view. **Expand recordings list** brings the list back.
 
 - **Search...** above the list matches meeting titles, tags and speaker names. Its filter button adds a date filter (a range, after or before) and a speaker filter.
 - **Tags** in the navigation hold your tags, which can nest. Select a tag to filter the list by it, drag a tag onto another to nest it, and right-click one to rename, add a sub-tag, promote or delete it. Tag a single meeting from its header. When a new tag, sub-tag, rename or move is refused, for example a name you already use or a tag dropped onto its own sub-tag, a notification gives the reason, and a refused name stays typed so you can correct it. In a meeting's header or the batch bar, typing a name you already use adds that tag instead of creating another.

@@ -96,7 +96,7 @@ With live speaker labels on, a speaker's label in the live transcript can be ren
 
 ## Paused Recording Lock
 
-Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
+Each user can run one browser capture at a time. While this tab is capturing, the microphone button in the collapsed recordings list reads **Meeting in progress**, and **Start Meeting** reads the same if the recorder fails while this tab still holds the capture. Pause or stop from the recording's page. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
 
 - **Resume recording** continues the same recording. The browser asks you to share again.
 - **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.
