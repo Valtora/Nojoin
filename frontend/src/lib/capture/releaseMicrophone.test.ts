@@ -50,7 +50,7 @@ vi.mock("./captureLock", () => ({
 vi.mock("./mixer", () => ({
   createCaptureMixer: vi.fn(async () => ({
     pcmSource: {}, systemAnalyser: {}, microphoneAnalyser: {}, mixedAnalyser: {},
-    detachMicrophone: vi.fn(), replaceMicrophone: vi.fn(async () => {}), resumeContext: vi.fn(async () => {}),
+    detachMicrophone: vi.fn(), replaceMicrophone: vi.fn(), resumeContext: vi.fn(async () => {}),
     applySettings: vi.fn(), updateAutomaticGain: vi.fn(), dispose: vi.fn(async () => {}),
   })),
 }));

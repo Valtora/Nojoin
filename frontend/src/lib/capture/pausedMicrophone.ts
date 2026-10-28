@@ -39,24 +39,24 @@ export const reconnectPausedMicrophone = async (
     settings,
   });
   try {
+    // A Stop or Discard during the permission prompt must not leave it live.
     assertMicrophoneResumeCurrent(isCurrent);
-    await runtime.mixer.replaceMicrophone(stream);
-    assertMicrophoneResumeCurrent(isCurrent);
-    runtime.sources.microphoneStream = stream;
-    runtime.microphoneReleased = false;
-    runtime.captureReport = {
-      ...runtime.captureReport,
-      ...describeCaptureSettings(settings),
-      requested_microphone_device_id: settings.microphoneDeviceId,
-      requested_microphone_label:
-        runtime.captureReport.requested_microphone_device_id === settings.microphoneDeviceId
-          ? runtime.captureReport.requested_microphone_label : null,
-      browser_microphone_track: describeTrack(stream.getAudioTracks()[0]),
-      notes: ["reopened_microphone_after_pause", ...(usedDefault ? ["microphone_default_fallback"] : [])],
-    };
-    return usedDefault;
+    runtime.mixer.replaceMicrophone(stream);
   } catch (error) {
     stream.getTracks().forEach((track) => track.stop());
     throw error;
   }
+  runtime.sources.microphoneStream = stream;
+  runtime.microphoneReleased = false;
+  runtime.captureReport = {
+    ...runtime.captureReport,
+    ...describeCaptureSettings(settings),
+    requested_microphone_device_id: settings.microphoneDeviceId,
+    requested_microphone_label:
+      runtime.captureReport.requested_microphone_device_id === settings.microphoneDeviceId
+        ? runtime.captureReport.requested_microphone_label : null,
+    browser_microphone_track: describeTrack(stream.getAudioTracks()[0]),
+    notes: ["reopened_microphone_after_pause", ...(usedDefault ? ["microphone_default_fallback"] : [])],
+  };
+  return usedDefault;
 };

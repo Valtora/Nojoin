@@ -173,12 +173,9 @@ describe("capture mixer", () => {
     expect(oldMic.connections).toEqual([]);
     expect(systemSource.connections).toEqual(systemConnections);
 
-    context.state = "suspended";
-    context.resumed = false;
     const replacement = {} as MediaStream;
-    await mixer.replaceMicrophone(replacement);
+    mixer.replaceMicrophone(replacement);
 
-    expect(context.resumed).toBe(true);
     expect(context.sources[2].stream).toBe(replacement);
     expect(context.sources[2].connections).toEqual(microphoneConnections);
     expect(mixer.microphoneAnalyser).toBe(analyser);
@@ -189,6 +186,20 @@ describe("capture mixer", () => {
     expect(context.closed).toBe(false);
     await mixer.dispose();
     expect(context.sources[2].disconnected).toBe(true);
+  });
+
+  it("restarts a context the browser suspended", async () => {
+    const context = new FakeAudioContext();
+    const mixer = await createCaptureMixer({
+      microphoneStream: {} as MediaStream,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+    context.state = "suspended";
+    context.resumed = false;
+
+    await mixer.resumeContext();
+
+    expect(context.resumed).toBe(true);
   });
 
   it("can dispose a mixer after its microphone was detached", async () => {

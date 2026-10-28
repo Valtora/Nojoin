@@ -1008,23 +1008,21 @@ export class CaptureController {
     try {
       await this.confirmUnconfirmedPause();
       if (released) {
-        assertMicrophoneResumeCurrent(isCurrent);
         usedDefault = await reconnectPausedMicrophone(runtime, this.state.settings, isCurrent);
       }
-      if (released) assertMicrophoneResumeCurrent(isCurrent);
       // Keep this tab's epoch: resuming elsewhere must still refuse this holder.
       response = await retryAfterSignIn(() =>
         this.forCapture(recordingId, runtime.ownerId, () =>
           resumeRecordingCapture(recordingId, { epoch: runtime.epoch }),
         ),
       );
-      assertMicrophoneResumeCurrent(isCurrent);
       // A stalled uploader retries its retained queue before new audio.
       runtime.uploader.recover();
       // Not awaited: a context the browser keeps interrupted must not hold
       // Resume. The recorder's flush gives it a moment to start rendering.
       void runtime.mixer.resumeContext().catch(() => {});
       await runtime.recorder.resume();
+      // A Stop or Discard while the server or recorder resumed owns it now.
       assertMicrophoneResumeCurrent(isCurrent);
     } catch (error: unknown) {
       if (isCurrent()) {

@@ -20,7 +20,7 @@ export interface CaptureMixer {
   /** Disconnects only the microphone input, preserving the rest of the capture graph. */
   detachMicrophone: () => void;
   /** Attaches a fresh microphone to the existing analyser, gain and PCM paths. */
-  replaceMicrophone: (stream: MediaStream) => Promise<void>;
+  replaceMicrophone: (stream: MediaStream) => void;
   /** Restarts rendering after the browser suspended or interrupted the context. */
   resumeContext: () => Promise<void>;
   dispose: () => Promise<void>;
@@ -249,8 +249,7 @@ export const createCaptureMixer = async (
     }
   };
 
-  const replaceMicrophone = async (stream: MediaStream) => {
-    await resumeContext();
+  const replaceMicrophone = (stream: MediaStream) => {
     const replacement = context.createMediaStreamSource(stream);
     replacement.connect(microphoneAnalyser);
     replacement.connect(microphoneGainNode);
