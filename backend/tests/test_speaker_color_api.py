@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.tests.sqlite_schemas import RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA
 
@@ -136,6 +137,7 @@ async def test_session_maker() -> sessionmaker:
         for statement in SCHEMA_STATEMENTS:
             await connection.execute(text(statement))
         await connection.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
+        await connection.run_sync(Transcript.__table__.create)
 
     try:
         yield session_maker
@@ -371,6 +373,7 @@ async def seed_linked_speaker(session_maker: sessionmaker) -> None:
                 "merged_into_id": None,
             },
         )
+        session.add(Transcript(id=41, recording_id=21, text="", segments=[]))
         await session.commit()
 
 
@@ -382,6 +385,10 @@ async def test_recording_speaker_color_updates_stay_meeting_local(
 ) -> None:
     await seed_linked_speaker(test_session_maker)
     override_current_user(1)
+    async with test_session_maker() as session:
+        sequence = await session.scalar(
+            text("SELECT change_sequence FROM transcripts WHERE recording_id = 21")
+        )
 
     response = await client.put(
         "/api/v1/speakers/recordings/rec-public-21/speakers/LIVE_00/color",
@@ -403,6 +410,12 @@ async def test_recording_speaker_color_updates_stay_meeting_local(
             )
         )
         recording_color, global_color = result.one()
+        assert (
+            await session.scalar(
+                text("SELECT change_sequence FROM transcripts WHERE recording_id = 21")
+            )
+            == sequence + 1
+        )
 
     assert recording_color == "orange"
     assert global_color == "violet"
