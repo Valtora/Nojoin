@@ -1,4 +1,4 @@
-"""Read accepted diariser evidence without loading models or changing its bank."""
+"""Read saved diariser evidence without loading models or changing its bank."""
 
 from __future__ import annotations
 
@@ -9,22 +9,19 @@ from typing import Any
 from zipfile import BadZipFile
 
 import numpy as np
-from sqlmodel import select
 
-from backend.models.pipeline import ProcessingRun
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.live_speaker_labels import live_speaker_label
 
-from .checkpoint import CHECKPOINT_KEY
 from .engine import LiveLabelConfig
-from .files import CHECKPOINT_PREFIX, DISABLED_FILENAME
+from .files import DISABLED_FILENAME
 from .lines import LabelTimeline
 from .state import LiveLabelStateError, _validate, read_snapshot
 
 
 @dataclass(frozen=True)
 class SpeakerEvidence:
-    """Owned arrays from one accepted checkpoint; inference may run concurrently."""
+    """Owned arrays from one saved label state."""
 
     timeline: LabelTimeline
     posteriors: np.ndarray
@@ -98,29 +95,16 @@ def _from_snapshot(meta: dict[str, Any], arrays: dict[str, Any]) -> SpeakerEvide
 def available_speaker_evidence(
     live_dir: Path, *, recording_id: int
 ) -> SpeakerEvidence | None:
-    """Read only an accepted checkpoint; missing/busy/pruned evidence stays absent.
+    """Read the saved label state; missing or invalid evidence stays absent.
 
-    In particular this does not call ``load_checkpoint``: constructing its
-    UnitBank can truncate an unaccepted suffix owned by a concurrent label step.
+    The live task runs its label step after this read, under the same drain
+    lock, so the state read here is the last one that step saved. It reads the
+    envelope only: constructing a UnitBank could truncate the bank.
     """
-    from backend.core.db import get_sync_session
-
     if (live_dir / DISABLED_FILENAME).exists():
         return None
     try:
-        with get_sync_session() as session:
-            run = session.execute(
-                select(ProcessingRun)
-                .where(ProcessingRun.recording_id == recording_id)
-                .where(ProcessingRun.idempotency_key == CHECKPOINT_KEY)
-            ).scalar_one_or_none()
-            filename = (run.model_metadata or {}).get("checkpoint") if run else None
-        if not isinstance(filename, str) or not filename.startswith(CHECKPOINT_PREFIX):
-            return None
-        # A filename from another directory is never a checkpoint reference.
-        if Path(filename).name != filename:
-            return None
-        snapshot = read_snapshot(live_dir, LiveLabelConfig(), filename=filename)
+        snapshot = read_snapshot(live_dir, LiveLabelConfig())
         if snapshot is None:
             return None
         meta, arrays = snapshot

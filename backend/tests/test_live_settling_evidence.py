@@ -1,16 +1,14 @@
 """Immutable diariser snapshots used by rolling ASR's independent speech gate."""
 
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
 
 from backend.processing.live_diarization import evidence
-from backend.processing.live_diarization.checkpoint import new_checkpoint_filename
 from backend.processing.live_diarization.engine import LiveLabelConfig
-from backend.processing.live_diarization.files import BANK_FILENAME
+from backend.processing.live_diarization.files import BANK_FILENAME, STATE_FILENAME
 from backend.processing.live_diarization.state import (
     encode_shadow,
     new_engine,
@@ -72,44 +70,24 @@ def test_fallback_snapshot_keeps_native_prefix_then_uses_translated_shadow() -> 
     assert snapshot.decide(2100, 2800).speaker == "LIVE_PROVISIONAL_7"
 
 
-@pytest.mark.parametrize("pruned", [False, True])
-def test_accepted_checkpoint_read_never_restores_or_truncates_bank(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pruned: bool
+@pytest.mark.parametrize("missing", [False, True])
+def test_saved_state_read_never_restores_or_truncates_bank(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: bool
 ) -> None:
-    from backend.core import db
-    from backend.processing.live_diarization import checkpoint, state
+    from backend.processing.live_diarization import state
 
     config = LiveLabelConfig()
     engine = new_engine(tmp_path, config)
     meta, arrays = encode_shadow(engine)
-    filename = new_checkpoint_filename()
-    write_snapshot(tmp_path, meta, arrays, filename=filename)
+    write_snapshot(tmp_path, meta, arrays)
     bank = tmp_path / BANK_FILENAME
-    bank.write_bytes(b"unaccepted suffix owned by a concurrent label step")
+    bank.write_bytes(b"rows the saved state does not count yet")
     original = bank.read_bytes()
-
-    class Session:
-        def __enter__(self) -> "Session":
-            return self
-
-        def __exit__(self, *_args: Any) -> None:
-            return None
-
-        def execute(self, _query: Any) -> Any:
-            run = SimpleNamespace(model_metadata={"checkpoint": filename})
-            return SimpleNamespace(scalar_one_or_none=lambda: run)
-
-    monkeypatch.setattr(db, "get_sync_session", Session)
-    monkeypatch.setattr(
-        checkpoint,
-        "load_checkpoint",
-        lambda *_args, **_kwargs: pytest.fail("restored engine"),
-    )
     monkeypatch.setattr(
         state, "_restore", lambda *_args, **_kwargs: pytest.fail("restored unit bank")
     )
-    if pruned:
-        (tmp_path / filename).unlink()
+    if missing:
+        (tmp_path / STATE_FILENAME).unlink()
     result = evidence.available_speaker_evidence(tmp_path, recording_id=42)
-    assert (result is None) is pruned
+    assert (result is None) is missing
     assert bank.read_bytes() == original

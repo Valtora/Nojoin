@@ -8,7 +8,6 @@ import backend.processing.live_diarization as live_diarization
 from backend.models.recording import RecordingStatus
 from backend.processing import live_transcribe as lt
 from backend.processing.live_diarization import step
-from backend.processing.live_diarization.hybrid_state import load_hybrid
 from backend.tests.test_live_transcription import (
     _FakeRecording,
     _FakeSession,
@@ -32,13 +31,8 @@ def _lane(monkeypatch, tmp_path):
     transcript = _FakeTranscript()
     session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, transcript))
     monkeypatch.setitem(config_manager.config, "live_speaker_labels", "auto")
-    # This lane fake tracks ASR only; checkpoint DB acceptance is exercised by
-    # the label integration suites. Keep real file recovery and model failure.
+    # The lane's minimal DB fake has no utterance-event query interface.
     monkeypatch.setattr(step, "has_label_history", lambda recording_id: False)
-    monkeypatch.setattr(step, "load_checkpoint", load_hybrid)
-    monkeypatch.setattr(
-        step, "accept_checkpoint", lambda session, recording_id, filename: None
-    )
     return temp_dir, audio_store, transcript, session
 
 
