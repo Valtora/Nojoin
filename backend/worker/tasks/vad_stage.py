@@ -70,6 +70,7 @@ def _complete_without_speech(session, recording: Recording) -> None:
 
     if not transcript:
         transcript = Transcript(recording_id=recording.id)
+    transcript.clear_meeting_edge_error()
 
     if reprocess_publication_pending(transcript):
         clear_previous_reprocess_state(session, recording.id)

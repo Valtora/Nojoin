@@ -9,6 +9,14 @@ from backend.utils.reprocess_publication import clear_reprocess_published
 logger = logging.getLogger(__name__)
 
 
+def _retire_run_state(transcript: Transcript, new_status: RecordingStatus) -> None:
+    """Clear what only described the run that just ended."""
+    if new_status in {RecordingStatus.PROCESSED, RecordingStatus.ERROR}:
+        clear_reprocess_published(transcript)
+    if new_status == RecordingStatus.PROCESSED:
+        transcript.clear_meeting_edge_error()
+
+
 def update_recording_status(session: Session, recording_id: int):
     """
     Updates the parent Recording status based on the status of its components (Transcript, Notes).
@@ -60,8 +68,7 @@ def update_recording_status(session: Session, recording_id: int):
             new_status = RecordingStatus.QUEUED
 
     if new_status != recording.status:
-        if new_status in {RecordingStatus.PROCESSED, RecordingStatus.ERROR}:
-            clear_reprocess_published(transcript)
+        _retire_run_state(transcript, new_status)
         logger.info(
             f"Transitioning Recording {recording_id} from {recording.status} to {new_status}"
         )
