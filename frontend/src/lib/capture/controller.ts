@@ -469,7 +469,6 @@ export class CaptureController {
   private recoveryRead = 0;
   private appliedRecoveryRead = 0;
   private navigationTicket = 0;
-  private startTicket = 0;
 
   private unconfirmedPause: UnconfirmedPause | null = null;
 
@@ -563,7 +562,6 @@ export class CaptureController {
 
   destroy = async () => {
     this.captureActionTicket += 1;
-    this.startTicket += 1;
     this.navigationTicket += 1;
     this.lifecycle.detach();
     this.stopCaptureRecheck();
@@ -682,30 +680,24 @@ export class CaptureController {
   };
 
   start = async (name?: string): Promise<StartCaptureResponse> => {
+    // The recovery check awaits, so Start holds "starting" before it: a second
+    // click meanwhile must not start another capture.
     if (this.runtime || this.state.status === "starting" || this.state.status === "finalizing") return null;
-    const ticket = ++this.startTicket;
     const previousStatus = this.state.status;
-    const isCurrent = () => ticket === this.startTicket;
     this.setState({ status: "starting", error: null });
     try {
-      const recovery = await this.refreshPausedRecording({ onDemand: true });
-      if (!isCurrent()) return null;
-      if (recovery) {
+      if (await this.refreshPausedRecording({ onDemand: true })) {
         this.setState({ status: previousStatus });
         return null;
       }
-      return await this.startCapture(name, isCurrent);
+      return await this.startCapture(name);
     } catch (error) {
-      if (!isCurrent()) return null;
       if (this.getState().status === "starting") this.setState({ status: previousStatus });
       throw error;
     }
   };
 
-  private startCapture = async (
-    name: string | undefined,
-    isCurrent: () => boolean,
-  ): Promise<StartCaptureResponse> => {
+  private startCapture = async (name: string | undefined): Promise<StartCaptureResponse> => {
     this.captureActionTicket += 1;
     const support = detectCaptureSupport();
     this.setState({ support });
@@ -720,16 +712,13 @@ export class CaptureController {
     let initResponse;
     try {
       initResponse = await initRecording(name);
-      if (!isCurrent()) return null;
 
     } catch (error: unknown) {
-      if (!isCurrent()) return null;
       const detail =
         error instanceof AxiosError ? error.response?.data?.detail : null;
 
       if (isActiveRecordingConflictDetail(detail)) {
         await this.refreshPausedRecording({ onDemand: true }).catch(() => {});
-        if (!isCurrent()) return null;
         this.setState({
           status: this.state.pausedRecording ? "paused" : "idle",
           error: detail.message,
@@ -756,7 +745,6 @@ export class CaptureController {
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });
-      assertMicrophoneResumeCurrent(isCurrent);
 
       if (sources.displayStream && sources.displayStream.getAudioTracks().length === 0) {
         useNotificationStore.getState().addNotification({
@@ -772,9 +760,7 @@ export class CaptureController {
         sources,
         captureReport: sources.captureReport,
         elapsedSeconds: 0,
-        isCurrent,
       });
-      if (!isCurrent()) { sources.release(); return null; }
       const captureReport = sources.captureReport;
       sources = null;
       this.setState({
@@ -789,10 +775,8 @@ export class CaptureController {
           outcome: "success",
         }),
       );
-      if (!isCurrent()) return null;
       clearPausedCaptureContext();
       await this.refreshPausedRecording().catch(() => {});
-      if (!isCurrent()) return null;
       return {
         recordingId: initResponse.id,
         name: initResponse.name,
@@ -800,10 +784,6 @@ export class CaptureController {
       };
 
     } catch (error: unknown) {
-      if (!isCurrent()) {
-        sources?.release();
-        return null;
-      }
       if (error instanceof PickSourceError && error.captureReport) {
         await this.reportCaptureSourceAttempt(
           initResponse.id,
@@ -816,14 +796,12 @@ export class CaptureController {
         );
       }
       sources?.release();
-      if (!isCurrent()) return null;
       const cancelledByUser =
         error instanceof PickSourceError && error.code === "display_cancelled";
       await discardRecordingCapture(
         initResponse.id,
         cancelledByUser ? "display_picker_cancelled" : undefined,
       ).catch(() => {});
-      if (!isCurrent()) return null;
 
       if (cancelledByUser) {
         this.setState({
@@ -905,7 +883,6 @@ export class CaptureController {
   };
 
   resume = async (recordingId?: RecordingId): Promise<StartCaptureResult> => {
-    this.startTicket += 1;
     const targetRecordingId =
       recordingId ?? this.state.pausedRecording?.id ?? this.state.recordingId;
     if (!targetRecordingId) {
@@ -1128,7 +1105,6 @@ export class CaptureController {
     }
     const permission = this.assertCaptureControlAllowed(targetRecordingId);
     if (permission) await permission;
-    this.startTicket += 1;
     this.captureActionTicket += 1;
 
     const hadRuntime = Boolean(this.runtime);
@@ -1287,7 +1263,6 @@ export class CaptureController {
     }
     const permission = this.assertCaptureControlAllowed(targetRecordingId);
     if (permission) await permission;
-    this.startTicket += 1;
     this.captureActionTicket += 1;
 
     // A tab whose capture continued elsewhere must not delete it from under
@@ -1743,11 +1718,8 @@ export class CaptureController {
     sources: PickedCaptureSources;
     captureReport: CaptureSourceReportSnapshot;
     elapsedSeconds?: number;
-    isCurrent?: () => boolean;
   }) => {
-    if (options.isCurrent) assertMicrophoneResumeCurrent(options.isCurrent);
     await this.disposeRuntime();
-    if (options.isCurrent) assertMicrophoneResumeCurrent(options.isCurrent);
 
     const mixer = await createCaptureMixer({
       displayStream: options.sources.displayStream,
@@ -1755,10 +1727,6 @@ export class CaptureController {
       systemGain: this.state.settings.systemGain,
       microphoneGain: this.state.settings.microphoneGain,
     });
-    if (options.isCurrent && !options.isCurrent()) {
-      await mixer.dispose();
-      assertMicrophoneResumeCurrent(options.isCurrent);
-    }
 
     const ownerId = signedInAccountId();
     const uploader = createSegmentUploader({

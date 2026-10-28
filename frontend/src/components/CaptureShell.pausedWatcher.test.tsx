@@ -264,21 +264,6 @@ describe("Start reservation across entry surfaces", () => {
     expect(routerPush).not.toHaveBeenCalled();
     expect(screen.getAllByRole("button", { name: "Start Meeting" })).toHaveLength(2);
   });
-
-  it("ignores a Start preflight which completes after its controller was destroyed", async () => {
-    const capture = controller();
-    let answer!: (recordings: Recording[]) => void;
-    const preflight = new Promise<Recording[]>((resolve) => { answer = resolve; });
-    api.getUnfinishedCaptures.mockReturnValue(preflight);
-    const starting = capture.start("").catch(() => null);
-    await capture.destroy();
-    answer([]);
-    await starting;
-
-    expect(api.initRecording).not.toHaveBeenCalled();
-    expect(pickCaptureSource).not.toHaveBeenCalled();
-    expect(capture.getState().runtimeActive).toBe(false);
-  });
 });
 
 afterEach(async () => {

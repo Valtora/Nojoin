@@ -539,7 +539,6 @@ describe("capture controller", () => {
       sources,
       captureReport: sources.captureReport,
       elapsedSeconds: 0,
-      isCurrent: expect.any(Function),
     });
   });
 
@@ -1882,46 +1881,6 @@ describe("a capture whose tab closed without pausing it (issue #519)", () => {
     expect(apiMocks.initRecording).toHaveBeenCalledTimes(1);
     expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledTimes(1);
     expect(controller.getState().status).toBe("recording");
-  });
-
-  it("ignores late initialisation after destruction without discarding the reservation", async () => {
-    let finishInit: (recording: unknown) => void = () => {};
-    apiMocks.initRecording.mockImplementationOnce(() => new Promise((resolve) => { finishInit = resolve; }));
-    const controller = newController();
-    const starting = controller.start("Weekly sync");
-    await vi.waitFor(() => expect(apiMocks.initRecording).toHaveBeenCalledTimes(1));
-    await controller.destroy();
-    const afterDestroy = controller.getState();
-
-    finishInit({ id: "rec-1", capture_epoch: 3 });
-    await expect(starting).resolves.toBeNull();
-
-    expect(pickSourceMocks.pickCaptureSource).not.toHaveBeenCalled();
-    expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
-    expect(captureLockMocks.holdCaptureLock).not.toHaveBeenCalled();
-    expect(controller.getState()).toEqual(afterDestroy);
-  });
-
-  it("releases a late picker after destruction without activating or discarding", async () => {
-    let finishPicker: (sources: unknown) => void = () => {};
-    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", capture_epoch: 3 });
-    pickSourceMocks.pickCaptureSource.mockImplementationOnce(() => new Promise((resolve) => {
-      finishPicker = resolve;
-    }));
-    const controller = newController();
-    const starting = controller.start("Weekly sync");
-    await vi.waitFor(() => expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledTimes(1));
-    await controller.destroy();
-    const afterDestroy = controller.getState();
-    const sources = microphoneSources();
-
-    finishPicker(sources);
-    await expect(starting).resolves.toBeNull();
-
-    expect(sources.release).toHaveBeenCalledTimes(1);
-    expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
-    expect(captureLockMocks.holdCaptureLock).not.toHaveBeenCalled();
-    expect(controller.getState()).toEqual(afterDestroy);
   });
 
   it("reserves Start while cold Resume is waiting for its picker", async () => {
