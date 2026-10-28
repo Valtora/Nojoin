@@ -12,6 +12,7 @@ from backend.tests.test_live_settling_publication import (
     _request,
     _seed,
     _words,
+    settle_with_k,
 )
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
@@ -377,7 +378,7 @@ def test_speaker_cap_and_retained_barriers_still_break_lines() -> None:
     assert [part.speaker for part in changed] == ["A", "B"]
     barrier = partition_words(words[:2], same[:2], barriers=[500])
     retained = partition_words(
-        words[:2], same[:2], boundaries=LineBoundaries(closed_ends={"0": 500})
+        words[:2], same[:2], boundaries=LineBoundaries(closed_at_ms=[500])
     )
     assert len(barrier) == len(retained) == 2
     assert barrier[0].boundary_locked and retained[0].boundary_locked
@@ -415,8 +416,10 @@ def test_closed_line_still_requires_boundary_words_and_speaker_locks(
 
 def test_tail_waits_for_more_than_one_second_of_confirmed_silence(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=1)
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         for step in range(2):
             publish_live_settling(
@@ -439,11 +442,13 @@ def test_tail_waits_for_more_than_one_second_of_confirmed_silence(
 @pytest.mark.parametrize("configured_on", ["publish", "expire"])
 def test_recording_pause_survives_speaker_only_reprojection(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
     pause_s: float,
     count: int,
     configured_on: str,
 ) -> None:
-    recording_id = _seed(settling_engine, k=99)
+    settle_with_k(monkeypatch, 99)
+    recording_id = _seed(settling_engine)
     words = [
         {"word": "One", "start_ms": 0, "end_ms": 500},
         {"word": " two", "start_ms": 1300, "end_ms": 1800},

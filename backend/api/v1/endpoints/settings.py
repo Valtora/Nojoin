@@ -1,5 +1,5 @@
 import logging
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -98,7 +98,7 @@ class SettingsUpdate(BaseModel):
     enable_live_transcription: Optional[bool] = None
     # Install-wide, admin-only; selection is frozen when capture labels start.
     live_speaker_labels: Optional[str] = None
-    live_text_settling: Optional[str] = None
+    live_text_settling: Optional[Literal["off", "auto", "always"]] = None
     live_text_settling_k: Optional[int] = Field(default=None, strict=True, ge=1, le=10)
     live_text_settling_window_s: Optional[float] = Field(
         default=None, strict=True, ge=2, le=30, allow_inf_nan=False
@@ -180,7 +180,7 @@ class SettingsUpdate(BaseModel):
             )
         return value
 
-    @field_validator("speaker_engine", "live_speaker_labels", "live_text_settling")
+    @field_validator("speaker_engine", "live_speaker_labels")
     @classmethod
     def validate_speaker_setting(
         cls, value: Optional[str], info: ValidationInfo

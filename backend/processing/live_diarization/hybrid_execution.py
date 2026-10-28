@@ -18,10 +18,7 @@ if TYPE_CHECKING:
 
 
 def _load_shadow(
-    run: LiveLabelRun,
-    engine: HybridLiveState,
-    loader: Callable[[], ModelFn],
-    checkpoint: Callable[[HybridLiveState], None],
+    run: LiveLabelRun, engine: HybridLiveState, loader: Callable[[], ModelFn]
 ) -> ModelFn:
     try:
         return loader()
@@ -32,20 +29,15 @@ def _load_shadow(
     # retry, even if the shadow loader fails again. Leave exception scope first.
     engine.fallback("oom", engine.consumed_n)
     release_native()
-    checkpoint(engine)
+    save_hybrid(run.live_dir, engine)
     return loader()
 
 
 def feed_capture(
-    run: LiveLabelRun,
-    engine: HybridLiveState,
-    loader: Callable[[], ModelFn],
-    checkpoint: Callable[[HybridLiveState], None] | None = None,
-    restore: Callable[[], HybridLiveState | None] | None = None,
+    run: LiveLabelRun, engine: HybridLiveState, loader: Callable[[], ModelFn]
 ) -> tuple[HybridLiveState, FeedResult]:
     """A failed shadow forward may have moved cursors; restore before retrying."""
-    persist = checkpoint or (lambda value: save_hybrid(run.live_dir, value))
-    model = _load_shadow(run, engine, loader, persist)
+    model = _load_shadow(run, engine, loader)
     samples = run.audio.numpy() if hasattr(run.audio, "numpy") else run.audio
     audio = np.asarray(samples, dtype=np.float32).reshape(-1)
     start_n = int(round(run.audio_start_s * engine.config.sample_rate))
@@ -57,18 +49,11 @@ def feed_capture(
     # Discard the mutated stream and shadow, then restore only durable accepted
     # evidence. The bank codec truncates any uncommitted append rows.
     engine.stream = None
-    engine.bank.discard_appends()
-    restored = (
-        restore()
-        if restore is not None
-        else load_hybrid(run.live_dir, engine.config, recording_id=run.recording_id)
-    )
+    restored = load_hybrid(run.live_dir, engine.config, recording_id=run.recording_id)
     if restored is None:
         release_native()
         raise LiveLabelStateError("Missing checkpoint after shadow allocation failure")
     restored.fallback("oom", restored.consumed_n)
     release_native()
-    if checkpoint is not None:
-        restored.bank.stage_appends()
-    persist(restored)
+    save_hybrid(run.live_dir, restored)
     return restored, restored.feed(audio, start_n, loader())

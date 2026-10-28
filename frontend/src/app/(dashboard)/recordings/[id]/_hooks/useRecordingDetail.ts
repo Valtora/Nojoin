@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import {
+  getRecordingIfChanged,
   getSettings,
   updateSettings,
   updateSpeaker,
@@ -76,7 +77,9 @@ interface UseRecordingDetailParams {
   capture?: { recordingId: string | null; status: string };
 }
 
-// A quiet page still notices a capture started from another tab or device.
+// A finished page still notices changes made from another tab or device: a
+// capture started, a reprocess, or a transcript edit. Each check is a 304
+// until the status or the transcript change counter moves.
 export const IDLE_RECORDING_POLL_INTERVAL_MS = 15_000;
 
 /**
@@ -158,6 +161,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // When the page first saw the audio as unavailable. It bounds how long the
   // page keeps re-checking for it.
   const audioUnavailableSinceRef = useRef<number | null>(null);
+  const idleEtagRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
   const localCaptureActive = !!recording && capture?.recordingId === recording.id &&
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
@@ -167,7 +171,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
     transcriptSpeakerNames, transcriptSpeakers, liveTranscript, usesInFlightTranscript, transcriptIsAuthoritative,
     hasRetainedPublication,
-    history, future, isUndoing, syncTranscriptState, repairTranscriptSequence, pushTranscriptHistory,
+    history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
     setActiveTranscriptEditId, handleUndo, handleRedo,
   } = useRecordingTranscript(recording, setRecording, localCaptureActive);
   const { refresh: refreshInFlightTranscript } = liveTranscript;
@@ -294,29 +298,46 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
           ? 0
           : Date.now() - audioUnavailableSinceRef.current,
         filesBeingRead,
-      ) ?? (isAudioUnavailable(recording) ? null : IDLE_RECORDING_POLL_INTERVAL_MS);
+      );
 
-    const pollIntervalMs = currentPollIntervalMs();
+    const idle = currentPollIntervalMs() === null;
+    const pollIntervalMs = idle
+      ? isAudioUnavailable(recording) ? null : IDLE_RECORDING_POLL_INTERVAL_MS
+      : currentPollIntervalMs();
     if (pollIntervalMs === null) {
       return;
     }
 
     const interval = setInterval(async () => {
-      if (currentPollIntervalMs() === null) {
+      if (!idle && currentPollIntervalMs() === null) {
         clearInterval(interval);
         return;
       }
       try {
         const { id } = await params;
-        const data = await metadataReader.read(id);
-        if (!data) return;
+        let polled: { recording: Recording; etag: string | null } | null;
+        if (idle) {
+          const sentAt = audioClock.stamp();
+          polled = await getRecordingIfChanged(id, idleEtagRef.current);
+          if (polled) audioClock.observe(polled.recording, sentAt);
+        } else {
+          const read = await metadataReader.read(id);
+          polled = read && { recording: read, etag: idleEtagRef.current };
+        }
         recordingNotFound.found();
+        if (!polled) return;
+        const data = polled.recording;
 
-        if (hasPolledRecordingChanged(recording, data)) {
+        const transcriptMoved = idle &&
+          data.transcript?.change_sequence !== recording.transcript?.change_sequence;
+        // Taken as seen only once the transcript has caught up: a failed read
+        // keeps the old ETag and counter, so the next check tries again.
+        if (transcriptMoved) await syncTranscriptState("full");
+        idleEtagRef.current = polled.etag;
+        if (transcriptMoved || hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
           if (!isEditingTitle) setTitleValue(data.name);
         }
-        await repairTranscriptSequence(data);
 
             } catch (e: unknown) {
         if (!metadataReader.isActive()) return;
@@ -335,7 +356,8 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, metadataReader, recordingNotFound, filesBeingRead, repairTranscriptSequence]);
+  }, [params, recording, isEditingTitle, audioClock, metadataReader, recordingNotFound, filesBeingRead,
+    syncTranscriptState]);
 
   // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {

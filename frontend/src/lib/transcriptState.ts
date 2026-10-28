@@ -116,11 +116,10 @@ export const applyTranscriptDelta = ({
   if (mode === "delta" && delta.revision < baseState.revision) {
     return baseState;
   }
-  const nextDeferred: LocalTranscriptState["deferredById"] = mode === "full" ? {} : { ...baseState.deferredById };
-  const fullUtterances = delta.settling_required
+  const nextDeferred = { ...baseState.deferredById };
+  let utterancesToApply = delta.settling_required
     ? delta.utterances.map((utterance) => ({ ...utterance, settling_required: true }))
     : delta.utterances;
-  let utterancesToApply = fullUtterances;
   let tombstonesToApply = delta.tombstones;
 
   if (activeEditUtteranceId) {
@@ -152,12 +151,12 @@ export const applyTranscriptDelta = ({
 
   // A delta that applies nothing keeps the list, as a full sync does when
   // nothing changed, so a poll with no news doesn't recompute the views.
-  let nextSegments =
+  const nextSegments =
     mode === "full"
-      ? fullUtterances.length > 0
+      ? utterancesToApply.length > 0
         ? keepUnchangedSegments(
             baseState.segments,
-            sortTranscriptSegments(fullUtterances.map(transcriptSegmentFromUtterance)),
+            sortTranscriptSegments(utterancesToApply.map(transcriptSegmentFromUtterance)),
           )
         : delta.settling_required ? [] : sortTranscriptSegments(fallbackSegments)
       : utterancesToApply.length === 0 && tombstonesToApply.length === 0
@@ -167,19 +166,6 @@ export const applyTranscriptDelta = ({
             utterancesToApply,
             tombstonesToApply,
           );
-
-  if (mode === "full" && activeEditUtteranceId) {
-    const activeSegment = baseState.segments.find((segment) => segment.id === activeEditUtteranceId);
-    if (activeSegment) {
-      // A full snapshot can delete by omission, without a tombstone. Keep the
-      // editor mounted until editing ends, then apply that authoritative value.
-      nextDeferred[activeEditUtteranceId] =
-        nextSegments.find((segment) => segment.id === activeEditUtteranceId) ?? null;
-      nextSegments = keepUnchangedSegments(baseState.segments, sortTranscriptSegments([
-        ...nextSegments.filter((segment) => segment.id !== activeEditUtteranceId), activeSegment,
-      ]));
-    }
-  }
 
   return {
     recordingId,

@@ -17,18 +17,16 @@ import logging
 from typing import Any
 
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlmodel import select
 
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
-from backend.models.recording import RecordingStatus
 from backend.models.speaker import GlobalSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.user import User
-from backend.utils.canonical_pipeline.guards import LineActionConflict
 from backend.utils.live_speaker_labels import live_speaker_display_name
 from backend.utils.speaker_names.durability import persist_name_anchors
 from backend.utils.speaker_names.events import UserNameAct
@@ -36,7 +34,6 @@ from backend.utils.speaker_names.live import (
     SURFACE_LIVE,
     live_speaker_names,
     record_live_speaker_name,
-    require_live_person_anchor,
 )
 from backend.utils.transcript_settling import (
     load_capture_publication,
@@ -49,7 +46,6 @@ from .routes_recording import PLACEHOLDER_NAME_PATTERN
 
 logger = logging.getLogger(__name__)
 
-NAMING_STATUSES = frozenset({RecordingStatus.UPLOADING, RecordingStatus.PAUSED})
 NAMING_CLOSED_DETAIL = (
     "Live speakers can be named only while the meeting is recording or paused. "
     "Rename the speaker once processing finishes."
@@ -62,18 +58,8 @@ PLACEHOLDER_NAME_DETAIL = "Pick a real name, or rename them to the right person"
 
 class LiveSpeakerNameUpdate(BaseModel):
     name: str = Field(max_length=255)
-    anchor_utterance_id: str | None = None
-    expected_revision: int | None = Field(default=None, ge=1)
     create_person: bool = False
     model_config = ConfigDict(extra="ignore")
-
-    @model_validator(mode="after")
-    def paired_anchor(self) -> "LiveSpeakerNameUpdate":
-        if (self.anchor_utterance_id is None) != (self.expected_revision is None):
-            raise ValueError(
-                "anchor_utterance_id and expected_revision must be supplied together"
-            )
-        return self
 
 
 class LiveSpeakerNamesRead(BaseModel):
@@ -101,10 +87,6 @@ def _validate_name_update(update: LiveSpeakerNameUpdate, label: str) -> str:
         raise HTTPException(status_code=422, detail=PLACEHOLDER_NAME_DETAIL)
     if live_speaker_display_name(label) is None:
         raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)
-    if update.create_person and update.anchor_utterance_id is None:
-        raise HTTPException(
-            status_code=422, detail="Choose a locked speaker line first"
-        )
     return name
 
 
@@ -138,14 +120,6 @@ async def name_live_speaker(
     ).scalar_one_or_none()
 
     def _record(sync_session: Session) -> tuple[dict[str, Any], dict[str, str]] | None:
-        reference = (
-            (update.anchor_utterance_id, update.expected_revision)
-            if update.anchor_utterance_id is not None
-            and update.expected_revision is not None
-            else None
-        )
-        if update.create_person and reference is not None:
-            require_live_person_anchor(sync_session, recording.id, label, reference)
         event = record_live_speaker_name(
             sync_session,
             recording.id,
@@ -156,7 +130,6 @@ async def name_live_speaker(
                 actor_user_id=current_user.id,
                 surface=SURFACE_LIVE,
             ),
-            reference,
         )
         if event is None:
             return None
@@ -170,11 +143,7 @@ async def name_live_speaker(
         }
         return metric, live_speaker_names(sync_session, recording.id)
 
-    try:
-        recorded = await db.run_sync(_record)
-    except LineActionConflict as error:
-        await db.rollback()
-        raise HTTPException(status_code=409, detail=error.detail) from error
+    recorded = await db.run_sync(_record)
     if recorded is None:
         await db.rollback()
         raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)

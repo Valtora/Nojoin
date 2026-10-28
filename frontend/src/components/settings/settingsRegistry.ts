@@ -490,14 +490,14 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "transcription-live-settling",
     label: "Live word settling",
-    description: "Revise recent words and lock unchanged wording on a GPU.",
+    description: "Revise recent words and lock unchanged wording on a GPU, or on a CPU too.",
     category: "transcription",
     access: "admin",
     scope: "everyone",
     advanced: "can-degrade",
     settingsKeys: ["live_text_settling"],
     defaultValue: "auto",
-    keywords: ["live", "settling", "word", "GPU"],
+    keywords: ["live", "settling", "word", "GPU", "CPU"],
   },
   {
     id: "transcription-live-settling-k",

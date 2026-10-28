@@ -26,6 +26,7 @@ from backend.processing.embedding import (
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.utils.speaker_names.events import UserNameAct, record_user_link
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -222,6 +223,7 @@ async def _record_dialog_link(
     """The dialog's link is the user's, as a rename's is (``record_user_link``)."""
     act = UserNameAct(person.name, person.id, actor_id, "api")
     await db.run_sync(lambda session: record_user_link(session, speaker, act))
+    await db.execute(change_sequence_bump(speaker.recording_id))
 
 
 @router.post("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/apply")
@@ -254,16 +256,6 @@ async def apply_voiceprint_action(
             detail="No voiceprint extracted. Call /voiceprint/extract first.",
         )
 
-    guarded_name = False
-    if action.action in {"create_new", "link_existing", "force_link"}:
-        from backend.utils.canonical_pipeline.guards import settling_required
-
-        from .helpers import _guard_speaker_lines
-
-        guarded_name = settling_required(
-            await _guard_speaker_lines(db, recording.id, diarization_label)
-        )
-
     if action.action == "create_new":
         if not action.new_speaker_name:
             raise HTTPException(
@@ -293,11 +285,8 @@ async def apply_voiceprint_action(
         new_gs = GlobalSpeaker(name=action.new_speaker_name, user_id=current_user.id)
         library_update = offer_linked_voiceprint(new_gs, rec_speaker, alpha=0.3)
         db.add(new_gs)
-        if guarded_name:
-            await db.flush()
-        else:
-            await db.commit()
-            await db.refresh(new_gs)
+        await db.commit()
+        await db.refresh(new_gs)
 
         rec_speaker.global_speaker_id = new_gs.id
         rec_speaker.name = new_gs.name

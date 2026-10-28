@@ -5,12 +5,11 @@ import { useCallback, useRef } from "react";
 import { getGlobalSpeakers, nameLiveSpeaker } from "@/lib/api/speakers";
 import { getErrorDetail } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
-import type { RecordingId, TranscriptSegment } from "@/types";
-import { liveSpeakerSourceReference } from "@/lib/transcript/liveSpeakerSource";
+import type { RecordingId } from "@/types";
 
 export interface LiveSpeakerNaming {
   /** Names live speaker `label`; a failure is reported, never thrown. */
-  renameLiveSpeaker: (label: string, name: string, segment?: TranscriptSegment, createPerson?: boolean) => Promise<boolean>;
+  renameLiveSpeaker: (label: string, name: string, createPerson?: boolean) => Promise<boolean>;
   /** People's names, read once on the first rename and kept. */
   loadPeopleNames: () => Promise<readonly string[]>;
 }
@@ -30,19 +29,9 @@ export function useLiveSpeakerNaming(
   const peopleNames = useRef<Promise<readonly string[]> | null>(null);
 
   const renameLiveSpeaker = useCallback(
-    async (label: string, name: string, segment?: TranscriptSegment, createPerson = false) => {
+    async (label: string, name: string, createPerson = false) => {
       try {
-        const anchor = segment ? liveSpeakerSourceReference(segment) : null;
-        if (createPerson && (!anchor || segment?.locked !== true)) {
-          addNotification({ type: "error", message: "Wait for a locked transcript line before adding this speaker to People." });
-          return false;
-        }
-        const names = await (createPerson
-          ? nameLiveSpeaker(recordingId, label, name, anchor!, true)
-          : anchor
-          ? nameLiveSpeaker(recordingId, label, name, anchor)
-          : nameLiveSpeaker(recordingId, label, name));
-        applyNames(names);
+        applyNames(await nameLiveSpeaker(recordingId, label, name, createPerson));
         peopleNames.current = null;
         try { await onAccepted?.(); }
         catch (error) { console.error("Failed to refresh accepted speaker naming", error); }

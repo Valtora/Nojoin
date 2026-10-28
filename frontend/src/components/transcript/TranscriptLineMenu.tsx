@@ -2,8 +2,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { noteTargetForLine } from "@/lib/notes/lineSelection";
-import { isNoteSelection, type NoteTarget, type OutboxDraft } from "@/lib/notes/noteOutbox";
+import { lineSelection } from "@/lib/notes/lineSelection";
+import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import { lineActionsFor, type LineActionId } from "@/lib/transcript/actions";
 import type { RecordingSpeaker, TranscriptSegment } from "@/types";
 import { lineIsSettling, LINE_SETTLING_REASON, splitWords } from "@/lib/transcript/settling";
@@ -81,11 +81,9 @@ export default function TranscriptLineMenu({
     currentLineEdit.current = lineEdit;
     return () => { currentLineEdit.current = null; };
   }, [lineEdit]);
-  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   /** The ⋯ button, while an editor or popover an item opened is open. */
   const returnFocusTo = useRef<HTMLElement | null>(null);
-  const selection = useMemo(() => noteTargetForLine(segment), [segment]);
-  const activeNoteTarget = noteTarget && !isNoteSelection(noteTarget) ? noteTarget : selection;
+  const selection = useMemo(() => lineSelection(segment), [segment]);
   const liveContext = lineEdit?.liveContext;
   useEffect(() => {
     if (!liveContext) return;
@@ -111,7 +109,6 @@ export default function TranscriptLineMenu({
       if (live) {
         if (selection) live.onNoteOnLine?.(selection);
       } else {
-        setNoteTarget(selection);
         setNoteAnchor(trigger);
       }
     },
@@ -180,15 +177,12 @@ export default function TranscriptLineMenu({
           lineEdit.anchor.focus();
         }}
       /> : null}
-      {noteAnchor && activeNoteTarget && onAddNote ? (
+      {noteAnchor && selection && onAddNote ? (
         <NoteOnSelectionPopover
-          quote={isNoteSelection(activeNoteTarget) ? activeNoteTarget.quotedText : null}
-          title={`Note on the line at ${formatTime(isNoteSelection(activeNoteTarget)
-            ? segment.start : activeNoteTarget.startMs / 1000)}`}
+          quote={selection.quotedText}
+          title={`Note on the line at ${formatTime(segment.start)}`}
           anchor={noteAnchor}
-          onSubmit={(body) => onAddNote(isNoteSelection(activeNoteTarget)
-            ? { kind: "selection", body, anchorMs: null, selection: activeNoteTarget }
-            : { kind: "point", body, anchorMs: activeNoteTarget.startMs, span: activeNoteTarget })}
+          onSubmit={(body) => onAddNote({ kind: "selection", body, anchorMs: null, selection })}
           onClose={() => setNoteAnchor(null)}
         />
       ) : null}

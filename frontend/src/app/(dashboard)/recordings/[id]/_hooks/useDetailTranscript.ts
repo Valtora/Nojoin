@@ -13,9 +13,6 @@ import { RecordingStatus, type Recording, type RecordingSpeaker, type Transcript
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { isRecordingInFlight, shouldPollRecordingUpdates, type TranscriptHistoryItem } from "./recordingDetailUtils";
-import { createDetailTranscriptReader, type DetailTranscriptRead, type TranscriptSyncResult } from "./detailTranscriptReader";
-
-export const SETTLED_TRANSCRIPT_READ_TIMEOUT_MS = 15_000;
 
 /** Transcript state, edit deferral, history and polling for the detail editor. */
 export function useDetailTranscript(
@@ -61,17 +58,15 @@ export function useDetailTranscript(
   const recordingRef = useRef(recording);
   const inFlightRef = useRef(isInFlightRecording);
   const activeEditRef = useRef(activeTranscriptEditId);
-  const readerRef = useRef<ReturnType<typeof createDetailTranscriptReader> | null>(null);
-  const fullSequenceRef = useRef<{ recordingId: string; sequence: number; speakers: string } | null>(null);
-  const repairRef = useRef<{
-    recordingId: string; sequence: number; speakers: string; promise: Promise<TranscriptSyncResult | null>;
-  } | null>(null);
+  // A read answers for the reader generation it was sent under, or not at all.
+  const generationRef = useRef(readerGeneration);
 
   useEffect(() => {
     recordingRef.current = recording;
     inFlightRef.current = isInFlightRecording;
     activeEditRef.current = activeTranscriptEditId;
-  }, [recording, isInFlightRecording, activeTranscriptEditId]);
+    generationRef.current = readerGeneration;
+  }, [recording, isInFlightRecording, activeTranscriptEditId, readerGeneration]);
 
   const transcriptSegments = useMemo(
     () => {
@@ -146,39 +141,23 @@ export function useDetailTranscript(
     [],
   );
 
-  const readTranscript = useCallback(
+  const syncTranscriptState = useCallback(
     async (
-      { recording, mode, options }: DetailTranscriptRead,
-      isCurrent: () => boolean,
+      mode: "full" | "delta" = "delta",
+      options: { deferActiveEdit?: boolean } = {},
     ) => {
+      const recording = recordingRef.current;
+      if (!recording || inFlightRef.current) {
+        return null;
+      }
+      const generation = generationRef.current;
       const currentTranscriptState = transcriptStateRef.current;
       const afterRevision =
         mode === "delta" && currentTranscriptState?.recordingId === recording.id
           ? currentTranscriptState.revision
           : undefined;
-      let transcriptDelta;
-      if (authoritativeEmpty) {
-        // A stalled handoff must not hold every retry behind the serial reader.
-        // Racing also fences clients which do not honour AbortSignal promptly.
-        const controller = new AbortController();
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        try {
-          transcriptDelta = await Promise.race([
-            getTranscriptUtterances(recording.id, afterRevision, controller.signal),
-            new Promise<never>((_, reject) => {
-              timeout = setTimeout(() => {
-                controller.abort();
-                reject(new Error("Settled transcript read timed out"));
-              }, SETTLED_TRANSCRIPT_READ_TIMEOUT_MS);
-            }),
-          ]);
-        } finally {
-          clearTimeout(timeout);
-        }
-      } else {
-        transcriptDelta = await getTranscriptUtterances(recording.id, afterRevision);
-      }
-      if (!isCurrent() || recordingRef.current?.id !== recording.id) return null;
+      const transcriptDelta = await getTranscriptUtterances(recording.id, afterRevision);
+      if (generationRef.current !== generation || recordingRef.current?.id !== recording.id) return null;
 
       const latestTranscriptState = transcriptStateRef.current;
       if (
@@ -240,9 +219,7 @@ export function useDetailTranscript(
       });
 
       if (mode === "full") {
-        fullSequenceRef.current = { recordingId: recording.id, sequence: recording.transcript?.change_sequence ?? 0,
-          speakers: JSON.stringify(transcriptDelta.speakers) };
-        setFullReadReady({ recordingId: recording.id, generation: readerGeneration,
+        setFullReadReady({ recordingId: recording.id, generation,
           publicationPending: recording.previous_publication_available === true });
       }
 
@@ -252,56 +229,8 @@ export function useDetailTranscript(
         speakers: transcriptDelta.speakers,
       };
     },
-    [setRecording, authoritativeEmpty, readerGeneration],
+    [setRecording, authoritativeEmpty],
   );
-
-  useEffect(() => {
-    const reader = createDetailTranscriptReader(readTranscript);
-    readerRef.current = reader;
-    repairRef.current = null;
-    fullSequenceRef.current = null;
-    return () => {
-      reader.cancel();
-      if (readerRef.current === reader) readerRef.current = null;
-    };
-  }, [recording?.id, isInFlightRecording, publicationPending, readTranscript]);
-
-  const syncTranscriptState = useCallback((
-    mode: "full" | "delta" = "delta",
-    options: { deferActiveEdit?: boolean } = {},
-  ) => {
-    const current = recordingRef.current;
-    return current && !inFlightRef.current && readerRef.current
-      ? readerRef.current.request({ recording: current, mode, options })
-      : Promise.resolve(null);
-  }, []);
-
-  // The durable sequence is distinct from the utterance event cursor: a full
-  // read repairs edits whose event committed behind that cursor. Failed reads
-  // leave this sequence unacknowledged so the next existing status poll retries.
-  const repairTranscriptSequence = useCallback((candidate: Recording, force = false) => {
-    const reprocessPublication = candidate.previous_publication_available === true ||
-      candidate.reprocess_publication_complete === true;
-    // Marker changes recreate the reader and schedule their own full read.
-    if ((!candidate.transcript?.settling_required && !reprocessPublication) ||
-      (isRecordingInFlight(candidate) && !reprocessPublication) ||
-      !!candidate.previous_publication_available !== !!recordingRef.current?.previous_publication_available ||
-      recordingRef.current?.id !== candidate.id || inFlightRef.current ||
-      !readerRef.current) return Promise.resolve(null);
-    const sequence = candidate.transcript?.change_sequence ?? 0;
-    const speakers = JSON.stringify(candidate.speakers ?? []);
-    const repaired = fullSequenceRef.current;
-    if (!force && repaired?.recordingId === candidate.id && repaired.sequence === sequence &&
-      (!reprocessPublication || repaired.speakers === speakers)) return Promise.resolve(null);
-    const pending = repairRef.current;
-    if (pending?.recordingId === candidate.id && pending.sequence === sequence &&
-      (!reprocessPublication || pending.speakers === speakers)) return pending.promise;
-    const promise = readerRef.current.request({ recording: candidate, mode: "full", options: {} }).finally(() => {
-      if (repairRef.current?.promise === promise) repairRef.current = null;
-    });
-    repairRef.current = { recordingId: candidate.id, sequence, speakers, promise };
-    return promise;
-  }, []);
 
   useEffect(() => {
     if (activeTranscriptEditId !== null) {
@@ -322,10 +251,7 @@ export function useDetailTranscript(
       return;
     }
 
-    const initialRead = recording.transcript?.settling_required
-      ? repairTranscriptSequence(recording, true)
-      : syncTranscriptState("full");
-    initialRead.catch((e) => {
+    syncTranscriptState("full").catch((e) => {
       console.error("Failed to load transcript utterances:", e);
     });
     // syncTranscriptState intentionally runs once per recording load; later
@@ -447,7 +373,7 @@ export function useDetailTranscript(
 
   return {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
-    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, repairTranscriptSequence, pushTranscriptHistory,
+    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
     publicationSpeakers: publicationSpeakers && publicationSpeakers.recordingId === recording?.id
       ? publicationSpeakers.speakers : undefined,
     setActiveTranscriptEditId, handleUndo, handleRedo,

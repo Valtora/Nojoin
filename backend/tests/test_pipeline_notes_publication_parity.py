@@ -11,12 +11,12 @@ from sqlmodel import Session
 
 from backend.core.exceptions import AudioProcessingError
 from backend.models.recording import Recording, RecordingStatus
-from backend.tests.test_live_settling_finalisation import _closed_line, _final_segment
-from backend.tests.test_pipeline_stages import _install_happy_path_modules, _run_task
-from backend.tests.test_transcript_publication import _transcript
-from backend.tests.test_transcript_publication import (
+from backend.tests.canonical_engine import _transcript
+from backend.tests.canonical_engine import (
     publication_engine as publication_engine,
 )
+from backend.tests.test_live_settling_finalisation import _closed_line, _final_segment
+from backend.tests.test_pipeline_stages import _install_happy_path_modules, _run_task
 from backend.utils.canonical_pipeline import serialize_canonical_utterances
 from backend.utils.config_manager import config_manager
 from backend.utils.status_manager import update_recording_status

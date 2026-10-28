@@ -24,7 +24,6 @@ describe("pending diarisation inside the previous utterance", () => {
     expect(paragraphs[0]).toHaveClass("inline");
     expect(paragraphs[1]).toHaveClass("inline");
     expect(paragraphs[1]).toHaveAttribute("data-segment-id", "tail");
-    expect(paragraphs[1]).toHaveAttribute("data-revision", "4");
     expect(paragraphs[1]).toHaveAttribute("data-start-ms", "1000");
     expect(paragraphs[1].querySelector('[data-word-id="w3"]')).toHaveClass("italic");
     expect(container.querySelector('#segment-tail')).toHaveAttribute("data-order-index", "1");
@@ -125,6 +124,6 @@ describe("pending diarisation inside the previous utterance", () => {
     else fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(kind === "name" ? rename : editText).toHaveBeenCalledTimes(1));
     expect(kind === "name" ? rename : editText).toHaveBeenCalledWith(...(kind === "name"
-      ? [anchor.speaker, "Kept draft", anchor] : [anchor, "Kept draft"]));
+      ? [anchor.speaker, "Kept draft"] : [anchor, "Kept draft"]));
   });
 });

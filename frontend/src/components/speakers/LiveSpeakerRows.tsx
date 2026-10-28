@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Users } from "lucide-react";
 import type { GlobalSpeaker, RecordingSpeaker, TranscriptSegment } from "@/types";
-import { liveSpeakerSourceReference } from "@/lib/transcript/liveSpeakerSource";
 import { liveSpeakerDisplayName, segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
@@ -11,9 +10,7 @@ import SpeakerAssignmentPopover from "@/components/SpeakerAssignmentPopover";
 import { useSpeakerTurnHighlight } from "./SpeakerTurnHighlight";
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 
-export type RenameLiveSpeaker = (
-  label: string, name: string, segment?: TranscriptSegment, createPerson?: boolean,
-) => Promise<boolean>;
+export type RenameLiveSpeaker = (label: string, name: string, createPerson?: boolean) => Promise<boolean>;
 
 interface Props {
   labels: string[];
@@ -30,17 +27,18 @@ interface Props {
 export default function LiveSpeakerRows({ labels, names, segments, speakers, globalSpeakers,
   speakerColors, onRename, readOnly }: Props) {
   const highlight = useSpeakerTurnHighlight();
-  const [picker, setPicker] = useState<{ label: string; segment: TranscriptSegment; anchor: HTMLElement } | null>(null);
+  const [picker, setPicker] = useState<{ label: string; anchor: HTMLElement } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Naming waits for a locked line, as the transcript's line actions do.
   const anchorFor = (label: string) => segments.findLast((segment) =>
-    segment.speaker === label && segment.locked === true && liveSpeakerSourceReference(segment) !== null);
+    segment.speaker === label && segment.locked === true);
   const canName = (label: string) => !readOnly && !!onRename &&
     liveSpeakerDisplayName(label) !== null && !!anchorFor(label);
   const displayName = (label: string) => segmentSpeakerDisplayName(names, label);
-  const assign = async (label: string, name: string, createPerson: boolean, anchor = anchorFor(label)) => {
-    if (submitting || !canName(label) || !anchor || !onRename) return false;
+  const assign = async (label: string, name: string, createPerson: boolean) => {
+    if (submitting || !canName(label) || !onRename) return false;
     setSubmitting(true);
-    try { return await onRename(label, name, anchor, createPerson); }
+    try { return await onRename(label, name, createPerson); }
     finally { setSubmitting(false); }
   };
 
@@ -58,8 +56,7 @@ export default function LiveSpeakerRows({ labels, names, segments, speakers, glo
       <div className="mt-2 flex flex-wrap gap-2">
         <ButtonBase type="button" aria-label={`Change identity for ${name}`} disabled={disabled}
           onClick={(event) => {
-            const segment = anchorFor(label);
-            if (segment) setPicker({ label, segment, anchor: event.currentTarget });
+            if (anchorFor(label)) setPicker({ label, anchor: event.currentTarget });
           }}
           className={`inline-flex items-center gap-1 rounded px-2 text-xs text-action-text hover:bg-action-tint disabled:opacity-50 ${TOUCH_TARGET_HEIGHT}`}>
           <Users className="h-3.5 w-3.5" aria-hidden="true" /> Change identity
@@ -81,7 +78,7 @@ export default function LiveSpeakerRows({ labels, names, segments, speakers, glo
       currentSpeakerLabel={picker.label} speakerColors={speakerColors} targetElement={picker.anchor}
       fixedScope="speaker_everywhere_in_recording"
       onSelect={async (assignment) => {
-        if (await assign(picker.label, assignment.name, false, picker.segment)) {
+        if (await assign(picker.label, assignment.name, false)) {
           setPicker(null); picker.anchor.focus();
         }
       }}

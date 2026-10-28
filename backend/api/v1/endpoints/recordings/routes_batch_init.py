@@ -23,7 +23,6 @@ from backend.utils.document_storage import (
 )
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
-from backend.utils.transcript_publication import lock_transcript_publications
 from backend.utils.transcript_settling import new_capture_settling_state
 
 from .helpers import revoke_recording_task
@@ -167,11 +166,6 @@ async def batch_permanently_delete_recordings(
     # Locked in id order, so two batches over the same recordings, or a batch
     # and a user deletion, take the locks in one order and cannot deadlock.
     recordings = sorted(recordings, key=lambda recording: recording.id)
-    await db.run_sync(
-        lambda session: lock_transcript_publications(
-            session, [recording.id for recording in recordings]
-        )
-    )
     for recording in recordings:
         # Locked, as in delete_recording, so keep_imported_audio_task cannot
         # repoint audio_path between this read and the delete.

@@ -7,7 +7,6 @@ import { Pencil } from "lucide-react";
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 
 interface LiveSpeakerChipProps {
-  disabledReason?: string;
   /** The stored live label, `LIVE_PROVISIONAL_<n>`. */
   label: string;
   /** What the chip reads: the name the user gave, else "Speaker <n>". */
@@ -46,7 +45,6 @@ export default function LiveSpeakerChip({
   onRename,
   loadPeopleNames,
   onEditingChange,
-  disabledReason,
 }: LiveSpeakerChipProps) {
   // The label is kept from when the box opened: a provisional line can move
   // to another label while the name is typed, and the name is for this one.
@@ -185,11 +183,10 @@ export default function LiveSpeakerChip({
         type="button"
         data-testid="live-transcript-speaker"
         data-locked={locked ? "true" : "false"}
-        title={disabledReason ?? "Rename this speaker"}
-        aria-disabled={!!disabledReason}
+        title="Rename this speaker"
         aria-label={`Rename ${name}`}
         onClick={() => {
-          if (disabledReason || !onRename) return;
+          if (!onRename) return;
           cancelledRef.current = false;
           setDraft({ key: Symbol("live speaker rename"), label, opened: name, text: name, rename: onRename });
         }}

@@ -6,10 +6,12 @@ import { SpeakerTurnHighlightProvider } from "./SpeakerTurnHighlight";
 import { line, panelProps, person, speaker, viewProps } from "../transcript/transcriptTestFixtures";
 
 const updateSpeaker = vi.fn();
+const merge = vi.fn();
 const promote = vi.fn();
 const notify = vi.fn();
 vi.mock("@/lib/api", () => ({
   updateSpeaker: (...args: unknown[]) => updateSpeaker(...args),
+  mergeRecordingSpeakers: (...args: unknown[]) => merge(...args),
   promoteToGlobalSpeaker: (...args: unknown[]) => promote(...args),
   getMergedRecordingSpeakers: vi.fn().mockResolvedValue([]),
 }));
@@ -19,6 +21,7 @@ vi.mock("../people/SplitPersonModal", () => ({ default: () => null }));
 
 beforeEach(() => {
   updateSpeaker.mockReset().mockResolvedValue([]);
+  merge.mockReset().mockResolvedValue({});
   promote.mockReset().mockResolvedValue({});
   notify.mockReset();
 });
@@ -132,6 +135,20 @@ describe("speaker row controls", () => {
     await waitFor(() => expect(props.onRefresh).toHaveBeenCalled());
     expect(updateSpeaker.mock.calls).toEqual([["r1", "A", "Robin"], ["r1", "A2", "Robin"]]);
     expect(screen.getByRole("button", { name: "Change identity for Alex" })).toHaveFocus();
+  });
+
+  it("moves every row member onto a speaker picked from this recording", async () => {
+    const props = panelProps();
+    const renamed = vi.fn();
+    props.speakers = [speaker("A", "Alex"), speaker("A2", "Alex", 3), speaker("B", "Blair", 2)];
+    render(<SpeakerPanel {...props} onSpeakerRenamed={renamed} />);
+    fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Blair Recording only" }));
+    await waitFor(() => expect(props.onRefresh).toHaveBeenCalled());
+    expect(merge.mock.calls).toEqual([["r1", "B", "A"], ["r1", "B", "A2"]]);
+    expect(updateSpeaker).not.toHaveBeenCalled();
+    // Generated notes follow the move, as they follow a rename.
+    expect(renamed).toHaveBeenCalledWith("Alex", "Blair");
   });
 
   it("keeps failed identity assignment open with typed text and reports the failure", async () => {

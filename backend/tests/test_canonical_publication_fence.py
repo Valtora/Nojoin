@@ -270,13 +270,11 @@ def test_fence_reacquires_after_savepoint_rollback(
         assert "committed after savepoint rollback" in transcript.text
 
 
-def test_serialisation_and_delta_reads_do_not_publish(
+def test_serialisation_and_delta_reads_do_not_advance_the_revision(
     publication_database: Database,
 ) -> None:
     engine, recording_id, _ = publication_database
     with Session(engine) as session:
-        transcript = _load_transcript(session, recording_id)
-        before_sequence = transcript.change_sequence
         before_revision = get_canonical_transcript_revision(session, recording_id)
         before_ids = [
             row["id"] for row in serialize_canonical_utterances(session, recording_id)
@@ -295,8 +293,6 @@ def test_serialisation_and_delta_reads_do_not_publish(
                 )
             ] == before_ids
             session.commit()
-        session.refresh(transcript)
-        assert transcript.change_sequence == before_sequence
         assert (
             get_canonical_transcript_revision(session, recording_id) == before_revision
         )
@@ -393,34 +389,22 @@ def test_replacement_keeps_word_evidence_through_projection_refresh(
         session.commit()
 
 
-@pytest.mark.parametrize("route", ["direct", "permanent", "batch", "user"])
 def test_deletion_waits_without_blocking_publishers_recording_foreign_keys(
-    publication_database: Database,
-    monkeypatch: pytest.MonkeyPatch,
-    route: str,
+    publication_database: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from backend.api.v1.endpoints import users
-    from backend.api.v1.endpoints.recordings import routes_actions, routes_batch_init
+    from backend.api.v1.endpoints.recordings import routes_actions
 
     engine, recording_id, _ = publication_database
     waiting = threading.Event()
-    route_module = {"batch": routes_batch_init, "user": users}.get(
-        route, routes_actions
-    )
     monkeypatch.setattr(
-        route_module,
+        routes_actions,
         "delete_recording_artifacts_after_commit",
         lambda *args, **kwargs: None,
     )
-    monkeypatch.setattr(route_module, "delete_document_files", AsyncMock())
+    monkeypatch.setattr(routes_actions, "delete_document_files", AsyncMock())
     with Session(engine) as lookup:
         recording = lookup.get(Recording, recording_id)
         public_id, owner_id = recording.public_id, recording.user_id
-        recording.is_deleted = True
-        admin = User(username="deleting-owner", hashed_password="x", role="owner")
-        lookup.add(admin)
-        lookup.commit()
-        admin_id = admin.id
 
     async def delete() -> Any:
         async_engine = create_async_engine(
@@ -433,40 +417,15 @@ def test_deletion_waits_without_blocking_publishers_recording_foreign_keys(
         def entering_lock(
             connection: Any, cursor: Any, statement: str, *args: Any
         ) -> None:
-            if ("FROM transcripts" in statement and "FOR UPDATE" in statement) or (
-                route == "user" and statement.startswith("DELETE FROM users")
-            ):
+            if "FROM transcripts" in statement and "FOR UPDATE" in statement:
                 waiting.set()
 
         event.listen(async_engine.sync_engine, "before_cursor_execute", entering_lock)
         try:
             async with AsyncSession(async_engine) as session:
                 owner = User(id=owner_id, username="fence-owner", hashed_password="x")
-                if route == "batch":
-                    return await routes_batch_init.batch_permanently_delete_recordings(
-                        routes_batch_init.BatchRecordingIds(recording_ids=[public_id]),
-                        db=session,
-                        current_user=owner,
-                    )
-                if route == "permanent":
-                    return await routes_actions.permanently_delete_recording(
-                        public_id, db=session, current_user=owner
-                    )
-                if route == "user":
-                    return await users.delete_user(
-                        db=session,
-                        user_id=owner_id,
-                        current_user=User(
-                            id=admin_id,
-                            username="deleting-owner",
-                            hashed_password="x",
-                            role="owner",
-                        ),
-                    )
                 return await routes_actions.delete_recording(
-                    public_id,
-                    db=session,
-                    current_user=owner,
+                    public_id, db=session, current_user=owner
                 )
         finally:
             await async_engine.dispose()
@@ -489,12 +448,6 @@ def test_deletion_waits_without_blocking_publishers_recording_foreign_keys(
             publisher.commit()
         finally:
             publisher.rollback()
-        result = future.result(timeout=10)
-        if route == "user":
-            assert result.id == owner_id
-        elif route == "batch":
-            assert result.recording_ids == [public_id]
-        else:
-            assert result["ok"] is True
+        assert future.result(timeout=10)["ok"] is True
     with Session(engine) as session:
         assert session.get(Recording, recording_id) is None

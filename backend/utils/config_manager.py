@@ -28,7 +28,6 @@ from backend.utils.languages import (
 from backend.utils.live_settling_settings import (
     LIVE_SETTLING_DEFAULTS,
     LIVE_SETTLING_KEYS,
-    validate_live_settling_setting,
 )
 from backend.utils.llm_provider_env import provider_of_only_llm_key
 from backend.utils.ollama_url_policy import (
@@ -594,8 +593,6 @@ class ConfigManager:
 
     def validate_config_value(self, key, value):
         """Validates a configuration value."""
-        if key in LIVE_SETTLING_KEYS:
-            validate_live_settling_setting(key, value)
         if key == "whisper_model_size" and value not in WHISPER_MODEL_SIZES:
             raise ValueError(
                 f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}"

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, List, Optional
 
 import aiofiles
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -346,15 +346,55 @@ async def get_recordings_calendar(
     )
 
 
+def _recording_etag(
+    status: RecordingStatus, change_sequence: int | None, notes_status: str | None
+) -> str:
+    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}"'
+
+
+async def _unchanged_since(
+    db: AsyncSession, recording_id: str, user_id: int, if_none_match: str
+) -> str | None:
+    """The current ETag when the caller already holds it, read without the body."""
+    row = (
+        await db.execute(
+            select(
+                Recording.status, Transcript.change_sequence, Transcript.notes_status
+            )
+            .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
+            .where(Recording.public_id == recording_id)
+            .where(Recording.user_id == user_id)
+        )
+    ).first()
+    if row is None:
+        return None
+    etag = _recording_etag(*row)
+    held = {tag.strip() for tag in if_none_match.split(",")}
+    return etag if etag in held else None
+
+
 @router.get("/{recording_id}", response_model=RecordingPublicRead)
 async def get_recording(
     recording_id: str,
+    response: Response,
+    if_none_match: Optional[str] = Header(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Get a specific recording by ID with all relationships loaded.
+
+    The ETag covers only the status, the transcript change counter and the
+    notes status: a finished recording's page sends it back as If-None-Match
+    and gets a 304 until one of them moves. no-store keeps browsers from revalidating ordinary
+    reads with it.
     """
+    if if_none_match is not None:
+        etag = await _unchanged_since(db, recording_id, current_user.id, if_none_match)
+        if etag is not None:
+            return Response(
+                status_code=304, headers={"ETag": etag, "Cache-Control": "no-store"}
+            )
     owned_id = await db.scalar(
         select(Recording.id)
         .where(Recording.public_id == recording_id)
@@ -495,6 +535,13 @@ async def get_recording(
             transcript_segments_override = []
             transcript_text_override = ""
 
+    transcript = recording.transcript
+    response.headers["ETag"] = _recording_etag(
+        recording.status,
+        transcript.change_sequence if transcript else None,
+        transcript.notes_status if transcript else None,
+    )
+    response.headers["Cache-Control"] = "no-store"
     return serialize_recording(
         recording,
         has_proxy=_recording_has_proxy(recording),

@@ -12,7 +12,6 @@ from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceStat
 from backend.utils.word_text import reconstruct_text_from_words
 
 from .constants import _append_utterance_event, _get_utterance, _load_transcript
-from .guards import LineActionConflict, require_action_lines
 from .live_settling_projection import row_words
 
 
@@ -21,16 +20,12 @@ def _split_index(words: list[dict[str, Any]], before_word_id: str) -> int:
         if str(UUID(before_word_id)) != before_word_id:
             raise ValueError
     except ValueError as error:
-        raise LineActionConflict(
-            "line_stale", "Choose a current word boundary to split."
-        ) from error
+        raise RuntimeError("Choose a current word boundary to split.") from error
     index = next(
         (i for i, word in enumerate(words) if word.get("id") == before_word_id), -1
     )
     if index <= 0:
-        raise LineActionConflict(
-            "line_stale", "Choose a word inside the line to split."
-        )
+        raise RuntimeError("Choose a word inside the line to split.")
     candidate = words[index]
     lexical = str(candidate.get("word") or "").strip()
     timed_left = any(
@@ -43,11 +38,9 @@ def _split_index(words: list[dict[str, Any]], before_word_id: str) -> int:
         or candidate.get("end_ms") is None
         or not timed_left
     ):
-        raise LineActionConflict(
-            "line_stale", "Untimed replacement text cannot be split."
-        )
+        raise RuntimeError("Untimed replacement text cannot be split.")
     if candidate.get("join_left") or not re.match(r"\w", lexical):
-        raise LineActionConflict("line_stale", "Split between complete words.")
+        raise RuntimeError("Split between complete words.")
     return index
 
 
@@ -109,7 +102,7 @@ class SplitCommand:
 def split_utterance(
     session: Session, command: SplitCommand
 ) -> list[TranscriptUtterance]:
-    """Reject a stale/settling source before superseding it or minting children."""
+    """Reject a stale source before superseding it or minting children."""
     from .core import refresh_transcript_projection_from_canonical
 
     transcript = _load_transcript(session, command.recording_id, lock=True)
@@ -123,10 +116,7 @@ def split_utterance(
         in {TranscriptUtteranceState.SUPERSEDED, TranscriptUtteranceState.DELETED}
         or parent.revision != command.expected_revision
     ):
-        raise LineActionConflict(
-            "line_stale", "This line changed. Reload it and try again."
-        )
-    require_action_lines(transcript, [parent])
+        raise RuntimeError("This line changed. Reload it and try again.")
     words = row_words(parent)
     index = _split_index(words, command.before_word_id)
     group = str(uuid4())

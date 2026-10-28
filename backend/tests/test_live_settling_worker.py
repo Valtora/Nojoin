@@ -39,7 +39,7 @@ def _step(tmp_path: Path, *, sequence: int = 6) -> worker.SettlingStep:
 @pytest.fixture
 def rolling_lane(monkeypatch: pytest.MonkeyPatch) -> Any:
     observations: list[dict[str, Any]] = []
-    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [], 7)
+    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [])
     monkeypatch.setattr(worker, "_episode_snapshot", lambda _step: snapshot)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(
@@ -156,41 +156,6 @@ def test_lead_up_is_configurable_and_inside_total_cap(
     monkeypatch.setattr(worker, "_decode_words", decode)
     worker.run_settling_step(step, {"context_window_s": 2})
     assert inputs == [(10000, 64000)]
-
-
-def test_delayed_gate_includes_missed_gap_before_existing_tail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rolling_lane: Any
-) -> None:
-    step = replace(_step(tmp_path), vad_regions=[])
-    rolling_lane.snapshot.words.append(
-        {"word": "tail", "start_ms": 12000, "end_ms": 12500, "locked": False}
-    )
-    rolling_lane.snapshot.gate_chunks.append(
-        {
-            "sequence": 3,
-            "start_ms": 6000,
-            "end_ms": 8000,
-            "missed": True,
-            "consumed": False,
-        }
-    )
-    monkeypatch.setattr(
-        worker,
-        "_speaker_evidence",
-        lambda _: SimpleNamespace(
-            speech_spans=lambda: [(6.5, 7.0)],
-            decide=None,
-        ),
-    )
-    inputs: list[tuple[int, int]] = []
-
-    def decode(_step: Any, _config: Any, audio: Any, start: int) -> Any:
-        inputs.append((start, audio.numel()))
-        return {"asr_segments": []}, "cuda"
-
-    monkeypatch.setattr(worker, "_decode_words", decode)
-    worker.run_settling_step(step, {"context_window_s": 0})
-    assert inputs == [(6000, 128000)]
 
 
 def test_silent_step_expires_without_decode_or_new_observation(
@@ -527,7 +492,7 @@ def test_redecoded_words_keep_their_own_audio_source_when_the_window_changes_sou
         ("live", "replaced", False),
     ],
 )
-def test_rejected_revision_drops_observation_without_stalling_current_episode(
+def test_rejected_step_drops_observation_without_stalling_current_episode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     rolling_lane: Any,
@@ -556,18 +521,41 @@ def test_rejected_revision_drops_observation_without_stalling_current_episode(
         "publish_live_settling",
         lambda *_args, **_kwargs: publication.SettlingPublicationResult(False),
     )
-    progress: list[publication.SettlingPass] = []
-
-    def expire(_session: Any, *, request: publication.SettlingPass) -> Any:
-        progress.append(request)
-        return publication.SettlingPublicationResult(True)
-
-    monkeypatch.setattr(publication, "expire_live_settling", expire)
     result = rolling_lane.publisher(
         step, rolling_lane.snapshot, {"asr_segments": []}, None
     )
     assert result.handled and result.accepted is expected
     assert not result.public_changed
-    assert bool(progress) is expected
-    if progress:
-        assert progress[0].source_revision is None
+
+
+def test_gpu_and_cpu_mode_settles_on_a_cpu_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rolling_lane: Any
+) -> None:
+    disabled: list[int] = []
+    monkeypatch.setattr(
+        worker, "_disable_cpu_episode", lambda step: disabled.append(step.sequence)
+    )
+    monkeypatch.setattr(worker, "cpu_settling_allowed", lambda: True)
+    monkeypatch.setattr(transcribe, "loaded_transcription_device", lambda _: "cpu")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        worker, "_decode_words", lambda *_: ({"asr_segments": []}, "cpu")
+    )
+    config: dict[str, Any] = {"processing_device": "cpu"}
+    result = worker.run_settling_step(_step(tmp_path), config)
+    assert disabled == []
+    assert result.handled
+    assert config["_settling_device"] == "cpu"
+
+
+def test_lines_settled_on_a_cpu_worker_do_not_wait_for_live_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.processing.live_diarization import step as label_step
+    from backend.utils.canonical_pipeline import live_settling as publication
+
+    monkeypatch.setattr(label_step, "live_speaker_labels_requested", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert not publication._speaker_enabled()
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    assert publication._speaker_enabled()

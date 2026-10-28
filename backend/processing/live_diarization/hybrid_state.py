@@ -17,7 +17,6 @@ from backend.processing.nemotron_types import NemotronStateError
 
 from . import native_state, state
 from .engine import LiveLabelConfig
-from .files import STATE_FILENAME
 
 if TYPE_CHECKING:
     from .hybrid import HybridLiveState
@@ -43,9 +42,7 @@ _STRINGS = (
 _ARRAYS = ("pending", "channel_frames", "posteriors", "overlap", "display_labels")
 
 
-def save_hybrid(
-    live_dir: Path, engine: HybridLiveState, *, filename: str = STATE_FILENAME
-) -> None:
+def save_hybrid(live_dir: Path, engine: HybridLiveState) -> None:
     """Durably save consumed decisions before any label transaction publishes them."""
     meta, arrays = state.encode_shadow(engine.shadow)
     generation = getattr(engine, "capture_generation", None) or str(uuid4())
@@ -70,7 +67,7 @@ def save_hybrid(
     meta["hybrid"] = hybrid
     _validate_identity(hybrid, arrays, engine.recording_id)
     state._validate(live_dir, engine.config, meta, arrays)
-    state.write_snapshot(live_dir, meta, arrays, filename=filename)
+    state.write_snapshot(live_dir, meta, arrays)
 
 
 def load_hybrid(
@@ -78,11 +75,10 @@ def load_hybrid(
     config: LiveLabelConfig,
     *,
     recording_id: int,
-    filename: str = STATE_FILENAME,
 ) -> HybridLiveState | None:
     """Restore exact state or a translated shadow, never invented identities."""
     try:
-        snapshot = state.read_snapshot(live_dir, config, filename=filename)
+        snapshot = state.read_snapshot(live_dir, config)
         if snapshot is None:
             return None
         meta, arrays = snapshot

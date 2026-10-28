@@ -3,7 +3,6 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClientStatus, RecordingStatus, type Recording, type TranscriptUtteranceList } from "@/types";
-import { SETTLED_TRANSCRIPT_READ_TIMEOUT_MS } from "./useDetailTranscript";
 import { useRecordingTranscript } from "./useRecordingTranscript";
 
 const mocks = vi.hoisted(() => ({ live: vi.fn(), settled: vi.fn(), notify: vi.fn() }));
@@ -85,9 +84,6 @@ describe("recording transcript handoff", () => {
       expect(mocks.live).toHaveBeenCalledTimes(liveReads + 1);
       expect(mocks.live).toHaveBeenLastCalledWith("rec-1", 4, expect.any(AbortSignal));
       expect(result.current.transcriptSegments[0].text).toBe("Still arriving");
-      expect(result.current.usesInFlightTranscript).toBe(true);
-      await advance(3_000);
-      expect(mocks.live).toHaveBeenCalledTimes(liveReads + 2);
       expect(result.current.usesInFlightTranscript).toBe(true);
       expect(result.current.transcriptIsAuthoritative).toBe(false);
       await act(async () => retry.resolve(snapshot("Final")));
@@ -194,19 +190,5 @@ describe("recording transcript handoff", () => {
     expect(result.current.transcriptSegments).toEqual([]);
     await act(async () => next.resolve(snapshot("Next meeting", "rec-2")));
     expect(result.current.transcriptSegments[0].text).toBe("Next meeting");
-  });
-
-  it("abandons a stalled final full read and ignores its late answer after retry", async () => {
-    const { result, rerender } = mount();
-    await advance();
-    const stalled = deferred<TranscriptUtteranceList>();
-    mocks.settled.mockReturnValueOnce(stalled.promise);
-    rerender({ value: recording({ status: RecordingStatus.PROCESSED }), localActive: false });
-    await advance(SETTLED_TRANSCRIPT_READ_TIMEOUT_MS);
-    await advance(3_000);
-    expect(result.current.transcriptSegments[0].text).toBe("Final");
-    expect(result.current.usesInFlightTranscript).toBe(false);
-    await act(async () => stalled.resolve(snapshot("Abandoned")));
-    expect(result.current.transcriptSegments[0].text).toBe("Final");
   });
 });

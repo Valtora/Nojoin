@@ -240,11 +240,7 @@ function TranscriptLine({
             name={headerName}
             locked={headerLine.speakerLocked}
             onRename={!readOnly && headerLive.onRenameLiveSpeaker && liveSpeakerDisplayName(headerSegment.speaker) !== null
-              ? (label, name) => headerSegment.settling_required
-                ? headerLive.onRenameLiveSpeaker!(label, name, headerLine.namingAnchor)
-                : headerLive.onRenameLiveSpeaker!(label, name)
-              : undefined}
-            disabledReason={headerSegment.settling_required && !headerLine.namingAnchor ? LINE_SETTLING_REASON : undefined}
+              ? headerLive.onRenameLiveSpeaker : undefined}
             loadPeopleNames={headerLive.loadPeopleNames}
             onEditingChange={handleLiveHeaderEditing}
           />
@@ -388,7 +384,6 @@ function TranscriptLine({
             segmentId={segmentId}
             startMs={segmentStartMs(segment)}
             endMs={segmentEndMs(segment)}
-            revision={segment.revision}
             settlingRequired={segment.settling_required}
             settling={lineIsSettling(segment)}
             words={segment.words}

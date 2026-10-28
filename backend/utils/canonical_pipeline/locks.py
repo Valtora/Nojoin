@@ -5,6 +5,8 @@ write surface: releasing a lock is an audited utterance event exactly like
 the edits that set it.
 """
 
+from backend.utils.transcript_change import change_sequence_bump
+
 from .core import (
     TranscriptUtterance,
     _append_utterance_event,
@@ -12,7 +14,7 @@ from .core import (
     _load_transcript,
     _update_projection_segment_by_public_id,
 )
-from .guards import require_action_lines, settling_required
+from .guards import settling_required
 
 
 def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, matching core's write functions
@@ -37,7 +39,6 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
         raise RuntimeError("Utterance revision conflict")
-    require_action_lines(transcript, [utterance])
 
     old_values = {
         "manual_text_locked": bool(utterance.manual_text_locked),
@@ -99,5 +100,6 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
             },
         )
         session.add(transcript)
+        session.execute(change_sequence_bump(recording_id))
 
     return utterance

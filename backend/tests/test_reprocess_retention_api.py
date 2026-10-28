@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
+from fastapi import Response
 from sqlalchemy import Engine, delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlmodel import Session, select
@@ -94,7 +95,11 @@ async def _assert_empty_api_publication(
                 id=recording.user_id, username="fence-owner", hashed_password="x"
             )
             detail = await routes_query.get_recording(
-                recording.public_id, db=session, current_user=owner
+                recording.public_id,
+                Response(),
+                if_none_match=None,
+                db=session,
+                current_user=owner,
             )
             utterances = await routes_utterances.get_transcript_utterances(
                 recording.public_id, after_revision=None, db=session, current_user=owner
@@ -348,6 +353,8 @@ def test_first_processing_keeps_draft_content_hidden(
             async with AsyncSession(async_engine, expire_on_commit=False) as session:
                 return await routes_query.get_recording(
                     public_id,
+                    Response(),
+                    if_none_match=None,
                     db=session,
                     current_user=User(
                         id=user_id, username="fence-owner", hashed_password="x"

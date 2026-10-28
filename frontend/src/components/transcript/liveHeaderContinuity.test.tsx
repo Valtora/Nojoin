@@ -17,7 +17,7 @@ const props = () => ({
 });
 
 describe("live header continuity", () => {
-  it("retains a naming draft and its opened revision through settled handoff and refusal", async () => {
+  it("retains a naming draft through settled handoff and refusal", async () => {
     const finished = props();
     const rename = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const view = render(<TranscriptView {...finished} live={{ hasLoaded: true, onRenameLiveSpeaker: rename }} />);
@@ -30,7 +30,7 @@ describe("live header continuity", () => {
     expect(screen.getByRole("combobox")).toHaveValue("Alex");
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
     await waitFor(() => expect(rename).toHaveBeenCalledTimes(1));
-    expect(rename).toHaveBeenLastCalledWith("LIVE_PROVISIONAL_1", "Alex", opened);
+    expect(rename).toHaveBeenLastCalledWith("LIVE_PROVISIONAL_1", "Alex");
     expect(screen.getByRole("combobox")).toHaveValue("Alex");
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
     await waitFor(() => expect(screen.queryByRole("combobox")).not.toBeInTheDocument());

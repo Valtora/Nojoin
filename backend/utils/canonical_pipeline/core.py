@@ -3,15 +3,12 @@
 import logging
 
 from backend.models.live_settling_public import public_settling_fields
+from backend.utils.transcript_change import change_sequence_bump
 
 from .assignment import *
 from .constants import *
 from .finalization import finalize_utterances_from_segments
-from .guards import (
-    protect_text_replacement,
-    require_action_lines,
-    settling_required,
-)
+from .guards import freeze_live_line, protect_text_replacement, settling_required
 from .live_compatibility import capture_segment_sort_key
 from .persistence import (
     apply_compatibility_segment_replace,
@@ -209,7 +206,6 @@ def update_utterance_text(
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
         raise RuntimeError("Utterance revision conflict")
-    require_action_lines(transcript, [utterance])
 
     old_values = {"text": utterance.text, "revision": utterance.revision}
     old_text_locked = bool(utterance.manual_text_locked)
@@ -217,6 +213,7 @@ def update_utterance_text(
         protect_text_replacement(utterance, text)
     utterance.text = text
     utterance.manual_text_locked = True
+    freeze_live_line(utterance)
     utterance.text_last_edit_source = source
     utterance.revision += 1
     session.add(utterance)
@@ -264,6 +261,7 @@ def update_utterance_text(
             for segment in (transcript.segments or [])
         ).strip()
         session.add(transcript)
+        session.execute(change_sequence_bump(recording_id))
 
     return utterance
 
@@ -307,7 +305,6 @@ def update_utterance_speaker(
         scope=scope,
         current_key=current_key,
     )
-    require_action_lines(transcript, [utterance, *target_utterances])
 
     target_speaker = resolve_assignment_target(
         session,
@@ -347,6 +344,7 @@ def update_utterance_speaker(
                 "diarisation_pending": False,
             }
             target_utterance.confidence_payload = live_payload
+        freeze_live_line(target_utterance)
         target_utterance.speaker_last_edit_source = source
         target_utterance.speaker_assignment_source = SPEAKER_ASSIGNMENT_SOURCE_MANUAL
         target_utterance.speaker_assignment_authority = (
@@ -449,6 +447,7 @@ def update_utterance_speaker(
     transcript.segments = updated_segments
     flag_modified(transcript, "segments")
     session.add(transcript)
+    session.execute(change_sequence_bump(recording_id))
     refresh_recording_speaker_usage_state(session, recording_id)
 
     return utterance, target_speaker
@@ -669,6 +668,7 @@ def refresh_transcript_projection_from_canonical(
     ).strip()
     flag_modified(transcript, "segments")
     session.add(transcript)
+    session.execute(change_sequence_bump(recording_id))
     refresh_recording_speaker_usage_state(session, recording_id)
     return projection_segments
 

@@ -6,9 +6,8 @@ import { createPortal } from "react-dom";
 import { Copy, StickyNote } from "lucide-react";
 
 import type { NoteSelection, OutboxDraft } from "@/lib/notes/noteOutbox";
-import type { TranscriptSegment } from "@/types";
-import { lineIsSettling } from "@/lib/transcript/settling";
 import { formatTimelineMs } from "@/lib/notes/placement";
+import type { TranscriptSegment } from "@/types";
 
 import NoteOnSelectionPopover from "../notes/NoteOnSelectionPopover";
 import Button from "../ui/Button";
@@ -79,6 +78,9 @@ const lineTrigger = (root: HTMLElement | null, segmentId: string) => {
   );
   return text?.closest("[data-line-actions]")?.querySelector<HTMLElement>('[aria-haspopup="menu"]') ?? null;
 };
+
+/** A note needs locked words: a settling word's wording and time can still change. */
+const SELECTION_SETTLING_REASON = "Selected words are still settling.";
 
 interface TranscriptSelectionToolbarProps {
   disabledReason?: string;
@@ -255,19 +257,11 @@ export default function TranscriptSelectionNotes({
   }
   if (!captured || (!onAddNote && !onNoteOnText)) return null;
   const { selection } = captured;
-  const disabledReason = selection?.sourceUtterances?.some((source) => {
-    const segment = segments?.find((line) => line.id === source.id);
-    if (!segments) return captured.settling;
-    if (!segment) return true;
-    if (source.word_ids?.length) {
-      return source.word_ids.some((id) => {
-        const word = segment.words?.find((word) => word.id === id);
-        return !word?.locked || (captured.wordTexts?.[id] !== undefined &&
-          word.word.trim() !== captured.wordTexts[id]);
-      });
-    }
-    return lineIsSettling(segment) || segment.revision !== source.revision;
-  }) ? "Selected words are still settling or have changed." : undefined;
+  const lockedAsSelected = ([id, text]: [string, string]) => segments?.some((line) =>
+    line.words?.some((word) => word.id === id && word.locked && word.word.trim() === text)) ?? false;
+  const disabledReason = captured.settling ||
+    Object.entries(captured.pendingWords ?? {}).some((word) => !lockedAsSelected(word))
+    ? SELECTION_SETTLING_REASON : undefined;
   return (
     <TranscriptSelectionToolbar
       key={captured.seq}

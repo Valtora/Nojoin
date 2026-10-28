@@ -12,11 +12,8 @@ import numpy as np
 import pytest
 from sqlmodel import Session
 
-from backend.models.recording import Recording
-from backend.models.transcript import Transcript
 from backend.processing import nemotron_model
 from backend.processing.live_diarization import hybrid_runtime, state, step
-from backend.processing.live_diarization.checkpoint import load_checkpoint
 from backend.processing.live_diarization.engine import LiveLabelConfig
 from backend.processing.live_diarization.files import (
     BANK_FILENAME,
@@ -34,7 +31,6 @@ from backend.utils.canonical_pipeline import (
     update_utterance_speaker,
 )
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
-from backend.utils.transcript_settling import capture_publication_token
 
 
 def run_at(live_dir: Path, start_s: float = 0.0) -> step.LiveLabelRun:
@@ -46,73 +42,6 @@ def run_at(live_dir: Path, start_s: float = 0.0) -> step.LiveLabelRun:
         audio_start_s=start_s,
         next_text_start_s=start_s + 4,
     )
-
-
-def test_resume_during_label_feed_preserves_checkpoint_and_bank_until_current_retry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    database = _database()
-    model = SpeakerTrackModel()
-    _patch_step(monkeypatch, database, model)
-    with Session(database) as session:
-        transcript = session.get(Transcript, 1)
-        transcript.settling_state = {"generation": "before", "sealed": False}
-        session.commit()
-
-    def token() -> Any:
-        with Session(database) as session:
-            return capture_publication_token(
-                session.get(Recording, 1), session.get(Transcript, 1)
-            )
-
-    audio = speaker_audio([(0, 12, 1), (12, 24, 2)], 24)
-
-    def run(start: int) -> None:
-        step.run_live_speaker_labels(
-            step.LiveLabelRun(
-                recording_id=1,
-                sequence=start // 12,
-                live_dir=tmp_path,
-                audio=audio[start * SAMPLE_RATE : (start + 12) * SAMPLE_RATE],
-                audio_start_s=float(start),
-                next_text_start_s=float(start + 12),
-                expected_token=token(),
-            )
-        )
-
-    run(0)
-    before = {
-        name: (tmp_path / name).read_bytes() for name in (STATE_FILENAME, BANK_FILENAME)
-    }
-    feed_capture = step.feed_capture
-
-    def resume_during_feed(*args: Any, **kwargs: Any) -> Any:
-        result = feed_capture(*args, **kwargs)
-        # Inference may close new units, but even bank appends remain staged.
-        assert {name: (tmp_path / name).read_bytes() for name in before} == before
-        with Session(database) as session:
-            recording = session.get(Recording, 1)
-            transcript = session.get(Transcript, 1)
-            recording.capture_epoch += 1
-            transcript.settling_state = {"generation": "resumed", "sealed": False}
-            session.commit()
-        return result
-
-    monkeypatch.setattr(step, "feed_capture", resume_during_feed)
-    run(12)
-    # Rejected preparation can leave a bank suffix, but never changes the
-    # accepted checkpoint or its immutable prefix. Recovery removes the suffix.
-    assert (tmp_path / STATE_FILENAME).read_bytes() == before[STATE_FILENAME]
-    assert (tmp_path / BANK_FILENAME).read_bytes().startswith(before[BANK_FILENAME])
-    load_checkpoint(tmp_path, step.CONFIG, recording_id=1)
-    assert {name: (tmp_path / name).read_bytes() for name in before} == before
-    monkeypatch.setattr(step, "feed_capture", feed_capture)
-    run(12)
-    saved = load_hybrid(tmp_path, step.CONFIG, recording_id=1)
-    assert saved is not None and saved.consumed_n == 24 * SAMPLE_RATE
-    assert saved.source_sequence == 1
-    assert (tmp_path / STATE_FILENAME).read_bytes() != before[STATE_FILENAME]
-    assert (tmp_path / BANK_FILENAME).stat().st_size > len(before[BANK_FILENAME])
 
 
 def test_lost_checkpoint_without_bank_preserves_published_native_labels_and_names(
@@ -145,11 +74,10 @@ def test_lost_checkpoint_without_bank_preserves_published_native_labels_and_name
     assert model.calls == 0
 
 
-def test_orphan_bank_disables_before_history_query_or_truncation(
+def test_orphan_bank_disables_before_database_or_truncation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_step(monkeypatch, _database(), SpeakerTrackModel())
     bank = tmp_path / BANK_FILENAME
     original = np.arange(256, dtype=np.float32).tobytes()
     bank.write_bytes(original)
@@ -167,7 +95,6 @@ def test_empty_saved_capture_without_bank_resumes_without_history_query(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_step(monkeypatch, _database(), SpeakerTrackModel())
     config = LiveLabelConfig()
     engine = HybridLiveState(
         state.new_engine(tmp_path, config), None, speaker_engine="classic"
@@ -193,7 +120,6 @@ def test_first_capture_without_checkpoint_bank_or_label_events_can_start(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_step(monkeypatch, _database(), SpeakerTrackModel())
     monkeypatch.setattr(step, "has_label_history", lambda recording_id: False)
     engine = step._load_or_disable(run_at(tmp_path), "cpu")
     assert engine is not None and engine.consumed_n == 0

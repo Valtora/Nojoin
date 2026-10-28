@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.processing import live_persistence
+from backend.processing.live_state import _STATE_FILENAME
 from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
 from backend.utils.config_manager import (
     DEFAULT_SYSTEM_CONFIG,
@@ -985,7 +986,7 @@ def test_live_state_defaults_to_sequence_zero(tmp_path):
 
     assert lt.read_live_state(live_dir)["next_expected"] == 0
 
-    (live_dir / lt._STATE_FILENAME).write_text(
+    (live_dir / _STATE_FILENAME).write_text(
         json.dumps({"buffer_abs_start": 2.5}),
         encoding="utf-8",
     )
@@ -1003,7 +1004,7 @@ def test_live_state_corrupt_file_falls_back_to_sequence_zero(tmp_path):
 
     live_dir = tmp_path / "live"
     live_dir.mkdir()
-    (live_dir / lt._STATE_FILENAME).write_text("{not-json", encoding="utf-8")
+    (live_dir / _STATE_FILENAME).write_text("{not-json", encoding="utf-8")
 
     state = lt.read_live_state(live_dir)
 
@@ -1674,7 +1675,7 @@ def test_live_engine_failure_loses_only_that_region(monkeypatch, tmp_path):
 
 def test_extract_region_text_drops_pure_context_segment():
     """A segment entirely within the prefix run-up is dropped."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     result = {
         "segments": [
@@ -1687,7 +1688,7 @@ def test_extract_region_text_drops_pure_context_segment():
 
 def test_extract_region_text_keeps_region_segment():
     """A segment entirely after the prefix is kept whole."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     result = {"segments": [{"start": 2.5, "end": 4.0, "text": "the region"}]}
     assert _extract_region_text(result, prefix_s=2.0) == "the region"
@@ -1695,7 +1696,7 @@ def test_extract_region_text_keeps_region_segment():
 
 def test_extract_region_text_straddle_with_words():
     """A boundary-straddling segment with words keeps only post-prefix words."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     result = {
         "segments": [
@@ -1727,7 +1728,7 @@ def test_a_capped_parakeet_context_word_stays_out_of_the_region():
         _Recognition,
         map_onnx_asr_recognition,
     )
-    from backend.processing.live_transcribe import _extract_region_segment_payloads
+    from backend.processing.live_asr_payload import _extract_region_segment_payloads
 
     clip = map_onnx_asr_recognition(
         _Recognition(
@@ -1769,7 +1770,7 @@ def _region_text(prefix_s, starts, cap_s) -> list[str]:
         _Recognition,
         map_onnx_asr_recognition,
     )
-    from backend.processing.live_transcribe import _extract_region_segment_payloads
+    from backend.processing.live_asr_payload import _extract_region_segment_payloads
 
     tokens = [f" w{index}" for index in range(len(starts))]
     clip = map_onnx_asr_recognition(
@@ -1816,7 +1817,7 @@ def test_a_tied_context_word_is_trimmed_when_its_segment_starts_with_it(steps):
 
 
 def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timestamps():
-    from backend.processing.live_transcribe import (
+    from backend.processing.live_asr_payload import (
         _build_live_confidence_payload,
         _extract_region_segment_payloads,
     )
@@ -1897,7 +1898,7 @@ def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timest
 def test_live_source_channel_analysis_detects_microphone_dominance():
     import torch
 
-    from backend.processing.live_transcribe import (
+    from backend.processing.live_audio_buffer import (
         _analyze_live_source_channels,
         _source_channel_speaker_confidence,
     )
@@ -1922,7 +1923,7 @@ def test_live_source_channel_analysis_detects_microphone_dominance():
 def test_live_source_channel_analysis_marks_unclear_overlap_low_confidence():
     import torch
 
-    from backend.processing.live_transcribe import (
+    from backend.processing.live_audio_buffer import (
         _analyze_live_source_channels,
         _source_channel_speaker_confidence,
     )
@@ -1988,11 +1989,9 @@ def test_live_source_channel_evidence_excludes_microphone_for_system_audio():
 
 
 def test_live_source_channel_evidence_overlap_reduces_authority():
-    from backend.processing.live_transcribe import (
-        LIVE_SOURCE_AUTHORITY_OVERLAP,
-        _build_live_confidence_payload,
-        _build_live_source_channel_evidence,
-    )
+    from backend.processing.browser_live_audio import LIVE_SOURCE_AUTHORITY_OVERLAP
+    from backend.processing.live_asr_payload import _build_live_confidence_payload
+    from backend.processing.live_audio_buffer import _build_live_source_channel_evidence
 
     source_activity = {
         "dominant_source": "microphone",
@@ -2168,7 +2167,7 @@ def test_microphone_only_capture_attributes_the_channel_not_the_person():
 
 def test_extract_region_text_straddle_without_words_midpoint():
     """A boundary-straddling segment without words uses the midpoint heuristic."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     # Midpoint 2.5 >= prefix 2.0 -> kept.
     kept = {"segments": [{"start": 1.0, "end": 4.0, "text": "kept"}]}
@@ -2181,7 +2180,7 @@ def test_extract_region_text_straddle_without_words_midpoint():
 
 def test_extract_region_text_prefix_zero_keeps_all():
     """With prefix_s == 0, all segments belong to the region."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     result = {
         "segments": [
@@ -2194,7 +2193,7 @@ def test_extract_region_text_prefix_zero_keeps_all():
 
 def test_extract_region_text_no_segments_falls_back_to_text():
     """Without segments, the top-level text is used only when prefix_s <= 0."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     assert _extract_region_text({"text": "plain"}, prefix_s=0.0) == "plain"
     assert _extract_region_text({"text": "plain"}, prefix_s=1.5) == ""
@@ -2205,21 +2204,21 @@ def test_extract_region_text_no_segments_falls_back_to_text():
 
 def test_strip_repetition_collapses_consecutive_words():
     """Three or more identical consecutive words collapse to one."""
-    from backend.processing.live_transcribe import _strip_repetition
+    from backend.processing.live_asr_payload import _strip_repetition
 
     assert _strip_repetition("yes yes yes please") == "yes please"
 
 
 def test_strip_repetition_collapses_repeated_phrase():
     """A short phrase repeated three or more times collapses to one."""
-    from backend.processing.live_transcribe import _strip_repetition
+    from backend.processing.live_asr_payload import _strip_repetition
 
     assert _strip_repetition("thank you thank you thank you bye") == "thank you bye"
 
 
 def test_strip_repetition_leaves_legitimate_text_untouched():
     """Ordinary text, including a single doubled word, is preserved."""
-    from backend.processing.live_transcribe import _strip_repetition
+    from backend.processing.live_asr_payload import _strip_repetition
 
     text = "the meeting starts at noon and we will review the budget"
     assert _strip_repetition(text) == text
@@ -2849,8 +2848,7 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
         ).one()
 
     assert recording_row[0] == "CANCELLED"
-    # A rejected preparation publishes no audio metadata to the cancelled row.
-    assert recording_row[1] is None
+    assert recording_row[1] == len(b"joined-audio")
     assert recording_row[2] is None
 
 
@@ -3052,7 +3050,7 @@ def test_concat_live_audio_channels_appends_along_time(monkeypatch):
     """Audio-buffering seam: concat joins parts along the sample (time) axis."""
     import torch
 
-    from backend.processing.live_transcribe import _concat_live_audio_channels
+    from backend.processing.live_audio_buffer import _concat_live_audio_channels
 
     part_a = torch.zeros((1, 3))
     part_b = torch.ones((1, 2))
@@ -3067,7 +3065,7 @@ def test_concat_live_audio_channels_expands_mono_to_match_channels():
     """Audio-buffering seam: a mono part is expanded to the max channel count."""
     import torch
 
-    from backend.processing.live_transcribe import _concat_live_audio_channels
+    from backend.processing.live_audio_buffer import _concat_live_audio_channels
 
     mono = torch.zeros((1, 2))
     stereo = torch.ones((2, 2))

@@ -4,6 +4,7 @@ import copy
 from dataclasses import replace
 from typing import Any
 
+import pytest
 from sqlalchemy import Engine
 from sqlmodel import Session
 
@@ -13,6 +14,7 @@ from backend.tests.test_live_settling_publication import (
     _request,
     _seed,
     _words,
+    settle_with_k,
 )
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
@@ -63,8 +65,10 @@ def _sync_delta(
 
 def test_unknown_tail_rejoins_locked_speaker_prefix_without_freezing_its_boundary(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=1)
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     client: dict[str, Any] = {}
     cursor = 0
     with Session(settling_engine) as session:
@@ -122,8 +126,10 @@ def test_unknown_tail_rejoins_locked_speaker_prefix_without_freezing_its_boundar
 
 def test_confirmed_pause_survives_pending_word_retiming_and_speaker_reprojection(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=99)
+    settle_with_k(monkeypatch, 99)
+    recording_id = _seed(settling_engine)
     client: dict[str, Any] = {}
     with Session(settling_engine) as session:
         assert publish_live_settling(
@@ -185,8 +191,10 @@ def test_confirmed_pause_survives_pending_word_retiming_and_speaker_reprojection
 
 def test_confirmed_pause_follows_retokenised_phrase_instead_of_reused_word_id(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=99)
+    settle_with_k(monkeypatch, 99)
+    recording_id = _seed(settling_engine)
     client: dict[str, Any] = {}
     with Session(settling_engine) as session:
         assert publish_live_settling(
@@ -353,3 +361,75 @@ def test_sustained_alignment_failures_respect_maximum_without_splitting_atoms(
             row.confidence_payload[SETTLING_KEY]["line_closed"] for row in rows[:-1]
         )
         assert all(line_is_locked(row) for row in rows[:-1])
+
+
+def test_a_confirmed_line_end_follows_its_last_word_through_retiming(
+    settling_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A retimed word that now starts after the confirmed cutoff keeps its line
+    # closed, even when the next phrase follows within the line pause.
+    settle_with_k(monkeypatch, 99)
+    recording_id = _seed(settling_engine)
+    with Session(settling_engine) as session:
+        assert publish_live_settling(
+            session,
+            request=_request(session, recording_id, 0),
+            words=[{"word": "Yes", "start_ms": 800, "end_ms": 900}],
+        ).accepted
+        session.commit()
+        assert expire_live_settling(
+            session,
+            request=replace(
+                _request(session, recording_id, 1, end_ms=2001), silence_start_ms=900
+            ),
+        ).accepted
+        session.commit()
+        assert publish_live_settling(
+            session,
+            request=_request(session, recording_id, 2, end_ms=4000),
+            words=[
+                {"word": "Yes", "start_ms": 950, "end_ms": 1150},
+                {"word": " sure", "start_ms": 2100, "end_ms": 2400},
+            ],
+        ).accepted
+        session.commit()
+        rows = _active(session, recording_id)
+
+    assert [row.text for row in rows] == ["Yes", "sure"]
+    assert rows[0].confidence_payload[SETTLING_KEY]["boundary_locked"]
+    assert rows[0].confidence_payload[SETTLING_KEY]["closed_at_ms"] == 900
+
+
+def test_a_word_recovered_before_a_confirmed_end_stays_on_its_line(
+    settling_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settle_with_k(monkeypatch, 99)
+    recording_id = _seed(settling_engine)
+    with Session(settling_engine) as session:
+        assert publish_live_settling(
+            session,
+            request=_request(session, recording_id, 0),
+            words=[{"word": "Thank", "start_ms": 100, "end_ms": 400}],
+        ).accepted
+        session.commit()
+        assert expire_live_settling(
+            session,
+            request=replace(
+                _request(session, recording_id, 1, end_ms=2101), silence_start_ms=1000
+            ),
+        ).accepted
+        session.commit()
+        assert publish_live_settling(
+            session,
+            request=_request(session, recording_id, 2, end_ms=4000),
+            words=[
+                {"word": "Thank", "start_ms": 100, "end_ms": 400},
+                {"word": " you", "start_ms": 500, "end_ms": 800},
+                {"word": " again", "start_ms": 2400, "end_ms": 2800},
+            ],
+        ).accepted
+        session.commit()
+        rows = _active(session, recording_id)
+
+    assert [row.text for row in rows] == ["Thank you", "again"]
+    assert rows[0].confidence_payload[SETTLING_KEY]["boundary_locked"]

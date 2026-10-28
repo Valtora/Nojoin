@@ -340,11 +340,11 @@ describe("LiveTranscriptPanel", () => {
 
     const renderNaming = ({
       names = {},
-      onRename = vi.fn(async () => {}),
+      onRename = vi.fn(async () => true),
       loadPeopleNames = vi.fn(async () => ["Dana Whitfield", "Erin"]),
     }: {
       names?: Record<string, string>;
-      onRename?: (label: string, name: string) => Promise<void>;
+      onRename?: (label: string, name: string) => Promise<boolean>;
       loadPeopleNames?: () => Promise<readonly string[]>;
     } = {}) => {
       render(
@@ -379,7 +379,7 @@ describe("LiveTranscriptPanel", () => {
     it("renames from the chip with one request, though the box blurs as it saves", async () => {
       let finish = () => {};
       const onRename = vi.fn(
-        () => new Promise<void>((resolve) => (finish = resolve)),
+        () => new Promise<boolean>((resolve) => (finish = () => resolve(true))),
       );
       renderNaming({ onRename });
 
@@ -425,7 +425,7 @@ describe("LiveTranscriptPanel", () => {
     });
 
     it("saves to the label it opened on, though the line moves to another meanwhile", async () => {
-      const onRename = vi.fn(async () => {});
+      const onRename = vi.fn(async () => true);
       const panel = (segments: typeof LIVE_LINES) => (
         <LiveTranscriptPanel
           segments={segments}

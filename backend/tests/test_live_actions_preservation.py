@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from copy import deepcopy
 from typing import Any
 
@@ -17,18 +16,17 @@ from backend.models.pipeline import (
     TranscriptUtteranceState,
 )
 from backend.models.recording import Recording, RecordingStatus
-from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
+from backend.tests.canonical_engine import _recording, _transcript
+from backend.tests.canonical_engine import (
+    publication_engine as publication_engine,
+)
 from backend.tests.test_canonical_publication_fence import Database
 from backend.tests.test_canonical_publication_fence import (
     publication_database as publication_database,
 )
 from backend.tests.test_live_settling_finalisation import _closed_line
-from backend.tests.test_reprocess_publication_postgres import _reset
-from backend.tests.test_transcript_publication import _recording, _transcript
-from backend.tests.test_transcript_publication import (
-    publication_engine as publication_engine,
-)
+from backend.tests.test_reprocess_reset_postgres import _reset
 from backend.utils.canonical_pipeline import (
     append_utterances_from_segments,
     finalize_utterances_from_segments,
@@ -37,8 +35,6 @@ from backend.utils.canonical_pipeline import (
     update_utterance_text,
 )
 from backend.utils.canonical_pipeline.constants import _load_transcript
-from backend.utils.canonical_pipeline.guards import LineActionConflict
-from backend.utils.canonical_pipeline.queries import list_active_utterances
 from backend.utils.canonical_pipeline.split import SplitCommand, split_utterance
 from backend.utils.config_manager import config_manager
 from backend.utils.speaker_names.durability import (
@@ -46,7 +42,6 @@ from backend.utils.speaker_names.durability import (
     restore_name_anchors,
     snapshot_name_anchors,
 )
-from backend.utils.speaker_names.review import dismiss_pending_name
 from backend.utils.transcript_settling import durable_settling_state
 from backend.worker.tasks.final_asr import mark_transcript_failed
 
@@ -256,7 +251,7 @@ def test_marked_reset_retains_accepted_view_and_name_anchors(
         session.commit()
         before = serialize_canonical_utterances(session, recording_id)
         anchors = deepcopy(transcript.settling_state["name_anchors"])
-    asyncio.run(_reset(engine, recording_id, threading.Event()))
+    asyncio.run(_reset(engine, recording_id))
     with Session(engine) as session:
         transcript = _load_transcript(session, recording_id)
         assert transcript is not None
@@ -333,7 +328,7 @@ def test_machine_only_failed_reprocess_keeps_the_exact_previous_view(
         before = serialize_canonical_utterances(
             session, recording_id, include_confidence_payload=True
         )
-    asyncio.run(_reset(engine, recording_id, threading.Event()))
+    asyncio.run(_reset(engine, recording_id))
     with Session(engine) as session:
         mark_transcript_failed(session, recording_id, "Final engine failed")
         session.expunge_all()
@@ -420,43 +415,6 @@ def test_actual_locked_line_actions_survive_final_publication(
             ]
 
 
-@pytest.mark.parametrize("marked", [False, True])
-@pytest.mark.parametrize("locked", [False, True])
-def test_name_dismissal_guards_its_source_before_identity_changes(
-    publication_engine: Engine,
-    marked: bool,
-    locked: bool,
-) -> None:
-    with Session(publication_engine) as session:
-        recording_id = _seed(session, marked)
-        speaker = RecordingSpeaker(
-            recording_id=recording_id,
-            diarization_label="LIVE_01",
-            name="Speaker 1",
-            local_name="Alex",
-            name_source="llm",
-        )
-        session.add(speaker)
-        session.flush()
-        for line in list_active_utterances(session, recording_id):
-            line.speaker_label = "LIVE_01"
-            line.recording_speaker_id = speaker.id
-            line.confidence_payload = {
-                **(line.confidence_payload or {}),
-                "live_text_settling": {"line_locked": locked},
-            }
-            session.add(line)
-        session.commit()
-        if marked and not locked:
-            with pytest.raises(LineActionConflict, match="still settling"):
-                dismiss_pending_name(session, speaker, None)
-            assert speaker.local_name == "Alex"
-            assert session.exec(select(SpeakerNameEvent)).all() == []
-        else:
-            assert dismiss_pending_name(session, speaker, None) == "Speaker 1"
-            assert session.exec(select(SpeakerNameEvent)).one().kind == "dismiss"
-
-
 def test_reprocess_backfills_archived_human_work_before_refreshing_projection(
     publication_database: Database,
 ) -> None:
@@ -485,7 +443,7 @@ def test_reprocess_backfills_archived_human_work_before_refreshing_projection(
         assert transcript.segments and not serialize_canonical_utterances(
             session, recording_id
         )
-    asyncio.run(_reset(engine, recording_id, threading.Event()))
+    asyncio.run(_reset(engine, recording_id))
     with Session(engine) as session:
         transcript = _load_transcript(session, recording_id)
         assert transcript is not None and transcript.text == archived_text

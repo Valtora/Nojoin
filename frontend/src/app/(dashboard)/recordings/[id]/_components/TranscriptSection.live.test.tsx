@@ -53,11 +53,11 @@ describe("shared section in-flight source", () => {
     expect(transcript.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("targets the carried composer from a line without waiting for its lock", () => {
+  it("targets the carried composer from a locked line", () => {
     const boxRef = createRef<HTMLTextAreaElement>();
     const props = base();
     render(<TranscriptSection {...props} liveNoteBoxRef={boxRef}
-      transcriptSegments={[{ ...line, locked: false }]} inFlightContent={<textarea ref={boxRef} aria-label="New note" />} />);
+      transcriptSegments={[{ ...line, locked: true }]} inFlightContent={<textarea ref={boxRef} aria-label="New note" />} />);
     fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
     expect(screen.getByRole("textbox", { name: "New note" })).toHaveFocus();

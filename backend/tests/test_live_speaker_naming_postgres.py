@@ -28,7 +28,6 @@ from backend.api.v1.endpoints.speakers.routes_live_names import (
     name_live_speaker,
 )
 from backend.core.db import driver_urls
-from backend.models.pipeline import TranscriptUtteranceEvent
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
@@ -125,40 +124,7 @@ async def test_a_name_sent_during_the_stop_waits_for_it_and_is_refused(sessions)
 
 @pytest.mark.anyio
 async def test_a_name_sent_while_capturing_is_recorded(sessions):
-    user_id, recording_id, public_id = await _seed(sessions)
-    async with sessions() as db:
-        before = (
-            await db.execute(
-                select(Transcript.change_sequence).where(
-                    Transcript.recording_id == recording_id
-                )
-            )
-        ).scalar_one()
-        events = (
-            await db.execute(
-                select(
-                    func.count(TranscriptUtteranceEvent.id),
-                    func.max(TranscriptUtteranceEvent.id),
-                )
-            )
-        ).one()
+    user_id, _, public_id = await _seed(sessions)
 
     assert await _name(sessions, user_id, public_id) == {ONE: "Alex"}
     assert await _event_count(sessions) == 1
-    async with sessions() as db:
-        after = (
-            await db.execute(
-                select(Transcript.change_sequence).where(
-                    Transcript.recording_id == recording_id
-                )
-            )
-        ).scalar_one()
-        assert after == before + 1
-        assert (
-            await db.execute(
-                select(
-                    func.count(TranscriptUtteranceEvent.id),
-                    func.max(TranscriptUtteranceEvent.id),
-                )
-            )
-        ).one() == events

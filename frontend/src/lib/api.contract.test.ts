@@ -125,6 +125,7 @@ describe("api public surface", () => {
         "getRecording",
         "getRecordingAnalytics",
         "getRecordingCalendarEventCandidates",
+        "getRecordingIfChanged",
         "getRecordingInfo",
         "getRecordingStreamUrl",
         "getRecordings",

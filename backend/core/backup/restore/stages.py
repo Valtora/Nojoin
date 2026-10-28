@@ -165,16 +165,6 @@ def _refuse_paths_leaving_their_directory(member: str, data: Any) -> None:
             )
 
 
-def _lock_replaced_transcripts(session: Any, state: "_RestoreState") -> None:
-    """Fence destructive restores before any Recording or dependent row locks."""
-    if state.clear_existing or state.overwrite_existing:
-        session.exec(
-            select(runtime.Transcript.id)
-            .order_by(runtime.Transcript.recording_id)
-            .with_for_update()
-        ).all()
-
-
 def _restore_clear_existing_data(session: Any, state: "_RestoreState") -> None:
     """Wipe non-user tables inside the restore's own transaction.
 

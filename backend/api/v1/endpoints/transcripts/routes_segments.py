@@ -31,7 +31,8 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline import (
     update_utterance_text as update_canonical_utterance_text,
 )
-from backend.utils.canonical_pipeline.guards import conflict_detail, settling_required
+from backend.utils.canonical_pipeline.guards import settling_required
+from backend.utils.canonical_pipeline.public_ids import SegmentIdConflictError
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
@@ -68,8 +69,8 @@ async def _apply_segment_replace(
                 sync_session, recording_id=recording_id, segments=segments
             )
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
+    except SegmentIdConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.put("/{recording_id}/segments/{segment_index}")
@@ -148,7 +149,7 @@ async def update_segment_speaker(
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         await db.commit()
         await db.refresh(transcript)
@@ -509,7 +510,7 @@ async def update_transcript_segment_text(
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         await db.commit()
         await db.refresh(transcript)

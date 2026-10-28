@@ -209,7 +209,7 @@ def test_silent_first_task_does_not_freeze_a_guessed_device(
     transcript = Transcript(
         recording_id=42,
         segments=[],
-        settling_state={"policy": {"k": 3, "window_s": 10.0, "enabled": None}},
+        settling_state={"policy": {"enabled": None}},
     )
     session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, transcript))
     monkeypatch.setattr(transcribe, "_ENGINE_REGISTRY", {})

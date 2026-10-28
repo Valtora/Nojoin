@@ -10,11 +10,11 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from backend.models.recording_public import serialize_transcript
-from backend.tests.test_live_settling_publication import _request
-from backend.tests.test_transcript_publication import _recording, _transcript
-from backend.tests.test_transcript_publication import (
+from backend.tests.canonical_engine import _recording, _transcript
+from backend.tests.canonical_engine import (
     publication_engine as publication_engine,
 )
+from backend.tests.test_live_settling_publication import _request
 from backend.utils.canonical_pipeline import (
     finalize_utterances_from_segments,
     refresh_transcript_projection_from_canonical,
@@ -40,7 +40,7 @@ def _closed_line(session: Session) -> tuple[int, dict[str, Any]]:
         "capture_epoch": 0,
         "sealed": False,
         "phase": "live",
-        "policy": {"k": 3, "window_s": 10, "enabled": True},
+        "policy": {"enabled": True},
     }
     session.add(transcript)
     session.commit()

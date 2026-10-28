@@ -64,8 +64,6 @@ const MODE_ICONS: Record<NoteInsertMode, LucideIcon> = {
 /** The menu's entry while the next note is on chosen text (`draft.selection`). */
 const ON_SELECTION = "selection";
 const ON_SELECTION_LABEL = "On the chosen text";
-const ON_LINE = "line";
-const ON_LINE_LABEL = "On the chosen line's time";
 
 interface LiveNoteComposerProps {
   /** Active and paused captures retain the timeline placement choices. */
@@ -108,7 +106,6 @@ const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
   if (draft.selection) {
     return `On the text at ${formatTimelineMs(draft.selection.startMs)}, which the note quotes.`;
   }
-  if (draft.lineSpan) return `On the timeline at ${formatTimelineMs(draft.lineSpan.startMs)}.`;
   switch (draft.mode) {
     case "typing":
       return draft.typingStartMs !== null && (!isBlank(draft.text) || hasFile)
@@ -136,10 +133,10 @@ const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
  * box drops that anchor; the next character takes a new one. "At send"
  * anchors it on Enter. "Before" and "After the transcript" make a note on
  * the whole meeting, shown before or after its lines and in My notes.
- * On a settled recording, "Note on this line" captures the line's timeline
- * span, shown above the box until sent or removed. Legacy lines retain their
- * whole-line quote. Selected text always quotes its words. Removing either
- * placement restores the previous mode and typing-start time.
+ * "Note on this line", from a line's ⋯ menu, puts the next note on that
+ * line's text: the quote shows above the box and the mode reads "On the
+ * chosen text" until the note is sent or the quote removed, when the mode
+ * before it comes back.
  *
  * A file pasted or dropped into the box goes with the note being typed, whose
  * text captions it; the note saves first, then the file uploads. The camera
@@ -170,7 +167,7 @@ export default function LiveNoteComposer({
   // A carried draft keeps its placement. Only a new, blank finished draft
   // defaults to Before; an explicit After choice persists between notes.
   const draft = !captureActive && isBlank(sourceDraft.text) && !draftFile &&
-    !sourceDraft.selection && !sourceDraft.lineSpan &&
+    !sourceDraft.selection &&
     (sourceDraft.mode === "typing" || sourceDraft.mode === "send")
     ? { ...sourceDraft, mode: "head" as const }
     : sourceDraft;
@@ -182,7 +179,7 @@ export default function LiveNoteComposer({
   const keyboardInset = useKeyboardInset();
   const modeId = useId();
   const hintId = useId();
-  const { selection, lineSpan } = draft;
+  const { selection } = draft;
   const ModeIcon = selection ? TextQuote : MODE_ICONS[draft.mode];
 
   // Grows with its text, chat-style, up to the cap its classes set.
@@ -288,7 +285,7 @@ export default function LiveNoteComposer({
 
   const status = showNotice
     ? { text: notice.text, tone: notice.tone }
-    : (message ?? { text: !captureActive && draft.mode === "send" && !selection && !lineSpan
+    : (message ?? { text: !captureActive && draft.mode === "send" && !selection
       ? "Carried placement: at send, using the stopped audio clock (or the recording's end)."
       : modeHint(draft, draftFile !== null), tone: "info" as const });
 
@@ -332,19 +329,6 @@ export default function LiveNoteComposer({
           />
         </div>
       ) : null}
-      {lineSpan ? (
-        <div data-testid="note-line-chip"
-          className="mb-1.5 flex items-center gap-2 rounded-lg bg-action-tint py-0.5 pl-2 text-xs text-action-tint-fg">
-          <TextCursorInput aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">
-            {formatTimelineMs(lineSpan.startMs)}–{formatTimelineMs(lineSpan.endMs)}
-          </span>
-          <IconButton size="sm" aria-label="Don't put the note on this line" title="Don't put the note on this line"
-            onClick={() => { setDraft({ ...draft, lineSpan: null }); setMessage(null); box.current?.focus(); }}
-            className="h-7 w-7 text-action-tint-fg hover:bg-action-tint-hover hover:text-action-tint-fg pointer-coarse:h-[44px] pointer-coarse:w-[44px] pointer-coarse:-my-2"
-            icon={<X aria-hidden="true" />} />
-        </div>
-      ) : null}
       {draftFile && onDraftFileChange ? (
         <div
           data-testid="note-draft-file"
@@ -375,18 +359,17 @@ export default function LiveNoteComposer({
             data-ui-fill="control"
             data-ui-border="full"
             id={modeId}
-            value={selection ? ON_SELECTION : lineSpan ? ON_LINE : draft.mode}
-            title={selection ? ON_SELECTION_LABEL : lineSpan ? ON_LINE_LABEL : MODE_LABELS[draft.mode]}
+            value={selection ? ON_SELECTION : draft.mode}
+            title={selection ? ON_SELECTION_LABEL : MODE_LABELS[draft.mode]}
             onChange={(event) => {
               const { value } = event.target;
-              if (value === ON_SELECTION || value === ON_LINE) return;
-              setDraft({ ...draft, mode: value as NoteInsertMode, selection: null, lineSpan: null });
+              if (value === ON_SELECTION) return;
+              setDraft({ ...draft, mode: value as NoteInsertMode, selection: null });
               setMessage(null);
             }}
             className="absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-lg border border-control-border bg-control-bg text-transparent outline-none focus:border-action focus:ring-2 focus:ring-action [&>option]:text-foreground"
           >
             {selection ? <option value={ON_SELECTION}>{ON_SELECTION_LABEL}</option> : null}
-            {lineSpan ? <option value={ON_LINE}>{ON_LINE_LABEL}</option> : null}
             {(Object.keys(MODE_LABELS) as NoteInsertMode[])
               .filter((value) => captureActive || value === "head" || value === "tail" || value === draft.mode)
               .map((value) => (

@@ -513,7 +513,13 @@ export default function SpeakerPanel({
         globalSpeakers={globalSpeakers} currentSpeakerLabel={picker.entry.speaker.diarization_label}
         speakerColors={speakerColors} targetElement={picker.anchor} fixedScope="speaker_everywhere_in_recording"
         onSelect={async (assignment) => {
-          if (await actions.assignIdentity(picker.entry, assignment.name)) {
+          // Another speaker of this recording takes over the row's lines, as
+          // the transcript picker's whole-speaker scope does; a name or person
+          // renames the row.
+          const done = assignment.diarizationLabel
+            ? await actions.mergeInto(picker.entry, assignment.diarizationLabel, assignment.name)
+            : await actions.assignIdentity(picker.entry, assignment.name);
+          if (done) {
             setPicker(null); picker.anchor.focus();
           }
         }}

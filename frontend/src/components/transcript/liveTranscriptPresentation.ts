@@ -1,7 +1,6 @@
 import { liveSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
-import { lineIsSettling } from "@/lib/transcript/settling";
-import type { NoteTarget } from "@/lib/notes/noteOutbox";
+import type { NoteSelection } from "@/lib/notes/noteOutbox";
 import type { TranscriptSegment } from "@/types";
 import type { LiveLineHandlers } from "./LiveLineEditor";
 import type { IndexedTranscriptSegment } from "./transcriptGroups";
@@ -17,10 +16,8 @@ export interface LiveTranscriptPresentation {
   hasLoaded: boolean;
   isPaused?: boolean;
   lineHandlers?: LiveLineHandlers;
-  onNoteOnLine?: (target: NoteTarget) => void;
-  onRenameLiveSpeaker?: (
-    label: string, name: string, segment?: TranscriptSegment,
-  ) => Promise<void | boolean>;
+  onNoteOnLine?: (selection: NoteSelection) => void;
+  onRenameLiveSpeaker?: (label: string, name: string) => Promise<boolean>;
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
 
@@ -30,7 +27,6 @@ export interface LiveLinePresentation {
   speakerLabel: string | null;
   sameSpeakerContinuation: boolean;
   speakerLocked: boolean;
-  namingAnchor?: TranscriptSegment;
 }
 
 const sourceChannelOf = (segment: TranscriptSegment) =>
@@ -42,17 +38,6 @@ const liveLabelOf = (segment: TranscriptSegment) =>
 
 const speakerLabelOf = (segment: TranscriptSegment) => liveLabelOf(segment) ??
   (segment.settling_required && segment.speaker !== "UNKNOWN" ? segment.speaker : null);
-
-const namingAnchorForRun = (segments: readonly TranscriptSegment[], index: number) => {
-  const first = segments[index];
-  if (!lineIsSettling(first)) return first;
-  for (let next = index + 1; next < segments.length; next += 1) {
-    const candidate = segments[next];
-    if (candidate.settling_required !== true || candidate.speaker !== first.speaker) break;
-    if (candidate.locked === true) return candidate;
-  }
-  return undefined;
-};
 
 export function buildLiveTranscriptPresentation(
   segments: readonly TranscriptSegment[],
@@ -72,7 +57,6 @@ export function buildLiveTranscriptPresentation(
       sameSpeakerContinuation: segment.settling_required === true &&
         previous !== undefined && segment.speaker === previous.speaker,
       speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
-      namingAnchor: showSpeaker ? namingAnchorForRun(segments, index) : undefined,
     }];
   }));
 }

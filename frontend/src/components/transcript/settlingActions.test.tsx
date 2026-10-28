@@ -31,7 +31,7 @@ describe("settling line actions", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     expect(submit).toHaveBeenCalledWith({ kind: "point", body: "My thought", anchorMs: 1500 });
   });
-  it("keeps corrections locked while line timeline notes stay available before and after locking", () => {
+  it("keeps every line action but Play waiting until the line locks", () => {
     const actions = handlers();
     const note = vi.fn();
     const delta = (locked: boolean): TranscriptUtteranceList => ({
@@ -46,8 +46,8 @@ describe("settling line actions", () => {
     const items = screen.getAllByRole("menuitem");
     expect(items).toHaveLength(4);
     for (const item of items) {
-      expect(item).toHaveAttribute("aria-disabled", item.textContent === "Note on this line" ? "false" : "true");
-      if (item.textContent !== "Note on this line") fireEvent.click(item);
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      fireEvent.click(item);
     }
     expect(note).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -56,7 +56,7 @@ describe("settling line actions", () => {
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     expect(screen.getByTestId("live-transcript-line")).not.toHaveAttribute("aria-describedby");
     fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
-    expect(note).toHaveBeenCalledWith({ startMs: 0, endMs: 2000 });
+    expect(note).toHaveBeenCalledWith({ startMs: 0, endMs: 2000, quotedText: "Alpha beta." });
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
     expect(screen.getByRole("textbox", { name: "Line text" })).toHaveValue("Alpha beta.");
@@ -126,74 +126,16 @@ describe("settling line actions", () => {
     expect(screen.queryByRole("button", { name: "Rename Alex" })).not.toBeInTheDocument();
   });
 
-  it("names a contiguous run from its locked line while keeping the first line's provisional header", async () => {
+  it("names a speaker from an open line's header", async () => {
     const rename = vi.fn().mockResolvedValue(undefined);
-    render(<LiveTranscriptPanel hasLoaded onRenameLiveSpeaker={rename}
-      segments={[line(false), { ...line(true), id: "u2", start: 3, revision: 4 }]} />);
-    const chips = screen.getAllByRole("button", { name: "Rename Speaker 1" });
-    expect(chips).toHaveLength(1);
-    expect(chips[0]).toHaveAttribute("data-locked", "false");
-    expect(chips[0]).toHaveClass("italic");
-    expect(chips[0]).toHaveAttribute("aria-disabled", "false");
-    fireEvent.click(chips[0]);
+    render(<LiveTranscriptPanel hasLoaded onRenameLiveSpeaker={rename} segments={[line(false)]} />);
+    const chip = screen.getByRole("button", { name: "Rename Speaker 1" });
+    expect(chip).toHaveAttribute("data-locked", "false");
+    fireEvent.click(chip);
     const input = within(screen.getByTestId("live-transcript-scroll")).getByRole("combobox");
     fireEvent.change(input, { target: { value: "Alex" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex",
-      expect.objectContaining({ id: "u2", revision: 4 })));
+    await waitFor(() => expect(rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex"));
     expect(rename).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the sole header disabled when every line in its run is unlocked", () => {
-    const rename = vi.fn();
-    render(<LiveTranscriptPanel hasLoaded onRenameLiveSpeaker={rename}
-      segments={[line(false), { ...line(false), id: "u2", start: 3 }]} />);
-    const chips = screen.getAllByRole("button", { name: "Rename Speaker 1" });
-    expect(chips).toHaveLength(1);
-    expect(chips[0]).toHaveAttribute("aria-disabled", "true");
-    fireEvent.click(chips[0]);
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(rename).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["another speaker", { ...line(true), speaker: "LIVE_PROVISIONAL_2" }],
-    ["an unmarked line with the same label", { ...line(true), settling_required: undefined }],
-  ])("does not borrow a naming anchor across %s", (_boundary, middle) => {
-    const rename = vi.fn();
-    render(<LiveTranscriptPanel hasLoaded onRenameLiveSpeaker={rename}
-      segments={[line(false), { ...middle, id: "middle", start: 3 }, { ...line(true), id: "u2", start: 6 }]} />);
-    const first = within(screen.getAllByTestId("live-transcript-line")[0])
-      .getByRole("button", { name: "Rename Speaker 1" });
-    expect(first).toHaveAttribute("aria-disabled", "true");
-    fireEvent.click(first);
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(rename).not.toHaveBeenCalled();
-  });
-
-  it("keeps the later naming anchor revision from when the shared header editor opened", async () => {
-    const rename = vi.fn().mockResolvedValue(undefined);
-    const first = line(false);
-    const anchor = { ...line(true), id: "u2", start: 3, revision: 4 };
-    const view = render(<LiveTranscriptPanel hasLoaded segments={[first, anchor]} onRenameLiveSpeaker={rename} />);
-    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 1" }));
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Alex" } });
-    view.rerender(<LiveTranscriptPanel hasLoaded segments={[first, { ...anchor, revision: 9 }]}
-      onRenameLiveSpeaker={rename} />);
-    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
-    await waitFor(() => expect(rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex",
-      expect.objectContaining({ id: "u2", revision: 4 })));
-    expect(rename).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the naming anchor revision from when its editor opened", async () => {
-    const rename = vi.fn().mockResolvedValue(undefined);
-    const first = line(true);
-    const view = render(<LiveTranscriptPanel hasLoaded segments={[first]} onRenameLiveSpeaker={rename} />);
-    fireEvent.click(screen.getByRole("button", { name: "Rename Speaker 1" }));
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Alex" } });
-    view.rerender(<LiveTranscriptPanel hasLoaded segments={[{ ...first, revision: 9 }]} onRenameLiveSpeaker={rename} />);
-    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
-    await waitFor(() => expect(rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex", expect.objectContaining({ revision: 3 })));
   });
 });

@@ -18,27 +18,26 @@ const props = () => ({ ...panelProps(), speakers: [], segments: [anchor],
 describe("live speaker rows", () => {
   beforeEach(() => { mocks.rename.mockReset().mockResolvedValue(true); mocks.promote.mockReset(); });
 
-  it("uses the locked source for identity changes and never offers fabricated pending suggestions", async () => {
+  it("changes identity once a line locks and never offers fabricated pending suggestions", async () => {
     render(<SpeakerPanel {...props()} globalSpeakers={[person(9, "Robin")]} />);
     expect(screen.queryByText("No speakers detected.")).toBeNull();
     expect(screen.queryByRole("button", { name: "Confirm Alex" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));
     fireEvent.click(screen.getByRole("button", { name: "Robin" }));
-    await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Robin", anchor, false));
+    await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Robin", false));
     expect(mocks.promote).not.toHaveBeenCalled();
   });
 
-  it("adds a live name to People through atomic anchored intent", async () => {
+  it("adds a live name to People in one request", async () => {
     render(<SpeakerPanel {...props()} />);
     fireEvent.click(screen.getByRole("button", { name: "Add to People" }));
-    await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex", anchor, true));
+    await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex", true));
     expect(mocks.promote).not.toHaveBeenCalled();
   });
 
-  it.each(["unlocked", "unanchored", "closed", "read-only"])("keeps %s live labels visible with mutations unavailable", (kind) => {
+  it.each(["unlocked", "closed", "read-only"])("keeps %s live labels visible with mutations unavailable", (kind) => {
     const options = props();
     if (kind === "unlocked") options.segments = [{ ...anchor, locked: false }];
-    if (kind === "unanchored") options.segments = [{ ...anchor, id: undefined, revision: undefined }];
     render(<SpeakerPanel {...options} onRenameLiveSpeaker={kind === "closed" ? undefined : mocks.rename}
       disableEditing={kind === "read-only"} />);
     expect(screen.getByRole("button", { name: "Alex" })).toBeInTheDocument();
@@ -53,12 +52,12 @@ describe("live speaker rows", () => {
     render(<SpeakerPanel {...props()} segments={[ordinary]} globalSpeakers={[person(9, "Robin")]} />);
     fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));
     fireEvent.click(screen.getByRole("button", { name: "Robin" }));
-    await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Robin", ordinary, false));
+    await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Robin", false));
     fireEvent.click(screen.getByRole("button", { name: "Add to People" }));
-    await waitFor(() => expect(mocks.rename).toHaveBeenLastCalledWith("LIVE_PROVISIONAL_1", "Alex", ordinary, true));
+    await waitFor(() => expect(mocks.rename).toHaveBeenLastCalledWith("LIVE_PROVISIONAL_1", "Alex", true));
   });
 
-  it("keeps the identity draft and its selected source revision after refusal and feed changes", async () => {
+  it("keeps the identity draft after refusal and feed changes", async () => {
     mocks.rename.mockResolvedValue(false);
     const { rerender } = render(<SpeakerPanel {...props()} />);
     fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));
@@ -70,7 +69,7 @@ describe("live speaker rows", () => {
     const newer = { ...anchor, revision: 8 };
     rerender(<SpeakerPanel {...props()} segments={[newer]} />);
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(mocks.rename).toHaveBeenLastCalledWith("LIVE_PROVISIONAL_1", "Robin", anchor, false));
+    await waitFor(() => expect(mocks.rename).toHaveBeenLastCalledWith("LIVE_PROVISIONAL_1", "Robin", false));
   });
 
   it("requires a real name before adding a live label to People", () => {

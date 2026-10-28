@@ -17,14 +17,13 @@ describe("live speaker naming transport", () => {
   });
   afterEach(() => { api.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
 
-  it("transports creation intent with its source revision while ordinary naming defaults off", async () => {
-    const anchor = { id: "u1", revision: 7 };
-    expect(await nameLiveSpeaker("r1", "LIVE_PROVISIONAL_1", "Alex", anchor, true))
+  it("transports creation intent only when asked", async () => {
+    expect(await nameLiveSpeaker("r1", "LIVE_PROVISIONAL_1", "Alex", true))
       .toEqual({ LIVE_PROVISIONAL_1: "Alex" });
     expect(new URL(requests[0].url).pathname.endsWith("/speakers/recordings/r1/live/LIVE_PROVISIONAL_1")).toBe(true);
     expect(requests[0].method).toBe("PUT");
-    expect(await requests[0].json()).toEqual({ name: "Alex", anchor_utterance_id: "u1", expected_revision: 7, create_person: true });
-    await nameLiveSpeaker("r1", "LIVE_PROVISIONAL_1", "Alex", anchor);
-    expect(await requests[1].json()).toEqual({ name: "Alex", anchor_utterance_id: "u1", expected_revision: 7 });
+    expect(await requests[0].json()).toEqual({ name: "Alex", create_person: true });
+    await nameLiveSpeaker("r1", "LIVE_PROVISIONAL_1", "Alex");
+    expect(await requests[1].json()).toEqual({ name: "Alex" });
   });
 });

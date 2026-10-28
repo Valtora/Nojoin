@@ -469,19 +469,7 @@ export interface NoteFileRemoval {
   note: TimelineNote | null;
 }
 
-export interface TranscriptSourceReference {
-  id: string;
-  revision: number;
-  /** Exact words selected on a recording using word settling. */
-  word_ids?: string[];
-  /** Complete captured token wording; a partial quote is not word evidence. */
-  word_texts?: Record<string, string>;
-}
-
 export interface TimelineNoteCreate {
-  source_utterances?: TranscriptSourceReference[];
-  target_utterance_id?: string;
-  target_utterance_revision?: number;
   /** Chosen by the client, so a retried create returns the first note. */
   id?: string;
   /** Chosen by the client; kept on the note, and on its tombstone once deleted. */
@@ -489,15 +477,12 @@ export interface TimelineNoteCreate {
   kind: TimelineNoteKind;
   body: string;
   anchor_ms?: number;
-  /** Optional captured line span on a point note; anchor_ms equals start_ms. */
   start_ms?: number;
   end_ms?: number;
   quoted_text?: string;
 }
 
 export interface TimelineNoteUpdate {
-  target_utterance_id?: string;
-  target_utterance_revision?: number;
   expected_revision: number;
   write_token?: string;
   body?: string;
@@ -511,8 +496,6 @@ export interface TimelineNoteUpdate {
  * `backend/tests/fixtures/timeline_note_error_codes.json`.
  */
 export const TIMELINE_NOTE_ERROR_CODES = [
-  "line_settling",
-  "line_stale",
   "recording_not_found",
   "note_not_found",
   "note_deleted_by_you",
@@ -540,6 +523,7 @@ export interface Transcript extends BaseDBModel {
   /** Captured settling policy or settled history; independent of current settings. */
   settling_required?: boolean;
   recording_id: RecordingId;
+  /** Moves when a writer changes what this transcript shows; idle pages poll it. */
   change_sequence?: number;
   text?: string;
   segments: TranscriptSegment[];
@@ -722,6 +706,9 @@ export interface ActiveRecordingConflictDetail {
   status: RecordingStatus;
 }
 
+/** Off; Auto: GPU only; always: GPU and CPU. */
+export type LiveTextSettlingMode = "off" | "auto" | "always";
+
 export interface Settings {
   whisper_model_size?: string;
   transcription_backend?: string;
@@ -734,7 +721,7 @@ export interface Settings {
   /** Install-wide, admin-only: provisional labels require CUDA. */
   live_speaker_labels?: "off" | "auto";
   /** Install-wide: rolling word agreement on confirmed CUDA; defaults off. */
-  live_text_settling?: "off" | "auto";
+  live_text_settling?: LiveTextSettlingMode;
   live_text_settling_k?: number;
   live_text_settling_window_s?: number;
   /** Install-wide, admin-only: selected when a capture's live labels start. */

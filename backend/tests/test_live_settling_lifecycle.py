@@ -94,7 +94,7 @@ async def _seed(sessions: async_sessionmaker[AsyncSession]) -> tuple[int, int, s
                 "capture_epoch": 4,
                 "sealed": False,
                 "phase": "live",
-                "policy": {"k": 3, "window_s": 10, "enabled": True},
+                "policy": {"enabled": True},
             },
         )
         db.add(transcript)
@@ -110,7 +110,6 @@ async def _seed(sessions: async_sessionmaker[AsyncSession]) -> tuple[int, int, s
                         step,
                         -8000,
                         2000,
-                        transcript.change_sequence,
                     ),
                     words=[{"word": "Accepted", "start_ms": 100, "end_ms": 500}],
                 )
@@ -151,7 +150,7 @@ async def _snapshot(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("transition", ["pause", "stalled-takeover"])
-async def test_capture_transition_closes_old_comparisons_before_new_policy(
+async def test_capture_transition_closes_old_comparisons_before_the_next_episode(
     lifecycle_sessions: async_sessionmaker[AsyncSession],
     transition: str,
 ) -> None:
@@ -172,7 +171,6 @@ async def test_capture_transition_closes_old_comparisons_before_new_policy(
         )
     state, closed = await _snapshot(sessions, recording_id)
     assert state["generation"] != "prior-episode"
-    assert state["policy"]["k"] == 5
     assert "last_decode_id" not in state
     assert closed == [
         (
@@ -198,7 +196,6 @@ async def test_capture_transition_closes_old_comparisons_before_new_policy(
                     2,
                     -6000,
                     4000,
-                    transcript.change_sequence,
                 ),
                 words=[{"word": "Later", "start_ms": 2100, "end_ms": 2500}],
             )

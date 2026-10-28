@@ -32,7 +32,7 @@ export default function PendingTranscriptContinuation({
     <div id={`segment-${segmentId}`} data-segment-id={segmentId} data-order-index={index}
       data-render-identity={liveRenderIdentity(segment, index)} data-line-actions className="inline">
       <TranscriptLineText text={segment.text} segmentId={segmentId}
-        startMs={segmentStartMs(segment)} endMs={segmentEndMs(segment)} revision={segment.revision}
+        startMs={segmentStartMs(segment)} endMs={segmentEndMs(segment)}
         settlingRequired={segment.settling_required} settling={lineIsSettling(segment)} words={segment.words}
         joinsPrevious={joinsPrevious}
         decorations={[...decorations, ...noteDecorations]}

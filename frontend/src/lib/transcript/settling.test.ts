@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { applyTranscriptDelta } from "@/lib/transcriptState";
-import { moveTargets } from "@/lib/notes/noteMoves";
 import { lineIsSettling, splitWords } from "./settling";
 import type { TranscriptSegment, TranscriptUtteranceList } from "@/types";
 
@@ -42,17 +41,6 @@ describe("settling policy and projection", () => {
     expect(marked.segments).toEqual([]);
     const legacy = applyTranscriptDelta({ currentState: null, recordingId: "r1", fallbackSegments: [segment], delta: { ...delta, settling_required: false }, mode: "full" });
     expect(legacy.segments).toEqual([segment]);
-  });
-
-  it("allows timeline moves before word lock and names every marked destination revision", () => {
-    const segments = [segment, { ...segment, id: "u2", start: 4, end: 6, locked: true, revision: 9 }];
-    // Timeline placement is independent of word locks; stale destinations still carry their revision.
-    expect(moveTargets(segments, [0, 1])).toEqual([
-      { afterIndex: 0, anchorMs: 0, source: { id: "u1", revision: 1 } },
-      { afterIndex: 1, anchorMs: 4000, source: { id: "u2", revision: 9 } },
-    ]);
-    expect(moveTargets(segments.map((line) => ({ ...line, settling_required: undefined })), [0, 1]))
-      .toEqual([{ afterIndex: 0, anchorMs: 0 }, { afterIndex: 1, anchorMs: 4000 }]);
   });
 
   it("never offers an interior boundary inside an untimed human replacement atom", () => {

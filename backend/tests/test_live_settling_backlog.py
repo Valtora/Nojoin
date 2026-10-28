@@ -1,4 +1,4 @@
-"""Backlog speech gets one decode while legacy capture keeps upstream wording."""
+"""Backlog speech opens the settling gate while legacy capture keeps upstream wording."""
 
 from dataclasses import replace
 from pathlib import Path
@@ -9,10 +9,9 @@ import pytest
 import soundfile as sf
 import torch
 from sqlalchemy import Engine
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from backend.models.recording import RecordingStatus
-from backend.models.transcript import Transcript
 from backend.processing import forced_aligner_model, live_transcribe, transcribe, vad
 from backend.processing import live_settling as worker
 from backend.processing.live_diarization import step as labels_worker
@@ -76,22 +75,20 @@ def test_backlog_speech_survives_silent_newest_chunk(
         "_speaker_evidence",
         lambda _: SimpleNamespace(speech_spans=lambda: spans, decide=None),
     )
-    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [], 7)
+    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [])
     monkeypatch.setattr(
         worker,
         "_episode_snapshot",
         lambda _: snapshot if settling else worker.SettlingStepResult(False),
     )
     decodes: list[tuple[int, int]] = []
-    publications: list[worker.EpisodeSnapshot] = []
     label_runs: list[Any] = []
 
     def decode(step: worker.SettlingStep, _config: Any, _audio: Any, start: int) -> Any:
         decodes.append((step.sequence, start))
         return {"asr_segments": []}, "cuda"
 
-    def publish(_step: Any, snap: Any, _payload: Any, _evidence: Any) -> Any:
-        publications.append(snap)
+    def publish(_step: Any, _snap: Any, _payload: Any, _evidence: Any) -> Any:
         return worker.SettlingStepResult(True)
 
     monkeypatch.setattr(worker, "_decode_words", decode)
@@ -113,18 +110,14 @@ def test_backlog_speech_survives_silent_newest_chunk(
         return
     expected_decode = vad or bool(spans)
     assert decodes == ([(3, 0)] if expected_decode else [])
-    chunks = publications[-1].gate_chunks
-    assert [chunk["sequence"] for chunk in chunks] == [0, 1, 2, 3]
-    assert chunks[0]["consumed"] is expected_decode
     if speech_source == "delayed" and labels:
-        # The first drained chunk must remain eligible for later diariser evidence.
-        snapshot = publications[-1]
+        # Diariser speech found after VAD missed it opens the gate while it is
+        # still in the window.
         spans.append((0.2, 1.0))
         path = _make_segment_wav(tmp_path, 4, 2, store)
         store.save_audio(str(path), torch.zeros(32000))
         _run_live_task(monkeypatch, 42, 4, session)
         assert decodes == [(4, 0)]
-        assert publications[-1].gate_chunks[0]["consumed"]
 
 
 @pytest.mark.parametrize("labels", [False, True])
@@ -170,13 +163,13 @@ def test_settling_off_preserves_upstream_repetition_text(
     ]
 
 
-def test_drained_backlog_publishes_once_and_spends_history_under_fence(
+def test_speech_left_in_the_window_keeps_getting_comparisons(
     worker_db: Any, settling_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One backlog decode is one observation, even when later evidence repeats."""
+    """A silent step still decodes while diariser speech sits in the open window."""
     for sequence in range(4):
         step = worker_db.step(sequence)
-    step = replace(step, first_sequence=0, vad_regions=[{"start": 0.2, "end": 1.0}])
+    step = replace(step, vad_regions=[{"start": 0.2, "end": 1.0}])
     calls: list[int] = []
 
     def decode(current: worker.SettlingStep, *_args: Any) -> Any:
@@ -201,19 +194,16 @@ def test_drained_backlog_publishes_once_and_spends_history_under_fence(
     assert worker.run_settling_step(
         replace(worker_db.step(4), vad_regions=[]), {}
     ).accepted
-    assert calls == [3]
+    # The repeated task is no new step; the silent one is a comparison.
+    assert calls == [3, 4]
     with Session(settling_engine) as session:
-        transcript = session.exec(select(Transcript)).one()
-        chunks = transcript.settling_state["gate_chunks"]
-        assert [chunk["sequence"] for chunk in chunks] == [0, 1, 2, 3, 4]
-        assert all(chunk["consumed"] for chunk in chunks[:4])
         words = [
             word
             for row in _active(session, worker_db.recording_id)
             for word in row_words(row)
         ]
         assert [word["word"] for word in words] == ["backlog"]
-        assert words[0]["unchanged_count"] == 0
+        assert words[0]["unchanged_count"] == 1
 
 
 @pytest.mark.parametrize("source", ["vad", "diariser"])
@@ -221,7 +211,7 @@ def test_drained_backlog_publishes_once_and_spends_history_under_fence(
     "case",
     [(0.2, False, False), (2.2, False, False), (3.2, False, True), (3.2, True, False)],
 )
-def test_newly_drained_gate_respects_cap_partial_chunk_and_mute(
+def test_gate_respects_cap_partial_chunk_and_mute(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     source: str,
@@ -235,7 +225,7 @@ def test_newly_drained_gate_respects_cap_partial_chunk_and_mute(
         store.save_audio(str(path), torch.ones(32000) * (0 if muted else 0.1))
     live_dir = tmp_path / "live"
     live_dir.mkdir()
-    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 9, "k": 3}, [], 7)
+    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 9, "k": 3}, [])
     monkeypatch.setattr(worker, "_episode_snapshot", lambda _: snapshot)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(transcribe, "loaded_transcription_device", lambda _: "cuda")
@@ -247,14 +237,12 @@ def test_newly_drained_gate_respects_cap_partial_chunk_and_mute(
         ),
     )
     decodes: list[int] = []
-    publications: list[worker.EpisodeSnapshot] = []
 
     def decode(step: worker.SettlingStep, *_args: Any) -> Any:
         decodes.append(step.sequence)
         return {"asr_segments": []}, "cuda"
 
-    def publish(_step: Any, snap: Any, _payload: Any, _evidence: Any) -> Any:
-        publications.append(snap)
+    def publish(_step: Any, _snap: Any, _payload: Any, _evidence: Any) -> Any:
         return worker.SettlingStepResult(True)
 
     monkeypatch.setattr(worker, "_decode_words", decode)
@@ -268,13 +256,9 @@ def test_newly_drained_gate_respects_cap_partial_chunk_and_mute(
         0,
         [{"start": start, "end": start + 0.4}] if source == "vad" else [],
         worker.CapturePublicationToken(0, "episode"),
-        first_sequence=0,
     )
     assert worker.run_settling_step(step, {}).accepted
     assert decodes == ([5] if expected else [])
-    chunks = publications[-1].gate_chunks
-    assert [chunk["sequence"] for chunk in chunks] == [1, 2, 3, 4, 5]
-    assert chunks[0]["start_ms"] == 3000
 
 
 @pytest.mark.parametrize("failure", ["vad", "asr"])

@@ -1,10 +1,9 @@
-"""People split inference holds no publication fence and refuses stale sources."""
+"""A People split moves the chosen lines to the new person's speaker."""
 
 from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import Session, select
@@ -25,12 +24,14 @@ from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.tests.postgres_setup import fresh_schema
-from backend.utils.canonical_pipeline import (
-    append_utterances_from_segments,
-    update_utterance_text,
-)
+from backend.utils.canonical_pipeline import append_utterances_from_segments
 
-SCHEMA = "people_split_publication_test"
+SCHEMA = "people_split_test"
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
 
 
 @pytest.fixture
@@ -109,34 +110,14 @@ async def split_database(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("edit_during_inference", [False, True])
-async def test_split_stages_inference_before_fence_and_rechecks_source(
+async def test_split_lines_belong_to_the_new_persons_speaker(
     split_database: tuple[Engine, async_sessionmaker[AsyncSession], dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
-    edit_during_inference: bool,
 ) -> None:
     engine, sessions, ids = split_database
-    calls: list[int] = []
 
     class Result:
         def get(self, timeout: int) -> dict[str, Any]:
-            with Session(engine) as concurrent:
-                # This must succeed at every model pass, including remainder
-                # inference after the selected side has been fully staged.
-                concurrent.execute(
-                    select(Transcript.id)
-                    .where(Transcript.recording_id == ids["recording"])
-                    .with_for_update(nowait=True)
-                ).one()
-                if edit_during_inference and not calls:
-                    update_utterance_text(
-                        concurrent,
-                        recording_id=ids["recording"],
-                        utterance_public_id=ids["line"],
-                        text="Human correction",
-                    )
-                    concurrent.commit()
-                calls.append(len(calls))
             return {"embedding": [1.0, 0.0], "speech_seconds": 25.0}
 
     async def dispatch(*args: Any, **kwargs: Any) -> Result:
@@ -151,33 +132,26 @@ async def test_split_stages_inference_before_fence_and_rechecks_source(
                 SegmentSelection(recording_id=ids["public_id"], start=0.0, end=5.0)
             ],
         )
-        if edit_during_inference:
-            with pytest.raises(HTTPException, match="409"):
-                await routes_global.split_speaker(
-                    ids["person"], request, session, owner
-                )
-            await session.rollback()
-        else:
-            result = await routes_global.split_speaker(
-                ids["person"], request, session, owner
-            )
-            assert result.name == "Robin"
-    assert len(calls) == 2
+        result = await routes_global.split_speaker(
+            ids["person"], request, session, owner
+        )
+        assert result.name == "Robin"
     with Session(engine) as session:
-        people = session.exec(
-            select(GlobalSpeaker.name).order_by(GlobalSpeaker.id)
-        ).all()
-        transcript = session.exec(select(Transcript)).one()
-        if edit_during_inference:
-            assert people == ["Dana"]
-            assert transcript.segments[0]["text"] == "Human correction"
-        else:
-            assert people == ["Dana", "Robin"]
-            assert transcript.segments[0]["speaker"].startswith("SPLIT_")
+        robin = session.exec(
+            select(GlobalSpeaker).where(GlobalSpeaker.name == "Robin")
+        ).one()
         rows = session.exec(
             select(TranscriptUtterance).order_by(TranscriptUtterance.sort_key)
         ).all()
-        for index, row in enumerate(rows):
-            expected = {"asr_segments": [{"words": [{"word": f"word {index}"}]}]}
-            assert row.confidence_payload == expected
-            assert transcript.segments[index]["confidence_payload"] == expected
+        speakers = {
+            speaker.id: speaker
+            for speaker in session.exec(select(RecordingSpeaker)).all()
+        }
+        moved = speakers[rows[0].recording_speaker_id]
+        assert moved.global_speaker_id == robin.id
+        assert moved.diarization_label.startswith("SPLIT_")
+        assert speakers[rows[1].recording_speaker_id].name == "Dana"
+        assert not any(
+            speaker.diarization_label.startswith("MANUAL_")
+            for speaker in speakers.values()
+        )

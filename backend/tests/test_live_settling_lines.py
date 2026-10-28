@@ -20,6 +20,7 @@ from backend.tests.test_live_settling_publication import (
     _request,
     _seed,
     _words,
+    settle_with_k,
 )
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
@@ -170,8 +171,10 @@ def test_pause_boundary_uses_the_final_word_gap_threshold(
 
 def test_closed_line_locks_after_silence_and_later_machine_work_cannot_change_it(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=1)
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         for step in range(2):
             publish_live_settling(
@@ -185,11 +188,9 @@ def test_closed_line_locks_after_silence_and_later_machine_work_cannot_change_it
         request = replace(
             _request(session, recording_id, 2, end_ms=4000), silence_start_ms=2000
         )
-        before_sequence = request.source_revision
         assert expire_live_settling(session, request=request).changed == 1
         session.commit()
         assert line_is_locked(row)
-        assert _request(session, recording_id, 3).source_revision == before_sequence + 1
         snapshot = copy.deepcopy(
             (
                 row.public_id,
@@ -228,8 +229,10 @@ def test_closed_line_locks_after_silence_and_later_machine_work_cannot_change_it
 
 def test_partial_speaker_locks_survive_pending_words_extending_an_open_line(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=1)
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         decide = lambda start, end: LiveLabelDecision("A", True, 1.0)
         for step in range(2):

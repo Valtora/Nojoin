@@ -59,7 +59,7 @@ describe("shared live capabilities", () => {
 
   it("preserves an idless growing line and its rename draft when timing and attribution change", () => {
     const handlers = props();
-    const live = { hasLoaded: true, onRenameLiveSpeaker: vi.fn(async () => {}) };
+    const live = { hasLoaded: true, onRenameLiveSpeaker: vi.fn(async () => true) };
     const first = { ...segment, id: undefined };
     const view = render(<TranscriptView {...handlers} segments={[first]} live={live} />);
     const paragraph = screen.getByText("The conversation continues.");

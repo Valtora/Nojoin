@@ -13,8 +13,8 @@ from backend.core.backup import BackupManager
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.tests.test_backup_publication_state_postgres import _old_archive
-from backend.tests.test_backup_publication_state_postgres import engine as engine
+from backend.tests.test_backup_settling_state_postgres import _old_archive
+from backend.tests.test_backup_settling_state_postgres import engine as engine
 from backend.tests.test_live_settling_finalisation import _final_segment
 from backend.tests.test_live_settling_publication import _request, _seed, _words
 from backend.utils.canonical_pipeline import (
@@ -52,7 +52,6 @@ def test_live_backup_projects_current_words_without_writing_snapshot(
             ).accepted
             session.commit()
         transcript = session.exec(select(Transcript)).one()
-        sequence = transcript.change_sequence
         snapshot = transcript.segments
         assert bool(snapshot) is retracted
         assert build_transcript_text_for_read(session, recording_id) == (
@@ -80,7 +79,6 @@ def test_live_backup_projects_current_words_without_writing_snapshot(
         with Session(engine) as session:
             transcript = session.exec(select(Transcript)).one()
             assert transcript.segments == snapshot
-            assert transcript.change_sequence == sequence
     finally:
         Path(archive_path).unlink(missing_ok=True)
 
@@ -118,7 +116,6 @@ def _provenance_archive(
         exported = json.loads(archive.read("transcripts.json"))[0]
         assert exported["settling_state"]["settled"] is True
         assert exported["settling_state"]["generation"] == "episode-a"
-        assert exported["change_sequence"] > 0
         return archive_path, exported["segments"]
 
 
@@ -145,7 +142,6 @@ def test_settled_restore_rebackup_and_reprocess_keep_durable_provenance(
         with Session(engine) as session:
             transcript = session.exec(select(Transcript)).one()
             assert transcript.settling_state == {"settled": True}
-            assert transcript.change_sequence == 0
             assert transcript.segments == segments
         rebackup, _ = BackupManager.create_backup_blocking(include_audio=False)
         archives.append(rebackup)
@@ -208,7 +204,6 @@ def test_provenance_restore_keeps_safe_target_and_accepts_old_archives(
         with Session(engine) as session:
             transcript = session.exec(select(Transcript)).one()
             transcript.settling_state = target
-            transcript.change_sequence = 999
             session.add(transcript)
             session.commit()
         result = BackupManager.restore_backup_blocking(
@@ -220,6 +215,5 @@ def test_provenance_restore_keeps_safe_target_and_accepts_old_archives(
         with Session(engine) as session:
             transcript = session.exec(select(Transcript)).one()
             assert transcript.settling_state == (None if legacy_archive else target)
-            assert transcript.change_sequence == (0 if legacy_archive else 999)
     finally:
         Path(archive_path).unlink(missing_ok=True)

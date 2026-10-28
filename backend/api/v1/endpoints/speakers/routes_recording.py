@@ -32,11 +32,7 @@ from backend.utils.canonical_pipeline import (
     unmerge_recording_speaker,
     update_recording_speaker_identity,
 )
-from backend.utils.canonical_pipeline.guards import (
-    LineActionConflict,
-    require_label_lines,
-    settling_required,
-)
+from backend.utils.canonical_pipeline.guards import settling_required
 from backend.utils.canonical_pipeline.notes_propagation import (
     propagate_speaker_rename_to_notes,
 )
@@ -49,6 +45,7 @@ from backend.utils.speaker_names.events import (
     record_user_name_events,
 )
 from backend.utils.speaker_names.sources import SOURCE_USER
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     MergedRecordingSpeakerRead,
@@ -58,11 +55,11 @@ from .helpers import (
     SpeakerUpdate,
     _canonical_transcript_writes_enabled,
     _get_owned_recording,
-    _guard_speaker_lines,
     _load_segments_for_speaker_work,
     _mark_pending_speaker_suggestions_superseded,
     _merge_local_speakers,
     _persist_segments_for_speaker_work,
+    _recording_transcript,
     _require_recording_speaker_mutations_supported,
     _serialize_recording_speakers,
 )
@@ -131,12 +128,7 @@ async def apply_recording_speaker_update(
     result = await db.execute(statement)
     global_speaker = result.scalar_one_or_none()
 
-    try:
-        action_transcript = await db.run_sync(
-            require_label_lines, recording.id, update.diarization_label
-        )
-    except LineActionConflict as exc:
-        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    action_transcript = await _recording_transcript(db, recording.id)
 
     if settling_required(action_transcript) or (
         _canonical_transcript_writes_enabled()
@@ -161,10 +153,6 @@ async def apply_recording_speaker_update(
             )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except RuntimeError as exc:
-            from backend.utils.canonical_pipeline.guards import conflict_detail
-
-            raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
 
         superseded_suggestion_count = (
             await _mark_pending_speaker_suggestions_superseded(
@@ -415,12 +403,7 @@ async def promote_speaker_to_global(
             status_code=404, detail="Speaker not found in this recording"
         )
 
-    try:
-        action_transcript = await db.run_sync(
-            require_label_lines, recording.id, diarization_label
-        )
-    except LineActionConflict as exc:
-        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    action_transcript = await _recording_transcript(db, recording.id)
 
     speaker_name = (
         recording_speaker.local_name
@@ -479,10 +462,6 @@ async def promote_speaker_to_global(
             )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except RuntimeError as exc:
-            from backend.utils.canonical_pipeline.guards import conflict_detail
-
-            raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
 
         await _mark_pending_speaker_suggestions_superseded(
             db,
@@ -778,6 +757,7 @@ async def update_speaker_color(
 
     recording_speaker.color = update.color
     db.add(recording_speaker)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
 
     return {"status": "success", "color": update.color}
@@ -811,8 +791,6 @@ async def split_local_speaker(
 
     if not request.segments:
         raise HTTPException(status_code=400, detail="No segments provided")
-
-    await _guard_speaker_lines(db, recording.id)
 
     target_label = None
     stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)

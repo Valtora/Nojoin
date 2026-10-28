@@ -1,7 +1,8 @@
 """Capture eligibility and immutable provenance for live publication.
 
-Word comparison lives in live_word_settling; this module owns the captured
-policy and publication boundary shared with capture lifecycle operations.
+Word comparison lives in live_word_settling; this module owns each episode's
+mode, the per-step K and window, and the publication boundary shared with
+capture lifecycle operations.
 """
 
 from copy import deepcopy
@@ -27,22 +28,24 @@ def _capture_policy_settings() -> dict[str, Any]:
     )
 
 
+def current_settling_policy() -> dict[str, Any]:
+    """K and the window, read at each step so a change applies to the next one."""
+    settings = _capture_policy_settings()
+    return {
+        "k": settings["live_text_settling_k"],
+        "window_s": settings["live_text_settling_window_s"],
+    }
+
+
+def cpu_settling_allowed() -> bool:
+    """Whether settling may run on a CPU worker (``always``), read at each step."""
+    return _capture_policy_settings()["live_text_settling"] == "always"
+
+
 class SettlingPolicy(TypedDict):
-    """Frozen capture policy, pending confirmation of the worker's device."""
+    """Whether the episode settles, pending confirmation of the worker's device."""
 
-    k: int
-    window_s: float
     enabled: bool | None
-
-
-class GateChunk(TypedDict):
-    """One retained chunk and whether its first speech opportunity was spent."""
-
-    sequence: int
-    start_ms: int
-    end_ms: int
-    missed: bool
-    consumed: bool
 
 
 class CaptureSettlingState(TypedDict):
@@ -58,7 +61,6 @@ class CaptureSettlingState(TypedDict):
     last_step_index: NotRequired[int]
     last_decode_id: NotRequired[str]
     speaker_enabled: NotRequired[bool]
-    gate_chunks: NotRequired[list[GateChunk]]
     line_break_pause_s: NotRequired[float]
     trailing_silence_start_ms: NotRequired[int | None]
     silence_audio_end_ms: NotRequired[int]
@@ -86,18 +88,14 @@ def durable_settling_state(state: dict[str, Any] | None) -> dict[str, Any] | Non
 def new_capture_settling_state(*, capture_epoch: int) -> CaptureSettlingState | None:
     """Mark explicitly enabled new captures; old recordings remain unmarked."""
     settings = _capture_policy_settings()
-    if settings["live_text_settling"] != "auto" or not config_manager.get(
+    if settings["live_text_settling"] == "off" or not config_manager.get(
         "enable_canonical_transcript_writes", True
     ):
         return None
     return {
         "version": 1,
         "eligible": True,
-        "policy": {
-            "k": settings["live_text_settling_k"],
-            "window_s": settings["live_text_settling_window_s"],
-            "enabled": None,
-        },
+        "policy": {"enabled": None},
         "generation": str(uuid4()),
         "capture_epoch": capture_epoch,
         "sealed": False,
@@ -149,17 +147,14 @@ def update_capture_settling_state(
         updated["generation"] = str(uuid4())
         settings = _capture_policy_settings()
         updated["policy"] = {
-            "k": settings["live_text_settling_k"],
-            "window_s": settings["live_text_settling_window_s"],
             "enabled": None
-            if settings["live_text_settling"] == "auto"
+            if settings["live_text_settling"] != "off"
             and config_manager.get("enable_canonical_transcript_writes", True)
             else False,
         }
         updated.pop("last_step_index", None)
         updated.pop("last_decode_id", None)
         updated.pop("speaker_enabled", None)
-        updated.pop("gate_chunks", None)
         updated.pop("trailing_silence_start_ms", None)
         updated.pop("silence_audio_end_ms", None)
     updated.update(capture_epoch=capture_epoch, sealed=sealed, phase=phase)
@@ -182,7 +177,11 @@ def resolve_capture_settling_policy(
         return
     transcript.settling_state = {
         **state,
-        "policy": {**state["policy"], "enabled": device == "cuda"},
+        "policy": {
+            **state["policy"],
+            "enabled": device == "cuda"
+            or (device == "cpu" and not disable_on_cpu and cpu_settling_allowed()),
+        },
     }
     if device == "cpu":
         transcript.settling_state.pop("trailing_silence_start_ms", None)

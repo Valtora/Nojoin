@@ -154,10 +154,6 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.processing_eta_sample_size !== current.processing_eta_sample_size ||
   polled.has_proxy !== current.has_proxy ||
   polled.has_audio !== current.has_audio ||
-  ((polled.transcript?.settling_required === true || polled.previous_publication_available === true ||
-    polled.reprocess_publication_complete === true) &&
-    (!!polled.transcript?.settling_required !== !!current.transcript?.settling_required ||
-      polled.transcript?.change_sequence !== current.transcript?.change_sequence)) ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||
   // Changes with the notes list, which the page then fetches.

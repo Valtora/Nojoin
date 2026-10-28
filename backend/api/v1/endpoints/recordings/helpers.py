@@ -38,7 +38,6 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.browser_capture_audio import BROWSER_MASTER_SUFFIX
-from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.recording_audio_sync import (
     SEGMENT_CORRUPT_SUFFIX,
     STAGED_BROWSER_SEGMENT_SUFFIXES,
@@ -62,7 +61,7 @@ from backend.utils.reprocess_publication import (
 )
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
-from backend.utils.transcript_publication import bump_transcript_change
+from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import durable_settling_state
 
 from .constants import (
@@ -690,11 +689,10 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
     The user's timeline notes hang off the recording, not the transcript, so
     they survive untouched.
     """
-    # The loader suppresses autoflush: reprocess may already have staged
-    # recording metadata, which must not lock Recording before Transcript.
-    existing_transcript = await db.run_sync(
-        lambda session: _load_transcript(session, recording_id, lock=True)
+    transcript_result = await db.execute(
+        select(Transcript).where(Transcript.recording_id == recording_id)
     )
+    existing_transcript = transcript_result.scalar_one_or_none()
     preserve_live_work = bool(
         existing_transcript is not None
         and (existing_transcript.settling_state or {}).get("settled") is True
@@ -773,8 +771,8 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         )
     )
     if existing_transcript is not None:
-        # Keep the publication identity and monotonic counter. All generated
-        # products still return to the defaults a replacement row used to get.
+        # Reset in place, so retained settled lines keep their transcript. All
+        # generated products return to the defaults a replacement row used to get.
         defaults = Transcript(recording_id=recording_id)
         defaults.settling_state = durable_settling_state(
             existing_transcript.settling_state
@@ -788,9 +786,7 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
             if field not in retained:
                 setattr(existing_transcript, field, getattr(defaults, field))
         db.add(existing_transcript)
-        # Bulk DELETEs bypass the ORM publication hook, including when the
-        # compatibility projection was already empty before this reset.
-        await db.run_sync(lambda session: bump_transcript_change(session, recording_id))
+        await db.execute(change_sequence_bump(recording_id))
         await db.flush()
 
 

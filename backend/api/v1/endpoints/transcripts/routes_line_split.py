@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.models.recording_public import TranscriptPublicRead, serialize_transcript
 from backend.models.user import User
-from backend.utils.canonical_pipeline.guards import conflict_detail
 from backend.utils.canonical_pipeline.split import SplitCommand, split_utterance
 from backend.utils.config_manager import is_meeting_edge_enabled
 
@@ -53,7 +52,7 @@ async def split_transcript_utterance(
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except RuntimeError as error:
-        raise HTTPException(status_code=409, detail=conflict_detail(error)) from error
+        raise HTTPException(status_code=409, detail=str(error)) from error
     await db.commit()
     await db.refresh(transcript)
     await _dispatch_meeting_edge_refresh(

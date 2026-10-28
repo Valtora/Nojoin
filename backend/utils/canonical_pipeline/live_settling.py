@@ -19,16 +19,16 @@ from backend.utils.live_word_settling import (
     close_word_state,
     expire_word_state,
     reconcile_word_state,
+    word_signature,
 )
-from backend.utils.transcript_publication import bump_transcript_change
+from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
-    GateChunk,
+    current_settling_policy,
     load_capture_publication,
     publication_is_current,
 )
 
-from .live_settling_boundaries import remap_phrase_end
 from .live_settling_projection import (
     SETTLING_KEY,
     DecideSpeaker,
@@ -64,10 +64,8 @@ class SettlingPass:
     step_index: int
     window_start_ms: int
     audio_end_ms: int
-    source_revision: int | None = None
     input_start_ms: int | None = None
     metadata: dict[str, Any] | None = None
-    gate_chunks: list[GateChunk] | None = None
     max_segment_ms: int | None = None
     silence_start_ms: int | None = None
     line_break_pause_s: float | None = None
@@ -140,11 +138,35 @@ def legacy_live_frontier(session: Session, *, recording_id: int) -> int:
 
 
 def _speaker_enabled() -> bool:
-    from backend.processing.live_diarization.setting import (
-        live_speaker_labels_requested,
-    )
+    """Whether live labels run, so a line's lock waits for its speaker's.
 
-    return live_speaker_labels_requested()
+    Not merely requested: on a CPU worker labels never run, and settling there
+    (``always``) must still lock lines.
+    """
+    from backend.processing.live_diarization.step import live_speaker_labels_device
+
+    return live_speaker_labels_device() is not None
+
+
+def _signature(word: dict[str, Any]) -> str:
+    return word_signature(str(word.get("word") or ""))
+
+
+def _still_ends_line(
+    current: list[dict[str, Any]], terminal: dict[str, Any], point: int | None
+) -> bool:
+    """Whether the revision holds the line's last word, unchanged and still last.
+
+    A word recovered after it but before the confirmed end belongs to the line.
+    """
+    for index, word in enumerate(current):
+        if word.get("id") == terminal.get("id"):
+            following = current[index + 1] if index + 1 < len(current) else None
+            start = following.get("start_ms") if following else None
+            return _signature(word) == _signature(terminal) and not (
+                start is not None and point is not None and start < point
+            )
+    return False
 
 
 def _line_boundaries(
@@ -153,13 +175,15 @@ def _line_boundaries(
     silence_start_ms: int | None,
     current: list[dict[str, Any]],
 ) -> LineBoundaries:
-    """Attach confirmed ends to revised phrase spans before considering timing."""
+    """Keep a confirmed line end on the line's last word through retiming.
+
+    When the revised hypothesis no longer holds that word unchanged and last
+    (it was retokenised, which can reuse its ID for the first piece, replaced,
+    or followed by recovered speech), the end stays a time cutoff instead.
+    """
     closed_ends: dict[str, int | None] = {}
     cutoffs: set[int] = set()
-    previous_end = -1
-    phrase_words: list[dict[str, Any]] = []
     for row in rows:
-        phrase_words.extend(row_words(row))
         stored = (row.confidence_payload or {}).get(SETTLING_KEY, {})
         if (
             not stored.get("boundary_locked")
@@ -167,13 +191,11 @@ def _line_boundaries(
         ):
             continue
         point = stored.get("closed_at_ms", row.end_ms)
-        end = remap_phrase_end(phrase_words, current, after_index=previous_end)
-        if end is not None:
-            closed_ends[current[end]["id"]] = point
-            previous_end = end
+        words = row_words(row)
+        if words and _still_ends_line(current, words[-1], point):
+            closed_ends[words[-1]["id"]] = point
         elif point is not None:
             cutoffs.add(point)
-        phrase_words = []
     return LineBoundaries(
         max_segment_ms=state.get(
             "max_segment_ms",
@@ -268,10 +290,6 @@ def _fresh(
         and publication_is_current(recording, transcript, request.expected_token)
         and state.get("phase") == "live"
         and request.step_index > state.get("last_step_index", -1)
-        and (
-            request.source_revision is None
-            or transcript.change_sequence == request.source_revision
-        )
     )
 
 
@@ -346,7 +364,7 @@ def publish_live_settling(
     settled = reconcile_word_state(
         existing,
         hypothesis,
-        k=state["policy"]["k"],
+        k=current_settling_policy()["k"],
         decode_id=request.decode_id,
         window_start_ms=request.window_start_ms,
         audio_end_ms=request.audio_end_ms,
@@ -397,15 +415,10 @@ def publish_live_settling(
         **(transcript.settling_state or {}),
         "last_step_index": request.step_index,
         "last_decode_id": request.decode_id,
-        **(
-            {"gate_chunks": request.gate_chunks}
-            if request.gate_chunks is not None
-            else {}
-        ),
     }
     session.add(transcript)
     if result.changed:
-        bump_transcript_change(session, request.recording_id)
+        session.execute(change_sequence_bump(request.recording_id))
     return result
 
 
@@ -430,14 +443,13 @@ def expire_live_settling(
         transcript,
         recording,
         request,
-        allow_unresolved=request.gate_chunks is not None,
+        allow_unresolved=True,
     ):
         return SettlingPublicationResult(False)
     if not settling_enabled(transcript):
         transcript.settling_state = {
             **(transcript.settling_state or {}),
             "last_step_index": request.step_index,
-            "gate_chunks": request.gate_chunks,
             "trailing_silence_start_ms": request.silence_start_ms,
             "silence_audio_end_ms": request.audio_end_ms,
         }
@@ -477,15 +489,10 @@ def expire_live_settling(
     transcript.settling_state = {
         **(transcript.settling_state or {}),
         "last_step_index": request.step_index,
-        **(
-            {"gate_chunks": request.gate_chunks}
-            if request.gate_chunks is not None
-            else {}
-        ),
     }
     session.add(transcript)
     if result.changed:
-        bump_transcript_change(session, request.recording_id)
+        session.execute(change_sequence_bump(request.recording_id))
     return result
 
 

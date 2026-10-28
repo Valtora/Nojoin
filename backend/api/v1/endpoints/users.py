@@ -31,7 +31,6 @@ from backend.utils.invitation_roles import resolve_invitation_role
 from backend.utils.rate_limit import enforce_rate_limit
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
-from backend.utils.transcript_publication import lock_transcript_publications
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -346,18 +345,6 @@ async def delete_user(
 
     # These first, as in every change that can remove an Owner or a superuser.
     accounts = await lock_privileged_accounts(db)
-
-    # Publication holds Transcript before checking Recording and actor-user FKs.
-    # Fence the known recordings before taking either parent's delete lock.
-    recording_ids = (
-        (await db.execute(select(Recording.id).where(Recording.user_id == user_id)))
-        .scalars()
-        .all()
-    )
-    if recording_ids:
-        await db.run_sync(
-            lambda session: lock_transcript_publications(session, recording_ids)
-        )
 
     # Locked, as delete_recording locks its recording, before the document
     # paths are read below. An upload creating a recording for this user waits

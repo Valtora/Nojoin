@@ -56,7 +56,7 @@ describe("words in an open settled line", () => {
     expect(pending).not.toHaveClass("italic", "text-contrast-helper");
   });
 
-  it("allows locked words in an open line using their real times and identities, across later updates", () => {
+  it("allows locked words in an open line using their real times, across later updates", () => {
     vi.useFakeTimers();
     const onNote = vi.fn();
     const segment = line();
@@ -67,11 +67,7 @@ describe("words in an open settled line", () => {
     view.rerender(<LiveTranscriptPanel segments={[{ ...segment, revision: 4 }]} hasLoaded onNoteOnLine={onNote} />);
     expect(add).toBeEnabled();
     fireEvent.click(add);
-    expect(onNote).toHaveBeenCalledWith({
-      startMs: 1000, endMs: 1700, quotedText: "Firm words",
-      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w1", "w2"],
-        word_texts: { w1: "Firm", w2: "words" } }],
-    });
+    expect(onNote).toHaveBeenCalledWith({ startMs: 1000, endMs: 1700, quotedText: "Firm words" });
   });
 
   it("keeps selection and Copy available but disables a note containing an unlocked word", () => {
@@ -83,7 +79,7 @@ describe("words in an open settled line", () => {
     const toolbar = screen.getByRole("toolbar");
     const add = within(toolbar).getByRole("button", { name: "Add note" });
     expect(add).toBeDisabled();
-    expect(add).toHaveAttribute("title", "Selected words are still settling or have changed.");
+    expect(add).toHaveAttribute("title", "Selected words are still settling.");
     expect(within(toolbar).getByRole("button", { name: "Copy" })).toBeEnabled();
     fireEvent.click(add);
     expect(onNote).not.toHaveBeenCalled();
@@ -165,7 +161,7 @@ describe("words in an open settled line", () => {
     expect(paragraph.querySelectorAll("mark")).toHaveLength(3);
   });
 
-  it("keeps a mixed untimed selection's whole fallback span and its exact selected identities", () => {
+  it("keeps a mixed untimed selection's whole fallback span", () => {
     vi.useFakeTimers();
     const onNote = vi.fn();
     const segment = line();
@@ -174,12 +170,10 @@ describe("words in an open settled line", () => {
     render(<LiveTranscriptPanel segments={[segment]} hasLoaded onNoteOnLine={onNote} />);
     selectWords("w2", "w3");
     fireEvent.click(screen.getByRole("button", { name: "Add note" }));
-    expect(onNote).toHaveBeenCalledWith({ startMs: 1000, endMs: 3000, quotedText: "words pending",
-      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w2", "w3"],
-        word_texts: { w2: "words", w3: "pending" } }] });
+    expect(onNote).toHaveBeenCalledWith({ startMs: 1000, endMs: 3000, quotedText: "words pending" });
   });
 
-  it("can quote locked zero-duration punctuation by identity without including the pending neighbour", () => {
+  it("can quote locked zero-duration punctuation without including the pending neighbour", () => {
     vi.useFakeTimers();
     const onNote = vi.fn();
     const segment = line();
@@ -190,8 +184,6 @@ describe("words in an open settled line", () => {
     const add = screen.getByRole("button", { name: "Add note" });
     expect(add).toBeEnabled();
     fireEvent.click(add);
-    expect(onNote).toHaveBeenCalledWith({ startMs: 1200, endMs: 1201, quotedText: ",",
-      sourceUtterances: [{ id: "open", revision: 3, word_ids: ["w2"],
-        word_texts: { w2: "," } }] });
+    expect(onNote).toHaveBeenCalledWith({ startMs: 1200, endMs: 1201, quotedText: "," });
   });
 });

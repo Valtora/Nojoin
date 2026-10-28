@@ -469,7 +469,7 @@ async def test_capture_eligibility_policy_and_lifecycle_are_persisted(
     from backend.utils.config_manager import config_manager
 
     original_get = config_manager.get
-    settings = {"live_text_settling": requested, "live_text_settling_k": 4}
+    settings = {"live_text_settling": requested}
     monkeypatch.setattr(
         config_manager,
         "get",
@@ -492,7 +492,7 @@ async def test_capture_eligibility_policy_and_lifecycle_are_persisted(
     if requested == "off":
         assert initial is None
         return
-    assert initial["policy"] == {"k": 4, "window_s": 10.0, "enabled": None}
+    assert initial["policy"] == {"enabled": None}
     assert initial["capture_epoch"] == 0
     assert not initial["sealed"]
     response = await client.post(
@@ -500,7 +500,6 @@ async def test_capture_eligibility_policy_and_lifecycle_are_persisted(
     )
     assert response.status_code == 200
     assert (await state())["phase"] == "paused"
-    settings["live_text_settling_k"] = 9
     response = await client.post(
         f"/api/v1/recordings/{public_id}/resume", headers={"Origin": TRUSTED_ORIGIN}
     )
@@ -508,9 +507,7 @@ async def test_capture_eligibility_policy_and_lifecycle_are_persisted(
     resumed = await state()
     assert resumed["capture_epoch"] == 1
     assert resumed["generation"] != initial["generation"]
-    # Pause closed the old hypothesis; the new episode captures today's policy
-    # without reinterpreting any previous episode's comparison counts.
-    assert resumed["policy"] == {"k": 9, "window_s": 10.0, "enabled": None}
+    assert resumed["policy"] == {"enabled": None}
     response = await client.post(
         f"/api/v1/recordings/{public_id}/segment",
         params={"sequence": 0, "epoch": 1},

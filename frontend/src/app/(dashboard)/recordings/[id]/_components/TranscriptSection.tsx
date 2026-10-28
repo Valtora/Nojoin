@@ -11,7 +11,7 @@ import { useLiveSpeakerNaming } from "@/components/transcript/_hooks/useLiveSpea
 import { useStableCallback } from "@/components/transcript/_hooks/useStableCallback";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
-import { isNoteSelection, type NoteTarget } from "@/lib/notes/noteOutbox";
+import type { NoteSelection } from "@/lib/notes/noteOutbox";
 import { ClientStatus } from "@/types";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, shownNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
@@ -184,10 +184,8 @@ export default function TranscriptSection({
   );
   const focusSection = useCallback(() => sectionRef.current?.focus(), []);
   const addNote = useCallback((note: OutboxDraft) => outbox.submit(note), [outbox]);
-  const noteOnLine = useCallback((target: NoteTarget) => {
-    outbox.setDraft({ ...outbox.getSnapshot().draft,
-      selection: isNoteSelection(target) ? target : null,
-      lineSpan: isNoteSelection(target) ? null : target });
+  const noteOnLine = useCallback((selection: NoteSelection) => {
+    outbox.setDraft({ ...outbox.getSnapshot().draft, selection });
     liveNoteBoxRef?.current?.focus();
   }, [outbox, liveNoteBoxRef]);
   const recordingId = recording.id;

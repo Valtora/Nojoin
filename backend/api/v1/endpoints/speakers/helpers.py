@@ -46,6 +46,7 @@ from backend.utils.canonical_pipeline.live_compatibility import (
     has_deferred_live_projection,
     prepare_live_compatibility_mutation,
 )
+from backend.utils.canonical_pipeline.public_ids import SegmentIdConflictError
 from backend.utils.speaker_name_suggestions import (
     supersede_pending_transcript_speaker_suggestions,
 )
@@ -180,10 +181,8 @@ async def _persist_segments_for_speaker_work(
                     segments=segments,
                 )
             )
-        except RuntimeError as exc:
-            from backend.utils.canonical_pipeline.guards import conflict_detail
-
-            raise HTTPException(status_code=409, detail=conflict_detail(exc)) from exc
+        except SegmentIdConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return
     transcript.segments = segments
     flag_modified(transcript, "segments")
@@ -237,36 +236,32 @@ async def _mark_pending_speaker_suggestions_superseded(
     return len(changed)
 
 
-async def _guard_speaker_lines(
-    db: AsyncSession, recording_id: int, label: str | None = None
+async def _recording_transcript(
+    db: AsyncSession, recording_id: int
 ) -> Transcript | None:
-    """Expose the common line conflict consistently across speaker API adapters."""
-    from backend.utils.canonical_pipeline.guards import (
-        LineActionConflict,
-        require_label_lines,
-        require_recording_lines,
-    )
-
-    try:
-        if label is None:
-            return await db.run_sync(require_recording_lines, recording_id)
-        return await db.run_sync(require_label_lines, recording_id, label)
-    except LineActionConflict as error:
-        raise HTTPException(status_code=409, detail=error.detail) from error
+    """Read the transcript that decides whether canonical lines lead."""
+    return (
+        await db.execute(
+            select(Transcript).where(Transcript.recording_id == recording_id)
+        )
+    ).scalar_one_or_none()
 
 
-async def _guard_linked_speakers(
+async def _settling_recordings(
     db: AsyncSession, speakers: list[RecordingSpeaker]
 ) -> set[int]:
-    """Check every recording of a library merge before its first mutation."""
-    marked: set[int] = set()
-    for speaker in speakers:
-        transcript = await _guard_speaker_lines(
-            db, speaker.recording_id, speaker.diarization_label
+    """Recordings whose canonical lines lead even before they finish processing."""
+    recording_ids = {speaker.recording_id for speaker in speakers}
+    transcripts = (
+        await db.execute(
+            select(Transcript).where(Transcript.recording_id.in_(recording_ids))
         )
-        if settling_required(transcript):
-            marked.add(speaker.recording_id)
-    return marked
+    ).scalars()
+    return {
+        transcript.recording_id
+        for transcript in transcripts
+        if settling_required(transcript)
+    }
 
 
 async def _merge_local_speakers(
@@ -283,7 +278,7 @@ async def _merge_local_speakers(
     recording = await db.get(Recording, recording_id)
     if recording is not None and not recording_supports_unified_mutations(recording):
         raise RuntimeError(LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL)
-    transcript = await _guard_speaker_lines(db, recording_id, source_label)
+    transcript = await _recording_transcript(db, recording_id)
     if recording is not None and (
         settling_required(transcript)
         or (

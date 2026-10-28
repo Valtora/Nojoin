@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -6,7 +7,6 @@ from uuid import uuid4
 
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import delete
-from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
@@ -35,7 +35,6 @@ from backend.utils.browser_capture_audio import (
     BROWSER_FLAC_SEGMENT_SUFFIX,
     BrowserAudioFormatError,
 )
-from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
@@ -43,43 +42,19 @@ from backend.utils.document_storage import (
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
+from backend.utils.stored_paths import require_recording_path
 from backend.utils.time import utc_now
-from backend.utils.transcript_publication import bump_transcript_change
 from backend.utils.transcript_settling import update_capture_settling_state
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
-from .capture_master import prepare_capture_master
+from .capture_settling import (
+    close_live_words,
+    lock_capture_publication,
+    seal_live_settling,
+)
 from .router import router
 
 logger = logging.getLogger(__name__)
-
-
-async def _lock_capture_publication(
-    db: AsyncSession, recording: Recording
-) -> Transcript | None:
-    """Lock Transcript before audio, so waiting publishers cannot stall uploads."""
-    transcript = await db.run_sync(
-        lambda session: _load_transcript(session, recording.id, lock=True)
-    )
-    try:
-        await recordings_module._lock_capture(db, recording)
-    except InvalidRequestError as exc:
-        raise HTTPException(status_code=404, detail="Recording not found") from exc
-    return transcript
-
-
-async def _close_live_words(
-    db: AsyncSession, transcript: Transcript | None, recording_id: int
-) -> None:
-    """Lock the last accepted hypothesis inside the lifecycle transaction."""
-    state = getattr(transcript, "settling_state", None) or {}
-    if not state.get("last_decode_id") or state.get("phase") != "live":
-        return
-    from backend.utils.canonical_pipeline.live_settling import close_live_settling
-
-    await db.run_sync(
-        lambda session: close_live_settling(session, recording_id=recording_id)
-    )
 
 
 def _capture_wall_span_seconds(recording: Recording) -> float | None:
@@ -204,7 +179,7 @@ async def pause_upload(
     )
     # A late pause from a tab whose capture was resumed elsewhere would mark
     # the capture paused under the tab now running it.
-    transcript = await _lock_capture_publication(db, recording)
+    transcript = await lock_capture_publication(db, recording)
     recordings_module._ensure_capture_epoch(recording, epoch)
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
@@ -213,7 +188,7 @@ async def pause_upload(
         )
 
     if recording.status != RecordingStatus.PAUSED:
-        await _close_live_words(db, transcript, recording.id)
+        await close_live_words(db, transcript, recording.id)
         update_capture_settling_state(
             transcript,
             capture_epoch=recording.capture_epoch,
@@ -224,7 +199,6 @@ async def pause_upload(
         recording.client_status = ClientStatus.PAUSED
         recording.last_activity_at = utc_now()
         db.add(recording)
-        await db.run_sync(lambda session: bump_transcript_change(session, recording.id))
         await db.commit()
         await db.refresh(recording)
 
@@ -284,24 +258,20 @@ async def resume_upload(
         db, recording_id, current_user.id
     )
     # Two takeovers at once must not both be issued the same epoch.
-    transcript = await _lock_capture_publication(db, recording)
+    transcript = await lock_capture_publication(db, recording)
 
     if epoch is not None:
         recordings_module._ensure_capture_epoch(recording, epoch)
         _ensure_holder_can_resume(recording)
         resumed_after_stall = False
         if (getattr(transcript, "settling_state", None) or {}).get("phase") != "live":
-            await _close_live_words(db, transcript, recording.id)
+            await close_live_words(db, transcript, recording.id)
     else:
         resumed_after_stall = _ensure_capture_can_be_taken_over(recording)
-        await _close_live_words(db, transcript, recording.id)
+        await close_live_words(db, transcript, recording.id)
         recording.capture_epoch += 1
 
     stalled_last_activity = recording.last_activity_at
-    status_changed = (
-        recording.status != RecordingStatus.UPLOADING
-        or recording.client_status != ClientStatus.RECORDING
-    )
     recording.status = RecordingStatus.UPLOADING
     update_capture_settling_state(
         transcript, capture_epoch=recording.capture_epoch, sealed=False, phase="live"
@@ -313,8 +283,6 @@ async def resume_upload(
     await recordings_module._reopen_recording_audio_cursor(
         db, recording_id=recording.id
     )
-    if status_changed:
-        await db.run_sync(lambda session: bump_transcript_change(session, recording.id))
     await db.commit()
     await db.refresh(recording)
 
@@ -661,54 +629,97 @@ async def finalize_upload(
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
-    prepared = await prepare_capture_master(db, recording, epoch)
+    # Held to the commit below, so no resume can take the capture over while
+    # its master is built.
+    await recordings_module._lock_capture(db, recording)
+    recordings_module._ensure_capture_epoch(recording, epoch)
+
+    recordings_module._ensure_recording_can_finalize_upload(recording)
+    # Before the chunk and window rows: a live publisher holds Transcript and
+    # then marks windows processed, so taking it later could deadlock.
+    await seal_live_settling(db, recording)
+
+    await recordings_module._sync_recording_audio_chunks_from_directory(
+        db,
+        recording_id=recording.id,
+        source_kind="browser",
+        suffix=".wav",
+    )
+    await recordings_module._sync_recording_audio_window_manifests(
+        db,
+        recording_id=recording.id,
+        source_kind="browser",
+        seal_tail=True,
+    )
+    # Live registration stops here. A segment task still queued would otherwise
+    # unseal every window this rebuild just sealed and reset its progress.
+    await recordings_module._seal_recording_audio_cursor(db, recording_id=recording.id)
+    chunk_rows = await recordings_module._list_recording_audio_chunks(
+        db,
+        recording_id=recording.id,
+        source_kind="browser",
+    )
+    pending_transcode_sequences = recordings_module._find_pending_transcode_sequences(
+        recording.id,
+        chunk_rows=chunk_rows,
+    )
+    if pending_transcode_sequences:
+        (
+            chunk_rows,
+            pending_transcode_sequences,
+        ) = await recordings_module._rescue_pending_browser_segments_for_finalize(
+            db,
+            recording_id=recording.id,
+            pending_sequences=pending_transcode_sequences,
+        )
+
+    if pending_transcode_sequences:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording upload is still in progress; finalize after all segment uploads complete.",
+        )
+    if not chunk_rows:
+        raise HTTPException(status_code=400, detail="No valid segments found")
+
+    corrupt_sequences = recordings_module._list_corrupt_browser_segment_sequences(
+        recording.id
+    )
+    missing_sequences = [
+        sequence
+        for sequence in recordings_module._find_missing_chunk_sequences(chunk_rows)
+        if sequence not in corrupt_sequences
+    ]
+    if missing_sequences:
+        raise HTTPException(
+            status_code=409,
+            detail="Recording upload is still in progress; finalize after all segment uploads complete.",
+        )
+
+    final_audio_path = recordings_module._browser_master_output_path(recording)
+
+    def _build_master_audio() -> float:
+        """Join the segments into the FLAC master and return its exact length.
+
+        Reading thousands of segment files is blocking I/O, and the API serves
+        from a single event loop, so it runs on a worker thread. The master is
+        built from the canonical WAVs rather than from what the browser sent,
+        so it is sample-exact whatever the client uploaded: joining the WebM
+        segments of older clients overlapped every boundary by 60 ms and
+        understated the duration by 3% (issue #417).
+        """
+        return recordings_module.write_browser_master_audio(
+            [require_recording_path(row.storage_path) for row in chunk_rows],
+            require_recording_path(final_audio_path),
+        )
+
     try:
-        await prepared.build()
+        duration_seconds = await asyncio.to_thread(_build_master_audio)
     except BrowserAudioFormatError as exc:
-        recording = await recordings_module._get_owned_recording(
-            db, recording_id, current_user.id
-        )
-        transcript = await _lock_capture_publication(db, recording)
-        await db.refresh(recording, with_for_update=True)
-        await prepared.validate(db, recording, master=False)
-        await _close_live_words(db, transcript, recording.id)
-        update_capture_settling_state(
-            transcript,
-            capture_epoch=recording.capture_epoch,
-            sealed=True,
-            phase="sealed",
-        )
+        await _abandon_failed_master(db, recording, final_audio_path)
         await recordings_module._mark_recording_upload_error(db, recording, str(exc))
-        await recordings_module._lock_capture(db, recording)
-        if (
-            recording.status == RecordingStatus.ERROR
-            and recording.capture_epoch == prepared.capture.epoch
-        ):
-            await _abandon_failed_master(db, recording, str(prepared.candidate_path))
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except HTTPException:
-        raise
     except Exception as e:  # noqa: BLE001 -- boundary: any failure to build the master audio is recorded on the recording and reported
-        recording = await recordings_module._get_owned_recording(
-            db, recording_id, current_user.id
-        )
-        transcript = await _lock_capture_publication(db, recording)
-        await db.refresh(recording, with_for_update=True)
-        await prepared.validate(db, recording, master=False)
-        await _close_live_words(db, transcript, recording.id)
-        update_capture_settling_state(
-            transcript,
-            capture_epoch=recording.capture_epoch,
-            sealed=True,
-            phase="sealed",
-        )
-        await db.commit()
-        await db.refresh(recording)
-        await recordings_module._lock_capture(db, recording)
-        # A holder can resume at the same epoch after the seal commit. Its new
-        # generation must survive this older Stop's recovery cleanup.
-        await prepared.validate(db, recording, master=False, sealed=True)
-        await _abandon_failed_master(db, recording, str(prepared.candidate_path))
+        await _abandon_failed_master(db, recording, final_audio_path)
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -716,42 +727,25 @@ async def finalize_upload(
             log_message=f"Failed to finalize segmented upload for recording {recording_id}.",
             exc=e,
         )
-    finally:
-        # A published master is moved below. Keep successful candidates until
-        # the fenced recheck; failed candidates belong only to this request.
-        if prepared.identity is None or prepared.identity[2] <= 0:
-            prepared.candidate_path.unlink(missing_ok=True)
 
-    try:
-        recording = await recordings_module._get_owned_recording(
-            db, recording_id, current_user.id
-        )
-        transcript = await _lock_capture_publication(db, recording)
-        await db.refresh(recording, with_for_update=True)
-        await prepared.validate(db, recording)
-        await recordings_module._sync_recording_audio_window_manifests(
-            db, recording_id=recording.id, source_kind="browser", seal_tail=True
-        )
-        await recordings_module._seal_recording_audio_cursor(
-            db, recording_id=recording.id
-        )
-        await _close_live_words(db, transcript, recording.id)
-        update_capture_settling_state(
-            transcript,
-            capture_epoch=recording.capture_epoch,
-            sealed=True,
-            phase="sealed",
-        )
-        os.replace(prepared.candidate_path, prepared.final_path)
-    finally:
-        prepared.candidate_path.unlink(missing_ok=True)
-    final_audio_path = str(prepared.final_path)
-    chunk_rows = prepared.chunks
-    duration_seconds = prepared.duration_seconds
+    file_stats = os.stat(final_audio_path)
+    await db.refresh(recording)
     recording.audio_path = final_audio_path
     recording.proxy_path = recordings_module.get_initial_proxy_path(final_audio_path)
-    recording.file_size_bytes = prepared.identity[2]
+    recording.file_size_bytes = file_stats.st_size
     recording.duration_seconds = duration_seconds
+
+    # Re-read above picked up any pause committed while segments were being
+    # concatenated. PAUSED finalizes just like UPLOADING (issue #166); only a
+    # genuinely closed recording is refused here.
+    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
+        db.add(recording)
+        await db.commit()
+        await db.refresh(recording)
+        raise HTTPException(
+            status_code=409,
+            detail=recordings_module.UPLOAD_CLOSED_DETAIL,
+        )
 
     finalized_from_paused = recording.status == RecordingStatus.PAUSED
 
@@ -823,7 +817,7 @@ async def discard_upload(
     )
     # Locked, so a worker cannot repoint audio_path between this read and the
     # delete (keep_imported_audio_task) and leave its new file behind.
-    await _lock_capture_publication(db, recording)
+    await lock_capture_publication(db, recording)
     await db.refresh(recording, with_for_update=True)
     # A tab whose capture continued elsewhere must not delete it from under the
     # tab running it. The list and the dialogs discard without an epoch.

@@ -6,11 +6,11 @@ import pytest
 from sqlalchemy import Engine
 from sqlmodel import Session
 
-from backend.tests.test_live_settling_finalisation import _closed_line
-from backend.tests.test_long_transcript_lines import _line
-from backend.tests.test_transcript_publication import (
+from backend.tests.canonical_engine import (
     publication_engine as publication_engine,
 )
+from backend.tests.test_live_settling_finalisation import _closed_line
+from backend.tests.test_long_transcript_lines import _line
 from backend.utils.canonical_pipeline import (
     finalize_utterances_from_segments,
     serialize_canonical_utterances,

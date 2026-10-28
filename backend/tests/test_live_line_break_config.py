@@ -73,7 +73,7 @@ def test_worker_passes_each_resolved_pause_through_snapshot_to_publication(
         worker, "load_capture_publication", lambda *_args: (transcript, None)
     )
     monkeypatch.setattr(worker, "publication_is_current", lambda *_args: True)
-    monkeypatch.setattr(worker, "live_speaker_labels_requested", lambda: False)
+    monkeypatch.setattr(worker, "live_speaker_labels_device", lambda: None)
     monkeypatch.setattr(worker, "_publish_step", rolling_lane.publisher)
     captured: list[tuple[str, publication.SettlingPass]] = []
 
@@ -101,7 +101,6 @@ def test_worker_passes_each_resolved_pause_through_snapshot_to_publication(
     assert kind == ("expiry" if silent else "decode")
     assert request.line_break_pause_s == pause_s
     assert request.expected_token == step.expected_token
-    assert request.source_revision == rolling_lane.snapshot.revision
     assert LINE_BREAK_PAUSE_KEY not in rolling_lane.snapshot.policy
 
 

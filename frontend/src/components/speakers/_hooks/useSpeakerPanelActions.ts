@@ -47,6 +47,11 @@ export interface SpeakerPanelActions {
   setMergeTargetLabel: (label: string) => void;
   startMerge: (entry: SpeakerPanelEntry) => void;
   submitMerge: () => Promise<void>;
+  /**
+   * Moves every label of the row onto another speaker of this recording. With
+   * `targetName`, generated notes follow the move as they follow a rename.
+   */
+  mergeInto: (entry: SpeakerPanelEntry, targetLabel: string, targetName?: string) => Promise<boolean>;
 
   // Delete
   deletingSpeaker: SpeakerPanelEntry | null;
@@ -188,19 +193,23 @@ export function useSpeakerPanelActions(
     if (renamingSpeaker) await assignIdentity(renamingSpeaker, renameValue);
   };
 
-  const submitMerge = async () => {
-    if (!mergingSpeaker || !mergeTargetLabel || isSubmitting) return;
+  const mergeInto = async (
+    entry: SpeakerPanelEntry, targetLabel: string, targetName?: string,
+  ): Promise<boolean> => {
+    if (isSubmitting) return false;
 
     setIsSubmitting(true);
     try {
-      for (const label of mergingSpeaker.labels) {
-        if (label === mergeTargetLabel) {
+      for (const label of entry.labels) {
+        if (label === targetLabel) {
           continue;
         }
 
-        await mergeRecordingSpeakers(recordingId, mergeTargetLabel, label);
+        await mergeRecordingSpeakers(recordingId, targetLabel, label);
       }
-      setMergingSpeaker(null);
+      if (targetName && targetName !== entry.displayName && onSpeakerRenamed) {
+        await onSpeakerRenamed(entry.displayName, targetName);
+      }
 
       // Dispatch custom event to notify parent components of the merge
       window.dispatchEvent(
@@ -208,11 +217,19 @@ export function useSpeakerPanelActions(
       );
 
       onRefresh();
+      return true;
     } catch (e: unknown) {
       console.error("Failed to merge speakers", e);
       addNotification({ type: "error", message: "Failed to merge speakers." });
+      return false;
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const submitMerge = async () => {
+    if (mergingSpeaker && mergeTargetLabel && await mergeInto(mergingSpeaker, mergeTargetLabel)) {
+      setMergingSpeaker(null);
     }
   };
 
@@ -349,6 +366,7 @@ export function useSpeakerPanelActions(
     setMergeTargetLabel,
     startMerge,
     submitMerge,
+    mergeInto,
 
     deletingSpeaker,
     setDeletingSpeaker,

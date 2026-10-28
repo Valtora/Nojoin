@@ -116,21 +116,15 @@ def encode_shadow(engine: LiveLabelEngine) -> tuple[dict[str, Any], dict[str, An
 
 
 def write_snapshot(
-    live_dir: Path,
-    meta: dict[str, Any],
-    arrays: dict[str, Any],
-    *,
-    filename: str = STATE_FILENAME,
+    live_dir: Path, meta: dict[str, Any], arrays: dict[str, Any]
 ) -> None:
     """Publish one envelope after its append-only bank reaches durable storage."""
     buffer = io.BytesIO()
     np.savez(buffer, meta=np.array(json.dumps(meta, allow_nan=False)), **arrays)
     # The bank rows first: a state on disk never counts rows that are not.
     _sync(live_dir / BANK_FILENAME)
-    path = live_dir / filename
-    tmp = live_dir / (
-        STATE_TMP_FILENAME if filename == STATE_FILENAME else f"{filename}.tmp"
-    )
+    path = live_dir / STATE_FILENAME
+    tmp = live_dir / STATE_TMP_FILENAME
     with open(tmp, "wb") as handle:
         handle.write(buffer.getvalue())
         handle.flush()
@@ -173,10 +167,10 @@ def load_engine(live_dir: Path, config: LiveLabelConfig) -> LiveLabelEngine | No
 
 
 def read_snapshot(
-    live_dir: Path, config: LiveLabelConfig, *, filename: str = STATE_FILENAME
+    live_dir: Path, config: LiveLabelConfig
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]] | None:
     """Read an envelope without constructing or truncating its unit bank."""
-    path = live_dir / filename
+    path = live_dir / STATE_FILENAME
     if not path.exists():
         return None
     with np.load(path, allow_pickle=False) as saved:

@@ -57,7 +57,19 @@ def settling_engine(
     engine.dispose()
 
 
-def _seed(engine: Engine, *, k: int = 3) -> int:
+def settle_with_k(monkeypatch: pytest.MonkeyPatch, k: int) -> None:
+    """Set the agreement count each step reads (``current_settling_policy``)."""
+    read = config_manager.get
+    monkeypatch.setattr(
+        config_manager,
+        "get",
+        lambda key, default=None: (
+            k if key == "live_text_settling_k" else read(key, default)
+        ),
+    )
+
+
+def _seed(engine: Engine) -> int:
     recording_id = add_recording(
         engine, "settling.wav", status=RecordingStatus.UPLOADING
     )
@@ -73,7 +85,7 @@ def _seed(engine: Engine, *, k: int = 3) -> int:
                     "capture_epoch": 0,
                     "sealed": False,
                     "phase": "live",
-                    "policy": {"k": k, "window_s": 10, "enabled": True},
+                    "policy": {"enabled": True},
                 },
             )
         )
@@ -92,7 +104,6 @@ def _request(
         step,
         end_ms - 10000,
         end_ms,
-        transcript.change_sequence,
     )
 
 
@@ -216,7 +227,7 @@ def test_speaker_projection_splits_overlap_per_word_and_delta_returns_tombstone(
         assert row_words(old_row) == old_words
 
 
-def test_duplicate_stale_and_paused_results_make_no_public_change(
+def test_duplicate_and_paused_results_make_no_public_change(
     settling_engine: Engine,
 ) -> None:
     recording_id = _seed(settling_engine)
@@ -224,25 +235,10 @@ def test_duplicate_stale_and_paused_results_make_no_public_change(
         request = _request(session, recording_id, 0)
         assert publish_live_settling(session, request=request, words=_words()).accepted
         session.commit()
-        baseline = _request(session, recording_id, 1).source_revision
         assert not publish_live_settling(
             session, request=request, words=_words()
         ).accepted
         session.commit()
-        stale = SettlingPass(
-            recording_id,
-            request.expected_token,
-            "stale",
-            2,
-            -8000,
-            2000,
-            request.source_revision,
-        )
-        assert not publish_live_settling(
-            session, request=stale, words=_words(("bad",))
-        ).accepted
-        session.commit()
-        assert _request(session, recording_id, 3).source_revision == baseline
         transcript, _ = load_capture_publication(session, recording_id)
         transcript.settling_state = {**transcript.settling_state, "phase": "paused"}
         session.add(transcript)
@@ -278,8 +274,11 @@ def test_expiry_and_closure_lock_without_decode_and_snapshot_only_on_closure(
         assert len(transcript.segments) == 1
 
 
-def test_order_does_not_restart_after_a_silent_gap(settling_engine: Engine) -> None:
-    recording_id = _seed(settling_engine, k=1)
+def test_order_does_not_restart_after_a_silent_gap(
+    settling_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         for step in range(2):
             publish_live_settling(
@@ -307,7 +306,7 @@ def test_order_does_not_restart_after_a_silent_gap(settling_engine: Engine) -> N
         )
 
 
-def test_a_publisher_waiting_on_fence_revalidates_source_revision(
+def test_a_publisher_waiting_on_fence_rejects_the_step_it_lost(
     settling_engine: Engine,
 ) -> None:
     recording_id = _seed(settling_engine)
@@ -351,7 +350,6 @@ def test_private_comparisons_do_not_emit_deltas_but_lock_transition_does(
         )
         session.commit()
         revision, _, _ = serialize_canonical_delta(session, recording_id)
-        sequence = _request(session, recording_id, 1).source_revision
         for step in (1, 2):
             result = publish_live_settling(
                 session, request=_request(session, recording_id, step), words=_words()
@@ -361,7 +359,6 @@ def test_private_comparisons_do_not_emit_deltas_but_lock_transition_does(
             assert serialize_canonical_delta(
                 session, recording_id, after_revision=revision
             ) == (revision, [], [])
-            assert _request(session, recording_id, step + 1).source_revision == sequence
         publish_live_settling(
             session, request=_request(session, recording_id, 3), words=_words()
         )
@@ -370,7 +367,6 @@ def test_private_comparisons_do_not_emit_deltas_but_lock_transition_does(
             session, recording_id, after_revision=revision
         )
         assert changed[0]["locked"]
-        assert _request(session, recording_id, 4).source_revision == sequence + 1
 
 
 def test_failed_alignment_retains_exact_untimed_atom_and_real_line_bounds(
@@ -419,7 +415,6 @@ def test_successful_timed_decode_clears_alignment_error_and_publishes_the_change
         publish_live_settling(session, request=request, words=_words())
         session.commit()
         revision, original, _ = serialize_canonical_delta(session, recording_id)
-        sequence = _request(session, recording_id, 1).source_revision
         result = publish_live_settling(
             session, request=_request(session, recording_id, 1), words=_words()
         )
@@ -436,7 +431,6 @@ def test_successful_timed_decode_clears_alignment_error_and_publishes_the_change
             "alignment_error"
             not in _active(session, recording_id)[0].confidence_payload
         )
-        assert _request(session, recording_id, 2).source_revision == sequence + 1
         result = publish_live_settling(
             session, request=_request(session, recording_id, 2), words=_words()
         )
@@ -445,7 +439,6 @@ def test_successful_timed_decode_clears_alignment_error_and_publishes_the_change
         assert serialize_canonical_delta(
             session, recording_id, after_revision=revision
         ) == (revision, [], [])
-        assert _request(session, recording_id, 3).source_revision == sequence + 1
 
 
 def test_resumed_cuda_does_not_adopt_or_duplicate_legacy_cpu_words(
@@ -495,6 +488,7 @@ def test_resumed_cuda_does_not_adopt_or_duplicate_legacy_cpu_words(
 
 def test_word_source_aggregation_tracks_audio_energy_and_retains_locked_provenance(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from backend.processing.browser_live_audio import (
         source_channel_from_confidence_payload,
@@ -510,7 +504,8 @@ def test_word_source_aggregation_tracks_audio_energy_and_retains_locked_provenan
     )
     assert mixed["source_channel_activity"]["source_overlap"]
     assert source_channel_from_confidence_payload(mixed) is None
-    recording_id = _seed(settling_engine, k=1)
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         words = [{**word, "source_channel_activity": microphone} for word in _words()]
         for step in range(2):

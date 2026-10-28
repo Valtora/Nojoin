@@ -1,7 +1,8 @@
-"""Library merge and voiceprint naming cannot bypass settled source guards."""
+"""Speaker actions on a settled capture protect the lines they change."""
 
 import copy
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -10,16 +11,72 @@ from sqlmodel import select
 
 from backend.models.pipeline import TranscriptUtterance
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
 from backend.tests.live_naming_fixtures import ONE
-from backend.tests.sqlite_schemas import P_TAGS_SCHEMA, PEOPLE_TAGS_SCHEMA
-from backend.tests.test_live_action_routes import _marked
-from backend.tests.test_live_speaker_naming_api import REC
+from backend.tests.sqlite_schemas import (
+    DOCUMENTS_SCHEMA,
+    P_TAGS_SCHEMA,
+    PEOPLE_TAGS_SCHEMA,
+    USERS_SCHEMA,
+)
+from backend.tests.test_live_speaker_naming_api import REC, _seed
 from backend.tests.test_live_speaker_naming_api import client as client
 from backend.tests.test_live_speaker_naming_api import session_maker as session_maker
+from backend.utils.canonical_pipeline import (
+    refresh_transcript_projection_from_canonical,
+)
 
 pytestmark = pytest.mark.anyio
+
+
+async def _marked(session_maker: Any) -> list[str]:
+    await _seed(session_maker, lines=[(0, 1.5, ONE, True), (2, 3.5, ONE, False)])
+    async with session_maker() as session:
+        await session.execute(text(USERS_SCHEMA))
+        await session.execute(text(DOCUMENTS_SCHEMA))
+        transcript = await session.get(Transcript, 1)
+        transcript.settling_state = {"settled": True}
+        rows = (
+            (
+                await session.execute(
+                    select(TranscriptUtterance).order_by(TranscriptUtterance.start_ms)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for index, row in enumerate(rows):
+            locked = index == 0
+            row.text = "First words."
+            row.confidence_payload = {
+                "live_text_settling": {
+                    "version": 1,
+                    "line_locked": locked,
+                    "text_locked": locked,
+                },
+                "live_speaker_label": {"locked": locked},
+                "asr_segments": [
+                    {
+                        "words": [
+                            {
+                                "id": str(uuid4()),
+                                "order": index * 2 + j,
+                                "word": word,
+                                "start_ms": row.start_ms + j * 500,
+                                "end_ms": row.start_ms + j * 500 + 450,
+                                "locked": locked,
+                            }
+                            for j, word in enumerate(("First", " words."))
+                        ]
+                    }
+                ],
+            }
+            session.add(row)
+        await session.flush()
+        await session.run_sync(refresh_transcript_projection_from_canonical, 1)
+        ids = [row.public_id for row in rows]
+        await session.commit()
+        return ids
 
 
 async def _people(
@@ -62,86 +119,6 @@ async def _people(
         if not marker:
             (await session.get(Transcript, 1)).settling_state = None
         await session.commit()
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        (marker, locked, collision, enabled)
-        for marker, locked in ((True, False), (True, True), (False, False))
-        for collision in (False, True)
-        for enabled in (False, True)
-    ],
-)
-async def test_library_merge_preflights_all_sources_before_identity_changes(
-    client: AsyncClient,
-    session_maker: Any,
-    monkeypatch: pytest.MonkeyPatch,
-    case: tuple[bool, bool, bool, bool],
-) -> None:
-    marker, all_locked, collision, canonical_enabled = case
-    await _people(
-        session_maker, marker=marker, all_locked=all_locked, collision=collision
-    )
-    if not canonical_enabled:
-        monkeypatch.setattr(
-            "backend.utils.config_manager.config_manager.get",
-            lambda key, default=None: (
-                False if key == "enable_canonical_transcript_writes" else default
-            ),
-        )
-    response = await client.post(
-        "/api/v1/speakers/merge", json={"source_speaker_id": 1, "target_speaker_id": 2}
-    )
-    refused = marker and not all_locked
-    assert response.status_code == (409 if refused else 200), response.text
-    async with session_maker() as session:
-        source = await session.get(GlobalSpeaker, 1)
-        speakers = (await session.execute(select(RecordingSpeaker))).scalars().all()
-        if refused:
-            assert response.json()["detail"]["code"] == "line_settling"
-            assert source is not None
-            assert (
-                next(
-                    speaker for speaker in speakers if speaker.diarization_label == ONE
-                ).global_speaker_id
-                == 1
-            )
-            assert (
-                await session.execute(select(SpeakerNameEvent))
-            ).scalars().all() == []
-        else:
-            assert source is None
-            assert any(speaker.global_speaker_id == 2 for speaker in speakers)
-
-
-@pytest.mark.parametrize("action", ["create_new", "link_existing", "force_link"])
-async def test_voiceprint_naming_refuses_before_creating_a_person_or_linking(
-    client: AsyncClient,
-    session_maker: Any,
-    action: str,
-) -> None:
-    await _people(session_maker, marker=True, all_locked=False, collision=False)
-    async with session_maker() as session:
-        row = (await session.execute(select(RecordingSpeaker))).scalar_one()
-        row.embedding = [0.25, 0.75]
-        session.add(row)
-        await session.commit()
-    response = await client.post(
-        f"/api/v1/speakers/recordings/{REC}/speakers/{ONE}/voiceprint/apply",
-        json={
-            "action": action,
-            "new_speaker_name": "New person",
-            "global_speaker_id": 2,
-        },
-    )
-    assert response.status_code == 409, response.text
-    assert response.json()["detail"]["code"] == "line_settling"
-    async with session_maker() as session:
-        assert len((await session.execute(select(GlobalSpeaker))).scalars().all()) == 2
-        row = (await session.execute(select(RecordingSpeaker))).scalar_one()
-        assert row.global_speaker_id == 1
-        assert (await session.execute(select(SpeakerNameEvent))).scalars().all() == []
 
 
 async def test_compatibility_speaker_change_gets_manual_protection_without_client_flags(
@@ -230,3 +207,23 @@ async def test_local_speaker_split_preserves_assignment_and_words_through_final_
         assert protected.speaker_label == assigned_label
         assert protected.manual_speaker_locked is True
         assert row_words(protected) == original_words
+
+
+async def test_full_and_delta_envelopes_keep_the_settled_policy_and_names_go_through(
+    client: AsyncClient, session_maker: Any
+) -> None:
+    await _marked(session_maker)
+    full = await client.get(f"/api/v1/transcripts/{REC}/utterances")
+    assert full.status_code == 200
+    assert full.json()["settling_required"] is True
+    delta = await client.get(
+        f"/api/v1/transcripts/{REC}/utterances",
+        params={"after_revision": full.json()["revision"]},
+    )
+    assert delta.json()["settling_required"] is True
+    assert delta.json()["utterances"] == []
+    # A settling line no longer blocks naming its speaker.
+    named = await client.put(
+        f"/api/v1/speakers/recordings/{REC}/live/{ONE}", json={"name": "Alex"}
+    )
+    assert named.status_code == 200, named.text

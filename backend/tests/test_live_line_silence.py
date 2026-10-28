@@ -18,6 +18,7 @@ from backend.tests.test_live_settling_publication import (
     _request,
     _seed,
     _words,
+    settle_with_k,
 )
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
@@ -38,9 +39,9 @@ def silence_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
         "generation": "episode",
         "phase": "live",
         "capture_epoch": 1,
-        "policy": {"enabled": True, "window_s": 10, "k": 3},
+        "policy": {"enabled": True},
     }
-    transcript = SimpleNamespace(settling_state=state, change_sequence=7)
+    transcript = SimpleNamespace(settling_state=state)
     recording = SimpleNamespace(transcript=transcript)
     session = SimpleNamespace(
         get=lambda *_args: recording,
@@ -66,7 +67,7 @@ def silence_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(
         transcribe, "loaded_transcription_device", lambda _config: "cuda"
     )
-    monkeypatch.setattr(worker, "live_speaker_labels_requested", lambda: False)
+    monkeypatch.setattr(worker, "live_speaker_labels_device", lambda: None)
     spans: list[tuple[float, float]] = []
     evidence = SimpleNamespace(speech_spans=lambda: spans, decide=None)
     monkeypatch.setattr(worker, "_speaker_evidence", lambda _step: evidence)
@@ -183,8 +184,10 @@ def test_cpu_episode_discards_prior_silence(silence_worker: Any) -> None:
 
 def test_canonical_publication_persists_silence_before_it_can_close_a_line(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=1)
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         for step in range(2):
             request = replace(

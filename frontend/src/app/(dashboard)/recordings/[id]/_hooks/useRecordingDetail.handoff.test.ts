@@ -5,7 +5,7 @@ import { ClientStatus, RecordingStatus, type Recording, type TranscriptUtterance
 import { useRecordingDetail } from "./useRecordingDetail";
 
 const mocks = vi.hoisted(() => ({
-  getRecording: vi.fn(), getTranscript: vi.fn(), getSettings: vi.fn(),
+  getRecording: vi.fn(), getRecordingIfChanged: vi.fn(), getTranscript: vi.fn(), getSettings: vi.fn(),
   notify: vi.fn(), exportAudio: vi.fn(), exportContent: vi.fn(), generateNotes: vi.fn(),
   router: { push: vi.fn(), refresh: vi.fn() },
   navigation: { activePanel: "transcript", chatPanelHeight: 30, setChatPanelHeight: vi.fn(), setActivePanel: vi.fn() },
@@ -14,6 +14,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => mocks.router }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api")>(),
   getRecording: (...args: unknown[]) => mocks.getRecording(...args),
+  getRecordingIfChanged: (...args: unknown[]) => mocks.getRecordingIfChanged(...args),
   getTranscriptUtterances: (...args: unknown[]) => mocks.getTranscript(...args),
   exportContent: (...args: unknown[]) => mocks.exportContent(...args),
   generateNotes: (...args: unknown[]) => mocks.generateNotes(...args),
@@ -62,19 +63,6 @@ describe("recording detail current metadata and capabilities", () => {
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
-  it("rejects an older uploading response after a newer settled response", async () => {
-    const { result } = renderHook(() => useRecordingDetail({ params }));
-    await advance();
-    const older = deferred<Recording>();
-    mocks.getRecording.mockReturnValueOnce(older.promise).mockResolvedValueOnce(recording({ processing_progress: 99 }));
-    await advance(30_000);
-    expect(result.current.recording?.processing_progress).toBe(99);
-    await act(async () => older.resolve(recording({ status: RecordingStatus.UPLOADING, upload_progress: 5 })));
-    expect(result.current.recording?.status).toBe(RecordingStatus.PROCESSED);
-    expect(result.current.recording?.processing_progress).toBe(99);
-    expect(result.current.canPlayback).toBe(true);
-  });
-
   it("feeds unchanged metadata reads into the audio clock before comparing state", async () => {
     const live = recording({ status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING, live_audio_ms: 2_000 });
     mocks.getRecording.mockResolvedValue(live);
@@ -95,7 +83,9 @@ describe("recording detail current metadata and capabilities", () => {
     await advance();
     expect(result.current.loading).toBe(false);
     expect(result.current.audioClock.audioNow("rec-1")).toBe(7_000);
-    mocks.getRecording.mockResolvedValue(recording({ name: "Newer metadata", processing_progress: 99 }));
+    // A finished page's check is a conditional read; this one has changed.
+    mocks.getRecordingIfChanged.mockResolvedValue({
+      recording: recording({ name: "Newer metadata", processing_progress: 99 }), etag: 'W/"PROCESSED-1"' });
     await advance(15_000);
     await act(async () => settings.resolve({}));
     expect(result.current.recording?.name).toBe("Newer metadata");

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import TranscriptView from "@/components/TranscriptView";
 import type { LiveLineHandlers } from "@/components/transcript/LiveLineEditor";
 import type { MoveNoteHandler } from "@/components/transcript/_hooks/useNoteMoves";
-import type { InlineNote, NoteTarget } from "@/lib/notes/noteOutbox";
+import type { InlineNote, NoteSelection } from "@/lib/notes/noteOutbox";
 import { buildMeetingSpeakerColors, getRecordingSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import type { RecordingSpeaker, TimelineNote, TranscriptSegment } from "@/types";
 
@@ -18,9 +18,9 @@ interface SharedLiveTranscriptProps {
   onDiscardNote?: (key: string) => void;
   onMoveNote?: MoveNoteHandler;
   footer?: ReactNode;
-  onNoteOnLine?: (target: NoteTarget) => void;
+  onNoteOnLine?: (selection: NoteSelection) => void;
   liveSpeakerNames?: Readonly<Record<string, string>>;
-  onRenameLiveSpeaker?: (label: string, name: string, segment?: TranscriptSegment) => Promise<void>;
+  onRenameLiveSpeaker?: (label: string, name: string) => Promise<boolean>;
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
 

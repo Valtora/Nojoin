@@ -10,7 +10,6 @@ import {
   type ComposerDraft,
   type NoteOutbox,
   type NoteSelection,
-  type NoteLineSpan,
   type RestoredNote,
   type RestoredOutbox,
 } from "./noteOutbox";
@@ -38,8 +37,6 @@ import {
 
 const isText = (value: unknown): value is string => typeof value === "string";
 const isId = (value: unknown): value is string => isText(value) && value !== "";
-const isWordTexts = (value: unknown): value is Record<string, string> =>
-  isRecord(value) && Object.values(value).every(isText);
 const isTime = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0;
 
@@ -53,20 +50,8 @@ const readSelection = (value: unknown): NoteSelection | null => {
   if (!isRecord(value)) return null;
   const { startMs, endMs, quotedText } = value;
   if (!isTime(startMs) || !isTime(endMs) || !isText(quotedText)) return null;
-  const sourceUtterances = Array.isArray(value.sourceUtterances)
-    ? value.sourceUtterances.flatMap((source) =>
-        isRecord(source) && isId(source.id) && Number.isInteger(source.revision) && Number(source.revision) >= 0
-          ? [{ id: source.id, revision: Number(source.revision),
-            ...(Array.isArray(source.word_ids) && source.word_ids.every(isId) ? { word_ids: source.word_ids } : {}),
-            ...(isWordTexts(source.word_texts) ? { word_texts: source.word_texts } : {}) }] : [],
-      )
-    : undefined;
-  return selectionOf({ startMs, endMs, quotedText, ...(sourceUtterances ? { sourceUtterances } : {}) });
+  return selectionOf({ startMs, endMs, quotedText });
 };
-
-const readSpan = (value: unknown): NoteLineSpan | null =>
-  isRecord(value) && isTime(value.startMs) && isTime(value.endMs) && value.endMs >= value.startMs
-    ? { startMs: value.startMs, endMs: value.endMs } : null;
 
 const readNote = (value: Record<string, unknown>): RestoredNote | null => {
   const { id, writeToken, kind, body, anchorMs, createdAt } = value;
@@ -74,8 +59,7 @@ const readNote = (value: Record<string, unknown>): RestoredNote | null => {
     return null;
   }
   if (kind === "point") {
-    const span = readSpan(value.span);
-    return isTime(anchorMs) ? { id, writeToken, kind, body, anchorMs, createdAt, ...(span ? { span } : {}) } : null;
+    return isTime(anchorMs) ? { id, writeToken, kind, body, anchorMs, createdAt } : null;
   }
   if (kind === "selection") {
     const selection = readSelection(value);
@@ -89,13 +73,11 @@ const readNote = (value: Record<string, unknown>): RestoredNote | null => {
 const readDraft = (value: unknown): ComposerDraft | null => {
   if (!isRecord(value) || !isText(value.text)) return null;
   const selection = readSelection(value.selection);
-  const lineSpan = readSpan(value.lineSpan);
   return {
     text: value.text,
     mode: isKnownMode(value.mode) ? value.mode : "typing",
     typingStartMs: isTime(value.typingStartMs) ? value.typingStartMs : null,
     ...(selection ? { selection } : {}),
-    ...(!selection && lineSpan ? { lineSpan } : {}),
   };
 };
 
@@ -210,14 +192,13 @@ export const persistNoteOutbox = (
   const record = (owner: number): StoredOutbox | null => {
     const { entries, draft } = outbox.getSnapshot();
     const notes: unknown[] = [
-      ...entries.map(({ id, writeToken, kind, body, anchorMs, selection, span, createdAt }) => ({
+      ...entries.map(({ id, writeToken, kind, body, anchorMs, selection, createdAt }) => ({
         id,
         writeToken,
         kind,
         body,
         anchorMs,
         ...(selection ?? {}),
-        ...(span ? { span } : {}),
         createdAt,
       })),
       ...foreign,
