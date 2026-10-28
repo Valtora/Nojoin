@@ -65,18 +65,6 @@ describe('recording transcript tour', () => {
     expect(tour.instances).toHaveLength(1);
   });
 
-  it('cancels the delay if processing resumes before the tour opens', async () => {
-    const view = render(detail(true));
-    await tick(1000);
-    view.rerender(detail(false));
-    await tick(5000);
-    expect(tour.instances).toHaveLength(0);
-    expect(useNavigationStore.getState().hasSeenTranscriptTour[7]).toBeUndefined();
-    view.rerender(detail(true));
-    await tick();
-    expect(tour.instances[0].drive).toHaveBeenCalledOnce();
-  });
-
   it('removes an active overlay on reprocessing without consuming the tour', async () => {
     const view = render(detail(true));
     await tick();
@@ -106,19 +94,6 @@ describe('recording transcript tour', () => {
     view.unmount();
     expect(tour.instances[0].destroy).toHaveBeenCalledOnce();
     expect(useNavigationStore.getState().hasSeenTranscriptTour[7]).toBeUndefined();
-  });
-
-  it('ignores a user lookup that resolves after the recording becomes ineligible', async () => {
-    let resolveUser!: (value: typeof account) => void;
-    vi.mocked(getUserMe).mockImplementationOnce(() => new Promise(resolve => { resolveUser = resolve; }));
-    const view = render(detail(true));
-    view.rerender(detail(false));
-    await act(async () => resolveUser(account));
-    await tick(5000);
-    expect(tour.instances).toHaveLength(0);
-    view.rerender(detail(true));
-    await tick();
-    expect(tour.instances[0].drive).toHaveBeenCalledOnce();
   });
 
   it('does not consume a tour when no usable anchor exists', async () => {

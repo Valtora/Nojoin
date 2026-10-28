@@ -20,7 +20,8 @@ const feed: LiveTranscript = {
 const base = (): ComponentProps<typeof TranscriptSection> => ({
   active: true, recording: { id: "rec-1", status: RecordingStatus.PAUSED, speakers: [] } as unknown as Recording,
   timelineNotes: [], transcriptSegments: [line], currentTime: -1, isPlaying: false,
-  speakerMap: {}, speakerColors: {}, globalSpeakers: [], canUndo: false, canRedo: false,
+  // The page merges live names into the map.
+  speakerMap: { LIVE_PROVISIONAL_1: "Alex" }, speakerColors: {}, globalSpeakers: [], canUndo: false, canRedo: false,
   deferredTranscriptUtteranceIds: [], onPlaySegment: vi.fn(), onPause: vi.fn(), onResume: vi.fn(),
   onRenameSpeaker: vi.fn(), onRefresh: vi.fn(), onUpdateSegmentSpeaker: vi.fn(), onUpdateSegmentText: vi.fn(),
   onFindAndReplace: vi.fn(), onUndo: vi.fn(), onRedo: vi.fn(), onExport: vi.fn(),
@@ -30,7 +31,7 @@ const base = (): ComponentProps<typeof TranscriptSection> => ({
 describe("shared section in-flight source", () => {
   it("keeps a retained published transcript read-only under the physical processing guard", () => {
     const props = base();
-    render(<TranscriptSection {...props} liveTranscript={undefined}
+    render(<TranscriptSection {...props} liveTranscript={undefined} speakerMap={{}}
       recording={{ ...props.recording, previous_publication_available: true, status: RecordingStatus.PROCESSING }} />);
     expect(screen.getByText("Live speech")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Actions for Speaker 1/ }));

@@ -259,8 +259,8 @@ export default function LiveNoteComposer({
       say(refusal, "error");
       return;
     }
-    setDraft({ text: "", mode: !captureActive && (draft.mode === "typing" || draft.mode === "send")
-      ? "head" : draft.mode, typingStartMs: null });
+    // A blank finished draft reads as Before again (above).
+    setDraft({ text: "", mode: draft.mode, typingStartMs: null });
     const place = notePlace(note);
     say(
       note.kind === "head" || note.kind === "tail"

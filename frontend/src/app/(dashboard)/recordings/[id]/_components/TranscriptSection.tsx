@@ -217,8 +217,6 @@ export default function TranscriptSection({
     loadPeopleNames: liveNaming.loadPeopleNames,
   }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveLineHandlers, activeCapture,
     noteOnLine, liveNaming.renameLiveSpeaker, liveNaming.loadPeopleNames]);
-  const selectedSpeakerMap = useMemo(() => ({ ...speakerMap, ...liveTranscript?.liveSpeakerNames }),
-    [speakerMap, liveTranscript?.liveSpeakerNames]);
   const discardNote = useCallback(
     (key: string) => {
       outbox.discard(key);
@@ -296,7 +294,7 @@ export default function TranscriptSection({
             isPlaying={isPlaying}
             onPause={onPause}
             onResume={onResume}
-            speakerMap={selectedSpeakerMap}
+            speakerMap={speakerMap}
             speakers={liveTranscript?.speakers ?? recording.speakers ?? NO_SPEAKERS}
             globalSpeakers={globalSpeakers}
             onRenameSpeaker={(label, name) => canWrite() ? onRenameSpeaker(label, name) : false}
