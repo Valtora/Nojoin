@@ -17,7 +17,7 @@ from backend.processing.live_audio_buffer import (
     _analyze_live_source_channels,
     _build_live_source_channel_evidence,
 )
-from backend.processing.live_diarization.setting import live_speaker_labels_requested
+from backend.processing.live_diarization.step import live_speaker_labels_device
 from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
 from backend.processing.live_settling_audio import (
     drained_chunk_bounds,
@@ -35,6 +35,7 @@ from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.live_word_settling import plan_settling_window
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
+    cpu_settling_allowed,
     load_capture_publication,
     publication_is_current,
     resolve_capture_settling_policy,
@@ -149,7 +150,7 @@ def _disable_cpu_episode(step: SettlingStep) -> None:
 
 
 def _speaker_evidence(step: SettlingStep) -> Any:
-    if not live_speaker_labels_requested():
+    if live_speaker_labels_device() is None:
         return None
     from backend.processing.live_diarization.evidence import available_speaker_evidence
 
@@ -264,7 +265,7 @@ def _publish_step(
                 return SettlingStepResult(True, False, window_s)
             resolve_capture_settling_policy(transcript, device="cuda")
             decide = evidence.decide if evidence is not None else None
-            if decide is None and live_speaker_labels_requested():
+            if decide is None and live_speaker_labels_device() is not None:
                 decide = lambda _start, _end: LiveLabelDecision("UNKNOWN", False, None)
             publication = publish_live_settling(
                 session,
@@ -347,7 +348,7 @@ def run_settling_step(step: SettlingStep, config: dict[str, Any]) -> SettlingSte
         config.get("processing_device") == "cpu"
         or device == "cpu"
         or not torch.cuda.is_available()
-    ):
+    ) and not cpu_settling_allowed():
         _disable_cpu_episode(step)
         return SettlingStepResult(False)
     window_s = float(snapshot.policy["window_s"])
@@ -422,11 +423,11 @@ def _decode_step(
     first = max(0, round((input_start / 1000 - available_start_s) * 16000))
     try:
         payload, device = _decode_words(step, config, audio[first:], input_start)
-        if device != "cuda":
+        if device != "cuda" and not (device == "cpu" and cpu_settling_allowed()):
             if device == "cpu":
                 _disable_cpu_episode(step)
             return SettlingStepResult(False)
-        config["_settling_device"] = "cuda"
+        config["_settling_device"] = device
         snapshot = replace(
             snapshot,
             gate_chunks=decoded_gate_chunks(

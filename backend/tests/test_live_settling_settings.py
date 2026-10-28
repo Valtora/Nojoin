@@ -221,3 +221,20 @@ def test_actual_cpu_fallback_disables_repeated_passes(
     resolve_capture_settling_policy(transcript, device="cpu", disable_on_cpu=True)
     resolve_capture_settling_policy(transcript, device="cuda")
     assert transcript.settling_state["policy"]["enabled"] is False
+
+
+@pytest.mark.parametrize(("mode", "enabled"), [("auto", False), ("always", True)])
+def test_a_cpu_worker_settles_only_when_the_mode_allows_it(
+    monkeypatch: pytest.MonkeyPatch, mode: str, enabled: bool
+) -> None:
+    from backend.utils.config_manager import config_manager
+
+    settings = {**SETTINGS, "live_text_settling": mode}
+    monkeypatch.setattr(
+        config_manager, "get", lambda key, default=None: settings.get(key, default)
+    )
+    transcript = Transcript(
+        recording_id=1, settling_state=new_capture_settling_state(capture_epoch=0)
+    )
+    resolve_capture_settling_policy(transcript, device="cpu")
+    assert transcript.settling_state["policy"]["enabled"] is enabled

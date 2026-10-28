@@ -73,7 +73,7 @@ def test_worker_passes_each_resolved_pause_through_snapshot_to_publication(
         worker, "load_capture_publication", lambda *_args: (transcript, None)
     )
     monkeypatch.setattr(worker, "publication_is_current", lambda *_args: True)
-    monkeypatch.setattr(worker, "live_speaker_labels_requested", lambda: False)
+    monkeypatch.setattr(worker, "live_speaker_labels_device", lambda: None)
     monkeypatch.setattr(worker, "_publish_step", rolling_lane.publisher)
     captured: list[tuple[str, publication.SettlingPass]] = []
 

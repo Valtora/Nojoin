@@ -29,4 +29,13 @@ describe("Live word settling settings", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Live word settling" }), { target: { value: "auto" } });
     expect(onPersist).toHaveBeenLastCalledWith({ live_text_settling: "auto" });
   });
+
+  it("offers settling on CPU too, and says what it costs", () => {
+    const onPersist = vi.fn();
+    render(<LiveTextSettlingSettings settings={{}} isAdmin onPersist={onPersist} />);
+    const mode = screen.getByRole("combobox", { name: "Live word settling" });
+    expect(mode).toHaveAccessibleDescription(/needs a lot of CPU and RAM/);
+    fireEvent.change(mode, { target: { value: "always" } });
+    expect(onPersist).toHaveBeenLastCalledWith({ live_text_settling: "always" });
+  });
 });

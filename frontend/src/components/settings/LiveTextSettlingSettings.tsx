@@ -1,5 +1,5 @@
 import { SelectBase } from "@/components/ui/nativeBases";
-import type { Settings } from "@/types";
+import type { LiveTextSettlingMode, Settings } from "@/types";
 import SettingsRow from "./SettingsRow";
 import { SETTINGS_SELECT_CLASS } from "./settingsControls";
 
@@ -16,7 +16,7 @@ export default function LiveTextSettlingSettings({ settings, isAdmin, onPersist 
         id="transcription-live-settling"
         label="Live word settling"
         controlId="live-text-settling"
-        description="Revises recent words as more speech arrives, then locks them. Auto (GPU) is on by default and applies to the next capture episode."
+        description="Revises recent words as more speech arrives, then locks them. Auto (GPU) is on by default and applies to the next capture episode. GPU and CPU also settles on a CPU server: each step decodes the recent audio again, which needs a lot of CPU and RAM."
       >
         <SelectBase
           id="live-text-settling"
@@ -25,12 +25,13 @@ export default function LiveTextSettlingSettings({ settings, isAdmin, onPersist 
           data-ui-disabled-fill="control-disabled"
           data-ui-border="full"
           value={settings.live_text_settling ?? "auto"}
-          onChange={(event) => void onPersist({ ...settings, live_text_settling: event.target.value as "auto" | "off" })}
+          onChange={(event) => void onPersist({ ...settings, live_text_settling: event.target.value as LiveTextSettlingMode })}
           disabled={!isAdmin}
           className={SETTINGS_SELECT_CLASS}
         >
           <option value="off">Off</option>
           <option value="auto">Auto (GPU)</option>
+          <option value="always">GPU and CPU</option>
         </SelectBase>
       </SettingsRow>
       <SettingsRow

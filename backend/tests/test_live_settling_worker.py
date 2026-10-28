@@ -561,3 +561,36 @@ def test_rejected_step_drops_observation_without_stalling_current_episode(
     )
     assert result.handled and result.accepted is expected
     assert not result.public_changed
+
+
+def test_gpu_and_cpu_mode_settles_on_a_cpu_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rolling_lane: Any
+) -> None:
+    disabled: list[int] = []
+    monkeypatch.setattr(
+        worker, "_disable_cpu_episode", lambda step: disabled.append(step.sequence)
+    )
+    monkeypatch.setattr(worker, "cpu_settling_allowed", lambda: True)
+    monkeypatch.setattr(transcribe, "loaded_transcription_device", lambda _: "cpu")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        worker, "_decode_words", lambda *_: ({"asr_segments": []}, "cpu")
+    )
+    config: dict[str, Any] = {"processing_device": "cpu"}
+    result = worker.run_settling_step(_step(tmp_path), config)
+    assert disabled == []
+    assert result.handled
+    assert config["_settling_device"] == "cpu"
+
+
+def test_lines_settled_on_a_cpu_worker_do_not_wait_for_live_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.processing.live_diarization import step as label_step
+    from backend.utils.canonical_pipeline import live_settling as publication
+
+    monkeypatch.setattr(label_step, "live_speaker_labels_requested", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert not publication._speaker_enabled()
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    assert publication._speaker_enabled()

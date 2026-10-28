@@ -27,6 +27,11 @@ def _capture_policy_settings() -> dict[str, Any]:
     )
 
 
+def cpu_settling_allowed() -> bool:
+    """Whether settling may run on a CPU worker (``always``), read at each step."""
+    return _capture_policy_settings()["live_text_settling"] == "always"
+
+
 class SettlingPolicy(TypedDict):
     """Frozen capture policy, pending confirmation of the worker's device."""
 
@@ -86,7 +91,7 @@ def durable_settling_state(state: dict[str, Any] | None) -> dict[str, Any] | Non
 def new_capture_settling_state(*, capture_epoch: int) -> CaptureSettlingState | None:
     """Mark explicitly enabled new captures; old recordings remain unmarked."""
     settings = _capture_policy_settings()
-    if settings["live_text_settling"] != "auto" or not config_manager.get(
+    if settings["live_text_settling"] == "off" or not config_manager.get(
         "enable_canonical_transcript_writes", True
     ):
         return None
@@ -152,7 +157,7 @@ def update_capture_settling_state(
             "k": settings["live_text_settling_k"],
             "window_s": settings["live_text_settling_window_s"],
             "enabled": None
-            if settings["live_text_settling"] == "auto"
+            if settings["live_text_settling"] != "off"
             and config_manager.get("enable_canonical_transcript_writes", True)
             else False,
         }
@@ -182,7 +187,11 @@ def resolve_capture_settling_policy(
         return
     transcript.settling_state = {
         **state,
-        "policy": {**state["policy"], "enabled": device == "cuda"},
+        "policy": {
+            **state["policy"],
+            "enabled": device == "cuda"
+            or (device == "cpu" and not disable_on_cpu and cpu_settling_allowed()),
+        },
     }
     if device == "cpu":
         transcript.settling_state.pop("trailing_silence_start_ms", None)

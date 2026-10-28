@@ -137,11 +137,14 @@ def legacy_live_frontier(session: Session, *, recording_id: int) -> int:
 
 
 def _speaker_enabled() -> bool:
-    from backend.processing.live_diarization.setting import (
-        live_speaker_labels_requested,
-    )
+    """Whether live labels run, so a line's lock waits for its speaker's.
 
-    return live_speaker_labels_requested()
+    Not merely requested: on a CPU worker labels never run, and settling there
+    (``always``) must still lock lines.
+    """
+    from backend.processing.live_diarization.step import live_speaker_labels_device
+
+    return live_speaker_labels_device() is not None
 
 
 def _line_boundaries(

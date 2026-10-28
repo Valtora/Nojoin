@@ -66,7 +66,7 @@ def silence_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(
         transcribe, "loaded_transcription_device", lambda _config: "cuda"
     )
-    monkeypatch.setattr(worker, "live_speaker_labels_requested", lambda: False)
+    monkeypatch.setattr(worker, "live_speaker_labels_device", lambda: None)
     spans: list[tuple[float, float]] = []
     evidence = SimpleNamespace(speech_spans=lambda: spans, decide=None)
     monkeypatch.setattr(worker, "_speaker_evidence", lambda _step: evidence)

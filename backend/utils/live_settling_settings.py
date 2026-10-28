@@ -9,6 +9,8 @@ LIVE_SETTLING_DEFAULTS: dict[str, Any] = {
     "live_text_settling_window_s": 10.0,
 }
 LIVE_SETTLING_KEYS = tuple(LIVE_SETTLING_DEFAULTS)
+# off; auto: GPU only; always: GPU and CPU, where each step re-decodes on the CPU.
+LIVE_SETTLING_MODES = ("off", "auto", "always")
 
 
 def validate_live_settling_setting(key: str, value: Any) -> None:
@@ -18,7 +20,7 @@ def validate_live_settling_setting(key: str, value: Any) -> None:
         ValueError: The setting is outside the supported policy bounds.
     """
     if key == "live_text_settling":
-        valid = isinstance(value, str) and value in {"auto", "off"}
+        valid = isinstance(value, str) and value in LIVE_SETTLING_MODES
     elif key == "live_text_settling_k":
         valid = type(value) is int and 1 <= value <= 10
     else:
