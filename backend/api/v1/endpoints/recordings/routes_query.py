@@ -345,8 +345,10 @@ async def get_recordings_calendar(
     )
 
 
-def _recording_etag(status: RecordingStatus, change_sequence: int | None) -> str:
-    return f'W/"{status.value}-{change_sequence or 0}"'
+def _recording_etag(
+    status: RecordingStatus, change_sequence: int | None, notes_status: str | None
+) -> str:
+    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}"'
 
 
 async def _unchanged_since(
@@ -355,7 +357,9 @@ async def _unchanged_since(
     """The current ETag when the caller already holds it, read without the body."""
     row = (
         await db.execute(
-            select(Recording.status, Transcript.change_sequence)
+            select(
+                Recording.status, Transcript.change_sequence, Transcript.notes_status
+            )
             .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
             .where(Recording.public_id == recording_id)
             .where(Recording.user_id == user_id)
@@ -379,9 +383,9 @@ async def get_recording(
     """
     Get a specific recording by ID with all relationships loaded.
 
-    The ETag covers only the status and the transcript change counter: a
-    finished recording's page sends it back as If-None-Match and gets a 304
-    until either moves. no-store keeps browsers from revalidating ordinary
+    The ETag covers only the status, the transcript change counter and the
+    notes status: a finished recording's page sends it back as If-None-Match
+    and gets a 304 until one of them moves. no-store keeps browsers from revalidating ordinary
     reads with it.
     """
     if if_none_match is not None:
@@ -519,9 +523,11 @@ async def get_recording(
             transcript_segments_override = []
             transcript_text_override = ""
 
+    transcript = recording.transcript
     response.headers["ETag"] = _recording_etag(
         recording.status,
-        recording.transcript.change_sequence if recording.transcript else None,
+        transcript.change_sequence if transcript else None,
+        transcript.notes_status if transcript else None,
     )
     response.headers["Cache-Control"] = "no-store"
     return serialize_recording(

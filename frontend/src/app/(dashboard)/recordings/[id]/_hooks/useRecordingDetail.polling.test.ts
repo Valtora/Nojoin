@@ -91,6 +91,22 @@ describe("recording detail polling", () => {
     expect(mocks.getRecording).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the old ETag when the transcript re-read fails, so the next check tries again", async () => {
+    mount();
+    await advance(0);
+    const moved = {
+      recording: recording({ transcript: { change_sequence: 1 } as Recording["transcript"] }),
+      etag: 'W/"PROCESSED-1-"',
+    };
+    mocks.getRecordingIfChanged.mockResolvedValue(moved);
+    mocks.getTranscript.mockRejectedValueOnce(new Error("offline"));
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(mocks.getTranscript).toHaveBeenCalledTimes(2);
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(mocks.getRecordingIfChanged).toHaveBeenLastCalledWith("rec-1", null);
+    expect(mocks.getTranscript).toHaveBeenCalledTimes(3);
+  });
+
   it("discovers a live capture on the slow check and starts three-second delta reads", async () => {
     const { result } = mount();
     await advance(0);

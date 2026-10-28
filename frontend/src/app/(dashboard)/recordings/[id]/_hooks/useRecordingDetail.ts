@@ -300,16 +300,18 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         recordingNotFound.found();
         if (!polled) return;
         const data = polled.recording;
-        idleEtagRef.current = polled.etag;
         audioClock.observe(data, sentAt);
 
         const transcriptMoved = idle &&
           data.transcript?.change_sequence !== recording.transcript?.change_sequence;
+        // Taken as seen only once the transcript has caught up: a failed read
+        // keeps the old ETag and counter, so the next check tries again.
+        if (transcriptMoved) await syncTranscriptState("full");
+        idleEtagRef.current = polled.etag;
         if (transcriptMoved || hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
           if (!isEditingTitle) setTitleValue(data.name);
         }
-        if (transcriptMoved) await syncTranscriptState("full");
 
             } catch (e: unknown) {
         console.error("Polling failed", e);

@@ -26,6 +26,7 @@ from backend.processing.embedding import (
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.utils.speaker_names.events import UserNameAct, record_user_link
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -222,6 +223,7 @@ async def _record_dialog_link(
     """The dialog's link is the user's, as a rename's is (``record_user_link``)."""
     act = UserNameAct(person.name, person.id, actor_id, "api")
     await db.run_sync(lambda session: record_user_link(session, speaker, act))
+    await db.execute(change_sequence_bump(speaker.recording_id))
 
 
 @router.post("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/apply")

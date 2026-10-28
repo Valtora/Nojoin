@@ -15,6 +15,7 @@ from sqlmodel import col, select
 
 from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
+from backend.utils.transcript_change import change_sequence_bump
 
 from .anchors import longest_turn
 from .events import add_event, speaker_lines
@@ -148,4 +149,5 @@ def link_voice_match(
     speaker.name_source = SOURCE_VOICEPRINT
     speaker.identity_confidence = score
     session.add(speaker)
+    session.execute(change_sequence_bump(speaker.recording_id))
     return True

@@ -124,17 +124,24 @@ async def test_the_read_is_a_304_until_the_transcript_changes(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("change", ["recording", "notes"])
 async def test_a_status_change_ends_the_304s(
-    session_maker: sessionmaker, client: AsyncClient
+    session_maker: sessionmaker, client: AsyncClient, change: str
 ) -> None:
     etag = (await client.get(URL)).headers["etag"]
     async with session_maker() as session:
-        recording = await session.get(Recording, 1)
-        assert recording is not None
-        recording.status = RecordingStatus.PROCESSING
+        if change == "recording":
+            recording = await session.get(Recording, 1)
+            assert recording is not None
+            recording.status = RecordingStatus.PROCESSING
+        else:
+            # Notes generation started from another tab: the page then polls.
+            transcript = await session.get(Transcript, 1)
+            assert transcript is not None
+            transcript.notes_status = "generating"
         await session.commit()
 
     response = await client.get(URL, headers={"If-None-Match": etag})
 
     assert response.status_code == 200
-    assert response.json()["status"] == RecordingStatus.PROCESSING.value
+    assert response.headers["etag"] != etag
