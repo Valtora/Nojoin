@@ -208,10 +208,9 @@ export function useRecordingActions(): RecordingActions {
   const { addNotification } = useNotificationStore();
   const {
     cancel: cancelCapture,
-    recordingId: captureRecordingId,
+    ownedRecordingId,
     pausedRecording,
     attentionRecordings,
-    runtimeActive,
   } = useCapture();
 
   return useMemo<RecordingActions>(() => {
@@ -312,8 +311,8 @@ export function useRecordingActions(): RecordingActions {
           // the row while the client kept recording to a missing recording or
           // stayed blocked behind a stale paused lock. For a queued/processing
           // recording, or one owned by another tab, a plain discard is correct.
-          const ownsLiveCapture =
-            runtimeActive && captureRecordingId === id;
+          // Includes a failed stop's retained runtime, whose media is released.
+          const ownsLiveCapture = ownedRecordingId === id;
           const ownsPausedCapture = pausedRecording?.id === id ||
             attentionRecordings.some((recording) => recording.id === id);
           if (ownsLiveCapture || ownsPausedCapture) {
@@ -472,9 +471,8 @@ export function useRecordingActions(): RecordingActions {
   }, [
     addNotification,
     cancelCapture,
-    captureRecordingId,
+    ownedRecordingId,
     pausedRecording,
     attentionRecordings,
-    runtimeActive,
   ]);
 }

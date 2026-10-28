@@ -53,16 +53,14 @@ vi.mock("@/lib/api", () => ({
 
 const captureState: {
   cancel: ReturnType<typeof vi.fn>;
-  recordingId: string | null;
+  ownedRecordingId: string | null;
   pausedRecording: { id: string } | null;
   attentionRecordings: { id: string }[];
-  runtimeActive: boolean;
 } = {
   cancel: vi.fn(),
-  recordingId: null,
+  ownedRecordingId: null,
   pausedRecording: null,
   attentionRecordings: [],
-  runtimeActive: false,
 };
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -78,10 +76,9 @@ describe("useRecordingActions", () => {
     addNotification.mockReset();
     Object.values(api).forEach((fn) => fn.mockReset().mockResolvedValue(undefined));
     captureState.cancel.mockReset().mockResolvedValue(undefined);
-    captureState.recordingId = null;
+    captureState.ownedRecordingId = null;
     captureState.pausedRecording = null;
     captureState.attentionRecordings = [];
-    captureState.runtimeActive = false;
   });
 
   it("exposes exactly the shared recording action set", () => {
@@ -141,9 +138,8 @@ describe("useRecordingActions", () => {
     });
   });
 
-  it("routes discard through the capture controller when this browser owns the live capture", async () => {
-    captureState.runtimeActive = true;
-    captureState.recordingId = "rec-live";
+  it("routes discard through the capture controller when this tab holds the capture, live or after a failed stop", async () => {
+    captureState.ownedRecordingId = "rec-live";
     const { result } = renderHook(() => useRecordingActions());
 
     await act(async () => {
@@ -188,8 +184,7 @@ describe("useRecordingActions", () => {
     // An active capture exists for a different recording (e.g. recording A is
     // live in this tab while the user discards queued recording B). Discarding B
     // must not tear down A's runtime.
-    captureState.runtimeActive = true;
-    captureState.recordingId = "rec-A";
+    captureState.ownedRecordingId = "rec-A";
     const { result } = renderHook(() => useRecordingActions());
 
     await act(async () => {
