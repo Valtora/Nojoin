@@ -6,6 +6,7 @@ import MeetingControls from "./MeetingControls";
 const routerPush = vi.fn();
 const addNotification = vi.fn();
 const start = vi.fn();
+let connectivityStatus = "online";
 
 const captureState = {
   controller: {
@@ -29,7 +30,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/connectivity/monitor", () => ({
   useConnectivityStore: (selector: (state: { status: string }) => unknown) =>
-    selector({ status: "online" }),
+    selector({ status: connectivityStatus }),
 }));
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -49,6 +50,7 @@ describe("MeetingControls", () => {
     routerPush.mockReset();
     addNotification.mockReset();
     start.mockReset();
+    connectivityStatus = "online";
     captureState.controller.getState = () => ({ error: null });
     captureState.runtimeActive = false;
     captureState.pausedRecording = null;
@@ -59,10 +61,10 @@ describe("MeetingControls", () => {
     };
   });
 
-  it("toasts start failures instead of rendering them inline", async () => {
+  it.each(["dashboard", "rail"] as const)("toasts %s start failures instead of rendering them inline", async (variant) => {
     start.mockRejectedValue(new Error("Permission denied by user"));
 
-    render(<MeetingControls variant="dashboard" />);
+    render(<MeetingControls variant={variant} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
 
@@ -77,10 +79,10 @@ describe("MeetingControls", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  it("does not toast or navigate when the share picker is cancelled", async () => {
+  it.each(["dashboard", "rail"] as const)("does not toast or navigate when the %s share picker is cancelled", async (variant) => {
     start.mockResolvedValue(null);
 
-    render(<MeetingControls variant="dashboard" />);
+    render(<MeetingControls variant={variant} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
 
@@ -89,6 +91,82 @@ describe("MeetingControls", () => {
     });
 
     expect(addNotification).not.toHaveBeenCalled();
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it.each(["sidebar", "rail"] as const)("starts and opens a recording from the %s control", async (variant) => {
+    const onMeetingEnd = vi.fn();
+    start.mockResolvedValue({ recordingId: "rec-new" });
+    render(<MeetingControls variant={variant} onMeetingEnd={onMeetingEnd} />);
+
+    const button = screen.getByRole("button", { name: "Start Meeting" });
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("title", "Start a new meeting recording.");
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(routerPush).toHaveBeenCalledWith("/recordings/rec-new");
+      expect(onMeetingEnd).toHaveBeenCalledOnce();
+    });
+    expect(start).toHaveBeenCalledExactlyOnceWith("");
+    expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+  });
+
+  describe.each(["sidebar", "rail"] as const)("%s start availability", (variant) => {
+    it.each([
+      { state: "paused", label: "Paused recording needs attention", paused: "PAUSED" },
+      { state: "interrupted", label: "Interrupted recording needs attention", paused: "UPLOADING" },
+      { state: "starting", label: "Starting meeting...", status: "starting" },
+      { state: "finalising", label: "Finalizing meeting...", status: "finalizing" },
+      { state: "unsupported", label: "Unsupported browser", unsupported: true },
+      { state: "offline", label: "Nojoin unavailable", offline: true },
+    ])("prevents starting while $state", ({ label, paused, status, unsupported, offline }) => {
+      captureState.pausedRecording = paused ? { id: "rec-held", status: paused } : null;
+      captureState.status = status ?? "idle";
+      captureState.support.supported = !unsupported;
+      connectivityStatus = offline ? "offline" : "online";
+      render(<MeetingControls variant={variant} />);
+
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title");
+      fireEvent.click(button);
+      expect(start).not.toHaveBeenCalled();
+      expect(routerPush).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each(["recording", "paused"])("keeps the rail disabled during live %s without rendering live controls", (status) => {
+    captureState.runtimeActive = true;
+    captureState.status = status;
+    const { rerender } = render(<MeetingControls variant="rail" />);
+
+    const button = screen.getByRole("button", { name: "Meeting in progress" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute(
+      "title",
+      "A meeting recording is already running. Use the recording controls to pause or stop it.",
+    );
+    expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+    fireEvent.click(button);
+    expect(start).not.toHaveBeenCalled();
+
+    rerender(<MeetingControls variant="sidebar" />);
+    expect(screen.getByTestId("live-controls")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
+    rerender(<MeetingControls variant="rail" />);
+    expect(screen.getByRole("button", { name: "Meeting in progress" })).toBeDisabled();
+  });
+
+  it.each(["sidebar", "rail"] as const)("blocks %s start when an errored capture still has a runtime", (variant) => {
+    captureState.runtimeActive = true;
+    captureState.status = "error";
+    render(<MeetingControls variant={variant} />);
+
+    const button = screen.getByRole("button", { name: "Meeting in progress" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(start).not.toHaveBeenCalled();
     expect(routerPush).not.toHaveBeenCalled();
   });
 

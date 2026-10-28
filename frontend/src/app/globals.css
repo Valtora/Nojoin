@@ -151,6 +151,11 @@ html {
 }
 
 @layer base {
+  button:not(:disabled, [aria-disabled="true"]),
+  [role="button"]:not(:disabled, [aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
