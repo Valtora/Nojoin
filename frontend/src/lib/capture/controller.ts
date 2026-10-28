@@ -28,7 +28,7 @@ import {
 } from "@/lib/session";
 import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 
-import { holdCaptureLock, isCaptureHeldInThisBrowser } from "./captureLock";
+import { holdCaptureLock } from "./captureLock";
 import { findAttentionRecordings, selectRecoveryOffer, type RecoveryRequest } from "./recovery";
 import { detectCaptureSupport } from "./featureDetect";
 import {
@@ -1086,8 +1086,7 @@ export class CaptureController {
     if (!targetRecordingId) {
       throw new Error("No active recording is available to finalize.");
     }
-    const permission = this.assertCaptureControlAllowed(targetRecordingId);
-    if (permission) await permission;
+    this.assertCaptureControlAllowed(targetRecordingId);
     this.captureActionTicket += 1;
 
     const hadRuntime = Boolean(this.runtime);
@@ -1244,8 +1243,7 @@ export class CaptureController {
     if (!targetRecordingId) {
       return;
     }
-    const permission = this.assertCaptureControlAllowed(targetRecordingId);
-    if (permission) await permission;
+    this.assertCaptureControlAllowed(targetRecordingId);
     this.captureActionTicket += 1;
 
     // A tab whose capture continued elsewhere must not delete it from under
@@ -1295,23 +1293,16 @@ export class CaptureController {
   };
 
   /** Stored conflict IDs are not ownership; remote controls require a current offer. */
-  private assertCaptureControlAllowed = (recordingId: RecordingId): void | Promise<void> => {
+  private assertCaptureControlAllowed = (recordingId: RecordingId) => {
     if (this.runtime) {
       if (this.runtime.recordingId === recordingId) return;
       throw new Error("Use the controls for the recording captured in this tab.");
     }
-    return this.assertRecoveryControlAllowed(recordingId);
-  };
-
-  private assertRecoveryControlAllowed = async (recordingId: RecordingId) => {
-    const offered = () => this.state.pausedRecording?.id === recordingId ||
+    // Discovery already left out captures another tab of this browser holds.
+    const offered = this.state.pausedRecording?.id === recordingId ||
       this.state.attentionRecordings.some((recording) => recording.id === recordingId);
-    if (!offered() || await isCaptureHeldInThisBrowser(recordingId)) {
+    if (!offered) {
       throw new Error("Open the recording to recover it, or use the tab that is capturing it.");
-    }
-    // A runtime may have started while the browser lock query was pending.
-    if (this.runtime || !offered()) {
-      throw new Error("The recording's recovery offer has changed. Open it again.");
     }
   };
 

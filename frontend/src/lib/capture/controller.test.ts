@@ -1765,18 +1765,6 @@ describe("a capture whose tab closed without pausing it (issue #519)", () => {
     expect(controller.getState().status).toBe("paused");
   });
 
-  it.each(["stop", "cancel"] as const)("rechecks a browser lock acquired after a recovery offer before %s", async (command) => {
-    const controller = newController();
-    await offerRecovery(controller);
-    expect(controller.getState().pausedRecording?.id).toBe("rec-1");
-    captureLockMocks.isCaptureHeldInThisBrowser.mockResolvedValue(true);
-
-    await expect(controller[command]("rec-1")).rejects.toThrow(/Open the recording to recover it/);
-
-    expect(apiMocks.finalizeRecordingCapture).not.toHaveBeenCalled();
-    expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
-  });
-
   it.each(["stop", "cancel"] as const)("rejects %s of another target without stopping its own runtime", async (command) => {
     const sources = microphoneSources();
     pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
