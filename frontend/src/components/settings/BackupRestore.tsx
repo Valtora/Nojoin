@@ -413,7 +413,7 @@ export default function BackupRestore() {
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             className={cn(
-              "relative cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
+              "relative rounded-lg border-2 border-dashed p-8 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
               isDragging
                 ? "border-action bg-action-tint"
                 : selectedFile

@@ -100,7 +100,7 @@ Use the camera button beside the composer or the screen-capture shortcut to take
 
 ## Naming Speakers During Capture
 
-Optional [live word settling](USAGE.md#live-transcription) revises only recent transcript words and speaker boundaries. Pause and Stop lock the last accepted words without another decode; Resume starts a fresh settling episode. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
+[Live word settling](USAGE.md#live-transcription) defaults to **Auto (GPU)**, with **3 unchanged comparisons** and a **10 s settling window**, and revises only recent transcript words and speaker boundaries. Administrators can turn it off; a stored Off stays off on upgrade, and CPU processing keeps ordinary whole-line transcription. Pause and Stop lock the last accepted words without another decode; Resume starts a fresh settling episode. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
 
 If Pause interrupts a live transcription pass, the next upload after Resume also drains its retained audio. Live text continues on the recording's audio clock, including a partial segment uploaded at Pause.
 
@@ -116,7 +116,7 @@ The **Speakers** tab also shows live labels, with **Change identity** and **Add 
 
 ## Paused Recording Lock
 
-Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
+Each user can run one browser capture at a time. While this tab is capturing, the microphone button in the collapsed recordings list reads **Meeting in progress**, and **Start Meeting** reads the same if the recorder fails while this tab still holds the capture. Pause or stop from the recording's page. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
 
 - **Resume recording** continues the same recording. The browser asks you to share again.
 - **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.

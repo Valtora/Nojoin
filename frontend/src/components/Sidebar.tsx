@@ -16,7 +16,6 @@ import {
   Filter,
   X,
   Archive,
-  Mic,
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
@@ -854,19 +853,22 @@ export default function Sidebar() {
             aria-label="Expand recordings list"
             aria-expanded={false}
           />
-          {/* Non-interactive hint for which library view the hidden list holds. */}
-          <span
-            className="flex h-10 w-10 items-center justify-center text-rail-fg-muted"
-            title={currentViewLabel}
-          >
-            {view === "archived" ? (
-              <Archive aria-hidden="true" className="h-4 w-4" />
-            ) : view === "deleted" ? (
-              <Trash2 aria-hidden="true" className="h-4 w-4" />
-            ) : (
-              <Mic aria-hidden="true" className="h-4 w-4" />
-            )}
-          </span>
+          {view === "recordings" ? (
+            <MeetingControls variant="rail" onMeetingEnd={fetchRecordings} />
+          ) : (
+            <span
+              className="flex h-10 w-10 items-center justify-center text-rail-fg-muted"
+              title={currentViewLabel}
+              role="img"
+              aria-label={currentViewLabel}
+            >
+              {view === "archived" ? (
+                <Archive aria-hidden="true" className="h-4 w-4" />
+              ) : (
+                <Trash2 aria-hidden="true" className="h-4 w-4" />
+              )}
+            </span>
+          )}
           {view === "recordings" && <ImportAudioButton appearance="icon" />}
         </div>
       )}

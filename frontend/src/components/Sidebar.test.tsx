@@ -22,6 +22,14 @@ const getRecordings = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTags = vi.fn();
 const getRecordingsCalendar = vi.fn();
+const start = vi.fn();
+
+const captureState = {
+  controller: { getState: () => ({ error: null }) },
+  runtimeActive: false,
+  status: "idle",
+  support: { supported: true, mode: "shared_audio" },
+};
 
 let currentView: ViewType = "recordings";
 let pausedRecording: { id: string } | null = null;
@@ -79,11 +87,17 @@ vi.mock("@/lib/notes/deletedRecordingNotes", () => ({
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
+    ...captureState,
     cancel: vi.fn(),
     recordingId: null,
     pausedRecording,
-    runtimeActive: false,
+    start: (...args: unknown[]) => start(...args),
   }),
+}));
+
+vi.mock("@/lib/connectivity/monitor", () => ({
+  useConnectivityStore: (selector: (state: { status: string }) => unknown) =>
+    selector({ status: "online" }),
 }));
 
 vi.mock("@/lib/timezone", async (importOriginal) => {
@@ -127,10 +141,8 @@ vi.mock("@/lib/searchUtils", () => ({
   }),
 }));
 
-vi.mock("./MeetingControls", () => ({
-  default: ({ pairedAction }: { pairedAction?: React.ReactNode }) => (
-    <div data-testid="meeting-controls">{pairedAction}</div>
-  ),
+vi.mock("./LiveMeetingControls", () => ({
+  default: () => <div data-testid="live-controls" />,
 }));
 
 vi.mock("./MonthCalendar", () => ({
@@ -182,6 +194,9 @@ describe("Sidebar", () => {
     routerPush.mockReset();
     routerReplace.mockReset();
     addNotification.mockReset();
+    start.mockReset();
+    captureState.runtimeActive = false;
+    captureState.status = "idle";
     currentView = "recordings";
     pausedRecording = null;
     pathname = "/recordings";
@@ -301,6 +316,55 @@ describe("Sidebar", () => {
     });
   });
 
+  describe("collapsed recordings rail", () => {
+    beforeEach(() => {
+      isRecordingsSidebarCollapsed = true;
+    });
+
+    it("starts a meeting, opens the recording and refreshes the list", async () => {
+      start.mockResolvedValue({ recordingId: "rec-new" });
+      renderWithProviders(<Sidebar />);
+      const button = await screen.findByRole("button", { name: "Start Meeting" });
+      await waitFor(() => expect(getRecordings).toHaveBeenCalled());
+      const callsAfterMount = getRecordings.mock.calls.length;
+
+      expect(button).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(routerPush).toHaveBeenCalledWith("/recordings/rec-new");
+        expect(getRecordings.mock.calls.length).toBeGreaterThan(callsAfterMount);
+      });
+      expect(start).toHaveBeenCalledExactlyOnceWith("");
+      expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+    });
+
+    it.each(["recording", "paused", "error"])("cannot start again during live %s", async (status) => {
+      captureState.runtimeActive = true;
+      captureState.status = status;
+      renderWithProviders(<Sidebar />);
+
+      const button = await screen.findByRole("button", { name: "Meeting in progress" });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(start).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+    });
+
+    it.each<ViewType>(["archived", "deleted"])("labels %s without offering recording actions", async (view) => {
+      currentView = view;
+      renderWithProviders(<Sidebar />);
+
+      const label = view === "archived" ? "Archived" : "Deleted";
+      expect(await screen.findByRole("img", { name: label })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Import Audio" })).not.toBeInTheDocument();
+      expect(screen.getAllByRole("button")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Expand recordings list" })).toBeInTheDocument();
+    });
+  });
+
   it("marks an import that did not finish rather than showing it uploading (issue #569)", async () => {
     getRecordings.mockResolvedValue([
       { ...recording, status: RecordingStatus.UPLOADING, import_stalled: true },
@@ -367,9 +431,7 @@ describe("Sidebar", () => {
     // jsdom applies no CSS, so the desktop pair and the phone header button
     // are both in the tree; each is found by where it sits.
     const desktopImport = () =>
-      within(screen.getByTestId("meeting-controls")).getByRole("button", {
-        name: "Import Audio",
-      });
+      importButtons().find((button) => button.textContent === "Import Audio")!;
     const phoneImport = () =>
       importButtons().find((button) => button.textContent === "Import");
     const emptyState = () =>

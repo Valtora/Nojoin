@@ -4,7 +4,7 @@ import math
 from typing import Any
 
 LIVE_SETTLING_DEFAULTS: dict[str, Any] = {
-    "live_text_settling": "off",
+    "live_text_settling": "auto",
     "live_text_settling_k": 3,
     "live_text_settling_window_s": 10.0,
 }

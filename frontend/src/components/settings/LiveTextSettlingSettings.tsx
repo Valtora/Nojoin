@@ -16,7 +16,7 @@ export default function LiveTextSettlingSettings({ settings, isAdmin, onPersist 
         id="transcription-live-settling"
         label="Live word settling"
         controlId="live-text-settling"
-        description="Revises recent words as more speech arrives, then locks them. Auto requires a GPU and applies to the next capture episode."
+        description="Revises recent words as more speech arrives, then locks them. Auto (GPU) is on by default and applies to the next capture episode."
       >
         <SelectBase
           id="live-text-settling"
@@ -24,7 +24,7 @@ export default function LiveTextSettlingSettings({ settings, isAdmin, onPersist 
           data-ui-fill="control"
           data-ui-disabled-fill="control-disabled"
           data-ui-border="full"
-          value={settings.live_text_settling ?? "off"}
+          value={settings.live_text_settling ?? "auto"}
           onChange={(event) => void onPersist({ ...settings, live_text_settling: event.target.value as "auto" | "off" })}
           disabled={!isAdmin}
           className={SETTINGS_SELECT_CLASS}

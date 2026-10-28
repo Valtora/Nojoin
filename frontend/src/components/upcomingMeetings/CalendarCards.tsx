@@ -250,7 +250,7 @@ export function DayTimelineEventCard({
   // A timeline bubble keeps the card fill and a border because it is a control
   // rather than a surface in the stack: it has to be opaque over the hour rules
   // it covers, and its border is the only thing marking it as live or past.
-  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[calc(5px*var(--radius-scale))] border bg-surface-card text-left transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
+  const cardClasses = `relative block h-full w-full overflow-hidden rounded-[calc(5px*var(--radius-scale))] border bg-surface-card text-left transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
     isLive
       ? "border-action-border"
       : "border-surface-border"
