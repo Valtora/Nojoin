@@ -26,10 +26,8 @@ describe("shared recording line actions", () => {
     expect(split).toHaveBeenCalledWith("r1", "u1", "w2", 7);
   });
 
-  it("reports a structured conflict and tells the editor to keep its text", async () => {
-    text.mockRejectedValueOnce({ response: { status: 409, data: { detail: {
-      code: "line_stale", message: "This line has changed. Select it again.",
-    } } } });
+  it("reports a conflict and tells the editor to keep its text", async () => {
+    text.mockRejectedValueOnce({ response: { status: 409, data: { detail: "This line has changed. Select it again." } } });
     const notify = vi.fn();
     expect(await transcriptLineActions(notify).editTranscriptLine("r1", line, "Keep my correction")).toBe(false);
     expect(notify).toHaveBeenCalledWith("This line has changed. Select it again.");

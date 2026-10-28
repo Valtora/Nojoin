@@ -40,12 +40,8 @@ const RECORDING: Recording = {
 
 function LivePage() {
   const noteEdits = useNoteEdits(RECORDING.id);
-  const applied = noteEdits.apply([...server.notes.values()]);
-  return <>
-    <RecordingStatusDisplay recording={RECORDING} onSaveMeetingEdgeFocus={vi.fn()}
-      timelineNotes={[]} noteEdits={noteEdits} showMeetingEdge={false} />
-    <output data-testid="applied-span">{applied.map((note) => `${note.start_ms}:${note.end_ms}`).join(",")}</output>
-  </>;
+  return <RecordingStatusDisplay recording={RECORDING} onSaveMeetingEdgeFocus={vi.fn()}
+    timelineNotes={[]} noteEdits={noteEdits} showMeetingEdge={false} />;
 }
 
 const originalElementFromPoint = document.elementFromPoint;
@@ -73,45 +69,38 @@ const loadLines = (marked: boolean) => {
 };
 
 describe("moving a newly saved note during live capture", () => {
-  it("takes an open line span through the composer and PATCHes its drag onto another open line", async () => {
+  it("drags a typed note onto an open line and PATCHes its new moment", async () => {
     loadLines(true);
     let answer!: (note: TimelineNote) => void;
     updateTimelineNote.mockImplementation(() => new Promise<TimelineNote>((resolve) => { answer = resolve; }));
     render(<LivePage />);
     await screen.findByText("Budget still growing");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:12" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
-    expect(screen.getByTestId("note-line-chip")).toHaveTextContent("00:12–00:15");
     const box = screen.getByRole("textbox", { name: "New note" });
     fireEvent.change(box, { target: { value: "Check this figure" } });
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() => expect(server.creates).toHaveLength(1));
-    expect(server.creates[0]).toMatchObject({ kind: "point", anchor_ms: 12_000,
-      start_ms: 12_000, end_ms: 15_500, body: "Check this figure" });
+    expect(server.creates[0]).toMatchObject({ kind: "point", anchor_ms: 20_000, body: "Check this figure" });
     const note = (await screen.findByText("Check this figure")).closest<HTMLElement>('[data-testid="timeline-note"]')!;
     await waitFor(() => expect(note).toHaveAttribute("data-note-status", "saved"));
-    expect(within(note).queryByTestId("timeline-note-quote")).toBeNull();
     const grip = note.querySelector<HTMLElement>("[data-note-grip]")!;
     expect(grip).toBeInTheDocument();
     fireEvent.pointerDown(grip, { pointerType: "mouse", button: 0 });
-    under = document.querySelector('[data-order-index="1"]');
+    under = document.querySelector('[data-order-index="0"]');
     expect(under).toBeInTheDocument();
     fireEvent.pointerMove(window, { clientX: 20, clientY: 40, buttons: 1 });
     fireEvent.pointerUp(window);
     await waitFor(() => expect(updateTimelineNote).toHaveBeenCalledTimes(1));
     const created = [...server.notes.values()][0];
     expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", created.id, {
-      expected_revision: 1, anchor_ms: 20_000, target_utterance_id: "u2", target_utterance_revision: 4,
+      expected_revision: 1, anchor_ms: 12_000,
     } satisfies TimelineNoteUpdate);
-    expect(screen.getByTestId("applied-span")).toHaveTextContent("20000:23500");
-    await act(async () => answer({ ...created, anchor_ms: 20_000, start_ms: 20_000, end_ms: 23_500, revision: 2 }));
-    expect(screen.getByTestId("applied-span")).toHaveTextContent("20000:23500");
+    await act(async () => answer({ ...created, anchor_ms: 12_000, revision: 2 }));
     const saved = screen.getByText("Check this figure").closest<HTMLElement>('[data-testid="timeline-note"]')!;
-    expect(saved).toHaveTextContent("00:20");
-    expect(within(saved).queryByTestId("timeline-note-quote")).toBeNull();
+    expect(saved).toHaveTextContent("00:12");
     const rows = Array.from(screen.getByTestId("live-transcript-scroll")
       .querySelectorAll('[data-order-index], [data-testid="timeline-note"]'));
     expect(rows.indexOf(saved)).toBeGreaterThan(rows.indexOf(under!));
+    expect(rows.indexOf(saved)).toBeLessThan(rows.indexOf(document.querySelector('[data-order-index="1"]')!));
   });
 
   it("keeps unmarked live point notes without move controls", async () => {

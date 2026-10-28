@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TranscriptSection from "@/app/(dashboard)/recordings/[id]/_components/TranscriptSection";
-import { createTimelineNote } from "@/lib/api";
 import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
 import {
@@ -169,14 +168,14 @@ afterEach(() => {
 });
 
 describe("Moving a point note with Move up and Move down", () => {
-  it("allows timeline movement onto settling destinations while checking their identity and revision", async () => {
+  it("moves it onto a line that is still settling", async () => {
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
     const segments = SEGMENTS.map((segment, index) => ({ ...segment, settling_required: true,
       revision: 8, provisional: true, locked: index !== 2 }));
     render(<Page notes={[POINT]} segments={segments} />);
     fireEvent.click(moveButton("n-point", "down"));
     await waitFor(() => expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-point", {
-      expected_revision: 2, anchor_ms: 130_000, target_utterance_id: "u2", target_utterance_revision: 8,
+      expected_revision: 2, anchor_ms: 130_000,
     }));
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "line:3"]);
   });
@@ -400,37 +399,6 @@ describe("Dragging a point note by its grip", () => {
     under = element;
     fireEvent.pointerMove(window, { clientX: 20, clientY: 40, buttons: 1 });
   };
-
-  it("drags a newly saved marked line note without a quote onto an open line", async () => {
-    const segments = SEGMENTS.map((segment) => ({ ...segment, settling_required: true,
-      revision: 8, provisional: true, locked: false }));
-    let created: TimelineNote | undefined;
-    vi.mocked(createTimelineNote).mockImplementation(async (_recording, payload) => {
-      created = note(payload.id!, payload.kind, payload.body, { anchor_ms: payload.anchor_ms,
-        start_ms: payload.start_ms, end_ms: payload.end_ms, quoted_text: null });
-      return created;
-    });
-    updateTimelineNote.mockImplementation(async (_recording, _id, update) => ({ ...created!,
-      anchor_ms: update.anchor_ms, start_ms: update.anchor_ms, end_ms: update.anchor_ms + 3000, revision: 3 }));
-    render(<Page notes={[]} segments={segments} />);
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Blair's line at 01:05" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
-    const dialog = screen.getByRole("dialog");
-    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "Line thought" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save note" }));
-    await waitFor(() => expect(created).toBeDefined());
-    await waitFor(() => expect(grip(created!.id)).toBeInTheDocument());
-    expect(created).toMatchObject({ kind: "point", anchor_ms: 65_000, start_ms: 65_000,
-      end_ms: 68_000, quoted_text: null });
-    expect(within(noteLine(created!.id)!).queryByTestId("timeline-note-quote")).toBeNull();
-    fireEvent.pointerDown(grip(created!.id), { pointerType: "mouse", button: 0 });
-    dragOver(line(2));
-    fireEvent.pointerUp(window);
-    await waitFor(() => expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", created!.id, {
-      expected_revision: 2, anchor_ms: 130_000, target_utterance_id: "u2", target_utterance_revision: 8,
-    }));
-    expect(myNotesTime(created!.id)).toBe("02:10");
-  });
 
   it("drops it after the line it is let go over, anchored at that line's start", async () => {
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));

@@ -41,37 +41,6 @@ const settle = async () => {
 };
 
 describe("NoteOutbox", () => {
-  it("retains a line's timeline span without a quote through a failed save and retry", async () => {
-    const outbox = new NoteOutbox(RECORDING);
-    server.failures.push(NO_ANSWER);
-    outbox.submit({ kind: "point", body: "Keep this", anchorMs: 1200, span: { startMs: 1200, endMs: 4500 } });
-    await settle();
-    const [entry] = outbox.getSnapshot().entries;
-    expect(inlineNotes([], outbox.getSnapshot())[0]).toMatchObject({ kind: "point", start_ms: 1200,
-      end_ms: 4500, quoted_text: null, status: "failed" });
-    outbox.retry(entry.key);
-    await settle();
-    expect(server.creates[1]).toEqual(server.creates[0]);
-    expect(server.creates[1]).toMatchObject({ kind: "point", anchor_ms: 1200, start_ms: 1200, end_ms: 4500 });
-    expect(server.creates[1]).not.toHaveProperty("quoted_text");
-    expect(outbox.getSnapshot().saved[0]).toMatchObject({ start_ms: 1200, end_ms: 4500 });
-  });
-
-  it("keeps a rejected source command and retries its original line revision", async () => {
-    const outbox = new NoteOutbox(RECORDING);
-    server.failures.push({ response: { status: 409, data: { detail: { code: "line_stale", message: "Select this line again." } } } });
-    outbox.submit({ kind: "selection", body: "Keep this thought", anchorMs: null, selection: {
-      startMs: 0, endMs: 2000, quotedText: "source words", sourceUtterances: [{ id: "u1", revision: 7 }],
-    } });
-    await settle();
-    const [entry] = outbox.getSnapshot().entries;
-    expect(entry.error).toBe("Select this line again.");
-    expect(entry.body).toBe("Keep this thought");
-    outbox.retry(entry.key);
-    await settle();
-    expect(server.creates[1]).toEqual(server.creates[0]);
-    expect(server.creates[1]).toMatchObject({ source_utterances: [{ id: "u1", revision: 7 }] });
-  });
   beforeEach(() => {
     server.notes.clear();
     server.tombstones.clear();

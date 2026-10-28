@@ -6,7 +6,7 @@ import type { TranscriptSegment } from "@/types";
 import { SELECTION_SETTLE_MS, type CapturedSelection } from "./_hooks/useCapturedSelection";
 import { TranscriptSelectionToolbar } from "./TranscriptSelectionToolbar";
 
-const REASON = "Selected words are still settling or have changed.";
+const REASON = "Selected words are still settling.";
 const segment = (): TranscriptSegment => ({
   id: "line", revision: 1, start: 1, end: 2, text: "Pending", speaker: "UNKNOWN",
   settling_required: true, provisional: true, locked: false,
@@ -67,7 +67,7 @@ it("explains the disabled note visibly and accessibly while Copy keeps the selec
   }
 });
 
-it("removes the explanation and description reference when unchanged words lock", () => {
+it("removes the explanation and description reference when the selected words lock", () => {
   vi.useFakeTimers();
   const onNote = vi.fn();
   const pending = segment();

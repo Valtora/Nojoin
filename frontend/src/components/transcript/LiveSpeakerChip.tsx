@@ -7,7 +7,6 @@ import { Pencil } from "lucide-react";
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 
 interface LiveSpeakerChipProps {
-  disabledReason?: string;
   /** The stored live label, `LIVE_PROVISIONAL_<n>`. */
   label: string;
   /** What the chip reads: the name the user gave, else "Speaker <n>". */
@@ -44,7 +43,6 @@ export default function LiveSpeakerChip({
   locked,
   onRename,
   loadPeopleNames,
-  disabledReason,
 }: LiveSpeakerChipProps) {
   // The label is kept from when the box opened: a provisional line can move
   // to another label while the name is typed, and the name is for this one.
@@ -52,7 +50,6 @@ export default function LiveSpeakerChip({
     label: string;
     opened: string;
     text: string;
-    rename: (label: string, name: string) => Promise<void>;
   } | null>(null);
   const [peopleNames, setPeopleNames] = useState<readonly string[]>([]);
   // Enter saves and the box then blurs as it closes: one request, not two.
@@ -118,7 +115,7 @@ export default function LiveSpeakerChip({
     }
     savingRef.current = true;
     try {
-      await draft.rename(draft.label, next);
+      await onRename(draft.label, next);
     } finally {
       savingRef.current = false;
       close();
@@ -174,13 +171,11 @@ export default function LiveSpeakerChip({
         type="button"
         data-testid="live-transcript-speaker"
         data-locked={locked ? "true" : "false"}
-        title={disabledReason ?? "Rename this speaker"}
-        aria-disabled={!!disabledReason}
+        title="Rename this speaker"
         aria-label={`Rename ${name}`}
         onClick={() => {
-          if (disabledReason) return;
           cancelledRef.current = false;
-          setDraft({ label, opened: name, text: name, rename: onRename });
+          setDraft({ label, opened: name, text: name });
         }}
         className={`group/chip inline-flex items-center gap-1 rounded text-left text-xs transition-colors hover:text-action-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-border pointer-coarse:-my-2.5 ${TOUCH_TARGET_HEIGHT} ${textStyle}`}
       >

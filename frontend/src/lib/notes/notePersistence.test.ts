@@ -153,22 +153,6 @@ describe("a note outbox kept in the browser", () => {
     expect((await stored(store))?.draft).toEqual(DRAFT);
   });
 
-  it("retains the original source revision when a selection command is restored and retried", async () => {
-    const outbox = openPage(store);
-    server.failures.push(NO_ANSWER);
-    outbox.submit({ kind: "selection", body: "Remember this", anchorMs: null, selection: {
-      startMs: 0, endMs: 2000, quotedText: "Words", sourceUtterances: [{ id: "u1", revision: 8 }],
-    } });
-    await settle();
-    const [entry] = outbox.getSnapshot().entries;
-    await vi.waitFor(async () => expect(await storedNoteIds(store)).toEqual([entry.id]));
-    closePages();
-    const restored = await openPageAndRead(store);
-    await vi.waitFor(() => expect(restored.getSnapshot().entries).toEqual([]));
-    expect(server.creates[1]).toEqual(server.creates[0]);
-    expect(server.creates[1]).toMatchObject({ source_utterances: [{ id: "u1", revision: 8 }] });
-  });
-
   it("brings a note on a line back after a reload, and sends it once with its span and quote", async () => {
     const outbox = openPage(store);
     server.failures.push(NO_ANSWER);

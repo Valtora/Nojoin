@@ -71,9 +71,6 @@ def dismiss_pending_name(
     from backend.utils.canonical_pipeline.unmerge import placeholder_speaker_name
 
     recording_id = speaker.recording_id
-    from backend.utils.canonical_pipeline.guards import require_label_lines
-
-    require_label_lines(session, recording_id, speaker.diarization_label)
     dismissed = shown_name(speaker)
     anchor = longest_turn(speaker_lines(session, recording_id), speaker.id)
     if anchor is not None:

@@ -47,10 +47,8 @@ describe("actions on a thirty second line", () => {
     const box = screen.getByRole("textbox", { name: "Note" });
     fireEvent.change(box, { target: { value: "Whole turn" } });
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(props.onAddNote).toHaveBeenCalledWith(marked
-      ? { kind: "point", body: "Whole turn", anchorMs: 0, span: { startMs: 0, endMs: 30000 } }
-      : { kind: "selection", body: "Whole turn", anchorMs: null,
-          selection: { startMs: 0, endMs: 30000, quotedText: segment.text } });
+    expect(props.onAddNote).toHaveBeenCalledWith({ kind: "selection", body: "Whole turn", anchorMs: null,
+      selection: { startMs: 0, endMs: 30000, quotedText: segment.text } });
   });
 
   it.each([false, true])("splits a finished line at a genuine late word before narrower speaker assignment (marked=%s)", async (marked) => {
@@ -118,14 +116,14 @@ describe("actions on a thirty second line", () => {
     expect(marked).not.toContain("word27");
   });
 
-  it("live long lines keep late-word splitting and full-span timeline notes", () => {
+  it("live long lines keep late-word splitting and full-span quoted notes", () => {
     const segment = { ...longLine(), locked: true, provisional: true };
     const note = vi.fn();
     const handlers = { split: vi.fn(), editText: vi.fn(), changeSpeaker: vi.fn() };
     render(<LiveTranscriptPanel segments={[segment]} hasLoaded onNoteOnLine={note} lineHandlers={handlers} />);
     fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
-    expect(note).toHaveBeenCalledWith({ startMs: 0, endMs: 30000 });
+    expect(note).toHaveBeenCalledWith({ startMs: 0, endMs: 30000, quotedText: segment.text });
     fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Split line" }));
     expect(within(screen.getByRole("combobox")).getAllByRole("option").at(-1)).toHaveTextContent("word29");

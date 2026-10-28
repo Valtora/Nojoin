@@ -6,7 +6,6 @@ import { moveTargets, targetBeside, type MoveTarget } from "@/lib/notes/noteMove
 import { holdPendingNoteWrite } from "@/lib/notes/noteOutboxes";
 import { shownLineAt, type NotePlacement, type PlacementNote, type PlacementSegment } from "@/lib/notes/placement";
 import type { EditableNote, NoteEditRefusal } from "@/lib/notes/useNoteEdits";
-import type { TranscriptSegment, TranscriptSourceReference } from "@/types";
 
 import type { NoteLineMove } from "../../notes/TimelineNoteLine";
 import { formatTime } from "../transcriptDisplay";
@@ -14,13 +13,13 @@ import { formatTime } from "../transcriptDisplay";
 import { useNoteDrag } from "./useNoteDrag";
 
 /** Saves a point note's new moment; resolves to why it was refused, or null. */
-export type MoveNoteHandler = (note: EditableNote, anchorMs: number, target?: TranscriptSourceReference) => Promise<NoteEditRefusal>;
+export type MoveNoteHandler = (note: EditableNote, anchorMs: number) => Promise<NoteEditRefusal>;
 
 type MovableNote = EditableNote & PlacementNote;
 
 interface UseNoteMovesOptions<N extends MovableNote> {
   /** Every line, hidden ones included, as the notes were placed on them. */
-  segments: readonly (PlacementSegment & Partial<TranscriptSegment> & { start: number })[];
+  segments: readonly (PlacementSegment & { start: number })[];
   /** The list indexes of the shown lines, ascending. */
   visibleIndexes: readonly number[];
   placements: readonly NotePlacement<N>[];
@@ -31,7 +30,7 @@ interface UseNoteMovesOptions<N extends MovableNote> {
 type Direction = "up" | "down";
 
 /**
- * Moving point notes between lines in the finished or marked live transcript: Move up and
+ * Moving the finished transcript's point notes between lines: Move up and
  * Move down on each, a step to the next gap a note can go to, and a drag of
  * its grip (`useNoteDrag`). Each move anchors the note at the start of the
  * line it now follows (`moveTargets`). After a step, focus stays on the same
@@ -87,9 +86,7 @@ export function useNoteMoves<N extends MovableNote>({
     if (direction) pendingFocus.current = { noteId: note.id, direction };
     const release = holdPendingNoteWrite();
     try {
-      const refused = await (target.source
-        ? onMoveNote(note, target.anchorMs, target.source)
-        : onMoveNote(note, target.anchorMs));
+      const refused = await onMoveNote(note, target.anchorMs);
       if (refused) {
         setRefusal({ noteId: note.id, message: refused });
         setAnnouncement(`Note not moved. ${refused}`);

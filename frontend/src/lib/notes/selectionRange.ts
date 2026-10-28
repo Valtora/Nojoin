@@ -10,7 +10,7 @@ import { selectionOf, type NoteSelection } from "./noteOutbox";
  * (`TranscriptLineText`). So a DOM `Range` goes to the lines it touches, then
  * to character offsets in each, then to ms through the line's words.
  *
- * Marked lines expose exact word identities and times in the DOM. Older
+ * Marked lines expose each word's times and lock in the DOM. Older
  * recordings retain character interpolation across the line's span.
  */
 
@@ -41,7 +41,6 @@ export const interpolatedTokens = (text: string, startMs: number, endMs: number)
 /** A line as the page draws it. */
 export interface DrawnLine {
   words?: TimedToken[];
-  revision?: number;
   settling?: boolean;
   segmentId: string;
   text: string;
@@ -88,16 +87,6 @@ export const selectionFromPicks = (picks: readonly LinePick[]): NoteSelection | 
     startMs: Math.min(...spans.map((span) => span.startMs)),
     endMs: Math.max(...spans.map((span) => span.endMs)),
     quotedText: clampQuote(spans.map((span) => span.text).join(" ")),
-    ...(picks.some((pick) => pick.line.revision !== undefined) ? {
-      sourceUtterances: picks.flatMap(({ line, from, to }) => {
-        if (line.revision === undefined || !pickSpan({ line, from, to })) return [];
-        const words = line.words?.filter((word) => word.from < to && word.to > from);
-        return [{ id: line.segmentId, revision: line.revision, ...(words ? {
-          word_ids: words.map((word) => word.id!),
-          word_texts: Object.fromEntries(words.map((word) => [word.id!, word.text.trim()])),
-        } : {}) }];
-      }),
-    } : {}),
   });
 };
 
@@ -139,9 +128,8 @@ export const linePicksOfRange = (range: Range, root: Element): LinePick[] =>
     // A boundary outside this line is before it (the start) or after it (the end).
     const from = offsetIn(paragraph, range.startContainer, range.startOffset, 0);
     const to = offsetIn(paragraph, range.endContainer, range.endOffset, text.length);
-    const revision = paragraph.dataset.revision === undefined ? undefined : Number(paragraph.dataset.revision);
     return from < to ? [{
-      line: { segmentId, text, startMs, endMs, revision, words,
+      line: { segmentId, text, startMs, endMs, words,
         settling: paragraph.dataset.settling === "true" }, from, to,
     }] : [];
   });

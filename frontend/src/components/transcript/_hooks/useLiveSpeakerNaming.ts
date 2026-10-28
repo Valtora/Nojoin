@@ -5,12 +5,11 @@ import { useCallback, useRef } from "react";
 import { getGlobalSpeakers, nameLiveSpeaker } from "@/lib/api/speakers";
 import { getErrorDetail } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
-import type { RecordingId, TranscriptSegment } from "@/types";
-import { sourceReference } from "@/lib/transcript/settling";
+import type { RecordingId } from "@/types";
 
 export interface LiveSpeakerNaming {
   /** Names live speaker `label`; a failure is reported, never thrown. */
-  renameLiveSpeaker: (label: string, name: string, segment?: TranscriptSegment) => Promise<void>;
+  renameLiveSpeaker: (label: string, name: string) => Promise<void>;
   /** People's names, read once on the first rename and kept. */
   loadPeopleNames: () => Promise<readonly string[]>;
 }
@@ -29,12 +28,9 @@ export function useLiveSpeakerNaming(
   const peopleNames = useRef<Promise<readonly string[]> | null>(null);
 
   const renameLiveSpeaker = useCallback(
-    async (label: string, name: string, segment?: TranscriptSegment) => {
+    async (label: string, name: string) => {
       try {
-        const anchor = segment ? sourceReference(segment) : null;
-        applyNames(await (anchor
-          ? nameLiveSpeaker(recordingId, label, name, anchor)
-          : nameLiveSpeaker(recordingId, label, name)));
+        applyNames(await nameLiveSpeaker(recordingId, label, name));
       } catch (error) {
         console.error("Failed to name the live speaker", error);
         addNotification({

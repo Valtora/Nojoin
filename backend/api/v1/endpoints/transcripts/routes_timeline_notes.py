@@ -44,7 +44,6 @@ from backend.models.timeline_note import (
     TimelineNoteTombstone,
 )
 from backend.models.timeline_note_public import (
-    TIMELINE_MS_MAX,
     TimelineNoteCreate,
     TimelineNoteErrorCode,
     TimelineNoteRead,
@@ -52,7 +51,6 @@ from backend.models.timeline_note_public import (
 )
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.services.timeline_note_anchors import guard_note_anchor
 from backend.services.timeline_note_service import (
     load_attachments_async,
     load_author_names_async,
@@ -60,7 +58,6 @@ from backend.services.timeline_note_service import (
     serialize_recording_timeline_notes,
     serialize_timeline_note,
 )
-from backend.utils.canonical_pipeline.guards import LineActionConflict
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.document_storage import delete_document_files
 from backend.utils.time import utc_now
@@ -480,11 +477,6 @@ async def create_timeline_note(
             await db.rollback()
             return current
 
-    try:
-        await db.run_sync(guard_note_anchor, recording_pk, payload)
-    except LineActionConflict as error:
-        raise HTTPException(status_code=409, detail=error.detail) from error
-
     fields: dict[str, Any] = {
         "recording_id": recording_pk,
         "created_by_user_id": user_id,
@@ -524,23 +516,6 @@ async def create_timeline_note(
     return await _read(db, note, recording_public_id)
 
 
-async def _move_point_anchor(
-    db: AsyncSession, note: TimelineNote, anchor_ms: int
-) -> None:
-    """Translate a retained line span together with its point anchor."""
-    if note.start_ms is not None and note.end_ms is not None:
-        assert note.anchor_ms is not None
-        delta = anchor_ms - note.anchor_ms
-        if note.end_ms + delta > TIMELINE_MS_MAX:
-            await db.rollback()
-            raise HTTPException(
-                status_code=422, detail="The moved note span is too large"
-            )
-        note.start_ms += delta
-        note.end_ms += delta
-    note.anchor_ms = anchor_ms
-
-
 @router.patch(
     "/{recording_id}/timeline-notes/{note_id}", response_model=TimelineNoteRead
 )
@@ -556,10 +531,6 @@ async def update_timeline_note(
     recording = await _owned_recording(db, recording_id, current_user.id)
     recording_pk, recording_public_id = recording.id, recording.public_id
     write_token = _token(payload.write_token)
-    try:
-        await db.run_sync(guard_note_anchor, recording_pk, payload)
-    except LineActionConflict as error:
-        raise HTTPException(status_code=409, detail=error.detail) from error
     note = await _locked_note(db, recording_pk, note_id)
     if note is None:
         raise _missing(await _tombstone_on(db, recording_pk, note_id), write_token)
@@ -589,7 +560,7 @@ async def update_timeline_note(
     if payload.body is not None:
         note.body = payload.body
     if payload.anchor_ms is not None:
-        await _move_point_anchor(db, note, payload.anchor_ms)
+        note.anchor_ms = payload.anchor_ms
     note.revision += 1
     note.last_write_token = write_token
     # Set here as well as by the column's onupdate, so the response carries it

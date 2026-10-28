@@ -7,11 +7,7 @@ from backend.models.live_settling_public import public_settling_fields
 from .assignment import *
 from .constants import *
 from .finalization import finalize_utterances_from_segments
-from .guards import (
-    protect_text_replacement,
-    require_action_lines,
-    settling_required,
-)
+from .guards import freeze_live_line, protect_text_replacement, settling_required
 from .live_compatibility import capture_segment_sort_key
 from .persistence import (
     apply_compatibility_segment_replace,
@@ -193,6 +189,11 @@ def append_utterances_from_segments(
     return utterances
 
 
+INACTIVE_STATES = frozenset(
+    {TranscriptUtteranceState.SUPERSEDED, TranscriptUtteranceState.DELETED}
+)
+
+
 def update_utterance_text(
     session,
     *,
@@ -209,7 +210,9 @@ def update_utterance_text(
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
         raise RuntimeError("Utterance revision conflict")
-    require_action_lines(transcript, [utterance])
+    if utterance.state in INACTIVE_STATES:
+        # A settling pass can supersede an open line under the editor.
+        raise RuntimeError("This line changed. Reload it and try again.")
 
     old_values = {"text": utterance.text, "revision": utterance.revision}
     old_text_locked = bool(utterance.manual_text_locked)
@@ -217,6 +220,7 @@ def update_utterance_text(
         protect_text_replacement(utterance, text)
     utterance.text = text
     utterance.manual_text_locked = True
+    freeze_live_line(utterance)
     utterance.text_last_edit_source = source
     utterance.revision += 1
     session.add(utterance)
@@ -286,6 +290,9 @@ def update_utterance_speaker(
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
         raise RuntimeError("Utterance revision conflict")
+    if utterance.state in INACTIVE_STATES:
+        # A settling pass can supersede an open line under the editor.
+        raise RuntimeError("This line changed. Reload it and try again.")
 
     transcript = _load_transcript(session, recording_id)
     recording = session.get(Recording, recording_id)
@@ -307,7 +314,6 @@ def update_utterance_speaker(
         scope=scope,
         current_key=current_key,
     )
-    require_action_lines(transcript, [utterance, *target_utterances])
 
     target_speaker = resolve_assignment_target(
         session,
@@ -340,6 +346,7 @@ def update_utterance_speaker(
         target_utterance.recording_speaker_id = target_key
         target_utterance.speaker_label = target_speaker.diarization_label
         target_utterance.manual_speaker_locked = True
+        freeze_live_line(target_utterance)
         target_utterance.speaker_last_edit_source = source
         target_utterance.speaker_assignment_source = SPEAKER_ASSIGNMENT_SOURCE_MANUAL
         target_utterance.speaker_assignment_authority = (

@@ -12,7 +12,7 @@ import {
 } from "@/lib/captures/useCaptureActions";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import type { AudioClock } from "@/lib/notes/audioClock";
-import { inlineNotes, isNoteSelection, type NoteTarget } from "@/lib/notes/noteOutbox";
+import { inlineNotes, type NoteSelection } from "@/lib/notes/noteOutbox";
 import { segmentStartMs } from "@/lib/notes/placement";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
@@ -177,10 +177,8 @@ export default function RecordingStatusDisplay({
   // "Note on this line": the box's next note goes on the line, and the box
   // takes focus to write it.
   const noteOnLine = useCallback(
-    (target: NoteTarget) => {
-      outbox.setDraft({ ...outbox.getSnapshot().draft,
-        selection: isNoteSelection(target) ? target : null,
-        lineSpan: isNoteSelection(target) ? null : target });
+    (selection: NoteSelection) => {
+      outbox.setDraft({ ...outbox.getSnapshot().draft, selection });
       composerBoxRef.current?.focus();
     },
     [outbox],

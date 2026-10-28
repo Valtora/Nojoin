@@ -254,16 +254,6 @@ async def apply_voiceprint_action(
             detail="No voiceprint extracted. Call /voiceprint/extract first.",
         )
 
-    guarded_name = False
-    if action.action in {"create_new", "link_existing", "force_link"}:
-        from backend.utils.canonical_pipeline.guards import settling_required
-
-        from .helpers import _guard_speaker_lines
-
-        guarded_name = settling_required(
-            await _guard_speaker_lines(db, recording.id, diarization_label)
-        )
-
     if action.action == "create_new":
         if not action.new_speaker_name:
             raise HTTPException(
@@ -293,11 +283,8 @@ async def apply_voiceprint_action(
         new_gs = GlobalSpeaker(name=action.new_speaker_name, user_id=current_user.id)
         library_update = offer_linked_voiceprint(new_gs, rec_speaker, alpha=0.3)
         db.add(new_gs)
-        if guarded_name:
-            await db.flush()
-        else:
-            await db.commit()
-            await db.refresh(new_gs)
+        await db.commit()
+        await db.refresh(new_gs)
 
         rec_speaker.global_speaker_id = new_gs.id
         rec_speaker.name = new_gs.name

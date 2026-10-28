@@ -13,7 +13,7 @@ import {
 } from "react";
 import { ArrowDown, Radio } from "lucide-react";
 
-import type { InlineNote, NoteTarget } from "@/lib/notes/noteOutbox";
+import type { InlineNote, NoteSelection } from "@/lib/notes/noteOutbox";
 import {
   bodyNotesAmongLines,
   formatTimelineMs,
@@ -90,20 +90,6 @@ const speakerLabelOf = (segment: TranscriptSegment): string | null =>
   liveLabelOf(segment) ??
   (segment.settling_required && segment.speaker !== "UNKNOWN" ? segment.speaker : null);
 
-const namingAnchorForRun = (segments: readonly TranscriptSegment[], index: number): TranscriptSegment | undefined => {
-  const first = segments[index];
-  if (!lineIsSettling(first)) return first;
-
-  // A shared header may precede its naming anchor, but only within this
-  // marked speaker run. Its visual lock still belongs to the first line.
-  for (let next = index + 1; next < segments.length; next += 1) {
-    const candidate = segments[next];
-    if (candidate.settling_required !== true || candidate.speaker !== first.speaker) break;
-    if (candidate.locked === true) return candidate;
-  }
-  return undefined;
-};
-
 const NO_NAMES: Readonly<Record<string, string>> = {};
 
 interface LiveTranscriptPanelProps {
@@ -124,11 +110,11 @@ interface LiveTranscriptPanelProps {
    * Puts the note box's next note on a line, or on selected text; without it
    * lines have no menu and a selection no toolbar.
    */
-  onNoteOnLine?: (target: NoteTarget) => void;
+  onNoteOnLine?: (selection: NoteSelection) => void;
   /** Live label -> the name the user gave it; others read "Speaker <n>". */
   liveSpeakerNames?: Readonly<Record<string, string>>;
   /** Names a live speaker from its label chip; without it the chip is text. */
-  onRenameLiveSpeaker?: (label: string, name: string, segment?: TranscriptSegment) => Promise<void>;
+  onRenameLiveSpeaker?: (label: string, name: string) => Promise<void>;
   /** The People names the rename offers while typing. */
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
@@ -204,7 +190,6 @@ export default function LiveTranscriptPanel({
           showSourceLabel:
             sourceChannel !== null && sourceChannel !== previousChannel,
           speakerLabel: showSpeakerLabel ? speakerLabel : null,
-          namingAnchor: showSpeakerLabel ? namingAnchorForRun(segments, index) : undefined,
           sameSpeakerContinuation: segment.settling_required === true &&
             previous !== undefined && segment.speaker === previous.speaker,
           speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
@@ -364,7 +349,7 @@ export default function LiveTranscriptPanel({
               ) : (
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
-                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked, assignedName, namingAnchor,
+                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked, assignedName,
                     sameSpeakerContinuation }, index) => [
                     <li
                       key={key}
@@ -385,12 +370,7 @@ export default function LiveTranscriptPanel({
                             speakerLabel
                           }
                           locked={speakerLocked}
-                          onRename={onRenameLiveSpeaker && liveLabelOf(segment)
-                            ? (label, name) => segment.settling_required
-                              ? onRenameLiveSpeaker(label, name, namingAnchor)
-                              : onRenameLiveSpeaker(label, name)
-                            : undefined}
-                          disabledReason={segment.settling_required && !namingAnchor ? LINE_SETTLING_REASON : undefined}
+                          onRename={liveLabelOf(segment) ? onRenameLiveSpeaker : undefined}
                           loadPeopleNames={loadPeopleNames}
                         />
                       ) : null}
@@ -409,7 +389,6 @@ export default function LiveTranscriptPanel({
                           segmentId={getTranscriptSegmentKey(segment, index)}
                           startMs={segmentStartMs(segment)}
                           endMs={segmentEndMs(segment)}
-                          revision={segment.revision}
                           settlingRequired={segment.settling_required}
                           settling={lineIsSettling(segment)}
                           words={segment.words}

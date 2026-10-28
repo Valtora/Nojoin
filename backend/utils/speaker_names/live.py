@@ -47,40 +47,11 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
     """The label's longest turn so far, from the lines whose label has locked.
 
     A locked line keeps its label, so its turn is the voice the user meant; an
-    unlocked one may still move to another label. Settled captures accept any
-    non-empty locked turn; final name resolution applies its own coverage floor.
-    Other captures retain the legacy fallback to any turn when no locked turn
-    lasts ``MIN_COVERED_MS``. Unlabelled lines end a turn, as another voice's do.
+    unlocked one may still move to another label. With no locked line, or none
+    lasting ``MIN_COVERED_MS`` (a shorter span names nobody at the final pass),
+    the longest turn of any. Unlabelled lines end a turn, as another voice's do.
     """
-    from backend.utils.canonical_pipeline.constants import (
-        ACTIVE_UTTERANCE_STATES,
-        _load_transcript,
-    )
-    from backend.utils.canonical_pipeline.guards import (
-        LineActionConflict,
-        line_effectively_locked,
-        settling_required,
-    )
-    from backend.utils.canonical_pipeline.scope import _lock_active_lines
-
-    transcript = _load_transcript(session, recording_id, lock=True)
-    if settling_required(transcript):
-        active = _lock_active_lines(session, recording_id)
-        eligible = [
-            (row.speaker_label or _UNLABELLED, row.start_ms, row.end_ms)
-            if row.speaker_label != label or line_effectively_locked(row)
-            else (_UNLABELLED, row.start_ms, row.end_ms)
-            for row in active
-        ]
-        anchor = longest_turn(eligible, label)
-        if anchor is None:
-            if any(row.speaker_label == label for row in active):
-                raise LineActionConflict(
-                    "line_settling",
-                    "This speaker's lines are still settling. Try again once they lock.",
-                )
-            return None
-        return anchor
+    from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
     rows = session.execute(
         select(
@@ -111,37 +82,14 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
 
 
 def record_live_speaker_name(
-    session: Any,
-    recording_id: int,
-    label: str,
-    act: UserNameAct,
-    anchor_reference: tuple[str, int] | None = None,
+    session: Any, recording_id: int, label: str, act: UserNameAct
 ) -> SpeakerNameEvent | None:
     """Record the user's name for a live label; None when no line carries it.
 
     The row supersedes the label's previous live name, so only the newest one
     stands at the final pass. ``act.surface`` is ``live``.
     """
-    from backend.utils.canonical_pipeline.constants import _load_transcript
-    from backend.utils.canonical_pipeline.guards import (
-        LineActionConflict,
-        require_source_line,
-        settling_required,
-    )
-
-    transcript = _load_transcript(session, recording_id, lock=True)
-    anchor: Span | None
-    if anchor_reference is not None and settling_required(transcript):
-        source_row = require_source_line(session, transcript, *anchor_reference)
-        if source_row is None or source_row.speaker_label != label:
-            raise LineActionConflict(
-                "line_stale", "This speaker's line changed. Reload it and try again."
-            )
-        anchor = (source_row.start_ms, source_row.end_ms)
-        if anchor[1] <= anchor[0]:
-            anchor = live_label_anchor(session, recording_id, label)
-    else:
-        anchor = live_label_anchor(session, recording_id, label)
+    anchor = live_label_anchor(session, recording_id, label)
     if anchor is None:
         return None
     previous = session.execute(

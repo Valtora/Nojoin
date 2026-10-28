@@ -1,6 +1,5 @@
-"""Human actions share one fenced policy and reject broad scopes atomically."""
+"""Line actions on settling recordings: edits freeze lines, words stay protected."""
 
-import copy
 from typing import Any
 from uuid import uuid4
 
@@ -8,21 +7,14 @@ import pytest
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
+from backend.models.live_settling_public import public_settling_fields
 from backend.models.pipeline import (
     ProcessingRunKind,
-    RecordingSpeakerAlias,
-    SpeakerCorrectionScope,
     TranscriptUtterance,
-    TranscriptUtteranceEvent,
     TranscriptUtteranceState,
 )
-from backend.models.speaker import RecordingSpeaker
-from backend.models.speaker_name_event import SpeakerNameEvent
-from backend.models.timeline_note import TimelineNoteKind
-from backend.models.timeline_note_public import TimelineNoteCreate, TimelineNoteUpdate
 from backend.models.transcript import Transcript
-from backend.services.timeline_note_anchors import guard_note_anchor
-from backend.tests.test_live_settling_publication import _seed
+from backend.tests.test_live_settling_publication import _active, _request, _seed
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
 )
@@ -37,13 +29,12 @@ from backend.utils.canonical_pipeline import (
     update_utterance_speaker,
     update_utterance_text,
 )
-from backend.utils.canonical_pipeline.guards import (
-    LineActionConflict,
-    settling_required,
+from backend.utils.canonical_pipeline.guards import settling_required
+from backend.utils.canonical_pipeline.live_settling import publish_live_settling
+from backend.utils.canonical_pipeline.live_settling_projection import (
+    mutable_row,
+    row_words,
 )
-from backend.utils.canonical_pipeline.live_settling_projection import row_words
-from backend.utils.speaker_names.events import UserNameAct
-from backend.utils.speaker_names.live import record_live_speaker_name
 
 
 def _lines(
@@ -102,78 +93,135 @@ def _lines(
     return recording_id, ids
 
 
-def _snapshot(session: Session, recording_id: int) -> dict[str, Any]:
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording_id)
-    ).one()
-    return copy.deepcopy(
-        {
-            "transcript": (
-                transcript.text,
-                transcript.segments,
-            ),
-            "rows": [
-                (
-                    row.public_id,
-                    row.text,
-                    row.speaker_label,
-                    row.revision,
-                    row.state,
-                    row.confidence_payload,
-                )
-                for row in session.exec(
-                    select(TranscriptUtterance).where(
-                        TranscriptUtterance.recording_id == recording_id
-                    )
-                ).all()
-            ],
-            "events": len(session.exec(select(TranscriptUtteranceEvent)).all()),
-            "speakers": len(session.exec(select(RecordingSpeaker)).all()),
-            "aliases": len(session.exec(select(RecordingSpeakerAlias)).all()),
-            "names": len(session.exec(select(SpeakerNameEvent)).all()),
-        }
-    )
-
-
-@pytest.mark.parametrize("scope", list(SpeakerCorrectionScope))
-def test_speaker_scope_preflights_every_target_before_creating_a_speaker(
-    settling_engine: Engine, scope: SpeakerCorrectionScope
+@pytest.mark.parametrize("action", ["text", "speaker", "split"])
+def test_an_action_on_a_settling_line_freezes_it_against_later_decodes(
+    settling_engine: Engine, action: str
 ) -> None:
     recording_id, ids = _lines(settling_engine)
     with Session(settling_engine) as session:
-        before = _snapshot(session, recording_id)
-        anchor = ids[1] if scope == SpeakerCorrectionScope.UTTERANCE_ONLY else ids[0]
-        with pytest.raises(LineActionConflict, match="settling"):
+        row = session.exec(
+            select(TranscriptUtterance).where(TranscriptUtterance.public_id == ids[1])
+        ).one()
+        assert mutable_row(row)
+        if action == "text":
+            frozen = [
+                update_utterance_text(
+                    session,
+                    recording_id=recording_id,
+                    utterance_public_id=ids[1],
+                    text="Human wording.",
+                )
+            ]
+        elif action == "speaker":
+            frozen = [
+                update_utterance_speaker(
+                    session,
+                    recording_id=recording_id,
+                    utterance_public_id=ids[1],
+                    new_speaker_name="Alex",
+                )[0]
+            ]
+        else:
+            frozen = split_utterance(
+                session,
+                SplitCommand(
+                    recording_id, ids[1], row_words(row)[1]["id"], row.revision
+                ),
+            )
+        session.commit()
+        before = [(line.public_id, line.text, line.speaker_label) for line in frozen]
+        assert not any(mutable_row(line) for line in frozen)
+        # It reads as locked too, so the page stops showing its words as settling.
+        for line in frozen:
+            public = public_settling_fields(line.confidence_payload)
+            assert public["locked"] is True
+            assert all(word["locked"] for word in public["words"])
+        request = _request(session, recording_id, 0, end_ms=4000)
+        words = [{"word": "Machine", "start_ms": 2100, "end_ms": 2400}]
+        publish_live_settling(session, request=request, words=words)
+        session.commit()
+        for line in frozen:
+            session.refresh(line)
+        assert [
+            (line.public_id, line.text, line.speaker_label) for line in frozen
+        ] == before
+
+
+@pytest.mark.parametrize("action", ["text", "speaker"])
+def test_freezing_a_later_open_line_keeps_the_earlier_one_settling(
+    settling_engine: Engine, action: str
+) -> None:
+    recording_id = _seed(settling_engine)
+    words = [
+        {"word": "Alpha", "start_ms": 100, "end_ms": 400},
+        {"word": " beta.", "start_ms": 500, "end_ms": 900},
+        {"word": " Gamma", "start_ms": 3000, "end_ms": 3400},
+        {"word": " delta.", "start_ms": 3500, "end_ms": 3900},
+    ]
+    with Session(settling_engine) as session:
+        publish_live_settling(
+            session,
+            request=_request(session, recording_id, 0, end_ms=4000),
+            words=words,
+        )
+        session.commit()
+        first, second = _active(session, recording_id)
+        assert (first.text, second.text) == ("Alpha beta.", "Gamma delta.")
+        if action == "text":
+            update_utterance_text(
+                session,
+                recording_id=recording_id,
+                utterance_public_id=second.public_id,
+                text="Gamma delta, corrected.",
+            )
+        else:
             update_utterance_speaker(
                 session,
                 recording_id=recording_id,
-                utterance_public_id=anchor,
-                new_speaker_name="Brand new person",
-                scope=scope,
+                utterance_public_id=second.public_id,
+                new_speaker_name="Alex",
             )
         session.commit()
-        assert _snapshot(session, recording_id) == before
+        publish_live_settling(
+            session,
+            request=_request(session, recording_id, 1, end_ms=4200),
+            words=words,
+        )
+        session.commit()
+        lines = _active(session, recording_id)
+        assert first.public_id in [line.public_id for line in lines]
+        assert lines[0].text == "Alpha beta."
+        assert mutable_row(lines[0])
 
 
-@pytest.mark.parametrize("full_replace", [False, True])
-def test_bulk_rejection_survives_a_caller_catching_and_committing(
-    settling_engine: Engine, full_replace: bool
+@pytest.mark.parametrize("action", ["text", "speaker"])
+def test_an_edit_to_a_line_a_settling_pass_superseded_is_refused(
+    settling_engine: Engine, action: str
 ) -> None:
-    recording_id, _ids = _lines(settling_engine)
+    recording_id, ids = _lines(settling_engine)
     with Session(settling_engine) as session:
-        before = _snapshot(session, recording_id)
-        segments = serialize_canonical_utterances(session, recording_id)
-        for segment in segments:
-            segment["text"] = "Changed"
-            segment["text_manually_edited"] = True
-            if full_replace:
-                segment["id"] = str(uuid4())
-        with pytest.raises(LineActionConflict, match="settling"):
-            apply_compatibility_segment_replace(
-                session, recording_id=recording_id, segments=segments
-            )
+        row = session.exec(
+            select(TranscriptUtterance).where(TranscriptUtterance.public_id == ids[1])
+        ).one()
+        row.state = TranscriptUtteranceState.SUPERSEDED
         session.commit()
-        assert _snapshot(session, recording_id) == before
+        with pytest.raises(RuntimeError, match="This line changed"):
+            if action == "text":
+                update_utterance_text(
+                    session,
+                    recording_id=recording_id,
+                    utterance_public_id=ids[1],
+                    text="Lost wording.",
+                    expected_revision=row.revision,
+                )
+            else:
+                update_utterance_speaker(
+                    session,
+                    recording_id=recording_id,
+                    utterance_public_id=ids[1],
+                    new_speaker_name="Alex",
+                    expected_revision=row.revision,
+                )
 
 
 def test_locked_bulk_edit_preserves_word_protection(
@@ -195,39 +243,6 @@ def test_locked_bulk_edit_preserves_word_protection(
         assert rows[0].text == "Human correction."
         assert row_words(rows[0])[0]["start_ms"] is None
         assert rows[1].text == "First words."
-
-
-def test_bulk_unchanged_unlocked_line_cannot_be_promoted_by_omitting_provisional(
-    settling_engine: Engine,
-) -> None:
-    recording_id, _ids = _lines(settling_engine)
-    with Session(settling_engine) as session:
-        before = _snapshot(session, recording_id)
-        segments = serialize_canonical_utterances(session, recording_id)
-        for segment in segments:
-            segment.pop("provisional", None)
-        with pytest.raises(LineActionConflict, match="settling"):
-            apply_compatibility_segment_replace(
-                session, recording_id=recording_id, segments=segments
-            )
-        session.commit()
-        assert _snapshot(session, recording_id) == before
-
-
-def test_bulk_cannot_bypass_word_split_by_replacing_locked_ids(
-    settling_engine: Engine,
-) -> None:
-    recording_id, _ids = _lines(settling_engine, second_locked=True)
-    with Session(settling_engine) as session:
-        before = _snapshot(session, recording_id)
-        segments = serialize_canonical_utterances(session, recording_id)
-        segments[0]["id"] = str(uuid4())
-        with pytest.raises(LineActionConflict, match="split action"):
-            apply_compatibility_segment_replace(
-                session, recording_id=recording_id, segments=segments
-            )
-        session.commit()
-        assert _snapshot(session, recording_id) == before
 
 
 def test_split_preserves_words_and_emits_delta_then_rejects_stale_parent(
@@ -255,14 +270,15 @@ def test_split_preserves_words_and_emits_delta_then_rejects_stale_parent(
         )
         assert ids[0] in tombstones
         assert {child.public_id for child in children} <= {line["id"] for line in delta}
-        with pytest.raises(LineActionConflict, match="changed"):
+        with pytest.raises(RuntimeError, match="changed"):
             split_utterance(session, command)
-        with pytest.raises(LineActionConflict, match="changed"):
+        with pytest.raises(RuntimeError, match="revision conflict"):
             update_utterance_text(
                 session,
                 recording_id=recording_id,
                 utterance_public_id=ids[0],
                 text="Invisible edit",
+                expected_revision=command.expected_revision,
             )
 
 
@@ -288,72 +304,10 @@ def test_human_text_is_one_untimed_atom_and_cannot_be_split(
             )
             == 2
         )
-        with pytest.raises(LineActionConflict):
+        with pytest.raises(RuntimeError):
             split_utterance(
                 session,
                 SplitCommand(recording_id, row.public_id, words[0]["id"], row.revision),
-            )
-
-
-def test_selection_guards_words_but_drag_and_typed_notes_remain_available(
-    settling_engine: Engine,
-) -> None:
-    recording_id, ids = _lines(settling_engine)
-    with Session(settling_engine) as session:
-        selection = TimelineNoteCreate(
-            kind=TimelineNoteKind.SELECTION,
-            body="note",
-            start_ms=0,
-            end_ms=3500,
-            quoted_text="First words.",
-        )
-        with pytest.raises(LineActionConflict, match="settling"):
-            guard_note_anchor(session, recording_id, selection)
-        # Timeline moves no longer require a line lock; source selections do.
-        guard_note_anchor(
-            session,
-            recording_id,
-            TimelineNoteUpdate(
-                expected_revision=1,
-                anchor_ms=2000,
-                target_utterance_id=ids[1],
-                target_utterance_revision=1,
-            ),
-        )
-        for kind, kwargs in (
-            (TimelineNoteKind.HEAD, {}),
-            (TimelineNoteKind.TAIL, {}),
-            (TimelineNoteKind.POINT, {"anchor_ms": 2200}),
-        ):
-            guard_note_anchor(
-                session,
-                recording_id,
-                TimelineNoteCreate(kind=kind, body="typed", **kwargs),
-            )
-        guard_note_anchor(
-            session,
-            recording_id,
-            TimelineNoteCreate(
-                kind=TimelineNoteKind.SELECTION,
-                body="locked",
-                start_ms=0,
-                end_ms=1500,
-                quoted_text="First words.",
-                source_utterances=[{"id": ids[0], "revision": 1}],
-            ),
-        )
-        with pytest.raises(LineActionConflict, match="changed"):
-            guard_note_anchor(
-                session,
-                recording_id,
-                TimelineNoteCreate(
-                    kind=TimelineNoteKind.SELECTION,
-                    body="stale",
-                    start_ms=0,
-                    end_ms=1500,
-                    quoted_text="First words.",
-                    source_utterances=[{"id": ids[0], "revision": 99}],
-                ),
             )
 
 
@@ -396,32 +350,6 @@ def test_clearing_manual_protection_updates_durable_projection(
         assert projected["text_manually_edited"] is False
 
 
-def test_naming_uses_only_fully_locked_turns_and_never_falls_back(
-    settling_engine: Engine,
-) -> None:
-    recording_id, ids = _lines(settling_engine)
-    with Session(settling_engine) as session:
-        act = UserNameAct("Alex", None, None, "live")
-        event = record_live_speaker_name(
-            session, recording_id, "LIVE_PROVISIONAL_1", act
-        )
-        assert (event.anchor_start_ms, event.anchor_end_ms) == (0, 1500)
-        with pytest.raises(LineActionConflict, match="settling"):
-            record_live_speaker_name(
-                session, recording_id, "LIVE_PROVISIONAL_1", act, (ids[1], 1)
-            )
-        row = session.exec(
-            select(TranscriptUtterance).where(TranscriptUtterance.public_id == ids[0])
-        ).one()
-        payload = copy.deepcopy(row.confidence_payload)
-        payload["live_text_settling"]["line_locked"] = False
-        row.confidence_payload = payload
-        session.add(row)
-        session.flush()
-        with pytest.raises(LineActionConflict, match="settling"):
-            record_live_speaker_name(session, recording_id, "LIVE_PROVISIONAL_1", act)
-
-
 def test_unmarked_and_never_settled_cpu_lines_keep_existing_actions(
     settling_engine: Engine,
 ) -> None:
@@ -440,17 +368,6 @@ def test_unmarked_and_never_settled_cpu_lines_keep_existing_actions(
                 text="Legacy edit",
             )
             assert len(row_words(row)) == 2
-            guard_note_anchor(
-                session,
-                recording_id,
-                TimelineNoteCreate(
-                    kind=TimelineNoteKind.SELECTION,
-                    body="legacy",
-                    start_ms=0,
-                    end_ms=3500,
-                    quoted_text="legacy",
-                ),
-            )
 
 
 def test_sticky_final_rows_remain_editable_after_runtime_metadata_is_removed(

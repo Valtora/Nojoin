@@ -5,7 +5,5 @@
   "note_deleted_elsewhere",
   "revision_conflict",
   "note_id_in_use",
-  "note_not_movable",
-  "line_settling",
-  "line_stale"
+  "note_not_movable"
 ]

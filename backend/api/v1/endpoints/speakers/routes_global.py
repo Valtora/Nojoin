@@ -63,12 +63,12 @@ from .helpers import (
     SpeakerSplitRequest,
     _canonical_transcript_writes_enabled,
     _carry_drift_refusals,
-    _guard_linked_speakers,
     _lift_drift_refusals,
     _load_segments_for_speaker_work,
     _merge_local_speakers,
     _persist_segments_for_speaker_work,
     _require_recordings_support_speaker_mutations,
+    _settling_recordings,
 )
 from .router import router
 from .split_voiceprints import (
@@ -255,7 +255,7 @@ async def merge_speakers(
         db,
         [rs.recording_id for rs in source_recording_speakers],
     )
-    marked_recordings = await _guard_linked_speakers(db, source_recording_speakers)
+    marked_recordings = await _settling_recordings(db, source_recording_speakers)
 
     for rs in source_recording_speakers:
         # Check if target already has a speaker in this recording

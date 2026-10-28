@@ -1,7 +1,7 @@
 "use client";
 
-import { noteTargetForLine } from "@/lib/notes/lineSelection";
-import type { NoteTarget } from "@/lib/notes/noteOutbox";
+import { lineSelection } from "@/lib/notes/lineSelection";
+import type { NoteSelection } from "@/lib/notes/noteOutbox";
 import { formatTimelineMs, segmentStartMs } from "@/lib/notes/placement";
 import { lineActionsFor } from "@/lib/transcript/actions";
 import { lineIsSettling, LINE_SETTLING_REASON, splitWords } from "@/lib/transcript/settling";
@@ -16,18 +16,20 @@ interface LiveLineMenuProps {
   speakers?: readonly RecordingSpeaker[];
   segment: TranscriptSegment;
   /** Puts the note box's next note on the line. */
-  onNoteOnLine: (selection: NoteTarget) => void;
+  onNoteOnLine: (selection: NoteSelection) => void;
 }
 
 /**
- * Corrections wait for marked lines to lock. Timeline notes stay available;
- * unmarked recordings retain the note-only menu with its whole-line quote.
+ * The live view's ⋯ menu on a line. Every line can take the note box's next
+ * note, quoting the line once its words lock. Lines of a recording using word
+ * settling also take corrections, speaker assignment and word splits, open or
+ * locked: a change on an open line freezes it against later decodes.
  */
 export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers }: LiveLineMenuProps) {
   const [editing, setEditing] = useState<{
     kind: LiveEditKind; anchor: HTMLElement; segment: TranscriptSegment;
   } | null>(null);
-  const selection = noteTargetForLine(segment);
+  const selection = lineSelection(segment);
   const canEdit = !!handlers && segment.settling_required === true && !!segment.id;
   const settling = lineIsSettling(segment);
   const items = lineActionsFor({
@@ -37,18 +39,33 @@ export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers
     provisional: true,
     canPlay: false,
     settlingRequired: segment.settling_required,
-    disabledReason: settling ? LINE_SETTLING_REASON : undefined,
+    noteDisabledReason: settling ? LINE_SETTLING_REASON : undefined,
     canSplit: canEdit && splitWords(segment).length > 0,
   }).map((action) => ({
     ...action,
     onSelect: (anchor: HTMLButtonElement) => {
-      if (action.id === "note" && selection) onNoteOnLine(selection);
-      if (settling) return;
+      if (action.id === "note") {
+        if (selection) onNoteOnLine(selection);
+        return;
+      }
       if (action.id === "editText" || action.id === "changeSpeaker" || action.id === "split") {
         setEditing({ kind: action.id, anchor, segment });
       }
     },
   }));
+  // A save is sent against the line as the editor opened it. When it fails,
+  // most often because a settling pass changed the line meanwhile, the editor
+  // moves to the line as it is now and keeps what was typed: Save again
+  // applies it there.
+  const rebase = (saved: boolean) => {
+    if (!saved) setEditing((open) => open && { ...open, segment });
+    return saved;
+  };
+  const editorHandlers: LiveLineHandlers | undefined = handlers && {
+    editText: async (line, text) => rebase(await handlers.editText(line, text)),
+    changeSpeaker: async (line, assignment) => rebase(await handlers.changeSpeaker(line, assignment)),
+    split: async (line, wordId) => rebase(await handlers.split(line, wordId)),
+  };
 
   return (
     <>
@@ -57,9 +74,9 @@ export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers
       items={items}
       triggerClassName="-my-0.5 h-6 w-6 shrink-0 pointer-coarse:-my-2.5"
     />
-    {editing && handlers && !settling ? <LiveLineEditor
+    {editing && editorHandlers ? <LiveLineEditor
       key={`${editing.kind}-${editing.segment.id}`} kind={editing.kind} segment={editing.segment} anchor={editing.anchor}
-      handlers={handlers} speakers={speakers} onClose={() => { setEditing(null); editing.anchor.focus(); }}
+      handlers={editorHandlers} speakers={speakers} onClose={() => { setEditing(null); editing.anchor.focus(); }}
     /> : null}
     </>
   );

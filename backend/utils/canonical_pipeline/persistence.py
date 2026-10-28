@@ -2,11 +2,7 @@
 
 from .assignment import _resolve_recording_speaker_for_value, _state_for_segment
 from .constants import *
-from .guards import (
-    protect_text_replacement,
-    require_compatibility_lines,
-    settling_required,
-)
+from .guards import freeze_live_line, protect_text_replacement, settling_required
 from .live_compatibility import capture_segment_sort_key
 from .projection_segments import _build_projection_segment
 from .public_ids import public_ids_for_write
@@ -250,7 +246,6 @@ def apply_compatibility_segment_replace(
         return []
 
     active_utterances = _lock_active_lines(session, recording_id)
-    require_compatibility_lines(transcript, active_utterances, list(segments))
     active_by_public_id = {
         utterance.public_id: utterance for utterance in active_utterances
     }
@@ -423,6 +418,7 @@ def apply_compatibility_segment_replace(
                 utterance.speaker_label = effective_speaker_label
                 utterance.manual_text_locked = effective_manual_text_locked
                 utterance.manual_speaker_locked = effective_manual_speaker_locked
+                freeze_live_line(utterance)
                 utterance.text_last_edit_source = effective_text_edit_source
                 utterance.speaker_last_edit_source = effective_speaker_edit_source
                 utterance.revision += 1

@@ -16,7 +16,6 @@ from backend.models.pipeline import (
     TranscriptUtteranceState,
 )
 from backend.models.recording import Recording, RecordingStatus
-from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.tests.canonical_engine import _recording, _transcript
 from backend.tests.canonical_engine import (
@@ -36,8 +35,6 @@ from backend.utils.canonical_pipeline import (
     update_utterance_text,
 )
 from backend.utils.canonical_pipeline.constants import _load_transcript
-from backend.utils.canonical_pipeline.guards import LineActionConflict
-from backend.utils.canonical_pipeline.queries import list_active_utterances
 from backend.utils.canonical_pipeline.split import SplitCommand, split_utterance
 from backend.utils.config_manager import config_manager
 from backend.utils.speaker_names.durability import (
@@ -45,7 +42,6 @@ from backend.utils.speaker_names.durability import (
     restore_name_anchors,
     snapshot_name_anchors,
 )
-from backend.utils.speaker_names.review import dismiss_pending_name
 from backend.utils.transcript_settling import durable_settling_state
 from backend.worker.tasks.final_asr import mark_transcript_failed
 
@@ -417,43 +413,6 @@ def test_actual_locked_line_actions_survive_final_publication(
             assert [row["revision"] for row in after] == [
                 row["revision"] for row in before
             ]
-
-
-@pytest.mark.parametrize("marked", [False, True])
-@pytest.mark.parametrize("locked", [False, True])
-def test_name_dismissal_guards_its_source_before_identity_changes(
-    publication_engine: Engine,
-    marked: bool,
-    locked: bool,
-) -> None:
-    with Session(publication_engine) as session:
-        recording_id = _seed(session, marked)
-        speaker = RecordingSpeaker(
-            recording_id=recording_id,
-            diarization_label="LIVE_01",
-            name="Speaker 1",
-            local_name="Alex",
-            name_source="llm",
-        )
-        session.add(speaker)
-        session.flush()
-        for line in list_active_utterances(session, recording_id):
-            line.speaker_label = "LIVE_01"
-            line.recording_speaker_id = speaker.id
-            line.confidence_payload = {
-                **(line.confidence_payload or {}),
-                "live_text_settling": {"line_locked": locked},
-            }
-            session.add(line)
-        session.commit()
-        if marked and not locked:
-            with pytest.raises(LineActionConflict, match="still settling"):
-                dismiss_pending_name(session, speaker, None)
-            assert speaker.local_name == "Alex"
-            assert session.exec(select(SpeakerNameEvent)).all() == []
-        else:
-            assert dismiss_pending_name(session, speaker, None) == "Speaker 1"
-            assert session.exec(select(SpeakerNameEvent)).one().kind == "dismiss"
 
 
 def test_reprocess_backfills_archived_human_work_before_refreshing_projection(

@@ -467,19 +467,7 @@ export interface NoteFileRemoval {
   note: TimelineNote | null;
 }
 
-export interface TranscriptSourceReference {
-  id: string;
-  revision: number;
-  /** Exact words selected on a recording using word settling. */
-  word_ids?: string[];
-  /** Complete captured token wording; a partial quote is not word evidence. */
-  word_texts?: Record<string, string>;
-}
-
 export interface TimelineNoteCreate {
-  source_utterances?: TranscriptSourceReference[];
-  target_utterance_id?: string;
-  target_utterance_revision?: number;
   /** Chosen by the client, so a retried create returns the first note. */
   id?: string;
   /** Chosen by the client; kept on the note, and on its tombstone once deleted. */
@@ -487,15 +475,12 @@ export interface TimelineNoteCreate {
   kind: TimelineNoteKind;
   body: string;
   anchor_ms?: number;
-  /** Optional captured line span on a point note; anchor_ms equals start_ms. */
   start_ms?: number;
   end_ms?: number;
   quoted_text?: string;
 }
 
 export interface TimelineNoteUpdate {
-  target_utterance_id?: string;
-  target_utterance_revision?: number;
   expected_revision: number;
   write_token?: string;
   body?: string;
@@ -509,8 +494,6 @@ export interface TimelineNoteUpdate {
  * `backend/tests/fixtures/timeline_note_error_codes.json`.
  */
 export const TIMELINE_NOTE_ERROR_CODES = [
-  "line_settling",
-  "line_stale",
   "recording_not_found",
   "note_not_found",
   "note_deleted_by_you",

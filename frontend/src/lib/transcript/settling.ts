@@ -1,4 +1,4 @@
-import type { TranscriptSegment, TranscriptSourceReference } from "@/types";
+import type { TranscriptSegment } from "@/types";
 
 export const LINE_SETTLING_REASON = "This line is still settling.";
 
@@ -6,12 +6,6 @@ export const LINE_SETTLING_REASON = "This line is still settling.";
 export const lineIsSettling = (segment: TranscriptSegment): boolean =>
   segment.settling_required === true &&
   (segment.locked === false || (segment.provisional === true && segment.locked !== true));
-
-/** A command names its source revision only on recordings using the new policy. */
-export const sourceReference = (segment: TranscriptSegment): TranscriptSourceReference | null =>
-  segment.settling_required && segment.id && segment.revision !== undefined
-    ? { id: segment.id, revision: segment.revision }
-    : null;
 
 /** Split boundaries are word identities, never whitespace guesses or interpolated times. */
 export const splitWords = (segment: TranscriptSegment) =>

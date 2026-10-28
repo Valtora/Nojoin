@@ -9,7 +9,7 @@ note and whatever transcript exists at the time.
 
 Four kinds, distinguished by which anchor columns are set:
 
-* ``point``: one moment, ``anchor_ms``, optionally retaining a line's time span.
+* ``point``: one moment, ``anchor_ms``.
 * ``selection``: a span of words, ``start_ms``/``end_ms``, with
   ``quoted_text`` the words as the user saw them. The quote is a snapshot and is
   never re-resolved against a later transcript.
@@ -58,9 +58,7 @@ TIMELINE_NOTE_KIND_CHECK = "kind IN ('point', 'selection', 'head', 'tail')"
 # constraint error.
 TIMELINE_NOTE_SHAPE_CHECK = (
     "(kind = 'point' AND anchor_ms IS NOT NULL AND anchor_ms >= 0"
-    " AND quoted_text IS NULL AND ((start_ms IS NULL AND end_ms IS NULL)"
-    " OR (start_ms IS NOT NULL AND end_ms IS NOT NULL"
-    " AND start_ms = anchor_ms AND start_ms <= end_ms)))"
+    " AND start_ms IS NULL AND end_ms IS NULL AND quoted_text IS NULL)"
     " OR (kind = 'selection' AND anchor_ms IS NULL"
     " AND start_ms IS NOT NULL AND end_ms IS NOT NULL"
     " AND start_ms >= 0 AND start_ms < end_ms AND quoted_text IS NOT NULL)"
