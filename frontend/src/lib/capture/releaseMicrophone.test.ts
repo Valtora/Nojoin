@@ -295,6 +295,18 @@ describe("releasing only the microphone while paused", () => {
       message: expect.stringMatching(/default/i),
     }));
   });
+  it("keeps following the system default when no microphone was chosen", async () => {
+    environment.mode = "microphone_only";
+    const capture = controller();
+    capture.updateSettings({ releaseMicrophoneOnPause: true, microphoneDeviceId: null });
+    await capture.start("Meeting");
+    await capture.pause();
+    // The default track reports a concrete device; Resume must not pin it.
+    expect(microphone.getSettings().deviceId).toBe("mic-a");
+    await capture.resume();
+    expect(getUserMedia.mock.calls[1][0].audio.deviceId).toBeUndefined();
+    expect(capture.getState().status).toBe("recording");
+  });
   it.each(["stop", "cancel"] as const)("%s while released never asks for another microphone", async (action) => {
     const { capture } = await start();
     await capture.pause();

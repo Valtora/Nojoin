@@ -10,18 +10,12 @@ export interface PausedMicrophoneRuntime {
   mixer: CaptureMixer;
   captureReport: CaptureSourceReportSnapshot;
   microphoneReleased?: boolean;
-  microphoneDeviceId?: string | null;
 }
 
 /** Call only after the recorder has flushed its pause tail. */
 export const releasePausedMicrophone = (runtime: PausedMicrophoneRuntime, enabled: boolean) => {
   if (!enabled || runtime.microphoneReleased) {
     return;
-  }
-  // Retain this capture's input until another microphone is explicitly selected.
-  if (runtime.microphoneDeviceId === undefined) {
-    runtime.microphoneDeviceId = runtime.captureReport.requested_microphone_device_id ??
-      runtime.sources.microphoneStream.getAudioTracks()[0]?.getSettings?.().deviceId ?? null;
   }
   runtime.mixer.detachMicrophone();
   runtime.sources.microphoneStream.getTracks().forEach((track) => track.stop());
@@ -41,7 +35,7 @@ export const reconnectPausedMicrophone = async (
   isCurrent: () => boolean,
 ): Promise<boolean> => {
   const { stream, usedDefault } = await reopenMicrophone({
-    microphoneDeviceId: runtime.microphoneDeviceId ?? null,
+    microphoneDeviceId: settings.microphoneDeviceId,
     settings,
   });
   try {
@@ -53,9 +47,9 @@ export const reconnectPausedMicrophone = async (
     runtime.captureReport = {
       ...runtime.captureReport,
       ...describeCaptureSettings(settings),
-      requested_microphone_device_id: runtime.microphoneDeviceId ?? null,
+      requested_microphone_device_id: settings.microphoneDeviceId,
       requested_microphone_label:
-        runtime.captureReport.requested_microphone_device_id === runtime.microphoneDeviceId
+        runtime.captureReport.requested_microphone_device_id === settings.microphoneDeviceId
           ? runtime.captureReport.requested_microphone_label : null,
       browser_microphone_track: describeTrack(stream.getAudioTracks()[0]),
       notes: ["reopened_microphone_after_pause", ...(usedDefault ? ["microphone_default_fallback"] : [])],

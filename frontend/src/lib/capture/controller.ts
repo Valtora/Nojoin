@@ -650,11 +650,6 @@ export class CaptureController {
     };
 
     writeCaptureSettings(nextSettings);
-    if (patch.microphoneDeviceId !== undefined) {
-      if (this.runtime) {
-        this.runtime.microphoneDeviceId = nextSettings.microphoneDeviceId;
-      }
-    }
     this.runtime?.mixer.applySettings({
       systemGain: nextSettings.systemGain,
       microphoneGain: nextSettings.microphoneGain,
