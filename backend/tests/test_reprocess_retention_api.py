@@ -262,3 +262,46 @@ def test_notes_and_speaker_inference_wait_for_a_running_reprocess(
         transcript = _load_transcript(session, recording_id)
         assert recording.status == RecordingStatus.QUEUED
         assert transcript.notes_status == "completed"
+
+
+def test_the_polled_read_leaves_a_retained_transcript_to_the_utterances_read(
+    publication_database: Database,
+) -> None:
+    engine, recording_id, _ = publication_database
+    _seed_previous(engine, recording_id)
+    asyncio.run(_reset(engine, recording_id))
+
+    async def read() -> tuple[Any, Any]:
+        async_engine = create_async_engine(
+            engine.url.set(drivername="postgresql+asyncpg"),
+            connect_args={"server_settings": {"search_path": SCHEMA}},
+        )
+        try:
+            async with AsyncSession(async_engine, expire_on_commit=False) as session:
+                recording = await session.get(Recording, recording_id)
+                owner = User(
+                    id=recording.user_id, username="fence-owner", hashed_password="x"
+                )
+                detail = await routes_query.get_recording(
+                    recording.public_id,
+                    Response(),
+                    if_none_match=None,
+                    db=session,
+                    current_user=owner,
+                )
+                utterances = await routes_utterances.get_transcript_utterances(
+                    recording.public_id,
+                    after_revision=None,
+                    db=session,
+                    current_user=owner,
+                )
+                return detail, utterances
+        finally:
+            await async_engine.dispose()
+
+    detail, utterances = asyncio.run(read())
+    # Polled every few seconds while in flight: a long meeting's transcript
+    # would be megabytes on each poll.
+    assert detail.previous_publication_available is True
+    assert (detail.transcript.text, detail.transcript.segments) == ("", [])
+    assert sorted(line.text for line in utterances.utterances) == ["first", "last", "middle"]

@@ -225,6 +225,10 @@ export default function TranscriptSection({
     transcriptStatus === "error" && recording.status === RecordingStatus.ERROR
       ? recording.transcript?.error_message || "Transcription failed."
       : null;
+  // An in-flight recording's polls carry no transcript, so a retained one
+  // first paints from its utterances read.
+  const loadingRetained = hasRetainedPublication && !transcriptIsAuthoritative;
+  const waitingText = loadingRetained ? "Loading the transcript." : "No transcript available yet.";
 
   return (
     <div
@@ -270,7 +274,7 @@ export default function TranscriptSection({
             live={live}
             readOnly={readOnly}
             emptyStateTitle={transcriptionError ? "" : transcriptStatus === "completed"
-              ? "No speech was detected in this recording." : "No transcript available yet."}
+              ? "No speech was detected in this recording." : waitingText}
             recordingId={recording.id}
             segments={transcriptSegments}
             currentTime={currentTime}
@@ -329,7 +333,7 @@ export default function TranscriptSection({
             </p>
           ) : (
             <p className="text-contrast-helper italic">
-              No transcript available yet.
+              {waitingText}
             </p>
           )}
         </div>

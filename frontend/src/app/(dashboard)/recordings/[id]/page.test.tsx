@@ -441,6 +441,22 @@ describe("RecordingPage (detail)", () => {
     expect(setActivePanel).not.toHaveBeenCalledWith("transcript");
   });
 
+  it("paints a retained transcript from its first utterances read, saying it loads until then", async () => {
+    // The in-flight poll carries no transcript, as the API sends it.
+    const retained = buildRecording({ status: RecordingStatus.PROCESSING, previous_publication_available: true });
+    retained.transcript = { ...retained.transcript!, transcript_status: "pending", text: "", segments: [] };
+    getRecording.mockResolvedValue(retained);
+    let answer!: (list: TranscriptUtteranceList) => void;
+    getTranscriptUtterances.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    renderPage();
+    expect(await screen.findByText("Loading the transcript.")).toBeInTheDocument();
+    expect(screen.queryByText("No transcript available yet.")).toBeNull();
+    await act(async () => answer(buildUtteranceList({ utterances: [
+      { id: "u0", start: 0, end: 2, text: "Kept words", speaker: "SPEAKER_00", revision: 1 },
+    ] })));
+    expect(screen.getByTestId("transcript-view")).toHaveTextContent("segments:1");
+  });
+
   it("shows retained Meeting Edge guidance and focus read-only beside processing progress on reload", async () => {
     sidePanelsCollapsed = false;
     sideTab = "meeting-edge";

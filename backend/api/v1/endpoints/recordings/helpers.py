@@ -56,7 +56,6 @@ from backend.utils.recording_storage import (
 )
 from backend.utils.reprocess_publication import (
     mark_reprocess_pending,
-    reprocess_publication_complete,
     reprocess_publication_pending,
 )
 from backend.utils.stored_paths import confined_recording_path
@@ -192,13 +191,9 @@ async def _mark_recording_upload_error(
 
 
 def _should_hide_in_flight_transcript_content(recording: Recording) -> bool:
-    transcript = recording.transcript
-    # The candidate can publish before optional notes finish. Its new result
-    # remains readable once the pending marker has been retired atomically.
-    return recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES and not (
-        reprocess_publication_pending(transcript)
-        or reprocess_publication_complete(transcript)
-    )
+    # A retained or newly published reprocess result is read from the
+    # utterances endpoint: carrying it here would resend it on every poll.
+    return recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
 
 
 async def _get_owned_recording(
