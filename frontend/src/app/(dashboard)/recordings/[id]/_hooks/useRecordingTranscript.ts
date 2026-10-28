@@ -41,7 +41,7 @@ export function useRecordingTranscript(
   // Once the run has ended and its result is on screen, the recording reads
   // as any other again, polled for later changes.
   const runEnded = hasRetainedPublication && !reprocessPublicationAvailable && !isRecordingInFlight(recording) &&
-    isSettledTranscriptReady;
+    isSettledTranscriptReady && settled.deferredTranscriptUtteranceIds.length === 0;
   useOnDepsChange([runEnded], () => {
     if (runEnded) setRetainedRecordingId(null);
   });

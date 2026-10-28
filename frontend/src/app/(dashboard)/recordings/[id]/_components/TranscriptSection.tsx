@@ -48,6 +48,8 @@ interface TranscriptSectionProps {
   canPlayback?: boolean;
   canExport?: boolean;
   transcriptIsAuthoritative?: boolean;
+  /** A reprocess's publication is on screen, from its start until its result is read. */
+  hasRetainedPublication?: boolean;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes?: readonly TimelineNote[] | null;
   /** The page's note edits, which My notes shares. */
@@ -95,6 +97,7 @@ export default function TranscriptSection({
   canPlayback = true,
   canExport = true,
   transcriptIsAuthoritative = false,
+  hasRetainedPublication = false,
   timelineNotes,
   noteEdits,
   transcriptSegments,
@@ -133,7 +136,7 @@ export default function TranscriptSection({
   // Terminal metadata can precede the replacement read; an open editor can
   // defer its old row even after that read. Wait for the displayed replacement.
   const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
-    (recording.previous_publication_available === true || recording.reprocess_publication_complete === true);
+    hasRetainedPublication;
   const readOnly = (isRecordingInFlight(recording) || awaitingPublication) && !activeCapture;
   // A replacement reader must not remount a finished recording's drafts.
   // Capture keeps its live presentation through processing until handoff.

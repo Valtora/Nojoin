@@ -29,8 +29,10 @@ export function useDetailTranscript(
   const { addNotification } = useNotificationStore();
   const isInFlightRecording = inFlight;
   const [readerGeneration, setReaderGeneration] = useState(0);
+  // Keyed on the publication too: in the render where it changes, the
+  // generation bump below has not applied yet.
   const [fullReadReady, setFullReadReady] = useState<{
-    recordingId: string; generation: number;
+    recordingId: string; generation: number; publicationPending: boolean;
   } | null>(null);
   const publicationPending = recording?.previous_publication_available === true;
   useOnDepsChange([recording?.id, isInFlightRecording, publicationPending], () => {
@@ -240,7 +242,8 @@ export function useDetailTranscript(
       if (mode === "full") {
         fullSequenceRef.current = { recordingId: recording.id, sequence: recording.transcript?.change_sequence ?? 0,
           speakers: JSON.stringify(transcriptDelta.speakers) };
-        setFullReadReady({ recordingId: recording.id, generation: readerGeneration });
+        setFullReadReady({ recordingId: recording.id, generation: readerGeneration,
+          publicationPending: recording.previous_publication_available === true });
       }
 
       return {
@@ -439,7 +442,8 @@ export function useDetailTranscript(
   };
 
   const isSettledTranscriptReady = !isInFlightRecording &&
-    fullReadReady?.recordingId === recording?.id && fullReadReady?.generation === readerGeneration;
+    fullReadReady?.recordingId === recording?.id && fullReadReady?.generation === readerGeneration &&
+    fullReadReady.publicationPending === publicationPending;
 
   return {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,

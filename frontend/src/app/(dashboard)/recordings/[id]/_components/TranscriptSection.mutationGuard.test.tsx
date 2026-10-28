@@ -27,8 +27,7 @@ describe("transcript mutation callbacks retained by an open control", () => {
     };
     const view = render(<TranscriptSection {...props} />);
     const retained = boundary.props!;
-    const recording = { ...props.recording, reprocess_publication_complete: true };
-    view.rerender(<TranscriptSection {...props} recording={recording} />);
+    view.rerender(<TranscriptSection {...props} hasRetainedPublication />);
     expect(boundary.props).toMatchObject({ readOnly: true, canUndo: false, canRedo: false });
     await act(async () => {
       retained.onUndo();
@@ -39,13 +38,13 @@ describe("transcript mutation callbacks retained by an open control", () => {
     expect(onRedo).not.toHaveBeenCalled();
     expect(onFindAndReplace).not.toHaveBeenCalled();
 
-    view.rerender(<TranscriptSection {...props} recording={recording} transcriptIsAuthoritative
+    view.rerender(<TranscriptSection {...props} hasRetainedPublication transcriptIsAuthoritative
       deferredTranscriptUtteranceIds={["old"]} />);
     expect(boundary.props).toMatchObject({ readOnly: true, canUndo: false, canRedo: false });
     await act(async () => retained.onFindAndReplace("Old", "New"));
     expect(onFindAndReplace).not.toHaveBeenCalled();
 
-    view.rerender(<TranscriptSection {...props} recording={recording} transcriptIsAuthoritative />);
+    view.rerender(<TranscriptSection {...props} hasRetainedPublication transcriptIsAuthoritative />);
     expect(boundary.props).toMatchObject({ readOnly: false, canUndo: true, canRedo: true });
     await act(async () => {
       retained.onUndo();

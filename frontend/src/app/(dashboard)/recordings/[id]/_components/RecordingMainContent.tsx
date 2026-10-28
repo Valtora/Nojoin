@@ -336,6 +336,7 @@ export default function RecordingMainContent({
           recording={recording}
           inFlightContent={inFlightContent}
           transcriptIsAuthoritative={transcriptIsAuthoritative}
+          hasRetainedPublication={hasRetainedPublication}
           canPlayback={canPlayback}
           canExport={canExport}
           timelineNotes={timelineNotes}

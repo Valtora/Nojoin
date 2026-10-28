@@ -53,12 +53,14 @@ function Harness({ initial, terminal = RecordingStatus.PROCESSED }: {
     <button onClick={() => setValue({ ...value, status: RecordingStatus.PROCESSING,
       previous_publication_available: true, reprocess_publication_complete: false })}>Reprocess</button>
     <button onClick={() => setValue({ ...value, status: terminal, previous_publication_available: false,
-      reprocess_publication_complete: true, speakers: [speaker("New name")] })}>Publish</button>
+      // Terminal metadata: the server has cleared both markers.
+      reprocess_publication_complete: false, speakers: [speaker("New name")] })}>Publish</button>
     <button onClick={() => void transcript.syncTranscriptState("full")}>Retry read</button>
     <output aria-label="Reader authority">{String(transcript.transcriptIsAuthoritative)}</output>
     <output aria-label="Deferred lines">{transcript.deferredTranscriptUtteranceIds.join(",")}</output>
     <TranscriptSection active recording={value} timelineNotes={[]} transcriptSegments={transcript.transcriptSegments}
       transcriptIsAuthoritative={transcript.transcriptIsAuthoritative} currentTime={-1} isPlaying={false}
+      hasRetainedPublication={transcript.hasRetainedPublication}
       speakerMap={names} speakerColors={{}} globalSpeakers={[]} canUndo canRedo
       deferredTranscriptUtteranceIds={transcript.deferredTranscriptUtteranceIds}
       onPlaySegment={vi.fn()} onPause={vi.fn()} onResume={vi.fn()} onRenameSpeaker={mocks.rename}
