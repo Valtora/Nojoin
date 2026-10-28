@@ -55,6 +55,7 @@ class LiveLabelDecision:
     speaker: str
     locked: bool
     share: float | None
+    diarisation_pending: bool = False
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ class LiveLabelWrite:
     changed: int
     settled_ms: int
     open_from_s: float | None
+    covered_unknown_words: int | None = None
 
 
 # (start_ms, end_ms) of a line -> its label now.
@@ -87,8 +89,12 @@ def _needs_write(
     current = utterance.speaker_label or UNKNOWN_SPEAKER
     if stored is None:
         # Never labelled: an unlabelled line stays as the lane wrote it.
-        return decision.speaker != current
-    return decision.speaker != current or bool(stored.get("locked")) != decision.locked
+        return decision.speaker != current or decision.diarisation_pending
+    return (
+        decision.speaker != current
+        or bool(stored.get("locked")) != decision.locked
+        or bool(stored.get("diarisation_pending")) != decision.diarisation_pending
+    )
 
 
 def _write_label(
@@ -102,6 +108,7 @@ def _write_label(
     payload[LIVE_SPEAKER_LABEL_PAYLOAD_KEY] = {
         "locked": decision.locked,
         "share": decision.share,
+        "diarisation_pending": decision.diarisation_pending,
     }
     utterance.speaker_label = decision.speaker
     utterance.confidence_payload = payload
@@ -178,16 +185,24 @@ def _unsettled(statement, recording_id: int, settled_ms: int):
 
 def _label_line(
     session, utterance: TranscriptUtterance, decide: DecideFn
-) -> tuple[bool, bool]:
-    """Write the line's label if it changed: (label is final, label written)."""
+) -> tuple[bool, bool, int]:
+    """Return label finality, whether written, and this pass's covered UNKNOWN words."""
     stored = _stored_label(utterance)
     if stored is not None and stored.get("locked") is True:
-        return True, False
+        return True, False, 0
     decision = decide(utterance.start_ms, utterance.end_ms)
     written = _needs_write(utterance, stored, decision)
     if written:
         _write_label(session, utterance, decision)
-    return decision.locked, written
+    unknown_count = 0
+    if decision.speaker == UNKNOWN_SPEAKER and not decision.diarisation_pending:
+        words = [
+            word
+            for segment in (utterance.confidence_payload or {}).get("asr_segments", [])
+            for word in segment.get("words", [])
+        ]
+        unknown_count = len(words) if words else len(utterance.text.split())
+    return decision.locked, written, unknown_count
 
 
 def apply_live_speaker_labels(
@@ -201,7 +216,12 @@ def apply_live_speaker_labels(
         result, settled, open_from = project_live_settling_speakers(
             session, transcript, decide
         )
-        return LiveLabelWrite(result.changed, max(settled_ms, settled), open_from)
+        return LiveLabelWrite(
+            result.changed,
+            max(settled_ms, settled),
+            open_from,
+            result.covered_unknown_words,
+        )
     held = {
         utterance.id: utterance
         for utterance in session.execute(
@@ -228,6 +248,7 @@ def apply_live_speaker_labels(
         )
     ).all()
     changed = 0
+    unknown_count = 0
     settled = settled_ms
     open_from_s: float | None = None
     for row_id, start_ms, end_ms in candidates:
@@ -237,8 +258,9 @@ def apply_live_speaker_labels(
             # next run reads the line again.
             final = False
         else:
-            final, written = _label_line(session, utterance, decide)
+            final, written, covered_unknown = _label_line(session, utterance, decide)
             changed += written
+            unknown_count += covered_unknown
         if not final:
             start_s = start_ms / 1000.0
             open_from_s = start_s if open_from_s is None else min(open_from_s, start_s)
@@ -248,4 +270,9 @@ def apply_live_speaker_labels(
         # Every row, not only the lines read here: an edit holding an older copy
         # of the projection may have written it back over settled lines.
         _refresh_projection(session, transcript, _live_rows(session, recording_id))
-    return LiveLabelWrite(changed=changed, settled_ms=settled, open_from_s=open_from_s)
+    return LiveLabelWrite(
+        changed=changed,
+        settled_ms=settled,
+        open_from_s=open_from_s,
+        covered_unknown_words=unknown_count,
+    )

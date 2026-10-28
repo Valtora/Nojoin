@@ -44,6 +44,7 @@ def label_line(
         live_speaker_label(display + 1) if display is not None else "UNKNOWN",
         locked=decision.locked,
         share=decision.share,
+        diarisation_pending=decision.diarisation_pending,
     )
 
 
@@ -70,11 +71,15 @@ def native_line(
     stop = max(0, math.ceil(end_s * 100) - engine.posterior_first_frame)
     probabilities = engine.posteriors[first:stop]
     complete = end_s <= engine.native_complete_frame / 100
+    if not complete:
+        return LiveLabelDecision("UNKNOWN", False, None, True)
     if not len(probabilities):
         return LiveLabelDecision("UNKNOWN", locked=complete, share=None)
     totals = probabilities.sum(axis=0, dtype=np.float32)
     winner = int(np.argmax(totals))
     total = float(totals.sum())
+    if not total:
+        return LiveLabelDecision("UNKNOWN", locked=complete, share=None)
     return LiveLabelDecision(
         live_speaker_label(winner + 1),
         locked=complete,

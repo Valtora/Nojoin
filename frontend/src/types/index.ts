@@ -266,6 +266,8 @@ export interface LiveTranscriptWord {
 
 /** Live settling evidence, or timed final words on a recording that used settling. */
 export interface LiveTranscriptSettling {
+  /** Live diarisation has not covered these words yet; UNKNOWN remains unassigned. */
+  diarisation_pending?: boolean;
   /** Sticky recording policy, copied onto local segments by the delta reader. */
   settling_required?: boolean;
   /** Final words retain identities and timings, with locked=true and no live lock reason. */

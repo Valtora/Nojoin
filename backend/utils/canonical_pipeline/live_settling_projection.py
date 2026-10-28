@@ -139,6 +139,7 @@ def word_decisions(
         if word.get("locked") and previous[word.get("id")].locked
     }
     decisions: list[LiveLabelDecision | None] = []
+    covered_untimed: dict[int, LiveLabelDecision] = {}
     for word in words:
         old = previous.get(word.get("id"))
         start, end = word.get("start_ms"), word.get("end_ms")
@@ -147,27 +148,57 @@ def word_decisions(
         elif decide is not None and start is not None and end is not None:
             decision = decide(int(start), max(int(start) + 1, int(end)))
         elif start is not None and end is not None:
-            decision = old or LiveLabelDecision("UNKNOWN", not speaker_enabled, None)
+            decision = old or LiveLabelDecision(
+                "UNKNOWN", not speaker_enabled, None, speaker_enabled
+            )
         else:
-            decision = None
+            extent = word_extent(word)
+            if decide is not None and extent is not None:
+                coverage = decide(extent[0], max(extent[0] + 1, extent[1]))
+                decision = coverage if coverage.diarisation_pending else None
+                if not coverage.diarisation_pending:
+                    covered_untimed[len(decisions)] = LiveLabelDecision(
+                        "UNKNOWN", coverage.locked, None
+                    )
+            else:
+                decision = old
         decisions.append(decision)
     for index, decision in enumerate(decisions):
         if decision is None:
             neighbour = next(
                 (
-                    decisions[j]
+                    candidate
                     for j in range(index - 1, -1, -1)
-                    if decisions[j] is not None
+                    if (candidate := decisions[j]) is not None
+                    and (
+                        index not in covered_untimed
+                        or not candidate.diarisation_pending
+                    )
                 ),
                 None,
             ) or next(
-                (item for item in decisions[index + 1 :] if item is not None), None
+                (
+                    item
+                    for item in decisions[index + 1 :]
+                    if item is not None
+                    and (index not in covered_untimed or not item.diarisation_pending)
+                ),
+                None,
             )
-            decisions[index] = neighbour or LiveLabelDecision(
-                "UNKNOWN", not speaker_enabled, None
+            decisions[index] = (
+                neighbour
+                or covered_untimed.get(index)
+                or LiveLabelDecision(
+                    "UNKNOWN", not speaker_enabled, None, speaker_enabled
+                )
             )
     return [
-        LiveLabelDecision(item.speaker, closing or item.locked, item.share)
+        LiveLabelDecision(
+            "UNKNOWN" if item.diarisation_pending else item.speaker,
+            closing or item.locked,
+            item.share,
+            item.diarisation_pending and not closing,
+        )
         for item in decisions
         if item is not None
     ]
@@ -184,6 +215,7 @@ def _stored_speaker(
             stored.get("locked") or word.get("id") in stored.get("locked_word_ids", [])
         ),
         None,
+        bool(stored.get("diarisation_pending")),
     )
 
 
@@ -244,6 +276,7 @@ def _payload(
             "locked": partition.speaker_locked,
             "locked_word_ids": partition.locked_speaker_words,
             "share": None,
+            "diarisation_pending": partition.diarisation_pending,
         },
     }
 

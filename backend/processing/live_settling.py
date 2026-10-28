@@ -268,7 +268,9 @@ def _publish_step(
             resolve_capture_settling_policy(transcript, device="cuda")
             decide = evidence.decide if evidence is not None else None
             if decide is None and live_speaker_labels_requested():
-                decide = lambda _start, _end: LiveLabelDecision("UNKNOWN", False, None)
+                decide = lambda _start, _end: LiveLabelDecision(
+                    "UNKNOWN", False, None, True
+                )
             publication = publish_live_settling(
                 session,
                 request=request,
@@ -296,6 +298,14 @@ def _publish_step(
                     session, request=replace(request, source_revision=None)
                 )
         session.commit()
+        if publication.accepted:
+            from backend.utils.canonical_pipeline.live_unknown_metrics import (
+                log_covered_unknown_words,
+            )
+
+            log_covered_unknown_words(
+                step.recording_id, publication.covered_unknown_words, log=logger
+            )
         return SettlingStepResult(True, accepted, window_s, bool(publication.changed))
     finally:
         session.close()

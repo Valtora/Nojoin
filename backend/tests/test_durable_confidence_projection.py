@@ -115,5 +115,10 @@ def test_live_labels_copy_current_protection_into_durable_projection(
         durable = _transcript(session, recording_id).segments[0]["confidence_payload"]
         assert durable == {
             **EVIDENCE,
-            "live_speaker_label": {"locked": True, "share": 1.0},
+            # Covered decisions explicitly clear a previously pending public line.
+            "live_speaker_label": {
+                "locked": True,
+                "share": 1.0,
+                "diarisation_pending": False,
+            },
         }

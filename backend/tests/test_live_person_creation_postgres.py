@@ -166,4 +166,5 @@ async def test_ordinary_live_reader_exposes_label_lock_without_private_evidence(
         ).scalar_one()
         assert public_transcript_segment(
             {"speaker": ONE, "confidence_payload": line.confidence_payload}
-        ) == {"speaker": ONE, "locked": True}
+            # Covered lines carry false so a delta can clear earlier pending state.
+        ) == {"speaker": ONE, "locked": True, "diarisation_pending": False}

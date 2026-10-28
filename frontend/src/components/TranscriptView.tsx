@@ -43,6 +43,7 @@ import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import { indexOverlaps, OverlapContext } from "./transcript/OverlapIndicator";
+import { appendPendingTranscriptGroups, isDiarisationPending } from "./transcript/pendingTranscriptGroups";
 
 interface TranscriptViewProps {
   /** The selected in-flight reader, with its source-specific actions. */
@@ -172,6 +173,7 @@ export default function TranscriptView({
   const [showSearch, setShowSearch] = useState(false);
   const [showReplace, setShowReplace] = useState(false);
   const isLive = live !== undefined;
+  const hasPendingDiarisation = segments.some(isDiarisationPending);
   // A carried editor must keep its row mounted when the authoritative reader
   // takes over, even if the final timings would put it in another group.
   const [hasShownLive, setHasShownLive] = useState(isLive);
@@ -185,7 +187,7 @@ export default function TranscriptView({
       return next;
     });
   }, []);
-  const keepLineGroups = isLive || liveInteractions.size > 0;
+  const keepLineGroups = isLive || hasPendingDiarisation || liveInteractions.size > 0;
   useOnDepsChange([live !== undefined], () => {
     if (live) setHasShownLive(true);
   });
@@ -223,7 +225,7 @@ export default function TranscriptView({
     const shown = hasKnownSpeakers && !isLive
       ? indexedSegments.filter(
           ({ segment }) =>
-            segment.speaker !== "UNKNOWN" || segment.provisional === true,
+            segment.speaker !== "UNKNOWN" || segment.provisional === true || isDiarisationPending(segment),
         )
       : indexedSegments;
     const shownIds = new Set(shown.map(({ segment, index }) => liveRenderIdentity(segment, index)));
@@ -402,12 +404,25 @@ export default function TranscriptView({
 
   // --- Grouping Logic ---
   const trackGroups = useMemo(
-    () =>
-      buildTranscriptGroups(
+    () => {
+      const groups = buildTranscriptGroups(
         displaySegments,
         new Set(keepLineGroups ? displaySegments.map((item) => item.index) : notesAmongLines.afterLine.keys()),
-      ),
-    [displaySegments, notesAmongLines, keepLineGroups],
+      );
+      const blockedIds = new Set(displaySegments.filter(({ segment, index }) =>
+        missingContextIds.has(liveRenderIdentity(segment, index))).map((item) => item.segmentId));
+      liveInteractions.forEach((item) => blockedIds.add(item.segmentId));
+      if (editing.editingTextId) blockedIds.add(editing.editingTextId);
+      if (editing.editingSpeakerLineId) blockedIds.add(editing.editingSpeakerLineId);
+      if (editing.activePopover) blockedIds.add(editing.activePopover.segmentId);
+      const breaks = new Set(notesAmongLines.afterLine.keys());
+      displaySegments.forEach(({ segment, index }) => {
+        if (missingContextIds.has(liveRenderIdentity(segment, index))) breaks.add(index);
+      });
+      return appendPendingTranscriptGroups(groups, breaks, blockedIds);
+    },
+    [displaySegments, notesAmongLines, keepLineGroups, missingContextIds, liveInteractions,
+      editing.editingTextId, editing.editingSpeakerLineId, editing.activePopover],
   );
 
   // Groups and lines are memoised: everything handed to them is a value, or

@@ -14,6 +14,17 @@ import {
 } from "./transcriptSegments";
 
 describe("transcriptSegments", () => {
+  it("keeps pending coverage through full and delta reads, including a coverage-only update", () => {
+    const utterance = { id: "tail", revision: 1, start: 1, end: 2, text: "Still unassigned",
+      speaker: "UNKNOWN", diarisation_pending: true };
+    expect(transcriptSegmentFromUtterance(utterance).diarisation_pending).toBe(true);
+    const pending = mergeTranscriptUtteranceDelta([], [utterance], []);
+    expect(pending[0].diarisation_pending).toBe(true);
+    const covered = mergeTranscriptUtteranceDelta(pending, [{ ...utterance, revision: 2, diarisation_pending: false }], []);
+    expect(covered[0].diarisation_pending).toBe(false);
+    expect(covered[0].speaker).toBe("UNKNOWN");
+  });
+
   it("keeps edge and interior untimed wording in source order after mapping and sorting", () => {
     // HTTP rows use only the retained words' bounds, including when diarisation
     // separates the timed neighbours. UUID order must have no effect.

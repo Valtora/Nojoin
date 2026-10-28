@@ -340,6 +340,13 @@ def update_utterance_speaker(
         target_utterance.recording_speaker_id = target_key
         target_utterance.speaker_label = target_speaker.diarization_label
         target_utterance.manual_speaker_locked = True
+        live_payload = dict(target_utterance.confidence_payload or {})
+        if isinstance(live_payload.get(LIVE_SPEAKER_LABEL_PAYLOAD_KEY), dict):
+            live_payload[LIVE_SPEAKER_LABEL_PAYLOAD_KEY] = {
+                **live_payload[LIVE_SPEAKER_LABEL_PAYLOAD_KEY],
+                "diarisation_pending": False,
+            }
+            target_utterance.confidence_payload = live_payload
         target_utterance.speaker_last_edit_source = source
         target_utterance.speaker_assignment_source = SPEAKER_ASSIGNMENT_SOURCE_MANUAL
         target_utterance.speaker_assignment_authority = (

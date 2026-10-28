@@ -43,6 +43,8 @@ class SpeakerEvidence:
         stop = max(0, math.ceil(end_ms / 10) - self.posterior_first_frame)
         probabilities = self.posteriors[first:stop]
         complete = end_ms <= self.native_complete_frame * 10
+        if not complete:
+            return LiveLabelDecision("UNKNOWN", False, None, True)
         if not len(probabilities):
             return LiveLabelDecision("UNKNOWN", complete, None)
         totals = probabilities.sum(axis=0, dtype=np.float32)

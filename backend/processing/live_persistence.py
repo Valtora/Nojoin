@@ -99,6 +99,7 @@ def _persist_live_run(
                 transcript, device=live_config.get("_settling_device")
             )
             if new_segments:
+                _mark_pending_speakers(new_segments, live_config)
                 use_canonical_live_writes = (
                     bool(config_manager.get("enable_canonical_transcript_writes", True))
                     and hasattr(session, "exec")
@@ -184,3 +185,26 @@ def _persist_live_run(
     finally:
         session.close()
     return LivePublicationResult(False)
+
+
+def _mark_pending_speakers(segments: list[dict], config: dict) -> None:
+    """Mark whole-line CUDA text before its independent label step can cover it."""
+    from backend.processing.live_diarization.setting import (
+        live_speaker_labels_requested,
+    )
+
+    device = str(config.get("_settling_device") or "")
+    if not device.startswith("cuda") or not live_speaker_labels_requested():
+        return
+    for segment in segments:
+        if segment.get("speaker") != "UNKNOWN" or segment.get(
+            "speaker_manually_edited"
+        ):
+            continue
+        payload = dict(segment.get("confidence_payload") or {})
+        payload["live_speaker_label"] = {
+            "locked": False,
+            "share": None,
+            "diarisation_pending": True,
+        }
+        segment["confidence_payload"] = payload

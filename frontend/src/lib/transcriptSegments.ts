@@ -172,6 +172,7 @@ export const transcriptSegmentFromUtterance = (
   return {
     id: utterance.id,
     ...(utterance.settling_required ? { settling_required: true } : {}),
+    ...(utterance.diarisation_pending !== undefined ? { diarisation_pending: utterance.diarisation_pending } : {}),
     ...(utterance.words !== undefined ? { words: utterance.words } : {}),
     ...(utterance.text_locked !== undefined ? { text_locked: utterance.text_locked } : {}),
     ...(utterance.locked !== undefined ? { locked: utterance.locked } : {}),

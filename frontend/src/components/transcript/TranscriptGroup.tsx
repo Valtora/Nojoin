@@ -34,6 +34,7 @@ import TranscriptLine from "./TranscriptLine";
 import { liveRenderIdentity, type LiveInteractionChange, type LiveLinePresentation,
   type LiveTranscriptPresentation } from "./liveTranscriptPresentation";
 import type { SpeakerAssignmentCommand } from "./CapturedSpeakerAssignment";
+import { pendingTranscriptRuns } from "./pendingTranscriptGroups";
 
 /** What every line of the view shares; memoised by the view. */
 export interface TranscriptLineShared {
@@ -134,7 +135,7 @@ function TranscriptGroup({
   const activeKeys = activeLineKeys.split(LINE_KEY_SEPARATOR);
   const recentKeys = recentLineKeys.split(LINE_KEY_SEPARATOR);
 
-  const renderLine = (item: IndexedTranscriptSegment) => {
+  const renderLine = ([item, ...continuations]: IndexedTranscriptSegment[]) => {
     const { segment, segmentId } = item;
     const isEditingSpeaker = editingSpeakerLineId === segmentId;
     const isEditingText = editingTextId === segmentId;
@@ -149,7 +150,11 @@ function TranscriptGroup({
         segment={segment}
         index={item.index}
         segmentId={segmentId}
-        isActive={activeKeys.includes(segmentId)}
+        isActive={[item, ...continuations].some((line) => activeKeys.includes(line.segmentId))}
+        continuations={continuations.length ? continuations.map((line) => ({
+          item: line, decorations: searchDecorations(line.segmentId), noteDecorations: noteDecorations(line.segmentId),
+        })) : undefined}
+        lineShared={continuations.length ? lineShared : undefined}
         readOnly={lineShared.readOnly || contextOnly}
         allowProvisionalEdits={lineShared.allowProvisionalEdits}
         speakerMap={speakerMap}
@@ -242,7 +247,7 @@ function TranscriptGroup({
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex flex-col w-full">{group.items.map(renderLine)}</div>
+        <div className="flex flex-col w-full">{pendingTranscriptRuns(group.items).map(renderLine)}</div>
       </div>
     </div>
   );

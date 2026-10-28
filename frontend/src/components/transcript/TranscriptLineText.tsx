@@ -22,6 +22,8 @@ interface TranscriptLineTextProps {
   settlingRequired?: boolean;
   settling?: boolean;
   words?: readonly LiveTranscriptWord[];
+  /** This inline source fragment begins with punctuation attached to the previous one. */
+  joinsPrevious?: boolean;
   decorations?: readonly TextDecoration[];
   className: string;
 }
@@ -180,6 +182,7 @@ export default function TranscriptLineText({
   settlingRequired,
   settling,
   words,
+  joinsPrevious,
   decorations = NO_DECORATIONS,
   className,
 }: TranscriptLineTextProps) {
@@ -192,6 +195,7 @@ export default function TranscriptLineText({
       data-end-ms={endMs}
       data-revision={settlingRequired ? revision : undefined}
       data-settling={settlingRequired ? String(!!settling) : undefined}
+      data-joins-previous={joinsPrevious || undefined}
       className={className}
     >
       {ranges.length ? settledText(text, ranges, decorations) : decoratedText(text, decorations)}

@@ -15,6 +15,15 @@ from .segmentation import *
 from .speaker import *
 
 
+def _clear_pending_label(payload: dict[str, Any]) -> None:
+    """Retain legacy confidence evidence while removing live presentation state."""
+    label = payload.get("live_speaker_label")
+    if isinstance(label, dict) and "diarisation_pending" in label:
+        payload["live_speaker_label"] = {
+            key: value for key, value in label.items() if key != "diarisation_pending"
+        }
+
+
 def _final_confidence_payload(
     segment: dict[str, Any],
     existing: dict[str, Any] | None = None,
@@ -23,6 +32,7 @@ def _final_confidence_payload(
 ) -> dict[str, Any] | None:
     """Keep evidence while replacing the previous run's alignment outcome."""
     payload = dict(existing or {})
+    _clear_pending_label(payload)
     incoming = segment.get("confidence_payload")
     forced = segment.get("alignment_error") or any(
         word.get("source_id") for word in segment.get("words") or []
@@ -38,9 +48,10 @@ def _final_confidence_payload(
             )
         )
     if matched and not forced and not payload.get("alignment_error"):
-        return existing
+        return payload if existing is not None else None
     if isinstance(incoming, dict) and (not matched or forced):
         payload.update(incoming)
+    _clear_pending_label(payload)
     if forced and (segment.get("words") or segment.get("alignment_error")):
         from backend.processing.live_asr_payload import _build_live_confidence_payload
 

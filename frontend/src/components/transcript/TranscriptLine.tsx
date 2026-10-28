@@ -40,6 +40,9 @@ import OverlapIndicator from "./OverlapIndicator";
 import { useSpeakerTurnHighlight } from "../speakers/SpeakerTurnHighlight";
 import LiveSpeakerChip from "./LiveSpeakerChip";
 import type { LiveInteractionChange, LiveLinePresentation, LiveTranscriptPresentation } from "./liveTranscriptPresentation";
+import { isDiarisationPending } from "./pendingTranscriptGroups";
+import PendingTranscriptContinuation, { type PendingContinuation } from "./PendingTranscriptContinuation";
+import type { TranscriptLineShared } from "./TranscriptGroup";
 
 /**
  * The line, its place among all the lines and its key, as separate props:
@@ -52,6 +55,8 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
   renderIdentity?: string;
   onLiveInteractionChange?: LiveInteractionChange;
   contextOnly?: boolean;
+  continuations?: readonly PendingContinuation[];
+  lineShared?: TranscriptLineShared;
   /** Playback is inside this line. */
   isActive: boolean;
   readOnly: boolean;
@@ -138,6 +143,8 @@ function TranscriptLine({
   renderIdentity = segmentId,
   onLiveInteractionChange,
   contextOnly = false,
+  continuations = [],
+  lineShared,
 }: TranscriptLineProps) {
   const settlingDescriptionId = useId();
   const [liveHeaderEdit, setLiveHeaderEdit] = useState<{
@@ -158,7 +165,9 @@ function TranscriptLine({
     [decorations, noteDecorations],
   );
   const isProvisional = segment.provisional === true;
-  const isSegmentReadOnly = readOnly || (live !== undefined && !segment.settling_required) || lineIsSettling(segment) ||
+  const pendingDiarisation = isDiarisationPending(segment);
+  const isSegmentReadOnly = readOnly || pendingDiarisation ||
+    (live !== undefined && !segment.settling_required) || lineIsSettling(segment) ||
     (isProvisional && !allowProvisionalEdits && !segment.settling_required);
   const speakerName = segmentSpeakerDisplayName(speakerMap, segment.speaker);
   const headerLive = liveHeaderEdit?.live ?? live;
@@ -199,7 +208,9 @@ function TranscriptLine({
   // A decision drops the "?", so focus goes to the speaker's name beside it.
   const speakerButtonRef = useRef<HTMLButtonElement>(null);
   const speakerColor = getColorByKey(speakerColors[segment.speaker] || "gray");
-  const bubbleColor = isActive
+  const bubbleColor = pendingDiarisation
+    ? "bg-surface-inset border-surface-border"
+    : isActive
     ? "border-2 border-status-success-border bg-status-success-bg"
     : `${speakerColor.bg} ${speakerColor.border}`;
 
@@ -223,7 +234,7 @@ function TranscriptLine({
       {live && lineIsSettling(segment) ? <p id={settlingDescriptionId} hidden>{LINE_SETTLING_REASON}</p> : null}
       {/* Speaker Label */}
       <div className="flex flex-wrap items-baseline gap-2 mb-1">
-        {headerLive ? (headerLine?.speakerLabel ? (
+        {pendingDiarisation ? null : headerLive ? (headerLine?.speakerLabel ? (
           <LiveSpeakerChip
             label={headerLine.speakerLabel}
             name={headerName}
@@ -382,10 +393,14 @@ function TranscriptLine({
             settling={lineIsSettling(segment)}
             words={segment.words}
             decorations={textDecorations}
-            className={`leading-relaxed whitespace-pre-wrap ${live && !segment.settling_required
+            className={`${continuations.length ? "inline " : ""}leading-relaxed whitespace-pre-wrap ${(live || pendingDiarisation) && !segment.settling_required
               ? "italic text-contrast-helper" : "text-contrast-muted"}`}
           />
         )}
+        {lineShared && continuations.map((continuation, at) => (
+          <PendingTranscriptContinuation key={continuation.item.segmentId} {...continuation}
+            previous={at === 0 ? segment : continuations[at - 1].item.segment} lineShared={lineShared} />
+        ))}
       </div>
       <FinalWordingReview segment={segment} />
     </div>

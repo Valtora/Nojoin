@@ -197,7 +197,7 @@ export const buildMeetingSpeakerColors = ({
   speakers,
   existingColors = {},
 }: {
-  segments: Array<Pick<TranscriptSegment, "speaker" | "overlapping_speakers">>;
+  segments: Array<Pick<TranscriptSegment, "speaker" | "overlapping_speakers" | "diarisation_pending">>;
   speakers?: RecordingSpeaker[];
   existingColors?: Record<string, string>;
 }): Record<string, string> => {
@@ -235,7 +235,8 @@ export const buildMeetingSpeakerColors = ({
   });
 
   segments.forEach((segment) => {
-    [segment.speaker, ...(segment.overlapping_speakers ?? [])].forEach((label) => {
+    const labels = segment.diarisation_pending && segment.speaker === "UNKNOWN" ? [] : [segment.speaker];
+    [...labels, ...(segment.overlapping_speakers ?? [])].forEach((label) => {
       const canonical = rememberAlias(label);
       rememberCanonical(canonical);
     });

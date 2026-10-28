@@ -43,6 +43,9 @@ class LiveSettlingPublicRead(BaseModel):
     final_review: FinalReviewPublicRead | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    diarisation_pending: bool | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 def public_settling_fields(
@@ -61,6 +64,12 @@ def public_settling_fields(
         else {}
     )
     label = payload.get("live_speaker_label")
+    if (
+        isinstance(label, dict)
+        and "diarisation_pending" in label
+        and not payload.get("human_protection")
+    ):
+        public_review["diarisation_pending"] = label["diarisation_pending"] is True
     if include_live_label_lock and isinstance(label, dict):
         public_review["locked"] = label.get("locked") is True
     metadata = payload.get("live_text_settling")
@@ -94,8 +103,15 @@ def public_transcript_segment(
     segment: dict[str, Any], *, include_final_words: bool = False
 ) -> dict[str, Any]:
     """Strip private evidence while preserving the typed settling projection."""
+    # Canonical reads are already public. Where private evidence exists it is
+    # authoritative, including final publication's removal of live pending state.
     return {
-        **{key: value for key, value in segment.items() if key != "confidence_payload"},
+        **{
+            key: value
+            for key, value in segment.items()
+            if key != "confidence_payload"
+            and not (key == "diarisation_pending" and "confidence_payload" in segment)
+        },
         **public_settling_fields(
             segment.get("confidence_payload"),
             final_utterance_id=segment.get("id")
