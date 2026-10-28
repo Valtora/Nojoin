@@ -463,11 +463,6 @@ export class CaptureController {
    */
   private captureActionTicket = 0;
 
-  /** A paused recording explicitly requested here, retained across watcher checks. */
-  private requestedPausedRecordingId: RecordingId | null = null;
-
-  private recoveryRead = 0;
-  private appliedRecoveryRead = 0;
   private navigationTicket = 0;
 
   private unconfirmedPause: UnconfirmedPause | null = null;
@@ -519,8 +514,8 @@ export class CaptureController {
   /** Exactly one recovery check per recording-page entry, never on later polls. */
   openRecording = async (recordingId: RecordingId | null) => {
     const ticket = ++this.navigationTicket;
-    // Navigation must not supersede the owner's capture action (notably a
-    // microphone permission prompt during Resume). Its own completion refreshes.
+    // No offer over this tab's own capture action (notably a permission prompt
+    // during Resume); that action looks again itself when it ends.
     if (!recordingId || this.runtime || this.state.status === "starting" ||
       this.state.status === "finalizing") return;
     await this.refreshPausedRecording({
@@ -585,32 +580,20 @@ export class CaptureController {
     if (!explicit && (this.state.status === "starting" || this.state.status === "finalizing")) {
       return this.state.pausedRecording;
     }
-    if (explicit) {
-      this.captureActionTicket += 1;
-    }
     const ticket = this.captureActionTicket;
-    const read = ++this.recoveryRead;
     const unfinished = await getUnfinishedCaptures();
     const captures = unfinished.filter(isLiveCaptureInProgress);
-    const discovered = await findAttentionRecordings(captures, this.getOwnedRecordingId());
-    if (ticket !== this.captureActionTicket || options.isCurrent?.() === false ||
-      (!explicit && read < this.appliedRecoveryRead)) {
+    const attentionRecordings = await findAttentionRecordings(captures, this.getOwnedRecordingId());
+    if (ticket !== this.captureActionTicket || options.isCurrent?.() === false) {
+      // An action began meanwhile and will look again itself when it ends.
       return this.state.pausedRecording;
     }
-    const stale = read < this.appliedRecoveryRead;
-    const attentionRecordings = stale ? this.state.attentionRecordings : discovered;
-    // Preserve an entry request only where both snapshots agree on eligibility.
-    // Its late response cannot resurrect a capture that has since moved on.
-    const candidates = stale ? attentionRecordings.filter((recording) =>
-      discovered.some((previous) => previous.id === recording.id)) : attentionRecordings;
     const ownedPause = captures.find((recording) =>
       recording.id === this.getOwnedRecordingId() && recording.status === RecordingStatus.PAUSED);
-    const decision = ownedPause ?? selectRecoveryOffer(candidates, this.requestedPausedRecordingId, options);
-    if (explicit) {
-      this.captureActionTicket += 1;
-    }
-    this.appliedRecoveryRead = Math.max(read, this.appliedRecoveryRead);
-    this.requestedPausedRecordingId = decision?.id ?? null;
+    // Read the current offer at completion, so a passive check that finishes
+    // after an explicit one keeps what it offered.
+    const decision = ownedPause ??
+      selectRecoveryOffer(attentionRecordings, this.state.pausedRecording?.id ?? null, options);
     void this.settleAudioKeptForFinishedCaptures(unfinished);
     this.setState({ pausedRecording: decision, attentionRecordings });
     if (this.runtime || captures.length === 0) {

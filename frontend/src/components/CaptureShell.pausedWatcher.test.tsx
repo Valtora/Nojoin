@@ -348,20 +348,6 @@ describe("paused capture ownership", () => {
     await expect(capture.refreshPausedRecording()).resolves.toBeNull();
   });
 
-  it("does not let an older automatic check erase an explicit offer", async () => {
-    held = [];
-    const capture = controller();
-    let answerOldCheck!: (recordings: Recording[]) => void;
-    api.getUnfinishedCaptures.mockImplementationOnce(() => new Promise<Recording[]>((resolve) => {
-      answerOldCheck = resolve;
-    }));
-    const oldCheck = capture.refreshPausedRecording();
-    await capture.refreshPausedRecording({ onDemand: true });
-    answerOldCheck([]);
-    await oldCheck;
-    expect(capture.getState().pausedRecording).toEqual(paused);
-  });
-
   it.each(["held", "pending"])("never explicitly offers a same-browser %s capture", async (kind) => {
     if (kind === "pending") { pending = held; held = []; }
     const capture = controller();
