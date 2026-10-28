@@ -108,6 +108,12 @@ export default function RecordingStatusDisplay({
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const liveTranscript = useLiveTranscript(recording);
+  const settlingRequired = liveTranscript.segments.some((segment) => segment.settling_required);
+  const refreshAfter = async (save: Promise<boolean>) => {
+    const saved = await save;
+    if (saved) liveTranscript.refresh();
+    return saved;
+  };
   const liveNaming = useLiveSpeakerNaming(
     recording.id,
     liveTranscript.applyLiveSpeakerNames,
@@ -125,10 +131,9 @@ export default function RecordingStatusDisplay({
         saved: outboxSaved,
         discarded: outboxDiscarded,
       });
-      return noteEdits && liveTranscript.segments.some((segment) => segment.settling_required)
-        ? noteEdits.apply(notes) : notes;
+      return noteEdits && settlingRequired ? noteEdits.apply(notes) : notes;
     },
-    [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded, noteEdits, liveTranscript.segments],
+    [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded, noteEdits, settlingRequired],
   );
   const pendingMeetingNotes = useMemo(
     () => outboxEntries.filter((entry) => entry.kind === "head" || entry.kind === "tail"),
@@ -434,25 +439,16 @@ export default function RecordingStatusDisplay({
                 hasLoaded={liveTranscript.hasLoaded}
                 speakers={liveTranscript.speakers}
                 lineHandlers={{
-                  editText: async (segment, text) => {
-                    const saved = await actions.editTranscriptLine(recording.id, segment, text);
-                    if (saved) liveTranscript.refresh();
-                    return saved;
-                  },
-                  changeSpeaker: async (segment, assignment) => {
-                    const saved = await actions.assignTranscriptLine(recording.id, segment, assignment);
-                    if (saved) liveTranscript.refresh();
-                    return saved;
-                  },
-                  split: async (segment, wordId) => {
-                    const saved = await actions.splitTranscriptLine(recording.id, segment, wordId);
-                    if (saved) liveTranscript.refresh();
-                    return saved;
-                  },
+                  editText: (segment, text) =>
+                    refreshAfter(actions.editTranscriptLine(recording.id, segment, text)),
+                  changeSpeaker: (segment, assignment) =>
+                    refreshAfter(actions.assignTranscriptLine(recording.id, segment, assignment)),
+                  split: (segment, wordId) =>
+                    refreshAfter(actions.splitTranscriptLine(recording.id, segment, wordId)),
                 }}
                 isPaused={isPaused}
                 notes={liveNotes}
-                onMoveNote={liveSegments.some((segment) => segment.settling_required) ? noteEdits?.move : undefined}
+                onMoveNote={settlingRequired ? noteEdits?.move : undefined}
                 onRetryNote={outbox.retry}
                 onDiscardNote={discardInlineNote}
                 onNoteOnLine={noteOnLine}

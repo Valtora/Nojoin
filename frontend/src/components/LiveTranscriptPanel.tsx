@@ -179,7 +179,6 @@ export default function LiveTranscriptPanel({
         const previousSpeakerLabel = previous
           ? segment.settling_required ? speakerLabelOf(previous) : liveLabelOf(previous)
           : null;
-        const assignedSpeaker = speakers?.find((speaker) => speaker.diarization_label === segment.speaker);
         const showSpeakerLabel = speakerLabel !== null &&
           (previous === undefined || speakerLabel !== previousSpeakerLabel);
 
@@ -193,18 +192,18 @@ export default function LiveTranscriptPanel({
           sameSpeakerContinuation: segment.settling_required === true &&
             previous !== undefined && segment.speaker === previous.speaker,
           speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
-          assignedName: assignedSpeaker ? getRecordingSpeakerDisplayName(assignedSpeaker, new Map()) : undefined,
         };
       }),
-    [segments, speakers],
+    [segments],
   );
+  const settlingRequired = segments.some((segment) => segment.settling_required);
 
   // Placed on the lines as listed, which is also the order they render in.
   const visibleIndexes = useMemo(() => segments.map((_, index) => index), [segments]);
   const placements = useMemo(() => placeTimelineNotes(segments, notes), [segments, notes]);
   const notesAmongLines = useMemo(() => bodyNotesAmongLines(placements, visibleIndexes), [placements, visibleIndexes]);
   const moves = useNoteMoves({ segments, visibleIndexes, placements, regionRef: scrollContainerRef,
-    onMoveNote: segments.some((segment) => segment.settling_required) ? onMoveNote : undefined });
+    onMoveNote: settlingRequired ? onMoveNote : undefined });
 
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -281,7 +280,7 @@ export default function LiveTranscriptPanel({
         </div>
         {!isEmpty ? (
           <span className="text-xs text-contrast-helper">
-            {segments.some((segment) => segment.settling_required)
+            {settlingRequired
               ? "Lines settle as the conversation continues. Your corrections are kept."
               : "Provisional. Corrected when the recording is processed."}
           </span>
@@ -349,7 +348,7 @@ export default function LiveTranscriptPanel({
               ) : (
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
-                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked, assignedName,
+                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked,
                     sameSpeakerContinuation }, index) => [
                     <li
                       key={key}
@@ -363,12 +362,7 @@ export default function LiveTranscriptPanel({
                       {speakerLabel ? (
                         <LiveSpeakerChip
                           label={speakerLabel}
-                          name={
-                            liveSpeakerNames[speakerLabel] ??
-                            assignedName ??
-                            liveSpeakerDisplayName(speakerLabel) ??
-                            speakerLabel
-                          }
+                          name={speakerMap[speakerLabel] ?? liveSpeakerDisplayName(speakerLabel) ?? speakerLabel}
                           locked={speakerLocked}
                           onRename={liveLabelOf(segment) ? onRenameLiveSpeaker : undefined}
                           loadPeopleNames={loadPeopleNames}
