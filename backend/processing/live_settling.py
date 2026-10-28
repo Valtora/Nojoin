@@ -36,6 +36,7 @@ from backend.utils.live_word_settling import plan_settling_window
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     cpu_settling_allowed,
+    current_settling_policy,
     load_capture_publication,
     publication_is_current,
     resolve_capture_settling_policy,
@@ -106,7 +107,7 @@ def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResul
             return SettlingStepResult(False)
         if not publication_is_current(recording, transcript, step.expected_token):
             return SettlingStepResult(True, False)
-        policy = state["policy"]
+        policy = {**state["policy"], **current_settling_policy()}
         # A disabled episode belongs to the legacy lane in every phase, so a
         # paused tail is still transcribed as upstream does.
         if policy.get("enabled") is False:

@@ -140,8 +140,4 @@ def test_cpu_resolution_is_frozen(
     assert _publish(recording_id, token, device="cuda").accepted
     with Session(capture_engine) as session:
         transcript = session.execute(select(Transcript)).scalar_one()
-        assert transcript.settling_state["policy"] == {
-            "k": 3,
-            "window_s": 10.0,
-            "enabled": False,
-        }
+        assert transcript.settling_state["policy"] == {"enabled": False}

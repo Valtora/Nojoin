@@ -8,7 +8,12 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from backend.tests.test_live_settling_line_edges import _sync_delta
-from backend.tests.test_live_settling_publication import _active, _request, _seed
+from backend.tests.test_live_settling_publication import (
+    _active,
+    _request,
+    _seed,
+    settle_with_k,
+)
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
 )
@@ -25,6 +30,13 @@ from backend.utils.canonical_pipeline.live_settling_projection import (
     SETTLING_KEY,
     row_words,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_agreement_locks(request: pytest.FixtureRequest) -> None:
+    if "settling_engine" in request.fixturenames:
+        request.getfixturevalue("settling_engine")
+        settle_with_k(request.getfixturevalue("monkeypatch"), 99)
 
 
 @pytest.mark.parametrize(
@@ -97,7 +109,7 @@ def test_confirmed_phrase_end_survives_retiming_and_retokenisation(
     phrase: str,
     split_speakers: bool,
 ) -> None:
-    recording_id = _seed(settling_engine, k=99)
+    recording_id = _seed(settling_engine)
     client: dict[str, Any] = {}
     with Session(settling_engine) as session:
         assert publish_live_settling(
@@ -148,7 +160,7 @@ def test_confirmed_phrase_end_survives_retiming_and_retokenisation(
 def test_retimed_phrase_end_survives_speaker_split_and_rejoin(
     settling_engine: Engine,
 ) -> None:
-    recording_id = _seed(settling_engine, k=99)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         assert publish_live_settling(
             session,

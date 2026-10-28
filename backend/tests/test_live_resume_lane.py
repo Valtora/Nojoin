@@ -136,7 +136,7 @@ def _configure_episode(lane: ResumeLane) -> None:
         elif lane.mode != "on":
             transcript.settling_state = {
                 **transcript.settling_state,
-                "policy": {"enabled": False, "k": 3, "window_s": 10},
+                "policy": {"enabled": False},
             }
         session.commit()
 

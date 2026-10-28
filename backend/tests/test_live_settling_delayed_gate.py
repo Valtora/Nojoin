@@ -53,7 +53,7 @@ def test_delayed_arrival_decodes_once_and_repeated_evidence_stays_consumed(
             transcript = session.exec(select(Transcript)).one()
             transcript.settling_state = {
                 **transcript.settling_state,
-                "policy": {"enabled": None, "window_s": 10, "k": 3},
+                "policy": {"enabled": None},
             }
             session.add(transcript)
             session.commit()

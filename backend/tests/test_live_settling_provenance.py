@@ -40,7 +40,7 @@ def _state() -> dict[str, Any]:
         "capture_epoch": 0,
         "sealed": False,
         "phase": "live",
-        "policy": {"k": 3, "window_s": 10, "enabled": True},
+        "policy": {"enabled": True},
     }
 
 

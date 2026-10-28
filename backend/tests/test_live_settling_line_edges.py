@@ -4,6 +4,7 @@ import copy
 from dataclasses import replace
 from typing import Any
 
+import pytest
 from sqlalchemy import Engine
 from sqlmodel import Session
 
@@ -13,6 +14,7 @@ from backend.tests.test_live_settling_publication import (
     _request,
     _seed,
     _words,
+    settle_with_k,
 )
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
@@ -63,8 +65,10 @@ def _sync_delta(
 
 def test_unknown_tail_rejoins_locked_speaker_prefix_without_freezing_its_boundary(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=1)
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     client: dict[str, Any] = {}
     cursor = 0
     with Session(settling_engine) as session:
@@ -122,8 +126,10 @@ def test_unknown_tail_rejoins_locked_speaker_prefix_without_freezing_its_boundar
 
 def test_confirmed_pause_survives_pending_word_retiming_and_speaker_reprojection(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=99)
+    settle_with_k(monkeypatch, 99)
+    recording_id = _seed(settling_engine)
     client: dict[str, Any] = {}
     with Session(settling_engine) as session:
         assert publish_live_settling(
@@ -185,8 +191,10 @@ def test_confirmed_pause_survives_pending_word_retiming_and_speaker_reprojection
 
 def test_confirmed_pause_follows_retokenised_phrase_instead_of_reused_word_id(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recording_id = _seed(settling_engine, k=99)
+    settle_with_k(monkeypatch, 99)
+    recording_id = _seed(settling_engine)
     client: dict[str, Any] = {}
     with Session(settling_engine) as session:
         assert publish_live_settling(

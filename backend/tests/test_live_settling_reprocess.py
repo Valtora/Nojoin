@@ -40,7 +40,7 @@ def test_actual_reprocess_reset_retains_settled_view_and_only_durable_provenance
             "settled": marker,
             "generation": "discarded-capture",
             "sealed": True,
-            "policy": {"k": 3, "window_s": 10, "enabled": True},
+            "policy": {"enabled": True},
         }
         session.add(transcript)
         session.commit()

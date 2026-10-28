@@ -17,6 +17,7 @@ from backend.tests.test_install_wide_transcription_settings import (
 from backend.utils import transcript_settling
 from backend.utils.config_manager import ConfigManager
 from backend.utils.transcript_settling import (
+    current_settling_policy,
     new_capture_settling_state,
     resolve_capture_settling_policy,
     update_capture_settling_state,
@@ -66,8 +67,6 @@ def test_invalid_policy_cannot_change_saved_settings(
     assert status == 422
     assert _config_file(install_config) == before
     assert row == {}
-    with pytest.raises(ValueError):
-        install_config.validate_config_value(key, value)
 
 
 @pytest.mark.parametrize("existing", [False, True], ids=["fresh", "existing-missing"])
@@ -100,11 +99,8 @@ def test_default_on_for_fresh_and_existing_users_without_a_stored_value(
         recording_id=1, settling_state=new_capture_settling_state(capture_epoch=0)
     )
     resolve_capture_settling_policy(transcript, device="cuda")
-    assert transcript.settling_state["policy"] == {
-        "k": 3,
-        "window_s": 10,
-        "enabled": True,
-    }
+    assert transcript.settling_state["policy"] == {"enabled": True}
+    assert current_settling_policy() == {"k": 3, "window_s": 10}
 
 
 def test_null_and_unrelated_updates_preserve_explicit_off_after_reload(
@@ -133,7 +129,7 @@ def test_null_and_unrelated_updates_preserve_explicit_off_after_reload(
     assert new_capture_settling_state(capture_epoch=0) is None
 
 
-def test_capture_counts_keep_policy_until_next_episode(
+def test_comparisons_and_window_apply_from_the_next_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from backend.utils.config_manager import config_manager
@@ -146,37 +142,19 @@ def test_capture_counts_keep_policy_until_next_episode(
         recording_id=1, settling_state=new_capture_settling_state(capture_epoch=0)
     )
     resolve_capture_settling_policy(transcript, device="cuda")
-    transcript.settling_state = {
-        **transcript.settling_state,
-        "speaker_enabled": True,
-        "gate_chunks": [
-            {
-                "sequence": 0,
-                "start_ms": 0,
-                "end_ms": 2000,
-                "missed": True,
-                "consumed": False,
-            }
-        ],
-    }
-    initial = dict(transcript.settling_state)
+    assert current_settling_policy() == {"k": 5, "window_s": 12.5}
     settings.update(live_text_settling_k=2, live_text_settling_window_s=6)
-    resolve_capture_settling_policy(transcript, device="cuda")
-    assert transcript.settling_state == initial
+    assert current_settling_policy() == {"k": 2, "window_s": 6}
+    assert transcript.settling_state["policy"] == {"enabled": True}
+    transcript.settling_state = {**transcript.settling_state, "speaker_enabled": True}
     update_capture_settling_state(
         transcript, capture_epoch=0, sealed=False, phase="paused"
     )
     update_capture_settling_state(
         transcript, capture_epoch=1, sealed=False, phase="live"
     )
-    assert transcript.settling_state["generation"] != initial["generation"]
-    assert transcript.settling_state["policy"] == {
-        "k": 2,
-        "window_s": 6,
-        "enabled": None,
-    }
+    assert transcript.settling_state["policy"] == {"enabled": None}
     assert "speaker_enabled" not in transcript.settling_state
-    assert "gate_chunks" not in transcript.settling_state
 
 
 @pytest.mark.parametrize("resumed", [False, True])

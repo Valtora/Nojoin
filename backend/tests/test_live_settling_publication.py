@@ -57,7 +57,19 @@ def settling_engine(
     engine.dispose()
 
 
-def _seed(engine: Engine, *, k: int = 3) -> int:
+def settle_with_k(monkeypatch: pytest.MonkeyPatch, k: int) -> None:
+    """Set the agreement count each step reads (``current_settling_policy``)."""
+    read = config_manager.get
+    monkeypatch.setattr(
+        config_manager,
+        "get",
+        lambda key, default=None: (
+            k if key == "live_text_settling_k" else read(key, default)
+        ),
+    )
+
+
+def _seed(engine: Engine) -> int:
     recording_id = add_recording(
         engine, "settling.wav", status=RecordingStatus.UPLOADING
     )
@@ -73,7 +85,7 @@ def _seed(engine: Engine, *, k: int = 3) -> int:
                     "capture_epoch": 0,
                     "sealed": False,
                     "phase": "live",
-                    "policy": {"k": k, "window_s": 10, "enabled": True},
+                    "policy": {"enabled": True},
                 },
             )
         )
@@ -262,8 +274,11 @@ def test_expiry_and_closure_lock_without_decode_and_snapshot_only_on_closure(
         assert len(transcript.segments) == 1
 
 
-def test_order_does_not_restart_after_a_silent_gap(settling_engine: Engine) -> None:
-    recording_id = _seed(settling_engine, k=1)
+def test_order_does_not_restart_after_a_silent_gap(
+    settling_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         for step in range(2):
             publish_live_settling(
@@ -473,6 +488,7 @@ def test_resumed_cuda_does_not_adopt_or_duplicate_legacy_cpu_words(
 
 def test_word_source_aggregation_tracks_audio_energy_and_retains_locked_provenance(
     settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from backend.processing.browser_live_audio import (
         source_channel_from_confidence_payload,
@@ -488,7 +504,8 @@ def test_word_source_aggregation_tracks_audio_energy_and_retains_locked_provenan
     )
     assert mixed["source_channel_activity"]["source_overlap"]
     assert source_channel_from_confidence_payload(mixed) is None
-    recording_id = _seed(settling_engine, k=1)
+    settle_with_k(monkeypatch, 1)
+    recording_id = _seed(settling_engine)
     with Session(settling_engine) as session:
         words = [{**word, "source_channel_activity": microphone} for word in _words()]
         for step in range(2):

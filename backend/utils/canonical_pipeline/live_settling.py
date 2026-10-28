@@ -24,6 +24,7 @@ from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     GateChunk,
+    current_settling_policy,
     load_capture_publication,
     publication_is_current,
 )
@@ -333,7 +334,7 @@ def publish_live_settling(
     settled = reconcile_word_state(
         existing,
         hypothesis,
-        k=state["policy"]["k"],
+        k=current_settling_policy()["k"],
         decode_id=request.decode_id,
         window_start_ms=request.window_start_ms,
         audio_end_ms=request.audio_end_ms,

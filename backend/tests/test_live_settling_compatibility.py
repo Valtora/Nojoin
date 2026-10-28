@@ -11,7 +11,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.tests.live_naming_fixtures import ONE
 from backend.tests.sqlite_schemas import P_TAGS_SCHEMA, PEOPLE_TAGS_SCHEMA
-from backend.tests.test_live_settling_publication import _request
+from backend.tests.test_live_settling_publication import _request, settle_with_k
 from backend.tests.test_live_speaker_naming_api import REC, _seed
 from backend.tests.test_live_speaker_naming_api import client as client
 from backend.tests.test_live_speaker_naming_api import session_maker as session_maker
@@ -125,8 +125,9 @@ async def test_speaker_mutation_updates_canonical_live_lines_from_deferred_snaps
 
 
 async def test_live_replacement_keeps_capture_order_when_next_window_adds_a_line(
-    session_maker: Any,
+    session_maker: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    settle_with_k(monkeypatch, 1)
     await _seed(session_maker, lines=[])
     async with session_maker() as session:
         transcript = await session.get(Transcript, 1)
@@ -136,7 +137,7 @@ async def test_live_replacement_keeps_capture_order_when_next_window_adds_a_line
             "generation": "order-test",
             "capture_epoch": 0,
             "phase": "live",
-            "policy": {"enabled": True, "k": 1, "window_s": 10},
+            "policy": {"enabled": True},
             "speaker_enabled": False,
         }
         await session.commit()
@@ -189,7 +190,7 @@ async def test_marked_cpu_cuda_and_cpu_fallback_lines_share_capture_order(
             "generation": "mixed-devices",
             "capture_epoch": 0,
             "phase": "live",
-            "policy": {"enabled": False, "k": 1, "window_s": 10},
+            "policy": {"enabled": False},
         }
         await session.commit()
         await session.run_sync(_append_across_devices)
@@ -200,7 +201,7 @@ def _append_across_devices(session: Any) -> None:
     transcript = session.get(Transcript, 1)
     transcript.settling_state = {
         **transcript.settling_state,
-        "policy": {"enabled": True, "k": 1, "window_s": 10},
+        "policy": {"enabled": True},
     }
     session.commit()
     assert publish_live_settling(
@@ -212,7 +213,7 @@ def _append_across_devices(session: Any) -> None:
     close_live_settling(session, recording_id=1)
     transcript.settling_state = {
         **transcript.settling_state,
-        "policy": {"enabled": False, "k": 1, "window_s": 10},
+        "policy": {"enabled": False},
     }
     session.commit()
     _append_cpu_lines(session, [("CPU fourth", 6.1)])
