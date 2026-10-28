@@ -347,17 +347,6 @@ describe("releasing only the microphone while paused", () => {
     expect(sharedAudio.readyState).toBe("live");
     expect(capture.getState()).toMatchObject({ status: "paused", runtimeActive: true });
   });
-  it("observes a remote pause through the existing coverage poll", async () => {
-    vi.useFakeTimers();
-    const { capture, recorder } = await start();
-    api.getRecording.mockResolvedValue({ ...paused, captured_audio_seconds: 0 });
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect(api.getRecording).toHaveBeenCalledWith("rec-1");
-    expect(recorder.pause).toHaveBeenCalledOnce();
-    expect(microphone.stop).toHaveBeenCalledOnce();
-    expect(sharedAudio.readyState).toBe("live");
-    expect(capture.getState().status).toBe("paused");
-  });
   it("supports microphone-only pause/resume without a shared picker", async () => {
     const { capture } = await start("microphone_only");
     await capture.pause();
@@ -430,21 +419,6 @@ describe("releasing only the microphone while paused", () => {
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(recorder.resume).toHaveBeenCalledOnce();
     expect(capture.getState().status).toBe("recording");
-  });
-
-  it("ignores an earlier remote pause answer after a local Resume", async () => {
-    vi.useFakeTimers();
-    const { capture, recorder } = await start();
-    const oldPoll = deferred<typeof paused>();
-    api.getRecording.mockReturnValueOnce(oldPoll.promise);
-    await vi.advanceTimersByTimeAsync(15_000);
-    await capture.pause();
-    await capture.resume();
-    oldPoll.resolve(paused);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(recorder.pause).toHaveBeenCalledOnce();
-    expect(capture.getState().status).toBe("recording");
-    expect(replacement.readyState).toBe("live");
   });
 
   it.each(["Android Chrome/140.0 Mobile Safari/537.36", "iPhone CriOS/140.0 Mobile Safari/604.1"])(

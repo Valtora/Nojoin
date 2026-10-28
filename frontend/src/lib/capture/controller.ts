@@ -2185,21 +2185,8 @@ export class CaptureController {
       return;
     }
 
-    const runtime = this.runtime;
-    const ticket = this.captureActionTicket;
-
     try {
       const recording = await getRecording(recordingId);
-      // Remote Pause has no push transport; reuse the coverage poll, and ignore
-      // an answer from before a local Resume/Stop/Discard changed the capture.
-      if (
-        this.state.settings.releaseMicrophoneOnPause && runtime &&
-        this.runtime === runtime && ticket === this.captureActionTicket &&
-        this.state.status === "recording" && recording.status === RecordingStatus.PAUSED
-      ) {
-        await this.pause();
-        return;
-      }
       const captured = recording.captured_audio_seconds;
       if (typeof captured !== "number") {
         return;
