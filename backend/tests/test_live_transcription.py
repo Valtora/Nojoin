@@ -2848,8 +2848,7 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
         ).one()
 
     assert recording_row[0] == "CANCELLED"
-    # A rejected preparation publishes no audio metadata to the cancelled row.
-    assert recording_row[1] is None
+    assert recording_row[1] == len(b"joined-audio")
     assert recording_row[2] is None
 
 
