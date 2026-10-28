@@ -92,7 +92,7 @@ To take notes on a second device, such as a phone while a laptop records, sign i
 
 ## Naming Speakers During Capture
 
-Optional [live word settling](USAGE.md#live-transcription) revises only recent transcript words and speaker boundaries. Pause and Stop lock the last accepted words without another decode; Resume starts a fresh settling episode. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
+[Live word settling](USAGE.md#live-transcription) defaults to **Auto (GPU)**, with **3 unchanged comparisons** and a **10 s settling window**, and revises only recent transcript words and speaker boundaries. Administrators can turn it off; a stored Off stays off on upgrade, and CPU processing keeps ordinary whole-line transcription. Pause and Stop lock the last accepted words without another decode; Resume starts a fresh settling episode. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
 
 If Pause interrupts a live transcription pass, the next upload after Resume also drains its retained audio. Live text continues on the recording's audio clock, including a partial segment uploaded at Pause.
 

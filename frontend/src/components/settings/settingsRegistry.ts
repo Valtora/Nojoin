@@ -496,7 +496,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     scope: "everyone",
     advanced: "can-degrade",
     settingsKeys: ["live_text_settling"],
-    defaultValue: "off",
+    defaultValue: "auto",
     keywords: ["live", "settling", "word", "GPU"],
   },
   {
