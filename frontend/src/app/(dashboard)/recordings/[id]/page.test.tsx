@@ -429,6 +429,18 @@ describe("RecordingPage (detail)", () => {
     expect(setActivePanel).toHaveBeenCalledWith("transcript");
   });
 
+  it("offers Meeting Edge only once settings say it is on, keeping a remembered tab", async () => {
+    activePanel = "meeting-edge";
+    let answer!: (settings: object) => void;
+    getSettings.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const tablist = await openTabs(360);
+    expect(tabLabels(tablist)).not.toContain("Meeting Edge");
+    expect(setActivePanel).not.toHaveBeenCalledWith("transcript");
+    await act(async () => answer({ enable_meeting_edge: true, meeting_edge_context_level: 2 }));
+    expect(tabLabels(tablist)).toContain("Meeting Edge");
+    expect(setActivePanel).not.toHaveBeenCalledWith("transcript");
+  });
+
   it("shows retained Meeting Edge guidance and focus read-only beside processing progress on reload", async () => {
     sidePanelsCollapsed = false;
     sideTab = "meeting-edge";

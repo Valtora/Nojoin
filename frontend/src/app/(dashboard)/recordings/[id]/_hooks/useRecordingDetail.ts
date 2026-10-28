@@ -108,7 +108,8 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // A note's file switched on keeps the recording polled until it is read.
   const filesBeingRead = noteFilesBeingRead(timelineNotes);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
-  const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState(true);
+  // Unknown until settings answer, so an installation with it off never flashes its tab.
+  const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState<boolean | null>(null);
   const [meetingEdgeContextLevel, setMeetingEdgeContextLevel] = useState(
     DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
   );
@@ -212,8 +213,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       void speakersAndSettings.then(([gsData, settingsData]) => {
         if (!metadataReader.isActive()) return;
         setGlobalSpeakers(gsData);
+        // Settings that cannot load leave Meeting Edge on.
+        setMeetingEdgeEnabled(settingsData?.enable_meeting_edge !== false);
         if (settingsData) {
-          setMeetingEdgeEnabled(settingsData.enable_meeting_edge !== false);
           setMeetingEdgeContextLevel(clampMeetingEdgeContextLevel(settingsData.meeting_edge_context_level));
         }
       });
@@ -267,7 +269,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   }, [isMobile]);
 
   // Meeting Edge shows while it is switched on, and afterwards wherever it left guidance.
-  const showMeetingEdge = meetingEdgeEnabled || Boolean(recording?.transcript?.meeting_edge_payload);
+  const showMeetingEdge = meetingEdgeEnabled === true || Boolean(recording?.transcript?.meeting_edge_payload);
 
   // The "speakers", "my-notes", "captures" and "meeting-edge" panels exist only on mobile,
   // where they have tabs; desktop shows them in the side column. Leaving
@@ -277,11 +279,11 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     if (
       (!isMobile &&
         (activePanel === "speakers" || activePanel === "my-notes" || activePanel === "captures" || activePanel === "meeting-edge")) ||
-      (!showMeetingEdge && activePanel === "meeting-edge")
+      (meetingEdgeEnabled !== null && !showMeetingEdge && activePanel === "meeting-edge")
     ) {
       setActivePanel("transcript");
     }
-  }, [isMobile, activePanel, setActivePanel, showMeetingEdge]);
+  }, [isMobile, activePanel, setActivePanel, showMeetingEdge, meetingEdgeEnabled]);
 
   useEffect(() => {
     if (!recording) return;
