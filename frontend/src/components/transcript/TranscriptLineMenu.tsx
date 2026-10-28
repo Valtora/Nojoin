@@ -85,13 +85,13 @@ export default function TranscriptLineMenu({
   const items = lineActionsFor({
     view: "finished",
     canNote: onAddNote !== null && selection !== null,
-    canEdit: !isSegmentReadOnly,
+    canEdit: !isSegmentReadOnly || lineIsSettling(segment),
     provisional: segment.provisional === true,
     canPlay: onPlayFrom !== null,
     canSplit: !isSegmentReadOnly && !!segment.id && segment.revision !== undefined &&
       onSplitSegment !== null && splitWords(segment).length > 0,
     settlingRequired: segment.settling_required,
-    noteDisabledReason: lineIsSettling(segment) ? LINE_SETTLING_REASON : undefined,
+    disabledReason: lineIsSettling(segment) ? LINE_SETTLING_REASON : undefined,
   }).map((action) => ({ ...action, onSelect: run[action.id] }));
 
   return (

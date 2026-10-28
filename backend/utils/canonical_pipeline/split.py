@@ -12,8 +12,7 @@ from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceStat
 from backend.utils.word_text import reconstruct_text_from_words
 
 from .constants import _append_utterance_event, _get_utterance, _load_transcript
-from .guards import freeze_live_line
-from .live_settling_projection import mutable_row, row_words
+from .live_settling_projection import row_words
 
 
 def _split_index(words: list[dict[str, Any]], before_word_id: str) -> int:
@@ -120,10 +119,6 @@ def split_utterance(
         raise RuntimeError("This line changed. Reload it and try again.")
     words = row_words(parent)
     index = _split_index(words, command.before_word_id)
-    # A split live line freezes like any edit: settling leaves its halves alone.
-    freeze = parent.state == TranscriptUtteranceState.PROVISIONAL and mutable_row(
-        parent
-    )
     group = str(uuid4())
     protection = {
         "version": 1,
@@ -151,9 +146,6 @@ def split_utterance(
         new_values={"state": "superseded"},
     )
     for child in children:
-        if freeze:
-            child.manual_text_locked = True
-            freeze_live_line(child)
         session.add(child)
         session.flush()
         _append_utterance_event(

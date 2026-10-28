@@ -21,9 +21,10 @@ interface LiveLineMenuProps {
 
 /**
  * The live view's ⋯ menu on a line. Every line can take the note box's next
- * note, quoting the line once its words lock. Lines of a recording using word
- * settling also take corrections, speaker assignment and word splits, open or
- * locked: a change on an open line freezes it against later decodes.
+ * note, quoting the line. Lines of a recording using word settling also take
+ * corrections, speaker assignment and word splits. On those recordings every
+ * action but Play waits for the line to lock, as a note from a selection waits
+ * for its words.
  */
 export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers }: LiveLineMenuProps) {
   const [editing, setEditing] = useState<{
@@ -39,33 +40,18 @@ export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers
     provisional: true,
     canPlay: false,
     settlingRequired: segment.settling_required,
-    noteDisabledReason: settling ? LINE_SETTLING_REASON : undefined,
+    disabledReason: settling ? LINE_SETTLING_REASON : undefined,
     canSplit: canEdit && splitWords(segment).length > 0,
   }).map((action) => ({
     ...action,
     onSelect: (anchor: HTMLButtonElement) => {
-      if (action.id === "note") {
-        if (selection) onNoteOnLine(selection);
-        return;
-      }
+      if (settling) return;
+      if (action.id === "note" && selection) onNoteOnLine(selection);
       if (action.id === "editText" || action.id === "changeSpeaker" || action.id === "split") {
         setEditing({ kind: action.id, anchor, segment });
       }
     },
   }));
-  // A save is sent against the line as the editor opened it. When it fails,
-  // most often because a settling pass changed the line meanwhile, the editor
-  // moves to the line as it is now and keeps what was typed: Save again
-  // applies it there.
-  const rebase = (saved: boolean) => {
-    if (!saved) setEditing((open) => open && { ...open, segment });
-    return saved;
-  };
-  const editorHandlers: LiveLineHandlers | undefined = handlers && {
-    editText: async (line, text) => rebase(await handlers.editText(line, text)),
-    changeSpeaker: async (line, assignment) => rebase(await handlers.changeSpeaker(line, assignment)),
-    split: async (line, wordId) => rebase(await handlers.split(line, wordId)),
-  };
 
   return (
     <>
@@ -74,9 +60,9 @@ export default function LiveLineMenu({ segment, onNoteOnLine, handlers, speakers
       items={items}
       triggerClassName="-my-0.5 h-6 w-6 shrink-0 pointer-coarse:-my-2.5"
     />
-    {editing && editorHandlers ? <LiveLineEditor
+    {editing && handlers && !settling ? <LiveLineEditor
       key={`${editing.kind}-${editing.segment.id}`} kind={editing.kind} segment={editing.segment} anchor={editing.anchor}
-      handlers={editorHandlers} speakers={speakers} onClose={() => { setEditing(null); editing.anchor.focus(); }}
+      handlers={handlers} speakers={speakers} onClose={() => { setEditing(null); editing.anchor.focus(); }}
     /> : null}
     </>
   );

@@ -31,7 +31,7 @@ describe("settling line actions", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     expect(submit).toHaveBeenCalledWith({ kind: "point", body: "My thought", anchorMs: 1500 });
   });
-  it("offers corrections on an open line, and its note once the line locks", () => {
+  it("keeps every line action but Play waiting until the line locks", () => {
     const actions = handlers();
     const note = vi.fn();
     const delta = (locked: boolean): TranscriptUtteranceList => ({
@@ -46,20 +46,20 @@ describe("settling line actions", () => {
     const items = screen.getAllByRole("menuitem");
     expect(items).toHaveLength(4);
     for (const item of items) {
-      expect(item).toHaveAttribute("aria-disabled", item.textContent?.startsWith("Note on this line") ? "true" : "false");
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      fireEvent.click(item);
     }
-    fireEvent.click(items[0]);
     expect(note).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
-    expect(screen.getByRole("textbox", { name: "Line text" })).toHaveValue("Alpha beta.");
-    fireEvent.keyDown(screen.getByRole("textbox", { name: "Line text" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const locked = applyTranscriptDelta({ currentState: initial, recordingId: "r1", fallbackSegments: [], delta: delta(true) });
     view.rerender(<LiveTranscriptPanel segments={locked.segments} hasLoaded onNoteOnLine={note} lineHandlers={actions} />);
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     expect(screen.getByTestId("live-transcript-line")).not.toHaveAttribute("aria-describedby");
-    open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
     expect(note).toHaveBeenCalledWith({ startMs: 0, endMs: 2000, quotedText: "Alpha beta." });
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
+    expect(screen.getByRole("textbox", { name: "Line text" })).toHaveValue("Alpha beta.");
   });
 
   it("splits at an interior lexical word UUID, without offering punctuation or an untimed atom", async () => {
@@ -95,10 +95,9 @@ describe("settling line actions", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  it("sends text against the revision the editor opened, and against the current one once that fails", async () => {
+  it("sends text against the revision the editor opened, despite a newer poll", async () => {
     const actions = handlers();
-    vi.mocked(actions.editText).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    const first = line(false);
+    const first = line(true);
     const view = render(<LiveTranscriptPanel segments={[first]} hasLoaded onNoteOnLine={vi.fn()} lineHandlers={actions} />);
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
@@ -107,12 +106,6 @@ describe("settling line actions", () => {
       hasLoaded onNoteOnLine={vi.fn()} lineHandlers={actions} />);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(actions.editText).toHaveBeenCalledWith(expect.objectContaining({ revision: 3 }), "My correction"));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
-    expect(screen.getByRole("textbox", { name: "Line text" })).toHaveValue("My correction");
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(actions.editText).toHaveBeenLastCalledWith(
-      expect.objectContaining({ revision: 9 }), "My correction"));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("offers final wording once beside the retained protected text", () => {

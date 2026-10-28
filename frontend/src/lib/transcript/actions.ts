@@ -14,10 +14,10 @@ export interface LineActionContext {
   provisional: boolean;
   /** The recording's audio can be played from the line. */
   canPlay: boolean;
-  /** The recording uses word settling, whose live lines take corrections (which freeze them). */
+  /** The recording uses word settling, whose live lines take corrections once locked. */
   settlingRequired?: boolean;
-  /** Why "Note on this line" is unavailable: a line note quotes the line, so it waits for the lock. */
-  noteDisabledReason?: string;
+  /** Why every action but Play is unavailable: on a settling line they wait for its lock. */
+  disabledReason?: string;
   canSplit?: boolean;
 }
 
@@ -31,8 +31,8 @@ export interface LineAction {
 
 /**
  * Every line action, in menu order. Legacy live views offer notes; marked
- * live views also offer corrections, speaker assignment and genuine-word splits,
- * on open lines too. In the finished view, Edit text is the only way
+ * live views also offer corrections, speaker assignment and genuine-word splits.
+ * In the finished view, Edit text is the only way
  * into a line's editor (a click on the text selects it), and Change speaker
  * and Play from here repeat the speaker button and the play button, so each
  * also has a keyboard path from one place.
@@ -74,6 +74,6 @@ export const LINE_ACTIONS: readonly LineAction[] = [
 /** The actions a line offers, in menu order; empty when it offers none. */
 export const lineActionsFor = (context: LineActionContext): LineAction[] =>
   LINE_ACTIONS.filter((action) => action.when(context)).map((action) =>
-    action.id === "note" && context.noteDisabledReason
-      ? { ...action, disabledReason: context.noteDisabledReason } : action,
+    action.id !== "play" && context.disabledReason
+      ? { ...action, disabledReason: context.disabledReason } : action,
   );

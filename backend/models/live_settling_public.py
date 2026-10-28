@@ -72,13 +72,8 @@ def public_settling_fields(
                     ],
                 }
         return public_review
-    # A locked line's words read as locked, including a line a person froze
-    # while its words were still settling (``freeze_live_line``).
-    line_locked = bool((metadata or {}).get("line_locked"))
     words = [
-        LiveWordPublicRead.model_validate(
-            {**word, "locked": True} if line_locked else word
-        ).model_dump()
+        LiveWordPublicRead.model_validate(word).model_dump()
         for segment in payload.get("asr_segments") or []
         for word in segment.get("words") or []
     ]
@@ -86,7 +81,7 @@ def public_settling_fields(
         **public_review,
         "words": words,
         "text_locked": bool(words) and all(word["locked"] for word in words),
-        "locked": protected or line_locked,
+        "locked": protected or bool((metadata or {}).get("line_locked")),
     }
 
 

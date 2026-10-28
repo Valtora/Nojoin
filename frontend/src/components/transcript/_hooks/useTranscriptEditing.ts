@@ -6,6 +6,7 @@ import type { KeyboardEvent } from "react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { TranscriptSegment } from "@/types";
+import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
 
 import type { TranscriptSearch } from "./useTranscriptSearch";
 
@@ -244,6 +245,10 @@ export function useTranscriptEditing(
     if (!segment) {
       return;
     }
+    if (lineIsSettling(segment)) {
+      addNotification({ type: "warning", message: LINE_SETTLING_REASON });
+      return;
+    }
 
     const prefix = segment.text.substring(0, match.startIndex);
     const suffix = segment.text.substring(match.startIndex + match.length);
@@ -270,7 +275,7 @@ export function useTranscriptEditing(
   const lineActions = useMemo<TranscriptLineActions>(
     () => ({
       startTextEdit: (segment, segmentId) => {
-        if (readOnly ||
+        if (readOnly || lineIsSettling(segment) ||
           (segment.provisional === true && !allowProvisionalEdits && !segment.settling_required)) return;
         setEdit({
           key: Symbol("text edit"),

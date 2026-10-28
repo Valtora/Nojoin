@@ -134,7 +134,7 @@ function TranscriptLine({
     [decorations, noteDecorations],
   );
   const isProvisional = segment.provisional === true;
-  const isSegmentReadOnly = readOnly ||
+  const isSegmentReadOnly = readOnly || lineIsSettling(segment) ||
     (isProvisional && !allowProvisionalEdits && !segment.settling_required);
   const speakerName = segmentSpeakerDisplayName(speakerMap, segment.speaker);
   // A live label is no speaker of the recording yet, so it has no name to
