@@ -70,6 +70,8 @@ import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingN
 import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
+import RecordingAttentionBadge from "./RecordingAttentionBadge";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 
 interface RowMenuItem {
   label: string;
@@ -153,6 +155,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { addNotification } = useNotificationStore();
+  const { refreshPausedRecording } = useCapture();
   const actions = useRecordingActions();
   const unsentRecordings = useUnsentRecordings();
   const { isCompact, isDesktop: isDesktopLayout } = useViewportDensity();
@@ -373,6 +376,7 @@ export default function Sidebar() {
       const data = await getRecordings(filters);
       setRecordings(data);
       setHasLoadedRecordings(true);
+      void refreshPausedRecording().catch(() => {});
 
         } catch (error: unknown) {
       console.error("Failed to fetch recordings:", error);
@@ -384,6 +388,7 @@ export default function Sidebar() {
     selectedTagIds,
     currentView,
     userTimeZone,
+    refreshPausedRecording,
   ]);
 
   useEffect(() => {
@@ -1257,6 +1262,7 @@ export default function Sidebar() {
                             {formatDurationString(recording.duration_seconds)}
                           </span>
                         </div>
+                        <RecordingAttentionBadge recordingId={recording.id} className="mt-2" />
                         {/* The open recording lists its own unsent notes. */}
                         {!isActive && unsentRecordings.includes(recording.id) && (
                           <Badge

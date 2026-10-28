@@ -35,8 +35,12 @@ vi.mock("@/lib/timezone", async (importOriginal) => ({
 vi.mock("@/lib/notes/useNoteOutbox", () => ({ useUnsentRecordings: () => [] }));
 vi.mock("@/lib/notes/deletedRecordingNotes", () => ({ useForgetNotesOfDeletedRecordings: () => {} }));
 vi.mock("@/lib/capture/CaptureProvider", () => ({
-  useCapture: () => ({ cancel: vi.fn(), recordingId: null, pausedRecording: null, runtimeActive: false }),
+  useCapture: () => ({
+    cancel: vi.fn(), recordingId: null, pausedRecording: null, runtimeActive: false, attentionRecordings: [],
+    refreshPausedRecording,
+  }),
 }));
+const refreshPausedRecording = async () => null;
 vi.mock("./MeetingControls", () => ({ default: () => null }));
 vi.mock("./MonthCalendar", () => ({ default: () => null }));
 

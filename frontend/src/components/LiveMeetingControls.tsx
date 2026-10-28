@@ -58,6 +58,8 @@ export default function LiveMeetingControls({
     elapsedSeconds,
     pause,
     recordingId,
+    ownedRecordingId,
+    pausedRecording,
     resume,
     runtimeActive,
     status,
@@ -68,11 +70,12 @@ export default function LiveMeetingControls({
 
   const { addNotification } = useNotificationStore();
   const isRecording = status === "recording";
-  // Pause and resume need live browser tracks. Stop and discard do not: a
-  // recording whose runtime was torn down must still be finishable, or it is
-  // stranded in PAUSED with no route to processing (issue #166).
+  // A conflict's ID is not ownership. A retained runtime can retry a failed
+  // stop, and an eligible recovery offer can finish without browser tracks.
   const transportDisabled = !runtimeActive || status === "finalizing";
-  const stopDisabled = status === "finalizing" || !recordingId;
+  const canControl = Boolean(recordingId &&
+    (ownedRecordingId === recordingId || pausedRecording?.id === recordingId));
+  const stopDisabled = status === "finalizing" || !canControl;
 
   // Diarization runs at stop time, so the cap stays editable for the whole
   // recording: whatever is set when capture ends is what gets applied.

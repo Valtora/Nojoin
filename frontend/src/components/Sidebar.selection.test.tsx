@@ -77,9 +77,12 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     cancel: vi.fn(),
     recordingId: null,
     pausedRecording: null,
+    attentionRecordings: [],
     runtimeActive: false,
+    refreshPausedRecording,
   }),
 }));
+const refreshPausedRecording = async () => null;
 vi.mock("@/lib/timezone", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/timezone")>();
   return {

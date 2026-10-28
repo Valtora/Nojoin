@@ -331,6 +331,28 @@ describe("releasing only the microphone while paused", () => {
     expect(recorder.resume).not.toHaveBeenCalled();
     expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false });
   });
+
+  it.each([false, true])("entering the recording page preserves pending Resume, cold=%s", async (cold) => {
+    const { capture } = await start("microphone_only");
+    await capture.pause();
+    let resumingCapture = capture;
+    if (cold) {
+      await capture.destroy();
+      resumingCapture = controller();
+      api.getUnfinishedCaptures.mockResolvedValue([paused]);
+      await resumingCapture.openRecording("rec-1");
+    }
+    const grant = deferred<MediaStream>();
+    getUserMedia.mockReturnValueOnce(grant.promise);
+    const resuming = resumingCapture.resume("rec-1");
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+
+    await resumingCapture.openRecording("rec-1");
+    grant.resolve(mediaStream(replacement));
+    await expect(resuming).resolves.toMatchObject({ recordingId: "rec-1", resumed: true });
+    expect(resumingCapture.getState()).toMatchObject({ status: "recording", runtimeActive: true });
+    expect(replacement.readyState).toBe("live");
+  });
   it("releases the microphone when an upload stall pauses capture", async () => {
     const { capture, uploaderOptions } = await start();
     await uploaderOptions.onStalled?.(new Error("upload stalled"));
@@ -357,6 +379,9 @@ describe("releasing only the microphone while paused", () => {
     const reloaded = controller();
     hookCapture.current = reloaded;
     api.getUnfinishedCaptures.mockResolvedValue([paused]);
+    // A reload of the recording page requests recovery once, rather than a
+    // background guard opening a decision whenever server state changes.
+    await reloaded.openRecording("rec-1");
     const { result } = renderHook(() => usePausedRecordingGuard());
     await waitFor(() => expect(result.current.hasPausedRecording).toBe(true));
     expect(api.discardRecordingCapture).not.toHaveBeenCalled();
@@ -494,6 +519,8 @@ describe("releasing only the microphone while paused", () => {
     await capture.pause();
     await capture.destroy();
     const reloaded = controller();
+    api.getUnfinishedCaptures.mockResolvedValue([paused]);
+    await reloaded.openRecording("rec-1");
     const stored = deferred<StoredSegment[]>();
     const mixed = deferred<typeof mixer>();
     const list = vi.spyOn(storeOf(reloaded), "list");

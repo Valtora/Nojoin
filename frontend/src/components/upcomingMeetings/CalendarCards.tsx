@@ -39,6 +39,7 @@ import {
   getUrlHost,
 } from "./calendarUtils";
 import { EventDetailsPopoverContent } from "./EventDetailsPopover";
+import RecordingAttentionBadge from "../RecordingAttentionBadge";
 
 export function LinkedRecordingsMeta({
   recordings,
@@ -59,10 +60,11 @@ export function LinkedRecordingsMeta({
       {singleRecording ? (
         <Link
           href={`/recordings/${singleRecording.id}`}
-          className="inline-flex items-center gap-1 text-xs font-semibold text-contrast-muted transition-colors hover:text-foreground"
+          className="inline-flex flex-wrap items-center gap-1 text-xs font-semibold text-contrast-muted transition-colors hover:text-foreground"
         >
           Open recording
           <ArrowRight className="h-3 w-3" />
+          <RecordingAttentionBadge recordingId={singleRecording.id} />
         </Link>
       ) : null}
     </div>
@@ -134,11 +136,14 @@ export function DashboardRecordingCard({
               {formatRecordingTime(recording, timeZone)}
             </span>
             <span>{formatRecordingDuration(recording.duration_seconds)}</span>
-            {showStatus ? (
-              <span className={`inline-flex rounded-pill border px-2.5 py-1 text-xs font-semibold ${getRecordingStatusClasses(recording.status)}`}>
-                {recording.status}
-              </span>
-            ) : null}
+            <RecordingAttentionBadge
+              recordingId={recording.id}
+              fallback={showStatus ? (
+                <span className={`inline-flex rounded-pill border px-2.5 py-1 text-xs font-semibold ${getRecordingStatusClasses(recording.status)}`}>
+                  {recording.status}
+                </span>
+              ) : null}
+            />
           </div>
         </div>
 

@@ -50,6 +50,7 @@ describe("MeetingControls", () => {
     routerPush.mockReset();
     addNotification.mockReset();
     start.mockReset();
+    captureState.refreshPausedRecording.mockClear();
     captureState.controller.getState = () => ({ error: null });
     captureState.runtimeActive = false;
     captureState.pausedRecording = null;
@@ -91,6 +92,17 @@ describe("MeetingControls", () => {
 
     expect(addNotification).not.toHaveBeenCalled();
     expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it("hands Start directly to the controller so its reservation covers preflight", async () => {
+    start.mockResolvedValue({ recordingId: "rec-new" });
+    render(<MeetingControls variant="dashboard" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+    expect(start).toHaveBeenCalledWith("");
+    expect(captureState.refreshPausedRecording).not.toHaveBeenCalled();
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/recordings/rec-new"));
   });
 
   it("keeps the sidebar's paired action through idle, recording, paused and finalizing", () => {

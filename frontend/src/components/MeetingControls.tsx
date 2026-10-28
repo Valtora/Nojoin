@@ -50,7 +50,6 @@ export default function MeetingControls({
     controller,
     finalizeRetry,
     pausedRecording,
-    refreshPausedRecording,
     runtimeActive,
     start,
     status,
@@ -152,9 +151,6 @@ export default function MeetingControls({
 
   const sendStart = async () => {
     try {
-      if (await refreshPausedRecording({ onDemand: true })) {
-        return null;
-      }
       return await start("");
     } catch (err: unknown) {
       console.error("Failed to start browser recording:", err);
