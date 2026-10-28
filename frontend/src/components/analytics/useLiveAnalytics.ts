@@ -5,6 +5,8 @@ import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import type { LiveRecordingAnalytics, RecordingId } from "@/types";
 
 const POLL_MS = 3000;
+// A read that never answers would otherwise hold back every later poll.
+const READ_TIMEOUT_MS = 15000;
 
 /** Polls one read at a time while enabled; disabling keeps the last snapshot. */
 export function useLiveAnalytics(recordingId: RecordingId, enabled = true) {
@@ -23,7 +25,9 @@ export function useLiveAnalytics(recordingId: RecordingId, enabled = true) {
     const read = () => {
       if (reading) return;
       reading = true;
-      void getLiveRecordingAnalytics(recordingId, controller.signal)
+      const deadline = new AbortController();
+      const timeout = setTimeout(() => deadline.abort(), READ_TIMEOUT_MS);
+      void getLiveRecordingAnalytics(recordingId, AbortSignal.any([controller.signal, deadline.signal]))
         .then((next) => {
           if (controller.signal.aborted) return;
           setAnalytics(next);
@@ -33,6 +37,7 @@ export function useLiveAnalytics(recordingId: RecordingId, enabled = true) {
           if (!controller.signal.aborted) setError("Analytics could not be refreshed. Retrying shortly.");
         })
         .finally(() => {
+          clearTimeout(timeout);
           reading = false;
         });
     };

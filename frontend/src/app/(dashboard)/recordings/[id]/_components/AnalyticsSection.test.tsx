@@ -186,6 +186,17 @@ describe("AnalyticsSection live lifecycle", () => {
     expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(initial + 1);
   });
 
+  it("gives up on a live read that never answers and polls again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getLiveRecordingAnalytics.mockImplementationOnce((_id: string, signal: AbortSignal) =>
+      new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason))));
+    renderWithProviders(<AnalyticsSection active inFlight recordingId="rec-1" speakerColors={{}} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(12000); });
+    expect(getLiveRecordingAnalytics).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(await screen.findByText("Alex")).toBeInTheDocument();
+  });
+
   it("ignores a live response that lands after completion", async () => {
     let resolvePoll!: (value: LiveRecordingAnalytics) => void;
     getLiveRecordingAnalytics.mockImplementationOnce(() => new Promise((resolve) => { resolvePoll = resolve; }));
