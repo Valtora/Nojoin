@@ -304,4 +304,8 @@ def test_the_polled_read_leaves_a_retained_transcript_to_the_utterances_read(
     # would be megabytes on each poll.
     assert detail.previous_publication_available is True
     assert (detail.transcript.text, detail.transcript.segments) == ("", [])
-    assert sorted(line.text for line in utterances.utterances) == ["first", "last", "middle"]
+    assert sorted(line.text for line in utterances.utterances) == [
+        "first",
+        "last",
+        "middle",
+    ]
