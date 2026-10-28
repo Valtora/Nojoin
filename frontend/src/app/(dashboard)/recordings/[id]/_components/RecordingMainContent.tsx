@@ -220,7 +220,8 @@ export default function RecordingMainContent({
   const setSideTab = useNavigationStore((state) => state.setSideTab);
   const tablistRef = useRef<HTMLDivElement>(null);
   const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
-  const tabs = isMobile ? MOBILE_TABS : TABS;
+  const tabs = !isMobile ? TABS
+    : meetingEdgeContent ? MOBILE_TABS : MOBILE_TABS.filter(({ panel }) => panel !== "meeting-edge");
   // The tab that Tab and the arrow keys start from: the current panel's, or the
   // first when it has no tab here (desktop holds "speakers" for one render
   // before useRecordingDetail falls back to the transcript).
@@ -442,7 +443,7 @@ export default function RecordingMainContent({
           </div>
         )}
 
-        {isMobile && <div role="tabpanel" id="panel-meeting-edge" aria-labelledby="tab-meeting-edge"
+        {isMobile && meetingEdgeContent && <div role="tabpanel" id="panel-meeting-edge" aria-labelledby="tab-meeting-edge"
           className={`absolute inset-0 flex flex-col overflow-y-auto ${activePanel === "meeting-edge" ? "z-10 visible" : "z-0 invisible"}`}>
           {meetingEdgeContent}
         </div>}

@@ -28,7 +28,7 @@ const renderColumn = (allowChat = true) => render(column(allowChat));
 // Match the page's conditional rail/column mounting, driven by the real store.
 function ResponsiveSideColumn({ allowChat }: { allowChat: boolean }) {
   const collapsed = useNavigationStore((state) => state.isSpeakerPanelCollapsed);
-  return collapsed ? <RecordingSideRail allowChat={allowChat} /> : column(allowChat);
+  return collapsed ? <RecordingSideRail allowChat={allowChat} showMeetingEdge /> : column(allowChat);
 }
 
 const tablist = () => screen.getByRole("tablist", { name: "Side panels" });
@@ -179,7 +179,7 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
       isChatPanelCollapsed: true,
       sideTab: sideTab === "speakers" ? "my-notes" : "speakers",
     });
-    render(<RecordingSideRail />);
+    render(<RecordingSideRail showMeetingEdge />);
 
     fireEvent.click(screen.getByRole("button", { name }));
 

@@ -406,6 +406,29 @@ describe("RecordingPage (detail)", () => {
     expect(screen.getByDisplayValue("Keep the goal")).toHaveAttribute("readonly");
   });
 
+  it("leaves Meeting Edge out of the side column when it is off and nothing is stored", async () => {
+    vi.stubGlobal("innerWidth", 1440);
+    sideTab = "meeting-edge";
+    sidePanelsCollapsed = false;
+    getSettings.mockResolvedValue({ enable_meeting_edge: false, meeting_edge_context_level: 2 });
+    getRecording.mockResolvedValue(buildRecording());
+    renderPage();
+    const sideTabs = await screen.findByRole("tablist", { name: "Side panels" });
+    await waitFor(() => expect(within(sideTabs).getAllByRole("tab").map((tab) => tab.textContent))
+      .toEqual(["Speakers", "My notes", "Captures"]));
+    // The remembered Meeting Edge tab falls back to Speakers.
+    expect(within(sideTabs).getByRole("tab", { name: "Speakers" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("speaker-panel")).toBeVisible();
+  });
+
+  it("leaves Meeting Edge out of a phone's tabs when it is off and nothing is stored", async () => {
+    activePanel = "meeting-edge";
+    getSettings.mockResolvedValue({ enable_meeting_edge: false, meeting_edge_context_level: 2 });
+    const tablist = await openTabs(360);
+    await waitFor(() => expect(tabLabels(tablist)).not.toContain("Meeting Edge"));
+    expect(setActivePanel).toHaveBeenCalledWith("transcript");
+  });
+
   it("shows retained Meeting Edge guidance and focus read-only beside processing progress on reload", async () => {
     sidePanelsCollapsed = false;
     sideTab = "meeting-edge";

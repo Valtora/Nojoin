@@ -51,6 +51,7 @@ export default function RecordingPage({ params }: PageProps) {
     noteEdits,
     globalSpeakers,
     loading,
+    showMeetingEdge,
     meetingEdgeContextLevel,
     isInFlightRecording,
     liveTranscript,
@@ -183,7 +184,7 @@ export default function RecordingPage({ params }: PageProps) {
     className="bg-surface-inset"
   />;
   const capturing = isLiveCaptureInProgress(recording);
-  const meetingEdgeContent = <MeetingEdgePanel
+  const meetingEdgeContent = showMeetingEdge ? <MeetingEdgePanel
     readOnly={!capturing}
     payload={recording.transcript?.meeting_edge_payload}
     focusText={recording.transcript?.meeting_edge_focus}
@@ -192,7 +193,7 @@ export default function RecordingPage({ params }: PageProps) {
     onSaveFocus={handleMeetingEdgeFocusChange}
     contextLevel={meetingEdgeContextLevel}
     onSaveContextLevel={handleMeetingEdgeContextLevelChange}
-  />;
+  /> : undefined;
 
   const mainContent = (
     <RecordingMainContent
@@ -381,7 +382,7 @@ export default function RecordingPage({ params }: PageProps) {
               )}
             </PanelGroup>
 
-            {sideColumnCollapsed && <RecordingSideRail />}
+            {sideColumnCollapsed && <RecordingSideRail showMeetingEdge={showMeetingEdge} />}
           </div>
         )}
       </div>

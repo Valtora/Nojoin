@@ -38,7 +38,8 @@ interface RecordingSideColumnProps {
   myNotes: ReactNode;
   /** The Captures list, as the page builds it. */
   captures: ReactNode;
-  meetingEdge: ReactNode;
+  /** The Meeting Edge panel, left out where Meeting Edge is not shown. */
+  meetingEdge?: ReactNode;
   /** Chat's percentage of the column's height. */
   chatPanelHeight: number;
   onChatPanelHeightChange: (height: number) => void;
@@ -65,29 +66,31 @@ function SideTabs({
   speakers: ReactNode;
   myNotes: ReactNode;
   captures: ReactNode;
-  meetingEdge: ReactNode;
+  meetingEdge?: ReactNode;
 }) {
-  const sideTab = useNavigationStore((state) => state.sideTab);
+  const remembered = useNavigationStore((state) => state.sideTab);
   const setSideTab = useNavigationStore((state) => state.setSideTab);
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
   );
   const tablistRef = useRef<HTMLDivElement>(null);
   const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes, captures, "meeting-edge": meetingEdge };
+  const tabs = SIDE_TABS.filter(({ tab }) => panels[tab] !== undefined);
+  const sideTab = tabs.some(({ tab }) => tab === remembered) ? remembered : "speakers";
 
   // Arrow keys move between the tabs and open them, wrapping; Home and End
   // jump to the first and last.
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    const index = SIDE_TABS.findIndex(({ tab }) => tab === sideTab);
+    const index = tabs.findIndex(({ tab }) => tab === sideTab);
     const targets: Record<string, number> = {
       ArrowLeft: index - 1,
       ArrowRight: index + 1,
       Home: 0,
-      End: SIDE_TABS.length - 1,
+      End: tabs.length - 1,
     };
     if (!(event.key in targets)) return;
     event.preventDefault();
-    const { tab } = SIDE_TABS[(targets[event.key] + SIDE_TABS.length) % SIDE_TABS.length];
+    const { tab } = tabs[(targets[event.key] + tabs.length) % tabs.length];
     setSideTab(tab);
     tablistRef.current?.querySelector<HTMLElement>(`#side-tab-${tab}`)?.focus();
   };
@@ -101,7 +104,7 @@ function SideTabs({
           aria-label="Side panels"
           className="flex min-w-0 overflow-hidden"
         >
-          {SIDE_TABS.map(({ tab, label, icon: Icon }) => {
+          {tabs.map(({ tab, label, icon: Icon }) => {
             const open = sideTab === tab;
             return (
               <ButtonBase
@@ -145,7 +148,7 @@ function SideTabs({
           className="@max-[25rem]:w-8"
         />
       </SurfaceBase>
-      {SIDE_TABS.map(({ tab }) => (
+      {tabs.map(({ tab }) => (
         <div
           key={tab}
           role="tabpanel"
@@ -202,7 +205,9 @@ export default function RecordingSideColumn({
           aria-controls="side-tabs"
         >
           <Users className="h-3.5 w-3.5" />
-          Speakers, My notes, Captures and Meeting Edge
+          {meetingEdge === undefined
+            ? "Speakers, My notes and Captures"
+            : "Speakers, My notes, Captures and Meeting Edge"}
           <ChevronDown className="ml-auto h-3.5 w-3.5" />
         </ButtonBase>
         {allowChat && <div className="min-h-0 flex-1">
@@ -285,7 +290,13 @@ export default function RecordingSideColumn({
 }
 
 /** The rail left when both parts of the side column are collapsed. */
-export function RecordingSideRail({ allowChat = true }: { allowChat?: boolean }) {
+export function RecordingSideRail({
+  allowChat = true,
+  showMeetingEdge,
+}: {
+  allowChat?: boolean;
+  showMeetingEdge: boolean;
+}) {
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
   );
@@ -325,13 +336,13 @@ export function RecordingSideRail({ allowChat = true }: { allowChat?: boolean })
         title="Show captures"
         onClick={() => show("captures")}
       />
-      <IconButton
+      {showMeetingEdge && <IconButton
         size="sm"
         icon={<Sparkles />}
         aria-label="Show Meeting Edge"
         title="Show Meeting Edge"
         onClick={() => show("meeting-edge")}
-      />
+      />}
       {allowChat && <IconButton
         size="sm"
         icon={<MessageSquare />}
