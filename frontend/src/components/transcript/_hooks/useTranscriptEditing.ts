@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import { useNotificationStore } from "@/lib/notificationStore";
-import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { TranscriptSegment } from "@/types";
 import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
@@ -132,18 +131,15 @@ export function useTranscriptEditing(
   } = options;
   const { addNotification } = useNotificationStore();
 
-  const [edit, setEdit] = useState<OpenEdit | null>(null);
+  const [openEdit, setEdit] = useState<OpenEdit | null>(null);
+  // An edit whose line has gone, replaced by a new result, is over: it no
+  // longer holds Export back.
+  const edit = openEdit && segments.some((segment, index) =>
+    getTranscriptSegmentKey(segment, index) === openEdit.segmentId) ? openEdit : null;
   const [activePopover, setActivePopover] = useState<SpeakerPopover | null>(
     null,
   );
   const [savesInFlight, setSavesInFlight] = useState(0);
-  // When the view turns read-only (a reprocess starting), open edits close,
-  // as the line menus' editors do: their line may not survive the new result.
-  useOnDepsChange([readOnly], () => {
-    if (!readOnly) return;
-    setEdit(null);
-    setActivePopover(null);
-  });
 
   const editingTextId = edit?.kind === "text" ? edit.segmentId : null;
   const isSubmitting = savesInFlight > 0;
@@ -169,7 +165,7 @@ export function useTranscriptEditing(
   const trackSave = async (save: () => unknown) => {
     setSavesInFlight((count) => count + 1);
     try {
-      await save();
+      return await save();
     } finally {
       setSavesInFlight((count) => count - 1);
     }
@@ -177,19 +173,22 @@ export function useTranscriptEditing(
 
   // The editor stays open while it saves, showing what was sent. It closes
   // then only if it is still the editor the save came from and still holds
-  // that value, so an edit opened or typed meanwhile stays open.
+  // that value, so an edit opened or typed meanwhile stays open. A refused
+  // save, such as one sent while the view is read-only, keeps the text, and
+  // sending it again makes a new request.
   const saveFromEditor = async (
     open: OpenEdit,
     value: string,
     save: () => unknown,
   ) => {
     setEdit({ ...open, saved: value });
+    let accepted: unknown;
     try {
-      await trackSave(save);
+      accepted = await trackSave(save);
     } finally {
-      setEdit((now) =>
-        now?.key === open.key && valueToSave(now) === value ? null : now,
-      );
+      setEdit((now) => now?.key !== open.key ? now
+        : accepted === false ? { ...now, saved: open.saved }
+          : valueToSave(now) === value ? null : now);
     }
   };
 

@@ -280,18 +280,27 @@ describe("transcript saves", () => {
     expect(textEditor()).toBeNull();
   });
 
-  it("closes open edits when the view turns read-only, without bringing them back", async () => {
-    const onUpdateSegmentText = vi.fn(async () => {});
-    const rerender = renderView({ onUpdateSegmentText });
+  it("keeps a refused text and sends it again on the next Enter", async () => {
+    const onUpdateSegmentText = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    renderView({ onUpdateSegmentText });
     await openText("u0");
-    fireEvent.change(textEditor()!, { target: { value: "Typed before reprocessing" } });
+    await submit(textEditor(), "Typed while read-only");
 
-    await rerender({ readOnly: true });
+    expect(textEditor()).toHaveValue("Typed while read-only");
+    await submit(textEditor(), "Typed while read-only");
+
+    expect(onUpdateSegmentText).toHaveBeenCalledTimes(2);
     expect(textEditor()).toBeNull();
-    await rerender({ readOnly: false });
+  });
+
+  it("lets Export go once a new result replaces the line being edited", async () => {
+    const rerender = renderView({});
+    await openText("u0");
+    expect(screen.getByRole("button", { name: "Export transcript disabled" })).toBeDisabled();
+
+    await rerender({ segments: [{ ...SEGMENTS[0], id: "n0" }, ...SEGMENTS.slice(1)] });
 
     expect(textEditor()).toBeNull();
-    expect(onUpdateSegmentText).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Export transcript" })).toBeEnabled();
   });
 });
