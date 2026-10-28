@@ -3,7 +3,6 @@ import {
   type CaptureMode,
   type CaptureSettings,
 } from "./shared";
-import { reopenMicrophone } from "./reopenMicrophone";
 import {
   describeCaptureSettings,
   describeTrack,
@@ -15,8 +14,6 @@ export type PickSourceErrorCode =
   | "display_cancelled"
   | "display_denied"
   | "microphone_denied"
-  | "microphone_busy"
-  | "microphone_unavailable"
   | "selected_microphone_unavailable"
   | "microphone_mismatch"
   | "missing_display_audio"
@@ -45,8 +42,6 @@ export interface PickSourceOptions {
   microphoneDeviceId?: string | null;
   settings: CaptureSettings;
   mediaDevices?: MediaDevices;
-  /** Restores a microphone deliberately released by a paused capture before reload. */
-  resumeReleasedMicrophone?: boolean;
 }
 
 export interface PickedCaptureSources {
@@ -106,19 +101,6 @@ const isUnavailableDeviceError = (error: unknown) => {
   );
 };
 
-const releasedMicrophoneFailureCode = (error: unknown): PickSourceErrorCode => {
-  // Reopening wraps the native failure with actionable Resume guidance.
-  const cause = error instanceof Error ? error.cause ?? error : error;
-  const name = cause && typeof cause === "object" && "name" in cause ? cause.name : "";
-  if (name === "NotReadableError" || name === "TrackStartError" || name === "AbortError") {
-    return "microphone_busy";
-  }
-  if (isUnavailableDeviceError(cause) || name === "DevicesNotFoundError") {
-    return "microphone_unavailable";
-  }
-  return "microphone_denied";
-};
-
 const buildCaptureReportSnapshot = (options: {
   mode: CaptureMode;
   requestedMicrophoneDeviceId: string | null;
@@ -173,7 +155,6 @@ export const pickCaptureSource = async (
   const mediaDevices = readMediaDevices(mode, options.mediaDevices);
   let displayStream: MediaStream | null = null;
   let microphoneStream: MediaStream | null = null;
-  let usedDefaultMicrophone = false;
   let availableMicrophones = [] as Awaited<
     ReturnType<typeof listAvailableMicrophones>
   >;
@@ -189,7 +170,6 @@ export const pickCaptureSource = async (
     )?.label ?? null;
 
   if (
-    !options.resumeReleasedMicrophone &&
     options.microphoneDeviceId &&
     availableMicrophones.length > 0 &&
     !availableMicrophones.some(
@@ -261,37 +241,26 @@ export const pickCaptureSource = async (
   }
 
   try {
-    if (options.resumeReleasedMicrophone) {
-      const reopened = await reopenMicrophone({
-        microphoneDeviceId: options.microphoneDeviceId ?? null,
-        settings: options.settings,
-        mediaDevices,
-      });
-      microphoneStream = reopened.stream;
-      usedDefaultMicrophone = reopened.usedDefault;
-    } else {
-      microphoneStream = await mediaDevices.getUserMedia({
-        audio: {
-          deviceId: options.microphoneDeviceId
-            ? { exact: options.microphoneDeviceId }
-            : undefined,
-          echoCancellation: options.settings.echoCancellation,
-          noiseSuppression: options.settings.noiseSuppression,
-          autoGainControl: options.settings.autoGainControl,
-        },
-      });
-    }
+    microphoneStream = await mediaDevices.getUserMedia({
+      audio: {
+        deviceId: options.microphoneDeviceId
+          ? { exact: options.microphoneDeviceId }
+          : undefined,
+        echoCancellation: options.settings.echoCancellation,
+        noiseSuppression: options.settings.noiseSuppression,
+        autoGainControl: options.settings.autoGainControl,
+      },
+    });
 
   } catch (error: unknown) {
     stopTracks(displayStream);
     const selectedDeviceUnavailable =
       Boolean(options.microphoneDeviceId) && isUnavailableDeviceError(error);
-    const failureCode = options.resumeReleasedMicrophone
-      ? releasedMicrophoneFailureCode(error)
-      : selectedDeviceUnavailable ? "selected_microphone_unavailable" : "microphone_denied";
     throw new PickSourceError(
-      failureCode,
-      selectedDeviceUnavailable && !options.resumeReleasedMicrophone
+      selectedDeviceUnavailable
+        ? "selected_microphone_unavailable"
+        : "microphone_denied",
+      selectedDeviceUnavailable
         ? "The selected microphone is not available to the browser. Choose another microphone in Settings > Recording before starting the recording."
         : error instanceof Error
           ? error.message
@@ -305,11 +274,9 @@ export const pickCaptureSource = async (
         microphoneStream: null,
         settings: options.settings,
         notes: [
-          options.resumeReleasedMicrophone && failureCode !== "microphone_denied"
-            ? failureCode
-            : selectedDeviceUnavailable
-              ? "selected_microphone_rejected_by_getUserMedia"
-              : "microphone_capture_denied",
+          selectedDeviceUnavailable
+            ? "selected_microphone_rejected_by_getUserMedia"
+            : "microphone_capture_denied",
         ],
       }),
     );
@@ -325,7 +292,6 @@ export const pickCaptureSource = async (
       ? microphoneSettings.deviceId
       : null;
   if (
-    !usedDefaultMicrophone &&
     options.microphoneDeviceId &&
     actualMicrophoneDeviceId &&
     actualMicrophoneDeviceId !== options.microphoneDeviceId
@@ -357,7 +323,6 @@ export const pickCaptureSource = async (
     displayStream,
     microphoneStream,
     settings: options.settings,
-    notes: usedDefaultMicrophone ? ["microphone_default_fallback"] : [],
   });
 
   const sources: PickedCaptureSources = {

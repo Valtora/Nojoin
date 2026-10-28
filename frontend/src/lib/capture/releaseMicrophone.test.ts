@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureController } from "./controller";
 import { CaptureAudioGraph } from "./captureAudio.fixtures";
@@ -8,10 +8,9 @@ import {
 } from "./releaseMicrophone.fixtures";
 import { createCaptureMixer } from "./mixer";
 import { createBrowserRecorder } from "./recorder";
-import type { SegmentStore, StoredSegment } from "./segmentStore";
+import type { SegmentStore } from "./segmentStore";
 import { readCaptureSettings, readPausedCaptureContext } from "./shared";
 import { createSegmentUploader } from "./uploader";
-import { usePausedRecordingGuard } from "./usePausedRecordingGuard";
 import { createWaveformMonitor } from "./waveform";
 const api = vi.hoisted(() => ({
   initRecording: vi.fn(), pauseRecordingCapture: vi.fn(), resumeRecordingCapture: vi.fn(),
@@ -22,7 +21,6 @@ const api = vi.hoisted(() => ({
 const environment = vi.hoisted(() => ({
   mode: "shared_audio", realDetection: false, notify: vi.fn(), releaseLock: vi.fn(),
 }));
-const hookCapture = vi.hoisted(() => ({ current: null as CaptureController | null }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api")>(), ...api,
 }));
@@ -71,13 +69,6 @@ vi.mock("./uploader", () => ({
 }));
 vi.mock("./waveform", () => ({
   createWaveformMonitor: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
-}));
-vi.mock("./CaptureProvider", () => ({
-  useCapture: () => ({
-    ...hookCapture.current!.getState(),
-    refreshPausedRecording: hookCapture.current!.refreshPausedRecording,
-    discardEmptyInterruptedRecording: hookCapture.current!.discardEmptyInterruptedRecording,
-  }),
 }));
 const lifecycle = (status: string, lastSequence = -1) => ({
   recording_id: "rec-1", status, last_sequence: lastSequence, capture_epoch: 3,
@@ -133,7 +124,6 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await Promise.all(controllers.splice(0).map((capture) => capture.destroy()));
-  hookCapture.current = null;
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -160,7 +150,6 @@ describe("releasing only the microphone while paused", () => {
     expect(uploader.dispose).not.toHaveBeenCalled();
     expect(environment.releaseLock).not.toHaveBeenCalled();
     expect(capture.getState()).toMatchObject({ status: "paused", runtimeActive: true });
-    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true, microphoneDeviceId: "mic-a" });
   });
   it("reacquires the exact microphone before server resume and reuses recorder/uploader", async () => {
     const [realMixer, realRecorder, realWaveform, { encodeFlac }] = await Promise.all([
@@ -371,36 +360,6 @@ describe("releasing only the microphone while paused", () => {
     expect(sharedAudio.readyState).toBe("live");
     expect(capture.getState().status).toBe("paused");
   });
-  it("offers Resume after a deliberately released empty capture reloads", async () => {
-    const { capture } = await start();
-    await capture.pause();
-    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true, lastSequence: -1 });
-    await capture.destroy();
-    const reloaded = controller();
-    hookCapture.current = reloaded;
-    api.getUnfinishedCaptures.mockResolvedValue([paused]);
-    // A reload of the recording page requests recovery once, rather than a
-    // background guard opening a decision whenever server state changes.
-    await reloaded.openRecording("rec-1");
-    const { result } = renderHook(() => usePausedRecordingGuard());
-    await waitFor(() => expect(result.current.hasPausedRecording).toBe(true));
-    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
-    expect(result.current.pausedRecording?.id).toBe("rec-1");
-  });
-  it("keeps released reload recovery paused after a rejected mic and permits retry", async () => {
-    const { capture } = await start("microphone_only");
-    await capture.pause();
-    await capture.destroy();
-    const reloaded = controller();
-    api.getUnfinishedCaptures.mockResolvedValue([paused]);
-    await reloaded.refreshPausedRecording();
-    getUserMedia.mockRejectedValueOnce(new DOMException("permission denied", "NotAllowedError"));
-    await expect(reloaded.resume("rec-1")).rejects.toThrow(/permission|allow/i);
-    expect(reloaded.getState().status).toBe("paused");
-    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true });
-    await expect(reloaded.resume("rec-1")).resolves.toMatchObject({ recordingId: "rec-1" });
-    expect(getDisplayMedia).not.toHaveBeenCalled();
-  });
   it("supports microphone-only pause/resume without a shared picker", async () => {
     const { capture } = await start("microphone_only");
     await capture.pause();
@@ -430,18 +389,16 @@ describe("releasing only the microphone while paused", () => {
     expect(capture.getState().status).toBe("recording");
   });
 
-  it.each([false, true])("honours a deliberate new microphone choice after release, reload=%s", async (reload) => {
+  it("honours a deliberate new microphone choice after release", async () => {
     const { capture } = await start("microphone_only");
     await capture.pause();
-    if (reload) await capture.destroy();
-    const target = reload ? controller() : capture;
-    target.updateSettings({ microphoneDeviceId: "mic-b" });
+    capture.updateSettings({ microphoneDeviceId: "mic-b" });
     enumerateDevices.mockResolvedValue([microphoneDevice(), microphoneDevice("mic-b")]);
     getUserMedia.mockResolvedValue(mediaStream(audioTrack("mic-b")));
-    await target.resume("rec-1");
+    await capture.resume("rec-1");
     expect(getUserMedia.mock.calls.at(-1)![0]).toMatchObject({ audio: { deviceId: { exact: "mic-b" } } });
-    expect(api.reportRecordingCaptureSources.mock.calls.at(-1)![1].requested_microphone_label).toBe(reload ? "mic-b" : null);
-    expect(target.getState().status).toBe("recording");
+    expect(api.reportRecordingCaptureSources.mock.calls.at(-1)![1].requested_microphone_label).toBeNull();
+    expect(capture.getState().status).toBe("recording");
   });
 
   it("releases an acquired mic if server Resume fails and reacquires on retry", async () => {
@@ -458,30 +415,6 @@ describe("releasing only the microphone while paused", () => {
     expect(getUserMedia).toHaveBeenCalledTimes(3);
     expect(retriedTrack.readyState).toBe("live");
     expect(recorder.resume).toHaveBeenCalledOnce();
-  });
-
-  it("preserves released microphone recovery context during guarded pagehide", async () => {
-    const { capture } = await start();
-    capture.attachLifecycle("/recordings/rec-1");
-    await capture.pause();
-    window.dispatchEvent(new Event("pagehide"));
-    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true, microphoneDeviceId: "mic-a" });
-    await waitFor(() => expect(capture.getState().runtimeActive).toBe(false));
-    expect(readPausedCaptureContext()).toMatchObject({ microphoneReleased: true });
-  });
-
-  it("notifies about missing-device default fallback after reload", async () => {
-    const { capture } = await start("microphone_only");
-    await capture.pause();
-    await capture.destroy();
-    const reloaded = controller();
-    enumerateDevices.mockResolvedValue([microphoneDevice("other")]);
-    getUserMedia.mockResolvedValueOnce(mediaStream(audioTrack("default-device")));
-    await reloaded.resume("rec-1");
-    expect(getUserMedia.mock.calls.at(-1)![0].audio.deviceId).toBeUndefined();
-    expect(environment.notify).toHaveBeenCalledWith(expect.objectContaining({
-      type: "warning", message: expect.stringMatching(/default microphone/i),
-    }));
   });
 
   it("makes only one microphone request for concurrent Resume clicks", async () => {
@@ -512,82 +445,6 @@ describe("releasing only the microphone while paused", () => {
     expect(recorder.pause).toHaveBeenCalledOnce();
     expect(capture.getState().status).toBe("recording");
     expect(replacement.readyState).toBe("live");
-  });
-
-  it.each(["store", "mixer"] as const)("Discard supersedes cold Resume awaiting %s", async (stage) => {
-    const { capture, mixer } = await start("microphone_only");
-    await capture.pause();
-    await capture.destroy();
-    const reloaded = controller();
-    api.getUnfinishedCaptures.mockResolvedValue([paused]);
-    await reloaded.openRecording("rec-1");
-    const stored = deferred<StoredSegment[]>();
-    const mixed = deferred<typeof mixer>();
-    const list = vi.spyOn(storeOf(reloaded), "list");
-    const newMixer = { ...mixer, dispose: vi.fn(async () => {}) };
-    if (stage === "store") list.mockReturnValueOnce(stored.promise);
-    else vi.mocked(createCaptureMixer).mockReturnValueOnce(mixed.promise);
-    const resuming = reloaded.resume("rec-1").catch((error: unknown) => error);
-    await waitFor(() => stage === "store"
-      ? expect(list).toHaveBeenCalled() : expect(createCaptureMixer).toHaveBeenCalledTimes(2));
-    await reloaded.cancel("rec-1");
-    stored.resolve([]);
-    mixed.resolve(newMixer);
-    await resuming;
-    expect(reloaded.getState()).toMatchObject({ status: "idle", runtimeActive: false });
-    expect(createBrowserRecorder).toHaveBeenCalledTimes(1);
-    expect(replacement.stop).toHaveBeenCalledOnce();
-    if (stage === "mixer") expect(newMixer.dispose).toHaveBeenCalledOnce();
-  });
-
-  it("destroy supersedes cold Resume while microphone permission is pending", async () => {
-    const { capture } = await start("microphone_only");
-    await capture.pause();
-    await capture.destroy();
-    const reloaded = controller();
-    const grant = deferred<MediaStream>();
-    getUserMedia.mockReturnValueOnce(grant.promise);
-    const resuming = reloaded.resume("rec-1").catch((error: unknown) => error);
-    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
-    await reloaded.destroy();
-    grant.resolve(mediaStream(replacement));
-    await resuming;
-    expect(reloaded.getState().runtimeActive).toBe(false);
-    expect(createBrowserRecorder).toHaveBeenCalledTimes(1);
-    expect(replacement.stop).toHaveBeenCalledOnce();
-  });
-
-  it.each(["denied", "missing"] as const)("uses opted-in on-demand recovery in a new tab, mic=%s", async (problem) => {
-    environment.mode = "microphone_only";
-    const fresh = controller();
-    fresh.updateSettings({ releaseMicrophoneOnPause: true, microphoneDeviceId: "mic-a" });
-    expect(readCaptureSettings().releaseMicrophoneOnPause).toBe(true);
-    expect(readPausedCaptureContext()).toBeNull();
-    api.getUnfinishedCaptures.mockResolvedValue([paused]);
-    // A fresh tab has no recovery context, so it requests the decision first.
-    await expect(fresh.refreshPausedRecording()).resolves.toBeNull();
-    await fresh.refreshPausedRecording({ onDemand: true });
-    hookCapture.current = fresh;
-    const { result } = renderHook(() => usePausedRecordingGuard());
-    await waitFor(() => expect(result.current.hasPausedRecording).toBe(true));
-    if (problem === "denied") {
-      getUserMedia.mockReset().mockRejectedValueOnce(new DOMException("permission denied", "NotAllowedError"));
-      const failure = await fresh.resume("rec-1").catch((error: unknown) => error);
-      expect(fresh.getState().status).toBe("paused");
-      expect(failure).toMatchObject({ message: expect.stringMatching(/permission|allow/i) });
-      getUserMedia.mockReset().mockResolvedValue(mediaStream(replacement));
-    } else {
-      enumerateDevices.mockResolvedValue([microphoneDevice("other")]);
-      getUserMedia.mockReset().mockResolvedValue(mediaStream(audioTrack("default-device")));
-    }
-    await fresh.resume("rec-1");
-    expect(fresh.getState().status).toBe("recording");
-    if (problem === "missing") {
-      expect(getUserMedia.mock.calls.at(-1)![0].audio.deviceId).toBeUndefined();
-      expect(environment.notify).toHaveBeenCalledWith(expect.objectContaining({
-        type: "warning", message: expect.stringMatching(/default microphone/i),
-      }));
-    }
   });
 
   it.each(["Android Chrome/140.0 Mobile Safari/537.36", "iPhone CriOS/140.0 Mobile Safari/604.1"])(

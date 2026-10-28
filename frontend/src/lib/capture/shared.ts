@@ -42,8 +42,6 @@ export interface PausedCaptureContext {
   recordingId: RecordingId;
   lastSequence: number;
   persistedAt: number;
-  microphoneReleased?: boolean;
-  microphoneDeviceId?: string | null;
 }
 
 export interface FinalizeRetryProgress {
@@ -274,12 +272,6 @@ export const readPausedCaptureContext = (): PausedCaptureContext | null => {
       recordingId: parsed.recordingId,
       lastSequence: parsed.lastSequence,
       persistedAt: parsed.persistedAt,
-      ...(typeof parsed.microphoneReleased === "boolean"
-        ? { microphoneReleased: parsed.microphoneReleased }
-        : {}),
-      ...(typeof parsed.microphoneDeviceId === "string" || parsed.microphoneDeviceId === null
-        ? { microphoneDeviceId: parsed.microphoneDeviceId }
-        : {}),
     };
   } catch {
     return null;

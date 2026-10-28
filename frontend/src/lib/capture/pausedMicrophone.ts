@@ -2,7 +2,7 @@
 import type { CaptureMixer } from "./mixer";
 import type { PickedCaptureSources } from "./pickSource";
 import { reopenMicrophone } from "./reopenMicrophone";
-import type { CaptureSettings, PausedCaptureContext } from "./shared";
+import type { CaptureSettings } from "./shared";
 import { describeCaptureSettings, describeTrack, type CaptureSourceReportSnapshot } from "./sourceReport";
 
 export interface PausedMicrophoneRuntime {
@@ -27,13 +27,6 @@ export const releasePausedMicrophone = (runtime: PausedMicrophoneRuntime, enable
   runtime.sources.microphoneStream.getTracks().forEach((track) => track.stop());
   runtime.microphoneReleased = true;
 };
-
-export const pausedMicrophoneContext = (
-  runtime: PausedMicrophoneRuntime,
-): Pick<PausedCaptureContext, "microphoneReleased" | "microphoneDeviceId"> =>
-  runtime.microphoneReleased
-    ? { microphoneReleased: true, microphoneDeviceId: runtime.microphoneDeviceId ?? null }
-    : {};
 
 export const assertMicrophoneResumeCurrent = (isCurrent: () => boolean) => {
   if (!isCurrent()) {

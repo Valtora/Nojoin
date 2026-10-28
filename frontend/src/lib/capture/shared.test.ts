@@ -1,12 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { pickCaptureSource } from "./pickSource";
-import {
-  readCaptureSettings,
-  readPausedCaptureContext,
-  writeCaptureSettings,
-  writePausedCaptureContext,
-} from "./shared";
+import { readCaptureSettings, writeCaptureSettings } from "./shared";
 
 const STORAGE_KEY = "nojoin.capture.settings";
 
@@ -46,28 +41,6 @@ describe("microphone release preference", () => {
     });
     writeCaptureSettings({ ...readCaptureSettings(), releaseMicrophoneOnPause: false });
     expect(readCaptureSettings()).toHaveProperty("releaseMicrophoneOnPause", false);
-  });
-});
-
-describe("released microphone recovery context", () => {
-  const base = { recordingId: "rec-1", lastSequence: 4, persistedAt: 1000 };
-
-  it.each(["selected-mic", null])("keeps a released microphone and its selected device %s", (microphoneDeviceId) => {
-    const context = { ...base, microphoneReleased: true, microphoneDeviceId };
-    writePausedCaptureContext(context);
-    expect(readPausedCaptureContext()).toEqual(context);
-  });
-
-  it("does not add microphone fields to older recovery contexts", () => {
-    writePausedCaptureContext(base);
-    expect(readPausedCaptureContext()).toEqual(base);
-  });
-
-  it("ignores invalid optional microphone fields", () => {
-    window.sessionStorage.setItem("nojoin.capture.paused-recording", JSON.stringify({
-      ...base, microphoneReleased: "true", microphoneDeviceId: 42,
-    }));
-    expect(readPausedCaptureContext()).toEqual(base);
   });
 });
 

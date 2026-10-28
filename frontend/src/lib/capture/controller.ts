@@ -44,7 +44,6 @@ import { joinFlacSegments } from "./pcm/flacJoin";
 import { pickCaptureSource, PickSourceError, type PickedCaptureSources } from "./pickSource";
 import {
   assertMicrophoneResumeCurrent,
-  pausedMicrophoneContext,
   reconnectPausedMicrophone,
   releasePausedMicrophone,
   type PausedMicrophoneRuntime,
@@ -655,10 +654,6 @@ export class CaptureController {
       if (this.runtime) {
         this.runtime.microphoneDeviceId = nextSettings.microphoneDeviceId;
       }
-      const pausedContext = readPausedCaptureContext();
-      if (pausedContext?.microphoneReleased) {
-        writePausedCaptureContext({ ...pausedContext, microphoneDeviceId: nextSettings.microphoneDeviceId });
-      }
     }
     this.runtime?.mixer.applySettings({
       systemGain: nextSettings.systemGain,
@@ -891,7 +886,6 @@ export class CaptureController {
       recordingId,
       lastSequence: this.state.lastSequence,
       persistedAt: Date.now(),
-      ...pausedMicrophoneContext(runtime),
     });
     this.setState({ status: "paused" });
     this.unconfirmedPause = owePause(recordingId);
@@ -940,11 +934,6 @@ export class CaptureController {
       return this.resumeRuntime(this.runtime, targetRecordingId, ticket);
     }
 
-    const pausedContext = readPausedCaptureContext();
-    const releasedContext = pausedContext?.recordingId === targetRecordingId && pausedContext.microphoneReleased
-      ? pausedContext : null;
-    const recoverReleasedMicrophone = Boolean(releasedContext || this.state.settings.releaseMicrophoneOnPause);
-
     const support = detectCaptureSupport();
     this.setState({ support });
     if (!support.supported) {
@@ -969,15 +958,9 @@ export class CaptureController {
     try {
       sources = await pickCaptureSource({
         mode: resolveCaptureMode(support),
-        microphoneDeviceId: releasedContext
-          ? releasedContext.microphoneDeviceId ?? null : this.state.settings.microphoneDeviceId,
+        microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
-        ...(recoverReleasedMicrophone ? { resumeReleasedMicrophone: true } : {}),
       });
-
-      if (recoverReleasedMicrophone) {
-        assertMicrophoneResumeCurrent(() => ticket === this.captureActionTicket);
-      }
 
       if (sources.displayStream && sources.displayStream.getAudioTracks().length === 0) {
         useNotificationStore.getState().addNotification({
@@ -991,9 +974,6 @@ export class CaptureController {
         heldRuntime ? heldRuntime.ownerId : signedInAccountId(),
         () => resumeRecordingCapture(targetRecordingId, { epoch: heldRuntime?.epoch }),
       );
-      if (recoverReleasedMicrophone) {
-        assertMicrophoneResumeCurrent(() => ticket === this.captureActionTicket);
-      }
       // Audio a previous page recorded but never uploaded goes first, and new
       // audio continues numbering after it.
       const restoredSegments = await this.loadQueuedSegments(
@@ -1003,9 +983,6 @@ export class CaptureController {
       );
       const lastRecordedSequence =
         restoredSegments.at(-1)?.sequence ?? resumeResponse.last_sequence;
-      if (recoverReleasedMicrophone) {
-        assertMicrophoneResumeCurrent(() => ticket === this.captureActionTicket);
-      }
       await this.activateRuntime({
         recordingId: targetRecordingId,
         epoch: resumeResponse.capture_epoch,
@@ -1015,7 +992,6 @@ export class CaptureController {
         sources,
         captureReport: sources.captureReport,
         elapsedSeconds: sequenceToElapsedSeconds(lastRecordedSequence),
-        isCurrent: recoverReleasedMicrophone ? () => ticket === this.captureActionTicket : undefined,
       });
       const captureReport = sources.captureReport;
       sources = null;
@@ -1026,7 +1002,6 @@ export class CaptureController {
         lastSequence: resumeResponse.last_sequence,
         error: null,
       });
-      this.warnMicrophoneFallback(captureReport.notes.includes("microphone_default_fallback"));
       await this.reportCaptureSourceAttempt(
         targetRecordingId,
         buildCaptureSourceReportPayload(captureReport, {
@@ -1050,9 +1025,6 @@ export class CaptureController {
         );
       }
       sources?.release();
-      if (recoverReleasedMicrophone && ticket !== this.captureActionTicket) {
-        throw error;
-      }
       if (isEndedForThisTab(error)) {
         throw await this.ifEndedElsewhere(error, heldRuntime);
       }
@@ -1061,7 +1033,7 @@ export class CaptureController {
         await pauseRecordingCapture(targetRecordingId, { epoch }).catch(() => {});
       }
       this.setState({
-        status: recoverReleasedMicrophone ? "paused" : "error",
+        status: "error",
         error: formatCaptureError(error),
       });
       // A stalled capture whose own tab came back is refused, and is no longer
@@ -1288,7 +1260,6 @@ export class CaptureController {
         recordingId,
         lastSequence: this.state.lastSequence,
         persistedAt: Date.now(),
-        ...(this.runtime ? pausedMicrophoneContext(this.runtime) : {}),
       });
       this.unconfirmedPause = owePause(recordingId);
     }
@@ -1429,7 +1400,6 @@ export class CaptureController {
     if (
       !context ||
       context.recordingId !== paused.id ||
-      context.microphoneReleased ||
       context.lastSequence >= 0
     ) {
       return false;
@@ -1958,7 +1928,6 @@ export class CaptureController {
       recordingId,
       lastSequence: this.state.lastSequence,
       persistedAt: Date.now(),
-      ...pausedMicrophoneContext(runtime),
     });
     this.setState({ status: "paused" });
     this.unconfirmedPause = owePause(recordingId);
@@ -2029,7 +1998,6 @@ export class CaptureController {
         recordingId: response.recording_id,
         lastSequence,
         persistedAt: Date.now(),
-        ...pausedMicrophoneContext(runtime),
       });
       this.setState({
         lastSequence,
@@ -2556,7 +2524,6 @@ export class CaptureController {
       recordingId,
       lastSequence,
       persistedAt: Date.now(),
-      ...pausedMicrophoneContext(this.runtime),
     });
 
     try {
