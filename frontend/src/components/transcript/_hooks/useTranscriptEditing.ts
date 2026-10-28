@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import { useNotificationStore } from "@/lib/notificationStore";
-import { getErrorDetail } from "@/lib/errors";
+import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { TranscriptSegment } from "@/types";
 import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
 
@@ -14,7 +14,6 @@ export interface UseTranscriptEditingOptions {
   segments: TranscriptSegment[];
   readOnly: boolean;
   allowProvisionalEdits: boolean;
-  bulkEditsDisabled?: boolean;
   onRenameSpeaker: (label: string, newName: string) => void | boolean | Promise<void | boolean>;
   onUpdateSegmentText: (
     segment: TranscriptSegment,
@@ -69,19 +68,11 @@ type OpenEdit = {
   segmentId: string;
   value: string;
   /**
-   * The value it opened with, then the last value accepted by the server.
-   * A refused value remains retryable.
+   * The value it opened with, then the value it sent: submitting that again
+   * saves nothing.
    */
   saved: string;
-  /** The mutation route selected when this editor opened. */
-  submit: (value: string) => void | boolean | Promise<void | boolean>;
-} & ({
-  kind: "text";
-  segment: TranscriptSegment;
-  update: UseTranscriptEditingOptions["onUpdateSegmentText"];
-  /** Only a reader snapshot matching an accepted write can advance its revision. */
-  acceptedText: string | null;
-} | { kind: "rename"; label: string });
+} & ({ kind: "text" } | { kind: "rename"; label: string });
 
 /** What a submit would save: a name is trimmed, a line's text is kept as typed. */
 const valueToSave = (edit: OpenEdit) =>
@@ -131,7 +122,6 @@ export function useTranscriptEditing(
     segments,
     readOnly,
     allowProvisionalEdits,
-    bulkEditsDisabled = false,
     onRenameSpeaker,
     onUpdateSegmentText,
     onFindAndReplace,
@@ -142,39 +132,36 @@ export function useTranscriptEditing(
   const { addNotification } = useNotificationStore();
 
   const [edit, setEdit] = useState<OpenEdit | null>(null);
-  if (edit?.kind === "text" && edit.acceptedText !== null && edit.segment.id) {
-    const observed = segments.find((segment) => segment.id === edit.segment.id);
-    if (observed && observed.text === edit.acceptedText && observed.revision !== undefined &&
-      edit.segment.revision !== undefined && observed.revision > edit.segment.revision) {
-      // Adjust this component's state during render, before the next event can
-      // submit. A refused write or unrelated poll never supplies this evidence.
-      const update = edit.update;
-      setEdit({ ...edit, segment: observed, acceptedText: null, submit: (text) => update(observed, text) });
-    }
-  }
   const [activePopover, setActivePopover] = useState<SpeakerPopover | null>(
     null,
   );
   const [savesInFlight, setSavesInFlight] = useState(0);
-  const pending = useRef(new Map<symbol, Set<string>>());
-  const mutationCallbacks = useRef({ onRenameSpeaker, onUpdateSegmentText });
-  useLayoutEffect(() => {
-    mutationCallbacks.current = { onRenameSpeaker, onUpdateSegmentText };
-  }, [onRenameSpeaker, onUpdateSegmentText]);
 
   const editingTextId = edit?.kind === "text" ? edit.segmentId : null;
-  const editingUtteranceId = edit?.kind === "text" ? edit.segment.id || null : null;
   const isSubmitting = savesInFlight > 0;
   const editInProgress = edit !== null || isSubmitting;
 
   useEffect(() => {
-    onActiveEditUtteranceChange?.(editingUtteranceId);
-  }, [editingUtteranceId, onActiveEditUtteranceChange]);
+    if (!onActiveEditUtteranceChange) {
+      return;
+    }
 
-  const trackSave = async <T,>(save: () => T | Promise<T>): Promise<T> => {
+    if (!editingTextId) {
+      onActiveEditUtteranceChange(null);
+      return;
+    }
+
+    const activeSegment = segments.find((segment, index) => {
+      return getTranscriptSegmentKey(segment, index) === editingTextId;
+    });
+
+    onActiveEditUtteranceChange(activeSegment?.id || null);
+  }, [editingTextId, onActiveEditUtteranceChange, segments]);
+
+  const trackSave = async (save: () => unknown) => {
     setSavesInFlight((count) => count + 1);
     try {
-      return await save();
+      await save();
     } finally {
       setSavesInFlight((count) => count - 1);
     }
@@ -186,61 +173,49 @@ export function useTranscriptEditing(
   const saveFromEditor = async (
     open: OpenEdit,
     value: string,
+    save: () => unknown,
   ) => {
-    const requests = pending.current.get(open.key) ?? new Set<string>();
-    if (requests.has(value)) return;
-    requests.add(value);
-    pending.current.set(open.key, requests);
+    setEdit({ ...open, saved: value });
     try {
-      const accepted = await trackSave(() => open.submit(value));
-      if (accepted !== false) {
-        setEdit((now) => {
-          if (now?.key !== open.key) return now;
-          return valueToSave(now) === value ? null : {
-            ...now, saved: value, ...(now.kind === "text" ? { acceptedText: value } : {}),
-          };
-        });
-      }
-    } catch (error) {
-      console.error("Failed to save transcript changes", error);
-      addNotification({ type: "error", message: getErrorDetail(error) ?? "Failed to save transcript changes." });
+      await trackSave(save);
     } finally {
-      requests.delete(value);
-      if (requests.size === 0) pending.current.delete(open.key);
+      setEdit((now) =>
+        now?.key === open.key && valueToSave(now) === value ? null : now,
+      );
     }
   };
 
-  // Enter and blur both submit. A pending duplicate does nothing; an empty
-  // or accepted unchanged name closes without another request.
+  // Enter and the input's blur both submit, so an empty or unchanged name, or
+  // the same name submitted again while it saves, closes the input without a
+  // request.
   const handleSpeakerRenameSubmit = async () => {
     if (edit?.kind !== "rename") return;
     const name = valueToSave(edit);
-    if (pending.current.get(edit.key)?.has(name)) return;
     if (!name || name === edit.saved) {
       setEdit(null);
       return;
     }
-    await saveFromEditor(edit, name);
+    const { label } = edit;
+    await saveFromEditor(edit, name, () => onRenameSpeaker(label, name));
   };
 
   // The same for a line's text, which may be empty. It is compared with the
   // text the editor opened with, not the line's text now: a line reopened
   // while its last save runs opens on the old text, and once that save lands,
   // comparing with the line would send the old text back.
-  const handleTextSubmit = async () => {
+  const handleTextSubmit = async (segment: TranscriptSegment) => {
     if (edit?.kind !== "text") return;
     const text = valueToSave(edit);
-    if (pending.current.get(edit.key)?.has(text)) return;
     if (text === edit.saved) {
       setEdit(null);
       return;
     }
-    await saveFromEditor(edit, text);
+    await saveFromEditor(edit, text, () => onUpdateSegmentText(segment, text));
   };
 
   const handleFindReplaceSubmit = async () => {
     const { findText, replaceText, caseSensitive, useRegex } = search;
-    if (!findText || isSubmitting || readOnly || bulkEditsDisabled) return;
+    if (!findText || isSubmitting) return;
 
     if (findText.length > 1000) {
       addNotification({
@@ -262,7 +237,7 @@ export function useTranscriptEditing(
 
   const handleReplaceCurrent = async () => {
     const { matches, currentMatchIndex, replaceText } = search;
-    if (matches.length === 0 || currentMatchIndex === -1 || isSubmitting || readOnly || bulkEditsDisabled)
+    if (matches.length === 0 || currentMatchIndex === -1 || isSubmitting)
       return;
 
     const match = matches[currentMatchIndex];
@@ -288,10 +263,10 @@ export function useTranscriptEditing(
     });
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent, segment: TranscriptSegment) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void handleTextSubmit();
+      handleTextSubmit(segment);
     } else if (e.key === "Escape") {
       setEdit(null);
     }
@@ -302,17 +277,12 @@ export function useTranscriptEditing(
       startTextEdit: (segment, segmentId) => {
         if (readOnly || lineIsSettling(segment) ||
           (segment.provisional === true && !allowProvisionalEdits && !segment.settling_required)) return;
-        const update = mutationCallbacks.current.onUpdateSegmentText;
         setEdit({
           key: Symbol("text edit"),
           kind: "text",
           segmentId,
           value: segment.text,
           saved: segment.text,
-          segment,
-          update,
-          acceptedText: null,
-          submit: (text) => update(segment, text),
         });
       },
       toggleSpeakerPopover: (segmentId, anchor) =>
@@ -322,7 +292,6 @@ export function useTranscriptEditing(
       openSpeakerPopover: (segmentId, anchor) => setActivePopover({ segmentId, anchor }),
       closeSpeakerPopover: () => setActivePopover(null),
       startSpeakerRename: (segmentId, speakerLabel, speakerName) => {
-        const rename = mutationCallbacks.current.onRenameSpeaker;
         setEdit({
           key: Symbol("speaker rename"),
           kind: "rename",
@@ -330,7 +299,6 @@ export function useTranscriptEditing(
           segmentId,
           value: speakerName,
           saved: speakerName,
-          submit: (name) => rename(speakerLabel, name),
         });
         setActivePopover(null);
       },

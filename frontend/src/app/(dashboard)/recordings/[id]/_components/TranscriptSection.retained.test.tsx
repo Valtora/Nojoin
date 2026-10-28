@@ -164,7 +164,7 @@ describe("retained transcript editing authority", () => {
     expect(editor).toHaveValue("My name");
   });
 
-  it("blocks a name dismissal from a speaker popover retained through publication", async () => {
+  it("closes a speaker popover, and its name dismissal, once publication starts", async () => {
     render(<Harness initial={recording(false)} />);
     await waitFor(() => expect(mocks.published).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole("button", { name: "Old name" }));
@@ -174,8 +174,7 @@ describe("retained transcript editing authority", () => {
     mocks.published.mockReturnValueOnce(deferred<TranscriptUtteranceList>().promise);
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
     await waitFor(() => expect(mocks.published).toHaveBeenCalledTimes(3));
-    fireEvent.click(screen.getByRole("button", { name: "Not Old name" }));
-    await act(async () => {});
+    expect(screen.queryByRole("button", { name: "Not Old name" })).not.toBeInTheDocument();
     expect(mocks.dismiss).not.toHaveBeenCalled();
   });
 });

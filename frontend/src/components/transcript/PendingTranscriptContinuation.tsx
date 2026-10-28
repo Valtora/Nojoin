@@ -7,7 +7,6 @@ import type { TranscriptSegment } from "@/types";
 import type { TextDecoration } from "./textDecorations";
 import type { TranscriptLineShared } from "./TranscriptGroup";
 import type { IndexedTranscriptSegment } from "./transcriptGroups";
-import { liveRenderIdentity } from "./liveTranscriptPresentation";
 import TranscriptLineMenu from "./TranscriptLineMenu";
 import TranscriptLineText from "./TranscriptLineText";
 
@@ -30,7 +29,7 @@ export default function PendingTranscriptContinuation({
   return <>
     {separator}
     <div id={`segment-${segmentId}`} data-segment-id={segmentId} data-order-index={index}
-      data-render-identity={liveRenderIdentity(segment, index)} data-line-actions className="inline">
+      data-line-actions className="inline">
       <TranscriptLineText text={segment.text} segmentId={segmentId}
         startMs={segmentStartMs(segment)} endMs={segmentEndMs(segment)}
         settlingRequired={segment.settling_required} settling={lineIsSettling(segment)} words={segment.words}
@@ -43,9 +42,7 @@ export default function PendingTranscriptContinuation({
           speakerName={segmentSpeakerDisplayName(lineShared.speakerMap, segment.speaker)} isSegmentReadOnly
           actions={lineShared.actions} onAddNote={lineShared.onAddNote} onPlayFrom={lineShared.onPlayFrom}
           readOnly={lineShared.readOnly} isEditingText={false} isChangingSpeaker={false}
-          live={lineShared.live} speakers={lineShared.speakers} index={index}
-          onLiveInteractionChange={lineShared.onLiveInteractionChange}
-          renderIdentity={liveRenderIdentity(segment, index)} />
+          live={lineShared.live} speakers={lineShared.speakers} />
       </span>
     </div>
   </>;

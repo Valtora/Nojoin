@@ -31,16 +31,13 @@ import {
   type TranscriptGroup as TranscriptGroupData,
 } from "./transcriptGroups";
 import TranscriptLine from "./TranscriptLine";
-import { liveRenderIdentity, type LiveInteractionChange, type LiveLinePresentation,
+import { liveRenderIdentity, type LiveLinePresentation,
   type LiveTranscriptPresentation } from "./liveTranscriptPresentation";
-import type { SpeakerAssignmentCommand } from "./CapturedSpeakerAssignment";
 import { pendingTranscriptRuns } from "./pendingTranscriptGroups";
 
 /** What every line of the view shares; memoised by the view. */
 export interface TranscriptLineShared {
   preserveLiveIdentity?: boolean;
-  onLiveInteractionChange?: LiveInteractionChange;
-  missingContextIds?: ReadonlySet<string>;
   live?: LiveTranscriptPresentation;
   liveLines?: ReadonlyMap<string, LiveLinePresentation>;
   readOnly: boolean;
@@ -53,7 +50,6 @@ export interface TranscriptLineShared {
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
   ) => boolean | void | Promise<boolean | void>;
-  captureSpeakerAssignment?: () => SpeakerAssignmentCommand;
   /** Confirms or dismisses a suggested speaker name; null where names can't be reviewed. */
   onReviewSpeakerName:
     | ((label: string, name: string, decision: SpeakerNameDecision) => Promise<void>)
@@ -65,7 +61,6 @@ export interface TranscriptLineShared {
   /** Plays on from a line's start, in seconds; null where playback is off. */
   onPlayFrom: ((startSeconds: number) => void) | null;
   onSplitSegment: ((segment: TranscriptSegment, wordId: string) => Promise<boolean>) | null;
-  captureSplitSegment?: () => TranscriptLineShared["onSplitSegment"] | undefined;
 }
 
 /** "Alex", "Alex and Blair", "Alex, Blair, and Sam". */
@@ -139,14 +134,9 @@ function TranscriptGroup({
     const { segment, segmentId } = item;
     const isEditingSpeaker = editingSpeakerLineId === segmentId;
     const isEditingText = editingTextId === segmentId;
-    const renderIdentity = liveRenderIdentity(segment, item.index);
-    const contextOnly = lineShared.missingContextIds?.has(renderIdentity) ?? false;
     return (
       <TranscriptLine
-        key={lineShared.preserveLiveIdentity ? renderIdentity : segmentId}
-        renderIdentity={renderIdentity}
-        onLiveInteractionChange={lineShared.onLiveInteractionChange}
-        contextOnly={contextOnly}
+        key={lineShared.preserveLiveIdentity ? liveRenderIdentity(segment, item.index) : segmentId}
         segment={segment}
         index={item.index}
         segmentId={segmentId}
@@ -155,14 +145,13 @@ function TranscriptGroup({
           item: line, decorations: searchDecorations(line.segmentId), noteDecorations: noteDecorations(line.segmentId),
         })) : undefined}
         lineShared={continuations.length ? lineShared : undefined}
-        readOnly={lineShared.readOnly || contextOnly}
+        readOnly={lineShared.readOnly}
         allowProvisionalEdits={lineShared.allowProvisionalEdits}
         speakerMap={speakerMap}
         speakers={lineShared.speakers}
         globalSpeakers={lineShared.globalSpeakers}
         speakerColors={speakerColors}
         onUpdateSegmentSpeaker={lineShared.onUpdateSegmentSpeaker}
-        captureSpeakerAssignment={lineShared.captureSpeakerAssignment}
         onReviewSpeakerName={lineShared.onReviewSpeakerName}
         isSpeakersFirstLine={speakerFirstLines.get(segment.speaker) === segmentId}
         hasPendingRemoteUpdate={
@@ -176,10 +165,9 @@ function TranscriptGroup({
         isEditingText={isEditingText}
         popoverAnchor={activePopover?.segmentId === segmentId ? activePopover.anchor : null}
         actions={lineShared.actions}
-        onAddNote={contextOnly ? null : lineShared.onAddNote}
-        onPlayFrom={contextOnly ? null : lineShared.onPlayFrom}
+        onAddNote={lineShared.onAddNote}
+        onPlayFrom={lineShared.onPlayFrom}
         onSplitSegment={lineShared.onSplitSegment}
-        captureSplitSegment={lineShared.captureSplitSegment}
         editor={isEditingSpeaker || isEditingText ? editor : null}
         live={lineShared.live}
         liveLine={lineShared.liveLines?.get(segmentId)}
@@ -273,9 +261,6 @@ function sameLineShared(previous: TranscriptGroupProps, next: TranscriptGroupPro
   return keys.length === Object.keys(left).length && keys.every((key) => {
     if (key === "liveLines") return next.group.items.every(({ segmentId }) =>
       sameLiveLine(left.liveLines?.get(segmentId), right.liveLines?.get(segmentId)));
-    if (key === "missingContextIds") return next.group.items.every(({ segment, index }) =>
-      left.missingContextIds?.has(liveRenderIdentity(segment, index)) ===
-      right.missingContextIds?.has(liveRenderIdentity(segment, index)));
     if (key === "live" && left.live && right.live) {
       const liveKeys = Object.keys(right.live) as (keyof LiveTranscriptPresentation)[];
       return liveKeys.length === Object.keys(left.live).length &&

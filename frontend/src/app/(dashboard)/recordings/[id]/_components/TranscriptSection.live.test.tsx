@@ -1,14 +1,10 @@
 import { createRef, type ComponentProps } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import TranscriptSection from "@/test/TranscriptSectionWithEdits";
 import type { LiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
 
-const editText = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/api", async (original) => ({
-  ...await original<typeof import("@/lib/api")>(), updateTranscriptUtteranceText: editText,
-}));
 const line: TranscriptSegment = {
   id: "u1", revision: 3, start: 0, end: 2, speaker: "LIVE_PROVISIONAL_1", text: "Live speech",
   provisional: true, settling_required: true, locked: true,
@@ -61,56 +57,5 @@ describe("shared section in-flight source", () => {
     fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
     expect(screen.getByRole("textbox", { name: "New note" })).toHaveFocus();
-  });
-
-  it("keeps an edit and its live mutation revision through Stop and the settled handoff", async () => {
-    editText.mockReset().mockRejectedValueOnce({ response: { status: 409, data: { detail: "Stale revision" } } })
-      .mockResolvedValueOnce({});
-    const props = base();
-    const view = render(<TranscriptSection {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
-    const editor = screen.getByRole("textbox", { name: "Line text" });
-    fireEvent.change(editor, { target: { value: "My correction" } });
-    view.rerender(<TranscriptSection {...props} recording={{ ...props.recording, status: RecordingStatus.PROCESSING }} />);
-    expect(screen.getByRole("textbox", { name: "Line text" })).toBe(editor);
-    view.rerender(<TranscriptSection {...props} liveTranscript={undefined} canPlayback canExport
-      recording={{ ...props.recording, status: RecordingStatus.PROCESSED }}
-      transcriptSegments={[{ ...line, revision: 9, provisional: false }]} />);
-    expect(screen.getByRole("textbox", { name: "Line text" })).toBe(editor);
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(editText).toHaveBeenCalledTimes(1));
-    expect(editText).toHaveBeenLastCalledWith("rec-1", "u1", "My correction", 3);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
-    expect(editor).toHaveValue("My correction");
-    expect(props.onRefresh).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(editText).toHaveBeenLastCalledWith("rec-1", "u1", "My correction", 3);
-    expect(props.onUpdateSegmentText).not.toHaveBeenCalled();
-    expect(props.onRefresh).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps only the open draft context after an authoritative empty handoff, then shows the empty result", () => {
-    const props = base();
-    const view = render(<TranscriptSection {...props} />);
-    const anchor = screen.getByRole("button", { name: "Actions for the line at 00:00" });
-    fireEvent.click(anchor);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
-    const editor = screen.getByRole("textbox", { name: "Line text" });
-    fireEvent.change(editor, { target: { value: "My unsaved correction" } });
-    view.rerender(<TranscriptSection {...props} liveTranscript={undefined} transcriptSegments={[]}
-      transcriptIsAuthoritative recording={{ ...props.recording, status: RecordingStatus.PROCESSED,
-        transcript: { transcript_status: "completed", text: "Stale metadata words" } as Recording["transcript"] }} />);
-    expect(screen.getByRole("textbox", { name: "Line text" })).toBe(editor);
-    expect(anchor).toBeInTheDocument();
-    expect(editor).toHaveValue("My unsaved correction");
-    expect(screen.getByText("This line is no longer in the current transcript. Your draft is kept.")).toBeInTheDocument();
-    expect(screen.queryByText("Stale metadata words")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.queryByText("Live speech")).not.toBeInTheDocument();
-    expect(screen.getByText("No speech was detected in this recording.")).toBeInTheDocument();
-    expect(screen.getByTestId("transcript-scroll-region")).toHaveFocus();
   });
 });

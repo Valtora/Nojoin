@@ -8,11 +8,10 @@ import {
   TimelineNote,
   TranscriptSpeakerAssignment,
 } from "@/types";
-import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { Fragment, useMemo, useState, type MouseEvent } from "react";
 import { ArrowDown, Radio } from "lucide-react";
 import { ButtonBase } from "./ui/nativeBases";
-import { useOnDepsChange } from "@/lib/useOnDepsChange";
-import { buildLiveTranscriptPresentation, liveRenderIdentity, type LiveInteractionChange,
+import { buildLiveTranscriptPresentation, liveRenderIdentity,
   type LiveTranscriptPresentation } from "./transcript/liveTranscriptPresentation";
 import { useTranscriptSearch } from "./transcript/_hooks/useTranscriptSearch";
 import { useTranscriptScroll } from "./transcript/_hooks/useTranscriptScroll";
@@ -172,25 +171,9 @@ export default function TranscriptView({
   const [showReplace, setShowReplace] = useState(false);
   const isLive = live !== undefined;
   const hasPendingDiarisation = segments.some(isDiarisationPending);
-  // A carried editor must keep its row mounted when the authoritative reader
-  // takes over, even if the final timings would put it in another group.
-  const [hasShownLive, setHasShownLive] = useState(isLive);
-  const [liveInteractions, setLiveInteractions] = useState<ReadonlyMap<string, IndexedTranscriptSegment>>(() => new Map());
-  const onLiveInteractionChange = useCallback<LiveInteractionChange>((identity, active, snapshot) => {
-    setLiveInteractions((current) => {
-      if ((active && (current.has(identity) || !snapshot)) || (!active && !current.has(identity))) return current;
-      const next = new Map(current);
-      if (active && snapshot) next.set(identity, snapshot);
-      else next.delete(identity);
-      return next;
-    });
-  }, []);
-  const keepLineGroups = isLive || hasPendingDiarisation || liveInteractions.size > 0;
-  useOnDepsChange([live !== undefined], () => {
-    if (live) setHasShownLive(true);
-  });
-  const LineList = hasShownLive ? "ol" : "div";
-  const LineItem = hasShownLive ? "li" : "div";
+  const keepLineGroups = isLive || hasPendingDiarisation;
+  const LineList = isLive ? "ol" : "div";
+  const LineItem = isLive ? "li" : "div";
   const liveLines = useMemo(() => isLive ? buildLiveTranscriptPresentation(segments) : undefined, [segments, isLive]);
 
   // The recording page's poll hands these over anew every few seconds, most
@@ -206,11 +189,6 @@ export default function TranscriptView({
     [pendingRemoteUtteranceIds],
   );
   const overlapBySegment = useMemo(() => indexOverlaps(segments), [segments]);
-  const missingContextIds = useMemo(() => {
-    const sourceIds = new Set(segments.map(liveRenderIdentity));
-    return new Set([...liveInteractions.values()].map(({ segment, index }) => liveRenderIdentity(segment, index))
-      .filter((identity) => !sourceIds.has(identity)));
-  }, [segments, liveInteractions]);
 
   // Memoised on the lines, so a playback tick hands every line the same item
   // and the same group, and an unchanged line does not redraw.
@@ -220,24 +198,13 @@ export default function TranscriptView({
     // Map to preserve original indices before filtering
     const indexedSegments = indexSegments(segments);
 
-    const shown = hasKnownSpeakers && !isLive
+    return hasKnownSpeakers && !isLive
       ? indexedSegments.filter(
           ({ segment }) =>
             segment.speaker !== "UNKNOWN" || segment.provisional === true || isDiarisationPending(segment),
         )
       : indexedSegments;
-    const shownIds = new Set(shown.map(({ segment, index }) => liveRenderIdentity(segment, index)));
-    const sourceByIdentity = new Map(indexedSegments.map((item) => [liveRenderIdentity(item.segment, item.index), item]));
-    const retained: IndexedTranscriptSegment[] = [];
-    liveInteractions.forEach((snapshot) => {
-      const identity = liveRenderIdentity(snapshot.segment, snapshot.index);
-      if (shownIds.has(identity)) return;
-      retained.push(sourceByIdentity.get(identity) ?? snapshot);
-      shownIds.add(identity);
-    });
-    return retained.length ? [...shown, ...retained].sort((left, right) =>
-      left.segment.start - right.segment.start || left.index - right.index) : shown;
-  }, [segments, isLive, liveInteractions]);
+  }, [segments, isLive]);
 
   const recentSegmentKeys = new Set(useRecentSegmentKeys(displaySegments).split(LINE_KEY_SEPARATOR));
 
@@ -254,20 +221,6 @@ export default function TranscriptView({
     isFollowingLatest,
     jumpToLatest,
   } = useTranscriptScroll({ segments, activeSegmentKey, liveFollow: !!live, growth: timelineNotes });
-  const previousInteractions = useRef(liveInteractions);
-  useLayoutEffect(() => {
-    const closed = [...previousInteractions.current.entries()].find(([identity]) => !liveInteractions.has(identity));
-    previousInteractions.current = liveInteractions;
-    if (!closed || document.activeElement !== document.body) return;
-    // Retiring a carried draft can regroup or remove its original trigger.
-    // Recover focus against the new row, or the reader when that row is gone.
-    const { segment, index } = closed[1];
-    const identity = liveRenderIdentity(segment, index);
-    const region = scrollContainerRef.current;
-    const row = [...region?.querySelectorAll<HTMLElement>("[data-render-identity]") ?? []]
-      .find((element) => element.dataset.renderIdentity === identity);
-    (row?.querySelector<HTMLElement>('[aria-haspopup="menu"]') ?? region)?.focus();
-  }, [liveInteractions, scrollContainerRef]);
 
   const search = useTranscriptSearch({ segments, showSearch, scrollSegmentIntoView });
 
@@ -275,7 +228,6 @@ export default function TranscriptView({
     segments,
     readOnly,
     allowProvisionalEdits,
-    bulkEditsDisabled: !!live || liveInteractions.size > 0,
     onRenameSpeaker,
     onUpdateSegmentText,
     onFindAndReplace,
@@ -325,9 +277,7 @@ export default function TranscriptView({
     [segments, timelineNotes],
   );
   const lineNotes = useLineNoteExpansion();
-  const visibleIndexes = useMemo(() => displaySegments
-    .filter(({ segment, index }) => !missingContextIds.has(liveRenderIdentity(segment, index)))
-    .map((item) => item.index), [displaySegments, missingContextIds]);
+  const visibleIndexes = useMemo(() => displaySegments.map((item) => item.index), [displaySegments]);
   const notesAmongLines = useMemo(
     () => bodyNotesAmongLines(notePlacements, visibleIndexes),
     [notePlacements, visibleIndexes],
@@ -406,19 +356,13 @@ export default function TranscriptView({
         displaySegments,
         new Set(keepLineGroups ? displaySegments.map((item) => item.index) : notesAmongLines.afterLine.keys()),
       );
-      const blockedIds = new Set(displaySegments.filter(({ segment, index }) =>
-        missingContextIds.has(liveRenderIdentity(segment, index))).map((item) => item.segmentId));
-      liveInteractions.forEach((item) => blockedIds.add(item.segmentId));
+      const blockedIds = new Set<string>();
       if (editing.editingTextId) blockedIds.add(editing.editingTextId);
       if (editing.editingSpeakerLineId) blockedIds.add(editing.editingSpeakerLineId);
       if (editing.activePopover) blockedIds.add(editing.activePopover.segmentId);
-      const breaks = new Set(notesAmongLines.afterLine.keys());
-      displaySegments.forEach(({ segment, index }) => {
-        if (missingContextIds.has(liveRenderIdentity(segment, index))) breaks.add(index);
-      });
-      return appendPendingTranscriptGroups(groups, breaks, blockedIds);
+      return appendPendingTranscriptGroups(groups, new Set(notesAmongLines.afterLine.keys()), blockedIds);
     },
-    [displaySegments, notesAmongLines, keepLineGroups, missingContextIds, liveInteractions,
+    [displaySegments, notesAmongLines, keepLineGroups,
       editing.editingTextId, editing.editingSpeakerLineId, editing.activePopover],
   );
 
@@ -432,7 +376,6 @@ export default function TranscriptView({
   const pause = useStableCallback(onPause);
   const resume = useStableCallback(onResume);
   const updateSegmentSpeaker = useStableCallback(onUpdateSegmentSpeaker);
-  const captureSpeakerAssignment = useStableCallback(() => onUpdateSegmentSpeaker);
   const canReviewSpeakerName = onReviewSpeakerName !== undefined;
   const reviewSpeakerName = useStableCallback(
     async (label: string, name: string, decision: SpeakerNameDecision) =>
@@ -447,7 +390,6 @@ export default function TranscriptView({
   const canSplit = onSplitSegment !== undefined;
   const splitSegment = useStableCallback(async (segment: TranscriptSegment, wordId: string) =>
     await onSplitSegment?.(segment, wordId) ?? false);
-  const captureSplitSegment = useStableCallback(() => onSplitSegment);
   const lineShared = useMemo<TranscriptLineShared>(
     () => ({
       readOnly,
@@ -455,21 +397,17 @@ export default function TranscriptView({
       live,
       liveLines,
       preserveLiveIdentity: keepLineGroups,
-      onLiveInteractionChange,
-      missingContextIds,
       speakerMap,
       speakers,
       globalSpeakers,
       speakerColors,
       onUpdateSegmentSpeaker: updateSegmentSpeaker,
-      captureSpeakerAssignment,
       onReviewSpeakerName: canReviewSpeakerName ? reviewSpeakerName : null,
       pendingRemoteUtteranceIds: pendingRemoteUtteranceIdSet,
       actions: editing.lineActions,
       onAddNote: canAddNote ? addNote : null,
       onPlayFrom: disableSegmentPlayback ? null : playFrom,
       onSplitSegment: canSplit ? splitSegment : null,
-      captureSplitSegment,
     }),
     [
       readOnly,
@@ -477,14 +415,11 @@ export default function TranscriptView({
       live,
       liveLines,
       keepLineGroups,
-      onLiveInteractionChange,
-      missingContextIds,
       speakerMap,
       speakers,
       globalSpeakers,
       speakerColors,
       updateSegmentSpeaker,
-      captureSpeakerAssignment,
       canReviewSpeakerName,
       reviewSpeakerName,
       pendingRemoteUtteranceIdSet,
@@ -495,7 +430,6 @@ export default function TranscriptView({
       playFrom,
       canSplit,
       splitSegment,
-      captureSplitSegment,
     ],
   );
   const lineKeys = (
@@ -517,15 +451,15 @@ export default function TranscriptView({
     <div id="transcript-view" data-testid={live ? "live-transcript-panel" : undefined}
       data-paused={live ? String(!!live.isPaused) : undefined} className="flex flex-col h-full relative min-h-0">
       <TranscriptToolbar
-        onUndo={() => { if (!live && liveInteractions.size === 0) onUndo(); }}
-        onRedo={() => { if (!live && liveInteractions.size === 0) onRedo(); }}
-        canUndo={!live && liveInteractions.size === 0 && canUndo}
-        canRedo={!live && liveInteractions.size === 0 && canRedo}
-        mutationsDisabled={!!live || readOnly || liveInteractions.size > 0}
+        onUndo={() => { if (!live) onUndo(); }}
+        onRedo={() => { if (!live) onRedo(); }}
+        canUndo={!live && canUndo}
+        canRedo={!live && canRedo}
+        mutationsDisabled={!!live || readOnly}
         onExport={() => {
-          if (!disableExport && !editing.editInProgress && liveInteractions.size === 0) onExport();
+          if (!disableExport && !editing.editInProgress) onExport();
         }}
-        exportDisabled={disableExport || editing.editInProgress || liveInteractions.size > 0}
+        exportDisabled={disableExport || editing.editInProgress}
         exportUnavailable={disableExport}
         showSearch={showSearch}
         setShowSearch={setShowSearch}
@@ -587,9 +521,7 @@ export default function TranscriptView({
             const noteLineId = liveRenderIdentity(last.segment, last.index);
             const groupKey = keepLineGroups ? liveRenderIdentity(first.segment, first.index)
               : group.items.map((item) => item.segmentId).join("|");
-            const isMissingContext = missingContextIds.has(liveRenderIdentity(first.segment, first.index));
-            const notesAfterGroup = isMissingContext ? [] :
-              notesAmongLines.afterLine.get(group.items[group.items.length - 1].index) ?? [];
+            const notesAfterGroup = notesAmongLines.afterLine.get(last.index) ?? [];
             const isGroupActive = currentTime >= group.start && currentTime < group.end;
 
             return (
@@ -604,7 +536,7 @@ export default function TranscriptView({
                   onPlaySegment={playSegment}
                   onPause={pause}
                   onResume={resume}
-                  disableSegmentPlayback={disableSegmentPlayback || isMissingContext}
+                  disableSegmentPlayback={disableSegmentPlayback}
                   speakerDisplayOrder={speakerDisplayOrder}
                   speakerFirstLines={speakerFirstLines}
                   lineShared={lineShared}
@@ -622,7 +554,7 @@ export default function TranscriptView({
                 />
                 </LineItem>
                 <CollapsedLineNotes
-                  as={hasShownLive ? "li" : "div"}
+                  as={LineItem}
                   notes={notesAfterGroup}
                   isFoldable={(note) => (!("status" in note) || note.status !== "failed") &&
                     !moves.hasRefusal(note.id) && shownEditor?.noteId !== note.id}

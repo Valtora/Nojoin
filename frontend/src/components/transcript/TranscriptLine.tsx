@@ -1,7 +1,7 @@
 "use client";
 
 import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases';
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { memo, useId, useMemo, useRef } from "react";
 
 import { getColorByKey } from "@/lib/constants";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
@@ -22,7 +22,7 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 
-import CapturedSpeakerAssignment, { type SpeakerAssignmentCommand } from "./CapturedSpeakerAssignment";
+import SpeakerAssignmentPopover from "../SpeakerAssignmentPopover";
 
 import type {
   TranscriptLineActions,
@@ -39,7 +39,7 @@ import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling"
 import OverlapIndicator from "./OverlapIndicator";
 import { useSpeakerTurnHighlight } from "../speakers/SpeakerTurnHighlight";
 import LiveSpeakerChip from "./LiveSpeakerChip";
-import type { LiveInteractionChange, LiveLinePresentation, LiveTranscriptPresentation } from "./liveTranscriptPresentation";
+import type { LiveLinePresentation, LiveTranscriptPresentation } from "./liveTranscriptPresentation";
 import { isDiarisationPending } from "./pendingTranscriptGroups";
 import PendingTranscriptContinuation, { type PendingContinuation } from "./PendingTranscriptContinuation";
 import type { TranscriptLineShared } from "./TranscriptGroup";
@@ -52,9 +52,6 @@ import type { TranscriptLineShared } from "./TranscriptGroup";
 type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | "segmentId"> & {
   live?: LiveTranscriptPresentation;
   liveLine?: LiveLinePresentation;
-  renderIdentity?: string;
-  onLiveInteractionChange?: LiveInteractionChange;
-  contextOnly?: boolean;
   continuations?: readonly PendingContinuation[];
   lineShared?: TranscriptLineShared;
   /** Playback is inside this line. */
@@ -69,7 +66,6 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
   ) => boolean | void | Promise<boolean | void>;
-  captureSpeakerAssignment?: () => SpeakerAssignmentCommand;
   /** Confirms or dismisses a suggested speaker name; null where names can't be reviewed. */
   onReviewSpeakerName:
     | ((label: string, name: string, decision: SpeakerNameDecision) => Promise<void>)
@@ -95,7 +91,6 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
   onAddNote: ((note: OutboxDraft) => string | null) | null;
   onPlayFrom: ((startSeconds: number) => void) | null;
   onSplitSegment: ((segment: TranscriptSegment, wordId: string) => Promise<boolean>) | null;
-  captureSplitSegment?: () => ((segment: TranscriptSegment, wordId: string) => Promise<boolean>) | null | undefined;
   /** The open editor, for a line that shows it; null on every other line. */
   editor: TranscriptOpenEditor | null;
 };
@@ -122,7 +117,6 @@ function TranscriptLine({
   globalSpeakers,
   speakerColors,
   onUpdateSegmentSpeaker,
-  captureSpeakerAssignment,
   onReviewSpeakerName,
   isSpeakersFirstLine,
   hasPendingRemoteUpdate,
@@ -136,24 +130,13 @@ function TranscriptLine({
   onAddNote,
   onPlayFrom,
   onSplitSegment,
-  captureSplitSegment,
   editor,
   live,
   liveLine,
-  renderIdentity = segmentId,
-  onLiveInteractionChange,
-  contextOnly = false,
   continuations = [],
   lineShared,
 }: TranscriptLineProps) {
   const settlingDescriptionId = useId();
-  const [liveHeaderEdit, setLiveHeaderEdit] = useState<{
-    live: LiveTranscriptPresentation;
-    line: LiveLinePresentation;
-    segment: TranscriptSegment;
-    name: string;
-    context: IndexedTranscriptSegment;
-  } | null>(null);
   const highlighted = useSpeakerTurnHighlight().labels.includes(segment.speaker);
   const textDecorations = useMemo(
     () =>
@@ -170,21 +153,6 @@ function TranscriptLine({
     (live !== undefined && !segment.settling_required) || lineIsSettling(segment) ||
     (isProvisional && !allowProvisionalEdits && !segment.settling_required);
   const speakerName = segmentSpeakerDisplayName(speakerMap, segment.speaker);
-  const headerLive = liveHeaderEdit?.live ?? live;
-  const headerLine = liveHeaderEdit?.line ?? liveLine;
-  const headerSegment = liveHeaderEdit?.segment ?? segment;
-  const headerName = liveHeaderEdit?.name ?? speakerName;
-  const headerContext = liveHeaderEdit?.context;
-  const handleLiveHeaderEditing = useCallback((editing: boolean) => {
-    const context = headerContext ?? { segment: headerSegment, index, segmentId };
-    setLiveHeaderEdit(editing && headerLive && headerLine
-      ? { live: headerLive, line: headerLine, segment: headerSegment, name: headerName, context }
-      : null);
-    onLiveInteractionChange?.(`${renderIdentity}:naming`, editing, context);
-  }, [headerLive, headerLine, headerSegment, headerName, index, segmentId, headerContext,
-    onLiveInteractionChange, renderIdentity]);
-  useEffect(() => () => onLiveInteractionChange?.(`${renderIdentity}:naming`, false),
-    [onLiveInteractionChange, renderIdentity]);
   // A live label is no speaker of the recording yet, so it has no name to
   // change; the line can still be assigned to a speaker.
   const canRenameSpeaker = liveSpeakerDisplayName(segment.speaker) === null;
@@ -217,7 +185,6 @@ function TranscriptLine({
   return (
     <div
       data-segment-id={segmentId}
-      data-render-identity={renderIdentity}
       data-testid={live ? "live-transcript-line" : undefined}
       data-line-index={live ? index : undefined}
       data-order-index={index}
@@ -228,21 +195,17 @@ function TranscriptLine({
         ? `group/line${liveLine?.sameSpeakerContinuation ? " pt-2" : ""}${highlighted ? " rounded-lg outline-2 outline-action-border outline-offset-2" : ""}`
         : `group/line flex flex-col mb-3 last:mb-0 ${highlighted ? "rounded-lg outline-2 outline-action-border outline-offset-2" : ""}`}
     >
-      {contextOnly ? <p className="mb-2 text-sm text-contrast-helper">
-        This line is no longer in the current transcript. Your draft is kept.
-      </p> : null}
       {live && lineIsSettling(segment) ? <p id={settlingDescriptionId} hidden>{LINE_SETTLING_REASON}</p> : null}
       {/* Speaker Label */}
       <div className="flex flex-wrap items-baseline gap-2 mb-1">
-        {pendingDiarisation ? null : headerLive ? (headerLine?.speakerLabel ? (
+        {pendingDiarisation ? null : live ? (liveLine?.speakerLabel ? (
           <LiveSpeakerChip
-            label={headerLine.speakerLabel}
-            name={headerName}
-            locked={headerLine.speakerLocked}
-            onRename={!readOnly && headerLive.onRenameLiveSpeaker && liveSpeakerDisplayName(headerSegment.speaker) !== null
-              ? headerLive.onRenameLiveSpeaker : undefined}
-            loadPeopleNames={headerLive.loadPeopleNames}
-            onEditingChange={handleLiveHeaderEditing}
+            label={liveLine.speakerLabel}
+            name={speakerName}
+            locked={liveLine.speakerLocked}
+            onRename={!readOnly && live.onRenameLiveSpeaker && liveSpeakerDisplayName(segment.speaker) !== null
+              ? live.onRenameLiveSpeaker : undefined}
+            loadPeopleNames={live.loadPeopleNames}
           />
         ) : null) : isEditingSpeaker && editor ? (
           <InputBase
@@ -293,12 +256,10 @@ function TranscriptLine({
               {speakerName}
             </ButtonBase>
 
-            {popoverAnchor && (!isSegmentReadOnly || readOnly) && (
-              <CapturedSpeakerAssignment
-                segment={segment}
-                onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}
-                captureCommand={captureSpeakerAssignment}
+            {popoverAnchor && !isSegmentReadOnly && (
+              <SpeakerAssignmentPopover
                 availableSpeakers={speakers}
+                currentSpeakerLabel={segment.speaker}
                 globalSpeakers={globalSpeakers}
                 speakerColors={speakerColors}
                 targetElement={popoverAnchor}
@@ -306,6 +267,10 @@ function TranscriptLine({
                 onDismissName={canDismissPlainName && onReviewSpeakerName
                   ? () => onReviewSpeakerName(segment.speaker, speakerName, "dismiss")
                   : undefined}
+                onSelect={(assignment) => {
+                  void onUpdateSegmentSpeaker(segment, assignment);
+                  actions.closeSpeakerPopover();
+                }}
                 onClose={actions.closeSpeakerPopover}
               />
             )}
@@ -339,15 +304,11 @@ function TranscriptLine({
           onAddNote={onAddNote}
           onPlayFrom={onPlayFrom}
           onSplitSegment={onSplitSegment}
-          captureSplitSegment={captureSplitSegment}
           readOnly={readOnly}
           isEditingText={isEditingText}
           isChangingSpeaker={popoverAnchor !== null}
           live={live}
           speakers={speakers}
-          index={index}
-          renderIdentity={renderIdentity}
-          onLiveInteractionChange={onLiveInteractionChange}
         />
       </div>
       {liveLine?.sourceLabel ? (

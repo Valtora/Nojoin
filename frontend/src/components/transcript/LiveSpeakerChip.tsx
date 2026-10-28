@@ -20,7 +20,6 @@ interface LiveSpeakerChipProps {
   onRename?: (label: string, name: string) => Promise<void | boolean>;
   /** The People names offered while typing, read when the rename opens. */
   loadPeopleNames?: () => Promise<readonly string[]>;
-  onEditingChange?: (editing: boolean) => void;
 }
 
 const TEXT_STYLE = {
@@ -44,16 +43,13 @@ export default function LiveSpeakerChip({
   locked,
   onRename,
   loadPeopleNames,
-  onEditingChange,
 }: LiveSpeakerChipProps) {
   // The label is kept from when the box opened: a provisional line can move
   // to another label while the name is typed, and the name is for this one.
   const [draft, setDraft] = useState<{
-    key: symbol;
     label: string;
     opened: string;
     text: string;
-    rename: (label: string, name: string) => Promise<void | boolean>;
   } | null>(null);
   const [peopleNames, setPeopleNames] = useState<readonly string[]>([]);
   // Enter saves and the box then blurs as it closes: one request, not two.
@@ -67,9 +63,6 @@ export default function LiveSpeakerChip({
   const textStyle = locked ? TEXT_STYLE.locked : TEXT_STYLE.provisional;
 
   const isEditing = draft !== null;
-  useEffect(() => {
-    onEditingChange?.(isEditing);
-  }, [isEditing, onEditingChange]);
   useEffect(() => {
     if (!isEditing || !loadPeopleNames) return;
     let cancelled = false;
@@ -91,7 +84,7 @@ export default function LiveSpeakerChip({
     buttonRef.current?.focus();
   }, [isEditing]);
 
-  if (!onRename && !draft) {
+  if (!onRename) {
     return (
       <div
         data-testid="live-transcript-speaker"
@@ -122,11 +115,8 @@ export default function LiveSpeakerChip({
     }
     savingRef.current = true;
     try {
-      if (await draft.rename(draft.label, next) !== false) {
-        setDraft((current) => current?.key === draft.key
-          ? current.text.trim() === next ? null : { ...current, opened: next }
-          : current);
-      }
+      // A refused name stays in the box to retry.
+      if (await onRename(draft.label, next) !== false) close();
     } catch (error) {
       console.error("Failed to rename the live speaker", error);
     } finally {
@@ -186,9 +176,8 @@ export default function LiveSpeakerChip({
         title="Rename this speaker"
         aria-label={`Rename ${name}`}
         onClick={() => {
-          if (!onRename) return;
           cancelledRef.current = false;
-          setDraft({ key: Symbol("live speaker rename"), label, opened: name, text: name, rename: onRename });
+          setDraft({ label, opened: name, text: name });
         }}
         className={`group/chip inline-flex items-center gap-1 rounded text-left text-xs transition-colors hover:text-action-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-border pointer-coarse:-my-2.5 ${TOUCH_TARGET_HEIGHT} ${textStyle}`}
       >

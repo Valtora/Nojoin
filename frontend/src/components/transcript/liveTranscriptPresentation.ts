@@ -3,11 +3,6 @@ import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import type { NoteSelection } from "@/lib/notes/noteOutbox";
 import type { TranscriptSegment } from "@/types";
 import type { LiveLineHandlers } from "./LiveLineEditor";
-import type { IndexedTranscriptSegment } from "./transcriptGroups";
-
-export type LiveInteractionChange = (
-  identity: string, active: boolean, snapshot?: IndexedTranscriptSegment,
-) => void;
 
 export const liveRenderIdentity = (segment: TranscriptSegment, index: number) =>
   segment.id ?? `${segment.start}-${index}`;
