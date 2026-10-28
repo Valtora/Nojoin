@@ -31,7 +31,6 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline import (
     update_utterance_text as update_canonical_utterance_text,
 )
-from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.canonical_pipeline.guards import settling_required
 from backend.utils.canonical_pipeline.live_settling import settling_enabled
 from backend.utils.config_manager import is_meeting_edge_enabled
@@ -67,9 +66,7 @@ async def get_transcript_utterances(
     current_user: User = Depends(get_current_user),
 ):
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    transcript = await db.run_sync(
-        lambda session: _load_transcript(session, recording.id, lock=True)
-    )
+    transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
