@@ -151,8 +151,8 @@ html {
 }
 
 @layer base {
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
+  button:not(:disabled, [aria-disabled="true"]),
+  [role="button"]:not(:disabled, [aria-disabled="true"]) {
     cursor: pointer;
   }
 
