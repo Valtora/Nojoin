@@ -210,7 +210,6 @@ function TranscriptGroup({
             title={pauses ? "Pause segment" : "Play segment"}
             disabled={disableSegmentPlayback}
             onClick={() => {
-              if (disableSegmentPlayback) return;
               if (isGroupActive) {
                 if (isPlaying) onPause();
                 else onResume();

@@ -124,10 +124,6 @@ export default function TranscriptSection({
 }: TranscriptSectionProps) {
   const { addNotification } = useNotificationStore();
   const usesLiveFeed = liveTranscript !== undefined;
-  const [hasShownLive, setHasShownLive] = useState(usesLiveFeed);
-  useOnDepsChange([usesLiveFeed], () => {
-    if (usesLiveFeed) setHasShownLive(true);
-  });
   const lineActions = useMemo(() => transcriptLineActions((message) =>
     addNotification({ type: "error", message })), [addNotification]);
   const applyLiveNames = liveTranscript?.applyLiveSpeakerNames ?? IGNORE_LIVE_NAMES;
@@ -138,26 +134,19 @@ export default function TranscriptSection({
   const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
     hasRetainedPublication;
   const readOnly = (isRecordingInFlight(recording) || awaitingPublication) && !activeCapture;
-  // A replacement reader must not remount a finished recording's drafts.
-  // Capture keeps its live presentation through processing until handoff.
+  // A finished recording keeps its finished presentation while a reprocess
+  // reads the feed; capture keeps its live one through processing until handoff.
   const [presentFeed, setPresentFeed] = useState(usesLiveFeed);
   useOnDepsChange([usesLiveFeed, readOnly], () => {
     if (!usesLiveFeed) setPresentFeed(false);
     else if (!readOnly) setPresentFeed(true);
   });
-  // Editors retain their mutation and revision, but capability and refresh
-  // follow the selected reader, including after an awaited write completes.
-  const canWrite = useStableCallback(() => !readOnly);
+  // The one handler guard: a control drawn before the view turned read-only
+  // can still be used. Refresh follows the selected reader after a write.
   const refreshSelectedReader = useStableCallback(liveTranscript?.refresh ?? onRefresh);
-  const splitLine = async (segment: TranscriptSegment, wordId: string) => {
-    if (!canWrite()) return false;
-    const saved = await lineActions.splitTranscriptLine(recording.id, segment, wordId);
-    if (saved) refreshSelectedReader();
-    return saved;
-  };
   const nameReview = useSpeakerNameReview({ recordingId: recording.id, onRefresh });
   const reviewSpeakerName = async (label: string, name: string, decision: SpeakerNameDecision) => {
-    if (canWrite()) await nameReview.review({ labels: [label], name }, decision);
+    if (!readOnly) await nameReview.review({ labels: [label], name }, decision);
   };
   const transcriptStatus = recording.transcript?.transcript_status;
   // The listed notes and those saved from this page since, less any it
@@ -189,26 +178,20 @@ export default function TranscriptSection({
     liveNoteBoxRef?.current?.focus();
   }, [outbox, liveNoteBoxRef]);
   const recordingId = recording.id;
-  const liveLineHandlers = useMemo<LiveLineHandlers>(() => ({
-    editText: async (segment, text) => {
-      if (!canWrite()) return false;
-      const saved = await lineActions.editTranscriptLine(recordingId, segment, text);
+  const liveLineHandlers = useMemo<LiveLineHandlers>(() => {
+    const write = async (save: () => Promise<boolean>) => {
+      if (readOnly) return false;
+      const saved = await save();
       if (saved) refreshSelectedReader();
       return saved;
-    },
-    changeSpeaker: async (segment, assignment) => {
-      if (!canWrite()) return false;
-      const saved = await lineActions.assignTranscriptLine(recordingId, segment, assignment);
-      if (saved) refreshSelectedReader();
-      return saved;
-    },
-    split: async (segment, wordId) => {
-      if (!canWrite()) return false;
-      const saved = await lineActions.splitTranscriptLine(recordingId, segment, wordId);
-      if (saved) refreshSelectedReader();
-      return saved;
-    },
-  }), [recordingId, refreshSelectedReader, canWrite, lineActions]);
+    };
+    return {
+      editText: (segment, text) => write(() => lineActions.editTranscriptLine(recordingId, segment, text)),
+      changeSpeaker: (segment, assignment) =>
+        write(() => lineActions.assignTranscriptLine(recordingId, segment, assignment)),
+      split: (segment, wordId) => write(() => lineActions.splitTranscriptLine(recordingId, segment, wordId)),
+    };
+  }, [recordingId, refreshSelectedReader, readOnly, lineActions]);
   const paused = recording.status === RecordingStatus.PAUSED || recording.client_status === ClientStatus.PAUSED;
   const hasLoaded = liveTranscript?.hasLoaded ?? false;
   const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed && presentFeed ? ({
@@ -281,7 +264,7 @@ export default function TranscriptSection({
         onEmptied={focusSection}
         className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
       />
-      {transcriptSegments.length > 0 || notes.length > 0 || liveTranscript || hasShownLive ? (
+      {transcriptSegments.length > 0 || notes.length > 0 || liveTranscript ? (
         <div className="min-h-0 flex-1">
           <TranscriptView
             live={live}
@@ -298,15 +281,15 @@ export default function TranscriptSection({
             speakerMap={speakerMap}
             speakers={liveTranscript?.speakers ?? recording.speakers ?? NO_SPEAKERS}
             globalSpeakers={globalSpeakers}
-            onRenameSpeaker={(label, name) => canWrite() ? onRenameSpeaker(label, name) : false}
-            onUpdateSegmentSpeaker={(segment, assignment) => canWrite() ? onUpdateSegmentSpeaker(segment, assignment) : false}
+            onRenameSpeaker={(label, name) => !readOnly && onRenameSpeaker(label, name)}
+            onUpdateSegmentSpeaker={(segment, assignment) => !readOnly && onUpdateSegmentSpeaker(segment, assignment)}
             onReviewSpeakerName={reviewSpeakerName}
-            onUpdateSegmentText={(segment, text) => canWrite() ? onUpdateSegmentText(segment, text) : false}
-            onSplitSegment={splitLine}
-            onFindAndReplace={(...args) => { if (canWrite()) return onFindAndReplace(...args); }}
+            onUpdateSegmentText={(segment, text) => !readOnly && onUpdateSegmentText(segment, text)}
+            onSplitSegment={liveLineHandlers.split}
+            onFindAndReplace={onFindAndReplace}
             speakerColors={speakerColors}
-            onUndo={() => { if (canWrite()) onUndo(); }}
-            onRedo={() => { if (canWrite()) onRedo(); }}
+            onUndo={onUndo}
+            onRedo={onRedo}
             canUndo={!readOnly && canUndo}
             canRedo={!readOnly && canRedo}
             onExport={onExport}

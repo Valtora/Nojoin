@@ -451,14 +451,12 @@ export default function TranscriptView({
     <div id="transcript-view" data-testid={live ? "live-transcript-panel" : undefined}
       data-paused={live ? String(!!live.isPaused) : undefined} className="flex flex-col h-full relative min-h-0">
       <TranscriptToolbar
-        onUndo={() => { if (!live) onUndo(); }}
-        onRedo={() => { if (!live) onRedo(); }}
+        onUndo={onUndo}
+        onRedo={onRedo}
         canUndo={!live && canUndo}
         canRedo={!live && canRedo}
         mutationsDisabled={!!live || readOnly}
-        onExport={() => {
-          if (!disableExport && !editing.editInProgress) onExport();
-        }}
+        onExport={onExport}
         exportDisabled={disableExport || editing.editInProgress}
         exportUnavailable={disableExport}
         showSearch={showSearch}
