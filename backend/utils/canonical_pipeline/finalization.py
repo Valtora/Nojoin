@@ -109,6 +109,17 @@ def _settled_final_confidence_payload(
     return payload or None
 
 
+def _settled_segments(
+    transcript: Transcript,
+    lines: Sequence[TranscriptUtterance],
+    segments: Sequence[dict[str, Any]],
+) -> Sequence[dict[str, Any]]:
+    """A recording with settled provenance keeps its human edits through the final run."""
+    if (transcript.settling_state or {}).get("settled") is True:
+        return preserve_human_segments(lines, segments)
+    return segments
+
+
 def finalize_utterances_from_segments(
     session,
     *,
@@ -162,8 +173,7 @@ def finalize_utterances_from_segments(
         idempotency_key=run_idempotency_key,
     )
 
-    if (transcript.settling_state or {}).get("settled") is True:
-        segments = preserve_human_segments(active_utterances, segments)
+    segments = _settled_segments(transcript, active_utterances, segments)
 
     recording_speakers = ensure_recording_speaker_aliases(
         session,
