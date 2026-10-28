@@ -33,7 +33,7 @@ export function Switch({
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
-        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent',
+        'relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent',
         'transition-colors duration-200 ease-in-out',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring',
         // The off state is a control boundary rather than a fill, so it takes
