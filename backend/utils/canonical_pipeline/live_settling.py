@@ -151,6 +151,23 @@ def _signature(word: dict[str, Any]) -> str:
     return word_signature(str(word.get("word") or ""))
 
 
+def _still_ends_line(
+    current: list[dict[str, Any]], terminal: dict[str, Any], point: int | None
+) -> bool:
+    """Whether the revision holds the line's last word, unchanged and still last.
+
+    A word recovered after it but before the confirmed end belongs to the line.
+    """
+    for index, word in enumerate(current):
+        if word.get("id") == terminal.get("id"):
+            following = current[index + 1] if index + 1 < len(current) else None
+            start = following.get("start_ms") if following else None
+            return _signature(word) == _signature(terminal) and not (
+                start is not None and point is not None and start < point
+            )
+    return False
+
+
 def _line_boundaries(
     rows: list[TranscriptUtterance],
     state: dict[str, Any],
@@ -159,11 +176,10 @@ def _line_boundaries(
 ) -> LineBoundaries:
     """Keep a confirmed line end on the line's last word through retiming.
 
-    When the revised hypothesis no longer holds that word unchanged (it was
-    retokenised, which can reuse its ID for the first piece, or replaced), the
-    end stays a time cutoff instead.
+    When the revised hypothesis no longer holds that word unchanged and last
+    (it was retokenised, which can reuse its ID for the first piece, replaced,
+    or followed by recovered speech), the end stays a time cutoff instead.
     """
-    wording = {word.get("id"): _signature(word) for word in current}
     closed_ends: dict[str, int | None] = {}
     cutoffs: set[int] = set()
     for row in rows:
@@ -175,9 +191,8 @@ def _line_boundaries(
             continue
         point = stored.get("closed_at_ms", row.end_ms)
         words = row_words(row)
-        terminal = words[-1].get("id") if words else None
-        if terminal is not None and wording.get(terminal) == _signature(words[-1]):
-            closed_ends[terminal] = point
+        if words and _still_ends_line(current, words[-1], point):
+            closed_ends[words[-1]["id"]] = point
         elif point is not None:
             cutoffs.add(point)
     return LineBoundaries(
