@@ -60,15 +60,6 @@ describe("finished transcript mutation outcomes", () => {
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
-  it("blocks a debounced notes save captured before reprocessing began", async () => {
-    const { result } = await mount();
-    const saveNotes = result.current.handleNotesChange;
-    act(() => result.current.setRecording({ ...recording, status: RecordingStatus.QUEUED,
-      previous_publication_available: true }));
-    await act(async () => { await saveNotes("An earlier editor's delayed save"); });
-    expect(mocks.notes).not.toHaveBeenCalled();
-  });
-
   it.each(["text", "rename", "assign"] as const)("reports %s refusal instead of resolving as success", async (kind) => {
     const { result } = await mount();
     mocks[kind].mockRejectedValueOnce(new Error("Stale revision"));

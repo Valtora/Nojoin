@@ -58,8 +58,8 @@ export default function RecordingPage({ params }: PageProps) {
     usesInFlightTranscript,
     transcriptIsAuthoritative,
     hasRetainedPublication,
-    canPlayback: detailCanPlayback,
-    canExport: detailCanExport,
+    canPlayback,
+    canExport,
     transcriptSegments,
     deferredTranscriptUtteranceIds,
     speakerMap,
@@ -133,8 +133,6 @@ export default function RecordingPage({ params }: PageProps) {
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
   const showCaptureSlot = isInFlightRecording || isLocalCaptureActive;
   const sideColumnCollapsed = isSpeakerPanelCollapsed && isChatPanelCollapsed;
-  const canPlayback = detailCanPlayback && !isLocalCaptureActive;
-  const canExport = detailCanExport && !isLocalCaptureActive;
 
   // Renaming a speaker propagates into the generated notes (shared by the
   // desktop side panel and the mobile Speakers tab).

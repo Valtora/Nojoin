@@ -116,34 +116,6 @@ describe("recording detail current metadata and capabilities", () => {
     expect(mocks.router.push).not.toHaveBeenCalled();
   });
 
-  it.each(["recording", "paused", "finalizing"])("blocks stored settled callbacks during matching local %s", async (status) => {
-    const { result, rerender } = renderHook(({ capture }) => useRecordingDetail({ params, capture }), {
-      initialProps: { capture: { recordingId: "rec-1", status: "idle" } },
-    });
-    await advance();
-    const play = vi.fn().mockResolvedValue(undefined);
-    const audio = { play, pause: vi.fn(), currentTime: 0 } as unknown as HTMLAudioElement;
-    result.current.audioRef.current = audio;
-    const stored = {
-      play: result.current.handlePlaySegment, resume: result.current.handleResume,
-      export: result.current.handleExport, generate: result.current.handleGenerateNotes,
-    };
-    rerender({ capture: { recordingId: "rec-1", status } });
-    await advance();
-    await stored.play(9);
-    stored.resume();
-    await stored.export({ kind: "audio" });
-    await stored.export({ kind: "document", sections: ["transcript"], format: "txt", includeNotes: false });
-    await stored.generate();
-    expect(result.current.canPlayback).toBe(false);
-    expect(result.current.canExport).toBe(false);
-    expect(audio.currentTime).toBe(0);
-    expect(play).not.toHaveBeenCalled();
-    expect(mocks.exportAudio).not.toHaveBeenCalled();
-    expect(mocks.exportContent).not.toHaveBeenCalled();
-    expect(mocks.generateNotes).not.toHaveBeenCalled();
-  });
-
   it("keeps settled playback and export available while another recording captures", async () => {
     const { result } = renderHook(() => useRecordingDetail({
       params, capture: { recordingId: "another", status: "recording" },

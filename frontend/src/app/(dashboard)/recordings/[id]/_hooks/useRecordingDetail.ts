@@ -163,10 +163,6 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
   const canPlayback = !!recording && !isInFlightRecording && !localCaptureActive;
   const canExport = canPlayback;
-  const capabilityRef = useRef({ recordingId: recording?.id, canPlayback, canExport });
-  useEffect(() => {
-    capabilityRef.current = { recordingId: recording?.id, canPlayback, canExport };
-  }, [recording?.id, canPlayback, canExport]);
   const {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
     transcriptSpeakerNames, transcriptSpeakers, liveTranscript, usesInFlightTranscript, transcriptIsAuthoritative,
@@ -458,7 +454,6 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   const handlePlaySegment = async (start: number, end?: number) => {
-    if (!capabilityRef.current.canPlayback || capabilityRef.current.recordingId !== recording?.id) return;
     if (audioRef.current) {
       try {
         // Optimistic update for instant UI response (scrolling)
@@ -489,7 +484,6 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   const handleResume = () => {
-    if (!capabilityRef.current.canPlayback || capabilityRef.current.recordingId !== recording?.id) return;
     if (audioRef.current) {
       audioRef.current.play();
     }
@@ -788,7 +782,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
 
   // Notes Handlers
   const handleGenerateNotes = async (notesTemplateId?: number | null) => {
-    if (!recording || !capabilityRef.current.canExport || capabilityRef.current.recordingId !== recording.id) return;
+    if (!recording) return;
     setIsGeneratingNotes(true);
     try {
       // Undefined means "use my default"; an id regenerates with that structure
@@ -821,7 +815,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   const handleNotesChange = async (notes: string) => {
-    if (!recording || !capabilityRef.current.canExport || capabilityRef.current.recordingId !== recording.id) return;
+    if (!recording) return;
 
     // Always push current notes to history (even if null) before making changes
     setNotesHistory((prev) => [...prev, recording.transcript?.notes ?? null]);
@@ -840,8 +834,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   const handleNotesUndo = async () => {
-    if (notesHistory.length === 0 || !recording || !capabilityRef.current.canExport ||
-      capabilityRef.current.recordingId !== recording.id) return;
+    if (notesHistory.length === 0 || !recording) return;
 
     const previousNotes = notesHistory[notesHistory.length - 1];
     const currentNotes = recording.transcript?.notes ?? null;
@@ -862,8 +855,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   const handleNotesRedo = async () => {
-    if (notesFuture.length === 0 || !recording || !capabilityRef.current.canExport ||
-      capabilityRef.current.recordingId !== recording.id) return;
+    if (notesFuture.length === 0 || !recording) return;
 
     const nextNotes = notesFuture[0];
     const currentNotes = recording.transcript?.notes ?? null;
@@ -906,7 +898,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   );
 
   const handleExport = async (selection: ExportSelection) => {
-    if (!recording || !capabilityRef.current.canExport || capabilityRef.current.recordingId !== recording.id) return;
+    if (!recording) return;
     if (selection.kind === "audio") {
       // Reports its own failures, with what went wrong.
       await recordingActions.exportAudio(recording.id, recording.name);
