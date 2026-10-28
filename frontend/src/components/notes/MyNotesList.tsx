@@ -21,7 +21,6 @@ import IconButton from "../ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
 import { NoteFile } from "./NoteFiles";
-import RetainedNoteEdits from "./RetainedNoteEdits";
 import { scrollTranscriptToNote } from "./transcriptJump";
 
 interface MyNotesListProps {
@@ -191,8 +190,6 @@ export default function MyNotesList({
           {placements.map(renderRow)}
         </ul>
       )}
-      {noteEdits.drafts ? <RetainedNoteEdits owner={noteEdits.drafts} notes={notes}
-        onEdit={(noteId, anchor) => setEditing({ noteId, anchor })} /> : null}
       <TranscriptNoteEditor
         editing={editing}
         notes={notes}
