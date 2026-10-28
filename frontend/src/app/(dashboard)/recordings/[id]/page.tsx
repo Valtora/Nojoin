@@ -182,11 +182,13 @@ export default function RecordingPage({ params }: PageProps) {
     onShowTranscript={showTranscript}
     className="bg-surface-inset"
   />;
+  const capturing = isLiveCaptureInProgress(recording);
   const meetingEdgeContent = <MeetingEdgePanel
-    readOnly={!isLiveCaptureInProgress(recording)}
+    readOnly={!capturing}
     payload={recording.transcript?.meeting_edge_payload}
     focusText={recording.transcript?.meeting_edge_focus}
-    status={recording.transcript?.meeting_edge_status}
+    // After capture the panel keeps its last guidance, not the state of its last run.
+    status={capturing ? recording.transcript?.meeting_edge_status : null}
     onSaveFocus={handleMeetingEdgeFocusChange}
     contextLevel={meetingEdgeContextLevel}
     onSaveContextLevel={handleMeetingEdgeContextLevelChange}

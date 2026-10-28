@@ -3,14 +3,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from sqlmodel import Session
 
 import backend.worker.tasks as tasks_module
 from backend.models.timeline_note import TimelineNote
-from backend.models.transcript import Transcript
 from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.meeting_edge import MeetingEdgeRequest, build_meeting_edge_prompt
-from backend.worker.tasks import intelligence_source, meeting_edge_stage
 
 
 class _ExecResult:
@@ -34,8 +31,6 @@ class _FakeSession:
         self.commit_count = 0
         recording.capture_epoch = getattr(recording, "capture_epoch", 0)
         transcript.recording_id = recording.id
-        transcript.change_sequence = getattr(transcript, "change_sequence", 0)
-        transcript.settling_state = getattr(transcript, "settling_state", None)
 
     def get(self, model, identifier):
         if model is tasks_module.Recording and identifier == self.recording.id:
@@ -60,35 +55,8 @@ class _FakeSession:
     def commit(self):
         self.commit_count += 1
 
-    def flush(self) -> None:
-        pass
-
-    def refresh(self, obj: object, attribute_names: list[str] | None = None) -> None:
-        pass
-
-    def rollback(self) -> None:
-        pass
-
     def close(self):
         return None
-
-
-@pytest.fixture(autouse=True)
-def fake_publication_source(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Adapt the fake's source read while retaining real token validation."""
-    real_load = intelligence_source.load_intelligence_source
-
-    def load_source(
-        session: Session | _FakeSession, recording_id: int
-    ) -> Transcript | SimpleNamespace | None:
-        if isinstance(session, _FakeSession):
-            assert recording_id == session.recording.id
-            assert recording_id == session.transcript.recording_id
-            return session.transcript
-        return real_load(session, recording_id)
-
-    monkeypatch.setattr(meeting_edge_stage, "load_intelligence_source", load_source)
-    monkeypatch.setattr(intelligence_source, "load_intelligence_source", load_source)
 
 
 def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(
@@ -136,6 +104,59 @@ def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(
     assert session.commit_count == 1
 
 
+def _run_live_edge_refresh(monkeypatch, session, llm):
+    """Run one refresh that reaches the model call with `llm`."""
+    monkeypatch.setattr(tasks_module, "flag_modified", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tasks_module,
+        "build_transcript_segments_for_read",
+        lambda *args, **kwargs: [
+            {
+                "start": 0.0,
+                "end": 1.2,
+                "speaker": "SPEAKER_00",
+                "text": "Fresh agenda update",
+            }
+        ],
+    )
+    monkeypatch.setattr(tasks_module, "_has_meeting_edge_signal", lambda **kwargs: True)
+    monkeypatch.setattr(
+        tasks_module, "_should_refresh_meeting_edge", lambda **kwargs: True
+    )
+    monkeypatch.setattr(
+        tasks_module, "_resolve_meeting_event_context", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        tasks_module, "build_recording_speaker_map", lambda speakers: {}
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "serialize_meeting_edge_result",
+        lambda result: {"summary": result},
+    )
+    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: llm)
+    monkeypatch.setattr(
+        tasks_module,
+        "resolve_llm_config",
+        lambda *args, **kwargs: SimpleNamespace(
+            provider="openai",
+            model="gpt-test",
+            api_url=None,
+            merged_config={},
+            missing_configuration_message=lambda: None,
+        ),
+    )
+
+    task = tasks_module.refresh_meeting_edge_task
+    original_session = task._session
+    task._session = session
+    try:
+        result = task.run(1)
+    finally:
+        task._session = original_session
+    return result
+
+
 def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestions(
     monkeypatch, fake_single_flight
 ):
@@ -168,56 +189,7 @@ def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestio
             captured["previous_points"] = request.previous_points
             return "Updated guidance"
 
-    monkeypatch.setattr(tasks_module, "flag_modified", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        tasks_module,
-        "build_transcript_segments_for_read",
-        lambda *args, **kwargs: [
-            {
-                "start": 0.0,
-                "end": 1.2,
-                "speaker": "SPEAKER_00",
-                "text": "Fresh agenda update",
-            }
-        ],
-    )
-    monkeypatch.setattr(tasks_module, "_has_meeting_edge_signal", lambda **kwargs: True)
-    monkeypatch.setattr(
-        tasks_module, "_should_refresh_meeting_edge", lambda **kwargs: True
-    )
-    monkeypatch.setattr(
-        tasks_module, "_resolve_meeting_event_context", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(
-        tasks_module, "build_recording_speaker_map", lambda speakers: {}
-    )
-    monkeypatch.setattr(
-        tasks_module,
-        "serialize_meeting_edge_result",
-        lambda result: {"summary": result},
-    )
-    monkeypatch.setattr(
-        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
-    )
-    monkeypatch.setattr(
-        tasks_module,
-        "resolve_llm_config",
-        lambda *args, **kwargs: SimpleNamespace(
-            provider="openai",
-            model="gpt-test",
-            api_url=None,
-            merged_config={},
-            missing_configuration_message=lambda: None,
-        ),
-    )
-
-    task = tasks_module.refresh_meeting_edge_task
-    original_session = task._session
-    task._session = session
-    try:
-        result = task.run(1)
-    finally:
-        task._session = original_session
+    result = _run_live_edge_refresh(monkeypatch, session, FakeLLM())
 
     assert result is not None
     assert (
@@ -551,3 +523,64 @@ def test_the_guard_is_released_so_the_next_trigger_can_run(
         task._session = original_session
 
     assert f"{KEY_PREFIX}meeting-edge:1" not in fake_single_flight.keys
+
+
+def _live_edge_session() -> _FakeSession:
+    recording = SimpleNamespace(
+        id=1, status=tasks_module.RecordingStatus.UPLOADING, user_id=7
+    )
+    transcript = SimpleNamespace(
+        meeting_edge_status=tasks_module.MEETING_EDGE_STATUS_READY,
+        meeting_edge_error_message=None,
+        meeting_edge_payload={"summary": "Earlier guidance"},
+        meeting_edge_source_signature="old-signature",
+        segments=[],
+        meeting_edge_focus=None,
+    )
+    user = SimpleNamespace(id=7, settings={"enable_meeting_edge": True})
+    return _FakeSession(recording, transcript, user)
+
+
+@pytest.mark.parametrize("call_fails", [False, True])
+def test_stop_during_a_call_drops_its_outcome_and_retires_updating(
+    monkeypatch, fake_single_flight, call_fails
+):
+    session = _live_edge_session()
+
+    class StoppedDuringCall:
+        def generate_meeting_edge(self, request, timeout):
+            assert (
+                session.transcript.meeting_edge_status
+                == tasks_module.MEETING_EDGE_STATUS_UPDATING
+            )
+            session.recording.status = tasks_module.RecordingStatus.QUEUED
+            if call_fails:
+                raise RuntimeError("provider timed out")
+            return "Guidance for a capture that has ended"
+
+    result = _run_live_edge_refresh(monkeypatch, session, StoppedDuringCall())
+
+    assert result is None
+    transcript = session.transcript
+    assert transcript.meeting_edge_payload == {"summary": "Earlier guidance"}
+    assert transcript.meeting_edge_status == tasks_module.MEETING_EDGE_STATUS_READY
+    assert transcript.meeting_edge_error_message is None
+
+
+def test_pause_during_a_call_keeps_its_outcome(monkeypatch, fake_single_flight):
+    session = _live_edge_session()
+
+    class PausedDuringCall:
+        def generate_meeting_edge(self, request, timeout):
+            session.recording.status = tasks_module.RecordingStatus.PAUSED
+            return "Guidance for the paused capture"
+
+    result = _run_live_edge_refresh(monkeypatch, session, PausedDuringCall())
+
+    assert result is not None
+    assert session.transcript.meeting_edge_payload["summary"] == (
+        "Guidance for the paused capture"
+    )
+    assert (
+        session.transcript.meeting_edge_status == tasks_module.MEETING_EDGE_STATUS_READY
+    )

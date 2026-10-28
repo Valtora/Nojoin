@@ -243,17 +243,9 @@ def test_reprocess_and_retry_keep_sequence_after_a_concurrent_edit(
         assert transcript is not None, "Reprocess deleted the publication identity"
         assert (transcript.id, transcript.change_sequence) == (transcript_id, 52)
         assert transcript.transcript_status == "pending"
-        # Meeting Edge is retained after capture, including retry from ERROR.
-        # This fixture's metadata-only payload contains no useful guidance.
-        edge_expected = {
-            "meeting_edge_focus": before["meeting_edge_focus"],
-            "meeting_edge_payload": before["meeting_edge_payload"],
-            "meeting_edge_status": "idle",
-            "meeting_edge_error_message": None,
-            "meeting_edge_source_signature": None,
-        }
-        for field, value in edge_expected.items():
-            assert getattr(transcript, field) == value, field
+        # Meeting Edge guidance and focus survive a retry from ERROR too.
+        for field in ("meeting_edge_focus", "meeting_edge_payload"):
+            assert getattr(transcript, field) == before[field], field
         if status == RecordingStatus.PROCESSED:
             # #749 replaces queue-time clearing with retention for completed
             # publications; the concurrent-edit fence/counter contract is unchanged.
@@ -269,7 +261,6 @@ def test_reprocess_and_retry_keep_sequence_after_a_concurrent_edit(
                 "settling_state",
                 "updated_at",
                 "change_sequence",
-                *edge_expected,
             }
             for field, value in before.items():
                 if field not in changed:

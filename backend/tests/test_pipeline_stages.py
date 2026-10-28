@@ -39,7 +39,6 @@ from celery.exceptions import SoftTimeLimitExceeded, TimeLimitExceeded
 
 # Before any test patches os.path.exists, which matplotlib reads on import.
 from pyannote.core import Annotation, Segment
-from sqlmodel import Session
 
 from backend.models.recording import ClientStatus, RecordingStatus
 from backend.models.transcript import Transcript
@@ -91,11 +90,6 @@ class _FakeTranscript:
         self.transcript_status = "pending"
         self.notes_status = "pending"
         self.error_message = None
-        self.change_sequence: int = 0
-        self.meeting_edge_payload: dict | None = None
-        self.meeting_edge_status = "idle"
-        self.meeting_edge_error_message: str | None = None
-        self.meeting_edge_source_signature: str | None = None
 
 
 class _FakeRecording:
@@ -132,8 +126,6 @@ class _FakeSession:
         return None
 
     def add(self, obj):
-        if isinstance(obj, Transcript):
-            self.transcript = obj
         self.added.append(obj)
 
     def commit(self):
@@ -162,28 +154,6 @@ class _FakeSession:
 
 def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segments=None):
     """Install the heavy-import stubs shared by the success-path tests."""
-    from backend.worker.tasks import intelligence_source
-
-    real_source = intelligence_source.load_intelligence_source
-
-    def load_test_source(
-        source_session: Session | _FakeSession, source_recording_id: int
-    ) -> Transcript | _FakeTranscript | None:
-        # Orchestration fakes model the source-read boundary. Real Session tests
-        # continue through production lock acquisition and refresh.
-        if isinstance(source_session, _FakeSession):
-            assert source_recording_id == source_session.recording.id
-            if source_session.transcript is not None:
-                assert source_recording_id == source_session.transcript.recording_id
-            return source_session.transcript
-        return real_source(source_session, source_recording_id)
-
-    monkeypatch.setattr(
-        tasks_module.pipeline, "load_intelligence_source", load_test_source
-    )
-    monkeypatch.setattr(
-        intelligence_source, "load_intelligence_source", load_test_source
-    )
     # First-use native speakers can request preparation on GPU hosts. Keep
     # these stage tests independent of Redis and any pending cache marker.
     monkeypatch.setattr(

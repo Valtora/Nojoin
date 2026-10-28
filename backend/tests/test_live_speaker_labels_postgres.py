@@ -611,6 +611,8 @@ def test_search_index_chunks_show_live_speakers_as_speaker_n(
         with Session(engine) as session:
             monkeypatch.setattr(index_transcript_task, "_session", session)
             index_transcript_task.run(recording_id)
+            # A second run replaces the transcript's chunks rather than adding to them.
+            index_transcript_task.run(recording_id)
             chunks = session.execute(select(ContextChunk)).scalars().all()
 
     assert [chunk.meta["speakers"] for chunk in chunks] == [["Speaker 1"]]

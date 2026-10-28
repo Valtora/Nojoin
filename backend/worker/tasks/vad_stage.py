@@ -28,7 +28,6 @@ from backend.utils.reprocess_publication import (
 
 from .constants import *  # noqa: F403
 from .final_asr import mark_transcript_without_speech
-from .intelligence_source import clear_meeting_edge_error
 
 if TYPE_CHECKING:
     from pyannote.core import Annotation
@@ -92,7 +91,6 @@ def _complete_without_speech(session, recording: Recording) -> None:
     else:
         mark_transcript_without_speech(transcript)
 
-    clear_meeting_edge_error(session, recording.id)
     mark_recording_audio_chunks_ready_for_cleanup(
         session,
         recording_id=recording.id,

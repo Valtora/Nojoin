@@ -175,7 +175,7 @@ After 20 seconds without sound, Nojoin shows an "Audio has been quiet for a bit"
 
 Meeting Edge needs AI configured and enough completed speech to work from, so a short test can show waveform activity and live transcript lines before any guidance appears.
 
-Open the **Meeting Edge** tab in the desktop side column or the phone's main tab row. It retains earlier guidance, questions, tracked-term history and focus after Stop, processing success or failure, and after an administrator switches the feature off. Focus and the recording-specific context slider become read-only after capture ends; any pending focus autosave is cancelled. Guidance can continue while uploading, queued or processing, and an update already running can finish while paused. Stale guidance errors clear at capture finalisation and when processing ends. Error notifications appear only during recording or a pause; an old update finishing late must not replace a newer result or restore an old error.
+Open the **Meeting Edge** tab in the desktop side column or the phone's main tab row. It retains earlier guidance, questions, tracked-term history and focus after Stop, processing success or failure, and after an administrator switches the feature off. Focus and the recording-specific context slider become read-only after capture ends; any pending focus autosave is cancelled. Guidance can continue while uploading, queued or processing, and an update already running can finish while paused. Update status and errors show only during recording or a pause, and an update still running when you press Stop is dropped.
 
 ### The Transcript tab stays empty
 
