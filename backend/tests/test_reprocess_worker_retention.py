@@ -166,6 +166,7 @@ def _view(engine: Engine, recording_id: int) -> dict[str, Any]:
         return deepcopy(
             {
                 "text": transcript.text,
+                "change_sequence": transcript.change_sequence,
                 "pending": (transcript.settling_state or {}).get("reprocess_pending")
                 is True,
                 "published": (transcript.settling_state or {}).get(
@@ -318,6 +319,8 @@ def test_replacement_is_fresh_and_committed_before_notes(
     for field in ("notes", "focus", "edge", "suggestions"):
         assert after[field] == before[field]
     assert (after["chat"], after["context"], after["names"]) == ([], [], [])
+    # A finished page's conditional read notices the replacement.
+    assert after["change_sequence"] > before["change_sequence"]
 
 
 @pytest.mark.parametrize("canonical", [False, True])
@@ -376,6 +379,7 @@ def test_vad_empty_replacement_retires_old_authority(
 ) -> None:
     engine, recording_id = worker_database
     _configure(monkeypatch, canonical)
+    before = _view(engine, recording_id)
     with Session(engine) as session:
         transcript = session.exec(select(Transcript)).one()
         transcript.language_detection = {
@@ -401,6 +405,7 @@ def test_vad_empty_replacement_retires_old_authority(
     )
     assert after["notes"] == "Previous notes"
     assert after["focus"] == "Keep my focus"
+    assert after["change_sequence"] > before["change_sequence"]
     with Session(engine) as session:
         assert session.exec(select(Transcript)).one().language_detection is None
 

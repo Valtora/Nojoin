@@ -15,6 +15,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
 from backend.utils.canonical_pipeline.constants import _load_transcript
+from backend.utils.transcript_change import change_sequence_bump
 
 
 def reprocess_publication_pending(transcript: Transcript | None) -> bool:
@@ -115,3 +116,6 @@ def clear_previous_reprocess_state(session: Session, recording_id: int) -> None:
         ):
             setattr(transcript, field, getattr(defaults, field))
         session.add(transcript)
+    # Canonical-off and no-speech replacements write no utterances, so the
+    # publication itself tells finished pages the transcript changed.
+    session.execute(change_sequence_bump(recording_id))
