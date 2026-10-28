@@ -24,7 +24,6 @@ from backend.utils.live_word_settling import (
 from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
-    GateChunk,
     current_settling_policy,
     load_capture_publication,
     publication_is_current,
@@ -66,7 +65,6 @@ class SettlingPass:
     audio_end_ms: int
     input_start_ms: int | None = None
     metadata: dict[str, Any] | None = None
-    gate_chunks: list[GateChunk] | None = None
     max_segment_ms: int | None = None
     silence_start_ms: int | None = None
     line_break_pause_s: float | None = None
@@ -391,11 +389,6 @@ def publish_live_settling(
         **(transcript.settling_state or {}),
         "last_step_index": request.step_index,
         "last_decode_id": request.decode_id,
-        **(
-            {"gate_chunks": request.gate_chunks}
-            if request.gate_chunks is not None
-            else {}
-        ),
     }
     session.add(transcript)
     if result.changed:
@@ -424,14 +417,13 @@ def expire_live_settling(
         transcript,
         recording,
         request,
-        allow_unresolved=request.gate_chunks is not None,
+        allow_unresolved=True,
     ):
         return SettlingPublicationResult(False)
     if not settling_enabled(transcript):
         transcript.settling_state = {
             **(transcript.settling_state or {}),
             "last_step_index": request.step_index,
-            "gate_chunks": request.gate_chunks,
             "trailing_silence_start_ms": request.silence_start_ms,
             "silence_audio_end_ms": request.audio_end_ms,
         }
@@ -471,11 +463,6 @@ def expire_live_settling(
     transcript.settling_state = {
         **(transcript.settling_state or {}),
         "last_step_index": request.step_index,
-        **(
-            {"gate_chunks": request.gate_chunks}
-            if request.gate_chunks is not None
-            else {}
-        ),
     }
     session.add(transcript)
     if result.changed:

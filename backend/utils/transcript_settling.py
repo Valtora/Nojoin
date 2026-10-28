@@ -48,16 +48,6 @@ class SettlingPolicy(TypedDict):
     enabled: bool | None
 
 
-class GateChunk(TypedDict):
-    """One retained chunk and whether its first speech opportunity was spent."""
-
-    sequence: int
-    start_ms: int
-    end_ms: int
-    missed: bool
-    consumed: bool
-
-
 class CaptureSettlingState(TypedDict):
     """Episode runtime state plus durable word-publication provenance."""
 
@@ -71,7 +61,6 @@ class CaptureSettlingState(TypedDict):
     last_step_index: NotRequired[int]
     last_decode_id: NotRequired[str]
     speaker_enabled: NotRequired[bool]
-    gate_chunks: NotRequired[list[GateChunk]]
     line_break_pause_s: NotRequired[float]
     trailing_silence_start_ms: NotRequired[int | None]
     silence_audio_end_ms: NotRequired[int]
@@ -166,7 +155,6 @@ def update_capture_settling_state(
         updated.pop("last_step_index", None)
         updated.pop("last_decode_id", None)
         updated.pop("speaker_enabled", None)
-        updated.pop("gate_chunks", None)
         updated.pop("trailing_silence_start_ms", None)
         updated.pop("silence_audio_end_ms", None)
     updated.update(capture_epoch=capture_epoch, sealed=sealed, phase=phase)

@@ -798,7 +798,6 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
                 speech,
                 expected_token,
                 source_channel_labels,
-                run[0],
             ),
             live_config,
         )

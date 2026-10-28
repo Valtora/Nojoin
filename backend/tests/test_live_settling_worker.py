@@ -158,41 +158,6 @@ def test_lead_up_is_configurable_and_inside_total_cap(
     assert inputs == [(10000, 64000)]
 
 
-def test_delayed_gate_includes_missed_gap_before_existing_tail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rolling_lane: Any
-) -> None:
-    step = replace(_step(tmp_path), vad_regions=[])
-    rolling_lane.snapshot.words.append(
-        {"word": "tail", "start_ms": 12000, "end_ms": 12500, "locked": False}
-    )
-    rolling_lane.snapshot.gate_chunks.append(
-        {
-            "sequence": 3,
-            "start_ms": 6000,
-            "end_ms": 8000,
-            "missed": True,
-            "consumed": False,
-        }
-    )
-    monkeypatch.setattr(
-        worker,
-        "_speaker_evidence",
-        lambda _: SimpleNamespace(
-            speech_spans=lambda: [(6.5, 7.0)],
-            decide=None,
-        ),
-    )
-    inputs: list[tuple[int, int]] = []
-
-    def decode(_step: Any, _config: Any, audio: Any, start: int) -> Any:
-        inputs.append((start, audio.numel()))
-        return {"asr_segments": []}, "cuda"
-
-    monkeypatch.setattr(worker, "_decode_words", decode)
-    worker.run_settling_step(step, {"context_window_s": 0})
-    assert inputs == [(6000, 128000)]
-
-
 def test_silent_step_expires_without_decode_or_new_observation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rolling_lane: Any
 ) -> None:

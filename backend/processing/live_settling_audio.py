@@ -72,25 +72,3 @@ def chunk_has_speech(
         if bool((audio[first:stop].abs() > 1e-7).any()):
             return True
     return False
-
-
-def drained_chunk_bounds(
-    temp_dir: Path,
-    first_sequence: int,
-    latest_sequence: int,
-    audio_end_ms: int,
-    floor_ms: int,
-) -> list[tuple[int, int, int]]:
-    """Retain actual drained chunk bounds only within the rolling input cap."""
-    from backend.processing.live_audio_buffer import _read_live_audio_channels
-
-    chunks: list[tuple[int, int, int]] = []
-    end_ms = audio_end_ms
-    for sequence in range(latest_sequence, first_sequence - 1, -1):
-        if end_ms <= floor_ms or len(chunks) >= 16:
-            break
-        audio = _read_live_audio_channels(str(temp_dir / f"{sequence}.wav"))
-        start_ms = end_ms - round(audio.size(-1) * 1000 / LIVE_SAMPLE_RATE)
-        chunks.append((sequence, start_ms, end_ms))
-        end_ms = start_ms
-    return list(reversed(chunks))
