@@ -17,6 +17,7 @@ from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import resolve_notes_template_async
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     MeetingEdgeFocusUpdate,
@@ -117,6 +118,7 @@ async def update_notes(
 
     transcript.notes = update.notes
     db.add(transcript)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(transcript)
 

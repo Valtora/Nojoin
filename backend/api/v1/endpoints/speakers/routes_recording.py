@@ -353,6 +353,7 @@ async def apply_recording_speaker_update(
             ),
         )
     )
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     speakers_module.record_pipeline_metric(
         stage="speaker_correction_applied",
@@ -513,6 +514,7 @@ async def promote_speaker_to_global(
             flag_modified(transcript, "speaker_name_suggestions")
             db.add(transcript)
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(recording_speaker)
 
@@ -584,6 +586,7 @@ async def merge_recording_speakers(
         reason="manual_speaker_merge",
     )
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.flush()
     await db.commit()
 
@@ -725,6 +728,7 @@ async def delete_recording_speaker(
     else:
         raise HTTPException(status_code=404, detail="Speaker not found in recording")
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     return {"ok": True}
 
@@ -859,6 +863,7 @@ async def split_local_speaker(
                 segments=new_segments,
             )
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
 
     stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)

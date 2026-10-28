@@ -827,6 +827,7 @@ Preserve the same schema and do not invent facts not supported by the original t
 
         from backend.core.db import get_sync_session
         from backend.models.transcript import Transcript
+        from backend.utils.transcript_change import change_sequence_bump
 
         with get_sync_session() as session:
             transcript_obj = session.exec(
@@ -835,6 +836,7 @@ Preserve the same schema and do not invent facts not supported by the original t
             if transcript_obj:
                 transcript_obj.notes = new_notes
                 session.add(transcript_obj)
+                session.execute(change_sequence_bump(recording_id))
                 session.commit()
                 logger.info(f"Updated notes for recording {recording_id}")
             else:
