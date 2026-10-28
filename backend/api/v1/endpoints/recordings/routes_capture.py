@@ -635,6 +635,9 @@ async def finalize_upload(
     recordings_module._ensure_capture_epoch(recording, epoch)
 
     recordings_module._ensure_recording_can_finalize_upload(recording)
+    # Before the chunk and window rows: a live publisher holds Transcript and
+    # then marks windows processed, so taking it later could deadlock.
+    await seal_live_settling(db, recording)
 
     await recordings_module._sync_recording_audio_chunks_from_directory(
         db,
@@ -651,7 +654,6 @@ async def finalize_upload(
     # Live registration stops here. A segment task still queued would otherwise
     # unseal every window this rebuild just sealed and reset its progress.
     await recordings_module._seal_recording_audio_cursor(db, recording_id=recording.id)
-    await seal_live_settling(db, recording)
     chunk_rows = await recordings_module._list_recording_audio_chunks(
         db,
         recording_id=recording.id,

@@ -476,7 +476,7 @@ Live text, live labels and naming, canonical append/replacement/finalisation, hu
 
 Pause, resume, finalise and discard use the order **capture audio advisory lock → Transcript → Recording**, with a Recording row lock where deletion requires it. Publishers hold Transcript only for their short database publication, never during inference, so a lifecycle control waiting for it holds uploads back only briefly. Uploads retain their existing audio bookkeeping and throttled Recording activity update, with no Transcript fence. A publisher snapshots the capture epoch and, for marked captures, generation before inference, then checks current eligibility and that token after acquiring the fence. Resume changes the marked generation; stop seals it. Rejected results advance neither the live checkpoint nor the label step. Naming checks fresh eligibility under the same fence.
 
-Stop seals the live episode under Transcript where it seals the audio cursor, before the master is built, and holds both locks until it commits. Text edits made during Stop wait for that commit. Discard revocation and artefact cleanup follow its database commit.
+Stop seals the live episode under Transcript right after its epoch check, before it rebuilds the chunk and window rows that publishers also update, and holds both locks until it commits. Text edits made during Stop wait for that commit. Discard revocation and artefact cleanup follow its database commit.
 
 Deleting a recording takes its Transcript before locking Recording, since a live capture's publisher holds them in that order. Polling is the only read path: live views poll utterance deltas with the existing event cursor (`after_revision`) and a periodic full read.
 

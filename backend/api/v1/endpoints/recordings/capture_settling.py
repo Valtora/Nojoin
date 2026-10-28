@@ -41,8 +41,9 @@ async def close_live_words(
 async def seal_live_settling(db: AsyncSession, recording: Recording) -> None:
     """End the live episode under the Transcript fence, so nothing publishes after.
 
-    Stop calls this under the audio lock it already holds. Publishers hold
-    Transcript only for their short publication, so the wait is brief.
+    Stop calls this under the audio lock it already holds, before it touches
+    the chunk and window rows. Publishers hold Transcript only for their short
+    publication, so the wait is brief.
     """
     transcript = await db.run_sync(
         lambda session: _load_transcript(session, recording.id, lock=True)

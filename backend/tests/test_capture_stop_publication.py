@@ -25,7 +25,12 @@ from backend.tests.test_canonical_publication_fence import (
     publication_database as publication_database,
 )
 from backend.utils.browser_capture_audio import BrowserAudioFormatError
+from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.config_manager import config_manager
+from backend.utils.recording_audio_sync import (
+    sync_recording_audio_chunks_from_directory,
+    sync_recording_audio_window_manifests,
+)
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     capture_publication_token,
@@ -252,3 +257,44 @@ def test_failed_stop_seals_before_abandoning_audio_and_fences_its_publisher(
         assert recording.status == expected
     # Unmarked captures keep upstream's generic-error behaviour.
     assert _publish(recording_id, token) == (not marked and failure is RuntimeError)
+
+
+def test_stop_waits_for_a_publisher_before_touching_the_window_rows(
+    capture_harness: CaptureHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine, recording_id, _, _, directory = capture_harness
+    _capture_token(capture_harness, monkeypatch, True)
+    with Session(engine) as session:
+        sync_recording_audio_chunks_from_directory(
+            session,
+            recording_id=recording_id,
+            source_kind="browser",
+            suffix=".wav",
+            temp_dir=directory,
+        )
+        sync_recording_audio_window_manifests(
+            session, recording_id=recording_id, source_kind="browser", seal_tail=False
+        )
+        session.commit()
+
+    async def overlap() -> Any:
+        with Session(engine) as publisher:
+            # A live publisher holds Transcript, then marks windows processed.
+            _load_transcript(publisher, recording_id, lock=True)
+            stop = asyncio.create_task(
+                _request(capture_harness, _stop_route, "first-tab")
+            )
+            await asyncio.to_thread(_wait_for_lock_wait, engine, "first-tab")
+            marked = await asyncio.to_thread(
+                publisher.execute,
+                text(
+                    "UPDATE recording_audio_window_manifests SET status = status "
+                    "WHERE recording_id = :recording_id"
+                ),
+                {"recording_id": recording_id},
+            )
+            assert marked.rowcount
+            publisher.commit()
+        return await stop
+
+    assert asyncio.run(overlap()).status == RecordingStatus.QUEUED
