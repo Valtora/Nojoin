@@ -361,3 +361,40 @@ def test_sustained_alignment_failures_respect_maximum_without_splitting_atoms(
             row.confidence_payload[SETTLING_KEY]["line_closed"] for row in rows[:-1]
         )
         assert all(line_is_locked(row) for row in rows[:-1])
+
+
+def test_a_confirmed_line_end_follows_its_last_word_through_retiming(
+    settling_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A retimed word that now starts after the confirmed cutoff keeps its line
+    # closed, even when the next phrase follows within the line pause.
+    settle_with_k(monkeypatch, 99)
+    recording_id = _seed(settling_engine)
+    with Session(settling_engine) as session:
+        assert publish_live_settling(
+            session,
+            request=_request(session, recording_id, 0),
+            words=[{"word": "Yes", "start_ms": 800, "end_ms": 900}],
+        ).accepted
+        session.commit()
+        assert expire_live_settling(
+            session,
+            request=replace(
+                _request(session, recording_id, 1, end_ms=2001), silence_start_ms=900
+            ),
+        ).accepted
+        session.commit()
+        assert publish_live_settling(
+            session,
+            request=_request(session, recording_id, 2, end_ms=4000),
+            words=[
+                {"word": "Yes", "start_ms": 950, "end_ms": 1150},
+                {"word": " sure", "start_ms": 2100, "end_ms": 2400},
+            ],
+        ).accepted
+        session.commit()
+        rows = _active(session, recording_id)
+
+    assert [row.text for row in rows] == ["Yes", "sure"]
+    assert rows[0].confidence_payload[SETTLING_KEY]["boundary_locked"]
+    assert rows[0].confidence_payload[SETTLING_KEY]["closed_at_ms"] == 900

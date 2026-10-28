@@ -19,6 +19,7 @@ from backend.utils.live_word_settling import (
     close_word_state,
     expire_word_state,
     reconcile_word_state,
+    word_signature,
 )
 from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (
@@ -148,21 +149,38 @@ def _speaker_enabled() -> bool:
     return live_speaker_labels_device() is not None
 
 
+def _signature(word: dict[str, Any]) -> str:
+    return word_signature(str(word.get("word") or ""))
+
+
 def _line_boundaries(
     rows: list[TranscriptUtterance],
     state: dict[str, Any],
     silence_start_ms: int | None,
+    current: list[dict[str, Any]],
 ) -> LineBoundaries:
-    """Keep confirmed line ends as time cutoffs for the revised words."""
+    """Keep a confirmed line end on the line's last word through retiming.
+
+    When the revised hypothesis no longer holds that word unchanged (it was
+    retokenised, which can reuse its ID for the first piece, or replaced), the
+    end stays a time cutoff instead.
+    """
+    wording = {word.get("id"): _signature(word) for word in current}
+    closed_ends: dict[str, int | None] = {}
     cutoffs: set[int] = set()
     for row in rows:
         stored = (row.confidence_payload or {}).get(SETTLING_KEY, {})
-        point = stored.get("closed_at_ms", row.end_ms)
         if (
-            stored.get("boundary_locked")
-            and stored.get("closure_reason") != "speaker"
-            and point is not None
+            not stored.get("boundary_locked")
+            or stored.get("closure_reason") == "speaker"
         ):
+            continue
+        point = stored.get("closed_at_ms", row.end_ms)
+        words = row_words(row)
+        terminal = words[-1].get("id") if words else None
+        if terminal is not None and wording.get(terminal) == _signature(words[-1]):
+            closed_ends[terminal] = point
+        elif point is not None:
             cutoffs.add(point)
     return LineBoundaries(
         max_segment_ms=state.get(
@@ -171,6 +189,7 @@ def _line_boundaries(
                 config_manager.get("live_max_segment_s", DEFAULT_MAX_SEGMENT_S) * 1000
             ),
         ),
+        closed_ends=closed_ends,
         closed_at_ms=sorted(cutoffs),
         silence_start_ms=silence_start_ms,
         line_break_pause_s=resolve_tuning(state, LINE_BREAK_PAUSE_KEY),
@@ -205,7 +224,7 @@ def _project(
         decisions,
         closing=context.closing,
         barriers=[row.start_ms for row in rows if not mutable_row(row)],
-        boundaries=_line_boundaries(mutable, state, context.silence_start_ms),
+        boundaries=_line_boundaries(mutable, state, context.silence_start_ms, words),
     )
     tombstones, ids, changed = write_partitions(
         session,

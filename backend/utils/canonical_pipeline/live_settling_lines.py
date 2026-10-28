@@ -1,6 +1,6 @@
 """Natural live line boundaries, independent of decode cadence and word locks."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,6 +34,7 @@ class LineBoundaries:
     """Legacy limits and durable confirmed ends held under the Transcript fence."""
 
     max_segment_ms: int = round(DEFAULT_MAX_SEGMENT_S * 1000)
+    closed_ends: Mapping[str, int | None] = field(default_factory=dict)
     silence_start_ms: int | None = None
     closed_at_ms: Sequence[int] = ()
     line_break_pause_s: float = TUNING_SPECS[LINE_BREAK_PAUSE_KEY].default
@@ -68,6 +69,9 @@ def _boundary_reason(
     boundaries: LineBoundaries,
 ) -> str | None:
     """Distinguish durable closed ends from provisional speaker/timing evidence."""
+    if partition.words[-1].get("id") in boundaries.closed_ends:
+        partition.closed_at_ms = boundaries.closed_ends[partition.words[-1]["id"]]
+        return "closure"
     extents, current = _extents(partition), word_extent(word)
     if extents and current is not None:
         start, end = current
@@ -109,7 +113,11 @@ def _close_partition(
         if trailing
         else None
     )
-    if closing:
+    terminal_id = partition.words[-1].get("id")
+    if terminal_id in boundaries.closed_ends:
+        partition.closure_reason, partition.boundary_locked = "closure", True
+        partition.closed_at_ms = boundaries.closed_ends[terminal_id]
+    elif closing:
         partition.closure_reason, partition.boundary_locked = "closure", True
     elif retained_end is not None:
         partition.closure_reason, partition.boundary_locked = "closure", True
