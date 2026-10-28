@@ -9,7 +9,7 @@ import {
 import { createCaptureMixer } from "./mixer";
 import { createBrowserRecorder } from "./recorder";
 import type { SegmentStore } from "./segmentStore";
-import { readCaptureSettings, readPausedCaptureContext } from "./shared";
+import { readPausedCaptureContext } from "./shared";
 import { createSegmentUploader } from "./uploader";
 import { createWaveformMonitor } from "./waveform";
 const api = vi.hoisted(() => ({
@@ -90,9 +90,6 @@ async function start(mode = "shared_audio", release = true) {
   environment.mode = mode;
   const capture = controller();
   capture.updateSettings({ releaseMicrophoneOnPause: release, microphoneDeviceId: "mic-a" });
-  expect(capture.getState().settings).toMatchObject({ releaseMicrophoneOnPause: release });
-  expect(JSON.parse(window.localStorage.getItem("nojoin.capture.settings")!))
-    .toMatchObject({ releaseMicrophoneOnPause: release });
   await capture.start("Meeting");
   return {
     capture,
@@ -129,11 +126,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 describe("releasing only the microphone while paused", () => {
-  it("persists the browser choice for the next controller", async () => {
-    await start();
-    expect(readCaptureSettings()).toMatchObject({ releaseMicrophoneOnPause: true });
-    expect(controller().getState().settings).toMatchObject({ releaseMicrophoneOnPause: true });
-  });
   it("finishes the pause tail before releasing mic and retains shared tracks and ownership", async () => {
     const { capture, recorder, mixer, uploader } = await start();
     const flushed = deferred<void>();

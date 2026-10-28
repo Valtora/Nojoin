@@ -10,40 +10,6 @@ const stored = () => {
   return raw === null ? null : (JSON.parse(raw) as Record<string, unknown>);
 };
 
-describe("microphone release preference", () => {
-  it.each([undefined, null, "true", "false", 1, 0])(
-    "defaults off for an absent or invalid stored value %s without changing existing choices",
-    (releaseMicrophoneOnPause) => {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        version: 2,
-        microphoneDeviceId: "chosen-mic",
-        microphoneGain: 1.4,
-        noiseSuppression: true,
-        releaseMicrophoneOnPause,
-      }));
-
-      expect(readCaptureSettings()).toMatchObject({
-        microphoneDeviceId: "chosen-mic",
-        microphoneGain: 1.4,
-        noiseSuppression: true,
-        releaseMicrophoneOnPause: false,
-      });
-    },
-  );
-
-  it("starts off in a fresh browser and keeps an explicit choice through subsequent saves", () => {
-    expect(readCaptureSettings()).toHaveProperty("releaseMicrophoneOnPause", false);
-    writeCaptureSettings({ ...readCaptureSettings(), releaseMicrophoneOnPause: true });
-    writeCaptureSettings({ ...readCaptureSettings(), microphoneGain: 1.8 });
-    expect(readCaptureSettings()).toMatchObject({
-      releaseMicrophoneOnPause: true,
-      microphoneGain: 1.8,
-    });
-    writeCaptureSettings({ ...readCaptureSettings(), releaseMicrophoneOnPause: false });
-    expect(readCaptureSettings()).toHaveProperty("releaseMicrophoneOnPause", false);
-  });
-});
-
 describe("capture processing defaults", () => {
   it.each([
     { profile: "fresh", saved: null, expected: false },

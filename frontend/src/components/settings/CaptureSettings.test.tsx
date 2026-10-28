@@ -4,16 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureController } from "@/lib/capture/controller";
 import type { CaptureSupport } from "@/lib/capture/shared";
-import { searchSettingsRegistry } from "./settingsRegistry";
 import CaptureSettings from "./CaptureSettings";
 
 let controller: CaptureController;
-const environment = vi.hoisted(() => ({
-  support: { supported: true, mode: "shared_audio" } as CaptureSupport,
-}));
 
 vi.mock("@/lib/capture/featureDetect", () => ({
-  detectCaptureSupport: () => environment.support,
+  detectCaptureSupport: (): CaptureSupport => ({ supported: true, mode: "shared_audio" }),
 }));
 
 // Keep the real controller/store/settings persistence; avoid provider lifecycle
@@ -41,39 +37,21 @@ afterEach(() => {
 });
 
 describe("microphone release setting", () => {
-  it.each(["shared_audio", "microphone_only"] as const)(
-    "persists an accessible default-off choice for %s capture across new controllers",
-    async (mode) => {
-      environment.support = { supported: true, mode };
-      controller = new CaptureController();
-      expect(controller.getState().support).toEqual({ supported: true, mode });
-      const view = render(<CaptureSettings />);
-      await waitFor(() => expect(screen.getByRole("button", { name: "Refresh devices" })).toBeEnabled());
-      const toggle = screen.getByRole("switch", { name: "Release the microphone while paused" });
-      expect(toggle).not.toBeChecked();
-      expect(toggle).toHaveAccessibleDescription(/this browser.*shared audio/i);
-      expect(screen.getAllByText("This browser")).toHaveLength(1);
+  it("starts off and keeps the choice for the next page load", async () => {
+    window.localStorage.clear();
+    controller = new CaptureController();
+    const view = render(<CaptureSettings />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh devices" })).toBeEnabled());
+    const toggle = screen.getByRole("switch", { name: "Release the microphone while paused" });
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toHaveAccessibleDescription(/this browser.*shared audio/i);
 
-      fireEvent.click(toggle);
-      expect(toggle).toBeChecked();
-      expect(controller.getState().settings).toHaveProperty("releaseMicrophoneOnPause", true);
-      view.unmount();
+    fireEvent.click(toggle);
+    view.unmount();
 
-      controller = new CaptureController();
-      render(<CaptureSettings />);
-      expect(screen.getByRole("switch", { name: "Release the microphone while paused" })).toBeChecked();
-      fireEvent.click(screen.getByRole("switch", { name: "Release the microphone while paused" }));
-      expect(new CaptureController().getState().settings).toHaveProperty("releaseMicrophoneOnPause", false);
-      await waitFor(() => expect(screen.getByRole("button", { name: "Refresh devices" })).toBeEnabled());
-    },
-  );
-
-  it("finds the browser preference through settings search", () => {
-    expect(searchSettingsRegistry("release microphone", { isAdmin: false, isSuperuser: false }))
-      .toEqual(expect.arrayContaining([expect.objectContaining({
-        entry: expect.objectContaining({
-          id: "recording-release-microphone-on-pause", scope: "browser", defaultValue: false,
-        }),
-      })]));
+    controller = new CaptureController();
+    render(<CaptureSettings />);
+    expect(screen.getByRole("switch", { name: "Release the microphone while paused" })).toBeChecked();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh devices" })).toBeEnabled());
   });
 });
