@@ -214,6 +214,10 @@ async def chat_with_meeting(
 
     if not transcript_obj and not in_flight:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    # Regenerating notes or speakers leaves a finished transcript finished.
+    transcript_in_progress = in_flight and (
+        transcript_obj is None or transcript_obj.transcript_status != "completed"
+    )
 
     meeting_notes = (transcript_obj.notes if transcript_obj else "") or ""
 
@@ -437,7 +441,7 @@ async def chat_with_meeting(
         answered = False
         excerpts: TranscriptExcerpts | None = None
         try:
-            if in_flight:
+            if transcript_in_progress:
                 from backend.services.live_chat import stream_live_chat
 
                 generator = stream_live_chat(ask, recording.id)
@@ -461,7 +465,7 @@ async def chat_with_meeting(
                 except ContextWindowExceededError as overflow:
                     # Refused before any text, by every provider configured:
                     # ask again from the passages relevant to the question.
-                    if in_flight or answered or excerpts is not None:
+                    if transcript_in_progress or answered or excerpts is not None:
                         raise
                     logger.info(
                         "Meeting %s is too long for chat; answering from excerpts: %s",

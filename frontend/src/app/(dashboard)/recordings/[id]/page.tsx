@@ -54,6 +54,7 @@ export default function RecordingPage({ params }: PageProps) {
     showMeetingEdge,
     meetingEdgeContextLevel,
     isInFlightRecording,
+    localCaptureActive,
     liveTranscript,
     usesInFlightTranscript,
     transcriptIsAuthoritative,
@@ -129,9 +130,10 @@ export default function RecordingPage({ params }: PageProps) {
     return null;
   }
 
-  const isLocalCaptureActive = capture.recordingId === recording.id &&
-    (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
-  const showCaptureSlot = isInFlightRecording || isLocalCaptureActive;
+  const showCaptureSlot = isInFlightRecording || localCaptureActive;
+  // Chat answers from the transcript so far only while it is still being
+  // produced, not while a finished one's notes or speakers are regenerated.
+  const transcriptInProgress = showCaptureSlot && recording.transcript?.transcript_status !== "completed";
   const sideColumnCollapsed = isSpeakerPanelCollapsed && isChatPanelCollapsed;
 
   // Renaming a speaker propagates into the generated notes (shared by the
@@ -317,7 +319,7 @@ export default function RecordingPage({ params }: PageProps) {
                   </ButtonBase>
                 </header>
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
-                  <ChatPanel inFlight={showCaptureSlot} onNotesUpdate={fetchRecording} />
+                  <ChatPanel inFlight={transcriptInProgress} onNotesUpdate={fetchRecording} />
                 </div>
               </SurfaceBase>
             )}
@@ -352,7 +354,7 @@ export default function RecordingPage({ params }: PageProps) {
                     minSize={18}
                   >
                     <RecordingSideColumn
-                      inFlight={showCaptureSlot}
+                      inFlight={transcriptInProgress}
                       speakers={
                         speakersContent
                       }

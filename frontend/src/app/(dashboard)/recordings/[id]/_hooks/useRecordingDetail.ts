@@ -972,6 +972,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     meetingEdgeContextLevel,
     // Derived
     isInFlightRecording,
+    localCaptureActive,
     canPlayback,
     canExport,
     liveTranscript,

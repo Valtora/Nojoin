@@ -23,14 +23,16 @@ from backend.utils.llm_config import ResolvedLLMConfig
 
 
 @pytest.mark.parametrize(
-    ("status", "client_status", "has_transcript"),
+    ("status", "client_status", "has_transcript", "finished"),
     [
-        ("UPLOADING", "RECORDING", True),
-        ("PAUSED", "PAUSED", True),
-        ("UPLOADING", "UPLOADING", True),
-        ("QUEUED", "IDLE", True),
-        ("PROCESSING", "IDLE", True),
-        ("UPLOADING", "RECORDING", False),
+        ("UPLOADING", "RECORDING", True, False),
+        ("PAUSED", "PAUSED", True, False),
+        ("UPLOADING", "UPLOADING", True, False),
+        ("QUEUED", "IDLE", True, False),
+        ("PROCESSING", "IDLE", True, False),
+        ("UPLOADING", "RECORDING", False, False),
+        # Notes regenerating on a finished transcript.
+        ("PROCESSING", "IDLE", True, True),
     ],
 )
 def test_chat_streams_while_the_recording_is_in_flight(
@@ -38,6 +40,7 @@ def test_chat_streams_while_the_recording_is_in_flight(
     status: str,
     client_status: str,
     has_transcript: bool,
+    finished: bool,
 ) -> None:
     received: list[dict] = []
 
@@ -51,6 +54,10 @@ def test_chat_streams_while_the_recording_is_in_flight(
         async with engine.begin() as connection:
             if not has_transcript:
                 await connection.execute(text("DELETE FROM transcripts"))
+            if finished:
+                await connection.execute(
+                    text("UPDATE transcripts SET transcript_status='completed'")
+                )
             await connection.execute(
                 text(
                     "UPDATE recordings SET status=:status, client_status=:client WHERE id=1"
@@ -96,6 +103,12 @@ def test_chat_streams_while_the_recording_is_in_flight(
         return frames, [(row[0], row[1]) for row in rows]
 
     frames, rows = asyncio.run(run())
+    if finished:
+        # The ordinary answer, read from the whole finished transcript.
+        assert frames == ['data: {"token": "Answer."}\n\n', "data: [DONE]\n\n"]
+        assert rows == [("user", "Hi"), ("assistant", "Answer.")]
+        assert received[0]["diarized_transcript"] is None
+        return
     footer = (
         "\n\n_Based on the transcript so far; wording and speakers may still change._"
     )
