@@ -538,7 +538,6 @@ export interface Transcript extends BaseDBModel {
   /** Captured settling policy or settled history; independent of current settings. */
   settling_required?: boolean;
   recording_id: RecordingId;
-  change_sequence?: number;
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;

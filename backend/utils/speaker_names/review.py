@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import inspect
 from sqlmodel import col, select
 
 from backend.models.speaker import RecordingSpeaker
@@ -50,25 +49,6 @@ def dismissed_names(session: Any, recording_speaker_id: int | None) -> set[str]:
     return {str(name).strip().casefold() for name in names}
 
 
-def _refresh_clean_speaker(session: Any, speaker: RecordingSpeaker) -> None:
-    """Read identity decisions after the fence without dropping staged changes."""
-    state = inspect(speaker)
-    if not state.persistent:
-        return
-    relationship_dirty = state.attrs.global_speaker.history.has_changes()
-    clean = [
-        column.key
-        for column in state.mapper.column_attrs
-        if not state.attrs[column.key].history.has_changes()
-        and not (column.key == "global_speaker_id" and relationship_dirty)
-    ]
-    with session.no_autoflush:
-        if clean:
-            session.refresh(speaker, attribute_names=clean)
-        if not relationship_dirty:
-            session.expire(speaker, ["global_speaker"])
-
-
 def dismiss_pending_name(
     session: Any, speaker: RecordingSpeaker, actor_user_id: int | None
 ) -> str:
@@ -91,13 +71,8 @@ def dismiss_pending_name(
     from backend.utils.canonical_pipeline.unmerge import placeholder_speaker_name
 
     recording_id = speaker.recording_id
-    from backend.utils.canonical_pipeline.constants import _load_transcript
     from backend.utils.canonical_pipeline.guards import require_label_lines
 
-    _load_transcript(session, recording_id, lock=True)
-    _refresh_clean_speaker(session, speaker)
-    if speaker.identity_locked:
-        return shown_name(speaker)
     require_label_lines(session, recording_id, speaker.diarization_label)
     dismissed = shown_name(speaker)
     anchor = longest_turn(speaker_lines(session, recording_id), speaker.id)
@@ -163,17 +138,7 @@ def link_voice_match(
     sources were recorded or taken as given, which the match would show as
     "Carol?" while linking Bob.
     """
-    from backend.utils.canonical_pipeline.constants import _load_transcript
-
-    previous_global_speaker_id = speaker.global_speaker_id
-    _load_transcript(session, speaker.recording_id, lock=True)
-    _refresh_clean_speaker(session, speaker)
     if speaker.identity_locked:
-        return False
-    if (
-        speaker.global_speaker_id is not None
-        and speaker.global_speaker_id != previous_global_speaker_id
-    ):
         return False
     if str(person.name).strip().casefold() in dismissed_names(session, speaker.id):
         return False

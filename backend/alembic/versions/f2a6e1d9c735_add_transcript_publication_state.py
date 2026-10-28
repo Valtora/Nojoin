@@ -1,4 +1,4 @@
-"""Add transcript publication sequence and runtime settling metadata.
+"""Add runtime live settling metadata to transcripts.
 
 Revision ID: f2a6e1d9c735
 Revises: 7bb9c74f9946
@@ -18,12 +18,6 @@ def upgrade() -> None:
     op.add_column(
         "transcripts",
         sa.Column(
-            "change_sequence", sa.BigInteger(), nullable=False, server_default="0"
-        ),
-    )
-    op.add_column(
-        "transcripts",
-        sa.Column(
             "settling_state",
             sa.JSON(none_as_null=True).with_variant(
                 JSONB(none_as_null=True), "postgresql"
@@ -35,4 +29,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_column("transcripts", "settling_state")
-    op.drop_column("transcripts", "change_sequence")

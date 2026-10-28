@@ -110,7 +110,6 @@ async def _seed(sessions: async_sessionmaker[AsyncSession]) -> tuple[int, int, s
                         step,
                         -8000,
                         2000,
-                        transcript.change_sequence,
                     ),
                     words=[{"word": "Accepted", "start_ms": 100, "end_ms": 500}],
                 )
@@ -198,7 +197,6 @@ async def test_capture_transition_closes_old_comparisons_before_new_policy(
                     2,
                     -6000,
                     4000,
-                    transcript.change_sequence,
                 ),
                 words=[{"word": "Later", "start_ms": 2100, "end_ms": 2500}],
             )

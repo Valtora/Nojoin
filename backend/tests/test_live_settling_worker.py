@@ -39,7 +39,7 @@ def _step(tmp_path: Path, *, sequence: int = 6) -> worker.SettlingStep:
 @pytest.fixture
 def rolling_lane(monkeypatch: pytest.MonkeyPatch) -> Any:
     observations: list[dict[str, Any]] = []
-    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [], 7)
+    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [])
     monkeypatch.setattr(worker, "_episode_snapshot", lambda _step: snapshot)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(
@@ -527,7 +527,7 @@ def test_redecoded_words_keep_their_own_audio_source_when_the_window_changes_sou
         ("live", "replaced", False),
     ],
 )
-def test_rejected_revision_drops_observation_without_stalling_current_episode(
+def test_rejected_step_drops_observation_without_stalling_current_episode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     rolling_lane: Any,
@@ -556,18 +556,8 @@ def test_rejected_revision_drops_observation_without_stalling_current_episode(
         "publish_live_settling",
         lambda *_args, **_kwargs: publication.SettlingPublicationResult(False),
     )
-    progress: list[publication.SettlingPass] = []
-
-    def expire(_session: Any, *, request: publication.SettlingPass) -> Any:
-        progress.append(request)
-        return publication.SettlingPublicationResult(True)
-
-    monkeypatch.setattr(publication, "expire_live_settling", expire)
     result = rolling_lane.publisher(
         step, rolling_lane.snapshot, {"asr_segments": []}, None
     )
     assert result.handled and result.accepted is expected
     assert not result.public_changed
-    assert bool(progress) is expected
-    if progress:
-        assert progress[0].source_revision is None

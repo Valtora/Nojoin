@@ -10,12 +10,12 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
-from backend.tests.test_live_settling_finalisation import _final_segment
-from backend.tests.test_live_settling_publication import _request, _words
-from backend.tests.test_transcript_publication import _recording, _transcript
-from backend.tests.test_transcript_publication import (
+from backend.tests.canonical_engine import _recording, _transcript
+from backend.tests.canonical_engine import (
     publication_engine as publication_engine,
 )
+from backend.tests.test_live_settling_finalisation import _final_segment
+from backend.tests.test_live_settling_publication import _request, _words
 from backend.utils.canonical_pipeline import (
     append_utterances_from_segments,
     finalize_utterances_from_segments,

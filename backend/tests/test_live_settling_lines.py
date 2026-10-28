@@ -185,11 +185,9 @@ def test_closed_line_locks_after_silence_and_later_machine_work_cannot_change_it
         request = replace(
             _request(session, recording_id, 2, end_ms=4000), silence_start_ms=2000
         )
-        before_sequence = request.source_revision
         assert expire_live_settling(session, request=request).changed == 1
         session.commit()
         assert line_is_locked(row)
-        assert _request(session, recording_id, 3).source_revision == before_sequence + 1
         snapshot = copy.deepcopy(
             (
                 row.public_id,

@@ -16,7 +16,7 @@ from backend.models.pipeline import (
 )
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.tests import test_canonical_transcript_phase1 as schemas
-from backend.tests.test_transcript_publication import _recording, _transcript
+from backend.tests.canonical_engine import _recording, _transcript
 from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.canonical_pipeline.guards import LineActionConflict
 from backend.utils.speaker_names.events import UserNameAct, as_name_event

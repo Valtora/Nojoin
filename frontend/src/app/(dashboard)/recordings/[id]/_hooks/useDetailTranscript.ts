@@ -12,7 +12,6 @@ import {
 import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
 
 import { isRecordingInFlight, shouldPollRecordingUpdates, type TranscriptHistoryItem } from "./recordingDetailUtils";
-import { createDetailTranscriptReader, type DetailTranscriptRead, type TranscriptSyncResult } from "./detailTranscriptReader";
 
 /** Transcript state, edit deferral, history and polling for the detail editor. */
 export function useDetailTranscript(
@@ -40,11 +39,6 @@ export function useDetailTranscript(
   >(null);
   const recordingRef = useRef(recording);
   const activeEditRef = useRef(activeTranscriptEditId);
-  const readerRef = useRef<ReturnType<typeof createDetailTranscriptReader> | null>(null);
-  const fullSequenceRef = useRef<{ recordingId: string; sequence: number } | null>(null);
-  const repairRef = useRef<{
-    recordingId: string; sequence: number; promise: Promise<TranscriptSyncResult | null>;
-  } | null>(null);
 
   useEffect(() => {
     recordingRef.current = recording;
@@ -113,18 +107,23 @@ export function useDetailTranscript(
     [],
   );
 
-  const readTranscript = useCallback(
+  const syncTranscriptState = useCallback(
     async (
-      { recording, mode, options }: DetailTranscriptRead,
-      isCurrent: () => boolean,
+      mode: "full" | "delta" = "delta",
+      options: { deferActiveEdit?: boolean } = {},
     ) => {
+      const recording = recordingRef.current;
+      if (!recording) {
+        return null;
+      }
+
       const currentTranscriptState = transcriptStateRef.current;
       const afterRevision =
         mode === "delta" && currentTranscriptState?.recordingId === recording.id
           ? currentTranscriptState.revision
           : undefined;
       const transcriptDelta = await getTranscriptUtterances(recording.id, afterRevision);
-      if (!isCurrent() || recordingRef.current?.id !== recording.id) return null;
+      if (recordingRef.current?.id !== recording.id) return null;
 
       const latestTranscriptState = transcriptStateRef.current;
       if (
@@ -181,10 +180,6 @@ export function useDetailTranscript(
         };
       });
 
-      if (mode === "full") {
-        fullSequenceRef.current = { recordingId: recording.id, sequence: recording.transcript?.change_sequence ?? 0 };
-      }
-
       return {
         revision: transcriptDelta.revision,
         segments: nextSegments,
@@ -193,45 +188,6 @@ export function useDetailTranscript(
     },
     [setRecording],
   );
-
-  useEffect(() => {
-    const reader = createDetailTranscriptReader(readTranscript);
-    readerRef.current = reader;
-    repairRef.current = null;
-    return () => {
-      reader.cancel();
-      if (readerRef.current === reader) readerRef.current = null;
-    };
-  }, [recording?.id, isInFlightRecording, readTranscript]);
-
-  const syncTranscriptState = useCallback((
-    mode: "full" | "delta" = "delta",
-    options: { deferActiveEdit?: boolean } = {},
-  ) => {
-    const current = recordingRef.current;
-    return current && readerRef.current
-      ? readerRef.current.request({ recording: current, mode, options })
-      : Promise.resolve(null);
-  }, []);
-
-  // The durable sequence is distinct from the utterance event cursor: a full
-  // read repairs edits whose event committed behind that cursor. Failed reads
-  // leave this sequence unacknowledged so the next existing status poll retries.
-  const repairTranscriptSequence = useCallback((candidate: Recording, force = false) => {
-    if (!candidate.transcript?.settling_required || isRecordingInFlight(candidate) ||
-      recordingRef.current?.id !== candidate.id || isRecordingInFlight(recordingRef.current) ||
-      !readerRef.current) return Promise.resolve(null);
-    const sequence = candidate.transcript.change_sequence ?? 0;
-    const repaired = fullSequenceRef.current;
-    if (!force && repaired?.recordingId === candidate.id && repaired.sequence === sequence) return Promise.resolve(null);
-    const pending = repairRef.current;
-    if (pending?.recordingId === candidate.id && pending.sequence === sequence) return pending.promise;
-    const promise = readerRef.current.request({ recording: candidate, mode: "full", options: {} }).finally(() => {
-      if (repairRef.current?.promise === promise) repairRef.current = null;
-    });
-    repairRef.current = { recordingId: candidate.id, sequence, promise };
-    return promise;
-  }, []);
 
   useEffect(() => {
     if (activeTranscriptEditId !== null) {
@@ -252,10 +208,7 @@ export function useDetailTranscript(
       return;
     }
 
-    const initialRead = recording.transcript?.settling_required
-      ? repairTranscriptSequence(recording, true)
-      : syncTranscriptState("full");
-    initialRead.catch((e) => {
+    syncTranscriptState("full").catch((e) => {
       console.error("Failed to load transcript utterances:", e);
     });
     // syncTranscriptState intentionally runs once per recording load; later
@@ -373,7 +326,7 @@ export function useDetailTranscript(
 
   return {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
-    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, repairTranscriptSequence, pushTranscriptHistory,
+    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
     setActiveTranscriptEditId, handleUndo, handleRedo,
   };
 }

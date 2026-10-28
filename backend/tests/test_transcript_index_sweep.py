@@ -34,7 +34,6 @@ CREATE TABLE recordings (
     is_deleted BOOLEAN NOT NULL, last_activity_at TIMESTAMP, capture_epoch INTEGER NOT NULL DEFAULT 0, transcription_language VARCHAR(16), user_id INTEGER, calendar_event_id INTEGER
 );
 CREATE TABLE transcripts (
-    change_sequence BIGINT NOT NULL DEFAULT 0,
     settling_state JSON,
     id INTEGER PRIMARY KEY, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
     recording_id INTEGER NOT NULL UNIQUE, text TEXT, segments JSON, language_detection JSON, notes TEXT,

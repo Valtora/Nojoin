@@ -10,8 +10,9 @@ from sqlmodel import Session
 
 from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
 from backend.models.recording_public import serialize_transcript
-from backend.tests.test_transcript_publication import _recording, _transcript
-from backend.tests.test_transcript_publication import (
+from backend.models.transcript import Transcript
+from backend.tests.canonical_engine import _recording, _transcript
+from backend.tests.canonical_engine import (
     publication_engine as publication_engine,
 )
 from backend.utils.canonical_pipeline import (
@@ -117,3 +118,23 @@ def test_live_labels_copy_current_protection_into_durable_projection(
             **EVIDENCE,
             "live_speaker_label": {"locked": True, "share": 1.0},
         }
+
+
+def test_public_read_keeps_durable_evidence_private_without_mutating_projection() -> (
+    None
+):
+    evidence = {
+        "asr_segments": [{"words": [{"word": "Hello", "start_ms": 0, "end_ms": 500}]}]
+    }
+    segment = {
+        "id": "line",
+        "text": "Hello",
+        "start": 0.0,
+        "end": 0.5,
+        "confidence_payload": evidence,
+    }
+    transcript = Transcript(id=1, recording_id=1, text="Hello", segments=[segment])
+    public = serialize_transcript(transcript, recording_public_id="recording")
+    assert "confidence_payload" not in public.segments[0]
+    assert public.segments[0]["text"] == "Hello"
+    assert transcript.segments[0]["confidence_payload"] == evidence

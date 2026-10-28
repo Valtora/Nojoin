@@ -1,4 +1,4 @@
-"""The publication revision preserves defaults and JSON on both dialects."""
+"""The settling-state revision adds nullable JSON (JSONB on PostgreSQL) and reverses."""
 
 from __future__ import annotations
 
@@ -59,34 +59,23 @@ def engine(request: pytest.FixtureRequest) -> Iterator[sa.Engine]:
         engine.dispose()
 
 
-def test_revision_defaults_json_and_downgrade(engine: sa.Engine) -> None:
+def test_revision_adds_settling_json_and_downgrades(engine: sa.Engine) -> None:
     revision = _revision()
     with engine.begin() as connection:
         with Operations.context(MigrationContext.configure(connection)):
             revision.upgrade()
         assert connection.execute(
-            sa.text("SELECT text, change_sequence, settling_state FROM transcripts")
-        ).one() == ("old text", 0, None)
-        connection.execute(sa.text("INSERT INTO transcripts (id) VALUES (2)"))
-        assert (
-            connection.execute(
-                sa.text("SELECT change_sequence FROM transcripts WHERE id = 2")
-            ).scalar_one()
-            == 0
-        )
+            sa.text("SELECT text, settling_state FROM transcripts")
+        ).one() == ("old text", None)
         table = sa.Table("transcripts", sa.MetaData(), autoload_with=connection)
         connection.execute(
             table.update()
             .where(table.c.id == 1)
-            .values(
-                change_sequence=2**40,
-                settling_state={"eligible": True, "policy": {"k": 3, "window_s": 10}},
-            )
+            .values(settling_state={"eligible": True, "policy": {"k": 3}})
         )
     with engine.connect() as connection:
         row = connection.execute(sa.select(table).where(table.c.id == 1)).one()
-        assert row.change_sequence == 2**40
-        assert row.settling_state["policy"] == {"k": 3, "window_s": 10}
+        assert row.settling_state["policy"] == {"k": 3}
         if engine.dialect.name == "postgresql":
             assert (
                 connection.execute(
@@ -103,17 +92,3 @@ def test_revision_defaults_json_and_downgrade(engine: sa.Engine) -> None:
             column["name"]
             for column in sa.inspect(connection).get_columns("transcripts")
         } == {"id", "text"}
-        assert (
-            connection.execute(
-                sa.text("SELECT text FROM transcripts WHERE id = 1")
-            ).scalar_one()
-            == "old text"
-        )
-        with Operations.context(MigrationContext.configure(connection)):
-            revision.upgrade()
-        assert (
-            connection.execute(
-                sa.text("SELECT change_sequence FROM transcripts WHERE id = 1")
-            ).scalar_one()
-            == 0
-        )

@@ -26,7 +26,7 @@ from backend.utils.canonical_pipeline import (
     serialize_canonical_utterances,
 )
 
-SCHEMA = "backup_publication_state_test"
+SCHEMA = "backup_settling_state_test"
 SEGMENTS = [
     {
         "id": "protected-line",
@@ -102,7 +102,6 @@ def test_version_three_round_trip_resets_only_imported_runtime_state(
                 text="Kept wording.",
                 segments=SEGMENTS,
                 transcript_status="processing" if interrupted else "completed",
-                change_sequence=72,
                 settling_state={"eligible": True, "epoch": 8, "sealed": False},
             )
         )
@@ -119,7 +118,6 @@ def test_version_three_round_trip_resets_only_imported_runtime_state(
         with engine.begin() as connection:
             connection.execute(
                 Transcript.__table__.update().values(
-                    change_sequence=999,
                     settling_state={"eligible": True, "epoch": 9},
                 )
             )
@@ -136,10 +134,8 @@ def test_version_three_round_trip_resets_only_imported_runtime_state(
             assert transcript.segments == SEGMENTS
             assert transcript.text == "Kept wording."
             if strategy == "safe":
-                assert transcript.change_sequence == 999
                 assert transcript.settling_state == {"eligible": True, "epoch": 9}
             else:
-                assert transcript.change_sequence == 0
                 assert transcript.settling_state is None
                 assert recording.status == (
                     RecordingStatus.ERROR if interrupted else RecordingStatus.PROCESSED
@@ -147,7 +143,6 @@ def test_version_three_round_trip_resets_only_imported_runtime_state(
                 public = serialize_transcript(
                     transcript, recording_public_id=recording.public_id
                 )
-                assert public.change_sequence == 0
                 assert "settling_state" not in public.model_dump()
         if not interrupted and strategy != "safe":
             _finish_backfill(engine, monkeypatch)
@@ -163,7 +158,6 @@ def _old_archive(archive_path: str) -> str:
             if name == "transcripts.json":
                 rows = json.loads(payload)
                 for row in rows:
-                    row.pop("change_sequence", None)
                     row.pop("settling_state", None)
                 payload = json.dumps(rows).encode()
             target.writestr(name, payload)
@@ -179,20 +173,12 @@ def _finish_backfill(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
         recording_id = recording.id
         monkeypatch.setattr(finalize_restored_recording_task, "_session", session)
         finalize_restored_recording_task.run(recording_id, needs_proxy=False)
-        assert "restoring_transcripts" not in session.info
         transcript = session.exec(select(Transcript)).one()
         utterance = session.exec(select(TranscriptUtterance)).one()
-        assert transcript.change_sequence == 0
         assert transcript.settling_state is None
         assert utterance.text == "Kept wording."
         assert utterance.manual_text_locked
         assert utterance.confidence_payload == SEGMENTS[0]["confidence_payload"]
-        # The task's session is reusable: publication resumes after its marker.
-        transcript.text = "An edit after restore."
-        session.add(transcript)
-        session.commit()
-    with Session(engine) as session:
-        assert session.exec(select(Transcript)).one().change_sequence == 1
 
 
 @pytest.mark.usefixtures("stub_celery_dispatch")
@@ -238,39 +224,3 @@ def test_compatibility_rewrite_backup_and_restore_keeps_private_word_evidence(
         _finish_backfill(engine, monkeypatch)
     finally:
         Path(archive_path).unlink(missing_ok=True)
-
-
-@pytest.mark.usefixtures("stub_celery_dispatch")
-def test_failed_restore_backfill_rolls_back_and_releases_suppression(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from backend.utils.canonical_pipeline import startup
-    from backend.worker.tasks import finalize_restored_recording_task
-
-    def fail_backfill(session: Session, recording_id: int) -> None:
-        transcript = session.exec(
-            select(Transcript).where(Transcript.recording_id == recording_id)
-        ).one()
-        transcript.text = "Uncommitted replacement"
-        session.add(transcript)
-        session.flush()
-        raise RuntimeError("Injected backfill failure")
-
-    with Session(engine) as session:
-        session.info["restoring_transcripts"] = True
-        recording = Recording(
-            name="Restored", audio_path="/data/recordings/restored.wav"
-        )
-        session.add(recording)
-        session.flush()
-        session.add(Transcript(recording_id=recording.id, text="Restored text"))
-        session.commit()
-        session.info.pop("restoring_transcripts")
-        monkeypatch.setattr(startup, "ensure_canonical_backfill", fail_backfill)
-        monkeypatch.setattr(finalize_restored_recording_task, "_session", session)
-        finalize_restored_recording_task.run(recording.id, needs_proxy=False)
-        assert "restoring_transcripts" not in session.info
-    with Session(engine) as session:
-        transcript = session.exec(select(Transcript)).one()
-        assert transcript.text == "Restored text"
-        assert transcript.change_sequence == 0

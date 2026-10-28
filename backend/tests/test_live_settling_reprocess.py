@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 
 import pytest
 from sqlmodel import Session
@@ -15,7 +14,7 @@ from backend.tests.test_canonical_publication_fence import (
 from backend.tests.test_live_settling_finalisation import _final_segment
 from backend.tests.test_live_settling_provenance import _evidence, _read
 from backend.tests.test_live_settling_provenance import live_labels as live_labels
-from backend.tests.test_reprocess_publication_postgres import _reset
+from backend.tests.test_reprocess_reset_postgres import _reset
 from backend.utils.canonical_pipeline import (
     finalize_utterances_from_segments,
     serialize_canonical_utterances,
@@ -46,16 +45,15 @@ def test_actual_reprocess_reset_retains_settled_view_and_only_durable_provenance
         session.add(transcript)
         session.commit()
         identity = transcript.id
-        sequence = transcript.change_sequence
         previous_lines = serialize_canonical_utterances(
             session, recording_id, include_confidence_payload=True
         )
         previous_text = transcript.text
-    asyncio.run(_reset(database, recording_id, threading.Event()))
+    asyncio.run(_reset(database, recording_id))
     with Session(database) as session:
         transcript = _load_transcript(session, recording_id)
         assert transcript is not None
-        assert transcript.id == identity and transcript.change_sequence > sequence
+        assert transcript.id == identity
         assert transcript.settling_state == (
             {"settled": True} if marker is True else None
         )

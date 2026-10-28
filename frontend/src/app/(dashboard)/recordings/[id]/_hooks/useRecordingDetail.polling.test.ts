@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useLiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import { ClientStatus, RecordingStatus, type Recording, type TranscriptUtteranceList } from "@/types";
-import { IDLE_RECORDING_POLL_INTERVAL_MS, useRecordingDetail } from "./useRecordingDetail";
+import { useRecordingDetail } from "./useRecordingDetail";
 
 const mocks = vi.hoisted(() => ({
   getRecording: vi.fn(), getTranscript: vi.fn(), notify: vi.fn(),
@@ -65,38 +65,6 @@ describe("recording detail polling", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
-  });
-
-  it("checks an idle recording slowly without repeatedly reading its transcript", async () => {
-    const { result } = mount();
-    await advance(0);
-    expect(result.current.detail.loading).toBe(false);
-    expect(mocks.getTranscript).toHaveBeenCalledTimes(1);
-    const loadedRecording = result.current.detail.recording;
-    await advance(IDLE_RECORDING_POLL_INTERVAL_MS - 1);
-    expect(mocks.getRecording).toHaveBeenCalledTimes(1);
-    await advance(1);
-    expect(mocks.getRecording).toHaveBeenCalledTimes(2);
-    expect(mocks.getTranscript).toHaveBeenCalledTimes(1);
-    expect(result.current.detail.recording).toBe(loadedRecording);
-  });
-
-  it("discovers a live capture on the slow check and starts full then three-second delta reads", async () => {
-    const { result } = mount();
-    await advance(0);
-    mocks.getRecording.mockResolvedValue(recording({
-      status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
-    }));
-    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
-    expect(result.current.detail.recording?.client_status).toBe(ClientStatus.RECORDING);
-    expect(mocks.getTranscript).toHaveBeenCalledTimes(2);
-    expect(mocks.getTranscript).toHaveBeenLastCalledWith("rec-1", undefined, expect.any(AbortSignal));
-    expect(result.current.live.segments[0]).toMatchObject({ text: "Live words", settling_required: true });
-    await advance(2_999);
-    expect(mocks.getTranscript).toHaveBeenCalledTimes(2);
-    await advance(1);
-    expect(mocks.getTranscript).toHaveBeenCalledTimes(3);
-    expect(mocks.getTranscript).toHaveBeenLastCalledWith("rec-1", 4, expect.any(AbortSignal));
   });
 
   it.each([

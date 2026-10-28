@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from copy import deepcopy
 from typing import Any
 
@@ -19,16 +18,16 @@ from backend.models.pipeline import (
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
+from backend.tests.canonical_engine import _recording, _transcript
+from backend.tests.canonical_engine import (
+    publication_engine as publication_engine,
+)
 from backend.tests.test_canonical_publication_fence import Database
 from backend.tests.test_canonical_publication_fence import (
     publication_database as publication_database,
 )
 from backend.tests.test_live_settling_finalisation import _closed_line
-from backend.tests.test_reprocess_publication_postgres import _reset
-from backend.tests.test_transcript_publication import _recording, _transcript
-from backend.tests.test_transcript_publication import (
-    publication_engine as publication_engine,
-)
+from backend.tests.test_reprocess_reset_postgres import _reset
 from backend.utils.canonical_pipeline import (
     append_utterances_from_segments,
     finalize_utterances_from_segments,
@@ -256,7 +255,7 @@ def test_marked_reset_retains_accepted_view_and_name_anchors(
         session.commit()
         before = serialize_canonical_utterances(session, recording_id)
         anchors = deepcopy(transcript.settling_state["name_anchors"])
-    asyncio.run(_reset(engine, recording_id, threading.Event()))
+    asyncio.run(_reset(engine, recording_id))
     with Session(engine) as session:
         transcript = _load_transcript(session, recording_id)
         assert transcript is not None
@@ -333,7 +332,7 @@ def test_machine_only_failed_reprocess_keeps_the_exact_previous_view(
         before = serialize_canonical_utterances(
             session, recording_id, include_confidence_payload=True
         )
-    asyncio.run(_reset(engine, recording_id, threading.Event()))
+    asyncio.run(_reset(engine, recording_id))
     with Session(engine) as session:
         mark_transcript_failed(session, recording_id, "Final engine failed")
         session.expunge_all()
@@ -485,7 +484,7 @@ def test_reprocess_backfills_archived_human_work_before_refreshing_projection(
         assert transcript.segments and not serialize_canonical_utterances(
             session, recording_id
         )
-    asyncio.run(_reset(engine, recording_id, threading.Event()))
+    asyncio.run(_reset(engine, recording_id))
     with Session(engine) as session:
         transcript = _load_transcript(session, recording_id)
         assert transcript is not None and transcript.text == archived_text

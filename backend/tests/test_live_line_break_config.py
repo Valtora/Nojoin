@@ -101,7 +101,6 @@ def test_worker_passes_each_resolved_pause_through_snapshot_to_publication(
     assert kind == ("expiry" if silent else "decode")
     assert request.line_break_pause_s == pause_s
     assert request.expected_token == step.expected_token
-    assert request.source_revision == rolling_lane.snapshot.revision
     assert LINE_BREAK_PAUSE_KEY not in rolling_lane.snapshot.policy
 
 

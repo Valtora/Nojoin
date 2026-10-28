@@ -9,11 +9,11 @@ from sqlmodel import Session, select
 from backend.models.recording_public import serialize_transcript
 from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
-from backend.tests.test_live_settling_finalisation import _closed_line, _final_segment
-from backend.tests.test_transcript_publication import _transcript
-from backend.tests.test_transcript_publication import (
+from backend.tests.canonical_engine import _transcript
+from backend.tests.canonical_engine import (
     publication_engine as publication_engine,
 )
+from backend.tests.test_live_settling_finalisation import _closed_line, _final_segment
 from backend.utils.canonical_pipeline import (
     finalize_utterances_from_segments,
     refresh_transcript_projection_from_canonical,

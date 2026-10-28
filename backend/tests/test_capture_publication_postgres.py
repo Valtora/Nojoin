@@ -90,7 +90,6 @@ def test_a_run_waiting_on_resume_rejects_its_old_episode(
             snapshot, recording_id, lock=False
         )
         token = capture_publication_token(recording, transcript)
-        sequence = transcript.change_sequence
     outcome: list[LivePublicationResult] = []
     started = threading.Event()
 
@@ -118,7 +117,6 @@ def test_a_run_waiting_on_resume_rejects_its_old_episode(
     assert not outcome[0].accepted
     with Session(capture_engine) as session:
         transcript = session.execute(select(Transcript)).scalar_one()
-        assert transcript.change_sequence == sequence
         assert transcript.segments == []
         assert (
             session.execute(select(func.count(TranscriptUtteranceEvent.id))).scalar()
@@ -126,7 +124,7 @@ def test_a_run_waiting_on_resume_rejects_its_old_episode(
         )
 
 
-def test_cpu_resolution_is_frozen_without_publishing_a_public_change(
+def test_cpu_resolution_is_frozen(
     capture_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import backend.core.db as core_db
@@ -138,7 +136,6 @@ def test_cpu_resolution_is_frozen_without_publishing_a_public_change(
             session, recording_id, lock=False
         )
         token = capture_publication_token(recording, transcript)
-        sequence = transcript.change_sequence
     assert _publish(recording_id, token).accepted
     assert _publish(recording_id, token, device="cuda").accepted
     with Session(capture_engine) as session:
@@ -148,4 +145,3 @@ def test_cpu_resolution_is_frozen_without_publishing_a_public_change(
             "window_s": 10.0,
             "enabled": False,
         }
-        assert transcript.change_sequence == sequence

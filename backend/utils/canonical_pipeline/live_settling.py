@@ -20,7 +20,6 @@ from backend.utils.live_word_settling import (
     expire_word_state,
     reconcile_word_state,
 )
-from backend.utils.transcript_publication import bump_transcript_change
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     GateChunk,
@@ -63,7 +62,6 @@ class SettlingPass:
     step_index: int
     window_start_ms: int
     audio_end_ms: int
-    source_revision: int | None = None
     input_start_ms: int | None = None
     metadata: dict[str, Any] | None = None
     gate_chunks: list[GateChunk] | None = None
@@ -257,10 +255,6 @@ def _fresh(
         and publication_is_current(recording, transcript, request.expected_token)
         and state.get("phase") == "live"
         and request.step_index > state.get("last_step_index", -1)
-        and (
-            request.source_revision is None
-            or transcript.change_sequence == request.source_revision
-        )
     )
 
 
@@ -393,8 +387,6 @@ def publish_live_settling(
         ),
     }
     session.add(transcript)
-    if result.changed:
-        bump_transcript_change(session, request.recording_id)
     return result
 
 
@@ -473,8 +465,6 @@ def expire_live_settling(
         ),
     }
     session.add(transcript)
-    if result.changed:
-        bump_transcript_change(session, request.recording_id)
     return result
 
 

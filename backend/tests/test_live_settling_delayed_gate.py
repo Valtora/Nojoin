@@ -18,11 +18,7 @@ from backend.tests.test_live_settling_publication import (
 )
 from backend.tests.test_live_settling_worker_postgres import worker_db as worker_db
 from backend.utils.canonical_pipeline.live_settling_projection import row_words
-from backend.utils.transcript_publication import bump_transcript_change
-from backend.utils.transcript_settling import (
-    CapturePublicationToken,
-    load_capture_publication,
-)
+from backend.utils.transcript_settling import CapturePublicationToken
 
 
 def _state(engine: Engine, recording_id: int) -> dict[str, Any]:
@@ -62,12 +58,7 @@ def test_delayed_arrival_decodes_once_and_repeated_evidence_stays_consumed(
             session.add(transcript)
             session.commit()
     first = replace(worker_db.step(0), vad_regions=[])
-    with Session(settling_engine) as session:
-        initial_revision = session.exec(select(Transcript)).one().change_sequence
     worker.run_settling_step(first, {})
-    with Session(settling_engine) as session:
-        transcript = session.exec(select(Transcript)).one()
-        assert transcript.change_sequence == initial_revision
     assert _state(settling_engine, worker_db.recording_id)["policy"]["enabled"] is (
         None if cold else True
     )
@@ -148,7 +139,6 @@ def test_ineligible_old_speech_does_not_open_gate(
             lambda _: worker.EpisodeSnapshot(
                 {"enabled": True, "window_s": 10, "k": 3},
                 [],
-                0,
                 frontier_ms=2000,
                 gate_chunks=_state(settling_engine, worker_db.recording_id)[
                     "gate_chunks"
@@ -202,37 +192,3 @@ def test_stale_token_after_inference_does_not_consume_delayed_arrival(
         worker_db.step(2), expected_token=CapturePublicationToken(0, "episode-a")
     )
     assert not worker.run_settling_step(stale, {}).accepted
-
-
-def test_public_edit_rejects_hypothesis_but_spends_delayed_arrival(
-    worker_db: Any, settling_engine: Engine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    worker.run_settling_step(replace(worker_db.step(0), vad_regions=[]), {})
-    _evidence(monkeypatch, [(0.5, 0.9)])
-    calls: list[int] = []
-
-    def decode(step: worker.SettlingStep, *_args: Any) -> Any:
-        calls.append(step.sequence)
-        with Session(settling_engine) as session:
-            load_capture_publication(session, worker_db.recording_id)
-            bump_transcript_change(session, worker_db.recording_id)
-            session.commit()
-        return {
-            "asr_segments": [
-                {"words": [{"word": "rejected", "start_ms": 500, "end_ms": 900}]}
-            ]
-        }, "cuda"
-
-    monkeypatch.setattr(worker, "_decode_words", decode)
-    assert worker.run_settling_step(
-        replace(worker_db.step(1), vad_regions=[]), {}
-    ).accepted
-    assert worker.run_settling_step(
-        replace(worker_db.step(2), vad_regions=[]), {}
-    ).accepted
-    assert calls == [1]
-    state = _state(settling_engine, worker_db.recording_id)
-    assert state["gate_chunks"][0]["consumed"]
-    assert "last_decode_id" not in state
-    with Session(settling_engine) as session:
-        assert _active(session, worker_db.recording_id) == []

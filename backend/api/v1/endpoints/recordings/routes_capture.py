@@ -44,7 +44,6 @@ from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
-from backend.utils.transcript_publication import bump_transcript_change
 from backend.utils.transcript_settling import update_capture_settling_state
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
@@ -224,7 +223,6 @@ async def pause_upload(
         recording.client_status = ClientStatus.PAUSED
         recording.last_activity_at = utc_now()
         db.add(recording)
-        await db.run_sync(lambda session: bump_transcript_change(session, recording.id))
         await db.commit()
         await db.refresh(recording)
 
@@ -298,10 +296,6 @@ async def resume_upload(
         recording.capture_epoch += 1
 
     stalled_last_activity = recording.last_activity_at
-    status_changed = (
-        recording.status != RecordingStatus.UPLOADING
-        or recording.client_status != ClientStatus.RECORDING
-    )
     recording.status = RecordingStatus.UPLOADING
     update_capture_settling_state(
         transcript, capture_epoch=recording.capture_epoch, sealed=False, phase="live"
@@ -313,8 +307,6 @@ async def resume_upload(
     await recordings_module._reopen_recording_audio_cursor(
         db, recording_id=recording.id
     )
-    if status_changed:
-        await db.run_sync(lambda session: bump_transcript_change(session, recording.id))
     await db.commit()
     await db.refresh(recording)
 

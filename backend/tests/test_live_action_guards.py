@@ -111,7 +111,6 @@ def _snapshot(session: Session, recording_id: int) -> dict[str, Any]:
             "transcript": (
                 transcript.text,
                 transcript.segments,
-                transcript.change_sequence,
             ),
             "rows": [
                 (

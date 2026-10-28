@@ -73,9 +73,6 @@ interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
 }
 
-// A quiet page still notices a capture started from another tab or device.
-export const IDLE_RECORDING_POLL_INTERVAL_MS = 15_000;
-
 /**
  * Owns the entire data-orchestration, live-state, transcript, notes and action
  * logic for the recording detail page, so the page component itself stays
@@ -149,7 +146,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const isInFlightRecording = isRecordingInFlight(recording);
   const {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
-    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, repairTranscriptSequence, pushTranscriptHistory,
+    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
     setActiveTranscriptEditId, handleUndo, handleRedo,
   } = useDetailTranscript(recording, setRecording);
   const compactChatPanelHeight = isCompact
@@ -272,7 +269,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
           ? 0
           : Date.now() - audioUnavailableSinceRef.current,
         filesBeingRead,
-      ) ?? (isAudioUnavailable(recording) ? null : IDLE_RECORDING_POLL_INTERVAL_MS);
+      );
 
     const pollIntervalMs = currentPollIntervalMs();
     if (pollIntervalMs === null) {
@@ -295,7 +292,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
           setRecording(data);
           if (!isEditingTitle) setTitleValue(data.name);
         }
-        await repairTranscriptSequence(data);
 
             } catch (e: unknown) {
         console.error("Polling failed", e);
@@ -313,7 +309,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead, repairTranscriptSequence]);
+  }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead]);
 
   // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {

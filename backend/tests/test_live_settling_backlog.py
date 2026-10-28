@@ -76,7 +76,7 @@ def test_backlog_speech_survives_silent_newest_chunk(
         "_speaker_evidence",
         lambda _: SimpleNamespace(speech_spans=lambda: spans, decide=None),
     )
-    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [], 7)
+    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [])
     monkeypatch.setattr(
         worker,
         "_episode_snapshot",
@@ -235,7 +235,7 @@ def test_newly_drained_gate_respects_cap_partial_chunk_and_mute(
         store.save_audio(str(path), torch.ones(32000) * (0 if muted else 0.1))
     live_dir = tmp_path / "live"
     live_dir.mkdir()
-    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 9, "k": 3}, [], 7)
+    snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 9, "k": 3}, [])
     monkeypatch.setattr(worker, "_episode_snapshot", lambda _: snapshot)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(transcribe, "loaded_transcription_device", lambda _: "cuda")

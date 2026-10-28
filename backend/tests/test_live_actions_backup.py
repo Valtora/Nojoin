@@ -17,7 +17,7 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.tests.test_backup_publication_state_postgres import engine as engine
+from backend.tests.test_backup_settling_state_postgres import engine as engine
 from backend.tests.test_live_settling_publication import _request, _seed, _words
 from backend.utils.canonical_pipeline import (
     serialize_canonical_utterances,
@@ -142,7 +142,6 @@ def test_accepted_capture_round_trip_and_backfill(
         assert result["status"] == "completed", result
         with Session(engine) as session:
             transcript = session.exec(select(Transcript)).one()
-            assert transcript.change_sequence == 0
             assert set(transcript.settling_state) == {"settled", "name_anchors"}
             assert transcript.segments == expected
             recording = session.exec(select(Recording)).one()

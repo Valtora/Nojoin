@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from backend.core.backup import BackupManager
 from backend.models.timeline_note import TimelineNote
-from backend.tests.test_backup_publication_state_postgres import engine as engine
+from backend.tests.test_backup_settling_state_postgres import engine as engine
 from backend.tests.test_live_actions_backup import _accepted_capture
 from backend.utils.config_manager import config_manager
 

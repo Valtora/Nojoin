@@ -126,7 +126,6 @@ def replay(hours: float, *, pending_speakers: bool = False) -> dict[str, Any]:
                     step,
                     end - 10000,
                     end,
-                    transcript.change_sequence,
                     metadata={
                         "source_channel_activity": {
                             "channel_count": 1,

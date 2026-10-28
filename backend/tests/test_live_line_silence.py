@@ -40,7 +40,7 @@ def silence_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
         "capture_epoch": 1,
         "policy": {"enabled": True, "window_s": 10, "k": 3},
     }
-    transcript = SimpleNamespace(settling_state=state, change_sequence=7)
+    transcript = SimpleNamespace(settling_state=state)
     recording = SimpleNamespace(transcript=transcript)
     session = SimpleNamespace(
         get=lambda *_args: recording,

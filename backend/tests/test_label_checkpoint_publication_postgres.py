@@ -85,7 +85,7 @@ def _facts(session: Session, recording_id: int) -> tuple[Any, ...]:
             TranscriptUtteranceEvent.recording_id == recording_id
         )
     ).all()
-    return transcript.change_sequence, transcript.segments, events
+    return transcript.segments, events
 
 
 @pytest.mark.parametrize(

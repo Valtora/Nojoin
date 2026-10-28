@@ -99,7 +99,6 @@ def _prepare_row(
         # recording-level provenance alongside the archived text and segments.
         item_data = {
             **item_data,
-            "change_sequence": 0,
             "settling_state": durable_settling_state(item_data.get("settling_state")),
         }
 
@@ -418,10 +417,6 @@ def _restore_backup_sync(request: _RestoreRequest):
             from sqlmodel import Session
 
             with Session(runtime.sync_engine) as session:
-                # This session is owned and closed here; the marker cannot leak
-                # into a later publication transaction.
-                session.info["restoring_transcripts"] = True
-                stages._lock_replaced_transcripts(session, state)
                 stages._restore_clear_existing_data(session, state)
                 stages._restore_preflight_overwrite(zipf, session, state)
                 for table_name, model_cls in runtime.MODELS:

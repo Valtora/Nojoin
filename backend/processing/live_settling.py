@@ -71,11 +71,10 @@ class SettlingStepResult:
 
 @dataclass(frozen=True)
 class EpisodeSnapshot:
-    """Facts observed before inference; publication revalidates their revision."""
+    """Facts observed before inference; publication revalidates the episode."""
 
     policy: dict[str, Any]
     words: list[dict[str, Any]]
-    revision: int
     frontier_ms: int = 0
     legacy_frontier_ms: int = 0
     gate_chunks: list[GateChunk] = field(default_factory=list)
@@ -122,7 +121,6 @@ def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResul
         return EpisodeSnapshot(
             dict(policy),
             words,
-            transcript.change_sequence,
             live_settling_frontier(session, recording_id=step.recording_id),
             legacy_live_frontier(session, recording_id=step.recording_id),
             list(state.get("gate_chunks", [])),
@@ -249,7 +247,6 @@ def _publish_step(
         step_index=step.sequence,
         window_start_ms=step.audio_end_ms - round(window_s * 1000),
         audio_end_ms=step.audio_end_ms,
-        source_revision=snapshot.revision,
         input_start_ms=metadata.get("utterance_start_ms"),
         metadata=metadata,
         gate_chunks=snapshot.gate_chunks,
@@ -281,20 +278,14 @@ def _publish_step(
             )
         accepted = publication.accepted
         if not accepted:
-            # A human edit can obsolete a decode while capture keeps running.
-            # Drop that observation, but let ingestion advance to the next chunk.
+            # A duplicate step is dropped, but ingestion still advances to the
+            # next chunk while its episode stays live.
             transcript, recording = load_capture_publication(session, step.recording_id)
             state = getattr(transcript, "settling_state", None) or {}
             accepted = (
                 publication_is_current(recording, transcript, step.expected_token)
                 and state.get("phase") == "live"
             )
-            if accepted:
-                # Preserve the spent speech opportunity after a public edit
-                # rejects this hypothesis; expiry never adds a comparison.
-                publication = expire_live_settling(
-                    session, request=replace(request, source_revision=None)
-                )
         session.commit()
         return SettlingStepResult(True, accepted, window_s, bool(publication.changed))
     finally:

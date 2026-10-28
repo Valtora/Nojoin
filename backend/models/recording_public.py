@@ -121,7 +121,6 @@ class TranscriptPublicRead(PublicModel):
     created_at: datetime
     updated_at: datetime
     recording_id: str
-    change_sequence: int = 0
     settling_required: bool = Field(
         default=False, exclude_if=lambda value: value is False
     )
@@ -345,7 +344,6 @@ def serialize_transcript(
         updated_at=transcript.updated_at,
         recording_id=recording_public_id,
         text=transcript.text if text_override is None else text_override,
-        change_sequence=transcript.change_sequence,
         settling_required=settling_required(transcript),
         # The durable projection retains inference/protection evidence for
         # backfill and backup; public reads expose the ordinary segment fields.
