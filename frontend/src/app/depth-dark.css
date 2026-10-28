@@ -5,6 +5,8 @@ html[data-style="depth"].dark {
   --depth-mix-card: 3%;
   --depth-mix-pane: 6%;
   --depth-mix-float: 9%;
+  /* Stay visible above the rail's pane/float fill instead of matching its lift. */
+  --rail-item-hover: color-mix(in srgb, var(--rail-bg) 84%, var(--foreground));
   --action-text: var(--action-text-hover);
   --danger-text: var(--danger-text-hover);
   --control-border: var(--contrast-icon-muted);
