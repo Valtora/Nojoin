@@ -192,7 +192,9 @@ export default function RecordingStatusDisplay({
   // the line's start, quoting nothing.
   const noteAtTime = useCallback(
     (atMs: number) => {
-      outbox.setDraft({ ...outbox.getSnapshot().draft, selection: null, mode: "typing", typingStartMs: atMs });
+      outbox.setDraft({
+        ...outbox.getSnapshot().draft, selection: null, mode: "typing", typingStartMs: atMs, typingStartFromLine: true,
+      });
       composerBoxRef.current?.focus();
     },
     [outbox],

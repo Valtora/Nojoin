@@ -107,7 +107,7 @@ const modeHint = (draft: ComposerDraft) => {
   switch (draft.mode) {
     case "typing":
       if (draft.typingStartMs === null) return "Placed where you start typing. Shift+Enter starts a new line.";
-      return isBlank(draft.text)
+      return isBlank(draft.text) || draft.typingStartFromLine
         ? `Placed at ${formatTimelineMs(draft.typingStartMs)}.`
         : `Placed at ${formatTimelineMs(draft.typingStartMs)}, where you started typing.`;
     case "send":
@@ -232,7 +232,8 @@ export default function LiveNoteComposer({
         ? draft.typingStartMs
         : null
       : (draft.typingStartMs ?? readAudioNow());
-    setDraft({ ...draft, text, typingStartMs });
+    const typingStartFromLine = (typingStartMs !== null && draft.typingStartFromLine) || undefined;
+    setDraft({ ...draft, text, typingStartMs, typingStartFromLine });
     setMessage(null);
     setDismissedNoticeSeq(latestNoticeSeq);
   };
@@ -330,7 +331,7 @@ export default function LiveNoteComposer({
             title="Don't attach this file"
             onClick={() => {
               onDraftFileChange(null);
-              if (isBlank(draft.text)) setDraft({ ...draft, typingStartMs: null });
+              if (isBlank(draft.text) && !draft.typingStartFromLine) setDraft({ ...draft, typingStartMs: null });
               setMessage(null);
               box.current?.focus();
             }}

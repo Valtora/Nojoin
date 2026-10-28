@@ -406,7 +406,10 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(screen.queryByTestId("note-selection-chip")).toBeNull();
     expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:00.");
     monotonicMs = 9_000; // The clock runs on while the note is typed.
-    addNote("Who signs?");
+    fireEvent.change(box(), { target: { value: "Who signs?" } });
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:00.");
+    expect(screen.getByTestId("live-note-status")).not.toHaveTextContent("where you started typing");
+    fireEvent.keyDown(box(), { key: "Enter" });
 
     await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(1));
     const payload = createTimelineNote.mock.calls[0][1];
