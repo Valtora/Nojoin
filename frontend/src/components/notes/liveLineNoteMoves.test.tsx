@@ -27,7 +27,6 @@ vi.mock("@/components/Workspace", () => ({
 vi.mock("@/components/LiveAudioWaveform", () => ({ default: () => <div /> }));
 vi.mock("@/components/LiveMeetingControls", () => ({ default: () => <div /> }));
 vi.mock("@/components/MeetingEdgePanel", () => ({ default: () => <div /> }));
-vi.mock("@/components/HeadNotePanel", () => ({ default: () => <div /> }));
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({ cancel: vi.fn(), recordingId: null, pausedRecording: null, runtimeActive: false }),
 }));

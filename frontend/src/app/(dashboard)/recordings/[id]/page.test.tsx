@@ -132,6 +132,10 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/components/ChatPanel", () => ({
   default: () => <div data-testid="chat-panel" />,
 }));
+vi.mock("@/components/TourGuide", () => ({
+  RecordingTranscriptTour: ({ eligible }: { eligible: boolean }) =>
+    <div data-testid="transcript-tour" data-eligible={String(eligible)} />,
+}));
 vi.mock("@/components/AudioPlayer", () => ({
   default: ({ recording }: { recording: Recording }) => (
     <div data-testid="audio-player" data-has-audio={String(recording.has_audio)} />
@@ -463,6 +467,7 @@ describe("RecordingPage (detail)", () => {
     expect(screen.getByRole("tablist", { name: "Meeting panels" })).toBeInTheDocument();
     expect(screen.getByTestId("recording-tag-editor")).toBeInTheDocument();
     expect(screen.getByTestId("linked-event-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("transcript-tour")).toHaveAttribute("data-eligible", String(status === RecordingStatus.PROCESSED));
     if (inFlight) {
       expect(screen.getByTestId("recording-capture-slot")).toBeInTheDocument();
       expect(screen.getByTestId("live-note-composer")).toBeInTheDocument();
@@ -473,6 +478,18 @@ describe("RecordingPage (detail)", () => {
       expect(screen.getByTestId("audio-player")).toBeInTheDocument();
       expect(screen.queryByTestId("recording-capture-slot")).not.toBeInTheDocument();
     }
+  });
+
+  it("enables the transcript tour when this recording finishes without navigating", async () => {
+    getRecording.mockResolvedValue(buildRecording({ status: RecordingStatus.PROCESSING }));
+    renderPage();
+    await screen.findByRole("heading", { name: /Quarterly sync/ });
+    expect(screen.getByTestId("transcript-tour")).toHaveAttribute("data-eligible", "false");
+
+    getRecording.mockResolvedValue(buildRecording());
+    fireEvent.click(screen.getByTestId("recording-tag-editor"));
+    await waitFor(() => expect(screen.getByTestId("transcript-tour")).toHaveAttribute("data-eligible", "true"));
+    expect(routerPush).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -554,6 +571,7 @@ describe("RecordingPage (detail)", () => {
     await screen.findByRole("heading", { name: /Quarterly sync/ });
     expect(screen.getByTestId("recording-capture-slot")).toBeInTheDocument();
     expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
+    expect(screen.getByTestId("transcript-tour")).toHaveAttribute("data-eligible", "false");
     expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
     expect(screen.queryByTestId("notes-view")).not.toBeInTheDocument();
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
@@ -1033,6 +1051,98 @@ describe("RecordingPage (detail)", () => {
     beforeEach(() => {
       sidePanelsCollapsed = false;
       listTimelineNotes.mockResolvedValue([POINT]);
+    });
+
+    describe("saved-note drafts through layout changes", () => {
+      beforeEach(() => {
+        forgetNoteOutboxes();
+        resetSessionForTests();
+      });
+
+      afterEach(() => {
+        forgetNoteOutboxes();
+        resetSessionForTests();
+      });
+
+      const assertLeaveProtection = (expected: boolean) => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(expected);
+        expect(useSessionStore.getState().heldBy.includes("notes")).toBe(expected);
+      };
+
+      const reopenDraft = async (panel: HTMLElement, refusal: string | null) => {
+        fireEvent.click(await within(panel).findByRole("button", { name: /^Edit note at 00:02/ }));
+        const editor = screen.getByRole("dialog");
+        expect(within(editor).getByRole("textbox")).toHaveValue("My retained page draft");
+        if (refusal) expect(within(editor).getByRole("alert")).toHaveTextContent(refusal);
+        assertLeaveProtection(true);
+        return editor;
+      };
+
+      it.each(["unsaved", "refused", "conflicting"].flatMap((state) =>
+        ["collapse", "responsive"].map((layout) => ({ state, layout })),
+      ))("retains a $state edit through $layout and releases protection after a deliberate finish", async ({ state, layout }) => {
+        vi.stubGlobal("innerWidth", 1440);
+        vi.stubGlobal("innerHeight", 800);
+        const params = Promise.resolve({ id: "rec-1" });
+        const view = renderWithProviders(<RecordingPage params={params} />);
+        await screen.findByRole("heading", { name: /Quarterly sync/ });
+        const panel = await sideNotes();
+        assertLeaveProtection(false);
+        fireEvent.click(within(panel).getByRole("button", { name: /^Edit note at 00:02/ }));
+        let editor = screen.getByRole("dialog");
+        fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "My retained page draft" } });
+        const current = { ...POINT, body: "Changed on another device", revision: 5 };
+        const refusal = state === "conflicting" ? "changed elsewhere" : state === "refused" ? "No answer" : null;
+        if (refusal) {
+          updateTimelineNote.mockRejectedValueOnce(state === "conflicting" ? { response: {
+            status: 409, data: { detail: { code: "revision_conflict", note: current } },
+          } } : new Error("offline"));
+          fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
+          await within(editor).findByRole("alert");
+        }
+        assertLeaveProtection(true);
+
+        if (layout === "collapse") {
+          fireEvent.click(screen.getByRole("button", { name: "Collapse side panels" }));
+          view.rerender(<RecordingPage params={params} />);
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+          assertLeaveProtection(true);
+          fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes, Captures and Meeting Edge" }));
+          view.rerender(<RecordingPage params={params} />);
+          editor = await reopenDraft(await sideNotes(), refusal);
+        } else {
+          vi.stubGlobal("innerWidth", 360);
+          fireEvent(window, new Event("resize"));
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+          assertLeaveProtection(true);
+          fireEvent.click(screen.getByRole("tab", { name: "My notes" }));
+          activePanel = "my-notes";
+          view.rerender(<RecordingPage params={params} />);
+          editor = await reopenDraft(document.getElementById("panel-my-notes")!, refusal);
+          activePanel = "transcript";
+          vi.stubGlobal("innerWidth", 1440);
+          fireEvent(window, new Event("resize"));
+          expect(document.getElementById("panel-my-notes")).not.toBeInTheDocument();
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+          assertLeaveProtection(true);
+          editor = await reopenDraft(await sideNotes(), refusal);
+        }
+
+        if (state === "conflicting") {
+          updateTimelineNote.mockResolvedValueOnce({ ...current, body: "My retained page draft", revision: 6 });
+          fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
+          await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+          expect(updateTimelineNote).toHaveBeenLastCalledWith("rec-1", POINT.id, {
+            expected_revision: 5, body: "My retained page draft",
+          });
+        } else {
+          fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+          if (state === "unsaved") expect(updateTimelineNote).not.toHaveBeenCalled();
+        }
+        assertLeaveProtection(false);
+      });
     });
 
     it("opens the transcript from a note in the side column's My notes", async () => {

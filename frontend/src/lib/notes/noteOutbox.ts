@@ -184,6 +184,8 @@ export interface OutboxSnapshot {
   entries: readonly OutboxEntry[];
   /** Notes the server has answered for that no listing has had yet. */
   saved: readonly TimelineNote[];
+  /** Body edits awaiting an answer, shared by every view; never persisted or retried. */
+  bodyEdits?: ReadonlyMap<string, string>;
   /** Ids discarded here: a listing still having one shows a delete in transit. */
   discarded: ReadonlySet<string>;
   draft: ComposerDraft;
@@ -332,14 +334,15 @@ export interface InlineNote {
  */
 export const shownNotes = (
   listed: readonly TimelineNote[] | null | undefined,
-  outbox: Pick<OutboxSnapshot, "saved" | "discarded">,
+  outbox: Pick<OutboxSnapshot, "saved" | "discarded" | "bodyEdits">,
 ): TimelineNote[] => {
   const seen = new Set<string>();
   const notes: TimelineNote[] = [];
   for (const note of [...(listed ?? []), ...outbox.saved]) {
     if (seen.has(note.id) || outbox.discarded.has(note.id)) continue;
     seen.add(note.id);
-    notes.push(note);
+    const body = outbox.bodyEdits?.get(note.id);
+    notes.push(body === undefined ? note : { ...note, body });
   }
   return notes;
 };
@@ -349,11 +352,12 @@ const BODY_KINDS: readonly InlineNote["kind"][] = ["point", "selection"];
 /**
  * The point and selection notes to place among a transcript's lines: the
  * saved ones (`shownNotes`) and those still on their way, of `entryKinds`.
- * Head and tail notes belong to the Notes box, which lists its own.
+ * Saved head and tail notes are placed separately at the transcript's ends;
+ * pending ones retain the shared unsaved-note recovery controls.
  */
 export const inlineNotes = (
   listed: readonly TimelineNote[] | null | undefined,
-  outbox: Pick<OutboxSnapshot, "entries" | "saved" | "discarded">,
+  outbox: Pick<OutboxSnapshot, "entries" | "saved" | "discarded" | "bodyEdits">,
   entryKinds: readonly InlineNote["kind"][] = BODY_KINDS,
 ): InlineNote[] => {
   const notes: InlineNote[] = [];
@@ -404,6 +408,7 @@ const uploadError = (error: unknown): string => {
 export class NoteOutbox {
   private entries: OutboxEntry[] = [];
   private saved: TimelineNote[] = [];
+  private readonly bodyEdits = new Map<string, { token: symbol; body: string }>();
   private readonly discards = new Map<string, Discard>();
   /** The ids in `discards`, as last published: a new set only when they change. */
   private discardedIds: ReadonlySet<string> = new Set();
@@ -464,6 +469,18 @@ export class NoteOutbox {
 
   /** Asks the page for its notes again, as after a write, when nothing polls. */
   notesChanged = (): void => this.wrote();
+
+  /** Shows a saved note's edit until its request settles; older answers cannot clear newer edits. */
+  beginBodyEdit = (id: string, body: string): (() => void) => {
+    const token = Symbol("note body edit");
+    this.bodyEdits.set(id, { token, body });
+    this.publish();
+    return () => {
+      if (this.bodyEdits.get(id)?.token !== token) return;
+      this.bodyEdits.delete(id);
+      this.publish();
+    };
+  };
 
   /**
    * Waits, before a note goes out under a new id, until a kept copy of the
@@ -828,6 +845,7 @@ export class NoteOutbox {
     this.snapshot = {
       entries: this.entries,
       saved: this.saved,
+      bodyEdits: new Map([...this.bodyEdits].map(([id, { body }]) => [id, body])),
       discarded: this.discardedIds,
       draft: this.draft,
       draftFile: this.draftFile,

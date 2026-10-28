@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { AudioClock } from "@/lib/notes/audioClock";
-import { type OutboxEntry } from "@/lib/notes/noteOutbox";
 import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import {
   ClientStatus,
@@ -42,18 +41,6 @@ vi.mock("./Workspace", () => ({
 vi.mock("./LiveAudioWaveform", () => ({ default: () => <div /> }));
 vi.mock("./LiveMeetingControls", () => ({ default: () => <div /> }));
 vi.mock("./MeetingEdgePanel", () => ({ default: () => <div /> }));
-// The Notes box, reduced to the meeting-wide notes it is handed to list.
-vi.mock("./HeadNotePanel", () => ({
-  default: ({ pendingNotes = [] }: { pendingNotes?: readonly OutboxEntry[] }) => (
-    <div data-testid="notes-box">
-      {pendingNotes.map((entry) => (
-        <p key={entry.key} data-testid="notes-box-pending">
-          {entry.kind}: {entry.body}
-        </p>
-      ))}
-    </div>
-  ),
-}));
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
@@ -362,21 +349,23 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(document.activeElement).toBe(box());
   });
 
-  it("lists a meeting-wide note on its way with the Notes box, not in the live card", async () => {
+  it("keeps a failed whole-meeting note in recovery above the transcript", async () => {
     createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
     renderLive();
     await screen.findByText("We need the budget.");
     fireEvent.change(screen.getByLabelText("Place note"), { target: { value: "tail" } });
     addNote("Follow up with legal");
 
-    const pending = await screen.findByTestId("notes-box-pending");
-    expect(pending).toHaveTextContent("tail: Follow up with legal");
+    const pending = await screen.findByTestId("unsaved-notes");
+    expect(pending).toHaveTextContent("Follow up with legal");
+    expect(pending).toHaveTextContent("After the transcript");
+    expect(within(pending).getByRole("button", { name: /^Retry/ })).toBeInTheDocument();
     expect(
       within(screen.getByTestId("live-note-composer")).queryByText("Follow up with legal"),
     ).toBeNull();
   });
 
-  it("puts a note on a line from its menu, and keeps a failed one with the lines, not the Notes box", async () => {
+  it("puts a note on a line from its menu and keeps a failed one beside that line", async () => {
     createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
     const { show } = renderLive();
     await screen.findByText("Legal signs off Friday.");
@@ -405,10 +394,10 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(screen.queryByTestId("notes-box-pending")).toBeNull();
   });
 
-  it("holds the Notes box back until the recording's notes have loaded", async () => {
+  it("shows the note list loading until saved notes arrive while keeping the one composer", async () => {
     renderLive(buildRecording(), null);
     await screen.findByText("We need the budget.");
-    expect(screen.queryByTestId("notes-box")).toBeNull();
+    expect(screen.getByText("Loading notes…")).toBeInTheDocument();
     expect(box()).toBeInTheDocument();
   });
 });

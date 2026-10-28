@@ -49,11 +49,14 @@ const TWO_ON_THE_VENUE = [saved("n1", "Check the figure", 13_000), saved("n2", "
 
 const notesShown = () => screen.queryAllByTestId("timeline-note").map((note) => note.textContent);
 
-function renderFinished(timelineNotes: TimelineNote[]) {
-  render(
+function Finished({ timelineNotes, segments = SEGMENTS }: {
+  timelineNotes: (TimelineNote | InlineNote)[];
+  segments?: TranscriptSegment[];
+}) {
+  return (
     <TranscriptView
       recordingId="rec-1"
-      segments={SEGMENTS}
+      segments={segments}
       timelineNotes={timelineNotes}
       currentTime={-1}
       onPlaySegment={vi.fn()}
@@ -73,9 +76,11 @@ function renderFinished(timelineNotes: TimelineNote[]) {
       canUndo={false}
       canRedo={false}
       onExport={vi.fn()}
-    />,
+    />
   );
 }
+
+const renderFinished = (timelineNotes: TimelineNote[]) => render(<Finished timelineNotes={timelineNotes} />);
 
 describe("a line's notes, folded", () => {
   it("shows a count in place of the notes, which a press on it shows and hides", () => {
@@ -106,7 +111,7 @@ describe("a line's notes, folded", () => {
     expect(screen.getAllByTestId("line-notes-chip")).toHaveLength(1);
   });
 
-  it("never folds a note still sending or refused, and counts only the saved ones", () => {
+  it("folds sending notes straight away and keeps refused notes recoverable", () => {
     const refused = saved("n3", "Refused by the server", 14_500);
     const sending = saved("n4", "Still on its way", 15_000);
     render(
@@ -119,14 +124,14 @@ describe("a line's notes, folded", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "2 notes on the line at 00:12" })).toBeInTheDocument();
-    expect(notesShown()).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "3 notes on the line at 00:12, saving" })).toHaveTextContent("Saving…");
+    expect(notesShown()).toHaveLength(1);
     expect(notesShown().join(" ")).toContain("Refused by the server");
-    expect(notesShown().join(" ")).toContain("Still on its way");
+    expect(notesShown().join(" ")).not.toContain("Still on its way");
     expect(screen.getByRole("button", { name: /^Retry note/ })).toBeInTheDocument();
   });
 
-  it("puts no chip on notes that are all unsaved", () => {
+  it("folds a pair of sending notes before either request is answered", () => {
     render(
       <LiveTranscriptPanel
         segments={SEGMENTS}
@@ -134,26 +139,48 @@ describe("a line's notes, folded", () => {
         notes={TWO_ON_THE_VENUE.map((note) => inline(note, "saving"))}
       />,
     );
-    expect(screen.queryByTestId("line-notes-chip")).not.toBeInTheDocument();
-    expect(notesShown()).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "2 notes on the line at 00:12, saving" })).toBeInTheDocument();
+    expect(notesShown()).toHaveLength(0);
   });
 
-  it("keeps a note written here in full once it saves", () => {
+  it("folds a second note immediately and keeps it folded once it saves", () => {
     const writtenHere = saved("n0", "Written on this page", 12_500);
-    const { rerender } = render(
-      <LiveTranscriptPanel segments={SEGMENTS} hasLoaded notes={[inline(writtenHere, "saving")]} />,
+    const { rerender } = render(<Finished timelineNotes={[TWO_ON_THE_VENUE[0]]} />);
+    rerender(<Finished timelineNotes={[TWO_ON_THE_VENUE[0], inline(writtenHere, "saving")]} />);
+    expect(screen.getByRole("button", { name: "2 notes on the line at 00:12, saving" })).toHaveAttribute(
+      "aria-expanded", "false",
     );
+    expect(notesShown()).toHaveLength(0);
     rerender(
-      <LiveTranscriptPanel
-        segments={SEGMENTS}
-        hasLoaded
-        notes={[writtenHere, ...TWO_ON_THE_VENUE].map((note) => inline(note))}
-      />,
+      <Finished timelineNotes={[TWO_ON_THE_VENUE[0], inline(writtenHere)]} />,
     );
 
     expect(screen.getByRole("button", { name: "2 notes on the line at 00:12" })).toBeInTheDocument();
-    expect(notesShown()).toHaveLength(1);
-    expect(notesShown()[0]).toContain("Written on this page");
+    expect(notesShown()).toHaveLength(0);
+  });
+
+  it("preserves an explicit expand choice through additions, failures and a single-note interval", () => {
+    const { rerender } = render(<Finished timelineNotes={TWO_ON_THE_VENUE} />);
+    fireEvent.click(screen.getByRole("button", { name: "2 notes on the line at 00:12" }));
+    const third = inline(saved("n3", "Third thought", 14_500), "saving");
+    rerender(<Finished timelineNotes={[...TWO_ON_THE_VENUE, third]} />);
+    expect(screen.getByRole("button", { name: "3 notes on the line at 00:12, saving" })).toHaveAttribute(
+      "aria-expanded", "true",
+    );
+    expect(notesShown()).toHaveLength(3);
+    rerender(<Finished timelineNotes={[TWO_ON_THE_VENUE[0]]} />);
+    rerender(<Finished timelineNotes={TWO_ON_THE_VENUE} />);
+    expect(screen.getByRole("button", { name: "2 notes on the line at 00:12" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("retains expansion when a note splits an earlier overlapping group member", () => {
+    const overlapping = SEGMENTS.map((segment, index) => index === 0 ? { ...segment, end: 14 } : segment);
+    const { rerender } = render(<Finished timelineNotes={TWO_ON_THE_VENUE} segments={overlapping} />);
+    fireEvent.click(screen.getByRole("button", { name: "2 notes on the line at 00:12" }));
+    rerender(<Finished timelineNotes={[saved("early", "Earlier thought", 2_000), ...TWO_ON_THE_VENUE]}
+      segments={overlapping} />);
+    expect(screen.getByRole("button", { name: "2 notes on the line at 00:12" })).toHaveAttribute("aria-expanded", "true");
+    expect(notesShown()).toHaveLength(3);
   });
 
   it("is an item of the live view's list, so the list stays a list", () => {

@@ -40,6 +40,8 @@ interface TimelineNoteLineProps {
   onEdit?: (trigger: HTMLElement) => void;
   /** The note's time, written the way the surrounding lines write theirs. */
   timeLabel: string;
+  /** Whole-meeting notes use their placement instead of an audio time. */
+  placementLabel?: string;
   status?: "saved" | "saving" | "failed";
   error?: string | null;
   onRetry?: () => void;
@@ -68,6 +70,7 @@ export default function TimelineNoteLine({
   wordsChanged = null,
   onEdit,
   timeLabel,
+  placementLabel,
   status = "saved",
   error = null,
   onRetry,
@@ -77,7 +80,8 @@ export default function TimelineNoteLine({
   attachment = null,
 }: TimelineNoteLineProps) {
   const lineRef = useRef<HTMLDivElement>(null);
-  const name = `at ${timeLabel}, “${noteSnippet(body)}”`;
+  const where = placementLabel?.toLowerCase() ?? `at ${timeLabel}`;
+  const name = `${where}, “${noteSnippet(body)}”`;
   return (
     <div
       ref={lineRef}
@@ -92,7 +96,9 @@ export default function TimelineNoteLine({
     >
       {/* The time and the note never wrap apart; only the buttons go under them where they don't fit beside. */}
       <div className="flex min-w-0 grow basis-64 gap-3">
-        <span className={timeColumnClassName}>{timeLabel}</span>
+        <span className={placementLabel ? "w-24 shrink-0 pt-0.5 text-xs text-contrast-icon-muted" : timeColumnClassName}>
+          {placementLabel ?? timeLabel}
+        </span>
         <div className="min-w-0 flex-1 border-l-2 border-action-border pl-3">
           <div className="flex flex-wrap items-center gap-x-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
             {move ? (
@@ -109,7 +115,7 @@ export default function TimelineNoteLine({
             ) : null}
             <span className="inline-flex items-center gap-1.5">
               <StickyNote className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="sr-only">Your note at {timeLabel}:</span>
+              <span className="sr-only">Your note {where}:</span>
               <span aria-hidden="true">Note</span>
             </span>
             {status === "saving" ? (

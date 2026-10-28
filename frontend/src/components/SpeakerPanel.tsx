@@ -368,9 +368,6 @@ export default function SpeakerPanel({
                             }}
                           >
                             <span className="truncate">{entry.displayName}</span>
-                            {/* Outside the truncated name, so a long one
-                                never hides that it is a suggestion. */}
-                            {entry.pendingName && <span className="shrink-0">?</span>}
                           </ButtonBase>
                           {/* A rename relabels every line this speaker holds,
                               so it is disclosed once here rather than on each

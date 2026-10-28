@@ -1,7 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HeadNoteOwnerProvider } from "@/lib/notes/HeadNoteOwner";
 import { AudioClock } from "@/lib/notes/audioClock";
 import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
@@ -52,15 +51,13 @@ const activeKeyListeners = () => {
 /** Real note surfaces share one recording outbox across presentation remounts. */
 function Presentation({ recording, mobile, clock }: { recording: Recording; mobile: boolean; clock: AudioClock }) {
   const noteEdits = useNoteEdits(recording.id);
-  return <HeadNoteOwnerProvider recordingId={recording.id} timelineNotes={notes}>
-    <div key={mobile ? "mobile" : "desktop"} data-testid={mobile ? "mobile-presentation" : "desktop-presentation"}>
+  return <div key={mobile ? "mobile" : "desktop"} data-testid={mobile ? "mobile-presentation" : "desktop-presentation"}>
       <section aria-label="Transcript">
         <RecordingNoteComposer recording={recording} segments={[]} audioClock={clock} />
       </section>
       <RecordingMyNotes recording={recording} timelineNotes={notes} segments={[]} noteEdits={noteEdits}
         onShowTranscript={noop} onPlay={noop} />
-    </div>
-  </HeadNoteOwnerProvider>;
+    </div>;
 }
 
 const shortcut = () => act(async () => {

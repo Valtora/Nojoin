@@ -19,6 +19,7 @@ import {
   MEETING_EDGE_CONTEXT_OPTIONS,
 } from "@/lib/meetingEdgeContext";
 import { MeetingEdgePayload } from "@/types";
+import MarkdownBubble from "./MarkdownBubble";
 import { useMeetingEdgeFocus } from "./useMeetingEdgeFocus";
 
 interface MeetingEdgePanelProps {
@@ -29,6 +30,17 @@ interface MeetingEdgePanelProps {
   onSaveFocus: (focus: string) => Promise<void>;
   contextLevel?: number;
   onSaveContextLevel?: (level: number) => Promise<void>;
+}
+
+/** Shared model-text rendering, with card typography and raw HTML disabled. */
+function EdgeMarkdown({ content }: { content: string }) {
+  return (
+    <MarkdownBubble
+      content={content}
+      html={false}
+      className="max-w-none break-words text-inherit focus:outline-none [&_p]:m-0 [&_strong]:font-semibold"
+    />
+  );
 }
 
 /**
@@ -206,9 +218,9 @@ function MeetingEdgePanel({
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
                   Current Read
                 </div>
-                <p className="mt-2 text-sm leading-6 text-contrast-muted">
-                  {payload.summary}
-                </p>
+                <div className="mt-2 text-sm leading-6 text-contrast-muted">
+                  <EdgeMarkdown content={payload.summary} />
+                </div>
               </div>
             ) : null}
 
@@ -232,7 +244,7 @@ function MeetingEdgePanel({
                   {questions.length > 0 ? (
                     questions.map((question, index) => (
                       <li key={`${question}-${index}`} className="rounded-xl bg-action-tint px-3 py-2">
-                        {question}
+                        <EdgeMarkdown content={question} />
                       </li>
                     ))
                   ) : (
@@ -253,7 +265,7 @@ function MeetingEdgePanel({
                   {points.length > 0 ? (
                     points.map((point, index) => (
                       <li key={`${point}-${index}`} className="rounded-xl bg-status-warning-bg px-3 py-2">
-                        {point}
+                        <EdgeMarkdown content={point} />
                       </li>
                     ))
                   ) : (
@@ -284,11 +296,11 @@ function MeetingEdgePanel({
                       className="rounded-xl border border-action-border bg-action-tint px-3 py-3"
                     >
                       <div className="text-sm font-semibold text-foreground">
-                        {concept.term}
+                        <EdgeMarkdown content={concept.term} />
                       </div>
-                      <p className="mt-1 text-sm leading-6 text-contrast-helper">
-                        {concept.explanation}
-                      </p>
+                      <div className="mt-1 text-sm leading-6 text-contrast-helper">
+                        <EdgeMarkdown content={concept.explanation} />
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -418,18 +418,19 @@ describe("suggested names", () => {
     name_source: "llm",
   });
 
-  it("marks only a pending name with a question mark and says why it was suggested", () => {
-    renderPanel({ speakers: [pendingAlice, bob] });
+  it.each(["voiceprint", "llm", "heuristic"] as const)(
+    "shows a pending %s name plainly while retaining its review controls", (nameSource) => {
+    renderPanel({ speakers: [{ ...pendingAlice, name_source: nameSource }, bob] });
 
-    // The "?" sits outside the name, which may be truncated.
-    expect(screen.getByText("Alice").parentElement).toHaveTextContent(/^Alice\?$/);
+    expect(screen.getByText("Alice").parentElement).toHaveTextContent(/^Alice$/);
     expect(screen.getByText("Alice")).toHaveClass("truncate");
-    expect(screen.getByText("?")).not.toHaveClass("truncate");
-    expect(screen.getByText("Recognised by voice")).toBeInTheDocument();
+    expect(screen.queryByText("?")).not.toBeInTheDocument();
+    const reason = nameSource === "voiceprint" ? "Recognised by voice"
+      : nameSource === "llm" ? "Suggested by AI" : "Introduced themselves";
+    expect(screen.getByText(reason)).toBeInTheDocument();
     expect(screen.getByText("Bob").parentElement).toHaveTextContent(/^Bob$/);
-    expect(screen.getAllByText("?")).toHaveLength(1);
-    expect(screen.queryByText("Suggested by AI")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm Alice" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Not Alice" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm Bob" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Not Bob" })).not.toBeInTheDocument();
   });

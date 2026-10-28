@@ -27,12 +27,11 @@ export const PLACEMENT_CASES: PlacementCase[] = JSON.parse(
 
 /**
  * What a view showing every line renders for a case, in order: `line:i` for
- * the line at index i and `note:id` for a body note, head and tail notes left
- * out (they have the notes panel).
+ * the line at index i and `note:id` for every note, including before/after notes.
  */
 export const expectedRenderOrder = (golden: PlacementCase): string[] => {
   const bodies = golden.expected.filter((item) => item.slot === "body");
-  const order: string[] = [];
+  const order: string[] = golden.expected.filter((item) => item.slot === "head").map((item) => `note:${item.id}`);
   const notesAfter = (index: number) =>
     bodies
       .filter((item) => item.after_index === index)
@@ -42,5 +41,5 @@ export const expectedRenderOrder = (golden: PlacementCase): string[] => {
     order.push(`line:${index}`);
     notesAfter(index);
   });
-  return order;
+  return [...order, ...golden.expected.filter((item) => item.slot === "tail").map((item) => `note:${item.id}`)];
 };

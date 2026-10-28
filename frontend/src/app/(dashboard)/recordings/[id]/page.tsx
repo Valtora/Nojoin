@@ -15,12 +15,12 @@ import { NoteFilesProvider } from "@/components/notes/NoteFiles";
 import MeetingEdgePanel from "@/components/MeetingEdgePanel";
 import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
 import ExportModal from "@/components/ExportModal";
+import { RecordingTranscriptTour } from "@/components/TourGuide";
 import { RecordingStatus } from "@/types";
 import { useRef } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
-import { HeadNoteOwnerProvider } from "@/lib/notes/HeadNoteOwner";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
 import { getAutoSpeakerReplacementName } from "./_hooks/recordingDetailUtils";
@@ -263,7 +263,6 @@ export default function RecordingPage({ params }: PageProps) {
   return (
     // Notes' files open one viewer, from a note's line or the Captures tab.
     <SpeakerTurnHighlightProvider key={recording.id}>
-    <HeadNoteOwnerProvider key={recording.id} recordingId={recording.id} timelineNotes={timelineNotes}>
     <NoteFilesProvider
       recordingId={recording.id}
       notes={timelineNotes}
@@ -271,6 +270,8 @@ export default function RecordingPage({ params }: PageProps) {
       onPlay={canPlayback ? (seconds) => handlePlaySegment(seconds) : undefined}
       onChanged={fetchRecording}
     >
+    <RecordingTranscriptTour recordingId={recording.id}
+      eligible={recording.status === RecordingStatus.PROCESSED && !showCaptureSlot} />
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {isMobile ? (
@@ -394,7 +395,6 @@ export default function RecordingPage({ params }: PageProps) {
       />}
     </div>
     </NoteFilesProvider>
-    </HeadNoteOwnerProvider>
     </SpeakerTurnHighlightProvider>
   );
 }

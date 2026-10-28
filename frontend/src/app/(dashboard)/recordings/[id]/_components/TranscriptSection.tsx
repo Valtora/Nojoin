@@ -14,7 +14,7 @@ import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { isNoteSelection, type NoteTarget } from "@/lib/notes/noteOutbox";
 import { ClientStatus } from "@/types";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
-import { inlineNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
+import { inlineNotes, shownNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
@@ -162,24 +162,16 @@ export default function TranscriptSection({
   // A note added here from a line's menu shows on its line while it saves;
   // the others still on their way are listed above the transcript.
   const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id);
-  const {
-    entries: outboxEntries,
-    saved: outboxSaved,
-    discarded: outboxDiscarded,
-  } = outboxState;
   // Edits, moves and deletes made here or in My notes show at once: a finished
   // recording's list is not fetched again.
   const { apply: applyEdits, edit: editNote, remove: removeNote, move: moveNote } = noteEdits;
   const notes = useMemo(
     () =>
-      applyEdits(
-        inlineNotes(
-          timelineNotes,
-          { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded },
-          INLINE_NOTES,
-        ),
-      ),
-    [applyEdits, timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
+      applyEdits([
+        ...shownNotes(timelineNotes, outboxState).filter((note) => note.kind === "head" || note.kind === "tail"),
+        ...inlineNotes(timelineNotes, outboxState, INLINE_NOTES),
+      ]),
+    [applyEdits, timelineNotes, outboxState],
   );
   const sectionRef = useRef<HTMLDivElement>(null);
   const durationSeconds = recording.duration_seconds;
@@ -236,9 +228,10 @@ export default function TranscriptSection({
     [outbox, focusSection, liveNoteBoxRef],
   );
   const deleteNote = useCallback(
-    async (note: EditableNote) => {
-      const refusal = await removeNote(note);
-      if (refusal === null) focusSection();
+    async (note: EditableNote, answer?: Parameters<NoteEdits["remove"]>[1]) => {
+      const editor = document.activeElement?.closest('[data-testid="note-on-selection"]');
+      const refusal = await removeNote(note, answer);
+      if (refusal === null && editor?.isConnected) focusSection();
       return refusal;
     },
     [removeNote, focusSection],
@@ -290,7 +283,7 @@ export default function TranscriptSection({
         onEmptied={focusSection}
         className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
       />
-      {transcriptSegments.length > 0 || liveTranscript || hasShownLive ? (
+      {transcriptSegments.length > 0 || notes.length > 0 || liveTranscript || hasShownLive ? (
         <div className="min-h-0 flex-1">
           <TranscriptView
             live={live}
@@ -327,8 +320,9 @@ export default function TranscriptSection({
             onAddNote={addNote}
             onRetryNote={outbox.retry}
             onDiscardNote={discardNote}
-            onEditNote={liveTranscript ? undefined : editNote}
-            onDeleteNote={liveTranscript ? undefined : deleteNote}
+            onEditNote={editNote}
+            noteDrafts={noteEdits.drafts}
+            onDeleteNote={deleteNote}
             onMoveNote={!liveTranscript || transcriptSegments.some((segment) => segment.settling_required) ? moveNote : undefined}
           />
         </div>

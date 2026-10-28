@@ -5,7 +5,7 @@ import type { LiveLineHandlers } from "@/components/transcript/LiveLineEditor";
 import type { MoveNoteHandler } from "@/components/transcript/_hooks/useNoteMoves";
 import type { InlineNote, NoteTarget } from "@/lib/notes/noteOutbox";
 import { buildMeetingSpeakerColors, getRecordingSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
-import type { RecordingSpeaker, TranscriptSegment } from "@/types";
+import type { RecordingSpeaker, TimelineNote, TranscriptSegment } from "@/types";
 
 interface SharedLiveTranscriptProps {
   lineHandlers?: LiveLineHandlers;
@@ -13,7 +13,7 @@ interface SharedLiveTranscriptProps {
   segments: TranscriptSegment[];
   hasLoaded: boolean;
   isPaused?: boolean;
-  notes?: readonly InlineNote[];
+  notes?: readonly (InlineNote | TimelineNote)[];
   onRetryNote?: (key: string) => void;
   onDiscardNote?: (key: string) => void;
   onMoveNote?: MoveNoteHandler;

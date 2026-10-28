@@ -50,7 +50,7 @@ export type { NoteInsertMode };
 export const MODE_LABELS: Record<NoteInsertMode, string> = {
   typing: "At typing start",
   send: "At send",
-  head: "Before the transcript (the Notes box's text if it has none)",
+  head: "Before the transcript",
   tail: "After the transcript",
 };
 
@@ -117,9 +117,9 @@ const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
     case "send":
       return "Placed where the recording is when you press Enter.";
     case "head":
-      return "For the whole meeting. Becomes the Notes box's text if it has none; otherwise listed under Other notes.";
+      return "For the whole meeting, before the transcript. Also listed in My notes.";
     case "tail":
-      return "For the whole meeting, after the transcript, listed under Other notes.";
+      return "For the whole meeting, after the transcript. Also listed in My notes.";
   }
 };
 
@@ -135,7 +135,7 @@ const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
  * to write as it likes and still lands beside what prompted it. Emptying the
  * box drops that anchor; the next character takes a new one. "At send"
  * anchors it on Enter. "Before" and "After the transcript" make a note on
- * the whole meeting, kept with the Notes box rather than among the lines.
+ * the whole meeting, shown before or after its lines and in My notes.
  * On a settled recording, "Note on this line" captures the line's timeline
  * span, shown above the box until sent or removed. Legacy lines retain their
  * whole-line quote. Selected text always quotes its words. Removing either
@@ -264,7 +264,7 @@ export default function LiveNoteComposer({
     const place = notePlace(note);
     say(
       note.kind === "head" || note.kind === "tail"
-        ? `Note added ${place}, with the Notes box.`
+        ? `Note added ${place}, and in My notes.`
         : `Note added ${place}.`,
       "info",
     );
@@ -453,6 +453,9 @@ export default function LiveNoteComposer({
         className={`mt-1 text-xs ${status.tone === "error" ? "text-status-danger-fg" : "text-contrast-helper"}`}
       >
         {status.text}
+      </p>
+      <p className="mt-1 text-xs text-contrast-helper">
+        These notes are fed into note generation and the final notes will label them as user-authored.
       </p>
     </form>
   );

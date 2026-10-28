@@ -21,6 +21,7 @@ import IconButton from "../ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
 import { NoteFile } from "./NoteFiles";
+import RetainedNoteEdits from "./RetainedNoteEdits";
 import { scrollTranscriptToNote } from "./transcriptJump";
 
 interface MyNotesListProps {
@@ -43,7 +44,7 @@ const startMsOf = (note: TimelineNote) =>
   note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0);
 
 /**
- * Every saved note on a processed meeting, in the transcript's order: notes
+ * Every saved note on the recording, in the transcript's order: notes
  * before the transcript first, then the rest by time, then notes after it.
  * A note at a time scrolls the transcript to it, and plays from there; each
  * note is edited or deleted here as on its line, through the same edits, so
@@ -75,9 +76,10 @@ export default function MyNotesList({
 
   // A deleted note's row is going, so focus moves to the list.
   const deleteNote = useCallback(
-    async (note: EditableNote) => {
-      const refusal = await remove(note);
-      if (refusal === null) listRef.current?.focus();
+    async (note: EditableNote, answer?: Parameters<NoteEdits["remove"]>[1]) => {
+      const editor = document.activeElement?.closest('[data-testid="note-on-selection"]');
+      const refusal = await remove(note, answer);
+      if (refusal === null && editor?.isConnected) listRef.current?.focus();
       return refusal;
     },
     [remove],
@@ -189,10 +191,13 @@ export default function MyNotesList({
           {placements.map(renderRow)}
         </ul>
       )}
+      {noteEdits.drafts ? <RetainedNoteEdits owner={noteEdits.drafts} notes={notes}
+        onEdit={(noteId, anchor) => setEditing({ noteId, anchor })} /> : null}
       <TranscriptNoteEditor
         editing={editing}
         notes={notes}
         onEditNote={edit}
+        noteDrafts={noteEdits.drafts}
         onDeleteNote={deleteNote}
         onClose={() => setEditing(null)}
       />

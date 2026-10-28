@@ -36,6 +36,7 @@ import TranscriptNoteEditor, {
 } from "./transcript/TranscriptNoteEditor";
 import { isSavedNote, useNoteHighlights } from "./transcript/_hooks/useNoteHighlights";
 import { useNoteMoves, type MoveNoteHandler } from "./transcript/_hooks/useNoteMoves";
+import { useLineNoteExpansion } from "./transcript/_hooks/useLineNoteExpansion";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
@@ -110,6 +111,7 @@ interface TranscriptViewProps {
   onEditNote?: NoteEditHandlers["onEditNote"];
   /** Deletes a saved note: the caller moves focus somewhere that stays. */
   onDeleteNote?: NoteEditHandlers["onDeleteNote"];
+  noteDrafts?: NoteEditHandlers["noteDrafts"];
   /** Moves a saved point note to a line's start; without it, notes stay put. */
   onMoveNote?: MoveNoteHandler;
 }
@@ -163,6 +165,7 @@ export default function TranscriptView({
   onDiscardNote,
   onEditNote,
   onDeleteNote,
+  noteDrafts,
   onMoveNote,
 }: TranscriptViewProps) {
   // Find & Replace toolbar visibility (search match state lives in the hook)
@@ -321,6 +324,7 @@ export default function TranscriptView({
     () => placeTimelineNotes(segments, timelineNotes ?? []),
     [segments, timelineNotes],
   );
+  const lineNotes = useLineNoteExpansion();
   const visibleIndexes = useMemo(() => displaySegments
     .filter(({ segment, index }) => !missingContextIds.has(liveRenderIdentity(segment, index)))
     .map((item) => item.index), [displaySegments, missingContextIds]);
@@ -328,6 +332,8 @@ export default function TranscriptView({
     () => bodyNotesAmongLines(notePlacements, visibleIndexes),
     [notePlacements, visibleIndexes],
   );
+  const headNotes = notePlacements.filter((placement) => placement.slot === "head").map(({ note }) => note);
+  const tailNotes = notePlacements.filter((placement) => placement.slot === "tail").map(({ note }) => note);
   const moves = useNoteMoves({
     segments,
     visibleIndexes,
@@ -341,7 +347,8 @@ export default function TranscriptView({
   // The editor shows only while its note is a saved one in the list.
   const shownEditor =
     editingNote !== null &&
-    (timelineNotes ?? []).some((note) => note.id === editingNote.noteId && isSavedNote(note))
+    ((timelineNotes ?? []).some((note) => note.id === editingNote.noteId && isSavedNote(note)) ||
+      noteDrafts?.getSnapshot().has(editingNote.noteId))
       ? editingNote
       : null;
   // An editor still open holds typed text or a write, so another note's marks
@@ -378,10 +385,12 @@ export default function TranscriptView({
           timeLabel={formatTime(
             (note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0)) / 1000,
           )}
+          placementLabel={note.kind === "head" ? "Before the transcript"
+            : note.kind === "tail" ? "After the transcript" : undefined}
           timeColumnClassName={NOTE_TIME_COLUMN}
           status={"status" in note ? note.status : "saved"}
           error={"error" in note ? note.error : null}
-          onRetry={onRetryNote ? () => onRetryNote(key) : undefined}
+          onRetry={onRetryNote ? () => { moves.focusAfterRetry(note.id); onRetryNote(key); } : undefined}
           onDiscard={onDiscardNote ? () => onDiscardNote(key) : undefined}
           // Not while its editor is open: a move would take the pencil it sits against.
           move={moves.controlsFor(note, (live ? isSavedNote(note) && note.revision !== undefined : canEditNote(note)) && shownEditor?.noteId !== note.id)}
@@ -539,7 +548,7 @@ export default function TranscriptView({
             style={{ top: moves.drag.bar.top, left: moves.drag.bar.left, width: moves.drag.bar.width }}
           />
         ) : null}
-        {trackGroups.length === 0 && notesAmongLines.opening.length === 0 ? (
+        {trackGroups.length === 0 && notesAmongLines.opening.length === 0 && headNotes.length === 0 && tailNotes.length === 0 ? (
           <div className="flex h-full min-h-[220px] items-center justify-center px-4">
             <div className="flex max-w-sm flex-col items-center text-center">
               <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-action-border bg-action-tint text-action-text">
@@ -558,9 +567,12 @@ export default function TranscriptView({
             </div>
           </div>
         ) : <LineList className="space-y-4">{[
+          ...headNotes.map(renderNote),
           ...notesAmongLines.opening.map(renderNote),
           ...trackGroups.map((group, groupIndex) => {
             const first = group.items[0];
+            const last = group.items[group.items.length - 1];
+            const noteLineId = liveRenderIdentity(last.segment, last.index);
             const groupKey = keepLineGroups ? liveRenderIdentity(first.segment, first.index)
               : group.items.map((item) => item.segmentId).join("|");
             const isMissingContext = missingContextIds.has(liveRenderIdentity(first.segment, first.index));
@@ -600,7 +612,12 @@ export default function TranscriptView({
                 <CollapsedLineNotes
                   as={hasShownLive ? "li" : "div"}
                   notes={notesAfterGroup}
-                  isSaved={(note) => isSavedNote(note) && !moves.wasMoved(note.id)}
+                  isFoldable={(note) => (!("status" in note) || note.status !== "failed") &&
+                    !moves.hasRefusal(note.id) && shownEditor?.noteId !== note.id}
+                  open={lineNotes.isExpanded(noteLineId)}
+                  onToggle={() => lineNotes.toggle(noteLineId)}
+                  gapIndex={last.index}
+                  saving={notesAfterGroup.some((note) => "status" in note && note.status === "saving")}
                   renderNote={renderNote}
                   lineTime={() => formatTime(group.items[group.items.length - 1].segment.start)}
                   timeColumnClassName={NOTE_TIME_COLUMN}
@@ -609,6 +626,7 @@ export default function TranscriptView({
               </Fragment>
             );
           }),
+          ...tailNotes.map(renderNote),
         ]}</LineList>}
       </div>
       {live && !isFollowingLatest ? <div className="pointer-events-none absolute bottom-4 left-0 right-0 flex justify-center">
@@ -627,6 +645,7 @@ export default function TranscriptView({
           editing={shownEditor}
           notes={timelineNotes}
           onEditNote={onEditNote}
+          noteDrafts={noteDrafts}
           onDeleteNote={onDeleteNote}
           onClose={() => setEditingNote(null)}
         />

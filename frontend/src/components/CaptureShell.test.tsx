@@ -75,6 +75,15 @@ describe("CaptureShell", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers an account's paused capture in a watching tab with no local runtime", () => {
+    // Inherited upstream behaviour: PAUSED is offered even when the capturing
+    // tab remains alive. Only stalled UPLOADING captures check browser ownership.
+    guardState.pausedRecording = { ...interrupted, status: "PAUSED", client_status: "PAUSED" };
+    render(<CaptureShell><div /></CaptureShell>);
+    expect(screen.getByText("Recording paused")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume recording" })).toBeEnabled();
+  });
+
   it("stops the recording it offers, by its own id", async () => {
     render(
       <CaptureShell>

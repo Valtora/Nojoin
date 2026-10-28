@@ -1,8 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 import RecordingSpeakers from "./RecordingSpeakers";
 import { line, panelProps } from "../transcript/transcriptTestFixtures";
+import RecordingMainContent from "@/app/(dashboard)/recordings/[id]/_components/RecordingMainContent";
 
 const mocks = vi.hoisted(() => ({ name: vi.fn(), notify: vi.fn(), merged: vi.fn(async () => []) }));
 vi.mock("@/lib/api/speakers", () => ({ nameLiveSpeaker: mocks.name, getGlobalSpeakers: vi.fn(async () => []) }));
@@ -10,6 +12,13 @@ vi.mock("@/lib/api", () => ({ getMergedRecordingSpeakers: mocks.merged }));
 vi.mock("@/lib/notificationStore", () => ({ useNotificationStore: () => ({ addNotification: mocks.notify }) }));
 vi.mock("../VoiceprintModal", () => ({ default: () => null }));
 vi.mock("../people/SplitPersonModal", () => ({ default: () => null }));
+vi.mock("@/app/(dashboard)/recordings/[id]/_components/RecordingHeader", () => ({ default: () => null }));
+vi.mock("@/app/(dashboard)/recordings/[id]/_components/LanguageNoticeBanner", () => ({ default: () => null }));
+vi.mock("@/app/(dashboard)/recordings/[id]/_components/TranscriptSection", () => ({ default: () => null }));
+vi.mock("@/app/(dashboard)/recordings/[id]/_components/NotesSection", () => ({ default: () => null }));
+vi.mock("@/app/(dashboard)/recordings/[id]/_components/DocumentsSection", () => ({ default: () => null }));
+vi.mock("@/app/(dashboard)/recordings/[id]/_components/AnalyticsSection", () => ({ default: () => null }));
+vi.mock("@/components/notes/CapturesGallery", () => ({ default: () => null }));
 
 const recording: Recording = {
   id: "r1", created_at: "2026-10-27T10:00:00Z", updated_at: "2026-10-27T10:00:00Z",
@@ -41,6 +50,29 @@ describe("recording speaker orchestration", () => {
     rerender(<RecordingSpeakers {...options} currentTime={1} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Alex" })).toBeInTheDocument());
     expect(mocks.merged).toHaveBeenCalledOnce();
+  });
+
+  it("mounts pending names plainly with Confirm in the actual mobile Speakers tab", async () => {
+    const options = props();
+    const speakers = [{ id: 1, recording_id: recording.id, diarization_label: "SPEAKER_0", local_name: "Robin",
+      name_source: "llm" as const, name_pending: true,
+      created_at: recording.created_at, updated_at: recording.updated_at }];
+    const content = <RecordingSpeakers {...options} speakers={speakers} />;
+    // Other panes/header are mocked; this exercises the mobile content branch
+    // and the production recording-speaker/panel chain together.
+    const main = { recording, isMobile: true, activePanel: "speakers", setActivePanel: vi.fn(),
+      speakerMap: {}, speakersContent: content } as unknown as ComponentProps<typeof RecordingMainContent>;
+    const originalScroll = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = vi.fn();
+    try {
+      render(<RecordingMainContent {...main} />);
+      const panel = screen.getByRole("tabpanel", { name: "Speakers" });
+      expect(within(panel).getByRole("button", { name: "Robin" })).toBeInTheDocument();
+      expect(within(panel).queryByText("?")).not.toBeInTheDocument();
+      expect(within(panel).getByRole("button", { name: "Confirm Robin" })).toBeInTheDocument();
+      expect(within(panel).getByText("Suggested by AI")).toBeInTheDocument();
+      await waitFor(() => expect(mocks.merged).toHaveBeenCalledOnce());
+    } finally { Element.prototype.scrollIntoView = originalScroll; }
   });
 
   it("retains the identity draft after a stale anchor refusal and refreshes neither People nor feed", async () => {

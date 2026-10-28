@@ -35,7 +35,7 @@ describe("MeetingEdgePanel", () => {
     rerender(<MeetingEdgePanel {...props} />);
     await act(async () => vi.advanceTimersByTime(1200));
     expect(onSaveFocus).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Deliberate new focus" } });
+    fireEvent.change(screen.getByDisplayValue("Pending focus"), { target: { value: "Deliberate new focus" } });
     await act(async () => vi.advanceTimersByTime(1200));
     expect(onSaveFocus).toHaveBeenCalledExactlyOnceWith("Deliberate new focus");
     expect(screen.getByText("Saved")).toBeVisible();
