@@ -9,7 +9,7 @@ import {
 import {
   applyTranscriptDelta, createLocalTranscriptState, flushDeferredTranscriptState, type LocalTranscriptState,
 } from "@/lib/transcriptState";
-import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
+import { RecordingStatus, type Recording, type RecordingSpeaker, type TranscriptSegment } from "@/types";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { isRecordingInFlight, shouldPollRecordingUpdates, type TranscriptHistoryItem } from "./recordingDetailUtils";
@@ -50,6 +50,9 @@ export function useDetailTranscript(
   const [transcriptState, setTranscriptState] = useState<LocalTranscriptState | null>(
     null,
   );
+  const [publicationSpeakers, setPublicationSpeakers] = useState<{
+    recordingId: string; speakers: RecordingSpeaker[];
+  } | null>(null);
   const [activeTranscriptEditId, setActiveTranscriptEditId] = useState<
     string | null
   >(null);
@@ -94,6 +97,10 @@ export function useDetailTranscript(
       return;
     }
 
+    if (retainedPublication) {
+      setPublicationSpeakers((previous) => previous?.recordingId === recording.id ? previous
+        : { recordingId: recording.id, speakers: recording.speakers ?? [] });
+    }
     setTranscriptState((prev) => {
       // A successful empty snapshot may have revision zero. Metadata remains
       // a fallback only until this recording's reader accepts a snapshot.
@@ -200,6 +207,7 @@ export function useDetailTranscript(
       acceptedSnapshotRecordingIdRef.current = recording.id;
       transcriptStateRef.current = nextState;
       setTranscriptState(nextState);
+      setPublicationSpeakers({ recordingId: recording.id, speakers: transcriptDelta.speakers });
       const liveNames = transcriptDelta.live_speaker_names ?? {};
       setLiveSpeakerNames((current) =>
         current?.recordingId === recording.id &&
@@ -436,6 +444,8 @@ export function useDetailTranscript(
   return {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
     liveSpeakerNames, history, future, isUndoing, syncTranscriptState, repairTranscriptSequence, pushTranscriptHistory,
+    publicationSpeakers: publicationSpeakers && publicationSpeakers.recordingId === recording?.id
+      ? publicationSpeakers.speakers : undefined,
     setActiveTranscriptEditId, handleUndo, handleRedo,
     isSettledTranscriptReady,
   };

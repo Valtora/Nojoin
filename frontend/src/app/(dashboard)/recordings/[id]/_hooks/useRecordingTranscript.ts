@@ -14,10 +14,18 @@ export function useRecordingTranscript(
   localCaptureActive = false,
 ) {
   const recordingId = recording?.id ?? null;
-  // A reprocess keeps the publication reader from its start until the run ends:
-  // the previous result until publication, then the replacement while notes run.
-  const hasRetainedPublication = recordingId !== null && !localCaptureActive &&
-    (recording?.previous_publication_available === true || recording?.reprocess_publication_complete === true);
+  const previousPublicationAvailable = recording?.previous_publication_available === true;
+  const reprocessPublicationAvailable = previousPublicationAvailable || recording?.reprocess_publication_complete === true;
+  const [retainedRecordingId, setRetainedRecordingId] = useState(
+    reprocessPublicationAvailable && !localCaptureActive ? recordingId : null,
+  );
+  useOnDepsChange([recordingId, reprocessPublicationAvailable, localCaptureActive], () => {
+    setRetainedRecordingId((previous) => localCaptureActive ? null
+      : reprocessPublicationAvailable ? recordingId : previous === recordingId ? previous : null);
+  });
+  // A marker clears at publication, before notes finish. Keep the publication
+  // reader selected through that boundary and any failed replacement read.
+  const hasRetainedPublication = recordingId !== null && retainedRecordingId === recordingId;
   const inFlight = (isRecordingInFlight(recording) || localCaptureActive) && !hasRetainedPublication;
   const [inFlightRecordingId, setInFlightRecordingId] = useState(inFlight ? recordingId : null);
   useOnDepsChange([recordingId, inFlight], () => {
@@ -30,6 +38,13 @@ export function useRecordingTranscript(
     retainedPublication: hasRetainedPublication,
   });
   const { isSettledTranscriptReady, syncTranscriptState } = settled;
+  // Once the run has ended and its result is on screen, the recording reads
+  // as any other again, polled for later changes.
+  const runEnded = hasRetainedPublication && !reprocessPublicationAvailable && !isRecordingInFlight(recording) &&
+    isSettledTranscriptReady;
+  useOnDepsChange([runEnded], () => {
+    if (runEnded) setRetainedRecordingId(null);
+  });
   const usesInFlightTranscript = !hasRetainedPublication &&
     (inFlight || (handoffRequired && !isSettledTranscriptReady));
   // Keep this reader alive through Stop, pipeline work and a failed final read.
@@ -39,7 +54,8 @@ export function useRecordingTranscript(
   // first answer. A successfully loaded empty feed is still authoritative.
   const showFeed = usesInFlightTranscript && feed.hasLoaded;
   const transcriptSegments = showFeed ? feed.segments : settled.transcriptSegments;
-  const transcriptSpeakers = showFeed ? feed.speakers : recording?.speakers;
+  const transcriptSpeakers = showFeed ? feed.speakers
+    : hasRetainedPublication ? settled.publicationSpeakers ?? recording?.speakers : recording?.speakers;
   const transcriptSpeakerNames = showFeed
     ? feed.liveSpeakerNames
     : settled.liveSpeakerNames?.recordingId === recordingId ? settled.liveSpeakerNames.names : {};

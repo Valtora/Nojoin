@@ -67,7 +67,7 @@ describe("durable quiet transcript repair", () => {
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-  it("notices publication during processing and holds the old words until the replacement read", async () => {
+  it("notices publication during processing and holds old speaker identity until the replacement read", async () => {
     const oldSpeaker = { id: 1, diarization_label: "SPEAKER_00", local_name: "Old name" } as RecordingSpeaker;
     const newSpeaker = { ...oldSpeaker, id: 2, local_name: "New name" };
     const initial = { ...recording(4, false, RecordingStatus.PROCESSING), previous_publication_available: true,
@@ -78,11 +78,11 @@ describe("durable quiet transcript repair", () => {
     await advance(0);
     const next = deferred<TranscriptUtteranceList>();
     mocks.getTranscript.mockReturnValueOnce(next.promise);
-    mocks.getRecording.mockResolvedValue({ ...initial, previous_publication_available: false,
-      reprocess_publication_complete: true, speakers: [newSpeaker] });
+    mocks.getRecording.mockResolvedValue({ ...initial, previous_publication_available: false, speakers: [newSpeaker] });
     await advance(3_000);
     expect(mocks.getTranscript).toHaveBeenCalledTimes(2);
     expect(result.current.transcriptSegments[0].text).toBe("Old words");
+    expect(result.current.recording?.speakers?.[0]?.local_name).toBe("Old name");
     expect(result.current.isInFlightRecording).toBe(true);
     expect(result.current.canPlayback).toBe(false);
     await act(async () => next.resolve({ ...transcript("New words", 0), settling_required: false, speakers: [newSpeaker] }));
@@ -91,7 +91,7 @@ describe("durable quiet transcript repair", () => {
     expect(result.current.isInFlightRecording).toBe(true);
   });
 
-  it.each(["sequence", "speaker"])("repairs retained %s changes and retries unchanged metadata", async (kind) => {
+  it.each(["sequence", "speaker"])("repairs retained %s changes and retries unchanged metadata without mixing identity", async (kind) => {
     const oldSpeaker = { id: 1, diarization_label: "SPEAKER_00", local_name: "Old name" } as RecordingSpeaker;
     const nextSpeaker = { ...oldSpeaker, local_name: "New name" };
     const initial = { ...recording(4, false), reprocess_publication_complete: true, speakers: [oldSpeaker] };
@@ -107,8 +107,10 @@ describe("durable quiet transcript repair", () => {
     await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
     expect(mocks.getTranscript).toHaveBeenCalledTimes(2);
     expect(result.current.transcriptSegments[0].text).toBe("Old words");
+    expect(result.current.recording?.speakers?.[0]?.local_name).toBe("Old name");
     await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
     expect(mocks.getTranscript).toHaveBeenCalledTimes(3);
+    expect(result.current.recording?.speakers?.[0]?.local_name).toBe("Old name");
     await act(async () => pending.resolve({ ...transcript("New words"), settling_required: false, speakers: [nextSpeaker] }));
     expect(result.current.transcriptSegments[0].text).toBe("New words");
     expect(result.current.recording?.speakers?.[0]?.local_name).toBe("New name");

@@ -27,8 +27,6 @@ const recording = (pending = true, status = RecordingStatus.PROCESSING): Recordi
       ? [{ id: "old", text: "Old words", start: 0, end: 1, speaker: "SPEAKER_00" }] : [],
   },
 });
-// The same run after publication, while notes still run.
-const published = (): Recording => ({ ...recording(false), reprocess_publication_complete: true });
 const snapshot = (text = "Old words", revision = 4): TranscriptUtteranceList => ({
   recording_id: "rec-1", revision, speakers: [speaker(text === "Old words" ? "Old name" : "New name")],
   tombstones: [], utterances: text
@@ -95,18 +93,21 @@ describe("retained recording publication", () => {
     expect(result.current.transcriptIsAuthoritative).toBe(true);
   });
 
-  it.each([0, 4])("swaps the words on publication at revision %i", async (revision) => {
-    const { result } = mount();
+  it.each([0, 4])("swaps words and fresh speaker identity together on publication at revision %i", async (revision) => {
+    const { result, painted } = mount();
     await advance();
     const replacement = deferred<TranscriptUtteranceList>();
     mocks.published.mockReturnValueOnce(replacement.promise);
-    act(() => result.current.setRecording(published()));
+    act(() => result.current.setRecording(recording(false)));
     await advance();
     expect(result.current.transcriptSegments[0]?.text).toBe("Old words");
+    expect(result.current.transcriptSpeakers?.[0]?.local_name).toBe("Old name");
     expect(mocks.published).toHaveBeenCalledTimes(2);
     expect(mocks.published.mock.calls[1][1]).toBeUndefined();
     await act(async () => replacement.resolve(snapshot("New words", revision)));
     expect(result.current.transcriptSegments[0]?.text).toBe("New words");
+    expect(result.current.transcriptSpeakers?.[0]?.local_name).toBe("New name");
+    expect(painted.every((value) => ["Old words/Old name", "New words/New name"].includes(value))).toBe(true);
     expect(mocks.live).not.toHaveBeenCalled();
   });
 
@@ -114,42 +115,44 @@ describe("retained recording publication", () => {
     const { result } = mount();
     await advance();
     mocks.published.mockResolvedValue(snapshot("", 0));
-    const completed = { ...published(), transcript: recording(true).transcript };
+    const completed = { ...recording(false), transcript: recording(true).transcript };
     act(() => result.current.setRecording(completed));
     await advance();
     expect(result.current.transcriptSegments).toEqual([]);
     expect(result.current.transcriptIsAuthoritative).toBe(true);
-    act(() => result.current.setRecording({ ...completed, status: RecordingStatus.PROCESSED,
-      reprocess_publication_complete: false }));
+    act(() => result.current.setRecording({ ...completed, status: RecordingStatus.PROCESSED }));
     await advance();
     expect(result.current.transcriptSegments).toEqual([]);
     expect(result.current.hasRetainedPublication).toBe(false);
   });
 
-  it("refreshes the replacement again once the run has ended, as for any recording", async () => {
+  it("polls the replacement again once the run has ended", async () => {
     const { result } = mount();
     await advance();
     mocks.published.mockResolvedValue(snapshot("New words"));
-    act(() => result.current.setRecording(published()));
+    act(() => result.current.setRecording(recording(false)));
     await advance();
-    act(() => result.current.setRecording({ ...published(), status: RecordingStatus.PROCESSED,
-      reprocess_publication_complete: false }));
+    expect(result.current.transcriptSegments[0]?.text).toBe("New words");
+    act(() => result.current.setRecording(recording(false, RecordingStatus.PROCESSED)));
     await advance();
+    expect(result.current.hasRetainedPublication).toBe(false);
+    expect(result.current.usesInFlightTranscript).toBe(false);
     const reads = mocks.published.mock.calls.length;
     // Regenerating notes later polls the transcript, as on any recording.
-    const regenerating = { ...published(), status: RecordingStatus.PROCESSED, reprocess_publication_complete: false };
+    const regenerating = recording(false, RecordingStatus.PROCESSED);
     regenerating.transcript = { ...regenerating.transcript!, notes_status: "generating" };
     act(() => result.current.setRecording(regenerating));
     await advance(3_000);
-    expect(result.current.hasRetainedPublication).toBe(false);
     expect(mocks.published.mock.calls.length).toBeGreaterThan(reads);
+    expect(result.current.transcriptSegments[0]?.text).toBe("New words");
+    expect(mocks.live).not.toHaveBeenCalled();
   });
 
   it("holds the old snapshot across failed reads, then retries publication after unchanged metadata", async () => {
     const { result } = mount();
     await advance();
     mocks.published.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(snapshot("New words"));
-    act(() => result.current.setRecording(published()));
+    act(() => result.current.setRecording(recording(false)));
     await advance();
     expect(result.current.transcriptSegments[0]?.text).toBe("Old words");
     await advance(3_000);
@@ -162,26 +165,27 @@ describe("retained recording publication", () => {
     const { result } = mount();
     await advance();
     mocks.published.mockResolvedValue(snapshot("New words"));
-    act(() => result.current.setRecording(published()));
+    act(() => result.current.setRecording(recording(false)));
     await advance();
     expect(result.current.transcriptSegments[0]?.text).toBe("New words");
     await act(async () => old.resolve(snapshot("Obsolete words")));
     expect(result.current.transcriptSegments[0]?.text).toBe("New words");
   });
 
-  it("drops the initial full read if publication overtakes it", async () => {
+  it("holds the complete metadata snapshot if publication wins the initial full read", async () => {
     const old = deferred<TranscriptUtteranceList>();
     const replacement = deferred<TranscriptUtteranceList>();
     mocks.published.mockReturnValueOnce(old.promise).mockReturnValueOnce(replacement.promise);
-    const { result } = mount();
+    const { result, painted } = mount();
     await advance();
-    act(() => result.current.setRecording(published()));
+    act(() => result.current.setRecording(recording(false)));
     await advance();
     expect(result.current.transcriptSegments[0]?.text).toBe("Old words");
+    expect(result.current.transcriptSpeakers?.[0]?.local_name).toBe("Old name");
     await act(async () => old.resolve(snapshot("Obsolete words")));
     expect(result.current.transcriptSegments[0]?.text).toBe("Old words");
     await act(async () => replacement.resolve(snapshot("New words")));
-    expect(result.current.transcriptSegments[0]?.text).toBe("New words");
+    expect(painted.every((value) => ["Old words/Old name", "New words/New name"].includes(value))).toBe(true);
   });
 
   it("does not revive the capture feed when the same open recording is reprocessed after handoff", async () => {

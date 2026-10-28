@@ -41,7 +41,9 @@ function deferred<T>() {
 }
 
 /** The real reader and section, with only the network and write boundary replaced. */
-function Harness({ initial }: { initial: Recording }) {
+function Harness({ initial, terminal = RecordingStatus.PROCESSED }: {
+  initial: Recording; terminal?: RecordingStatus;
+}) {
   const [value, setValue] = useState<Recording | null>(initial);
   const transcript = useRecordingTranscript(value, setValue);
   if (!value) return null;
@@ -50,10 +52,8 @@ function Harness({ initial }: { initial: Recording }) {
   return <>
     <button onClick={() => setValue({ ...value, status: RecordingStatus.PROCESSING,
       previous_publication_available: true, reprocess_publication_complete: false })}>Reprocess</button>
-    <button onClick={() => setValue({ ...value, status: RecordingStatus.PROCESSING, previous_publication_available: false,
-      reprocess_publication_complete: true })}>Publish</button>
-    <button onClick={() => setValue({ ...value, status: RecordingStatus.PROCESSED,
-      reprocess_publication_complete: false })}>Finish</button>
+    <button onClick={() => setValue({ ...value, status: terminal, previous_publication_available: false,
+      reprocess_publication_complete: true, speakers: [speaker("New name")] })}>Publish</button>
     <button onClick={() => void transcript.syncTranscriptState("full")}>Retry read</button>
     <output aria-label="Reader authority">{String(transcript.transcriptIsAuthoritative)}</output>
     <output aria-label="Deferred lines">{transcript.deferredTranscriptUtteranceIds.join(",")}</output>
@@ -81,10 +81,10 @@ describe("retained transcript editing authority", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it(
-    "keeps the old snapshot read-only after publication until the replacement is accepted", async () => {
+  it.each([RecordingStatus.PROCESSED, RecordingStatus.ERROR])(
+    "keeps the old snapshot read-only at terminal %s until the replacement is accepted", async (terminal) => {
       const replacement = deferred<TranscriptUtteranceList>();
-      render(<Harness initial={recording(true)} />);
+      render(<Harness initial={recording(true)} terminal={terminal} />);
       await waitFor(() => expect(screen.getByLabelText("Reader authority")).toHaveTextContent("true"));
       mocks.published.mockReturnValueOnce(replacement.promise);
       fireEvent.click(screen.getByRole("button", { name: "Publish" }));
@@ -101,7 +101,6 @@ describe("retained transcript editing authority", () => {
       await act(async () => replacement.resolve(snapshot("New words")));
       expect(screen.queryByText("Old words")).not.toBeInTheDocument();
       expect(screen.getByText("New words")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Finish" }));
       fireEvent.click(screen.getByRole("button", { name: /Actions for New name/ }));
       expect(screen.getByRole("button", { name: "New name" })).toBeEnabled();
       expect(screen.getByRole("menuitem", { name: "Edit text" })).toBeInTheDocument();
@@ -129,7 +128,6 @@ describe("retained transcript editing authority", () => {
     mocks.published.mockResolvedValueOnce(snapshot("New words"));
     fireEvent.click(screen.getByRole("button", { name: "Retry read" }));
     await screen.findByText("New words");
-    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
     fireEvent.click(screen.getByRole("button", { name: /Actions for New name/ }));
     expect(screen.getByRole("button", { name: "New name" })).toBeEnabled();
   });
@@ -209,7 +207,6 @@ describe("retained transcript editing authority", () => {
     await waitFor(() => expect(screen.getByLabelText("Deferred lines")).toBeEmptyDOMElement());
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByText("New words")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
     expect(screen.getByRole("button", { name: "New name" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Redo" })).toBeEnabled();

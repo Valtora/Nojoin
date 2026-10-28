@@ -930,10 +930,13 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     try { setGlobalSpeakers(await getGlobalSpeakers()); }
     catch (error) { console.error("Failed to refresh People after speaker naming", error); }
   }, []);
+  const presentedRecording = useMemo(() => recording && hasRetainedPublication
+    ? { ...recording, speakers: transcriptSpeakers ? [...transcriptSpeakers] : recording.speakers }
+    : recording, [recording, hasRetainedPublication, transcriptSpeakers]);
 
   return {
     // Core data
-    recording,
+    recording: presentedRecording,
     setRecording,
     audioClock,
     timelineNotes,
