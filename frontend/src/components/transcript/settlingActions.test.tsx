@@ -31,33 +31,30 @@ describe("settling line actions", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     expect(submit).toHaveBeenCalledWith({ kind: "point", body: "My thought", anchorMs: 1500 });
   });
-  it("keeps every line action but Play waiting until the line locks", () => {
+  it("keeps the line's edits waiting until it locks", () => {
     const actions = handlers();
-    const note = vi.fn();
     const delta = (locked: boolean): TranscriptUtteranceList => ({
       recording_id: "r1", revision: locked ? 4 : 3, settling_required: true,
       utterances: [{ ...line(locked), id: "u1", revision: locked ? 4 : 3 }], speakers: [], tombstones: [],
     });
     const initial = applyTranscriptDelta({ currentState: null, recordingId: "r1", fallbackSegments: [], delta: delta(false), mode: "full" });
-    const view = render(<LiveTranscriptPanel segments={initial.segments} hasLoaded onNoteOnLine={note} lineHandlers={actions} />);
+    const view = render(<LiveTranscriptPanel segments={initial.segments} hasLoaded onNoteOnLine={vi.fn()} lineHandlers={actions} />);
     expect(screen.getByTestId("live-transcript-line")).toHaveAccessibleDescription("This line is still settling.");
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     open();
     const items = screen.getAllByRole("menuitem");
-    expect(items).toHaveLength(4);
+    expect(items.map((item) => item.textContent?.replace("This line is still settling.", ""))).toEqual([
+      "Edit text", "Change speaker", "Split line",
+    ]);
     for (const item of items) {
       expect(item).toHaveAttribute("aria-disabled", "true");
       fireEvent.click(item);
     }
-    expect(note).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const locked = applyTranscriptDelta({ currentState: initial, recordingId: "r1", fallbackSegments: [], delta: delta(true) });
-    view.rerender(<LiveTranscriptPanel segments={locked.segments} hasLoaded onNoteOnLine={note} lineHandlers={actions} />);
+    view.rerender(<LiveTranscriptPanel segments={locked.segments} hasLoaded onNoteOnLine={vi.fn()} lineHandlers={actions} />);
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     expect(screen.getByTestId("live-transcript-line")).not.toHaveAttribute("aria-describedby");
-    fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
-    expect(note).toHaveBeenCalledWith({ startMs: 0, endMs: 2000, quotedText: "Alpha beta." });
-    open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
     expect(screen.getByRole("textbox", { name: "Line text" })).toHaveValue("Alpha beta.");
   });

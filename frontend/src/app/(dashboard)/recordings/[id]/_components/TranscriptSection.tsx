@@ -177,6 +177,14 @@ export default function TranscriptSection({
     outbox.setDraft({ ...outbox.getSnapshot().draft, selection });
     liveNoteBoxRef?.current?.focus();
   }, [outbox, liveNoteBoxRef]);
+  // On a line still settling: the box's next note is a typed note anchored at
+  // the line's start, quoting nothing.
+  const noteAtTime = useCallback((atMs: number) => {
+    outbox.setDraft({
+      ...outbox.getSnapshot().draft, selection: null, mode: "typing", typingStartMs: atMs, typingStartFromLine: true,
+    });
+    liveNoteBoxRef?.current?.focus();
+  }, [outbox, liveNoteBoxRef]);
   const recordingId = recording.id;
   const liveLineHandlers = useMemo<LiveLineHandlers>(() => {
     const write = async (save: () => Promise<boolean>) => {
@@ -197,10 +205,11 @@ export default function TranscriptSection({
   const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed && presentFeed ? ({
     hasLoaded, isPaused: paused, lineHandlers: liveLineHandlers,
     onNoteOnLine: activeCapture ? noteOnLine : undefined,
+    onNoteAtTime: activeCapture ? noteAtTime : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,
     loadPeopleNames: liveNaming.loadPeopleNames,
   }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveLineHandlers, activeCapture,
-    noteOnLine, liveNaming.renameLiveSpeaker, liveNaming.loadPeopleNames]);
+    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.loadPeopleNames]);
   const discardNote = useCallback(
     (key: string) => {
       outbox.discard(key);

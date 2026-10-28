@@ -64,7 +64,9 @@ export default function TranscriptLineMenu({
   } | null>(null);
   /** The ⋯ button, while an editor or popover an item opened is open. */
   const returnFocusTo = useRef<HTMLElement | null>(null);
-  const selection = useMemo(() => lineSelection(segment), [segment]);
+  const settling = lineIsSettling(segment);
+  // A locked line's note quotes it; a settling line's is a timeline note at its start.
+  const quoted = useMemo(() => (settling ? null : lineSelection(segment)), [settling, segment]);
 
   // Back to the ⋯ button once what an item opened has closed, unless focus
   // went somewhere on purpose (a click elsewhere).
@@ -80,11 +82,9 @@ export default function TranscriptLineMenu({
 
   const run: Record<LineActionId, (trigger: HTMLButtonElement) => void> = {
     note: (trigger) => {
-      if (live) {
-        if (selection) live.onNoteOnLine?.(selection);
-      } else {
-        setNoteAnchor(trigger);
-      }
+      if (!live) setNoteAnchor(trigger);
+      else if (settling) live.onNoteAtTime?.(segmentStartMs(segment));
+      else if (quoted) live.onNoteOnLine?.(quoted);
     },
     editText: (trigger) => {
       if (live) {
@@ -110,21 +110,23 @@ export default function TranscriptLineMenu({
     !!segment.id && segment.revision !== undefined;
   const items = lineActionsFor({
     view: live ? "live" : "finished",
-    canNote: (live ? live.onNoteOnLine !== undefined : onAddNote !== null) && selection !== null,
-    canEdit: live ? liveCanEdit : !isSegmentReadOnly || lineIsSettling(segment),
+    canNote: live
+      ? settling ? live.onNoteAtTime !== undefined : live.onNoteOnLine !== undefined && quoted !== null
+      : onAddNote !== null && (settling || quoted !== null),
+    canEdit: live ? liveCanEdit : !isSegmentReadOnly || settling,
     provisional: segment.provisional === true,
     canPlay: !live && onPlayFrom !== null,
     canSplit: (live ? liveCanEdit : !isSegmentReadOnly && !!segment.id && segment.revision !== undefined &&
       onSplitSegment !== null) && splitWords(segment).length > 0,
     settlingRequired: segment.settling_required,
-    disabledReason: lineIsSettling(segment) ? LINE_SETTLING_REASON : undefined,
+    disabledReason: settling ? LINE_SETTLING_REASON : undefined,
   }).map((action) => ({ ...action, onSelect: run[action.id] }));
   // An editor submits against the line as it opened, so a line changed since
   // is refused rather than overwritten. It goes once the line can't take the
   // edit: it is settling again, or the view stopped offering it.
   const editHandlers = live ? live.lineHandlers
     : onSplitSegment ? { split: onSplitSegment, editText: async () => false, changeSpeaker: async () => false } : undefined;
-  const editorOpen = lineEdit !== null && editHandlers !== undefined && !lineIsSettling(segment) &&
+  const editorOpen = lineEdit !== null && editHandlers !== undefined && !settling &&
     (live ? liveCanEdit : lineEdit.kind === "split" && !isSegmentReadOnly);
   if (lineEdit !== null && !editorOpen) setLineEdit(null);
 
@@ -143,12 +145,14 @@ export default function TranscriptLineMenu({
         handlers={editHandlers} speakers={speakers}
         onClose={() => { setLineEdit(null); lineEdit.anchor.focus(); }}
       /> : null}
-      {noteAnchor && selection && onAddNote ? (
+      {noteAnchor && (settling || quoted) && onAddNote ? (
         <NoteOnSelectionPopover
-          quote={selection.quotedText}
+          quote={quoted?.quotedText ?? null}
           title={`Note on the line at ${formatTime(segment.start)}`}
           anchor={noteAnchor}
-          onSubmit={(body) => onAddNote({ kind: "selection", body, anchorMs: null, selection })}
+          onSubmit={(body) => onAddNote(quoted
+            ? { kind: "selection", body, anchorMs: null, selection: quoted }
+            : { kind: "point", body, anchorMs: segmentStartMs(segment) })}
           onClose={() => setNoteAnchor(null)}
         />
       ) : null}

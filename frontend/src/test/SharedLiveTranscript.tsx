@@ -19,6 +19,7 @@ interface SharedLiveTranscriptProps {
   onMoveNote?: MoveNoteHandler;
   footer?: ReactNode;
   onNoteOnLine?: (selection: NoteSelection) => void;
+  onNoteAtTime?: (atMs: number) => void;
   liveSpeakerNames?: Readonly<Record<string, string>>;
   onRenameLiveSpeaker?: (label: string, name: string) => Promise<boolean>;
   loadPeopleNames?: () => Promise<readonly string[]>;
@@ -29,7 +30,7 @@ const noop = () => {};
 /** Runs legacy live behavioural fixtures through the production shared cards. */
 export default function SharedLiveTranscript({
   segments, hasLoaded, isPaused, lineHandlers, speakers = [], notes, onRetryNote,
-  onDiscardNote, onMoveNote, footer, onNoteOnLine, liveSpeakerNames = {},
+  onDiscardNote, onMoveNote, footer, onNoteOnLine, onNoteAtTime, liveSpeakerNames = {},
   onRenameLiveSpeaker, loadPeopleNames,
 }: SharedLiveTranscriptProps) {
   const speakerMap = {
@@ -47,7 +48,7 @@ export default function SharedLiveTranscript({
       onUndo={noop} onRedo={noop} canUndo={false} canRedo={false} onExport={noop}
       disableSegmentPlayback disableExport timelineNotes={notes} onRetryNote={onRetryNote}
       onDiscardNote={onDiscardNote} onMoveNote={onMoveNote}
-      live={{ hasLoaded, isPaused, lineHandlers, onNoteOnLine, onRenameLiveSpeaker, loadPeopleNames }} />
+      live={{ hasLoaded, isPaused, lineHandlers, onNoteOnLine, onNoteAtTime, onRenameLiveSpeaker, loadPeopleNames }} />
     {footer}
   </>;
 }
