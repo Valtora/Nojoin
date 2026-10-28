@@ -65,6 +65,36 @@ describe("reopening a released microphone", () => {
     expect(mediaDevices.getUserMedia.mock.calls[0][0].audio.deviceId).toEqual({ exact: "mic-1" });
   });
 
+  describe("when the browser lists blank device ids", () => {
+    const missing = (name: string) => Object.assign(new Error(name), { name });
+
+    it("requests the selected device and does not claim a fallback when it is granted", async () => {
+      const { mediaDevices, reopen, stream } = setup([""]);
+      await expect(reopen()).resolves.toEqual({ stream, usedDefault: false });
+      expect(mediaDevices.getUserMedia).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ audio: expect.objectContaining({ deviceId: { exact: "mic-1" } }) }),
+      );
+    });
+
+    it.each(["NotFoundError", "OverconstrainedError"])(
+      "falls back to the default when the request fails with %s",
+      async (name) => {
+        const { mediaDevices, reopen, stream } = setup([""]);
+        mediaDevices.getUserMedia.mockRejectedValueOnce(missing(name)).mockResolvedValueOnce(stream);
+        await expect(reopen()).resolves.toEqual({ stream, usedDefault: true });
+        expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+        expect(mediaDevices.getUserMedia.mock.calls[1][0].audio.deviceId).toBeUndefined();
+      },
+    );
+
+    it("does not fall back when the microphone is busy", async () => {
+      const { mediaDevices, reopen } = setup([""]);
+      mediaDevices.getUserMedia.mockRejectedValue(missing("NotReadableError"));
+      await expect(reopen()).rejects.toThrow(/busy.*close.*resume/i);
+      expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("uses the browser default without claiming a fallback when no device was selected", async () => {
     const { mediaDevices, reopen, stream } = setup();
     await expect(reopen(null)).resolves.toEqual({ stream, usedDefault: false });

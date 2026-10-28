@@ -9,8 +9,16 @@ interface ReopenMicrophoneOptions {
 const unavailableMessage =
   "The microphone is unavailable. Connect it or choose another microphone in Settings, then try Resume again.";
 
+const errorName = (error: unknown) =>
+  error && typeof error === "object" && "name" in error ? error.name : "";
+
+const isMissingDeviceError = (error: unknown) => {
+  const name = errorName(error);
+  return name === "NotFoundError" || name === "OverconstrainedError";
+};
+
 const describeMicrophoneFailure = (error: unknown): Error => {
-  const name = error && typeof error === "object" && "name" in error ? error.name : "";
+  const name = errorName(error);
   if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
     return new Error(
       "Microphone permission was denied. Allow microphone access in your browser settings, then try Resume again.",
@@ -32,19 +40,27 @@ const describeMicrophoneFailure = (error: unknown): Error => {
   );
 };
 
-/** Only a successful device listing can justify changing the selected input. */
+/**
+ * A listing with usable ids can show the selected microphone is gone. Before any
+ * capture is active a browser may list blank ids (Media Capture and Streams,
+ * section 9.2.1: empty strings for deviceId, label and groupId), which proves
+ * nothing, so `trusted` is false and the exact request decides instead. A
+ * listing with no microphones at all is trusted.
+ */
 const resolveMicrophoneDevice = async (mediaDevices: MediaDevices, requested: string | null) => {
+  let trusted = false;
   if (requested && mediaDevices.enumerateDevices) {
     try {
-      const devices = await mediaDevices.enumerateDevices();
-      if (!devices.some((device) => device.kind === "audioinput" && device.deviceId === requested)) {
-        return { deviceId: null, usedDefault: true };
+      const inputs = (await mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
+      trusted = inputs.length === 0 || inputs.some((device) => device.deviceId !== "");
+      if (trusted && !inputs.some((device) => device.deviceId === requested)) {
+        return { deviceId: null, usedDefault: true, trusted };
       }
     } catch {
       // The device may still be available; request its exact id rather than changing inputs.
     }
   }
-  return { deviceId: requested, usedDefault: false };
+  return { deviceId: requested, usedDefault: false, trusted };
 };
 
 const validateMicrophone = (stream: MediaStream, deviceId: string | null) => {
@@ -77,19 +93,32 @@ export const reopenMicrophone = async (
   if (!mediaDevices?.getUserMedia) {
     throw new Error("This browser cannot reopen the microphone. Use a browser with microphone capture support.");
   }
-  const { deviceId, usedDefault } = await resolveMicrophoneDevice(mediaDevices, options.microphoneDeviceId);
-  let stream: MediaStream;
-  try {
-    stream = await mediaDevices.getUserMedia({
+  const resolved = await resolveMicrophoneDevice(mediaDevices, options.microphoneDeviceId);
+  const request = (id: string | null) =>
+    mediaDevices.getUserMedia({
       audio: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
+        deviceId: id ? { exact: id } : undefined,
         echoCancellation: options.settings.echoCancellation,
         noiseSuppression: options.settings.noiseSuppression,
         autoGainControl: options.settings.autoGainControl,
       },
     });
+  let { deviceId, usedDefault } = resolved;
+  let stream: MediaStream;
+  try {
+    stream = await request(deviceId);
   } catch (error: unknown) {
-    throw describeMicrophoneFailure(error);
+    if (resolved.trusted || !deviceId || !isMissingDeviceError(error)) {
+      throw describeMicrophoneFailure(error);
+    }
+    // The listing could not vouch for the device and the browser says it is gone.
+    deviceId = null;
+    usedDefault = true;
+    try {
+      stream = await request(null);
+    } catch (fallbackError: unknown) {
+      throw describeMicrophoneFailure(fallbackError);
+    }
   }
   validateMicrophone(stream, deviceId);
   return { stream, usedDefault };
