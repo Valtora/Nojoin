@@ -166,7 +166,8 @@ afterEach(() => {
 describe("My notes", () => {
   it("asks before the page is left while an edit is unsaved, and not once it is saved", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<><a href="/people">People</a><Page notes={[HEAD]} /></>);
+    render(<><a href="/people">People</a><button id="nav-logout" type="button">Log Out</button>
+      <Page notes={[HEAD]} /></>);
     const leave = () => {
       const unload = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(unload);
@@ -178,7 +179,9 @@ describe("My notes", () => {
     expect(leave()).toBe(true);
     // An in-app link asks too, and staying keeps the editor and its text.
     expect(fireEvent.click(screen.getByRole("link", { name: "People" }))).toBe(false);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    // So does Log Out, which ends the session before any unload prompt.
+    expect(fireEvent.click(screen.getByRole("button", { name: "Log Out" }))).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(2);
     expect(within(editor).getByRole("textbox")).toHaveValue("Not saved yet");
 
     let answer!: (note: TimelineNote) => void;
@@ -191,7 +194,7 @@ describe("My notes", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(leave()).toBe(false);
     expect(fireEvent.click(screen.getByRole("link", { name: "People" }))).toBe(true);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(2);
   });
 
   it("keeps an editor with unsaved text open when another note's pencil is pressed", () => {

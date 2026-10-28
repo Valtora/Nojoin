@@ -5,10 +5,11 @@ import { useEffect } from "react";
 import { holdPendingNoteWrite } from "./noteOutboxes";
 
 /**
- * The app's own ways off a page: its links, the main navigation, Settings and
- * any other control marked `data-leaves-page`, such as a page's Back button.
+ * The app's own ways off a page: its links, the main navigation, Settings,
+ * Log Out and any other control marked `data-leaves-page`, such as a page's
+ * Back button.
  */
-const LEAVING_CONTROLS = "a[href], nav button, #nav-settings, [data-leaves-page]";
+const LEAVING_CONTROLS = "a[href], nav button, #nav-settings, #nav-logout, [data-leaves-page]";
 
 export const LEAVE_WITH_UNSAVED_NOTE = "This note has changes that are not saved. Leave without saving them?";
 
