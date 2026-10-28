@@ -17,6 +17,10 @@ from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import resolve_notes_template_async
+from backend.utils.reprocess_publication import (
+    REPROCESS_RUNNING_MESSAGE,
+    reprocess_replacement_running,
+)
 from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (
     load_capture_publication,
@@ -164,6 +168,9 @@ async def generate_notes(
 
     if transcript and transcript.transcription_failed():
         raise HTTPException(status_code=409, detail=TRANSCRIPTION_FAILED_NOTES_MESSAGE)
+    # The retained transcript is readable, but the pass replacing it owns notes.
+    if reprocess_replacement_running(transcript):
+        raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
 
     segments = (
         await db.run_sync(

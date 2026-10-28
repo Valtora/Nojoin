@@ -6,13 +6,17 @@ import asyncio
 from typing import Any
 
 import pytest
-from fastapi import Response
+from fastapi import HTTPException, Response
 from sqlalchemy import Engine, delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlmodel import Session, select
 
-from backend.api.v1.endpoints.recordings import helpers, routes_query
-from backend.api.v1.endpoints.transcripts import routes_utterances
+from backend.api.v1.endpoints.recordings import (
+    helpers,
+    routes_actions,
+    routes_query,
+)
+from backend.api.v1.endpoints.transcripts import routes_notes, routes_utterances
 from backend.models.pipeline import TranscriptUtterance
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.speaker import RecordingSpeaker
@@ -216,3 +220,45 @@ def test_first_processing_keeps_draft_content_hidden(
     assert response.reprocess_publication_complete is False
     assert response.transcript.text == ""
     assert response.transcript.segments == []
+
+
+@pytest.mark.parametrize("route", ["notes", "speakers"])
+def test_notes_and_speaker_inference_wait_for_a_running_reprocess(
+    publication_database: Database, route: str
+) -> None:
+    engine, recording_id, _ = publication_database
+    _seed_previous(engine, recording_id)
+    asyncio.run(_reset(engine, recording_id))
+
+    async def start() -> int:
+        async_engine = create_async_engine(
+            engine.url.set(drivername="postgresql+asyncpg"),
+            connect_args={"server_settings": {"search_path": SCHEMA}},
+        )
+        try:
+            async with AsyncSession(async_engine, expire_on_commit=False) as session:
+                recording = await session.get(Recording, recording_id)
+                owner = User(
+                    id=recording.user_id, username="fence-owner", hashed_password="x"
+                )
+                with pytest.raises(HTTPException) as refused:
+                    if route == "notes":
+                        # MCP's regenerate_notes calls this same route.
+                        await routes_notes.generate_notes(
+                            recording.public_id, None, db=session, current_user=owner
+                        )
+                    else:
+                        await routes_actions.infer_speakers_for_recording(
+                            recording.public_id, db=session, current_user=owner
+                        )
+                return refused.value.status_code
+        finally:
+            await async_engine.dispose()
+
+    # The retained transcript has lines, which alone would let either start.
+    assert asyncio.run(start()) == 409
+    with Session(engine) as session:
+        recording = session.get(Recording, recording_id)
+        transcript = _load_transcript(session, recording_id)
+        assert recording.status == RecordingStatus.QUEUED
+        assert transcript.notes_status == "completed"

@@ -25,6 +25,20 @@ def reprocess_publication_pending(transcript: Transcript | None) -> bool:
     ) is True
 
 
+def reprocess_replacement_running(transcript: Transcript | None) -> bool:
+    """A retained publication whose replacement has neither published nor failed."""
+    return (
+        transcript is not None
+        and transcript.transcript_status == "pending"
+        and reprocess_publication_pending(transcript)
+    )
+
+
+REPROCESS_RUNNING_MESSAGE = (
+    "This recording is being reprocessed. Try again once processing has finished."
+)
+
+
 def reprocess_publication_complete(transcript: Transcript | None) -> bool:
     """A replacement remains readable during optional post-publication work."""
     return (
@@ -71,11 +85,7 @@ def restore_retained_publication(session: Session, recording_id: int) -> None:
     transcript = session.exec(
         select(Transcript).where(Transcript.recording_id == recording_id)
     ).first()
-    if (
-        transcript is not None
-        and transcript.transcript_status == "pending"
-        and reprocess_publication_pending(transcript)
-    ):
+    if transcript is not None and reprocess_replacement_running(transcript):
         clear_reprocess_pending(transcript)
         transcript.transcript_status = "completed"
         session.add(transcript)
