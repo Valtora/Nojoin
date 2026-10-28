@@ -568,12 +568,11 @@ export class CaptureController {
    *
    * Discovery updates badges without opening a dialog. Navigation and explicit
    * actions can offer a capture unless another tab of this browser holds it.
-   * A capture still marked as
-   * uploading counts once the server judges it stalled:
-   * its tab closed without the pause arriving, because it was signed out or
-   * offline at the time (issue #519).
-   * One this tab runs, or any tab of this browser holds, is live however quiet
-   * it looks, since that tab may only be waiting for a sign-in or a connection.
+   * A capture still marked as uploading counts once the server judges it
+   * stalled: its tab closed without the pause arriving, because it was signed
+   * out or offline at the time (issue #519). One this tab runs, or any tab of
+   * this browser holds, is live however quiet it looks, since that tab may only
+   * be waiting for a sign-in or a connection.
    */
   refreshPausedRecording = async (options: RecoveryRequest = {}) => {
     const explicit = Boolean(options.onDemand || options.recordingId);
