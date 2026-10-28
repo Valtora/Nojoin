@@ -17,7 +17,6 @@ from backend.processing.live_audio_buffer import (
     _analyze_live_source_channels,
     _build_live_source_channel_evidence,
 )
-from backend.processing.live_diarization.step import live_speaker_labels_device
 from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
 from backend.processing.live_settling_audio import (
     chunk_has_speech,
@@ -141,6 +140,10 @@ def _disable_cpu_episode(step: SettlingStep) -> None:
 
 
 def _speaker_evidence(step: SettlingStep) -> Any:
+    # Imported here: the step pulls in SciPy, and the API imports this module
+    # (through segment_transcode) without the worker's ML stack.
+    from backend.processing.live_diarization.step import live_speaker_labels_device
+
     if live_speaker_labels_device() is None:
         return None
     from backend.processing.live_diarization.evidence import available_speaker_evidence
@@ -220,6 +223,7 @@ def _publish_step(
     evidence: Any,
 ) -> SettlingStepResult:
     from backend.core.db import get_sync_session
+    from backend.processing.live_diarization.step import live_speaker_labels_device
     from backend.utils.canonical_pipeline.live_settling import (
         SettlingPass,
         expire_live_settling,

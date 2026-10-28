@@ -13,6 +13,7 @@ from sqlmodel import Session
 from backend.core import db
 from backend.processing import live_settling as worker
 from backend.processing import transcribe
+from backend.processing.live_diarization import step as label_step
 from backend.tests.test_live_settling_publication import (
     _active,
     _request,
@@ -67,7 +68,7 @@ def silence_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(
         transcribe, "loaded_transcription_device", lambda _config: "cuda"
     )
-    monkeypatch.setattr(worker, "live_speaker_labels_device", lambda: None)
+    monkeypatch.setattr(label_step, "live_speaker_labels_device", lambda: None)
     spans: list[tuple[float, float]] = []
     evidence = SimpleNamespace(speech_spans=lambda: spans, decide=None)
     monkeypatch.setattr(worker, "_speaker_evidence", lambda _step: evidence)

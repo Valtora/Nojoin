@@ -1,5 +1,6 @@
 """Fenced rolling word publication without a growing compatibility JSON write."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -147,6 +148,17 @@ def _speaker_enabled() -> bool:
     return live_speaker_labels_device() is not None
 
 
+def _stored_speaker_enabled(state: Mapping[str, object]) -> bool:
+    """The flag this episode's first publication stored, else the worker's answer.
+
+    Asked only when nothing is stored: the API closes lines too, and it has no
+    label engine or SciPy to import. Each accepted publication stores the flag
+    before ``last_decode_id``, which the API's close requires.
+    """
+    stored = state.get("speaker_enabled")
+    return _speaker_enabled() if stored is None else bool(stored)
+
+
 def _signature(word: dict[str, Any]) -> str:
     return word_signature(str(word.get("word") or ""))
 
@@ -224,7 +236,7 @@ def _project(
     }
     words = [word for word in words if word.get("id") not in immutable_ids]
     state = transcript.settling_state or {}
-    speaker_enabled = state.get("speaker_enabled", _speaker_enabled())
+    speaker_enabled = _stored_speaker_enabled(state)
     decisions = word_decisions(
         words,
         mutable,
@@ -361,7 +373,7 @@ def publish_live_settling(
     )
     state = {
         **state,
-        "speaker_enabled": state.get("speaker_enabled", _speaker_enabled()),
+        "speaker_enabled": _stored_speaker_enabled(state),
         "trailing_silence_start_ms": request.silence_start_ms,
         "silence_audio_end_ms": request.audio_end_ms,
         **(

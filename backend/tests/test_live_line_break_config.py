@@ -9,6 +9,7 @@ import pytest
 from backend.core import db
 from backend.processing import live_settling as worker
 from backend.processing import live_transcribe
+from backend.processing.live_diarization import step as label_step
 from backend.processing.processing_tuning import LINE_BREAK_PAUSE_KEY
 from backend.tests.test_live_settling_worker import _step
 from backend.tests.test_live_settling_worker import rolling_lane as rolling_lane
@@ -73,7 +74,7 @@ def test_worker_passes_each_resolved_pause_through_snapshot_to_publication(
         worker, "load_capture_publication", lambda *_args: (transcript, None)
     )
     monkeypatch.setattr(worker, "publication_is_current", lambda *_args: True)
-    monkeypatch.setattr(worker, "live_speaker_labels_device", lambda: None)
+    monkeypatch.setattr(label_step, "live_speaker_labels_device", lambda: None)
     monkeypatch.setattr(worker, "_publish_step", rolling_lane.publisher)
     captured: list[tuple[str, publication.SettlingPass]] = []
 
