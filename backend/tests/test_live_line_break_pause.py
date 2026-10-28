@@ -378,7 +378,7 @@ def test_speaker_cap_and_retained_barriers_still_break_lines() -> None:
     assert [part.speaker for part in changed] == ["A", "B"]
     barrier = partition_words(words[:2], same[:2], barriers=[500])
     retained = partition_words(
-        words[:2], same[:2], boundaries=LineBoundaries(closed_ends={"0": 500})
+        words[:2], same[:2], boundaries=LineBoundaries(closed_at_ms=[500])
     )
     assert len(barrier) == len(retained) == 2
     assert barrier[0].boundary_locked and retained[0].boundary_locked
