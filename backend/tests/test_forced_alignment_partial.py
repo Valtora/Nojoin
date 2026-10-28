@@ -1,4 +1,4 @@
-"""Policy C retains real AMI-derived predictions without repairing timestamps."""
+"""Per-word retention keeps AMI-derived predictions without repairing timestamps."""
 
 from types import SimpleNamespace
 from typing import Any

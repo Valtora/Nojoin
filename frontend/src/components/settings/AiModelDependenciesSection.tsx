@@ -65,7 +65,7 @@ const DEPENDENCY_MODELS: DependencyModel[] = [
   {
     id: "forced_aligner",
     label: "Word timing aligner",
-    desc: "Qwen's forced aligner supplies word timings for Canary and other speech engines that need them. Runs on CPU when GPU memory is limited.",
+    desc: "Qwen's forced aligner supplies word timings for Canary and other speech engines that need them. Runs on the CPU.",
     target: "forced_aligner",
   },
 ];

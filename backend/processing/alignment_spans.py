@@ -61,7 +61,7 @@ def _timing(
 def retained_timings(
     entries: list[dict[str, Any]], duration_s: float
 ) -> list[tuple[float, float] | None]:
-    """Keep policy C's observed spans in text order, leaving other words untimed.
+    """Keep each observed span that stays in text order, leaving other words untimed.
 
     Both boundaries must be nondecreasing relative to the last kept word.
     Rejected predictions never become anchors for subsequent words.
