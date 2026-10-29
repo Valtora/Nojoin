@@ -9,9 +9,11 @@ from typing import Callable
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from backend.services.model_preparation import request_pinned_preparation
 from backend.utils.config_manager import config_manager
 from backend.utils.download_progress import (
     clear_download_progress,
+    get_download_progress,
     set_download_progress,
 )
 from backend.utils.forced_aligner_model_utils import (
@@ -405,7 +407,6 @@ _PREPARATION_STAGE_SUBJECTS = {
     "segmentation": "the speaker models",
     "parakeet": "the Parakeet transcription model",
     "canary": "the Canary transcription model",
-    "forced_aligner": "the word timing aligner",
 }
 
 
@@ -419,6 +420,28 @@ def preparation_failure_message(stage: str | None) -> str:
         "internet and has free disk space, then retry from Model downloads "
         "under Advanced in Settings > AI providers."
     )
+
+
+def _hand_off_aligner() -> bool:
+    """Queue the aligner on the CPU lane; whether it is now queued or running.
+
+    The aligner only downloads and hashes, so it goes to the CPU lane rather
+    than holding live ASR's GPU queue behind 1.8 GB. One already pending, from
+    first use say, is shown as queued instead of this run's completion, unless
+    its own task is already reporting.
+    """
+    if request_pinned_preparation("forced_aligner", recording_id=None):
+        return True
+    if aligner_control.pending_task() is None:
+        return False
+    if (get_download_progress() or {}).get("stage") != "forced_aligner":
+        set_download_progress(
+            0,
+            "Model preparation queued...",
+            status="downloading",
+            stage="forced_aligner",
+        )
+    return True
 
 
 def download_models(
@@ -527,23 +550,12 @@ def download_models(
             )
             _prepare_onnx_asr_model(onnx_model_id)
 
-        if not engine_has_native_word_timestamps(transcription_backend):
+        if engine_has_native_word_timestamps(transcription_backend) or not (
+            _hand_off_aligner()
+        ):
             report(
-                "Preparing forced aligner word-timing assets...",
-                90,
-                stage="forced_aligner",
-                status="downloading",
+                "Model preparation complete.", 100, stage="complete", status="complete"
             )
-            prepare_forced_aligner_model(
-                progress=lambda message, percent: report(
-                    message,
-                    90 + percent // 10,
-                    stage="forced_aligner",
-                    status="downloading",
-                )
-            )
-
-        report("Model preparation complete.", 100, stage="complete", status="complete")
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
         set_download_progress(

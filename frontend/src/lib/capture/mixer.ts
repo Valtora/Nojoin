@@ -17,6 +17,15 @@ export interface CaptureMixer {
   applySettings: (settings: Pick<CreateCaptureMixerOptions, "systemGain" | "microphoneGain">) => void;
   getSystemGain: () => number;
   getMicrophoneGain: () => number;
+  /** Disconnects only the microphone input, preserving the rest of the capture graph. */
+  detachMicrophone: () => void;
+  /** Attaches a fresh microphone to the existing analyser, gain and PCM paths. */
+  replaceMicrophone: (stream: MediaStream) => void;
+  /**
+   * Asks a suspended or interrupted context to render again, waiting at most
+   * `timeoutMs`. True once the context is running.
+   */
+  resumeContext: (timeoutMs: number) => Promise<boolean>;
   dispose: () => Promise<void>;
 }
 
@@ -160,7 +169,7 @@ export const createCaptureMixer = async (
   if (!hasDisplayAudio && "gain" in systemSource) {
     systemSource.gain.value = 0;
   }
-  const microphoneSource = context.createMediaStreamSource(
+  let microphoneSource: MediaStreamAudioSourceNode | null = context.createMediaStreamSource(
     options.microphoneStream,
   );
 
@@ -232,6 +241,32 @@ export const createCaptureMixer = async (
   const microphoneSamples = new Uint8Array(microphoneAnalyser.fftSize);
   const mixedSamples = new Uint8Array(mixedAnalyser.fftSize);
 
+  const detachMicrophone = () => {
+    microphoneSource?.disconnect();
+    microphoneSource = null;
+  };
+
+  const resumeContext = async (timeoutMs: number) => {
+    if (context.state !== "running") {
+      // An interrupted context (iOS during a call) can leave resume() pending.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        context.resume().catch(() => {}),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+      ]);
+      clearTimeout(timer);
+    }
+    return context.state === "running";
+  };
+
+  const replaceMicrophone = (stream: MediaStream) => {
+    const replacement = context.createMediaStreamSource(stream);
+    replacement.connect(microphoneAnalyser);
+    replacement.connect(microphoneGainNode);
+    detachMicrophone();
+    microphoneSource = replacement;
+  };
+
   const updateAutomaticGain = () => {
     const systemMetrics = readAnalyserMetrics(systemAnalyser, systemSamples);
     const microphoneMetrics = readAnalyserMetrics(
@@ -291,6 +326,9 @@ export const createCaptureMixer = async (
       clampGain(
         microphoneGainNode.gain.value * microphoneAutomaticGainNode.gain.value,
       ),
+    detachMicrophone,
+    replaceMicrophone,
+    resumeContext,
     dispose: async () => {
       pcmSource.close();
       tapNode.disconnect();
@@ -303,7 +341,7 @@ export const createCaptureMixer = async (
       microphoneAutomaticGainNode.disconnect();
       sourceMerger.disconnect();
       systemSource.disconnect();
-      microphoneSource.disconnect();
+      detachMicrophone();
       await context.close();
     },
   };

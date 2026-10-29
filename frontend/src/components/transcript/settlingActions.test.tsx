@@ -20,6 +20,7 @@ const handlers = (): LiveLineHandlers => ({
   split: vi.fn().mockResolvedValue(true),
 });
 const open = () => fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
+const WAITING = "Corrections open when this line locks, usually within half a minute.";
 
 describe("settling line actions", () => {
   it("keeps typed notes available beneath an unlocked active line", () => {
@@ -39,14 +40,16 @@ describe("settling line actions", () => {
     });
     const initial = applyTranscriptDelta({ currentState: null, recordingId: "r1", fallbackSegments: [], delta: delta(false), mode: "full" });
     const view = render(<LiveTranscriptPanel segments={initial.segments} hasLoaded onNoteOnLine={vi.fn()} lineHandlers={actions} />);
-    expect(screen.getByTestId("live-transcript-line")).toHaveAccessibleDescription("This line is still settling.");
+    expect(screen.getByTestId("live-transcript-line")).toHaveAccessibleDescription(WAITING);
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     open();
     const items = screen.getAllByRole("menuitem");
-    expect(items.map((item) => item.textContent?.replace("This line is still settling.", ""))).toEqual([
-      "Edit text", "Change speaker", "Split line",
-    ]);
+    // Named by their labels alone, with the reason said once for the menu.
+    expect(items.map((item) => item.textContent)).toEqual(["Edit text", "Change speaker", "Split line"]);
+    expect(within(screen.getByRole("menu").parentElement!).getAllByText(WAITING)).toHaveLength(1);
     for (const item of items) {
+      expect(item).toHaveAccessibleName(item.textContent!);
+      expect(item).toHaveAccessibleDescription(WAITING);
       expect(item).toHaveAttribute("aria-disabled", "true");
       fireEvent.click(item);
     }
@@ -90,6 +93,18 @@ describe("settling line actions", () => {
     expect(screen.getByRole("textbox")).toHaveValue("My correction");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("closes without a request when Save leaves the text as it opened", () => {
+    const actions = handlers();
+    render(<LiveTranscriptPanel segments={[line(true)]} hasLoaded onNoteOnLine={vi.fn()} lineHandlers={actions} />);
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Line text" }), { target: { value: "Alpha beta!" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Line text" }), { target: { value: "Alpha beta." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(actions.editText).not.toHaveBeenCalled();
   });
 
   it("sends text against the revision the editor opened, despite a newer poll", async () => {

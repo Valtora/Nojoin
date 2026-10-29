@@ -143,10 +143,14 @@ export class BrowserRecorder {
 
   resume() {
     if (this.stateValue !== "paused") {
-      return;
+      return Promise.resolve();
     }
-    void this.enqueueOperation(async () => {
+    return this.enqueueOperation(async () => {
       if (this.stateValue === "paused") {
+        // The tap keeps rendering during pause. Drop its partial block while
+        // still paused; PCM precedes the acknowledgement on the same port. A
+        // suspended context renders nothing, so a timeout has nothing to drop.
+        await this.source.flush();
         this.beginRecording();
       }
     });
@@ -156,6 +160,7 @@ export class BrowserRecorder {
     const emitTail = options.emitTail !== false;
     this.stopStallWatchdog();
     return this.enqueueOperation(async () => {
+      this.stopStallWatchdog();
       if (this.stateValue === "recording") {
         await this.source.flush();
       }
