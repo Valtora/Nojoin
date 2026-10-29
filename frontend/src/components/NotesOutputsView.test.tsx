@@ -97,6 +97,19 @@ describe("notes outputs", () => {
     expect(screen.queryByRole("checkbox", { name: "Kafka: event streaming" })).not.toBeInTheDocument();
   });
 
+  it("offers glossary suggestions only while the meeting has none", async () => {
+    const glossary = { ...extra, kind: "glossary", name: "Glossary", notes_template_id: null, notes_template_sections: null };
+    api.listNotesOutputs.mockResolvedValue([{ ...glossary, notes: "ARR: annual recurring revenue" }]);
+    render(<NotesOutputsView {...props()} />);
+    await screen.findByRole("tab", { name: "Glossary" });
+    fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
+    // Extract more on the existing set is how a meeting gets new terms.
+    const used = await screen.findByRole("button", { name: "Glossary suggestionsAlready in this meeting" });
+    expect(used).toBeDisabled();
+    fireEvent.click(used);
+    expect(api.generateNotes).not.toHaveBeenCalled();
+  });
+
   it("discovers automatically created outputs while primary notes generate", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     // As the worker queues it: named "Glossary", generating, no lines yet.

@@ -241,3 +241,20 @@ async def test_glossary_output_rejects_prose_update_without_changing_lines(
         assert preserved is not None
         assert preserved.notes == original
         assert preserved.notes_status == "completed"
+
+
+@pytest.mark.usefixtures("meeting")
+async def test_a_meeting_has_one_glossary_set(
+    reader_client: AsyncClient,
+    stub_celery_dispatch: list[tuple[str, Any, Any]],
+) -> None:
+    output_id = await _create_glossary(reader_client)
+    dispatched = len(stub_celery_dispatch)
+    response = await reader_client.post(
+        f"{PATH}/generate", json={"kind": "glossary", "create_output": True}
+    )
+    assert response.status_code == 409, response.text
+    assert "already has glossary suggestions" in response.json()["detail"]
+    assert len(stub_celery_dispatch) == dispatched
+    outputs = (await reader_client.get(f"{PATH}/outputs")).json()
+    assert [output["id"] for output in outputs] == [output_id]

@@ -119,7 +119,8 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
     {props.notes && <NotesTemplatePicker label="Generate another set" disabled={generating}
       isTemplateUsed={isTemplateUsed}
       onSelect={(templateId) => void generate(templateId, true)}
-      onSelectGlossary={() => void generate(null, true, "glossary")} />}
+      onSelectGlossary={() => void generate(null, true, "glossary")}
+      glossaryUsed={outputs.some((output) => output.kind === "glossary")} />}
     {selected && <Button size="sm" variant="ghost" disabled={generating}
       onClick={() => setConfirmDelete(true)}>Delete set</Button>}
   </>;

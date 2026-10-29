@@ -132,6 +132,18 @@ async def _generation_output(
             )
         return output
     if request.kind == "glossary":
+        existing = await db.execute(
+            select(NotesOutput.id).where(
+                NotesOutput.recording_id == transcript.recording_id,
+                NotesOutput.kind == "glossary",
+            )
+        )
+        if existing.first() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This meeting already has glossary suggestions; "
+                "use Extract more or regenerate them instead.",
+            )
         return NotesOutput(
             recording_id=transcript.recording_id, kind="glossary", name="Glossary"
         )

@@ -13,6 +13,8 @@ interface NotesTemplatePickerProps {
   onSelect: (notesTemplateId: number | null) => void;
   /** Built-in output available only when adding another set. */
   onSelectGlossary?: () => void;
+  /** The meeting already has glossary suggestions: shown but disabled. */
+  glossaryUsed?: boolean;
   label?: string;
   /**
    * Choosing a new set: the built-in entry is left out, so a template is
@@ -32,6 +34,7 @@ export default function NotesTemplatePicker({
   activeTemplateId = null,
   onSelect,
   onSelectGlossary,
+  glossaryUsed = false,
   label,
   isTemplateUsed,
 }: NotesTemplatePickerProps) {
@@ -105,10 +108,13 @@ export default function NotesTemplatePicker({
           {onSelectGlossary && <ButtonBase
             type="button"
             onClick={() => { setOpen(false); onSelectGlossary(); }}
-            className="w-full px-3 py-2 text-left text-sm text-contrast-muted hover:bg-surface-inset"
+            disabled={glossaryUsed}
+            className="w-full px-3 py-2 text-left text-sm text-contrast-muted hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
           >
             <span className="block">Glossary suggestions</span>
-            <span className="block text-xs contrast-helper">Terms to add to your personal glossary.</span>
+            <span className="block text-xs contrast-helper">
+              {glossaryUsed ? "Already in this meeting" : "Terms to add to your personal glossary."}
+            </span>
           </ButtonBase>}
           {!isTemplateUsed && <ButtonBase
             type="button"
