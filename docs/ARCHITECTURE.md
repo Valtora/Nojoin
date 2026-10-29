@@ -295,6 +295,16 @@ Consolidation never drops text. A segment under 0.1 s folds into a neighbour at 
 
 Invariant: float rounding decides no threshold on a word time, or on a gap or duration built from word times. Parakeet times sit on onnx-asr's 80 ms grid (or the cap past it) and Whisper's on hundredths of a second, so a gap can equal a threshold exactly. Every such comparison, in the mapper, the merge, flip smoothing, consolidation, the fold and the live lane's context trim, goes through [backend/utils/word_times.py](../backend/utils/word_times.py), which treats a value within 1 µs of its threshold as equal to it. Speaker-overlap ratios are not word-time thresholds and compare as they are.
 
+### Prompt Catalogue And Overrides
+
+Shipped blocks in [backend/prompts/](../backend/prompts/) use stable IDs and single-pass `${name}` substitution. The registry owns each block's exact placeholders and parser-required literals (JSON keys, tags, enum values and copied-example sentinels); the same validator checks bundled text, saved edits and overrides loaded at generation. Replacement values are opaque and never interpreted as templates.
+
+`NOJOIN_DEVELOPER_MODE=true` enables override resolution in both API and workers. Builders resolve blocks at use, including shared fragments and default notes sections. Each render checks the config manager's file identity and reloads changed configuration, so a saved override applies on the next call without restarting. With the gate off, generation ignores retained overrides entirely.
+
+Overrides are installation-wide `prompt_overrides` entries in `data/config.json`, shaped as `{id: {text, base_sha256}}`. The hash covers the shipped block's raw UTF-8 text. Saves merge into the existing config through its atomic writer, and configuration backup/export includes the entries. Ordinary settings responses exclude them. Dedicated `/settings/prompts` catalogue/save/restore endpoints enforce both the environment gate (404 when off) and the existing administrator dependency (403 for other accounts); `/system/capabilities` reports the gate to authenticated clients.
+
+Saving validates placeholders and required literals, returning a specific 422 on failure. At generation an invalid stored override logs one diagnostic line and falls back to the shipped block. The editor retains that text with **Default used**. A valid override whose `base_sha256` differs from the current block remains active, with **Default changed** and the current default alongside it. Saving again adopts the current base hash; restoring deletes only that override. Neither an update nor disabling developer mode discards edits automatically.
+
 ### Processing Tuning
 
 Eight values in these stages can be overridden. Keys, defaults and bounds live in [backend/processing/processing_tuning.py](../backend/processing/processing_tuning.py), which imports nothing heavy so the API validates against the same table, and the processing modules take their defaults from it. [frontend/src/lib/processingTuning.json](../frontend/src/lib/processingTuning.json) mirrors it.

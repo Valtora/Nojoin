@@ -27,20 +27,6 @@ from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
-# Static prompt text. These are plain strings, never format templates: the JSON
-# schema below can therefore be written with real braces instead of doubled ones,
-# and nothing interpolated into the prompt needs escaping. See
-# backend.utils.prompt_blocks for why.
-AUTOMATIC_MEETING_INTELLIGENCE_INTRO = render_prompt("notes.intelligence_intro")
-
-AUTOMATIC_MEETING_INTELLIGENCE_CRITICAL_RULES = render_prompt(
-    "notes.intelligence_rules"
-)
-
-# The ``\\n`` sequences are literal backslash-n in the rendered prompt: the schema
-# is showing the model how to escape newlines inside a JSON string.
-AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA = render_prompt("notes.intelligence_schema")
-
 
 class MeetingIntelligenceContractError(ValueError):
     """Raised when a unified meeting-intelligence payload breaks the contract."""
@@ -266,10 +252,10 @@ def build_automatic_meeting_intelligence_prompt(
 
     body = render_prompt_blocks(
         [
-            (None, AUTOMATIC_MEETING_INTELLIGENCE_INTRO),
+            (None, render_prompt("notes.intelligence_intro")),
             (
                 render_prompt("shared.heading_critical_rules"),
-                AUTOMATIC_MEETING_INTELLIGENCE_CRITICAL_RULES,
+                render_prompt("notes.intelligence_rules"),
             ),
             (
                 render_prompt("shared.heading_title_style"),
@@ -308,7 +294,8 @@ def build_automatic_meeting_intelligence_prompt(
             ),
             (
                 render_prompt("shared.heading_required_json_schema"),
-                AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA,
+                # Literal backslash-n sequences demonstrate JSON string escaping.
+                render_prompt("notes.intelligence_schema"),
             ),
             (
                 render_prompt("shared.heading_notes_markdown_requirements"),

@@ -16,19 +16,6 @@ from typing import Any, Optional, Union
 
 from backend.prompts import render_prompt
 
-NO_TRANSCRIPT_SECTION = render_prompt("chat.no_transcript")
-
-EXCERPTS_PREAMBLE = render_prompt("chat.excerpts_preamble")
-
-NO_EXCERPTS_PREAMBLE = render_prompt("chat.no_excerpts_preamble")
-
-# What a chat reply can do. Each reply is one request: nothing runs after it,
-# so a model left to guess offers to monitor the meeting or send reminders.
-# Only a request that passes the notes tool may say it can change the notes.
-CAPABILITIES_WITH_NOTES_TOOL = render_prompt("chat.capabilities_with_notes_tool")
-
-CAPABILITIES_WITHOUT_TOOLS = render_prompt("chat.capabilities_without_tools")
-
 
 @dataclass(frozen=True)
 class TranscriptExcerpts:
@@ -73,17 +60,18 @@ def _transcript_section(diarized_transcript: ChatTranscript) -> str:
     if isinstance(diarized_transcript, TranscriptExcerpts):
         if not diarized_transcript.text:
             return render_prompt(
-                "chat.no_excerpt_transcript", preamble=NO_EXCERPTS_PREAMBLE
+                "chat.no_excerpt_transcript",
+                preamble=render_prompt("chat.no_excerpts_preamble"),
             )
         return render_prompt(
             "chat.excerpt_transcript",
-            preamble=EXCERPTS_PREAMBLE,
+            preamble=render_prompt("chat.excerpts_preamble"),
             transcript=diarized_transcript.text,
         )
     # A missing transcript is stated as such, never passed off as transcript
     # text, so the model cannot quote a status message as something said.
     if not diarized_transcript:
-        return NO_TRANSCRIPT_SECTION
+        return render_prompt("chat.no_transcript")
     return render_prompt("chat.full_transcript", transcript=diarized_transcript)
 
 
@@ -111,7 +99,9 @@ def build_chat_context(
     """
     sources = _sources(diarized_transcript)
     capabilities = (
-        CAPABILITIES_WITH_NOTES_TOOL if notes_tool else CAPABILITIES_WITHOUT_TOOLS
+        render_prompt("chat.capabilities_with_notes_tool")
+        if notes_tool
+        else render_prompt("chat.capabilities_without_tools")
     )
     return render_prompt(
         "chat.context",

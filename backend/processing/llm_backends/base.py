@@ -497,18 +497,6 @@ class LLMBackend:
             )
         return self.get_mapped_transcript_for_llm(recording_id)
 
-    # Static prompt text. Plain strings, never format templates: JSON schema
-    # examples use real braces, and interpolated values need no escaping.
-    SPEAKER_SUGGESTION_INTRO = render_prompt("speakers.suggestion_intro")
-
-    SPEAKER_SUGGESTION_CRITICAL_RULES = render_prompt("speakers.suggestion_rules")
-
-    SPEAKER_SUGGESTION_JSON_SCHEMA = render_prompt("speakers.suggestion_schema")
-
-    NOTES_INTRO = render_prompt("notes.intro")
-
-    NOTES_CLOSING = render_prompt("notes.closing")
-
     @staticmethod
     def parse_notes(response_text: str) -> str:
         # Notes begin at the '# Meeting Notes' heading; anything before it is the
@@ -571,7 +559,7 @@ class LLMBackend:
         context = notes_context or NotesPromptContext()
         body = render_prompt_blocks(
             [
-                (None, LLMBackend.NOTES_INTRO),
+                (None, render_prompt("notes.intro")),
                 (
                     render_prompt("shared.heading_speaker_mapping"),
                     LLMBackend.mapping_to_markdown_table(speaker_mapping),
@@ -608,7 +596,7 @@ class LLMBackend:
                     build_notes_body_spec(context.notes_sections),
                 ),
                 (render_prompt("shared.heading_transcript_to_analyze"), transcript),
-                (None, LLMBackend.NOTES_CLOSING),
+                (None, render_prompt("notes.closing")),
             ]
         )
         return body
@@ -626,10 +614,10 @@ class LLMBackend:
 
         body = render_prompt_blocks(
             [
-                (None, LLMBackend.SPEAKER_SUGGESTION_INTRO),
+                (None, render_prompt("speakers.suggestion_intro")),
                 (
                     render_prompt("shared.heading_critical_rules"),
-                    LLMBackend.SPEAKER_SUGGESTION_CRITICAL_RULES,
+                    render_prompt("speakers.suggestion_rules"),
                 ),
                 (
                     render_prompt("shared.heading_eligible_diarization_labels"),
@@ -645,7 +633,7 @@ class LLMBackend:
                 ),
                 (
                     render_prompt("shared.heading_required_json_schema"),
-                    LLMBackend.SPEAKER_SUGGESTION_JSON_SCHEMA,
+                    render_prompt("speakers.suggestion_schema"),
                 ),
                 (render_prompt("shared.heading_transcript"), transcript),
             ]

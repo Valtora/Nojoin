@@ -50,9 +50,10 @@ from backend.core.security import (
     validate_password_policy,
 )
 from backend.core.task_dispatch import dispatch_task
-from backend.models.system_public import ModelStatusInfo
+from backend.models.system_public import ModelStatusInfo, SystemCapabilities
 from backend.models.user import User
 from backend.preload_models import check_model_status
+from backend.prompts import developer_mode_enabled
 from backend.seed_demo import seed_demo_data
 from backend.services.model_preparation import enqueue_model_preparation
 from backend.services.model_status import add_nemotron_preparation_status
@@ -400,6 +401,13 @@ async def get_admin_health(
     Return admin-only operational readiness state for the processing pipeline.
     """
     return await get_admin_health_status(db)
+
+
+@router.get("/capabilities", response_model=SystemCapabilities)
+async def get_system_capabilities(
+    current_user: User = Depends(get_current_user),
+) -> SystemCapabilities:
+    return SystemCapabilities(developer_mode=developer_mode_enabled())
 
 
 @router.get("/status")

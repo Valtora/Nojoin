@@ -681,6 +681,7 @@ x-shared-app-environment: &shared-app-environment
   CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0
   HF_TOKEN: ${HF_TOKEN:-}
   DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
+  NOJOIN_DEVELOPER_MODE: ${NOJOIN_DEVELOPER_MODE:-false}
   # Shared, not api-only: the worker lanes resolve the public origin too, for
   # calendar webhook URLs and the telemetry local-origin flag.
   WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}

@@ -16,7 +16,15 @@ def _write_catalogue(directory: Path) -> None:
     """Write valid synthetic blocks without copying any shipped prose."""
     files: dict[str, list[str]] = {}
     for spec in REGISTRY.values():
-        text = " ".join(f"${{{name}}}" for name in spec.placeholders) or "Valid block"
+        text = (
+            " ".join(
+                [
+                    *(f"${{{name}}}" for name in spec.placeholders),
+                    *spec.required_literals,
+                ]
+            )
+            or "Valid block"
+        )
         files.setdefault(spec.file, []).append(f"{spec.block} = {json.dumps(text)}")
     for name, lines in files.items():
         (directory / name).write_text("\n".join(lines), encoding="utf-8")

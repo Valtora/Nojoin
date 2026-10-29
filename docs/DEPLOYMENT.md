@@ -270,6 +270,12 @@ Put each comment on a line of its own. Compose strips a comment that follows a v
 | `NOJOIN_TRUSTED_PROXIES` | `127.0.0.1,::1,nginx` | IPs, CIDR blocks or hostnames of proxies whose `X-Forwarded-For` is trusted when identifying clients for rate limiting. Add your edge proxy ([Trusted Proxy IPs](#trusted-proxy-ips-for-rate-limiting)). |
 | `NOJOIN_BIND_ADDRESS` | `127.0.0.1` | Host address the bundled proxy publishes ports `14141` and `14443` on ([Loopback Port Binding](#loopback-port-binding)). |
 
+### Developer Mode
+
+`NOJOIN_DEVELOPER_MODE=true` enables the administrator-only [prompt editor](USAGE.md#developer-prompts). It defaults to `false`. The shipped Compose file forwards it through the shared environment to the API and every worker lane; on an existing deployment, add `NOJOIN_DEVELOPER_MODE: ${NOJOIN_DEVELOPER_MODE:-false}` to `x-shared-app-environment` and recreate the API and workers after setting it in `.env`.
+
+Prompt overrides live in `data/config.json` and travel with configuration backups. Disabling the variable makes generation use shipped defaults and hides the editor, while keeping saved overrides. This is an environment gate: a value in `config.json` cannot enable it.
+
 ### Common Optional Values
 
 AI providers:

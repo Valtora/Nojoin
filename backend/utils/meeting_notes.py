@@ -29,17 +29,14 @@ PLACEHOLDER_SPEAKER_PATTERN = re.compile(
 # Nothing here is a format template: prompts are composed by concatenation (see
 # backend.utils.prompt_blocks), so braces, backslashes and Markdown in a
 # user-authored structure are just characters and need no escaping.
-NOTES_SPEC_PREAMBLE = render_prompt("notes.preamble")
-
 # The editable half. Bump NOTES_SECTIONS_VERSION whenever this changes so
 # templates forked from an older wording can tell the user their copy is stale.
 NOTES_SECTIONS_VERSION = 2
 
-DEFAULT_NOTES_SECTIONS = render_prompt("notes.default_sections")
 
-NOTES_TABLE_RULES = render_prompt("notes.table_rules")
-
-NOTES_FIDELITY_RULES = render_prompt("notes.fidelity_rules")
+def default_notes_sections() -> str:
+    """Resolve the built-in structure at the time it is used."""
+    return render_prompt("notes.default_sections")
 
 
 def build_notes_body_spec(notes_sections: Optional[str] = None) -> str:
@@ -49,20 +46,15 @@ def build_notes_body_spec(notes_sections: Optional[str] = None) -> str:
     caller that has no custom template renders a byte-identical prompt to the
     one used before this feature existed.
     """
-    sections = (notes_sections or "").strip() or DEFAULT_NOTES_SECTIONS
+    sections = (notes_sections or "").strip() or default_notes_sections()
     return "\n\n".join(
         [
-            NOTES_SPEC_PREAMBLE,
+            render_prompt("notes.preamble"),
             sections,
-            NOTES_TABLE_RULES,
-            NOTES_FIDELITY_RULES,
+            render_prompt("notes.table_rules"),
+            render_prompt("notes.fidelity_rules"),
         ]
     )
-
-
-# The assembled default, kept as a module constant because both default prompt
-# templates embed it and a test asserts they stay in step.
-NOTES_BODY_SPEC = build_notes_body_spec()
 
 
 _LEADING_TITLE_HEADING_PATTERN = re.compile(r"^\s*#\s+[^\n]*(?:\n+|\Z)")
@@ -225,24 +217,6 @@ class AttachedDocument:
     attached_to_note: bool = False
 
 
-# Document text is untrusted input. It is uploaded by the user, but its contents
-# are authored by whoever produced the file, and visual parsing widens that
-# further: a model transcribing a page will faithfully reproduce any instruction
-# printed on it. Both sinks matter -- notes generation writes the notes document,
-# and meeting chat holds an update_meeting_notes tool that can overwrite it.
-#
-# The delimiters plus an explicit data-not-instructions rule are the standard
-# mitigation. They are not airtight, but they raise the bar substantially and
-# they cost nothing.
-_DOCUMENT_SECTION_PREAMBLE = render_prompt("shared.documents_preamble")
-
-
-# Added only when the user switched a note's file on, so every prompt without
-# one stays as it was. The notes are Markdown text and a file is opened from
-# the app, so the model refers to it rather than embedding it.
-_NOTE_FILE_SECTION_NOTE = render_prompt("shared.note_file_explanation")
-
-
 def build_documents_prompt_section(
     documents: Optional[Sequence[AttachedDocument]],
 ) -> str:
@@ -255,9 +229,12 @@ def build_documents_prompt_section(
     if not usable:
         return render_prompt("shared.no_documents")
 
-    blocks: List[str] = [_DOCUMENT_SECTION_PREAMBLE]
+    # Documents are untrusted content, including instructions faithfully copied
+    # by vision transcription. Fence them as data for both notes and chat tools.
+    blocks: List[str] = [render_prompt("shared.documents_preamble")]
     if any(document.attached_to_note for document in usable):
-        blocks.append(_NOTE_FILE_SECTION_NOTE)
+        # A note's file is opened from the app, so refer to it rather than embed it.
+        blocks.append(render_prompt("shared.note_file_explanation"))
     for document in usable:
         note = render_prompt("shared.document_truncated") if document.truncated else ""
         origin = (

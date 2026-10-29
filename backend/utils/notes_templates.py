@@ -30,11 +30,11 @@ from sqlmodel import Session, col, select
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.prompts import render_prompt
 from backend.utils.meeting_notes import (
-    DEFAULT_NOTES_SECTIONS,
     NOTES_SECTIONS_VERSION,
     AttachedDocument,
     MeetingMetadata,
     NotesPromptContext,
+    default_notes_sections,
     format_duration_for_prompt,
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
@@ -92,12 +92,12 @@ class ResolvedNotesTemplate:
         ``##`` heading" rule only ever encoded the built-in structure's own first
         line, so it cannot be applied to a structure the user wrote.
         """
-        return self.sections.strip() != DEFAULT_NOTES_SECTIONS.strip()
+        return self.sections.strip() != default_notes_sections().strip()
 
 
 def builtin_notes_template() -> ResolvedNotesTemplate:
     return ResolvedNotesTemplate(
-        sections=DEFAULT_NOTES_SECTIONS,
+        sections=default_notes_sections(),
         name=BUILTIN_TEMPLATE_NAME,
         template_id=None,
     )

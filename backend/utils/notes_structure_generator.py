@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from backend.prompts import render_prompt
 from backend.utils.meeting_notes import (
-    DEFAULT_NOTES_SECTIONS,
+    default_notes_sections,
 )
 from backend.utils.notes_templates import (
     MAX_NOTES_SECTIONS_LENGTH,
@@ -55,7 +55,7 @@ def build_notes_structure_generator_prompt(brief: str) -> str:
             MAX_NOTES_TEMPLATE_DESCRIPTION_LENGTH
         ),
         max_notes_sections_length=str(MAX_NOTES_SECTIONS_LENGTH),
-        default_notes_sections=DEFAULT_NOTES_SECTIONS,
+        default_notes_sections=default_notes_sections(),
         brief=brief.strip(),
     )
 

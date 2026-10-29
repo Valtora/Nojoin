@@ -274,13 +274,6 @@ def render_timeline_for_llm(
     return "\n".join(lines)
 
 
-MEETING_WIDE_NOTES_PREAMBLE = render_prompt("shared.meeting_wide_notes_preamble")
-
-INLINE_NOTES_EXPLANATION = render_prompt("shared.inline_notes_explanation")
-
-NOTES_LIST_PREAMBLE = render_prompt("shared.notes_list_preamble")
-
-
 def _split_slots(
     placements: Sequence[NotePlacement[N]],
 ) -> tuple[list[NotePlacement[N]], list[NotePlacement[N]]]:
@@ -311,10 +304,10 @@ def render_user_notes_context(
     meeting_wide, body = _split_slots(placements)
     parts: list[str] = []
     if meeting_wide:
-        parts.append(MEETING_WIDE_NOTES_PREAMBLE)
+        parts.append(render_prompt("shared.meeting_wide_notes_preamble"))
         parts.extend(_quoted(placement.note.body) for placement in meeting_wide)
     if body:
-        parts.append(INLINE_NOTES_EXPLANATION)
+        parts.append(render_prompt("shared.inline_notes_explanation"))
     return "\n\n".join(parts) if parts else None
 
 
@@ -349,7 +342,7 @@ def render_notes_list_context(
     lines = render_notes_as_lines(placements)
     if not lines:
         return None
-    return NOTES_LIST_PREAMBLE + "\n\n" + "\n".join(lines)
+    return render_prompt("shared.notes_list_preamble") + "\n\n" + "\n".join(lines)
 
 
 def timeline_notes_signature(notes: Iterable[TimelineNoteLike]) -> str:

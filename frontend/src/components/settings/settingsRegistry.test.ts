@@ -57,7 +57,7 @@ function readDeclaredSettingsKeys(): string[] {
 const declaredKeys = readDeclaredSettingsKeys();
 
 /** The account created at first-run setup. */
-const SUPERUSER: SettingsViewer = { isAdmin: true, isSuperuser: true };
+const SUPERUSER: SettingsViewer = { isAdmin: true, isSuperuser: true, developerMode: true };
 /** Any other Owner or Admin. */
 const ADMIN: SettingsViewer = { isAdmin: true, isSuperuser: false };
 const USER: SettingsViewer = { isAdmin: false, isSuperuser: false };
@@ -66,6 +66,7 @@ const ACCESS_RANK: Record<SettingsAccess, number> = {
   all: 0,
   admin: 1,
   superuser: 2,
+  developer: 1,
 };
 
 const visibleCategoryIds = (viewer: SettingsViewer) =>

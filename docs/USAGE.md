@@ -8,6 +8,14 @@ For a first test recording, follow [Make Your First Recording](GETTING_STARTED.m
 
 Guided tours introduce the dashboard, the recordings list and the transcript view the first time you open each. **Settings > Help > Restart tours** shows them again, and **Create it again** brings back the Welcome to Nojoin demo meeting if you deleted it.
 
+## Developer Prompts
+
+When the operator enables [developer mode](DEPLOYMENT.md#developer-mode), administrators can open **Settings > Developer > Prompts**. Choose a prompt from the list grouped by feature. Its shipped default appears beside an override editor, with the placeholders and required literals that the prompt must retain. `${name}` placeholders substitute meeting data once; use `$$` for a literal dollar sign.
+
+**Save** applies the override across the installation on the next generation, without restarting. A refused save names the missing placeholder or required literal; correct the text and save again. **Restore default** removes that prompt's override. These actions do not regenerate existing notes or other results.
+
+The status is **Default**, **Overridden**, **Default changed**, or **Default used** for an invalid stored override. When an update changes the shipped default, compare it beside your retained override before saving or restoring it. An invalid override remains editable while generation uses the default. Turning developer mode off hides this section and uses shipped defaults, retaining edits for later.
+
 ## Dashboard
 
 The dashboard holds:

@@ -48,13 +48,11 @@ CLI_PATH = "/usr/bin/claude"
 DEFAULT_TIMEOUT_SECONDS = 300
 _REFRESH_SKEW_SECONDS = 120
 
+
 # A tight, non-agentic system prompt so the CLI behaves as a plain inference
 # endpoint rather than a coding agent. A plain string fully replaces the CLI's
 # large built-in preset (~23k tokens observed), conserving subscription quota and
 # keeping outputs on-contract.
-_SYSTEM_PROMPT = render_prompt("cli.system")
-
-
 @dataclass
 class _RateLimitReading:
     """Latest-known rate-limit status from a ``RateLimitEvent`` (any status).
@@ -530,7 +528,7 @@ class CliConversationManager:
             max_turns=1,
             allowed_tools=[],
             setting_sources=[],
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=render_prompt("cli.system"),
             cwd=self._user_cwd(user_id),
             include_partial_messages=include_partial_messages,
         )

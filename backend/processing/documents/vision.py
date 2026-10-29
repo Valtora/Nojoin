@@ -14,6 +14,7 @@ from .vision_input import fit_images_for_vision, vision_batches
 
 logger = logging.getLogger(__name__)
 
+
 # The rendered-page instruction. Two things in here are load-bearing.
 #
 # First, the extracted text layer is supplied alongside the image. The text
@@ -24,12 +25,9 @@ logger = logging.getLogger(__name__)
 # Second, the model is told to describe rather than interpret. A chart summarised
 # as "sales improved" is useless for later retrieval; the axis labels and the
 # values are what someone will actually ask about.
-_PAGE_PROMPT = render_prompt("vision.page")
-
-
 def build_page_prompt(page: PageSource) -> str:
     """The instruction for a rendered page, with its text layer when there is one."""
-    prompt = _PAGE_PROMPT
+    prompt = render_prompt("vision.page")
     text = (page.text or "").strip()
     if text:
         prompt += render_prompt("vision.text_layer", text=text)

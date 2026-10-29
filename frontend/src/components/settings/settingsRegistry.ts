@@ -122,6 +122,14 @@ export const UNSURFACED_SETTINGS_KEYS = [
 ] as const;
 
 export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
+  {
+    id: "developer-prompts",
+    label: "Prompts",
+    description: "Customise installation-wide AI prompt overrides and restore shipped defaults.",
+    category: "prompts",
+    access: "developer",
+    keywords: ["developer", "prompts", "AI", "override", "default"],
+  },
   // ---------------------------------------------------------------- profile
   {
     id: "profile-username",

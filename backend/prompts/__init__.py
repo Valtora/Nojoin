@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
+import os
 import tomllib
+from collections.abc import Mapping
 from functools import cache
 from pathlib import Path
 from string import Template
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 
 class PromptSpec(NamedTuple):
     file: str
     block: str
     placeholders: frozenset[str] = frozenset()
+    required_literals: tuple[str, ...] = ()
 
 
 # Each block's substitution contract is owned by code, independently of its prose.
@@ -141,13 +146,127 @@ _CONTRACTS = (
 )
 
 
+# Output keys, tags, enum values and copied-example sentinels consumed by parsers.
+_REQUIRED_LITERALS = {
+    "notes.default_sections": ("##",),
+    "notes.intelligence_rules": ("speaker_mapping", "notes_markdown", "title"),
+    "notes.intelligence_schema": ('"speaker_mapping"', '"title"', '"notes_markdown"'),
+    "speakers.no_unresolved": ("speaker_mapping",),
+    "speakers.unresolved_intro": ("speaker_mapping",),
+    "speakers.suggestion_rules": ("confidence", "0.0", "1.0"),
+    "speakers.suggestion_schema": (
+        '"suggestions"',
+        '"diarization_label"',
+        '"suggested_name"',
+        '"confidence"',
+        '"rationale"',
+        '"signals"',
+        '"evidence_spans"',
+        '"quote"',
+        '"reason"',
+        '"start_seconds"',
+        '"end_seconds"',
+    ),
+    "meeting_edge.intro": (
+        "summary",
+        "rolling_summary",
+        "questions",
+        "points",
+        "concepts",
+    ),
+    "meeting_edge.critical_rules": ("questions", "points"),
+    "meeting_edge.json_schema": (
+        '"summary"',
+        '"rolling_summary"',
+        '"questions"',
+        '"points"',
+        '"concepts"',
+        '"term"',
+        '"explanation"',
+    ),
+    "analytics.critical_rules": ("speaker",),
+    "analytics.topic_rules": ("led_by", '"contested"'),
+    "analytics.sentiment_rules": (
+        "tone",
+        '"positive"',
+        '"negative"',
+        '"neutral"',
+        '"mixed"',
+        "citations",
+    ),
+    "analytics.question_rules": ("answered_by", "answer_summary", "null"),
+    "analytics.decision_rules": (
+        "consensus",
+        '"stated"',
+        '"assumed"',
+        '"none"',
+        "agreed_by",
+        "objected_by",
+        "citations",
+    ),
+    "analytics.json_schema": (
+        '"topics"',
+        '"title"',
+        '"start_seconds"',
+        '"end_seconds"',
+        '"summary"',
+        '"led_by"',
+        '"leadership_basis"',
+        '"sentiment"',
+        '"speaker"',
+        '"tone"',
+        '"mixed"',
+        '"citations"',
+        '"quote"',
+        '"questions"',
+        '"question"',
+        '"asked_by"',
+        '"asked_at_seconds"',
+        '"answered_by"',
+        '"answered_at_seconds"',
+        '"answer_summary"',
+        '"decisions"',
+        '"decision"',
+        '"proposed_by"',
+        '"agreed_by"',
+        '"objected_by"',
+        '"consensus"',
+        '"stated"',
+    ),
+    "analytics.transcript_fence_instruction": ("<meeting_transcript>",),
+    "structure.instructions": ('"name"', '"description"', '"sections"'),
+    "long_meeting.part_speaker_rules": (
+        "<speaker_names>",
+        "</speaker_names>",
+        "Person name or role",
+    ),
+    "long_meeting.part_closing_speakers": ("<speaker_names>",),
+    "long_meeting.merge_title_rules": (
+        "<title>",
+        "</title>",
+    ),
+    "long_meeting.settle_speakers": (
+        "<speaker_names>",
+        "</speaker_names>",
+        "One of the names listed for SPEAKER_00",
+    ),
+    "long_meeting.merge_closing_title": ("<title>",),
+    "long_meeting.merge_closing_title_speakers": ("<title>", "<speaker_names>"),
+}
+
+
 def _build_registry() -> dict[str, PromptSpec]:
     registry: dict[str, PromptSpec] = {}
     declarations: dict[str, str] = {}
     for row, (feature, blocks, names) in enumerate(_CONTRACTS):
         for position, block in enumerate(blocks.split()):
             prompt_id = f"{feature}.{block}"
-            spec = PromptSpec(f"{feature}.toml", block, frozenset(names.split()))
+            spec = PromptSpec(
+                f"{feature}.toml",
+                block,
+                frozenset(names.split()),
+                _REQUIRED_LITERALS.get(prompt_id, ()),
+            )
             declaration = f"_CONTRACTS[{row}] block {position}: {spec!r}"
             if prompt_id in declarations:
                 raise ValueError(
@@ -177,6 +296,9 @@ def _validate_template(prompt_id: str, text: object, spec: PromptSpec) -> Templa
             f"{prompt_id}: placeholder mismatch; "
             f"expected {sorted(spec.placeholders)}, found {sorted(actual)}"
         )
+    for literal in spec.required_literals:
+        if literal not in text:
+            raise ValueError(f"{prompt_id}: missing required literal {literal!r}")
     return template
 
 
@@ -208,4 +330,64 @@ def render_prompt(prompt_id: str, **values: str) -> str:
         raise ValueError(
             f"{prompt_id}: expected values {sorted(expected)}, got {sorted(values)}"
         )
+    if developer_mode_enabled():
+        # Deferred to avoid the config -> LLM backends -> prompts import cycle.
+        from backend.utils.config_manager import config_manager
+
+        config_manager.reload()
+        overrides = config_manager.get("prompt_overrides", {})
+        override = overrides.get(prompt_id) if isinstance(overrides, Mapping) else None
+        if override is not None:
+            try:
+                template = validate_override(prompt_id, _override_text(override))
+            except ValueError as exc:
+                logging.getLogger(__name__).warning("Default used: %s", exc)
     return template.substitute(values)
+
+
+def developer_mode_enabled() -> bool:
+    """Only the process environment can enable developer mode."""
+    return os.environ.get("NOJOIN_DEVELOPER_MODE", "").strip().lower() == "true"
+
+
+def validate_override(prompt_id: str, text: object) -> Template:
+    """Use the shipped block's code-owned contract for edits and stored text."""
+    return _validate_template(prompt_id, text, REGISTRY[prompt_id])
+
+
+def default_sha256(prompt_id: str) -> str:
+    """Hash the shipped block, including its literal placeholder syntax."""
+    return hashlib.sha256(
+        load_registry()[prompt_id].template.encode("utf-8")
+    ).hexdigest()
+
+
+def _override_text(override: object) -> object:
+    return override.get("text") if isinstance(override, Mapping) else None
+
+
+def prompt_catalogue_entry(prompt_id: str, override: object) -> dict[str, Any]:
+    """Describe an edit without discarding invalid or outdated saved text."""
+    spec = REGISTRY[prompt_id]
+    status = "default"
+    if override is not None:
+        try:
+            validate_override(prompt_id, _override_text(override))
+            status = (
+                "overridden"
+                if isinstance(override, Mapping)
+                and override.get("base_sha256") == default_sha256(prompt_id)
+                else "default changed"
+            )
+        except ValueError:
+            status = "invalid"
+    text = _override_text(override)
+    return {
+        "id": prompt_id,
+        "feature": prompt_id.split(".", 1)[0],
+        "placeholders": sorted(spec.placeholders),
+        "required_literals": list(spec.required_literals),
+        "default_text": load_registry()[prompt_id].template,
+        "override_text": text if isinstance(text, str) else None,
+        "status": status,
+    }

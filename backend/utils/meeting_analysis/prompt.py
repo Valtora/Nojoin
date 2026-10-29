@@ -25,25 +25,6 @@ from backend.utils.prompt_blocks import render_prompt_blocks
 # wins the name.
 CONTESTED_LEADERSHIP = "contested"
 
-MEETING_ANALYSIS_INTRO = render_prompt("analytics.intro")
-
-MEETING_ANALYSIS_CRITICAL_RULES = render_prompt("analytics.critical_rules")
-
-MEETING_ANALYSIS_TOPIC_RULES = render_prompt("analytics.topic_rules")
-
-MEETING_ANALYSIS_SENTIMENT_RULES = render_prompt("analytics.sentiment_rules")
-
-MEETING_ANALYSIS_QUESTION_RULES = render_prompt("analytics.question_rules")
-
-MEETING_ANALYSIS_DECISION_RULES = render_prompt("analytics.decision_rules")
-
-MEETING_ANALYSIS_JSON_SCHEMA = render_prompt("analytics.json_schema")
-
-MEETING_ANALYSIS_CLOSING = render_prompt("analytics.closing")
-
-# The transcript is untrusted input, fenced exactly as attached documents are.
-TRANSCRIPT_FENCE_INSTRUCTION = render_prompt("analytics.transcript_fence_instruction")
-
 
 def build_speakers_prompt_section(speaker_names: Sequence[str]) -> str:
     """The allowlist, rendered for the prompt.
@@ -85,27 +66,30 @@ def build_meeting_analysis_prompt_parts(
 
     prefix = render_prompt_blocks(
         [
-            (None, MEETING_ANALYSIS_INTRO),
+            (None, render_prompt("analytics.intro")),
             (
                 render_prompt("shared.heading_critical_rules"),
-                MEETING_ANALYSIS_CRITICAL_RULES,
+                render_prompt("analytics.critical_rules"),
             ),
-            (render_prompt("shared.heading_topics"), MEETING_ANALYSIS_TOPIC_RULES),
+            (
+                render_prompt("shared.heading_topics"),
+                render_prompt("analytics.topic_rules"),
+            ),
             (
                 render_prompt("shared.heading_sentiment"),
-                MEETING_ANALYSIS_SENTIMENT_RULES,
+                render_prompt("analytics.sentiment_rules"),
             ),
             (
                 render_prompt("shared.heading_questions"),
-                MEETING_ANALYSIS_QUESTION_RULES,
+                render_prompt("analytics.question_rules"),
             ),
             (
                 render_prompt("shared.heading_decisions"),
-                MEETING_ANALYSIS_DECISION_RULES,
+                render_prompt("analytics.decision_rules"),
             ),
             (
                 render_prompt("shared.heading_required_json_schema"),
-                MEETING_ANALYSIS_JSON_SCHEMA,
+                render_prompt("analytics.json_schema"),
             ),
             # Carries its own heading.
             (None, build_output_language_prompt_section(output_language_instruction)),
@@ -121,12 +105,12 @@ def build_meeting_analysis_prompt_parts(
                 render_prompt("shared.heading_transcript"),
                 render_prompt_blocks(
                     [
-                        (None, TRANSCRIPT_FENCE_INSTRUCTION),
+                        (None, render_prompt("analytics.transcript_fence_instruction")),
                         (None, build_transcript_prompt_section(transcript)),
                     ]
                 ),
             ),
-            (None, MEETING_ANALYSIS_CLOSING),
+            (None, render_prompt("analytics.closing")),
         ]
     )
     return f"{prefix}\n\n", f"{suffix}\n"

@@ -3,6 +3,7 @@ import {
   ArrowUpCircle,
   Bot,
   Captions,
+  Code,
   Mic,
   NotebookPen,
   Palette,
@@ -31,6 +32,7 @@ export const SETTINGS_GROUP_IDS = [
   "meetings",
   "data",
   "about",
+  "developer",
 ] as const;
 
 export type SettingsGroupId = (typeof SETTINGS_GROUP_IDS)[number];
@@ -40,6 +42,7 @@ export const SETTINGS_GROUP_LABELS: Record<SettingsGroupId, string> = {
   meetings: "Meetings",
   data: "Data",
   about: "About",
+  developer: "Developer",
 };
 
 export const SETTINGS_CATEGORY_IDS = [
@@ -57,6 +60,7 @@ export const SETTINGS_CATEGORY_IDS = [
   "system",
   "updates",
   "help",
+  "prompts",
 ] as const;
 
 export type SettingsCategoryId = (typeof SETTINGS_CATEGORY_IDS)[number];
@@ -66,13 +70,14 @@ export type SettingsCategoryId = (typeof SETTINGS_CATEGORY_IDS)[number];
  * (Owners, Admins and the superuser), or only the superuser, the account
  * created at first-run setup. Each mirrors the check on the API behind it.
  */
-export type SettingsAccess = "all" | "admin" | "superuser";
+export type SettingsAccess = "all" | "admin" | "superuser" | "developer";
 
 /** The signed-in account, as far as settings access is concerned. */
 export interface SettingsViewer {
   /** An Owner, an Admin or the superuser. */
   isAdmin: boolean;
   isSuperuser: boolean;
+  developerMode?: boolean;
 }
 
 export function canViewSettings(
@@ -86,6 +91,8 @@ export function canViewSettings(
       return viewer.isAdmin;
     case "superuser":
       return viewer.isSuperuser;
+    case "developer":
+      return viewer.isAdmin && viewer.developerMode === true;
   }
 }
 
@@ -123,6 +130,15 @@ export const SETTINGS_CATEGORIES: Record<
   SettingsCategoryId,
   SettingsCategoryMetadata
 > = {
+  prompts: {
+    id: "prompts",
+    group: "developer",
+    label: "Prompts",
+    description: "Customise the AI prompts used across this installation. Changes apply to everyone.",
+    icon: Code,
+    access: "developer",
+    fullBleed: true,
+  },
   profile: {
     id: "profile",
     group: "general",

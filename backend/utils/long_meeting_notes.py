@@ -120,38 +120,8 @@ class PartsBudget:
 
 # --- Prompts ---------------------------------------------------------------
 
-PART_INTRO = render_prompt("long_meeting.part_intro")
-
-USE_SPEAKER_MAPPING = render_prompt("long_meeting.use_speaker_mapping")
-
-PART_INTRO_SPEAKERS = render_prompt("long_meeting.part_intro_speakers")
-
-PART_SPEAKER_RULES = render_prompt("long_meeting.part_speaker_rules")
-
 # The example names in long_meeting.toml. A model sometimes copies them as an answer.
 EXAMPLE_NAMES = {"person name or role", "one of the names listed for speaker_00"}
-
-PART_CLOSING = render_prompt("long_meeting.part_closing")
-
-PART_CLOSING_SPEAKERS = render_prompt("long_meeting.part_closing_speakers")
-
-MERGE_INTRO = render_prompt("long_meeting.merge_intro")
-
-MERGE_INTRO_TITLE = render_prompt("long_meeting.merge_intro_title")
-
-MERGE_TITLE_RULES = render_prompt("long_meeting.merge_title_rules")
-
-MERGE_LABELS_KEPT = render_prompt("long_meeting.merge_labels_kept")
-
-SETTLE_SPEAKERS = render_prompt("long_meeting.settle_speakers")
-
-MERGE_CLOSING = render_prompt("long_meeting.merge_closing")
-
-MERGE_CLOSING_TITLE = render_prompt("long_meeting.merge_closing_title")
-
-MERGE_CLOSING_TITLE_SPEAKERS = render_prompt(
-    "long_meeting.merge_closing_title_speakers"
-)
 
 
 @dataclass(frozen=True)
@@ -279,21 +249,31 @@ def build_part_prompt(
     labels = request.unresolved_speakers if request is not None else ()
     if request is None:
         head: list[PromptBlock] = [
-            (None, f"{PART_INTRO} {USE_SPEAKER_MAPPING}"),
+            (
+                None,
+                render_prompt("long_meeting.part_intro")
+                + " "
+                + render_prompt("long_meeting.use_speaker_mapping"),
+            ),
             (render_prompt("shared.heading_speaker_mapping"), context.speaker_mapping),
         ]
     elif labels:
         head = [
-            (None, PART_INTRO_SPEAKERS),
-            (render_prompt("shared.heading_speaker_rules"), PART_SPEAKER_RULES),
+            (None, render_prompt("long_meeting.part_intro_speakers")),
+            (
+                render_prompt("shared.heading_speaker_rules"),
+                render_prompt("long_meeting.part_speaker_rules"),
+            ),
             (
                 render_prompt("shared.heading_unresolved_speaker_labels"),
                 _labels_section(labels),
             ),
         ]
     else:
-        head = [(None, PART_INTRO)]
-    closing = PART_CLOSING_SPEAKERS if labels else PART_CLOSING
+        head = [(None, render_prompt("long_meeting.part_intro"))]
+    closing = render_prompt(
+        "long_meeting.part_closing_speakers" if labels else "long_meeting.part_closing"
+    )
     return render_prompt_blocks(
         [
             *head,
@@ -385,7 +365,9 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
         if request is None
         else (
             render_prompt("shared.heading_unresolved_speaker_labels"),
-            MERGE_LABELS_KEPT if request.unresolved_speakers else None,
+            render_prompt("long_meeting.merge_labels_kept")
+            if request.unresolved_speakers
+            else None,
         )
     )
     part_notes = "\n\n".join(
@@ -399,8 +381,11 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
             for label, names in (disputed or {}).items()
         )
         head: list[PromptBlock] = [
-            (None, MERGE_INTRO_TITLE),
-            (render_prompt("shared.heading_title_rules"), MERGE_TITLE_RULES),
+            (None, render_prompt("long_meeting.merge_intro_title")),
+            (
+                render_prompt("shared.heading_title_rules"),
+                render_prompt("long_meeting.merge_title_rules"),
+            ),
             (
                 render_prompt("shared.heading_title_style"),
                 build_title_preference_instruction(request.prefer_short_titles),
@@ -410,7 +395,7 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
                 render_prompt("shared.heading_speaker_names_to_settle"),
                 render_prompt(
                     "long_meeting.settlement",
-                    SETTLE_SPEAKERS=SETTLE_SPEAKERS,
+                    SETTLE_SPEAKERS=render_prompt("long_meeting.settle_speakers"),
                     settle=settle,
                 )
                 if settle
@@ -418,11 +403,14 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
             ),
         ]
         closing = _closing(
-            MERGE_CLOSING_TITLE_SPEAKERS if settle else MERGE_CLOSING_TITLE, words
+            render_prompt("long_meeting.merge_closing_title_speakers")
+            if settle
+            else render_prompt("long_meeting.merge_closing_title"),
+            words,
         )
     else:
-        head = [(None, MERGE_INTRO), speakers]
-        closing = _closing(MERGE_CLOSING, words)
+        head = [(None, render_prompt("long_meeting.merge_intro")), speakers]
+        closing = _closing(render_prompt("long_meeting.merge_closing"), words)
     return render_prompt_blocks(
         [
             *head,

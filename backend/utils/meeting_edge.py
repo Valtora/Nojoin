@@ -37,29 +37,6 @@ MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
 MEETING_EDGE_CONTEXT_LEVEL_MAX = 5
 MEETING_EDGE_CONTEXT_LEVEL_DEFAULT = 2
 
-MEETING_EDGE_CONTEXT_GUIDANCE = {
-    1: render_prompt("meeting_edge.context_level_1"),
-    2: render_prompt("meeting_edge.context_level_2"),
-    3: render_prompt("meeting_edge.context_level_3"),
-    4: render_prompt("meeting_edge.context_level_4"),
-    5: render_prompt("meeting_edge.context_level_5"),
-}
-
-# Heading that starts the volatile per-refresh context. The halves are composed
-# separately so provider caching never depends on searching the rendered prose.
-MEETING_EDGE_CACHE_SPLIT_MARKER = render_prompt(
-    "shared.heading_earlier_context_summary"
-)
-
-# Static prompt text, split at the cache boundary. Plain strings, never format
-# templates: the JSON schema uses real braces and interpolated values need no
-# escaping. See backend.utils.prompt_blocks.
-MEETING_EDGE_INTRO = render_prompt("meeting_edge.intro")
-
-MEETING_EDGE_CRITICAL_RULES = render_prompt("meeting_edge.critical_rules")
-
-MEETING_EDGE_JSON_SCHEMA = render_prompt("meeting_edge.json_schema")
-
 
 class MeetingEdgeContractError(ValueError):
     """Raised when a Meeting Edge payload breaks the JSON contract."""
@@ -174,7 +151,7 @@ def build_meeting_edge_prompt_parts(
     text either way; only the cache breakpoint differs.
 
     Composing the halves separately is what makes that guarantee structural,
-    rather than finding MEETING_EDGE_CACHE_SPLIT_MARKER inside a rendered
+    rather than finding the earlier-context heading inside a rendered
     string, which a heading rename would break.
 
     Returns ``("", prompt)`` for a caller-supplied override, which callers treat
@@ -185,10 +162,10 @@ def build_meeting_edge_prompt_parts(
 
     prefix = render_prompt_blocks(
         [
-            (None, MEETING_EDGE_INTRO),
+            (None, render_prompt("meeting_edge.intro")),
             (
                 render_prompt("shared.heading_critical_rules"),
-                MEETING_EDGE_CRITICAL_RULES,
+                render_prompt("meeting_edge.critical_rules"),
             ),
             (
                 render_prompt("shared.heading_technical_context_policy"),
@@ -200,14 +177,14 @@ def build_meeting_edge_prompt_parts(
             ),
             (
                 render_prompt("shared.heading_required_json_schema"),
-                MEETING_EDGE_JSON_SCHEMA,
+                render_prompt("meeting_edge.json_schema"),
             ),
         ]
     )
     suffix = render_prompt_blocks(
         [
             (
-                MEETING_EDGE_CACHE_SPLIT_MARKER,
+                render_prompt("shared.heading_earlier_context_summary"),
                 build_rolling_summary_prompt_section(request.rolling_summary),
             ),
             (
@@ -412,7 +389,7 @@ def build_focus_text_prompt_section(focus_text: str | None) -> str:
 
 def build_concept_guidance_prompt_section(context_level: int) -> str:
     level = _normalize_context_level(context_level)
-    return MEETING_EDGE_CONTEXT_GUIDANCE[level]
+    return render_prompt(f"meeting_edge.context_level_{level}")
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
