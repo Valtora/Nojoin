@@ -181,6 +181,7 @@ vi.mock("./mixer", () => ({
     microphoneAnalyser: {},
     mixedAnalyser: {},
     updateAutomaticGain: vi.fn(),
+    resumeContext: vi.fn(async () => true),
     dispose: vi.fn(),
   })),
 }));
@@ -2303,6 +2304,18 @@ describe("a capture taken over or stopped elsewhere (issues #570, #590)", () => 
 
     expectStoodDown(started);
     expect(started.recorder.resume).not.toHaveBeenCalled();
+  });
+
+  it("reports a refused resume once, never as the server's raw detail first", async () => {
+    const started = await startCapture();
+    await started.controller.pause();
+    apiMocks.resumeRecordingCapture.mockRejectedValueOnce(superseded());
+    const errors: (string | null)[] = [];
+    started.controller.subscribe((state) => errors.push(state.error));
+
+    await expect(started.controller.resume()).rejects.toThrow(/continued in another tab/);
+
+    expect(new Set(errors.filter(Boolean)).size).toBe(1);
   });
 
   it("neither finalizes nor owes a pause when its stop is refused", async () => {

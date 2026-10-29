@@ -87,6 +87,7 @@ describe("noise suppression migration for settings saved before it defaulted off
     expect(settings).toEqual({
       startMode: "shared_audio",
       microphoneDeviceId: "mic-1",
+      releaseMicrophoneOnPause: false,
       microphoneGain: 1.4,
       systemGain: 0.8,
       echoCancellation: false,
@@ -129,6 +130,7 @@ describe("noise suppression migration for settings saved before it defaulted off
     expect(readCaptureSettings()).toEqual({
       startMode: "shared_audio",
       microphoneDeviceId: null,
+      releaseMicrophoneOnPause: false,
       microphoneGain: 1,
       systemGain: 1,
       echoCancellation: true,

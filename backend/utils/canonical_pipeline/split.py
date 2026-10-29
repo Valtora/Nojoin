@@ -12,6 +12,7 @@ from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceStat
 from backend.utils.word_text import reconstruct_text_from_words
 
 from .constants import _append_utterance_event, _get_utterance, _load_transcript
+from .guards import line_still_settling
 from .live_settling_projection import row_words
 
 
@@ -117,6 +118,9 @@ def split_utterance(
         or parent.revision != command.expected_revision
     ):
         raise RuntimeError("This line changed. Reload it and try again.")
+    # Its words, times and speaker can still change, as the client says.
+    if line_still_settling(transcript, parent):
+        raise RuntimeError("This line is still settling. Split it once it locks.")
     words = row_words(parent)
     index = _split_index(words, command.before_word_id)
     group = str(uuid4())

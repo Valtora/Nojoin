@@ -149,7 +149,7 @@ async def test_compatibility_speaker_change_gets_manual_protection_without_clien
         assert rows[1].manual_speaker_locked is False
 
 
-async def test_local_speaker_split_preserves_assignment_and_words_through_final_drift(
+async def test_local_speaker_split_keeps_assignment_through_final_drift(
     client: AsyncClient, session_maker: Any
 ) -> None:
     from backend.utils.canonical_pipeline import (
@@ -202,11 +202,12 @@ async def test_local_speaker_split_preserves_assignment_and_words_through_final_
         )
         await session.commit()
         after = await session.run_sync(list_active_utterances, 1)
-        protected = next(row for row in after if row.start_ms == 0)
-        assert protected.recording_speaker_id == assigned_id
-        assert protected.speaker_label == assigned_label
-        assert protected.manual_speaker_locked is True
-        assert row_words(protected) == original_words
+        # A speaker-only correction protects the speaker; the wording is final.
+        final = next(row for row in after if row.start_ms == 0)
+        assert final.recording_speaker_id == assigned_id
+        assert final.speaker_label == assigned_label
+        assert final.manual_speaker_locked is True
+        assert final.text == "Final segmentation drift."
 
 
 async def test_full_and_delta_envelopes_keep_the_settled_policy_and_names_go_through(

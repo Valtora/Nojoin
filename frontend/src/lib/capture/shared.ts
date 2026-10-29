@@ -24,6 +24,7 @@ export interface CaptureLevels {
 export interface CaptureSettings {
   startMode: CaptureMode;
   microphoneDeviceId: string | null;
+  releaseMicrophoneOnPause: boolean;
   microphoneGain: number;
   systemGain: number;
   echoCancellation: boolean;
@@ -134,6 +135,17 @@ export interface StartCaptureResult {
 
 export type StartCaptureResponse = StartCaptureResult | null;
 
+/**
+ * Rejects a Resume that a Stop, Discard or other capture action overtook. That
+ * action owns the capture and reports its own outcome, so callers stay quiet.
+ */
+export class CaptureResumeSupersededError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("The recording changed while Resume was waiting. Try Resume again if it is still paused.", options);
+    this.name = "CaptureResumeSupersededError";
+  }
+}
+
 export interface GuardedExitRequest {
   reason: "pagehide" | "beforeunload" | "route-change";
   useBeacon: boolean;
@@ -150,6 +162,7 @@ export const DEFAULT_CAPTURE_MODE: CaptureMode = "shared_audio";
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   startMode: DEFAULT_CAPTURE_MODE,
   microphoneDeviceId: null,
+  releaseMicrophoneOnPause: false,
   microphoneGain: 1,
   systemGain: 1,
   echoCancellation: true,
@@ -189,6 +202,10 @@ export const readCaptureSettings = (): CaptureSettings => {
         typeof parsed.microphoneDeviceId === "string"
           ? parsed.microphoneDeviceId
           : null,
+      releaseMicrophoneOnPause:
+        typeof parsed.releaseMicrophoneOnPause === "boolean"
+          ? parsed.releaseMicrophoneOnPause
+          : DEFAULT_CAPTURE_SETTINGS.releaseMicrophoneOnPause,
       microphoneGain:
         typeof parsed.microphoneGain === "number" &&
         Number.isFinite(parsed.microphoneGain)

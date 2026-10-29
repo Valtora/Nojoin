@@ -18,6 +18,7 @@ import {
   SETTINGS_VALUE_CLASS,
 } from "./settingsControls";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+import { Switch } from "@/components/ui/Switch";
 
 interface MicrophoneOption {
   deviceId: string;
@@ -410,6 +411,22 @@ export default function CaptureSettings() {
             </option>
           ))}
         </SelectBase>
+      </SettingsRow>
+
+      <SettingsRow
+        id="recording-release-microphone-on-pause"
+        labelId="recording-release-microphone-on-pause-label"
+        descriptionId="recording-release-microphone-on-pause-help"
+        label="Release the microphone while paused"
+        description="In this browser, free the microphone after Pause so another application can use it. Shared audio stays open. Resume opens the microphone again and may ask for permission."
+        controlClassName={SETTINGS_CONTROL_END}
+      >
+        <Switch
+          aria-labelledby="recording-release-microphone-on-pause-label"
+          aria-describedby="recording-release-microphone-on-pause-help"
+          checked={settings.releaseMicrophoneOnPause}
+          onCheckedChange={(releaseMicrophoneOnPause) => updateSettings({ releaseMicrophoneOnPause })}
+        />
       </SettingsRow>
 
       <SettingsRow
