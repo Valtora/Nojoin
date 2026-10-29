@@ -62,7 +62,8 @@ afterEach(() => {
 
 describe.each(surfaces)("a live capture on the %s card, in a browser that cannot capture", (_name, surface) => {
   it.each([
-    [ClientStatus.RECORDING, "Recording"],
+    // Nothing records in this browser, so it is "Live" here.
+    [ClientStatus.RECORDING, "Live"],
     [ClientStatus.UPLOADING, "Uploading"],
   ])("labels client status %s as %s", async (clientStatus, label) => {
     const recording = live(clientStatus);
@@ -72,6 +73,7 @@ describe.each(surfaces)("a live capture on the %s card, in a browser that cannot
 
     expect(screen.getByTestId("support")).toHaveTextContent("unsupported");
     expect(screen.getByText(label)).toBeInTheDocument();
-    expect(screen.queryByText(label === "Recording" ? "Uploading" : "Recording")).not.toBeInTheDocument();
+    expect(screen.queryByText(label === "Live" ? "Uploading" : "Live")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recording")).not.toBeInTheDocument();
   });
 });

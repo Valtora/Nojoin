@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/Badge";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { Recording } from "@/types";
 import RecordingAttentionBadge from "../RecordingAttentionBadge";
 
@@ -28,6 +29,7 @@ const formatEta = (seconds?: number | null): string | null => {
  * while there is something to report and disappears when the queue drains.
  */
 export default function ProcessingCard({ recordings }: ProcessingCardProps) {
+  const { ownedRecordingId } = useCapture();
   return (
     <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center gap-3">
@@ -51,7 +53,8 @@ export default function ProcessingCard({ recordings }: ProcessingCardProps) {
                   </span>
                   <RecordingAttentionBadge
                     recordingId={recording.id}
-                    fallback={<StatusBadge status={recording.status} clientStatus={recording.client_status} size="sm" />}
+                    fallback={<StatusBadge status={recording.status} clientStatus={recording.client_status}
+                    capturedHere={recording.id === ownedRecordingId} size="sm" />}
                   />
                 </span>
                 {recording.processing_step || eta ? (

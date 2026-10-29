@@ -1,3 +1,4 @@
+import type { ComponentPropsWithoutRef } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +10,7 @@ import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 import CaptureShell from "./CaptureShell";
 import LiveMeetingControls from "./LiveMeetingControls";
 import MeetingControls from "./MeetingControls";
+import ProcessingCard from "./dashboardRecordings/ProcessingCard";
 
 // Browser media and the network are the edges: the provider, controller,
 // recovery dialog and controls are the real ones.
@@ -65,6 +67,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("./SessionSignInDialog", () => ({ default: () => null }));
+vi.mock("next/link", () => ({
+  default: ({ children, ...props }: ComponentPropsWithoutRef<"a">) => <a {...props}>{children}</a>,
+}));
 
 const paused = {
   id: "rec-1",
@@ -126,8 +131,10 @@ describe("a recording claimed and resumed from the recovery dialog", () => {
   it("can be stopped and discarded from the page it was resumed on", async () => {
     // The recording page is already mounted, with no capture of its own, when
     // this tab takes the recording over.
+    const liveCopy = { ...paused, status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING };
     render(<CaptureProvider><CaptureShell>
       <LiveMeetingControls size="bar" serverPaused />
+      <ProcessingCard recordings={[liveCopy]} />
     </CaptureShell></CaptureProvider>);
     await act(async () => {});
     expect(screen.getByTitle("Stop recording")).toBeDisabled();
@@ -139,7 +146,9 @@ describe("a recording claimed and resumed from the recovery dialog", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByTitle("Stop recording")).toBeEnabled();
     expect(screen.getByTitle("Discard recording")).toBeEnabled();
-    expect(screen.getByText("Recording")).toBeInTheDocument();
+    // The controls' pill and the dashboard badge both say this tab records.
+    expect(screen.getAllByText("Recording")).toHaveLength(2);
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("Stop recording"));
 

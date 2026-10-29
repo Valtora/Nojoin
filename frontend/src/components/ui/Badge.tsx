@@ -109,18 +109,22 @@ const STATUS_MAP: Record<RecordingStatus, StatusDescriptor> = {
 
 // A capture in progress is UPLOADING on the server whether it is running or
 // paused; the browser's own state tells the two apart from a finishing upload.
-const CAPTURE_MAP: Partial<Record<ClientStatus, StatusDescriptor>> = {
-  [ClientStatus.RECORDING]: {
-    tone: "warning",
-    label: "Recording",
-    icon: <Mic aria-hidden="true" />,
-  },
-  [ClientStatus.PAUSED]: STATUS_MAP[RecordingStatus.PAUSED],
+// A running one reads "Recording" only in the tab capturing it, "Live"
+// anywhere else, as the recording page's controls do.
+const captureDescriptor = (
+  clientStatus: ClientStatus | null | undefined,
+  capturedHere: boolean,
+): StatusDescriptor | null => {
+  if (clientStatus === ClientStatus.PAUSED) return STATUS_MAP[RecordingStatus.PAUSED];
+  if (clientStatus !== ClientStatus.RECORDING) return null;
+  return { tone: "warning", label: capturedHere ? "Recording" : "Live", icon: <Mic aria-hidden="true" /> };
 };
 
 interface StatusBadgeProps {
   status: RecordingStatus;
   clientStatus?: ClientStatus | null;
+  /** Whether this tab is capturing the recording. */
+  capturedHere?: boolean;
   /** True while meeting notes are generating, which is a sub-state of PROCESSED. */
   generatingNotes?: boolean;
   size?: BadgeSize;
@@ -132,6 +136,7 @@ interface StatusBadgeProps {
 export function StatusBadge({
   status,
   clientStatus,
+  capturedHere = false,
   generatingNotes = false,
   size = "md",
   label,
@@ -143,7 +148,7 @@ export function StatusBadge({
         label: "Generating notes",
         icon: <Loader2 aria-hidden="true" className="animate-spin" />,
       }
-    : (status === RecordingStatus.UPLOADING && clientStatus && CAPTURE_MAP[clientStatus]) ||
+    : (status === RecordingStatus.UPLOADING && captureDescriptor(clientStatus, capturedHere)) ||
       STATUS_MAP[status];
 
   return (

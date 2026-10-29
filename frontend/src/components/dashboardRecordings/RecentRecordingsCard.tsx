@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Mic } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/Badge";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { formatTimeZoneDate } from "@/lib/timezone";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { Recording, RecordingStatus } from "@/types";
@@ -33,6 +34,7 @@ export default function RecentRecordingsCard({
   recordings,
   timeZone,
 }: RecentRecordingsCardProps) {
+  const { ownedRecordingId } = useCapture();
   return (
     <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center gap-3">
@@ -69,7 +71,8 @@ export default function RecentRecordingsCard({
                 <RecordingAttentionBadge
                   recordingId={recording.id}
                   fallback={recording.status !== RecordingStatus.PROCESSED
-                    ? <StatusBadge status={recording.status} clientStatus={recording.client_status} size="sm" /> : null}
+                    ? <StatusBadge status={recording.status} clientStatus={recording.client_status}
+                    capturedHere={recording.id === ownedRecordingId} size="sm" /> : null}
                 />
               </Link>
             </li>
