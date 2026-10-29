@@ -262,6 +262,7 @@ def test_dense_prompt_is_refused_before_loading_model(
         )
 
 
+@pytest.mark.usefixtures("download_progress_in_memory")
 def test_unprepared_assets_queue_preparation_once_and_never_download(
     monkeypatch: pytest.MonkeyPatch, stub_celery_dispatch: list
 ) -> None:
