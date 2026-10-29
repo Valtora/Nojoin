@@ -11,17 +11,11 @@ const lines = (before?: number, after?: number, overlaps = false): TranscriptSeg
 ];
 
 describe("capture intervals in transcript grouping", () => {
+  // The server omits the interval before the first resume and numbers each one after.
   it.each([
-    [undefined, undefined], [undefined, 0], [0, undefined], [0, 0], [1, 1],
-  ])("joins pending continuations within compatible intervals (%s, %s)", (before, after) => {
-    const indexed = indexSegments(lines(before, after));
-    const groups = buildTranscriptGroups(indexed);
-    expect(appendPendingTranscriptGroups(groups, new Set(), new Set())).toHaveLength(1);
-    expect(pendingTranscriptRuns(indexed)).toHaveLength(1);
-  });
-
-  it.each([false, true])("keeps capture intervals separate even with overlap=%s", (overlaps) => {
-    const indexed = indexSegments(lines(0, 1, overlaps));
+    [undefined, 1, false], [undefined, 1, true], [1, 2, false], [1, 2, true],
+  ])("keeps capture intervals %s and %s separate (overlap=%s)", (before, after, overlaps) => {
+    const indexed = indexSegments(lines(before, after, overlaps));
     const groups = buildTranscriptGroups(indexed);
     expect(groups).toHaveLength(2);
     expect(appendPendingTranscriptGroups(groups, new Set(), new Set())).toHaveLength(2);

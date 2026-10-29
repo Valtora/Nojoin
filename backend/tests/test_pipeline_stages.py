@@ -47,6 +47,7 @@ from backend.processing import transcribe as real_transcribe
 from backend.processing.engines.base import VAD_MUTED_INPUT
 from backend.services import model_preparation
 from backend.utils import nemotron_lock, nemotron_model_utils
+from backend.utils import transcript_utils as real_transcript_utils
 from backend.utils.status_manager import update_recording_status
 from backend.worker import tasks as tasks_module
 from backend.worker.tasks import vad_stage
@@ -1236,11 +1237,9 @@ def test_the_merge_breaks_the_line_at_the_transcripts_resume_cut(monkeypatch):
         },
         release_model_cache=lambda: None,
     )
-    _install(
-        monkeypatch,
-        "backend.utils.transcript_utils",
-        combine_transcription_diarization=lambda *a, **k: [],
-        consolidate_diarized_transcript=lambda segs, *a, **k: list(segs),
+    # The real combiner and consolidator: they are what must not rejoin the line.
+    monkeypatch.setitem(
+        sys.modules, "backend.utils.transcript_utils", real_transcript_utils
     )
 
     _run_task(monkeypatch, session, recording_id=739)

@@ -55,7 +55,7 @@ describe("pending diarisation inside the previous utterance", () => {
     { isLive: true, overlaps: true }, { isLive: false, overlaps: true },
   ])("keeps a resumed pending tail separate (live=$isLive, overlap=$overlaps)", ({ isLive, overlaps }) => {
     const [anchor, tail] = pendingTailLines();
-    const before = { ...anchor, end: overlaps ? 1.1 : anchor.end, capture_interval: 0 };
+    const before = { ...anchor, end: overlaps ? 1.1 : anchor.end };
     const after = { ...tail, capture_interval: 1 };
     const props = { ...viewProps([before, after]), live: isLive ? live : undefined };
     const { container, rerender } = render(<TranscriptView {...props} />);

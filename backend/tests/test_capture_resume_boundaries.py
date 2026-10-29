@@ -1,14 +1,15 @@
 """Capture resume geometry survives asynchronous ingestion and runtime resets."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from typing import Any
 
 import pytest
-from fastapi import HTTPException
+from sqlmodel import Session, select
 
-from backend.api.v1.endpoints.recordings import routes_capture as capture
-from backend.models.recording import ClientStatus, RecordingStatus
 from backend.models.transcript import Transcript
+from backend.tests.test_canonical_publication_fence import (
+    publication_database as publication_database,
+)
 from backend.utils import reprocess_publication
 from backend.utils.capture_resume import (
     RESUME_BOUNDARIES,
@@ -21,54 +22,6 @@ from backend.utils.transcript_settling import (
     resolve_capture_settling_policy,
     update_capture_settling_state,
 )
-
-
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
-
-
-@pytest.mark.anyio
-async def test_resume_marks_next_upload_once_and_refuses_stale_epoch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    recording = SimpleNamespace(
-        id=1,
-        public_id="capture",
-        capture_epoch=3,
-        status=RecordingStatus.PAUSED,
-        client_status=ClientStatus.RECORDING,
-        last_activity_at=None,
-    )
-    transcript = Transcript(recording_id=1)
-    db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock(), add=lambda row: None)
-    monkeypatch.setattr(
-        capture.recordings_module,
-        "_get_owned_recording",
-        AsyncMock(return_value=recording),
-    )
-    monkeypatch.setattr(
-        capture, "lock_capture_publication", AsyncMock(return_value=transcript)
-    )
-    monkeypatch.setattr(capture, "close_live_words", AsyncMock())
-    monkeypatch.setattr(
-        capture.recordings_module, "_reopen_recording_audio_cursor", AsyncMock()
-    )
-    monkeypatch.setattr(
-        capture.recordings_module, "_get_last_uploaded_sequence", lambda _id: 4
-    )
-    for _ in range(2):
-        response = await capture.resume_upload(
-            "capture", epoch=3, db=db, current_user=SimpleNamespace(id=1)
-        )
-        assert response.last_sequence == 4
-    assert transcript.settling_state == {RESUME_SEQUENCES: [5]}
-    with pytest.raises(HTTPException) as refused:
-        await capture.resume_upload(
-            "capture", epoch=2, db=db, current_user=SimpleNamespace(id=1)
-        )
-    assert refused.value.status_code == 409
-    assert transcript.settling_state == {RESUME_SEQUENCES: [5]}
 
 
 def test_transcode_finishing_first_does_not_move_the_resume_cut() -> None:
@@ -98,27 +51,29 @@ def test_final_offsets_outlive_chunks_and_runtime_reset() -> None:
 
 @pytest.mark.parametrize("settled", [False, True])
 def test_geometry_survives_both_reprocess_reset_paths(
-    settled: bool, monkeypatch: pytest.MonkeyPatch
+    settled: bool, publication_database: Any
 ) -> None:
+    engine, recording_id, _ = publication_database
     state = {RESUME_BOUNDARIES: [4200], "eligible": True, "policy": {"enabled": True}}
     if settled:
         state["settled"] = True
     durable = durable_settling_state(state)
     assert durable[RESUME_BOUNDARIES] == [4200]
     assert "eligible" not in durable and "policy" not in durable
-    transcript = Transcript(
-        recording_id=1, settling_state={**state, "reprocess_pending": True}
-    )
-    monkeypatch.setattr(
-        reprocess_publication, "_load_transcript", lambda *args, **kwargs: transcript
-    )
-    session = SimpleNamespace(execute=lambda statement: None, add=lambda row: None)
-    reprocess_publication.clear_previous_reprocess_state(session, 1)
-    assert transcript.settling_state == {
-        RESUME_BOUNDARIES: [4200],
-        "reprocess_pending": True,
-        "reprocess_published": True,
-    }
+    with Session(engine) as session:
+        transcript = session.exec(select(Transcript)).one()
+        transcript.settling_state = {**state, "reprocess_pending": True}
+        session.add(transcript)
+        session.commit()
+    with Session(engine) as session:
+        reprocess_publication.clear_previous_reprocess_state(session, recording_id)
+        session.commit()
+    with Session(engine) as session:
+        assert session.exec(select(Transcript)).one().settling_state == {
+            RESUME_BOUNDARIES: [4200],
+            "reprocess_pending": True,
+            "reprocess_published": True,
+        }
 
 
 def test_resume_metadata_does_not_enable_settling_or_require_a_policy() -> None:

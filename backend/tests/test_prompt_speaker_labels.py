@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
-from sqlmodel import Session
+from sqlalchemy import text
+from sqlmodel import Session, select
 
 import backend.utils.llm_config as llm_config_module
 import backend.worker.tasks as tasks_module
 from backend.api.v1.endpoints.transcripts.helpers import _format_transcript_text
+from backend.models.pipeline import ProcessingRunKind
+from backend.models.speaker import RecordingSpeaker
+from backend.models.transcript import Transcript
 from backend.services.timeline_note_service import RecordingTimelineNotes
+from backend.tests.storage_hygiene_harness import add_recording, postgres_engine
 from backend.tests.test_infer_speakers_task import (
     _create_infer_speakers_task_database,
     _run_infer_speakers_task,
 )
+from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.live_speaker_labels import (
     render_indexed_transcript_for_llm,
     speaker_display_name,
@@ -147,80 +152,93 @@ def test_independent_inference_names_unknown_without_changing_label_keys(
 
 
 def test_new_search_chunks_embed_prompt_names_and_keep_display_metadata(
-    monkeypatch: pytest.MonkeyPatch,
+    postgres_test_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import backend.processing.text_embedding as text_embedding
-    import backend.worker.tasks.intelligence as intelligence
+    from backend.models.context_chunk import TEXT_EMBEDDING_DIMENSIONS, ContextChunk
 
-    session = MagicMock()
-    session.get.return_value = SimpleNamespace(id=1)
-    session.exec.side_effect = [
-        MagicMock(first=lambda: SimpleNamespace(segments=SEGMENTS)),
-        MagicMock(all=lambda: []),
-        MagicMock(all=lambda: []),
-    ]
-    embeddings = MagicMock()
-    embeddings.embed.return_value = [[0.0] * 384]
-    monkeypatch.setattr(tasks_module.index_transcript_task, "_session", session)
-    monkeypatch.setattr(
-        tasks_module,
-        "build_transcript_segments_for_read",
-        lambda *args, **kwargs: SEGMENTS,
-    )
-    monkeypatch.setattr(
-        intelligence, "with_live_speaker_names", lambda *args: SPEAKER_MAP
-    )
-    monkeypatch.setattr(
-        text_embedding, "get_text_embedding_service", lambda: embeddings
-    )
+    embedded: list[str] = []
 
-    tasks_module.index_transcript_task.run(1)
+    class Embeddings:
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            embedded.extend(texts)
+            return [[0.0] * TEXT_EMBEDDING_DIMENSIONS for _ in texts]
 
-    embedded = embeddings.embed.call_args.args[0]
+    monkeypatch.setattr(text_embedding, "get_text_embedding_service", Embeddings)
+    with postgres_engine(postgres_test_url) as engine:
+        recording_id = add_recording(engine, "meeting.wav")
+        with Session(engine) as session:
+            session.add(Transcript(recording_id=recording_id, segments=[]))
+            for label, name in SPEAKER_MAP.items():
+                session.add(
+                    RecordingSpeaker(
+                        recording_id=recording_id, diarization_label=label, name=name
+                    )
+                )
+            append_utterances_from_segments(
+                session,
+                recording_id=recording_id,
+                segments=SEGMENTS,
+                run_kind=ProcessingRunKind.FINALIZE,
+                source="final",
+            )
+            session.commit()
+        with Session(engine) as session:
+            monkeypatch.setattr(tasks_module.index_transcript_task, "_session", session)
+            tasks_module.index_transcript_task.run(recording_id)
+            (chunk,) = session.exec(select(ContextChunk)).all()
+
     assert embedded == [
         "Unidentified speaker: UNKNOWN is the stored label.\nPriya: A reply.\n"
     ]
-    chunk = session.add.call_args.args[0]
     assert chunk.content == embedded[0]
     assert set(chunk.meta["speakers"]) == {"UNKNOWN", "Priya"}
-    session.commit.assert_called_once()
 
 
-def test_ai_analytics_prompt_and_allowlist_agree_without_changing_display_names(
-    monkeypatch: pytest.MonkeyPatch,
+def test_ai_analytics_attributes_an_unidentified_line_through_its_prompt_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import backend.services.meeting_analytics as analytics
-    import backend.utils.canonical_pipeline as canonical
-    from backend.worker.tasks.analytics_ai import _build_analysis_inputs
+    from backend.tests import test_meeting_analysis_task as analysis
 
-    directory = [
-        {
-            "speaker_key": "label:UNKNOWN",
-            "diarization_label": "UNKNOWN",
-            "name": "UNKNOWN",
-        }
-    ]
-    utterance = SimpleNamespace(
-        text="Unattributed speech.",
-        start_ms=0,
-        end_ms=4000,
-        recording_speaker_id=None,
-        speaker_label="UNKNOWN",
-        state="finalized",
-    )
-    monkeypatch.setattr(
-        analytics, "compute_recording_analytics", lambda *args: {"speakers": directory}
-    )
-    monkeypatch.setattr(canonical, "list_active_utterances", lambda *args: [utterance])
+    engine = analysis._make_engine(tmp_path, "unidentified")
+    with engine.begin() as connection:
+        analysis._seed(connection)
+        # A live line no speaker was assigned to: analytics reads it as UNKNOWN.
+        connection.execute(
+            text(
+                "INSERT INTO transcript_utterances (id, created_at, updated_at, "
+                "public_id, recording_id, sort_key, start_ms, end_ms, text, "
+                "speaker_label, recording_speaker_id, state, source_kind, revision, "
+                "manual_text_locked, manual_speaker_locked, speaker_assignment_source, "
+                "speaker_assignment_authority, overlap_rank) VALUES "
+                "(4, :ts, :ts, 'u-3', 10, '0003', 18000, 24000, :body, 'UNKNOWN', "
+                "NULL, 'provisional', 'live', 1, 0, 0, 'live', 'live', 0)"
+            ),
+            {"ts": analysis._now(), "body": "Nobody claimed this line."},
+        )
+    response = {
+        "topics": [],
+        "questions": [],
+        "decisions": [],
+        "sentiment": [
+            {
+                "speaker": "Unidentified speaker",
+                "tone": "neutral",
+                "summary": "Spoke once.",
+                "citations": [
+                    {"quote": "Nobody claimed this line.", "start_seconds": 18}
+                ],
+            }
+        ],
+    }
+    backend = analysis.FakeBackend(json.dumps(response))
+    analysis._run(engine, monkeypatch, config=analysis._configured(), backend=backend)
 
-    inputs = _build_analysis_inputs(
-        MagicMock(), SimpleNamespace(id=1, duration_seconds=4)
+    assert "Unidentified speaker" in backend.last_request.allowlist.names
+    assert backend.last_request.transcript.endswith(
+        "[00:18 - 00:24] Unidentified speaker: Nobody claimed this line."
     )
-
-    assert inputs["allowlist"].names == ("Unidentified speaker",)
-    assert inputs["allowlist"].resolve("Unidentified speaker") == "label:UNKNOWN"
-    assert (
-        inputs["transcript"]
-        == "[00:00 - 00:04] Unidentified speaker: Unattributed speech."
-    )
-    assert directory[0]["name"] == "UNKNOWN"
+    block = analysis._payload(analysis._row(engine)[2])["ai"]
+    # The model's answer, given the prompt name, maps back to the stored label.
+    assert [item["speaker_key"] for item in block["sentiment"]] == ["label:UNKNOWN"]
+    assert block["excluded"]["unknown_speaker_items"] == 0
