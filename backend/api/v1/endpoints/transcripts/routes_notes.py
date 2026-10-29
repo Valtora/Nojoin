@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
@@ -50,12 +50,16 @@ class GenerateNotesRequest(BaseModel):
     ``notes_template_id`` picks the structure for this run of the meeting's
     notes, or for a new extra set (``create_output``), where null is the
     built-in structure. ``output_id`` reruns an extra set, always with the
-    structure saved when it was created.
+    structure saved when it was created. ``kind="glossary"`` creates the
+    built-in glossary output; ``extract_more`` appends new terms to an existing
+    glossary output instead of replacing its suggestions.
     """
 
     notes_template_id: Optional[int] = None
     create_output: bool = False
     output_id: int | None = None
+    kind: Literal["notes", "glossary"] = "notes"
+    extract_more: bool = False
 
 
 async def _requested_template(
@@ -72,6 +76,21 @@ async def _requested_template(
     return template
 
 
+def _validate_output_request(request: GenerateNotesRequest) -> None:
+    if request.extract_more and request.output_id is None:
+        raise HTTPException(
+            status_code=400, detail="Choose a glossary output to extract more."
+        )
+    if request.kind == "glossary" and (
+        request.notes_template_id is not None
+        or (request.output_id is None and not request.create_output)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Glossary suggestions need a new output, without a notes structure.",
+        )
+
+
 async def _generation_output(
     db: AsyncSession,
     transcript: Transcript,
@@ -79,6 +98,7 @@ async def _generation_output(
     user: User,
 ) -> NotesOutput | None:
     """The extra set a run writes, or None for the meeting's own notes."""
+    _validate_output_request(request)
     if request.output_id is None and not request.create_output:
         if request.notes_template_id is not None:
             await _requested_template(db, user, request.notes_template_id)
@@ -98,11 +118,20 @@ async def _generation_output(
         )
     if request.output_id is not None:
         output = await _get_notes_output(db, transcript.recording_id, request.output_id)
+        if request.extract_more and output.kind != "glossary":
+            raise HTTPException(
+                status_code=400,
+                detail="Extract more is only available for glossary suggestions.",
+            )
         if output.notes_status == "generating":
             raise HTTPException(
                 status_code=409, detail="Meeting notes are already generating."
             )
         return output
+    if request.kind == "glossary":
+        return NotesOutput(
+            recording_id=transcript.recording_id, kind="glossary", name="Glossary"
+        )
     template = builtin_notes_template()
     if request.notes_template_id is not None:
         template = await _requested_template(db, user, request.notes_template_id)
@@ -139,6 +168,11 @@ async def update_notes_output(
 ) -> NotesOutput:
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     output = await _get_notes_output(db, recording.id, output_id)
+    if output.kind == "glossary":
+        raise HTTPException(
+            status_code=400,
+            detail="Regenerate glossary suggestions to replace their lines.",
+        )
     if output.notes_status == "generating":
         raise HTTPException(
             status_code=409, detail="Meeting notes are already generating."
@@ -344,6 +378,7 @@ async def generate_notes(
             if output is not None
             else [recording.id, request.notes_template_id]
         ),
+        kwargs={"extract_more": True} if request.extract_more else None,
     )
     from backend.models.task import register_task_ownership
 

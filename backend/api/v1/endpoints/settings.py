@@ -139,6 +139,10 @@ class SettingsUpdate(BaseModel):
     install_notes_template_id: Optional[int] = None
     glossary_terms: Optional[str] = None
     install_glossary_terms: Optional[str] = None
+    glossary_suggestions_enabled: Optional[bool] = None
+    glossary_suggestions_limit: Optional[int] = Field(
+        default=None, strict=True, ge=5, le=50
+    )
     enable_vad: Optional[bool] = None
     vad_mute_transcription: Optional[bool] = None
     vad_mute_diarization: Optional[bool] = None

@@ -306,6 +306,8 @@ DEFAULT_USER_SETTINGS = {
     # tiers are merged (personal wins on conflict), never replaced.
     "glossary_terms": "",
     "install_glossary_terms": "",
+    "glossary_suggestions_enabled": False,
+    "glossary_suggestions_limit": 15,
     "enable_vad": True,  # Enable Voice Activity Detection (silence filtering)
     # With VAD on, whether each final-pass stage hears the muted audio
     # (backend/processing/vad_muting.py): transcription does by default,

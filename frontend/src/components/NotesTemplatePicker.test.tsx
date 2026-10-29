@@ -54,6 +54,20 @@ describe("NotesTemplatePicker", () => {
     expect(listNotesTemplates).not.toHaveBeenCalled();
   });
 
+  it("offers glossary output only when its separate generation action is supplied", async () => {
+    const onSelect = vi.fn();
+    const onSelectGlossary = vi.fn();
+    const { rerender } = render(<NotesTemplatePicker onSelect={onSelect} />);
+    fireEvent.click(screen.getByLabelText("Choose notes structure"));
+    await screen.findByText("Interview notes");
+    expect(screen.queryByRole("button", { name: /Glossary suggestions/ })).not.toBeInTheDocument();
+    rerender(<NotesTemplatePicker onSelect={onSelect} onSelectGlossary={onSelectGlossary} />);
+    fireEvent.click(screen.getByRole("button", { name: /Glossary suggestions/ }));
+    expect(onSelectGlossary).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.queryByText("Interview notes")).not.toBeInTheDocument();
+  });
+
   it("passes null for the built-in structure and an id for a template", async () => {
     const onSelect = vi.fn();
     render(<NotesTemplatePicker onSelect={onSelect} />);

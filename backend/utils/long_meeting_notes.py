@@ -182,6 +182,7 @@ class LongMeetingContext:
     language: str
     notes_spec: str
     request: Optional[AutomaticMeetingIntelligenceRequest] = None
+    output_spec_override: Optional[str] = None
 
 
 def context_for_notes(  # noqa: PLR0913 - one argument per prompt section
@@ -196,12 +197,17 @@ def context_for_notes(  # noqa: PLR0913 - one argument per prompt section
     return LongMeetingContext(
         speaker_mapping=speaker_mapping_table,
         metadata=build_meeting_metadata_prompt_section(notes_context.metadata),
-        glossary=build_glossary_prompt_section(notes_context.glossary),
+        glossary=build_glossary_prompt_section(
+            notes_context.glossary,
+            for_notes=not bool(notes_context.output_spec_override),
+        ),
         user_notes=build_user_notes_prompt_section(user_notes),
         meeting_context=build_meeting_context_prompt_section(meeting_context),
         documents=build_documents_prompt_section(notes_context.documents),
         language=build_output_language_prompt_section(output_language_instruction),
-        notes_spec=build_notes_body_spec(notes_context.notes_sections),
+        notes_spec=notes_context.output_spec_override
+        or build_notes_body_spec(notes_context.notes_sections),
+        output_spec_override=notes_context.output_spec_override,
     )
 
 
@@ -274,6 +280,24 @@ def _labels_section(labels: Sequence[str]) -> str:
     return "\n".join(lines)
 
 
+def _structured_output_prompt(
+    context: LongMeetingContext, content: str, *, documents: bool = True
+) -> str:
+    return render_prompt_blocks(
+        [
+            (
+                None,
+                "Extract supported glossary entries from the transcript part or combine the candidate arrays below. "
+                "Keep each term once, add no unsupported meanings, and follow the output contract exactly.",
+            ),
+            *_shared_blocks(context, documents=documents),
+            ("# Output Contract", context.output_spec_override),
+            ("# Source Content", content),
+            (None, "Return only the JSON array required by the output contract."),
+        ]
+    )
+
+
 def build_part_prompt(
     context: LongMeetingContext,
     index: int,
@@ -287,6 +311,8 @@ def build_part_prompt(
     of the meeting, so a server that reuses a cached prompt prefix reads it
     once.
     """
+    if context.output_spec_override:
+        return _structured_output_prompt(context, part.text)
     request = context.request
     labels = request.unresolved_speakers if request is not None else ()
     if request is None:
@@ -382,6 +408,10 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
     also writes the title and settles the ``disputed`` speaker labels from the
     names the parts gave them.
     """
+    if context.output_spec_override:
+        return _structured_output_prompt(
+            context, "\n\n".join(item.text for item in items), documents=False
+        )
     request = context.request
     scope = (
         "the whole meeting"

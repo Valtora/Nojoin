@@ -457,6 +457,9 @@ class NotesPromptContext:
     # Parsed text of the meeting's attached documents. Uncapped by design,
     # matching the transcript, which has never been truncated either.
     documents: Optional[Sequence["AttachedDocument"]] = None
+    # Structured extra outputs replace the complete notes format, including its
+    # Markdown preamble; propagated through both whole-meeting and parts prompts.
+    output_spec_override: Optional[str] = None
 
 
 def build_glossary_prompt_section(

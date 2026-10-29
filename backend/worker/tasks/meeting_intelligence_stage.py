@@ -16,6 +16,10 @@ from backend.utils.meeting_notes import append_user_notes_section
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.utils.transcript_change import change_sequence_bump
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
+from backend.worker.tasks.notes_outputs import (
+    generate_automatic_glossary,
+    prepare_automatic_glossary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +339,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
                 result.notes_markdown, timeline_notes.appendix_lines()
             ),
         )
+        glossary_output = prepare_automatic_glossary(session, recording)
         _apply_automatic_meeting_intelligence_result(
             session,
             recording,
@@ -345,6 +350,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
             provider=llm_config.provider,
             resolved_template=resolved_template,
         )
+        generate_automatic_glossary(session, recording, glossary_output)
         logger.info(
             "Generated unified meeting intelligence for recording %s",
             recording.id,

@@ -577,6 +577,26 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
 
   // ------------------------------------------------------------------ notes
   {
+    id: "notes-glossary-suggestions",
+    label: "Suggest glossary terms automatically",
+    description: "Create glossary suggestions after each meeting, ready to review in Notes.",
+    category: "notes",
+    access: "all",
+    settingsKeys: ["glossary_suggestions_enabled"],
+    defaultValue: false,
+    keywords: ["glossary", "suggestions", "terms", "automatic", "vocabulary"],
+  },
+  {
+    id: "notes-glossary-suggestions-limit",
+    label: "Glossary suggestions per extraction",
+    description: "Suggest between 5 and 50 terms per extraction; the default is 15.",
+    category: "notes",
+    access: "all",
+    settingsKeys: ["glossary_suggestions_limit"],
+    defaultValue: 15,
+    keywords: ["glossary", "suggestions", "limit", "terms", "extract"],
+  },
+  {
     id: "notes-structure",
     label: "Notes structure",
     description: "The sections and headings the AI writes meeting notes into.",

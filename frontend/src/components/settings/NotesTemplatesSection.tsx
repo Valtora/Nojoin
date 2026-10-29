@@ -26,6 +26,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
+import GlossarySuggestionsSettings from "./GlossarySuggestionsSettings";
 import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
 
 const ICON_BUTTON =
@@ -365,6 +366,8 @@ export default function NotesTemplatesSection({
           </>
         )}
       </SettingsBlock>
+
+      <GlossarySuggestionsSettings settings={settings} onPersist={onPersist} />
 
       <NotesTemplateEditorModal
         isOpen={Boolean(editing) || creating}

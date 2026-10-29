@@ -101,6 +101,7 @@ vi.mock("@/lib/api", () => ({
   getSettings: (...args: unknown[]) => getSettings(...args),
   getGlobalSpeakers: (...args: unknown[]) => getGlobalSpeakers(...args),
   getTranscriptUtterances: (...args: unknown[]) => getTranscriptUtterances(...args),
+  listNotesOutputs: vi.fn().mockResolvedValue([]),
   renameRecording: (...args: unknown[]) => renameRecording(...args),
   updateSettings: vi.fn(),
   updateSpeaker: (...args: unknown[]) => updateSpeaker(...args),
@@ -124,6 +125,11 @@ vi.mock("@/lib/api", () => ({
   downloadDocument: vi.fn(),
   documentPreviewUrl: (id: number) => `/api/v1/documents/${id}/preview`,
   documentFileUrl: (id: number) => `/api/v1/documents/${id}/download`,
+}));
+
+// The live feed imports its API module directly rather than the barrel.
+vi.mock("@/lib/api/transcript", () => ({
+  getTranscriptUtterances: (...args: unknown[]) => getTranscriptUtterances(...args),
 }));
 
 // Heavy child components are stubbed so the tests pin the page's own

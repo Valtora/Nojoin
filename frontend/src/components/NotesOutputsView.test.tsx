@@ -7,6 +7,7 @@ import NotesOutputsView from "./NotesOutputsView";
 const api = vi.hoisted(() => ({
   listNotesOutputs: vi.fn(), generateNotes: vi.fn(), deleteNotesOutput: vi.fn(),
   updateNotesOutput: vi.fn(), exportContent: vi.fn(), listNotesTemplates: vi.fn(),
+  getSettings: vi.fn(), updateSettings: vi.fn(),
 }));
 vi.mock("@/lib/api", () => api);
 vi.mock("./NotesView", () => ({ default: (props: NotesViewProps) => <div>
@@ -41,11 +42,49 @@ beforeEach(() => {
   api.deleteNotesOutput.mockResolvedValue(undefined);
   api.updateNotesOutput.mockResolvedValue({ ...extra, notes: "Edited extra" });
   api.exportContent.mockResolvedValue(undefined);
+  api.getSettings.mockResolvedValue({ glossary_terms: "" });
+  api.updateSettings.mockResolvedValue({ glossary_terms: "" });
 });
 
 afterEach(() => { vi.useRealTimers(); });
 
 describe("notes outputs", () => {
+  it("creates a glossary checklist, extracts more into it and regenerates it", async () => {
+    const glossary = { ...extra, kind: "glossary", name: "Glossary suggestions", notes: "ARR: annual recurring revenue", notes_template_id: null };
+    api.generateNotes.mockResolvedValue({ output: glossary });
+    render(<NotesOutputsView {...props()} />);
+    await waitFor(() => expect(api.listNotesOutputs).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Glossary suggestions/ }));
+    await screen.findByRole("tab", { name: "Glossary suggestions", selected: true });
+    expect(api.generateNotes).toHaveBeenCalledWith("rec-1", null, { create_output: true, kind: "glossary" });
+    expect(screen.getByRole("checkbox", { name: "ARR: annual recurring revenue" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit notes" })).not.toBeInTheDocument();
+
+    api.generateNotes.mockResolvedValue({ output: { ...glossary, notes: "ARR: annual recurring revenue\nKafka: event streaming" } });
+    fireEvent.click(screen.getByRole("button", { name: "Extract more" }));
+    await screen.findByRole("checkbox", { name: "Kafka: event streaming" });
+    expect(api.generateNotes).toHaveBeenLastCalledWith("rec-1", null, { output_id: 11, extract_more: true });
+
+    api.generateNotes.mockResolvedValue({ output: { ...glossary, notes: "New: replacement set" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Regenerate suggestions" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate suggestions" }));
+    await screen.findByRole("checkbox", { name: "New: replacement set" });
+    expect(screen.queryByRole("checkbox", { name: "Kafka: event streaming" })).not.toBeInTheDocument();
+    expect(api.generateNotes).toHaveBeenLastCalledWith("rec-1", null, { output_id: 11 });
+  });
+
+  it("discovers automatically created outputs while primary notes generate", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listNotesOutputs.mockResolvedValueOnce([]).mockResolvedValue([
+      { ...extra, kind: "glossary", name: "Glossary suggestions", notes: "ARR: recurring revenue" },
+    ]);
+    render(<NotesOutputsView {...props()} isGenerating />);
+    await waitFor(() => expect(api.listNotesOutputs).toHaveBeenCalledOnce());
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(await screen.findByRole("tab", { name: "Glossary suggestions" })).toBeInTheDocument();
+  });
+
   it("creates, regenerates and deletes an extra set, returning to a single view", async () => {
     const primary = props();
     render(<NotesOutputsView {...primary} />);

@@ -165,7 +165,12 @@ export const updateMeetingEdgeFocus = async (
 export const generateNotes = async (
   recordingId: RecordingId,
   notesTemplateId?: number | null,
-  output?: { create_output?: boolean; output_id?: number },
+  output?: {
+    create_output?: boolean;
+    output_id?: number;
+    kind?: "notes" | "glossary";
+    extract_more?: boolean;
+  },
 ): Promise<{
   status: string;
   notes_status?: string;

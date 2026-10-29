@@ -1,6 +1,12 @@
+from typing import Any
+
 from backend.models.notes_output import NotesOutput
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.glossary_suggestions import (
+    GLOSSARY_OUTPUT_KIND,
+    suggestions_limit,
+)
 from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
@@ -10,6 +16,7 @@ from .constants import *
 from .notes_outputs import (
     fail_output_generation,
     finish_output_generation,
+    glossary_output_notes,
     load_output_for_generation,
     output_notes_context,
     start_output_generation,
@@ -25,7 +32,20 @@ def generate_notes_task(
     recording_id: int,
     notes_template_id: int | None = None,
     output_id: int | None = None,
+    extract_more: bool = False,
 ):
+    return _generate_notes(
+        self.session, recording_id, notes_template_id, output_id, extract_more
+    )
+
+
+def _generate_notes(
+    session: Any,
+    recording_id: int,
+    notes_template_id: int | None = None,
+    output_id: int | None = None,
+    extract_more: bool = False,
+) -> None:
     """
     Generate meeting notes for a recording.
 
@@ -35,7 +55,6 @@ def generate_notes_task(
     behaves exactly as before. ``output_id`` generates that extra set instead,
     with its saved structure (``notes_outputs``).
     """
-    session = self.session
     recording = None
     transcript = None
     output = None
@@ -139,7 +158,12 @@ def generate_notes_task(
             explicit_template_id=notes_template_id,
         )
         if output is not None:
-            notes_context = output_notes_context(notes_context, output)
+            notes_context = output_notes_context(
+                notes_context,
+                output,
+                limit=suggestions_limit(user_settings),
+                extract_more=extract_more,
+            )
         notes_arguments = {
             "user_notes": timeline_notes.user_notes_context(),
             "meeting_context": _resolve_meeting_event_context(session, recording),
@@ -168,10 +192,18 @@ def generate_notes_task(
             )
 
         if output is not None:
+            if output.kind == GLOSSARY_OUTPUT_KIND:
+                notes = glossary_output_notes(
+                    notes, output, notes_context, user_settings, extract_more
+                )
+            else:
+                notes = append_user_notes_section(
+                    notes, timeline_notes.appendix_lines()
+                )
             finish_output_generation(
                 session,
                 output,
-                append_user_notes_section(notes, timeline_notes.appendix_lines()),
+                notes,
             )
             return
         transcript.notes = append_user_notes_section(

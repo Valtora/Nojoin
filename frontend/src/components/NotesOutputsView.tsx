@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import NotesView, { type NotesViewProps } from "./NotesView";
 import NotesTemplatePicker from "./NotesTemplatePicker";
+import GlossaryOutputView from "./GlossaryOutputView";
 import ConfirmationModal from "./ConfirmationModal";
 import Button from "./ui/Button";
 import { ButtonBase } from "./ui/nativeBases";
@@ -41,12 +42,12 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
     if (DEMO_MODE) return;
     try {
       const fresh = await listNotesOutputs(recordingId);
-      // While polling, only a generating set can change on the server. The
-      // others change only by this user's edits, and a reply that crossed one
-      // in flight would reset the editor under them.
+      // Preserve edits to completed sets, while discovering automatically
+      // created outputs as well as refreshing those already generating.
       setOutputs((previous) => onlyGenerating
-        ? previous.map((output) => output.notes_status === "generating"
-          ? fresh.find((item) => item.id === output.id) ?? output : output)
+        ? [...previous.map((output) => output.notes_status === "generating"
+          ? fresh.find((item) => item.id === output.id) ?? output : output),
+        ...fresh.filter((item) => !previous.some((output) => output.id === item.id))]
         : fresh);
     } catch (cause) {
       console.error("Failed to load notes sets", cause);
@@ -55,13 +56,13 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
 
   // A find and replace or a speaker rename rewrites every set along with the
   // first notes, so a change to those reloads the sets too.
-  useEffect(() => { void load(false); }, [load, primaryNotes]);
+  useEffect(() => { void load(false); }, [load, primaryNotes, props.isGenerating]);
 
   useEffect(() => {
-    if (!extraGenerating) return;
+    if (!extraGenerating && !props.isGenerating) return;
     const timer = setInterval(() => void load(true), 3000);
     return () => clearInterval(timer);
-  }, [extraGenerating, load]);
+  }, [extraGenerating, props.isGenerating, load]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -71,9 +72,12 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
     finally { setBusy(false); }
   };
 
-  const generate = (templateId: number | null, create: boolean) => run(async () => {
+  const generate = (
+    templateId: number | null, create: boolean, kind: "notes" | "glossary" = "notes", extractMore = false,
+  ) => run(async () => {
     const response = await generateNotes(recordingId, templateId,
-      create ? { create_output: true } : { output_id: selected?.id });
+      create ? { create_output: true, ...(kind === "glossary" ? { kind } : {}) }
+        : { output_id: selected?.id, ...(extractMore ? { extract_more: true } : {}) });
     if (response.output) {
       const output = response.output;
       setOutputs((previous) => [...previous.filter((item) => item.id !== output.id), output].sort((a, b) => a.id - b.id));
@@ -97,7 +101,8 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
 
   const toolbarActions = <>
     {props.notes && <NotesTemplatePicker label="Generate another set" disabled={generating}
-      onSelect={(templateId) => void generate(templateId, true)} />}
+      onSelect={(templateId) => void generate(templateId, true)}
+      onSelectGlossary={() => void generate(null, true, "glossary")} />}
     {selected && <Button size="sm" variant="ghost" disabled={generating}
       onClick={() => setConfirmDelete(true)}>Delete set</Button>}
   </>;
@@ -126,7 +131,11 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
     {(error || selected?.error_message) && <p role="alert" className="p-3 text-sm text-status-danger-fg">{error || selected?.error_message}</p>}
     <div className="min-h-0 flex-1" role={outputs.length ? "tabpanel" : undefined}
       id="notes-output-panel" aria-labelledby={outputs.length ? selected ? `notes-output-${selected.id}` : "notes-output-primary" : undefined}>
-      {selected ? <NotesView {...props} key={selected.id} notes={selected.notes} localHistory fixedTemplate
+      {selected?.kind === "glossary" ? <GlossaryOutputView key={selected.id} notes={selected.notes}
+        isGenerating={generating}
+        onRegenerate={() => void generate(null, false)}
+        onExtractMore={() => void generate(null, false, "glossary", true)}
+        toolbarActions={toolbarActions} /> : selected ? <NotesView {...props} key={selected.id} notes={selected.notes} localHistory fixedTemplate
         activeTemplateId={selected.notes_template_id} isGenerating={busy || props.isGenerating || selected.notes_status === "generating"}
         onNotesChange={(notes) => void save(selected.id, notes)}
         onGenerateNotes={() => generate(null, false)}

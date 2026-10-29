@@ -520,7 +520,7 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
 }
 
 export interface NotesOutput extends BaseDBModel {
-  /** "notes" for a set generated from a notes template. */
+  /** "notes" for a template, "glossary" for newline-separated Term: meaning suggestions. */
   kind: string;
   name: string;
   notes: string | null;
@@ -806,6 +806,8 @@ export interface Settings {
   install_notes_template_id?: number | null;
   glossary_terms?: string;
   install_glossary_terms?: string;
+  glossary_suggestions_enabled?: boolean;
+  glossary_suggestions_limit?: number;
   enable_vad?: boolean;
   // With VAD on, whether transcription and speaker separation hear the muted
   // audio. Transcription defaults true, speaker separation false.

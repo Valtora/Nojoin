@@ -396,6 +396,8 @@ Meeting notes are generated once, at the end of processing, from every document 
 
 On a processed recording, open **Notes > Generate another set** beside **Regenerate Notes**, then choose a structure. The new set appears in a sub-tab named after that structure; a recording with only its original notes has no sub-tab row. **Regenerate Notes** reruns only the selected set, using its saved structure. Each extra set can be edited, exported as text with **Export Notes** (the file name includes the set's name), or removed with **Delete set** after confirmation. Find and replace and speaker renames apply to every set. Deleting the last extra set returns to the single notes view.
 
+**Generate another set > Glossary** creates a built-in glossary suggestions output instead of ordinary notes. Its **Glossary** sub-tab offers a checklist, **Extract more** and **Regenerate**, rather than the notes editor.
+
 The first set, labelled **Meeting notes** when sub-tabs are visible, remains the meeting's notes for chat, search, Meeting Edge, sharing and the recording's usual export. Extra sets are included only when exported from their own tab. Changing or deleting a template later does not change a set's saved structure; generate another set to use an updated template.
 
 ### Glossary
@@ -403,6 +405,10 @@ The first set, labelled **Meeting notes** when sub-tabs are visible, remains the
 **Settings > Transcription > Glossary** holds project names, acronyms, products and corrections for words the AI commonly mishears, one per line as `Term: meaning`. Administrators keep a **Shared glossary** that everyone can read; your own entries are added to it, and yours wins where both define the same term.
 
 The glossary is used for notes and by Meeting Edge. It does not change the transcript.
+
+To discover terms from a meeting, open **Notes > Generate another set > Glossary**. Suggestions cover meeting-specific jargon, projects, products, names and plausible transcription corrections, in the same `Term: meaning` format. Existing personal and shared glossary terms are excluded. Tick a line to add it to your personal glossary; untick it to remove your entry for that term. A term already in your personal glossary is checked even when its capitalisation or meaning differs. Shared entries are never changed here.
+
+In **Settings > Notes and live assistance > Notes structure**, enable **Suggest glossary terms automatically** to create a Glossary output when a meeting is finalised. This is off by default. **Glossary suggestions per extraction** defaults to 15 and accepts 5–50. **Extract more** appends up to that many new terms, excluding those already in the tab; **Regenerate suggestions** replaces the suggestions. Removing a suggestion output or regenerating it does not remove entries you have already added to your personal glossary.
 
 ### Tables In Notes
 

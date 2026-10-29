@@ -581,7 +581,12 @@ class LLMBackend:
         context = notes_context or NotesPromptContext()
         body = render_prompt_blocks(
             [
-                (None, LLMBackend.NOTES_INTRO),
+                (
+                    None,
+                    "Analyse the meeting using the output contract below."
+                    if context.output_spec_override
+                    else LLMBackend.NOTES_INTRO,
+                ),
                 (
                     "# Speaker Mapping",
                     LLMBackend.mapping_to_markdown_table(speaker_mapping),
@@ -590,7 +595,13 @@ class LLMBackend:
                     "# Recording Metadata",
                     build_meeting_metadata_prompt_section(context.metadata),
                 ),
-                ("# Glossary", build_glossary_prompt_section(context.glossary)),
+                (
+                    "# Glossary",
+                    build_glossary_prompt_section(
+                        context.glossary,
+                        for_notes=not bool(context.output_spec_override),
+                    ),
+                ),
                 ("# User Notes Context", build_user_notes_prompt_section(user_notes)),
                 (
                     "# Meeting Context",
@@ -607,9 +618,18 @@ class LLMBackend:
                 ),
                 # Structure and fidelity rules come from the shared body spec, so
                 # this prompt and the unified one cannot drift.
-                ("# Notes Format", build_notes_body_spec(context.notes_sections)),
+                (
+                    "# Notes Format",
+                    context.output_spec_override
+                    or build_notes_body_spec(context.notes_sections),
+                ),
                 ("# Transcript to Analyze", transcript),
-                (None, LLMBackend.NOTES_CLOSING),
+                (
+                    None,
+                    "Return only the JSON array required by the output contract."
+                    if context.output_spec_override
+                    else LLMBackend.NOTES_CLOSING,
+                ),
             ]
         )
         return body

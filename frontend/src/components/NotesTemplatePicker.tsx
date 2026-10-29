@@ -11,6 +11,8 @@ interface NotesTemplatePickerProps {
   /** Template that produced the current notes, if any. */
   activeTemplateId?: number | null;
   onSelect: (notesTemplateId: number | null) => void;
+  /** Built-in output available only when adding another set. */
+  onSelectGlossary?: () => void;
   label?: string;
 }
 
@@ -24,6 +26,7 @@ export default function NotesTemplatePicker({
   disabled = false,
   activeTemplateId = null,
   onSelect,
+  onSelectGlossary,
   label,
 }: NotesTemplatePickerProps) {
   const [open, setOpen] = useState(false);
@@ -91,8 +94,16 @@ export default function NotesTemplatePicker({
       {open && (
         <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="float" className="absolute right-0 z-[var(--z-dropdown)] mt-1 w-64 rounded-md border border-surface-border bg-surface-card shadow-float py-1">
           <p className="px-3 py-1.5 text-[11px] uppercase tracking-wide contrast-helper">
-            Generate with structure
+            {onSelectGlossary ? "Generate another set" : "Generate with structure"}
           </p>
+          {onSelectGlossary && <ButtonBase
+            type="button"
+            onClick={() => { setOpen(false); onSelectGlossary(); }}
+            className="w-full px-3 py-2 text-left text-sm text-contrast-muted hover:bg-surface-inset"
+          >
+            <span className="block">Glossary suggestions</span>
+            <span className="block text-xs contrast-helper">Terms to add to your personal glossary.</span>
+          </ButtonBase>}
           <ButtonBase
             type="button"
             onClick={() => handleSelect(null)}
