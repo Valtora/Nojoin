@@ -115,9 +115,10 @@ def _consume_overlap(
     A timed word belongs to the protected line holding its midpoint, and an
     untimed word goes with the timed word before it, or the first timed word
     when none precedes it. Runs of words outside every protected line stay
-    ordinary final segments, bounded by their timed words and the protected
-    lines beside them. Only a segment with no timed word is reviewed whole on
-    the first line.
+    ordinary final segments, split wherever a protected line lies between
+    them, even one holding no word's midpoint, and bounded by their timed
+    words and the protected lines beside them. Only a segment with no timed
+    word is reviewed whole on the first line.
     """
     words = segment.get("words") or []
     if not any(has_word_timing(word) for word in words):
@@ -126,22 +127,24 @@ def _consume_overlap(
             reviews[found[0]].append(text)
         return []
 
-    def owner(word: dict[str, Any]) -> int | None:
+    def owner(word: dict[str, Any]) -> tuple[int | None, int]:
+        """The protected line holding the midpoint, and how many lines end before it."""
         middle = _middle_ms(word)
-        return next(
+        line = next(
             (i for i in found if line_bounds[i][0] <= middle < line_bounds[i][1]),
             None,
         )
+        return line, sum(line_bounds[i][1] <= middle for i in found)
 
     current = next(owner(word) for word in words if has_word_timing(word))
-    owners: list[int | None] = []
+    owners: list[tuple[int | None, int]] = []
     for word in words:
         if has_word_timing(word):
             current = owner(word)
         owners.append(current)
 
     parts: list[dict[str, Any]] = []
-    for index, run in groupby(zip(words, owners), key=itemgetter(1)):
+    for (index, _gap), run in groupby(zip(words, owners), key=itemgetter(1)):
         kept = [word for word, _ in run]
         text = reconstruct_text_from_words(kept)
         if index is not None:
