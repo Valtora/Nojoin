@@ -65,6 +65,8 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
     recordingId: localCaptureId,
+    // The tab capturing: its runtime holds the capture.
+    ownedRecordingId: localCaptureId,
     pausedRecording: null,
     runtimeActive: false,
     status: localCaptureStatus,

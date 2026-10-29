@@ -108,7 +108,7 @@ describe("recording detail current metadata and capabilities", () => {
 
   it("keeps settled playback and export available while another recording captures", async () => {
     const { result } = renderHook(() => useRecordingDetail({
-      params, capture: { recordingId: "another", status: "recording" },
+      params, capture: { ownedRecordingId: "another", status: "recording" },
     }));
     await advance();
     expect(result.current.canPlayback).toBe(true);

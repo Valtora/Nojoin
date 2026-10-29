@@ -74,7 +74,7 @@ import { createRecordingMetadataReader } from "./recordingMetadataReader";
 
 interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
-  capture?: { recordingId: string | null; status: string };
+  capture?: { ownedRecordingId: string | null; status: string };
 }
 
 // A finished page still notices changes made from another tab or device: a
@@ -164,7 +164,11 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const audioUnavailableSinceRef = useRef<number | null>(null);
   const idleEtagRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
-  const localCaptureActive = !!recording && capture?.recordingId === recording.id &&
+  // Only this tab's runtime, a failed stop's included, keeps a recording in
+  // flight here ahead of the server. A stored ID outlives a reload after which
+  // another device may have finished the recording, and a recovery offer alone
+  // has nothing to play back from either.
+  const localCaptureActive = !!recording && capture?.ownedRecordingId === recording.id &&
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
   const canPlayback = !!recording && !isInFlightRecording && !localCaptureActive;
   const canExport = canPlayback;
