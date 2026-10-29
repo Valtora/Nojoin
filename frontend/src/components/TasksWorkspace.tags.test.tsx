@@ -40,7 +40,10 @@ describe("Tasks tag filters", () => {
     setCachedUserTimeZone("UTC");
     api.getTags.mockResolvedValue(tags);
     api.getRecordings.mockResolvedValue([]);
-    api.getUserTasks.mockResolvedValue(tasks);
+    // Stand in for the server's any-of tag filter.
+    api.getUserTasks.mockImplementation(async (_status: string, tagIds: number[] = []) =>
+      tagIds.length === 0 ? tasks : tasks.filter((item) => item.tags?.some((tag) => tagIds.includes(tag.id))),
+    );
   });
 
   it("uses navigation selections, matches any tag, and removes or clears filters", async () => {
@@ -84,15 +87,17 @@ describe("Tasks tag filters", () => {
     expect(await screen.findByRole("heading", { name: "Archived plan" })).toBeInTheDocument();
   });
 
-  it("hides an edited task that no longer matches the selection", async () => {
+  it("keeps a task created under an active filter until the next fetch", async () => {
     useNavigationStore.setState({ selectedTagIds: [1] });
-    api.updateUserTask.mockResolvedValue(task(1, "Plan release", []));
+    api.createUserTask.mockResolvedValue(task(6, "Untagged follow-up", []));
     render(<TasksWorkspace />);
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("heading", { name: "Plan release" });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    fireEvent.change(screen.getByPlaceholderText("Task title"), { target: { value: "Untagged follow-up" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
 
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Plan release" })).not.toBeInTheDocument());
-    expect(screen.getByText("No open tasks match the selected tags.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Untagged follow-up" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Plan release" })).toBeInTheDocument();
   });
 
   it("refreshes results after a selected tag is deleted and can clear the filter", async () => {
@@ -109,6 +114,19 @@ describe("Tasks tag filters", () => {
     api.getUserTasks.mockResolvedValue([task(1, "Plan release", [])]);
     fireEvent.click(screen.getByRole("button", { name: "Clear All" }));
     expect(await screen.findByRole("heading", { name: "Plan release" })).toBeInTheDocument();
+  });
+
+  it("keeps the list when a reload after a tag edit fails", async () => {
+    render(<TasksWorkspace />);
+    await screen.findByRole("heading", { name: "Plan release" });
+
+    api.getUserTasks.mockRejectedValue(new Error("offline"));
+    act(() => { window.dispatchEvent(new Event("tags-updated")); });
+
+    await waitFor(() => expect(api.getUserTasks).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(screen.getByRole("heading", { name: "Plan release" })).toBeInTheDocument();
+    expect(screen.queryByText("Loading tasks...")).not.toBeInTheDocument();
   });
 
   it("ignores an older response after the selected tags change", async () => {

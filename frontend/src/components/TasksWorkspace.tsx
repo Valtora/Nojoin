@@ -272,14 +272,16 @@ export default function TasksWorkspace() {
 
   useEffect(() => {
     let cancelled = false;
-    const loadTasks = async () => {
-      setLoading(true);
+    // A tag edit elsewhere reloads quietly: the list stays up, and on failure
+    // it keeps what it last showed.
+    const loadTasks = async (quiet: boolean) => {
+      if (!quiet) setLoading(true);
       try {
         const taskData = await getUserTasks("all", selectedTagIds);
         if (!cancelled) setTasks(sortTasks(taskData));
       } catch (error: unknown) {
         if (!cancelled) {
-          setTasks([]);
+          if (!quiet) setTasks([]);
           addNotification({
             type: "error",
             message: getErrorMessage(error, "Failed to load tasks."),
@@ -289,8 +291,18 @@ export default function TasksWorkspace() {
         if (!cancelled) setLoading(false);
       }
     };
-    void loadTasks();
-    const handleTagsUpdated = () => void loadTasks();
+    void loadTasks(false);
+    const handleTagsUpdated = () => {
+      void loadTasks(true);
+      getTags()
+        .then(setTags)
+        .catch((error: unknown) => {
+          addNotification({
+            type: "error",
+            message: getErrorMessage(error, "Failed to refresh tags."),
+          });
+        });
+    };
     window.addEventListener("tags-updated", handleTagsUpdated);
     return () => {
       cancelled = true;
@@ -328,32 +340,12 @@ export default function TasksWorkspace() {
     };
   }, [addNotification]);
 
-  useEffect(() => {
-    const handleTagsUpdated = () => {
-      getTags()
-        .then(setTags)
-        .catch((error: unknown) => {
-          addNotification({
-            type: "error",
-            message: getErrorMessage(error, "Failed to refresh tags."),
-          });
-        });
-    };
-
-    window.addEventListener("tags-updated", handleTagsUpdated);
-    return () => window.removeEventListener("tags-updated", handleTagsUpdated);
-  }, [addNotification]);
-
   const taskGroups = useMemo(() => {
-    // Keep newly created or edited tasks within the server filter's selection.
-    const matching = selectedTagIds.length === 0 ? tasks : tasks.filter((task) =>
-      task.tags?.some((tag) => selectedTagIds.includes(tag.id)),
-    );
-    const open = matching.filter((task) => !task.archived_at && !task.completed_at);
-    const completed = matching.filter((task) => !task.archived_at && task.completed_at);
-    const archived = matching.filter((task) => task.archived_at);
+    const open = tasks.filter((task) => !task.archived_at && !task.completed_at);
+    const completed = tasks.filter((task) => !task.archived_at && task.completed_at);
+    const archived = tasks.filter((task) => task.archived_at);
     return { open, completed, archived };
-  }, [tasks, selectedTagIds]);
+  }, [tasks]);
 
   const visibleTasks = taskGroups[view];
 
