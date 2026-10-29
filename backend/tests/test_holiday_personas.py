@@ -1,4 +1,8 @@
-"""The holiday persona files: every shipped one loads, and a broken one is skipped."""
+"""The holiday persona files: every shipped one loads, and a broken one is skipped.
+
+Also the notes prompts for a meeting too long for one call, which are built
+apart from the whole-meeting prompt and must carry the same tone.
+"""
 
 from __future__ import annotations
 
@@ -7,12 +11,22 @@ from pathlib import Path
 
 import pytest
 
+from backend.utils.long_meeting_notes import (
+    _Notes,
+    build_merge_prompt,
+    build_part_prompt,
+    context_for_notes,
+)
+from backend.utils.meeting_notes import NotesPromptContext
 from backend.utils.personas import (
     PERSONAS_DIR,
     SURFACES,
+    TONE_HEADING,
     ActivePersona,
     load_personas,
+    persona_by_slug,
 )
+from backend.utils.transcript_parts import TranscriptPart
 
 GOOD = """
 name = "Talk Like a Pirate Day"
@@ -89,3 +103,31 @@ def test_every_persona_tone_carries_the_safety_line() -> None:
             tone = ActivePersona(persona, "dated").tone(surface)
             assert tone.startswith(persona.line(surface))
             assert safety in tone
+
+
+@pytest.mark.parametrize("with_persona", [True, False], ids=["persona", "none"])
+def test_a_long_meetings_part_and_merge_prompts_carry_the_notes_tone(
+    with_persona: bool,
+) -> None:
+    pirate = persona_by_slug("pirate")
+    assert pirate is not None
+    active = ActivePersona(pirate, "command") if with_persona else None
+    context = context_for_notes(
+        "| SPEAKER_00 | Mira |", None, None, None, NotesPromptContext(persona=active)
+    )
+    part = TranscriptPart(
+        text="[00:00:01] SPEAKER_00: Hello.", start="00:00", end="00:01"
+    )
+    notes = _Notes(text="## Summary\nHello.", first=1, last=1, start=None, end=None)
+
+    prompts = [
+        build_part_prompt(context, 1, 2, part),
+        build_merge_prompt(context, [notes], 2, final=True),
+    ]
+
+    for prompt in prompts:
+        if active is None:
+            assert TONE_HEADING not in prompt
+        else:
+            section = f"{TONE_HEADING}\n{active.tone('notes')}"
+            assert prompt.index("# Notes Format") < prompt.index(section)

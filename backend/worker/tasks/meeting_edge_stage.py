@@ -13,6 +13,7 @@ from backend.services.timeline_note_service import (
     load_recording_timeline_notes,
 )
 from backend.utils.meeting_edge import normalize_meeting_edge_items
+from backend.utils.persona_settings import surface_tone
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.timeline_notes import (
     iter_timeline,
@@ -484,6 +485,7 @@ def _refresh_meeting_edge(self, recording_id: int):
             previous_points=_read_meeting_edge_payload_items(
                 previous_payload, "points"
             ),
+            tone=surface_tone(user_settings, recording.id, "edge"),
         )
 
         _set_meeting_edge_state(

@@ -52,6 +52,7 @@ from backend.utils.meeting_notes import (
     is_placeholder_speaker_name,
     strip_leading_title_heading,
 )
+from backend.utils.personas import tone_block
 from backend.utils.prompt_blocks import PromptBlock, render_prompt_blocks
 from backend.utils.speaker_name_suggestions import detect_rule_based_speaker_suggestions
 from backend.utils.transcript_parts import (
@@ -182,6 +183,8 @@ class LongMeetingContext:
     language: str
     notes_spec: str
     request: Optional[AutomaticMeetingIntelligenceRequest] = None
+    # A holiday persona's notes tone, as the whole-meeting prompt carries it.
+    tone: Optional[str] = None
 
 
 def context_for_notes(  # noqa: PLR0913 - one argument per prompt section
@@ -202,6 +205,7 @@ def context_for_notes(  # noqa: PLR0913 - one argument per prompt section
         documents=build_documents_prompt_section(notes_context.documents),
         language=build_output_language_prompt_section(output_language_instruction),
         notes_spec=build_notes_body_spec(notes_context.notes_sections),
+        tone=notes_context.tone,
     )
 
 
@@ -221,6 +225,7 @@ def context_for_request(
         ),
         notes_spec=build_notes_body_spec(request.notes_sections),
         request=request,
+        tone=request.notes_only_tone,
     )
 
 
@@ -308,6 +313,7 @@ def build_part_prompt(
             *head,
             *_shared_blocks(context, documents=True),
             ("# Notes Format", context.notes_spec),
+            tone_block(context.tone),
             ("# This Part", _part_instructions(index, total, part, words)),
             ("# Transcript Part", part.text),
             (None, _closing(closing, words)),
@@ -432,6 +438,7 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
             *head,
             *_shared_blocks(context, documents=False),
             ("# Notes Format", context.notes_spec),
+            tone_block(context.tone),
             ("# Combining Rules", _combining_rules(scope, words)),
             ("# Notes of the Parts", part_notes),
             (None, closing),

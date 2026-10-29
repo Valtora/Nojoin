@@ -58,6 +58,7 @@ from backend.utils.meeting_notes import (
     build_user_notes_prompt_section,
     strip_leading_title_heading,
 )
+from backend.utils.personas import tone_block
 from backend.utils.prompt_blocks import render_prompt_blocks
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -628,6 +629,7 @@ class LLMBackend:
                 # Structure and fidelity rules come from the shared body spec, so
                 # this prompt and the unified one cannot drift.
                 ("# Notes Format", build_notes_body_spec(context.notes_sections)),
+                tone_block(context.tone),
                 ("# Transcript to Analyze", transcript),
                 (None, LLMBackend.NOTES_CLOSING),
             ]

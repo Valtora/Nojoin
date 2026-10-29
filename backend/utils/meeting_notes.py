@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.personas import ActivePersona
 
 PLACEHOLDER_SPEAKER_PATTERN = re.compile(
     r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$",
@@ -457,6 +458,13 @@ class NotesPromptContext:
     # Parsed text of the meeting's attached documents. Uncapped by design,
     # matching the transcript, which has never been truncated either.
     documents: Optional[Sequence["AttachedDocument"]] = None
+    # The holiday persona these notes are written in, set only while the
+    # user's notes surface is on (backend.utils.persona_settings).
+    persona: Optional[ActivePersona] = None
+
+    @property
+    def tone(self) -> Optional[str]:
+        return self.persona.tone("notes") if self.persona else None
 
 
 def build_glossary_prompt_section(

@@ -21,6 +21,7 @@ from backend.utils.meeting_notes import (
     resolve_recording_speaker_name,
     strip_leading_title_heading,
 )
+from backend.utils.personas import tone_block
 from backend.utils.prompt_blocks import render_prompt_blocks
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
@@ -94,6 +95,18 @@ class AutomaticMeetingIntelligenceRequest:
     # Parsed text of the meeting's attached documents, rendered inside
     # untrusted-content delimiters. See build_documents_prompt_section.
     documents: Sequence["AttachedDocument"] | None = None
+    # A holiday persona's notes tone (NotesPromptContext.tone), or None.
+    tone: str | None = None
+
+    @property
+    def notes_only_tone(self) -> str | None:
+        """``tone``, held to the notes: the title and speaker names stay plain."""
+        if not self.tone:
+            return None
+        return (
+            f"{self.tone} It applies to notes_markdown only; write the title and "
+            "the speaker mapping as usual."
+        )
 
     @property
     def uses_custom_notes_sections(self) -> bool:
@@ -319,6 +332,7 @@ def build_automatic_meeting_intelligence_prompt(
                 "# Notes Markdown Requirements",
                 build_notes_body_spec(request.notes_sections),
             ),
+            tone_block(request.notes_only_tone),
             ("# Transcript", request.resolved_transcript),
         ]
     )

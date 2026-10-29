@@ -1,6 +1,7 @@
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.persona_settings import record_notes_persona
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 from backend.utils.transcript_change import change_sequence_bump
@@ -155,6 +156,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         # time, so a later edit or deletion cannot rewrite the record.
         transcript.notes_template_id = resolved_template.template_id
         transcript.notes_template_sections = resolved_template.sections
+        record_notes_persona(
+            session, recording.user_id, recording.id, notes_context.persona
+        )
         recording.processing_step = "Completed"
         recording.processing_progress = 100
         session.add(transcript)

@@ -13,6 +13,8 @@ from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.meeting_notes import append_user_notes_section
+from backend.utils.persona_settings import record_notes_persona
+from backend.utils.personas import ActivePersona
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.utils.transcript_change import change_sequence_bump
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
@@ -85,6 +87,7 @@ def _apply_automatic_meeting_intelligence_result(
     meeting_context: MeetingEventContext | None,
     provider: str | None,
     resolved_template: ResolvedNotesTemplate | None = None,
+    notes_persona: ActivePersona | None = None,
 ) -> None:
     from backend.processing.embedding import cosine_similarity
 
@@ -147,6 +150,7 @@ def _apply_automatic_meeting_intelligence_result(
         # Provenance: the template and its text at generation time (issue #137).
         transcript.notes_template_id = resolved_template.template_id
         transcript.notes_template_sections = resolved_template.sections
+    record_notes_persona(session, recording.user_id, recording.id, notes_persona)
     session.add(recording)
     session.add(transcript)
     # As in generate_notes_task: the notes status can be back where another
@@ -285,6 +289,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
         glossary=notes_context.glossary,
         meeting_metadata=notes_context.metadata,
         documents=notes_context.documents,
+        tone=notes_context.tone,
     )
 
     if update_processing_status:
@@ -344,6 +349,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
             meeting_context=meeting_context,
             provider=llm_config.provider,
             resolved_template=resolved_template,
+            notes_persona=notes_context.persona,
         )
         logger.info(
             "Generated unified meeting intelligence for recording %s",

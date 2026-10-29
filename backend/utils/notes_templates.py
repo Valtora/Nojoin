@@ -38,6 +38,7 @@ from backend.utils.meeting_notes import (
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
 )
+from backend.utils.persona_settings import active_persona
 from backend.utils.timezones import utc_naive_to_timezone
 
 logger = logging.getLogger(__name__)
@@ -544,6 +545,11 @@ def build_notes_prompt_context(  # noqa: PLR0913 - one argument per prompt input
             timezone_name=(settings or {}).get("timezone"),
         ),
         documents=documents or None,
+        persona=(
+            active_persona(settings, recording_id, "notes")
+            if recording_id is not None
+            else None
+        ),
     )
     return context, template
 
