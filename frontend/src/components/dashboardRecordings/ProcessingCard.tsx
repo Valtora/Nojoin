@@ -51,7 +51,7 @@ export default function ProcessingCard({ recordings }: ProcessingCardProps) {
                   </span>
                   <RecordingAttentionBadge
                     recordingId={recording.id}
-                    fallback={<StatusBadge status={recording.status} size="sm" />}
+                    fallback={<StatusBadge status={recording.status} clientStatus={recording.client_status} size="sm" />}
                   />
                 </span>
                 {recording.processing_step || eta ? (

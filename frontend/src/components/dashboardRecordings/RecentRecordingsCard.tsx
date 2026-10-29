@@ -69,7 +69,7 @@ export default function RecentRecordingsCard({
                 <RecordingAttentionBadge
                   recordingId={recording.id}
                   fallback={recording.status !== RecordingStatus.PROCESSED
-                    ? <StatusBadge status={recording.status} size="sm" /> : null}
+                    ? <StatusBadge status={recording.status} clientStatus={recording.client_status} size="sm" /> : null}
                 />
               </Link>
             </li>

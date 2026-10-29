@@ -559,6 +559,28 @@ async def test_session_init_pause_resume_finalize_round_trip(
 
 
 @pytest.mark.anyio
+async def test_recordings_list_carries_a_running_capture_client_status(
+    client: AsyncClient,
+) -> None:
+    # A capture is UPLOADING like a finishing upload; the dashboard tells them
+    # apart by client status.
+    set_session_cookie(client)
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Browser meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+
+    listed = await client.get("/api/v1/recordings/")
+
+    assert listed.status_code == 200
+    assert [(row["status"], row["client_status"]) for row in listed.json()] == [
+        ("UPLOADING", "RECORDING")
+    ]
+
+
+@pytest.mark.anyio
 async def test_finalize_accepts_paused_recording_without_resuming(
     client: AsyncClient,
     monkeypatch,

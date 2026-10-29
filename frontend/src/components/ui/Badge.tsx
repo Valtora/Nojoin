@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { AlertCircle, Check, Loader2, Pause, UploadCloud } from "lucide-react";
+import { AlertCircle, Check, Loader2, Mic, Pause, UploadCloud } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import { RecordingStatus } from "@/types";
+import { ClientStatus, RecordingStatus } from "@/types";
 
 export type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 export type BadgeSize = "sm" | "md";
@@ -107,8 +107,20 @@ const STATUS_MAP: Record<RecordingStatus, StatusDescriptor> = {
   },
 };
 
+// A capture in progress is UPLOADING on the server whether it is running or
+// paused; the browser's own state tells the two apart from a finishing upload.
+const CAPTURE_MAP: Partial<Record<ClientStatus, StatusDescriptor>> = {
+  [ClientStatus.RECORDING]: {
+    tone: "warning",
+    label: "Recording",
+    icon: <Mic aria-hidden="true" />,
+  },
+  [ClientStatus.PAUSED]: STATUS_MAP[RecordingStatus.PAUSED],
+};
+
 interface StatusBadgeProps {
   status: RecordingStatus;
+  clientStatus?: ClientStatus | null;
   /** True while meeting notes are generating, which is a sub-state of PROCESSED. */
   generatingNotes?: boolean;
   size?: BadgeSize;
@@ -119,6 +131,7 @@ interface StatusBadgeProps {
 
 export function StatusBadge({
   status,
+  clientStatus,
   generatingNotes = false,
   size = "md",
   label,
@@ -130,7 +143,8 @@ export function StatusBadge({
         label: "Generating notes",
         icon: <Loader2 aria-hidden="true" className="animate-spin" />,
       }
-    : STATUS_MAP[status];
+    : (status === RecordingStatus.UPLOADING && clientStatus && CAPTURE_MAP[clientStatus]) ||
+      STATUS_MAP[status];
 
   return (
     <Badge tone={descriptor.tone} size={size} icon={descriptor.icon} className={className}>
