@@ -273,6 +273,16 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["microphone", "mic", "device", "input", "capture", "browser capture"],
   },
   {
+    id: "recording-release-microphone-on-pause",
+    label: "Release the microphone while paused",
+    description: "Free the microphone after Pause. Shared audio stays open; Resume opens the microphone again.",
+    category: "recording",
+    access: "all",
+    scope: "browser",
+    defaultValue: DEFAULT_CAPTURE_SETTINGS.releaseMicrophoneOnPause,
+    keywords: ["release microphone", "mic", "pause", "resume", "privacy", "free microphone"],
+  },
+  {
     id: "recording-microphone-gain",
     label: "Microphone gain",
     description: "The local microphone level mixed into the recording.",
@@ -480,7 +490,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "transcription-line-break-pause",
     label: "Line break pause",
-    description: "Start a new line after a longer pause in live settling lines and diarised final transcripts when speakers are detected.",
+    description: "Start a new line after a longer pause, in live lines when word settling is on and in processed transcripts.",
     category: "transcription",
     access: "all",
     settingsKeys: ["line_break_pause_s"],
@@ -490,7 +500,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "transcription-live-settling",
     label: "Live word settling",
-    description: "Revise recent words and lock unchanged wording on a GPU, or on a CPU too.",
+    description: "Revise the newest live words, then lock them: on a GPU server, or on a CPU-only one too.",
     category: "transcription",
     access: "admin",
     scope: "everyone",
@@ -502,7 +512,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "transcription-live-settling-k",
     label: "Unchanged comparisons",
-    description: "Successful unchanged comparisons before live words lock.",
+    description: "How many unchanged repeats a live word needs before it locks.",
     category: "transcription",
     access: "admin",
     scope: "everyone",
@@ -514,7 +524,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "transcription-live-settling-window",
     label: "Settling window",
-    description: "Total audio cap per live settling pass, including lead-up.",
+    description: "How much recent audio is transcribed again each time while live words settle.",
     category: "transcription",
     access: "admin",
     scope: "everyone",

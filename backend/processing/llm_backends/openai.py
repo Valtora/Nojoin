@@ -437,7 +437,9 @@ class OpenAILLMBackend(LLMBackend):
         # Lead with the stable meeting context as a system message so OpenAI's
         # automatic prefix caching can reuse it across turns; the volatile
         # question is sent last.
-        context = build_chat_context(meeting_notes, diarized_transcript)
+        context = build_chat_context(
+            meeting_notes, diarized_transcript, notes_tool=True
+        )
         messages = [{"role": "system", "content": context}] + build_chat_messages(
             user_question, conversation_history
         )

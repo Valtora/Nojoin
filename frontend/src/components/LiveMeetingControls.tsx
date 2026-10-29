@@ -7,6 +7,7 @@ import { useState, type ReactNode } from "react";
 import SpeakerCapField from "@/components/SpeakerCapField";
 import { updateRecordingMaxSpeakers } from "@/lib/api";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 interface LiveMeetingControlsProps {
@@ -151,7 +152,8 @@ export default function LiveMeetingControls({
 
       return await stop();
     } catch (err: unknown) {
-      if (!controller.getState().error) {
+      // The Stop or Discard that overtook a Resume reports its own outcome.
+      if (!(err instanceof CaptureResumeSupersededError) && !controller.getState().error) {
         addNotification({
           type: "error",
           message:

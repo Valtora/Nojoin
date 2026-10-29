@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { getGlobalSpeakers } from "@/lib/api";
 import type { GlobalSpeaker, RecordingSpeaker, TranscriptSegment, TranscriptSpeakerAssignment } from "@/types";
 import { splitWords } from "@/lib/transcript/settling";
@@ -9,6 +9,7 @@ import Button from "../ui/Button";
 import { SelectBase, TextareaBase } from "../ui/nativeBases";
 import SpeakerAssignmentPopover from "../SpeakerAssignmentPopover";
 import { useAnchoredPanel } from "../ui/useAnchoredPanel";
+import { usePanelDismissal } from "../ui/usePanelDismissal";
 
 export interface LiveLineHandlers {
   editText: (segment: TranscriptSegment, text: string) => Promise<boolean>;
@@ -50,25 +51,47 @@ export default function LiveLineEditor({
     void getGlobalSpeakers().then((names) => { if (current) setPeople(names); }).catch(() => {});
     return () => { current = false; };
   }, [kind]);
+  // Back to the ⋯ button it opened from; a press outside leaves focus where it landed.
+  const close = () => { onClose(); anchor.focus(); };
+  // The speaker picker handles its own presses outside. The others let go
+  // while nothing typed or chosen would be lost, and never mid-save.
+  const unchanged = kind === "split" ? wordId === (words[0]?.id ?? "") : text === segment.text;
+  const handlePanelKeyDown = usePanelDismissal({
+    panelRef, anchor, unchanged: kind !== "changeSpeaker" && unchanged && !saving,
+    dismiss: onClose, close: () => { if (!saving) close(); },
+  });
+  // A refusal keeps the editor open. Save and the text were disabled while it
+  // ran, which dropped focus to the page, so the text is enabled again first
+  // and focus goes back to it or the picker.
   const save = async (command: () => Promise<boolean>) => {
     if (saving) return;
     setSaving(true);
     try {
-      if (await command()) onClose();
+      if (await command()) close();
+      else {
+        flushSync(() => setSaving(false));
+        (kind === "split" ? splitPickerRef : textEditorRef).current?.focus();
+      }
     } catch (error) {
       console.error("Failed to save the transcript line", error);
     } finally { setSaving(false); }
+  };
+  // Text as it opened closes without a request, as in the finished view: the
+  // server would replace the line's timed words with one untimed atom.
+  const saveText = () => {
+    if (text === segment.text) close();
+    else void save(() => handlers.editText(segment, text));
   };
   if (kind === "changeSpeaker") return (
     <SpeakerAssignmentPopover
       availableSpeakers={speakers} globalSpeakers={people} currentSpeakerLabel={segment.speaker}
       targetElement={anchor} speakerColors={{}}
-      onSelect={(assignment) => void save(() => handlers.changeSpeaker(segment, assignment))} onClose={onClose}
+      onSelect={(assignment) => void save(() => handlers.changeSpeaker(segment, assignment))} onClose={close}
     />
   );
   return createPortal(
     <div ref={panelRef} style={panelStyle} role="dialog" aria-label={kind === "split" ? "Split line" : "Edit line text"}
-      onKeyDown={(event) => { if (event.key === "Escape" && !saving) onClose(); }}
+      onKeyDown={handlePanelKeyDown}
       className="z-[var(--z-dropdown)] w-80 max-w-[calc(100vw-2rem)] rounded border border-surface-border bg-surface-card p-3 text-foreground shadow-float">
       {kind === "editText" ? (
         <TextareaBase ref={textEditorRef} aria-label="Line text" value={text} disabled={saving}
@@ -84,11 +107,11 @@ export default function LiveLineEditor({
         </label>
       )}
       <div className="mt-2 flex gap-2">
-        <Button size="sm" disabled={saving || (kind === "split" && !wordId)} onClick={() => void save(() =>
-          kind === "split" ? handlers.split(segment, wordId) : handlers.editText(segment, text))}>
+        <Button size="sm" disabled={saving || (kind === "split" && !wordId)} onClick={() =>
+          kind === "split" ? void save(() => handlers.split(segment, wordId)) : saveText()}>
           {kind === "split" ? "Split" : "Save"}
         </Button>
-        <Button size="sm" variant="ghost" disabled={saving} onClick={onClose}>Cancel</Button>
+        <Button size="sm" variant="ghost" disabled={saving} onClick={close}>Cancel</Button>
       </div>
     </div>, document.body,
   );
