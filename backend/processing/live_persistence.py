@@ -19,6 +19,7 @@ from backend.utils.audio_windows import (
 from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.meeting_brief import get_live_title_delay_minutes
+from backend.utils.recording_audio_sync import lock_recording_audio
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     load_capture_publication,
@@ -85,11 +86,11 @@ def _persist_live_run(
 ) -> LivePublicationResult:
     """Persist provisional live utterances and manifest coverage.
 
-    Re-reads recording status under a fresh session: the live↔final alignment
-    invariant requires that provisional writes only land while the recording is
-    still in flight (UPLOADING/PAUSED); a late status flip to a terminal/final
-    state rejects the result without advancing the obsolete lane checkpoint.
-    Returns acceptance and whether a Meeting Edge refresh should be dispatched.
+    Takes the audio lock and then the Transcript fence, the order Stop, pause and
+    resume use; finalize holds both to its commit. Writes only while the capture is
+    UPLOADING/PAUSED, so a late status flip rejects the result without advancing
+    the obsolete lane checkpoint. Returns acceptance and whether to refresh
+    Meeting Edge.
     """
     from backend.core.db import get_sync_session
 
@@ -97,6 +98,7 @@ def _persist_live_run(
     live_title_delay_minutes = 0
     session = get_sync_session()
     try:
+        lock_recording_audio(session, recording_id)
         transcript, recording = load_capture_publication(session, recording_id)
         if publication_is_current(recording, transcript, expected_token):
             resolve_capture_settling_policy(

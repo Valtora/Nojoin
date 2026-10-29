@@ -14,8 +14,14 @@ from backend import preload_models
 
 
 @pytest.fixture
-def prepared(monkeypatch) -> list[str]:
-    """Record each preparation step in place of the real downloads."""
+def prepared(
+    monkeypatch, stub_celery_dispatch, model_cache_env, download_progress_in_memory
+) -> list[str]:
+    """Record each preparation step in place of the real downloads.
+
+    Canary's aligner is queued on the CPU lane rather than prepared here, so
+    that request is recorded by the dispatch stub against an isolated cache.
+    """
     steps: list[str] = []
     monkeypatch.setattr(preload_models, "clear_download_progress", lambda: None)
     monkeypatch.setattr(
@@ -67,10 +73,7 @@ def test_core_batch_on_an_onnx_engine_skips_whisper(
         **{model_kwarg: model_id},
     )
 
-    expected = ["pyannote", f"onnx:{backend}/{model_id}"]
-    if backend == "canary":
-        expected.append("forced_aligner")
-    assert prepared == expected
+    assert prepared == ["pyannote", f"onnx:{backend}/{model_id}"]
 
 
 def test_core_batch_on_whisper_prepares_the_configured_whisper_size(prepared):
