@@ -384,6 +384,21 @@ def test_chat_keeps_unknown_lines_when_no_speaker_is_known(engine):
     assert transcript == "[00:00] Unidentified speaker: Hello."
 
 
+def test_live_chat_names_an_unlabelled_live_line_as_an_unidentified_speaker(engine):
+    # A live line is UNKNOWN until the live labeller assigns it.
+    _insert_transcript(engine, segments=None)
+    _insert_utterance(engine, 1, (0, 1000), "LIVE_PROVISIONAL_1", "Labelled.")
+    _insert_utterance(engine, 2, (1000, 2000), "UNKNOWN", "Not labelled yet.")
+    _update_utterance(engine, 1, state="provisional")
+    _update_utterance(engine, 2, state="provisional")
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID, live=True)
+
+    assert transcript == (
+        "[00:00] Speaker 1: Labelled.\n[00:01] Unidentified speaker: Not labelled yet."
+    )
+
+
 def test_chat_names_a_merged_speakers_lines_after_the_target(engine):
     # A merge relabels the source's utterances (and the projection) to the
     # target and keeps the source row, pointing at the target, for
