@@ -536,6 +536,8 @@ def serialize_canonical_utterances(
         payload.update(
             public_settling_fields(
                 utterance.confidence_payload,
+                provisional=settling_required(transcript)
+                and utterance.state == TranscriptUtteranceState.PROVISIONAL,
                 final_utterance_id=utterance.public_id
                 if settling_required(transcript)
                 and utterance.state == TranscriptUtteranceState.FINALIZED

@@ -162,8 +162,7 @@ describe("PCM recorder", () => {
     source.render(INPUT_RATE * 2);
     await recorder.pause();
     source.render(INPUT_RATE * 4);
-    recorder.resume();
-    await Promise.resolve();
+    await recorder.resume();
     source.render(INPUT_RATE * 2);
     await recorder.stop();
 

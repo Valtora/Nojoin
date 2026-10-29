@@ -15,7 +15,7 @@ export default function LineBreakPauseSettings({ settings, onUpdate }: Props) {
         id="transcription-line-break-pause"
         label="Line break pause"
         descriptionId="line-break-pause-help"
-        description="Start a new line after a pause longer than this many seconds. Applies to live settling lines and diarised final transcripts when speakers are detected. Without speaker detection, this pause does not regroup the transcription engine's segments. Empty uses the installation's value, or 1 second. Changes apply when recordings are processed; saved transcripts stay as they are."
+        description="Start a new line after a pause longer than this many seconds. Applies to live lines when word settling is on, and to processed transcripts when speakers are detected. Empty uses the installation's value, or 1 second. A change applies to new live lines and to recordings processed afterwards; saved transcripts stay as they are."
       >
         <TuningInput
           tuningKey="line_break_pause_s"

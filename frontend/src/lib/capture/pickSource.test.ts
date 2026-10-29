@@ -31,6 +31,29 @@ const buildStream = (options: {
 };
 
 describe("capture source picker", () => {
+  it("releases its current microphone after a paused capture replaces the stream", async () => {
+    const original = buildTrack("audio", "Original");
+    const replacement = buildTrack("audio", "Replacement");
+    const display = buildTrack("audio", "Shared");
+    const sources = await pickCaptureSource({
+      mode: "shared_audio",
+      settings: DEFAULT_CAPTURE_SETTINGS,
+      mediaDevices: {
+        enumerateDevices: vi.fn().mockResolvedValue([]),
+        getDisplayMedia: vi.fn().mockResolvedValue(buildStream({ audioTracks: [display] })),
+        getUserMedia: vi.fn().mockResolvedValue(buildStream({ audioTracks: [original] })),
+      } as unknown as MediaDevices,
+    });
+    original.stop();
+    sources.microphoneStream = buildStream({ audioTracks: [replacement] });
+
+    sources.release();
+
+    expect(replacement.stop).toHaveBeenCalledOnce();
+    expect(display.stop).toHaveBeenCalledOnce();
+    expect(original.stop).toHaveBeenCalledOnce();
+  });
+
   it("uses display and microphone sources for shared-audio capture", async () => {
     const displayStream = buildStream({
       audioTracks: [buildTrack("audio", "System Audio")],
