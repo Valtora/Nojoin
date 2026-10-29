@@ -9,7 +9,7 @@ import {
 import { createCaptureMixer } from "./mixer";
 import { createBrowserRecorder } from "./recorder";
 import type { SegmentStore } from "./segmentStore";
-import { readPausedCaptureContext } from "./shared";
+import { CaptureResumeSupersededError, readPausedCaptureContext } from "./shared";
 import { createSegmentUploader } from "./uploader";
 import { createWaveformMonitor } from "./waveform";
 const api = vi.hoisted(() => ({
@@ -243,8 +243,8 @@ describe("releasing only the microphone while paused", () => {
     expect(readPausedCaptureContext()).not.toBeNull();
     await capture[action]();
     boundary.resolve();
-    expect(await resuming).toBeInstanceOf(Error);
-    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false });
+    expect(await resuming).toBeInstanceOf(CaptureResumeSupersededError);
+    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false, error: null });
   });
   it("falls back with a warning only when enumeration proves the selected mic absent", async () => {
     const { capture } = await start();
@@ -301,11 +301,47 @@ describe("releasing only the microphone while paused", () => {
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
     await capture[action]();
     grant.resolve(mediaStream(replacement));
-    await resuming;
+    expect(await resuming).toBeInstanceOf(CaptureResumeSupersededError);
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(replacement.stop).toHaveBeenCalledOnce();
     expect(recorder.resume).not.toHaveBeenCalled();
-    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false });
+    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false, error: null });
+  });
+  it.each(["stop", "cancel"] as const)("%s during the audio context wait stands the Resume aside", async (action) => {
+    const { capture, mixer } = await start();
+    await capture.pause();
+    const rendering = deferred<boolean>();
+    vi.mocked(mixer.resumeContext).mockReturnValueOnce(rendering.promise);
+    const resuming = capture.resume().catch((error: unknown) => error);
+    await waitFor(() => expect(mixer.resumeContext).toHaveBeenCalledOnce());
+    await capture[action]();
+    // Closing the context on teardown leaves it not running.
+    rendering.resolve(false);
+    expect(await resuming).toBeInstanceOf(CaptureResumeSupersededError);
+    expect(api.resumeRecordingCapture).not.toHaveBeenCalled();
+    expect(replacement.readyState).toBe("ended");
+    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false, error: null });
+  });
+  it.each([
+    ["stop", "accepts"], ["stop", "refuses"], ["cancel", "accepts"], ["cancel", "refuses"],
+  ] as const)("%s during a slow server Resume with the setting off stands it aside when the server %s", async (action, answer) => {
+    const { capture } = await start("shared_audio", false);
+    await capture.pause();
+    const server = deferred<unknown>();
+    api.resumeRecordingCapture.mockReturnValueOnce(server.promise);
+    const resuming = capture.resume().catch((error: unknown) => error);
+    await waitFor(() => expect(api.resumeRecordingCapture).toHaveBeenCalledOnce());
+    await capture[action]();
+    if (answer === "accepts") {
+      server.resolve(lifecycle("UPLOADING"));
+    } else {
+      // What the server says once the recording has been stopped.
+      server.reject(Object.assign(new Error("Request failed with status code 409"), {
+        response: { status: 409, data: { detail: "Recording is no longer accepting capture uploads" } },
+      }));
+    }
+    expect(await resuming).toBeInstanceOf(CaptureResumeSupersededError);
+    expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false, error: null });
   });
   it("releases the microphone when an upload stall pauses capture", async () => {
     const { capture, uploaderOptions } = await start();

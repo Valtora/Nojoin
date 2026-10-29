@@ -67,6 +67,7 @@ import {
   type CaptureSourceReportSnapshot,
 } from "./sourceReport";
 import {
+  CaptureResumeSupersededError,
   clearPausedCaptureContext,
   DEFAULT_CAPTURE_LEVELS,
   type CaptureCoverageCause,
@@ -1006,12 +1007,16 @@ export class CaptureController {
       // A Stop or Discard while the server or recorder resumed owns it now.
       assertMicrophoneResumeCurrent(isCurrent);
     } catch (error: unknown) {
-      if (isCurrent()) {
-        if (released) releasePausedMicrophone(runtime, true);
-        // A capture that ended elsewhere reports its own message below.
-        if (!isEndedForThisTab(error)) {
-          this.setState({ status: "paused", error: formatCaptureError(error) });
-        }
+      // Whatever overtook this Resume owns the capture and reports its own
+      // outcome, so even a server refusal is left to it.
+      if (!isCurrent()) {
+        throw error instanceof CaptureResumeSupersededError
+          ? error : new CaptureResumeSupersededError({ cause: error });
+      }
+      if (released) releasePausedMicrophone(runtime, true);
+      // A capture that ended elsewhere reports its own message below.
+      if (!isEndedForThisTab(error)) {
+        this.setState({ status: "paused", error: formatCaptureError(error) });
       }
       throw await this.ifEndedElsewhere(error, runtime);
     } finally {

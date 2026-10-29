@@ -141,6 +141,17 @@ export interface StartCaptureResult {
 
 export type StartCaptureResponse = StartCaptureResult | null;
 
+/**
+ * Rejects a Resume that a Stop, Discard or other capture action overtook. That
+ * action owns the capture and reports its own outcome, so callers stay quiet.
+ */
+export class CaptureResumeSupersededError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("The recording changed while Resume was waiting. Try Resume again if it is still paused.", options);
+    this.name = "CaptureResumeSupersededError";
+  }
+}
+
 export interface GuardedExitRequest {
   reason: "pagehide" | "beforeunload" | "route-change";
   useBeacon: boolean;

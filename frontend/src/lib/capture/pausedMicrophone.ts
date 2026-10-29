@@ -2,7 +2,7 @@
 import type { CaptureMixer } from "./mixer";
 import type { PickedCaptureSources } from "./pickSource";
 import { reopenMicrophone } from "./reopenMicrophone";
-import type { CaptureSettings } from "./shared";
+import { CaptureResumeSupersededError, type CaptureSettings } from "./shared";
 import { describeCaptureSettings, describeTrack, type CaptureSourceReportSnapshot } from "./sourceReport";
 
 export interface PausedMicrophoneRuntime {
@@ -24,7 +24,7 @@ export const releasePausedMicrophone = (runtime: PausedMicrophoneRuntime, enable
 
 export const assertMicrophoneResumeCurrent = (isCurrent: () => boolean) => {
   if (!isCurrent()) {
-    throw new Error("The recording changed while Resume was waiting. Try Resume again if it is still paused.");
+    throw new CaptureResumeSupersededError();
   }
 };
 
