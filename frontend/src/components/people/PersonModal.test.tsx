@@ -98,33 +98,6 @@ describe("PersonModal meeting history lifecycle", () => {
     view.rerender(<PersonModal {...props} isOpen />);
     await waitFor(() => expect(getPersonMeetings).toHaveBeenCalledTimes(2));
   });
-
-  it("keeps contact editing visible until detailed meeting history is expanded", async () => {
-    vi.mocked(getPersonMeetings).mockResolvedValueOnce({
-      meeting_count: 50, total_talk_time_seconds: 60,
-      first_seen: "2026-10-01T00:00:00Z", last_seen: "2026-10-01T00:00:00Z",
-      talk_time_by_month: [{ month: "2026-10", talk_time_seconds: 60 }],
-      meetings: Array.from({ length: 50 }, (_, index) => ({
-        recording_id: `rec-${index}`, title: `History meeting ${index}`,
-        date: "2026-10-01T00:00:00Z", duration_seconds: 120, talk_time_seconds: 1,
-      })),
-    });
-    const onSave = vi.fn();
-    render(modal(dana(true, false), { onSave }));
-    const disclosure = await screen.findByText("View meeting history");
-    const name = screen.getByDisplayValue("Dana");
-    expect(name).toBeVisible();
-    expect(screen.getByText("50")).toBeVisible();
-    expect(disclosure.closest("details")).not.toHaveAttribute("open");
-    expect(screen.getByText("History meeting 0")).not.toBeVisible();
-    fireEvent.change(name, { target: { value: "Dana Reed" } });
-    fireEvent.click(disclosure);
-    expect(disclosure.closest("details")).toHaveAttribute("open");
-    expect(screen.getByRole("link", { name: /History meeting 0/ })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Talk time by month (UTC)" })).toBeVisible();
-    expect(screen.getByDisplayValue("Dana Reed")).toBeVisible();
-    expect(onSave).not.toHaveBeenCalled();
-  });
 });
 
 describe("PersonModal voiceprint lock", () => {

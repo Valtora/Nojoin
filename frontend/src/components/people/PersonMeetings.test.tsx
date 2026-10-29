@@ -39,16 +39,11 @@ describe("person meeting history", () => {
     vi.mocked(getPersonMeetings).mockResolvedValue(history());
     render(<PersonMeetings personId={7} />);
     expect(screen.getByRole("status")).toHaveTextContent("Loading meetings");
-    const disclosure = await screen.findByText("View meeting history");
-    expect(disclosure.closest("details")).not.toHaveAttribute("open");
-    expect(screen.getByText("75")).toBeInTheDocument();
+    expect(await screen.findByText("75")).toBeInTheDocument();
     expect(screen.getByText("1h 1m")).toBeInTheDocument();
     expect(screen.getByText("1 Jan 2025")).toBeInTheDocument();
     // Match the existing date-fns formatter's abbreviated month names.
     expect(screen.getByText("30 Sep 2026")).toBeInTheDocument();
-    expect(screen.getByText("Meeting 0")).not.toBeVisible();
-    fireEvent.click(disclosure);
-    expect(disclosure.closest("details")).toHaveAttribute("open");
     expect(screen.getByRole("heading", { name: "Latest 50 meetings" })).toBeVisible();
     expect(screen.getAllByRole("link")).toHaveLength(50);
     const unknown = screen.getByText("Meeting 0").closest("a")!;
@@ -72,7 +67,7 @@ describe("person meeting history", () => {
     expect(screen.queryByText("First seen")).not.toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    expect(screen.queryByText("View meeting history")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Monthly talk time" })).not.toBeInTheDocument();
   });
 
   it("retries a failed read without submitting an enclosing form", async () => {

@@ -60,30 +60,28 @@ function MeetingHistory({ data, timeZone }: { data: PersonMeetingsRead; timeZone
       <Figure label="First seen" value={displayDate(data.first_seen, timeZone)} />
       <Figure label="Last seen" value={displayDate(data.last_seen, timeZone)} />
     </dl>
-    <details className="space-y-4">
-      <summary className="cursor-pointer rounded-sm text-sm font-medium text-action-text focus-visible:outline-2 focus-visible:outline-focus-ring">
-        View meeting history
-      </summary>
+    {/* Bounded so a long history never pushes the contact form out of reach. */}
+    <div className="max-h-80 space-y-4 overflow-y-auto px-1">
       {data.talk_time_by_month.length > 0 && <MonthlyTalkTime months={data.talk_time_by_month} />}
       <div>
-      <h4 className="text-sm font-medium text-foreground">
-        {data.meeting_count > data.meetings.length ? `Latest ${data.meetings.length} meetings` : "Linked meetings"}
-      </h4>
-      <ul className="mt-2 divide-y divide-surface-border">
-        {data.meetings.map((meeting) => <li key={meeting.recording_id}>
-          <Link href={`/recordings/${meeting.recording_id}`}
-            className="block rounded-md py-2 focus-visible:outline-2 focus-visible:outline-focus-ring">
-            <span className="block truncate text-sm font-medium text-action-text hover:underline">{meeting.title}</span>
-            <span className="block text-xs text-contrast-helper">
-              {displayDate(meeting.date, timeZone)} · Duration: {meeting.duration_seconds === null
-                ? "Unknown" : formatDuration(meeting.duration_seconds * 1000)}
-              {" · Talk time: "}{formatDuration(meeting.talk_time_seconds * 1000)}
-            </span>
-          </Link>
-        </li>)}
-      </ul>
+        <h4 className="text-sm font-medium text-foreground">
+          {data.meeting_count > data.meetings.length ? `Latest ${data.meetings.length} meetings` : "Linked meetings"}
+        </h4>
+        <ul className="mt-2 divide-y divide-surface-border">
+          {data.meetings.map((meeting) => <li key={meeting.recording_id}>
+            <Link href={`/recordings/${meeting.recording_id}`}
+              className="block rounded-md py-2 focus-visible:outline-2 focus-visible:outline-focus-ring">
+              <span className="block truncate text-sm font-medium text-action-text hover:underline">{meeting.title}</span>
+              <span className="block text-xs text-contrast-helper">
+                {displayDate(meeting.date, timeZone)} · Duration: {meeting.duration_seconds === null
+                  ? "Unknown" : formatDuration(meeting.duration_seconds * 1000)}
+                {" · Talk time: "}{formatDuration(meeting.talk_time_seconds * 1000)}
+              </span>
+            </Link>
+          </li>)}
+        </ul>
       </div>
-    </details>
+    </div>
   </>;
 }
 
