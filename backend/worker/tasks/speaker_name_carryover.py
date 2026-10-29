@@ -38,7 +38,11 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_names.anchors import lines_from_final_segments
 from backend.utils.speaker_names.events import as_name_event
-from backend.utils.speaker_names.live import SURFACE_LIVE, live_label_spans
+from backend.utils.speaker_names.live import (
+    SURFACE_LIVE,
+    live_label_spans,
+    manually_reassigned_live_turns,
+)
 from backend.utils.speaker_names.resolve import NameEvent, ResolvedName, resolve_names
 from backend.utils.speaker_names.sources import MACHINE_SOURCES
 
@@ -105,14 +109,26 @@ def _name_events(
         if row.surface == SURFACE_LIVE and row.anchor_label
     }
     spans = live_label_spans(session, recording_id, set(live.values()))
+    removed = manually_reassigned_live_turns(
+        session, recording_id, set(live.values()) - spans.keys()
+    )
+    invalidated = {
+        row.id
+        for row in rows
+        if row.id in live
+        and any(
+            start <= row.anchor_start_ms and end >= row.anchor_end_ms
+            for start, end in removed.get(live[row.id], ())
+        )
+    }
     return [
         replace(
             as_name_event(row),
             anchor_spans=spans.get(live[row.id], ()),
-            # With no reference speech, the former anchor must not confidently
-            # identify a voice after every line on it was manually reassigned.
+            # Missing raw labels also follow ordinary finalisation. Only an
+            # explicit correction covering the saved turn invalidates it.
             anchor_end_ms=(
-                row.anchor_end_ms if spans.get(live[row.id]) else row.anchor_start_ms
+                row.anchor_start_ms if row.id in invalidated else row.anchor_end_ms
             ),
         )
         if row.id in live
