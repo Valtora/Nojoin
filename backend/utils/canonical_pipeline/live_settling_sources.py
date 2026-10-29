@@ -3,7 +3,10 @@
 from math import sqrt
 from typing import Any
 
-from backend.processing.browser_live_audio import BROWSER_LIVE_SOURCE_NAME_BY_CHANNEL
+from backend.processing.browser_live_audio import (
+    BROWSER_LIVE_SOURCE_NAME_BY_CHANNEL,
+    source_channel_from_confidence_payload,
+)
 from backend.processing.live_audio_buffer import (
     LIVE_SOURCE_DOMINANCE_RATIO_THRESHOLD,
     LIVE_SOURCE_DOMINANT_SHARE_THRESHOLD,
@@ -28,6 +31,11 @@ def partition_source_metadata(words: list[dict[str, Any]]) -> dict[str, Any]:
         _channel_summary(activity, activities, channels, samples)
     evidence = _build_live_source_channel_evidence(activity, {}).to_payload()
     return {"source_channel_activity": activity, "source_channel_evidence": evidence}
+
+
+def words_source_channel(words: list[dict[str, Any]]) -> str | None:
+    """The source badge a line of these words shows, or None when unattributed."""
+    return source_channel_from_confidence_payload(partition_source_metadata(words))
 
 
 def _channel_summary(

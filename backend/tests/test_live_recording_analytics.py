@@ -128,11 +128,12 @@ def test_live_pending_tail_counts_under_the_previous_speaker(
             {**line, "start": 1.0, "end": 4.0},
             {**pending, "start": 4.0, "end": 6.0},
             {**pending, "start": 6.0, "end": 7.0},
+            {**pending, "start": 7.0, "end": 8.0, "source_channel": "microphone"},
         ],
     )
     talk_time = _live(session)["metrics"]["talk_time"]
     assert talk_time["label:LIVE_PROVISIONAL_1"]["speech_ms"] == 6_000
-    assert talk_time["label:UNKNOWN"]["speech_ms"] == 1_000
+    assert talk_time["label:UNKNOWN"]["speech_ms"] == 2_000
 
 
 @pytest.mark.parametrize(

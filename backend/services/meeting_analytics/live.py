@@ -112,13 +112,17 @@ def _analysed_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _continue_pending_speakers(
     segments: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """An undiarised tail counts under the speaker before it, as the transcript shows."""
+    """An undiarised tail counts under the speaker before it, as the transcript shows.
+
+    As there, only within one audio source.
+    """
     continued: list[dict[str, Any]] = []
     for segment in segments:
         if (
             continued
             and segment.get("diarisation_pending") is True
             and (segment.get("speaker") or "UNKNOWN") == "UNKNOWN"
+            and segment.get("source_channel") == continued[-1].get("source_channel")
         ):
             previous = continued[-1]
             segment = {

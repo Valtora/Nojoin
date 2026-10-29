@@ -1,7 +1,9 @@
 """Pending display state preserves canonical identities through publication."""
 
 from dataclasses import replace
+from typing import Any
 
+import pytest
 from sqlalchemy import Engine
 from sqlmodel import Session
 
@@ -140,6 +142,60 @@ def test_close_continues_the_previous_speaker_over_a_pending_tail(
         assert [word["id"] for line in closed for word in line["words"]] == [
             word["id"] for line in before for word in line["words"]
         ]
+
+
+_MICROPHONE = {"channel_count": 2, "sample_count": 100, "channel_rms": [1, 0]}
+_SHARED = {"channel_count": 2, "sample_count": 100, "channel_rms": [0, 1]}
+
+
+@pytest.mark.parametrize(
+    ("sources", "sealed"),
+    [
+        ((_SHARED, _MICROPHONE), ["LIVE_PROVISIONAL_2", "UNKNOWN"]),
+        (
+            (_MICROPHONE, _SHARED, _MICROPHONE),
+            ["LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_2", "LIVE_PROVISIONAL_1"],
+        ),
+    ],
+)
+def test_close_continues_a_speaker_only_from_the_same_source(
+    settling_engine: Engine,
+    sources: tuple[dict[str, Any], ...],
+    sealed: list[str],
+) -> None:
+    labels = {id(_MICROPHONE): "LIVE_PROVISIONAL_1", id(_SHARED): "LIVE_PROVISIONAL_2"}
+    starts = {100 + index * 450: source for index, source in enumerate(sources)}
+
+    def decide(start: int, _end: int) -> LiveLabelDecision:
+        if start == max(starts):
+            return LiveLabelDecision("UNKNOWN", False, None, True)
+        return LiveLabelDecision(labels[id(starts[start])], False, 1.0)
+
+    words = [
+        {**word, "source_channel_activity": source}
+        for word, source in zip(
+            _words(tuple(f" w{index}" for index in range(len(sources)))),
+            sources,
+            strict=True,
+        )
+    ]
+    recording_id = _seed(settling_engine)
+    with Session(settling_engine) as session:
+        _enable_speakers(session, recording_id)
+        publish_live_settling(
+            session,
+            request=_request(session, recording_id, 0),
+            words=words,
+            decide_speaker=decide,
+        )
+        session.commit()
+        assert serialize_canonical_utterances(session, recording_id)[-1][
+            "diarisation_pending"
+        ]
+        close_live_settling(session, recording_id=recording_id)
+        session.commit()
+        closed = serialize_canonical_utterances(session, recording_id)
+        assert [line["speaker"] for line in closed] == sealed
 
 
 def test_close_after_resume_continues_the_sealed_speaker(

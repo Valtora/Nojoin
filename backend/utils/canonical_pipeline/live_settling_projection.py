@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from itertools import groupby
 from typing import Any
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from backend.utils.word_text import reconstruct_text_from_words
 from .constants import LIVE_SPEAKER_LABEL_PAYLOAD_KEY, _append_utterance_event
 from .live_labels import LiveLabelDecision
 from .live_settling_lines import LineBoundaries, Partition, partition_words, word_extent
-from .live_settling_sources import partition_source_metadata
+from .live_settling_sources import partition_source_metadata, words_source_channel
 
 SETTLING_KEY = "live_text_settling"
 DecideSpeaker = Callable[[int, int], LiveLabelDecision]
@@ -111,33 +112,54 @@ def live_rows(
     )
 
 
+LeadSpeaker = Callable[[str | None], str | None]
+
+
 @dataclass(frozen=True)
 class Closing:
     """A close seals the tail; pending words continue ``lead_speaker`` if no word does."""
 
-    lead_speaker: str | None = None
+    lead_speaker: LeadSpeaker
 
 
 def lead_speaker(
     session: Session, recording_id: int, rows: Sequence[TranscriptUtterance]
-) -> str | None:
-    """The speaker of the newest immutable live line starting before the tail."""
+) -> LeadSpeaker:
+    """Look up the speaker of the newest immutable live line before the tail, by source.
+
+    A line's source is the badge it shows (``None`` when unattributed), as the
+    transcript compares sources before continuing a speaker.
+    """
     tail = [row for row in rows if mutable_row(row)]
-    if not tail:
-        return None
-    return session.execute(
-        select(TranscriptUtterance.speaker_label)
-        .where(TranscriptUtterance.recording_id == recording_id)
-        .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
-        .where(TranscriptUtterance.source_kind == "live")
-        .where(col(TranscriptUtterance.id).not_in([row.id for row in tail]))
-        .where(TranscriptUtterance.start_ms <= tail[0].start_ms)
-        .order_by(
-            col(TranscriptUtterance.start_ms).desc(),
-            col(TranscriptUtterance.id).desc(),
+
+    def speaker_from(channel: str | None) -> str | None:
+        if not tail:
+            return None
+        lines = session.execute(
+            select(
+                TranscriptUtterance.speaker_label,
+                TranscriptUtterance.confidence_payload,
+            )
+            .where(TranscriptUtterance.recording_id == recording_id)
+            .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
+            .where(TranscriptUtterance.source_kind == "live")
+            .where(col(TranscriptUtterance.id).not_in([row.id for row in tail]))
+            .where(TranscriptUtterance.start_ms <= tail[0].start_ms)
+            .order_by(
+                col(TranscriptUtterance.start_ms).desc(),
+                col(TranscriptUtterance.id).desc(),
+            )
         )
-        .limit(1)
-    ).scalar_one_or_none()
+        return next(
+            (
+                speaker
+                for speaker, payload in lines
+                if source_channel_from_confidence_payload(payload) == channel
+            ),
+            None,
+        )
+
+    return speaker_from
 
 
 def mutable_row(row: TranscriptUtterance) -> bool:
@@ -221,35 +243,49 @@ def word_decisions(
                     "UNKNOWN", not speaker_enabled, None, speaker_enabled
                 )
             )
-    return _published([item for item in decisions if item is not None], closing)
-
-
-def _published(
-    decisions: list[LiveLabelDecision], closing: Closing | None
-) -> list[LiveLabelDecision]:
-    """Show pending words as unknown; a close seals them with the nearest decision.
-
-    The final pass corrects a wrong guess. Unknown remains only with nothing before it.
-    """
-    previous = closing.lead_speaker if closing is not None else None
-    published: list[LiveLabelDecision] = []
-    for item in decisions:
-        speaker = item.speaker
-        if not item.diarisation_pending:
-            previous = speaker
-        elif closing is None or previous is None:
-            speaker = "UNKNOWN"
-        else:
-            speaker = previous
-        published.append(
-            LiveLabelDecision(
-                speaker,
-                closing is not None or item.locked,
-                item.share,
-                item.diarisation_pending and closing is None,
-            )
+    decided = [item for item in decisions if item is not None]
+    if closing is not None:
+        return _sealed(words, decided, closing)
+    return [
+        LiveLabelDecision(
+            "UNKNOWN" if item.diarisation_pending else item.speaker,
+            item.locked,
+            item.share,
+            item.diarisation_pending,
         )
-    return published
+        for item in decided
+    ]
+
+
+def _sealed(
+    words: Sequence[dict[str, Any]],
+    decisions: list[LiveLabelDecision],
+    closing: Closing,
+) -> list[LiveLabelDecision]:
+    """Seal each pending run with the nearest earlier decision from its audio source.
+
+    The transcript continues a speaker only within one source, so a microphone
+    tail never takes a shared-audio speaker. The final pass corrects a wrong
+    guess; Unknown remains only with nothing before it from that source.
+    """
+    latest: dict[str | None, str] = {}
+    sealed: list[LiveLabelDecision] = []
+    for (pending, _), group in groupby(zip(words, decisions, strict=True), key=_run):
+        run = list(group)
+        channel = words_source_channel([word for word, _ in run])
+        if pending:
+            speaker = latest.get(channel) or closing.lead_speaker(channel) or "UNKNOWN"
+        else:
+            speaker = run[0][1].speaker
+            latest[channel] = speaker
+        sealed.extend(LiveLabelDecision(speaker, True, item.share) for _, item in run)
+    return sealed
+
+
+def _run(pair: tuple[dict[str, Any], LiveLabelDecision]) -> tuple[bool, str | None]:
+    """Pending words form one run; decided words run while their speaker holds."""
+    item = pair[1]
+    return item.diarisation_pending, None if item.diarisation_pending else item.speaker
 
 
 def _stored_speaker(
