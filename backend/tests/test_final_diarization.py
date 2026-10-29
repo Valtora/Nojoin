@@ -102,6 +102,7 @@ def test_route_uses_float16_threshold_on_final_frame(
 @pytest.mark.parametrize(
     "reason", ["classic", "cpu", "cpu_unavailable", "speaker_cap", "missing", "invalid"]
 )
+@pytest.mark.usefixtures("download_progress_in_memory")
 def test_ineligible_never_loads_native(
     lane: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, reason: str
 ) -> None:

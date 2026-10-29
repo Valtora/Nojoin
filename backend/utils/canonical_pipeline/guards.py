@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from backend.models.live_settling_public import public_settling_fields
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.models.transcript import Transcript
 
@@ -12,6 +13,22 @@ def settling_required(transcript: Transcript | None) -> bool:
     return state.get("settled") is True or bool(
         state.get("eligible") and state.get("policy", {}).get("enabled") is True
     )
+
+
+def line_still_settling(
+    transcript: Transcript | None, row: TranscriptUtterance
+) -> bool:
+    """Whether a line still waits for its lock, exactly as public reads show it.
+
+    The client holds a line's actions back on the same ``locked`` field, so a
+    line the server refuses is one the client also shows as settling.
+    """
+    provisional = row.state == TranscriptUtteranceState.PROVISIONAL
+    fields = public_settling_fields(
+        row.confidence_payload,
+        provisional=settling_required(transcript) and provisional,
+    )
+    return settling_required(transcript) and fields.get("locked") is False
 
 
 def freeze_live_line(row: TranscriptUtterance) -> None:

@@ -10,6 +10,7 @@ import { useUnsavedNoteWarning } from "@/lib/notes/useUnsavedNoteWarning";
 
 import Button from "../ui/Button";
 import { useAnchoredPanel } from "../ui/useAnchoredPanel";
+import { usePanelDismissal } from "../ui/usePanelDismissal";
 
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
@@ -84,16 +85,11 @@ export default function NoteOnSelectionPopover({
     if (placed) boxRef.current?.focus();
   }, [placed]);
 
-  useEffect(() => {
-    if (!isUnchanged) return;
-    const closeOnOutsidePress = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (panelRef.current?.contains(target) || anchor.contains(target)) return;
-      onClose();
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePress, true);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePress, true);
-  }, [isUnchanged, anchor, onClose, panelRef]);
+  // Escape, a press outside and a Tab out of it, while the box is as it
+  // opened; with a note typed in the box, Tab wraps.
+  const handlePanelKeyDown = usePanelDismissal({
+    panelRef, anchor, unchanged: isUnchanged, dismiss: onClose, close,
+  });
 
   // A refused write keeps the popover open. The button pressed was disabled
   // while it ran, which dropped focus to the page, so it goes to the box.
@@ -143,30 +139,6 @@ export default function NoteOnSelectionPopover({
       event.preventDefault();
       save();
     }
-  };
-
-  // Escape from anywhere in it. A Tab out of it, which would go on from the
-  // end of the page where it sits, closes it and carries on from the anchor
-  // instead, while the box is empty; with a note in the box, Tab wraps.
-  const handlePanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const stops = Array.from(
-      panelRef.current?.querySelectorAll<HTMLElement>("textarea, button:not(:disabled)") ?? [],
-    );
-    const edge = event.shiftKey ? stops[0] : stops[stops.length - 1];
-    if (document.activeElement !== edge) return;
-    if (isUnchanged) {
-      close();
-      return;
-    }
-    event.preventDefault();
-    (event.shiftKey ? stops[stops.length - 1] : stops[0])?.focus();
   };
 
   // On the body, so no translucent transcript group (a stacking context)

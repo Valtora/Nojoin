@@ -398,7 +398,7 @@ class GeminiLLMBackend(LLMBackend):
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
 
         prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+            user_question, meeting_notes, diarized_transcript, notes_tool=True
         )
 
         contents = []
