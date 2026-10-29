@@ -97,4 +97,18 @@ describe("live transcript behind notice", () => {
     );
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
   });
+
+  it("clears at Stop, before the next read", async () => {
+    getTranscriptUtterances.mockResolvedValue(read(true, ["A line."]));
+    const view = render(<LiveTranscriptTab recording={recording()} />);
+    await settle();
+    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+
+    view.rerender(
+      <LiveTranscriptTab recording={recording({ status: RecordingStatus.QUEUED, client_status: ClientStatus.IDLE })} />,
+    );
+    await settle();
+    expect(screen.getByText("A line.")).toBeInTheDocument();
+    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+  });
 });

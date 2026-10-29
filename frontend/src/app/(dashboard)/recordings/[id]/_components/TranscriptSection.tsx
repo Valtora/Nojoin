@@ -202,7 +202,7 @@ export default function TranscriptSection({
   }, [recordingId, refreshSelectedReader, readOnly, lineActions]);
   const paused = recording.status === RecordingStatus.PAUSED || recording.client_status === ClientStatus.PAUSED;
   const hasLoaded = liveTranscript?.hasLoaded ?? false;
-  const liveBehind = liveTranscript?.liveBehind ?? false;
+  const liveBehind = activeCapture && (liveTranscript?.liveBehind ?? false);
   const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed && presentFeed ? ({
     hasLoaded, isPaused: paused, liveBehind, lineHandlers: liveLineHandlers,
     onNoteOnLine: activeCapture ? noteOnLine : undefined,
