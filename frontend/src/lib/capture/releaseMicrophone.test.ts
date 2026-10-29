@@ -256,7 +256,8 @@ describe("releasing only the microphone while paused", () => {
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(getUserMedia.mock.calls[1][0].audio.deviceId).toBeUndefined();
     expect(environment.notify).toHaveBeenCalledWith(expect.objectContaining({
-      type: "warning", message: expect.stringMatching(/default/i),
+      type: "warning",
+      message: "The selected microphone is not available, so Nojoin is recording from the system default microphone.",
     }));
   });
   it("keeps requesting the selected mic when enumeration fails", async () => {

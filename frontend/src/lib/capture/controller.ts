@@ -1047,7 +1047,7 @@ export class CaptureController {
     if (usedDefault) {
       useNotificationStore.getState().addNotification({
         type: "warning",
-        message: "The selected microphone is no longer listed by the browser. Using the system default microphone. Check the waveform before continuing.",
+        message: "The selected microphone is not available, so Nojoin is recording from the system default microphone.",
       });
     }
   };
