@@ -1669,10 +1669,26 @@ async def test_read_tasks_requires_owned_recording(
     assert response.json() == {"detail": "Recording not found"}
 
 
+# (title, completed, archived, linked recording) for the status-filter test.
+RECORDING_FILTER_TASKS: dict[int, tuple[str, bool, bool, int | None]] = {
+    101: ("Draft the minutes", False, False, 401),
+    102: ("Send the slides", True, False, 401),
+    103: ("Book the venue", False, True, 401),
+    104: ("Unlinked follow-up", False, False, None),
+    105: ("Other meeting's archived task", True, True, 402),
+    106: ("Other meeting's completed task", True, False, 402),
+}
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("status", "expected_ids"),
-    [("open", {101}), ("archived", {103})],
+    [
+        ("open", {101}),
+        ("completed", {102}),
+        ("archived", {103}),
+        ("all", {101, 102, 103}),
+    ],
 )
 async def test_read_tasks_recording_filter_preserves_statuses(
     client: AsyncClient,
@@ -1681,29 +1697,30 @@ async def test_read_tasks_recording_filter_preserves_statuses(
     status: str,
     expected_ids: set[int],
 ) -> None:
-    await seed_recording(
-        test_session_maker,
-        recording_id=401,
-        user_id=1,
-        name="Meeting",
-        public_id="rec-meeting",
-        created_at=TEST_TIMESTAMP,
-    )
-    for task_id in (101, 102, 103, 104):
+    for recording_id, public_id in ((401, "rec-meeting"), (402, "rec-other")):
+        await seed_recording(
+            test_session_maker,
+            recording_id=recording_id,
+            user_id=1,
+            name="Meeting",
+            public_id=public_id,
+            created_at=TEST_TIMESTAMP,
+        )
+    for task_id, (title, completed, archived, linked) in RECORDING_FILTER_TASKS.items():
         await seed_task(
             test_session_maker,
             task_id=task_id,
             user_id=1,
-            title="Follow up",
-            completed_at=TEST_TIMESTAMP if task_id == 102 else None,
-            archived_at=TEST_TIMESTAMP if task_id == 103 else None,
+            title=title,
+            completed_at=TEST_TIMESTAMP if completed else None,
+            archived_at=TEST_TIMESTAMP if archived else None,
         )
-        if task_id != 104:
+        if linked is not None:
             await seed_user_task_recording(
                 test_session_maker,
                 row_id=task_id,
                 task_id=task_id,
-                recording_id=401,
+                recording_id=linked,
             )
     override_current_user(1)
 
@@ -1713,6 +1730,16 @@ async def test_read_tasks_recording_filter_preserves_statuses(
 
     assert response.status_code == 200
     assert {task["id"] for task in response.json()} == expected_ids
+    # The recording view renders these three fields from the list response.
+    stamp = "2026-04-12T10:00:00Z"
+    assert {
+        task["id"]: (task["title"], task["completed_at"], task["archived_at"])
+        for task in response.json()
+    } == {
+        task_id: (title, stamp if completed else None, stamp if archived else None)
+        for task_id, (title, completed, archived, _) in RECORDING_FILTER_TASKS.items()
+        if task_id in expected_ids
+    }
 
 
 @pytest.mark.anyio
@@ -1721,7 +1748,7 @@ async def test_recording_tasks_preserve_multiple_links_through_completion_and_re
     override_current_user: Callable[[int], None],
     test_session_maker: sessionmaker,
 ) -> None:
-    for recording_id in (401, 402):
+    for recording_id in (401, 402, 403):
         await seed_recording(
             test_session_maker,
             recording_id=recording_id,
@@ -1737,24 +1764,66 @@ async def test_recording_tasks_preserve_multiple_links_through_completion_and_re
     )
     assert created.status_code == 200
     task_id = created.json()["id"]
+    # Tasks on another meeting, one active and one archived, must stay off both lists.
+    for title in ("Other meeting's task", "Other meeting's archived task"):
+        other = await client.post(
+            "/api/v1/tasks/", json={"title": title, "recording_ids": ["rec-403"]}
+        )
+        assert other.status_code == 200
+    archived_other = await client.patch(
+        f"/api/v1/tasks/{other.json()['id']}", json={"archived": True}
+    )
+    assert archived_other.status_code == 200
+
+    async def listed_for(public_id: str, status: str | None = None) -> list[dict]:
+        params = {"recording_id": public_id}
+        if status is not None:
+            params["status"] = status
+        listed = await client.get("/api/v1/tasks/", params=params)
+        assert listed.status_code == 200
+        return listed.json()
 
     for completed in (True, False):
         updated = await client.patch(
             f"/api/v1/tasks/{task_id}", json={"completed": completed}
         )
         assert updated.status_code == 200
+        # The recording view replaces its row with this response body.
+        saved = updated.json()
+        assert saved["id"] == task_id
+        assert saved["title"] == "Shared follow-up"
+        assert (saved["completed_at"] is not None) is completed
+        assert saved["archived_at"] is None
+        assert {link["id"] for link in saved["linked_recordings"]} == {
+            "rec-401",
+            "rec-402",
+        }
         for public_id in ("rec-401", "rec-402"):
-            listed = await client.get(
-                "/api/v1/tasks/", params={"recording_id": public_id}
-            )
-            assert listed.status_code == 200
-            assert [task["id"] for task in listed.json()] == [task_id]
-            task = listed.json()[0]
-            assert (task["completed_at"] is not None) is completed
-            assert {link["id"] for link in task["linked_recordings"]} == {
-                "rec-401",
-                "rec-402",
-            }
+            for status in (None, "all"):
+                tasks = await listed_for(public_id, status)
+                assert [task["id"] for task in tasks] == [task_id]
+                task = tasks[0]
+                assert (task["completed_at"] is not None) is completed
+                assert task["completed_at"] == saved["completed_at"]
+                assert {link["id"] for link in task["linked_recordings"]} == {
+                    "rec-401",
+                    "rec-402",
+                }
+
+    # An archived linked task stays on the recording view and keeps its archive
+    # state when it is completed there.
+    archived = await client.patch(f"/api/v1/tasks/{task_id}", json={"archived": True})
+    assert archived.status_code == 200
+    archived_at = archived.json()["archived_at"]
+    assert archived_at is not None
+    completed = await client.patch(f"/api/v1/tasks/{task_id}", json={"completed": True})
+    assert completed.status_code == 200
+    assert completed.json()["completed_at"] is not None
+    assert completed.json()["archived_at"] == archived_at
+    tasks = await listed_for("rec-401", "all")
+    assert [(task["id"], task["archived_at"]) for task in tasks] == [
+        (task_id, archived_at)
+    ]
 
 
 @pytest.mark.anyio

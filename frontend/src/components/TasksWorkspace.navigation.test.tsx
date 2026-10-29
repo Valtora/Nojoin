@@ -2,6 +2,7 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setCachedUserTimeZone } from "@/lib/timezone";
 import type { UserTask } from "@/types";
 
 const api = vi.hoisted(() => ({
@@ -14,14 +15,12 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api", () => api);
-vi.mock("@/lib/useUserTimeZone", () => ({ useUserTimeZone: () => "UTC" }));
 vi.mock("next/link", () => ({
   default: ({ children, ...props }: ComponentPropsWithoutRef<"a">) => <a {...props}>{children}</a>,
 }));
 vi.mock("./Workspace", () => ({
   default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("./ui/TaskDeadlineModal", () => ({ default: () => null }));
 
 import TasksWorkspace from "./TasksWorkspace";
 import TasksPage from "@/app/(dashboard)/tasks/page";
@@ -45,6 +44,7 @@ const tasks = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setCachedUserTimeZone("UTC");
   api.getUserTasks.mockResolvedValue(tasks);
   api.getTags.mockResolvedValue([]);
   api.getRecordings.mockResolvedValue([]);

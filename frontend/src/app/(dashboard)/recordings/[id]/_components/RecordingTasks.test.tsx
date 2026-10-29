@@ -2,16 +2,12 @@ import type { ComponentPropsWithoutRef } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useNotificationStore } from "@/lib/notificationStore";
 import type { UserTask } from "@/types";
 
 const api = vi.hoisted(() => ({ getUserTasks: vi.fn(), updateUserTask: vi.fn() }));
-const addNotification = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api", () => api);
-vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: (select: (state: { addNotification: typeof addNotification }) => unknown) =>
-    select({ addNotification }),
-}));
 vi.mock("next/link", () => ({
   default: ({ children, ...props }: ComponentPropsWithoutRef<"a">) => <a {...props}>{children}</a>,
 }));
@@ -41,9 +37,14 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+const errorMessages = () => useNotificationStore.getState().activeNotifications
+  .filter((notification) => notification.type === "error")
+  .map((notification) => notification.message);
+
 describe("recording linked tasks", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    useNotificationStore.setState({ activeNotifications: [], history: [] });
     api.getUserTasks.mockResolvedValue([task()]);
   });
 
@@ -78,9 +79,7 @@ describe("recording linked tasks", () => {
     const checkbox = await screen.findByRole("checkbox", { name: "Mark Send the agenda complete" });
     fireEvent.click(checkbox);
 
-    await waitFor(() => expect(addNotification).toHaveBeenCalledWith({
-      type: "error", message: "Could not save task",
-    }));
+    await waitFor(() => expect(errorMessages()).toEqual(["Could not save task"]));
     expect(checkbox).not.toBeChecked();
     expect(checkbox).toBeEnabled();
     fireEvent.click(checkbox);
@@ -133,9 +132,7 @@ describe("recording linked tasks", () => {
     api.getUserTasks.mockRejectedValue(new Error("Tasks temporarily unavailable"));
     render(<LinkedTasks recordingId="rec-planning" />);
 
-    await waitFor(() => expect(addNotification).toHaveBeenCalledWith({
-      type: "error", message: "Tasks temporarily unavailable",
-    }));
+    await waitFor(() => expect(errorMessages()).toEqual(["Tasks temporarily unavailable"]));
     expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
   });
 });
