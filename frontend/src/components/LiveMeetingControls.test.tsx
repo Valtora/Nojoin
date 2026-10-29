@@ -108,6 +108,18 @@ describe("LiveMeetingControls", () => {
     expect(transport?.className).toContain("min-w-[min(18rem,100%)]");
   });
 
+  // The page's copy of the recording catches up with a pause on its next poll;
+  // the capturing tab must not follow it meanwhile.
+  it("keeps the capturing tab's own state and clock ahead of the server", () => {
+    captureState.status = "paused";
+
+    render(<LiveMeetingControls size="bar" serverPaused={false} />);
+
+    expect(screen.getByText("Paused")).toBeInTheDocument();
+    expect(screen.queryByText("Recording")).not.toBeInTheDocument();
+    expect(screen.getByText("00:12")).toBeInTheDocument();
+  });
+
   it("says a stop is finishing once nothing is left to send", () => {
     captureState.status = "finalizing";
     captureState.stopStage = "finalizing";

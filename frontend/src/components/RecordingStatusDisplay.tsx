@@ -390,6 +390,7 @@ export default function RecordingStatusDisplay({
                 }}
                 onMeetingDiscard={onDiscarded}
                 barTrailing={uploadButton}
+                serverPaused={isPaused}
               />
             </div>
           ) : null}

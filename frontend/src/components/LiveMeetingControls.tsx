@@ -22,6 +22,12 @@ interface LiveMeetingControlsProps {
   onMeetingDiscard?: () => void;
   /** Extra controls for the `bar` variant, placed before the speaker cap. */
   barTrailing?: ReactNode;
+  /**
+   * Whether the server has this recording paused, from the recording page.
+   * Another tab or device may be capturing it, and this tab's own capture
+   * state, idle, would read "Paused 00:00" whatever the recording is doing.
+   */
+  serverPaused?: boolean;
 }
 
 // Below this the queue is ordinary upload latency, a segment or two.
@@ -50,6 +56,7 @@ export default function LiveMeetingControls({
   onMeetingEnd,
   onMeetingDiscard,
   barTrailing,
+  serverPaused,
 }: LiveMeetingControlsProps) {
   const {
     cancel,
@@ -77,6 +84,10 @@ export default function LiveMeetingControls({
   const canControl = Boolean(recordingId &&
     (ownedRecordingId === recordingId || pausedRecording?.id === recordingId));
   const stopDisabled = status === "finalizing" || !canControl;
+  // Only the capturing tab has a clock. Any other shows the server's state,
+  // as the page header does, and no clock rather than a wrong one.
+  const capturedElsewhere = !canControl && serverPaused !== undefined;
+  const showsRecording = capturedElsewhere ? !serverPaused : isRecording;
 
   // Diarization runs at stop time, so the cap stays editable for the whole
   // recording: whatever is set when capture ends is what gets applied.
@@ -185,7 +196,7 @@ export default function LiveMeetingControls({
     ? stopStage === "flushing-uploads" && uploadQueue.segments > 0
       ? "Uploading"
       : "Finishing"
-    : isRecording
+    : showsRecording
       ? "Recording"
       : "Paused";
 
@@ -266,14 +277,16 @@ export default function LiveMeetingControls({
         <div className="flex items-center gap-2">
           <div className="flex flex-1 items-center gap-2 rounded-xl border border-status-danger-border bg-status-danger-bg px-3 py-2 text-status-danger-fg">
             <span
-              className={`inline-block h-2 w-2 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
+              className={`inline-block h-2 w-2 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
             />
             <span className="text-xs font-semibold uppercase tracking-[0.14em]">
               {statusLabel}
             </span>
-            <span className="ml-auto font-mono text-sm font-semibold text-foreground">
-              {formatTime(elapsedSeconds)}
-            </span>
+            {capturedElsewhere ? null : (
+              <span className="ml-auto font-mono text-sm font-semibold text-foreground">
+                {formatTime(elapsedSeconds)}
+              </span>
+            )}
           </div>
           {isRecording ? (
             <ButtonBase
@@ -346,14 +359,16 @@ export default function LiveMeetingControls({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <div className="density-surface-panel flex shrink-0 items-center gap-3 bg-status-danger-bg px-3 py-1.5 text-status-danger-fg">
             <span
-              className={`h-2.5 w-2.5 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
+              className={`h-2.5 w-2.5 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
             />
             <span className="text-xs font-semibold uppercase tracking-[0.16em]">
               {statusLabel}
             </span>
-            <span className="font-mono text-xl font-semibold tabular-nums text-foreground">
-              {formatTime(elapsedSeconds)}
-            </span>
+            {capturedElsewhere ? null : (
+              <span className="font-mono text-xl font-semibold tabular-nums text-foreground">
+                {formatTime(elapsedSeconds)}
+              </span>
+            )}
           </div>
 
           {/* The floor stops the transport being squeezed beside the clock,
@@ -437,15 +452,17 @@ export default function LiveMeetingControls({
       <div className="density-surface-panel flex items-center justify-between gap-4 border border-status-danger-border bg-status-danger-bg px-4 py-4 text-status-danger-fg">
         <div className="flex items-center gap-3">
           <div
-            className={`h-2.5 w-2.5 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
+            className={`h-2.5 w-2.5 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
           />
           <span className="text-sm font-semibold uppercase tracking-[0.16em]">
             {statusLabel}
           </span>
         </div>
-        <span className="font-mono text-3xl font-semibold text-foreground">
-          {formatTime(elapsedSeconds)}
-        </span>
+        {capturedElsewhere ? null : (
+          <span className="font-mono text-3xl font-semibold text-foreground">
+            {formatTime(elapsedSeconds)}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3">

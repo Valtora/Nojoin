@@ -446,6 +446,34 @@ describe("CaptureShell watching a paused capture", () => {
   });
 });
 
+describe("the recording page in a tab that is not capturing", () => {
+  const clock = /^\d+:\d{2}(:\d{2})?$/;
+  const live = {
+    ...paused, id: "rec-live", status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
+  } as Recording;
+
+  it.each([
+    { recording: live, serverPaused: false, label: "Recording" },
+    { recording: paused, serverPaused: true, label: "Paused" },
+  ])("shows $label from the server, with no clock", async ({ recording, serverPaused, label }) => {
+    pathname = `/recordings/${recording.id}`;
+    // Another tab of this browser is capturing it.
+    held = [{ name: `nojoin-capture:${recording.id}`, mode: "exclusive" }];
+    api.getUnfinishedCaptures.mockResolvedValue([recording]);
+    render(<CaptureProvider>
+      <LiveMeetingControls size="bar" serverPaused={serverPaused} /><WatcherState />
+    </CaptureProvider>);
+    await act(async () => {});
+
+    expect(api.getUnfinishedCaptures).toHaveBeenCalled();
+    expect(screen.getByTestId("watcher-state")).toHaveTextContent("watching:none");
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.queryByText(label === "Recording" ? "Paused" : "Recording")).not.toBeInTheDocument();
+    expect(screen.queryByText(clock)).not.toBeInTheDocument();
+    expect(screen.getByTitle("Stop recording")).toBeDisabled();
+  });
+});
+
 describe("recovery on demand for another browser or device", () => {
   it("keeps imports available while another same-browser tab holds the capture", async () => {
     render(<CaptureProvider><CaptureShell><ImportAudioButton /></CaptureShell></CaptureProvider>);
