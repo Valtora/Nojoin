@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import runpy
 from pathlib import Path
 
 import pytest
@@ -86,6 +87,37 @@ def test_substitution_does_not_interpret_replacement_text() -> None:
     value = "${undeclared} $bad $$ {braces} \\ café\nUNKNOWN / Unidentified speaker"
     values = {name: value for name in REGISTRY[prompt_id].placeholders}
     assert value in render_prompt(prompt_id, **values)
+
+
+def test_duplicate_prompt_id_names_both_declarations(tmp_path: Path) -> None:
+    """Import a real catalogue with a conflicting code-owned declaration."""
+    import backend.prompts
+
+    source = Path(backend.prompts.__file__).read_text(encoding="utf-8")
+    original = '("shared", "calendar_title recording_title", "title")'
+    assert original in source
+    duplicate = '("shared", "calendar_title recording_title notes_legend", "title")'
+    module = tmp_path / "__init__.py"
+    module.write_text(source.replace(original, duplicate, 1), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"shared\.notes_legend") as error:
+        runpy.run_path(str(module))
+    message = str(error.value)
+    assert "first declaration _CONTRACTS[0] block 0" in message
+    assert "second declaration _CONTRACTS[2] block 2" in message
+    assert message.count("file='shared.toml', block='notes_legend'") == 2
+    assert "frozenset()" in message
+    assert "frozenset({'title'})" in message
+
+
+def test_non_utf8_catalogue_names_id_and_file(tmp_path: Path) -> None:
+    _write_catalogue(tmp_path)
+    prompt_id = next(iter(REGISTRY))
+    spec = REGISTRY[prompt_id]
+    (tmp_path / spec.file).write_bytes(b"\xff")
+    with pytest.raises(ValueError) as error:
+        load_registry(tmp_path)
+    assert f"{prompt_id}: cannot load {spec.file}:" in str(error.value)
+    assert isinstance(error.value.__cause__, UnicodeDecodeError)
 
 
 @pytest.mark.parametrize("defect", ["missing", "extra"])

@@ -397,7 +397,7 @@ In this release a final pass meets user rows only on a run that does not reset t
 
 #### Shipped Prompt Blocks
 
-Nojoin's inference prompt prose lives in feature TOML files under `backend/prompts/`, with common fragments in `shared.toml`. The registry in `backend/prompts/__init__.py` maps each prompt id to its file, block and exact placeholder names. Its first use loads and validates the whole catalogue, then caches it; missing files or blocks, empty text and invalid placeholder contracts raise an error naming the prompt id.
+Nojoin's inference prompt prose lives in feature TOML files under `backend/prompts/`, with common fragments in `shared.toml`. This includes the document-provenance descriptions and page labels used in notes prompts. The registry in `backend/prompts/__init__.py` maps each prompt id to its file, block and exact placeholder names. Duplicate ids fail when the registry is built, naming both declarations. Its first use loads and validates the whole catalogue, then caches it; missing files or blocks, empty text and invalid placeholder contracts raise an error naming the prompt id. File-loading errors, including invalid UTF-8, also name the file.
 
 Python still assembles optional sections, lists, numbers, message roles and cache boundaries. Each block uses `string.Template` placeholders (`${name}`, or `$$` for a literal dollar), substituted once so replacement text remains opaque. Moving prose into files preserves the rendered bytes, including separate Meeting Edge and analytics cache halves. These shipped files are the only source; they have no runtime editor or override configuration.
 

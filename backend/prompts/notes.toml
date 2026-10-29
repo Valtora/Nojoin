@@ -79,3 +79,11 @@ closing = '''Return only the meeting notes described above, starting directly wi
 title_intro = '''You are an expert meeting-notes assistant. Given the full meeting transcript below, provide a title that summarises the main topic or purpose of the meeting. '''
 
 title_closing = ''' Output ONLY the title with no additional commentary, punctuation, or formatting.'''
+
+document_page_label = '''Page ${number}'''
+
+document_visual_origin = '''a vision model reading the rendered pages, so charts, diagrams and images are described'''
+
+document_ocr_origin = '''local OCR of the page images, so wording is present but charts and diagrams are not described'''
+
+document_text_origin = '''the file's own text layer'''

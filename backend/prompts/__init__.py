@@ -46,10 +46,12 @@ _CONTRACTS = (
         "notes",
         "preamble default_sections table_rules fidelity_rules "
         "intelligence_intro intelligence_rules intelligence_schema title_short "
-        "title_descriptive intro closing title_intro title_closing",
+        "title_descriptive intro closing title_intro title_closing "
+        "document_visual_origin document_ocr_origin document_text_origin",
         "",
     ),
     ("shared", "calendar_title recording_title", "title"),
+    ("notes", "document_page_label", "number"),
     ("shared", "calendar_description", "description"),
     ("shared", "calendar_attendees", "attendee_list"),
     ("shared", "duration_hours", "hours plural_suffix"),
@@ -138,11 +140,27 @@ _CONTRACTS = (
     ("chat", "retrieved_document", "recording location origin content"),
 )
 
-REGISTRY: dict[str, PromptSpec] = {
-    f"{feature}.{block}": PromptSpec(f"{feature}.toml", block, frozenset(names.split()))
-    for feature, blocks, names in _CONTRACTS
-    for block in blocks.split()
-}
+
+def _build_registry() -> dict[str, PromptSpec]:
+    registry: dict[str, PromptSpec] = {}
+    declarations: dict[str, str] = {}
+    for row, (feature, blocks, names) in enumerate(_CONTRACTS):
+        for position, block in enumerate(blocks.split()):
+            prompt_id = f"{feature}.{block}"
+            spec = PromptSpec(f"{feature}.toml", block, frozenset(names.split()))
+            declaration = f"_CONTRACTS[{row}] block {position}: {spec!r}"
+            if prompt_id in declarations:
+                raise ValueError(
+                    f"{prompt_id}: duplicate prompt id; "
+                    f"first declaration {declarations[prompt_id]}; "
+                    f"second declaration {declaration}"
+                )
+            declarations[prompt_id] = declaration
+            registry[prompt_id] = spec
+    return registry
+
+
+REGISTRY = _build_registry()
 
 PROMPT_DIRECTORY = Path(__file__).resolve().parent
 
@@ -172,7 +190,7 @@ def load_registry(directory: Path = PROMPT_DIRECTORY) -> dict[str, Template]:
             try:
                 with (directory / spec.file).open("rb") as source:
                     files[spec.file] = tomllib.load(source)
-            except (OSError, tomllib.TOMLDecodeError) as exc:
+            except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
                 raise ValueError(
                     f"{prompt_id}: cannot load {spec.file}: {exc}"
                 ) from exc
