@@ -169,21 +169,15 @@ export default function LiveTranscriptPanel({
     ])), ...liveSpeakerNames,
   }), [speakers, liveSpeakerNames]);
 
-  // Show the source and speaker labels only where they change, so a run of
-  // consecutive lines from one channel or voice reads as one block and a
-  // switch becomes a visible event rather than repetition on every line.
+  // Every labelled line names its speaker, as the finished transcript does.
+  // The source label shows only where it changes, so a run of lines from one
+  // channel reads as one block and a switch becomes a visible event.
   const lines = useMemo(
     () =>
       segments.map((segment, index) => {
         const sourceChannel = sourceChannelOf(segment);
         const previous = index > 0 ? segments[index - 1] : undefined;
         const previousChannel = previous ? sourceChannelOf(previous) : undefined;
-        const speakerLabel = speakerLabelOf(segment);
-        const previousSpeakerLabel = previous
-          ? segment.settling_required ? speakerLabelOf(previous) : liveLabelOf(previous)
-          : null;
-        const showSpeakerLabel = speakerLabel !== null &&
-          (previous === undefined || speakerLabel !== previousSpeakerLabel);
 
         return {
           segment,
@@ -191,9 +185,7 @@ export default function LiveTranscriptPanel({
           sourceChannel,
           showSourceLabel:
             sourceChannel !== null && sourceChannel !== previousChannel,
-          speakerLabel: showSpeakerLabel ? speakerLabel : null,
-          sameSpeakerContinuation: segment.settling_required === true &&
-            previous !== undefined && segment.speaker === previous.speaker,
+          speakerLabel: speakerLabelOf(segment),
           speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
         };
       }),
@@ -351,8 +343,7 @@ export default function LiveTranscriptPanel({
               ) : (
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
-                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked,
-                    sameSpeakerContinuation }, index) => [
+                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked }, index) => [
                     <li
                       key={key}
                       data-testid="live-transcript-line"
@@ -360,7 +351,7 @@ export default function LiveTranscriptPanel({
                       data-order-index={index}
                       data-line-actions
                       aria-describedby={lineIsSettling(segment) ? settlingDescriptionId : undefined}
-                      className={sameSpeakerContinuation ? "group/line pt-2" : "group/line"}
+                      className="group/line"
                     >
                       {speakerLabel ? (
                         <LiveSpeakerChip
