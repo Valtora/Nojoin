@@ -22,6 +22,15 @@ EXCERPTS_PREAMBLE = """This meeting is too long to include its full transcript, 
 
 NO_EXCERPTS_PREAMBLE = """This meeting is too long to include its full transcript, and no passages of it could be selected for this question. Answer from the meeting notes above, and say so when they do not cover the question."""
 
+# What a chat reply can do. Each reply is one request: nothing runs after it,
+# so a model left to guess offers to monitor the meeting or send reminders.
+# Only a request that passes the notes tool may say it can change the notes.
+CAPABILITIES_WITH_NOTES_TOOL = """# WHAT YOU CAN DO
+Answer from what is provided here: the meeting notes, the transcript and any related context. Your only action is updating the meeting notes with your tool, when the user asks you to change them. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the meeting is still being recorded, suggest asking again later instead."""
+
+CAPABILITIES_WITHOUT_TOOLS = """# WHAT YOU CAN DO
+Answer from what is provided here: the meeting notes, the transcript and any related context. You cannot change the meeting notes, watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the meeting is still being recorded, suggest asking again later instead."""
+
 
 @dataclass(frozen=True)
 class TranscriptExcerpts:
@@ -64,9 +73,22 @@ def _sources(diarized_transcript: ChatTranscript) -> str:
     return "meeting notes"
 
 
-def build_chat_context(meeting_notes: str, diarized_transcript: ChatTranscript) -> str:
-    """Stable, cacheable chat context: instructions, notes, and the transcript."""
+def build_chat_context(
+    meeting_notes: str,
+    diarized_transcript: ChatTranscript,
+    *,
+    notes_tool: bool = False,
+) -> str:
+    """Stable, cacheable chat context: instructions, notes, and the transcript.
+
+    ``notes_tool`` is True only when the request also sends the
+    ``update_meeting_notes`` tool, so the prompt never claims an action the
+    provider was not given.
+    """
     sources = _sources(diarized_transcript)
+    capabilities = (
+        CAPABILITIES_WITH_NOTES_TOOL if notes_tool else CAPABILITIES_WITHOUT_TOOLS
+    )
     return f"""
 You are a helpful AI assistant. You have access to the following {sources} and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
 
@@ -76,6 +98,8 @@ When referencing transcript content, always include the timestamp in [MM:SS] for
 # FORMATTING
 When an answer compares several items across the same fields, present it as a Markdown table with a header row and a `| --- |` delimiter row beneath it. Keep tables to six columns or fewer, write a line break inside a cell as `<br>` rather than a real newline, and never merge cells.
 
+{capabilities}
+
 # Meeting Notes:
 {meeting_notes}
 
@@ -83,11 +107,15 @@ When an answer compares several items across the same fields, present it as a Ma
 
 
 def build_chat_prompt(
-    user_question: str, meeting_notes: str, diarized_transcript: ChatTranscript
+    user_question: str,
+    meeting_notes: str,
+    diarized_transcript: ChatTranscript,
+    *,
+    notes_tool: bool = False,
 ) -> str:
     """Single-string chat prompt (context + question) for providers without caching."""
     return (
-        build_chat_context(meeting_notes, diarized_transcript)
+        build_chat_context(meeting_notes, diarized_transcript, notes_tool=notes_tool)
         + f"\nUser Question: {user_question}\n"
     )
 
