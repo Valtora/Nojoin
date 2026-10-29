@@ -166,7 +166,11 @@ export function PeopleTable({
                       </div>
                       <div>
                         <div className="font-medium text-foreground flex items-center gap-1.5">
-                          {person.name}
+                          <ButtonBase type="button" onClick={() => onEdit(person)}
+                            className="text-left hover:text-action-text hover:underline"
+                            aria-label={`Details for ${person.name}`}>
+                            {person.name}
+                          </ButtonBase>
                           {person.is_voiceprint_locked && (
                             <div className="group/lock relative">
                               <Lock className="w-3.5 h-3.5 text-status-success-fg" />
@@ -327,7 +331,11 @@ export function PeopleTable({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 font-medium text-foreground">
-                  <span className="truncate">{person.name}</span>
+                  <ButtonBase type="button" onClick={() => onEdit(person)}
+                    className="truncate text-left hover:text-action-text hover:underline"
+                    aria-label={`Details for ${person.name}`}>
+                    {person.name}
+                  </ButtonBase>
                   {person.is_voiceprint_locked && (
                     <Lock
                       className="h-3.5 w-3.5 shrink-0 text-status-success-fg"

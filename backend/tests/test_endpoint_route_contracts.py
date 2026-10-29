@@ -255,6 +255,12 @@ SPEAKERS_ROUTE_CONTRACT = [
         "delete_global_speaker_embedding",
         None,
     ),
+    (
+        "/{speaker_id}/meetings",
+        ("GET",),
+        "get_person_meetings",
+        "PersonMeetingsRead",
+    ),
     ("/{speaker_id}/recalibrate", ("POST",), "recalibrate_voiceprint", None),
     ("/{speaker_id}/scan-matches", ("POST",), "scan_for_matches", None),
     ("/{speaker_id}/segments", ("GET",), "get_speaker_segments", "List"),

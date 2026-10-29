@@ -79,6 +79,30 @@ export interface GlobalSpeaker extends BaseDBModel {
   tags?: PeopleTag[];
 }
 
+export interface PersonMeetingRead {
+  recording_id: RecordingId;
+  title: string;
+  date: string;
+  duration_seconds: number | null;
+  talk_time_seconds: number;
+}
+
+export interface PersonTalkMonthRead {
+  /** Calendar month in UTC, formatted YYYY-MM. */
+  month: string;
+  talk_time_seconds: number;
+}
+
+/** Full-history figures alongside the newest 50 owned, linked meetings. */
+export interface PersonMeetingsRead {
+  meetings: PersonMeetingRead[];
+  meeting_count: number;
+  total_talk_time_seconds: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  talk_time_by_month: PersonTalkMonthRead[];
+}
+
 /**
  * The fields a person update changes; an absent field is left as it is.
  * Mirrors `GlobalSpeakerUpdate` in backend/models/speaker.py.

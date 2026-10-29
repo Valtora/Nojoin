@@ -3,6 +3,7 @@ import type {
   GlobalSpeakerUpdate,
   LiveSpeakerNames,
   MergedRecordingSpeaker,
+  PersonMeetingsRead,
   RecalibrateResult,
   Recording,
   RecordingId,
@@ -31,6 +32,12 @@ export const getGlobalSpeakers = async (
   const response = await api.get<GlobalSpeaker[]>(
     `/speakers/?${params.toString()}`,
   );
+  return response.data;
+};
+
+/** Read full-history figures and the newest 50 meetings linked to a person. */
+export const getPersonMeetings = async (speakerId: number): Promise<PersonMeetingsRead> => {
+  const response = await api.get<PersonMeetingsRead>(`/speakers/${speakerId}/meetings`);
   return response.data;
 };
 

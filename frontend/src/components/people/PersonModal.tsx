@@ -28,6 +28,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAnchoredPanel } from "@/components/ui/useAnchoredPanel";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { notifyRequestError } from "@/lib/notifyRequestError";
+import { PersonMeetings } from "./PersonMeetings";
 
 interface PersonModalProps {
   person: GlobalSpeaker | null; // If null, creating new
@@ -358,6 +359,7 @@ interface TagNode extends PeopleTag {
         </>
       }
     >
+          {person && isOpen && <PersonMeetings key={person.id} personId={person.id} />}
           <form id="person-form" onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

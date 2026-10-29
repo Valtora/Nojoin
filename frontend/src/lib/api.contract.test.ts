@@ -121,6 +121,7 @@ describe("api public surface", () => {
         "getNotes",
         "getOAuthAuthorizeInfo",
         "getPeopleTags",
+        "getPersonMeetings",
         "getPersonalDictionary",
         "getRecording",
         "getRecordingAnalytics",
