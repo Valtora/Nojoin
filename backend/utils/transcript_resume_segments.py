@@ -19,7 +19,7 @@ def _word_parts(
     segment: dict[str, Any], boundaries_s: list[float]
 ) -> list[tuple[int, dict[str, Any]]]:
     anchors = timed_word_groups(segment.get("words") or [])
-    if not anchors or segment.get("alignment_error"):
+    if not anchors:
         # Without native times there is no honest way to distribute this text.
         return [(_interval(segment["start"], boundaries_s), segment)]
     assigned: list[tuple[int, dict[str, Any], list[dict[str, Any]]]] = []

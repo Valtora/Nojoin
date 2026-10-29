@@ -1,7 +1,5 @@
 """The same capture cut divides live words, legacy audio and final evidence."""
 
-from typing import Any
-
 import pytest
 
 from backend.tests.test_transcript_utils import FakeDiarization
@@ -81,13 +79,9 @@ def test_final_timed_words_split_without_short_segment_fold_crossing_resume(
     ]
 
 
-@pytest.mark.parametrize("alignment_error", [None, "No usable word timings"])
-def test_final_untimed_crossing_remains_intact_without_fabricating_evidence(
-    alignment_error: str | None,
-) -> None:
-    segment: dict[str, Any] = {"start": 0.0, "end": 2.0, "text": "before after"}
-    if alignment_error:
-        segment["alignment_error"] = alignment_error
+def test_final_untimed_crossing_remains_intact_without_fabricating_evidence() -> None:
+    # Failed alignment leaves a segment wordless too, so this is that case as well.
+    segment = {"start": 0.0, "end": 2.0, "text": "before after"}
     result = combine_and_consolidate_segments(
         {"segments": [segment]},
         None,
