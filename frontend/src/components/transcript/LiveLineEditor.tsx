@@ -55,6 +55,12 @@ export default function LiveLineEditor({
     setSaving(true);
     try { if (await command()) onClose(); } finally { setSaving(false); }
   };
+  // Text as it opened closes without a request, as in the finished view: the
+  // server would replace the line's timed words with one untimed atom.
+  const saveText = () => {
+    if (text === segment.text) onClose();
+    else void save(() => handlers.editText(segment, text));
+  };
   if (kind === "changeSpeaker") return (
     <SpeakerAssignmentPopover
       availableSpeakers={speakers} globalSpeakers={people} currentSpeakerLabel={segment.speaker}
@@ -79,8 +85,8 @@ export default function LiveLineEditor({
         </label>
       )}
       <div className="mt-2 flex gap-2">
-        <Button size="sm" disabled={saving || (kind === "split" && !wordId)} onClick={() => void save(() =>
-          kind === "split" ? handlers.split(segment, wordId) : handlers.editText(segment, text))}>
+        <Button size="sm" disabled={saving || (kind === "split" && !wordId)} onClick={() =>
+          kind === "split" ? void save(() => handlers.split(segment, wordId)) : saveText()}>
           {kind === "split" ? "Split" : "Save"}
         </Button>
         <Button size="sm" variant="ghost" disabled={saving} onClick={onClose}>Cancel</Button>

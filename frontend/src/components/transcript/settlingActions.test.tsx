@@ -92,6 +92,18 @@ describe("settling line actions", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  it("closes without a request when Save leaves the text as it opened", () => {
+    const actions = handlers();
+    render(<LiveTranscriptPanel segments={[line(true)]} hasLoaded onNoteOnLine={vi.fn()} lineHandlers={actions} />);
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Line text" }), { target: { value: "Alpha beta!" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Line text" }), { target: { value: "Alpha beta." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(actions.editText).not.toHaveBeenCalled();
+  });
+
   it("sends text against the revision the editor opened, despite a newer poll", async () => {
     const actions = handlers();
     const first = line(true);
