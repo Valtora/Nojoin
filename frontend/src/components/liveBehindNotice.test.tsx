@@ -6,8 +6,8 @@ import RecordingStatusDisplay from "./RecordingStatusDisplay";
 import { LIVE_TRANSCRIPT_POLL_INTERVAL_MS } from "./transcript/_hooks/useLiveTranscript";
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
-// The live read's `live_waiting` comes from the real endpoint
-// (backend/tests/test_live_waiting_api.py); here only the network is stubbed.
+// The live read's `live_behind` comes from the real endpoint
+// (backend/tests/test_live_behind_api.py); here only the network is stubbed.
 const getTranscriptUtterances = vi.fn();
 
 vi.mock("@/lib/api/transcript", async (importOriginal) => ({
@@ -48,7 +48,7 @@ const recording = (overrides: Partial<Recording> = {}): Recording => ({
   ...overrides,
 });
 
-const read = (liveWaiting: boolean, texts: string[] = []) => ({
+const read = (liveBehind: boolean, texts: string[] = []) => ({
   recording_id: "rec-1",
   revision: texts.length,
   utterances: texts.map((text, index) => ({
@@ -57,13 +57,13 @@ const read = (liveWaiting: boolean, texts: string[] = []) => ({
   })),
   tombstones: [],
   speakers: [],
-  ...(liveWaiting ? { live_waiting: true } : {}),
+  ...(liveBehind ? { live_behind: true } : {}),
 });
 
 const poll = () => act(async () => { await vi.advanceTimersByTimeAsync(LIVE_TRANSCRIPT_POLL_INTERVAL_MS); });
 const settle = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
-describe("live transcript waiting notice", () => {
+describe("live transcript behind notice", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     getTranscriptUtterances.mockReset();
@@ -72,7 +72,7 @@ describe("live transcript waiting notice", () => {
     vi.useRealTimers();
   });
 
-  it("appears while the live read says it is waiting and clears when lines arrive", async () => {
+  it("appears while the live read says it is behind and clears when lines arrive", async () => {
     getTranscriptUtterances
       .mockResolvedValueOnce(read(true))
       .mockResolvedValueOnce(read(false, ["Caught up at last."]));

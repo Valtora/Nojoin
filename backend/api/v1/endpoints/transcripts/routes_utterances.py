@@ -15,8 +15,8 @@ from backend.models.recording_public import (
 )
 from backend.models.speaker import RecordingSpeaker
 from backend.models.user import User
+from backend.processing.live_state import LIVE_BEHIND_LAG_MS, live_lane_lag_ms
 from backend.processing.pipeline_metrics import record_pipeline_metric
-from backend.utils.audio_windows import LIVE_WAITING_LAG_MS, live_lane_lag_ms
 from backend.utils.canonical_pipeline import (
     build_transient_utterance_payloads_from_segments,
     ensure_canonical_backfill,
@@ -60,7 +60,7 @@ from .routes_segments import update_segment_speaker, update_transcript_segment_t
 logger = logging.getLogger(__name__)
 
 
-async def _live_transcript_waiting(db: AsyncSession, recording: Recording) -> bool:
+async def _live_transcript_behind(db: AsyncSession, recording: Recording) -> bool:
     """Whether a running capture's live lane is behind its uploads (issue #780).
 
     A paused or stopped capture, or one with live transcription off, never is.
@@ -70,7 +70,7 @@ async def _live_transcript_waiting(db: AsyncSession, recording: Recording) -> bo
     ):
         return False
     lag_ms = await db.run_sync(lambda session: live_lane_lag_ms(session, recording.id))
-    return lag_ms >= LIVE_WAITING_LAG_MS
+    return lag_ms >= LIVE_BEHIND_LAG_MS
 
 
 @router.get("/{recording_id}/utterances", response_model=TranscriptUtteranceListRead)
@@ -85,7 +85,7 @@ async def get_transcript_utterances(
 
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
-    live_waiting = await _live_transcript_waiting(db, recording)
+    live_behind = await _live_transcript_behind(db, recording)
 
     if not _canonical_transcript_writes_enabled() and not settling_required(transcript):
         utterances = build_transient_utterance_payloads_from_segments(transcript)
@@ -119,7 +119,7 @@ async def get_transcript_utterances(
                 )
                 for speaker in speakers
             ],
-            live_waiting=live_waiting,
+            live_behind=live_behind,
         )
 
     def _read_delta(sync_session):
@@ -171,7 +171,7 @@ async def get_transcript_utterances(
             for speaker in speakers
         ],
         live_speaker_names=live_names,
-        live_waiting=live_waiting,
+        live_behind=live_behind,
     )
 
 

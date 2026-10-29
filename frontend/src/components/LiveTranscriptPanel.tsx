@@ -98,8 +98,8 @@ interface LiveTranscriptPanelProps {
   segments: TranscriptSegment[];
   hasLoaded: boolean;
   isPaused?: boolean;
-  /** Live transcription is behind the uploads while the server finishes other work. */
-  liveWaiting?: boolean;
+  /** Live transcription is behind the audio uploaded so far. */
+  liveBehind?: boolean;
   /** Point and selection notes, each placed after the line it follows. */
   notes?: readonly InlineNote[];
   onRetryNote?: (key: string) => void;
@@ -148,7 +148,7 @@ export default function LiveTranscriptPanel({
   segments,
   hasLoaded,
   isPaused = false,
-  liveWaiting = false,
+  liveBehind = false,
   notes = NO_NOTES,
   onRetryNote,
   onDiscardNote,
@@ -284,7 +284,7 @@ export default function LiveTranscriptPanel({
           </span>
         ) : null}
       </div>
-      {liveWaiting && !isPaused ? (
+      {liveBehind && !isPaused ? (
         <p role="status" className="mt-3 text-sm text-contrast-helper">
           Live transcript is waiting for the server to finish another task. Nothing is lost; it will catch up.
         </p>
