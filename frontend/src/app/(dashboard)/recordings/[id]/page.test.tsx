@@ -129,6 +129,7 @@ vi.mock("@/lib/api", () => ({
   attachFileToNote: vi.fn(),
   setNoteFileUseInNotes: vi.fn(),
   downloadDocument: vi.fn(),
+  getNotes: vi.fn(async () => ({ notes: null, notes_template_id: null })),
   documentPreviewUrl: (id: number) => `/api/v1/documents/${id}/preview`,
   documentFileUrl: (id: number) => `/api/v1/documents/${id}/download`,
 }));

@@ -54,7 +54,7 @@ class GenerateNotesRequest(BaseModel):
     """Optional body for Regenerate Notes.
 
     ``notes_template_id`` picks the structure for this run of the meeting's
-    notes, or for a new extra set (``create_output``), where null is the
+    notes, or for a new extra set (``create_output``): a template, not the
     built-in structure. ``output_id`` reruns an extra set, always with the
     structure saved when it was created.
     """
@@ -76,6 +76,30 @@ async def _requested_template(
     if template.template_id != template_id:
         raise HTTPException(status_code=404, detail="Notes template not found")
     return template
+
+
+async def _refuse_repeated_set(
+    db: AsyncSession, transcript: Transcript, template: ResolvedNotesTemplate
+) -> None:
+    """A new set adds a structure the meeting lacks; Regenerate reruns one it has."""
+    if template.is_builtin:
+        raise HTTPException(
+            status_code=400, detail="Choose a notes template for the new set."
+        )
+    result = await db.execute(
+        select(NotesOutput.notes_template_id).where(
+            NotesOutput.recording_id == transcript.recording_id
+        )
+    )
+    used = set(result.scalars())
+    if transcript.notes:
+        used.add(transcript.notes_template_id)
+    if template.template_id in used:
+        raise HTTPException(
+            status_code=409,
+            detail="This meeting already has a set from that template; "
+            "regenerate that set instead.",
+        )
 
 
 async def _generation_output(
@@ -108,6 +132,7 @@ async def _generation_output(
     template = builtin_notes_template()
     if request.notes_template_id is not None:
         template = await _requested_template(db, user, request.notes_template_id)
+    await _refuse_repeated_set(db, transcript, template)
     return NotesOutput(
         recording_id=transcript.recording_id,
         name=template.name,

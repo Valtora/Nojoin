@@ -6,6 +6,7 @@ import NotesOutputsView from "./NotesOutputsView";
 
 const api = vi.hoisted(() => ({
   listNotesOutputs: vi.fn(), generateNotes: vi.fn(), deleteNotesOutput: vi.fn(),
+  getNotes: vi.fn(),
   updateNotesOutput: vi.fn(), exportContent: vi.fn(), listNotesTemplates: vi.fn(),
 }));
 vi.mock("@/lib/api", () => api);
@@ -23,6 +24,11 @@ const extra: NotesOutput = {
   notes_template_sections: "## Tasks", notes_status: "completed", error_message: null,
   created_at: "2026-10-29", updated_at: "2026-10-29",
 };
+// What POST /notes/generate answers for an extra set: the run has only started.
+const started = (output: NotesOutput) => ({
+  status: "success", notes_status: "generating", error_message: null, message: "Note generation started",
+  output: { ...output, notes_status: "generating" },
+});
 const props = (): NotesViewProps => ({
   recordingId: "rec-1", notes: "First notes", onNotesChange: vi.fn(),
   onGenerateNotes: vi.fn().mockResolvedValue(undefined), onFindAndReplace: vi.fn().mockResolvedValue(undefined),
@@ -37,7 +43,8 @@ beforeEach(() => {
     templates: [{ id: 7, name: "Task list", description: null }],
     builtin: { name: "Nojoin default", description: null },
   });
-  api.generateNotes.mockResolvedValue({ output: extra });
+  api.generateNotes.mockResolvedValue(started({ ...extra, notes: null }));
+  api.getNotes.mockResolvedValue({ notes: "First notes", notes_template_id: null });
   api.deleteNotesOutput.mockResolvedValue(undefined);
   api.updateNotesOutput.mockResolvedValue({ ...extra, notes: "Edited extra" });
   api.exportContent.mockResolvedValue(undefined);
@@ -47,6 +54,9 @@ afterEach(() => { vi.useRealTimers(); });
 
 describe("notes outputs", () => {
   it("creates, regenerates and deletes an extra set, returning to a single view", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listNotesOutputs.mockResolvedValueOnce([]).mockResolvedValue([extra]);
+    api.generateNotes.mockResolvedValueOnce(started({ ...extra, notes: null })).mockResolvedValueOnce(started(extra));
     const primary = props();
     render(<NotesOutputsView {...primary} />);
     await waitFor(() => expect(api.listNotesOutputs).toHaveBeenCalled());
@@ -54,12 +64,21 @@ describe("notes outputs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
     fireEvent.click(await screen.findByRole("button", { name: "Task list" }));
     await screen.findByRole("tab", { name: "Task list", selected: true });
-    expect(screen.getByText("Extra tasks")).toBeInTheDocument();
     expect(api.generateNotes).toHaveBeenCalledWith("rec-1", 7, { create_output: true });
+    expect(screen.getByRole("button", { name: "Regenerate Notes" })).toBeDisabled();
+    expect(screen.queryByText("Extra tasks")).not.toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(screen.getByText("Extra tasks")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Regenerate Notes" }));
     await waitFor(() => expect(api.generateNotes).toHaveBeenCalledWith("rec-1", null, { output_id: 11 }));
     expect(primary.onGenerateNotes).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Delete set" })).toBeEnabled());
+    // Once the request settles, the set's own generating state keeps it locked.
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: "Regenerate Notes" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete set" })).toBeDisabled();
+    expect(screen.getByText("Extra tasks")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(screen.getByRole("button", { name: "Delete set" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Delete set" }));
     const dialog = await screen.findByRole("dialog");
     expect(api.deleteNotesOutput).not.toHaveBeenCalled();
@@ -91,13 +110,39 @@ describe("notes outputs", () => {
   });
 
   it("shows generation errors without losing the original notes", async () => {
-    api.generateNotes.mockRejectedValue({ response: { data: { detail: "This recording is being reprocessed." } } });
+    const reprocessing = "This recording is being reprocessed. Try again once processing has finished.";
+    api.generateNotes.mockRejectedValue({ response: { data: { detail: reprocessing } } });
     render(<NotesOutputsView {...props()} />);
     fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
     fireEvent.click(await screen.findByRole("button", { name: "Task list" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("This recording is being reprocessed.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(reprocessing);
     expect(screen.getByText("First notes")).toBeInTheDocument();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  });
+
+  it("offers only templates not already on the meeting", async () => {
+    const template = (id: number, name: string) => ({ id, name, description: `${name} description` });
+    api.listNotesOutputs.mockResolvedValue([extra]);
+    api.getNotes.mockResolvedValue({ notes: "First notes", notes_template_id: 8 });
+    api.listNotesTemplates.mockResolvedValue({
+      templates: [template(7, "Task list"), template(8, "Minutes"), template(9, "Brief")],
+      builtin: { name: "Nojoin default", description: null },
+    });
+    render(<NotesOutputsView {...props()} />);
+    await screen.findByRole("tab", { name: "Task list" });
+    await waitFor(() => expect(api.getNotes).toHaveBeenCalledWith("rec-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
+    const free = await screen.findByRole("button", { name: "BriefBrief description" });
+    // A template is required: the built-in structure is not a choice for a new set.
+    expect(screen.queryByRole("button", { name: /Nojoin default/ })).not.toBeInTheDocument();
+    for (const name of ["Task list", "Minutes"]) {
+      const used = screen.getByRole("button", { name: `${name}Already in this meeting` });
+      expect(used).toBeDisabled();
+      fireEvent.click(used);
+    }
+    expect(api.generateNotes).not.toHaveBeenCalled();
+    fireEvent.click(free);
+    await waitFor(() => expect(api.generateNotes).toHaveBeenCalledWith("rec-1", 9, { create_output: true }));
   });
 
   it("supports keyboard navigation and keeps an extra's generation state on its own tab", async () => {
@@ -186,10 +231,14 @@ describe("notes outputs", () => {
   });
 
   it("can create a live extra before the first primary notes finish", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listNotesOutputs.mockResolvedValueOnce([]).mockResolvedValue([extra]);
     render(<NotesOutputsView {...props()} notes={null} isGenerating allowCreateOutput />);
     fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
     fireEvent.click(await screen.findByRole("button", { name: "Task list" }));
     expect(await screen.findByRole("tab", { name: "Task list", selected: true })).toBeInTheDocument();
+    expect(screen.queryByText("Extra tasks")).not.toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(screen.getByText("Extra tasks")).toBeInTheDocument();
   });
 

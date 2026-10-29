@@ -6,7 +6,9 @@ import NotesTemplatePicker from "./NotesTemplatePicker";
 import ConfirmationModal from "./ConfirmationModal";
 import Button from "./ui/Button";
 import { ButtonBase } from "./ui/nativeBases";
-import { deleteNotesOutput, exportContent, generateNotes, listNotesOutputs, updateNotesOutput } from "@/lib/api";
+import {
+  deleteNotesOutput, exportContent, generateNotes, getNotes, listNotesOutputs, updateNotesOutput, type NotesTemplate,
+} from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
 import { getErrorMessage } from "@/lib/errors";
 import type { NotesOutput } from "@/types";
@@ -46,6 +48,20 @@ export default function NotesOutputsView(props: NotesOutputsViewProps) {
   const primarySelected = !selected;
   const { onPrimarySelected, recordingId, notes: primaryNotes } = props;
   useEffect(() => { onPrimarySelected?.(primarySelected); }, [onPrimarySelected, primarySelected]);
+
+  // Which structure the first notes used, so a new set cannot repeat it.
+  const [primaryTemplateId, setPrimaryTemplateId] = useState<number | null>(null);
+  useEffect(() => {
+    if (DEMO_MODE || !primaryNotes) return;
+    let cancelled = false;
+    getNotes(recordingId)
+      .then((data) => { if (!cancelled) setPrimaryTemplateId(data.notes_template_id ?? null); })
+      .catch((cause) => console.error("Failed to load the notes structure", cause));
+    return () => { cancelled = true; };
+  }, [recordingId, primaryNotes]);
+  // The server refuses the same.
+  const isTemplateUsed = (template: NotesTemplate) => outputs.some((output) => output.notes_template_id === template.id)
+    || (Boolean(primaryNotes) && primaryTemplateId === template.id);
 
   const load = useCallback(async (onlyGenerating: boolean) => {
     // The public demo replays captured reads only, and has no extra sets.
@@ -113,6 +129,7 @@ export default function NotesOutputsView(props: NotesOutputsViewProps) {
 
   const toolbarActions = <>
     {(props.notes || props.allowCreateOutput) && <NotesTemplatePicker label="Generate another set" disabled={busy.create}
+      isTemplateUsed={isTemplateUsed}
       onSelect={(templateId) => void generate(templateId, true)} />}
     {selected && <Button size="sm" variant="ghost" disabled={selectedBusy}
       onClick={() => setConfirmDelete(true)}>Delete set</Button>}
