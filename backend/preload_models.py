@@ -9,6 +9,7 @@ from typing import Callable
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from backend.services.model_preparation import request_pinned_preparation
 from backend.utils.config_manager import config_manager
 from backend.utils.download_progress import (
     clear_download_progress,
@@ -405,7 +406,6 @@ _PREPARATION_STAGE_SUBJECTS = {
     "segmentation": "the speaker models",
     "parakeet": "the Parakeet transcription model",
     "canary": "the Canary transcription model",
-    "forced_aligner": "the word timing aligner",
 }
 
 
@@ -527,23 +527,11 @@ def download_models(
             )
             _prepare_onnx_asr_model(onnx_model_id)
 
-        if not engine_has_native_word_timestamps(transcription_backend):
-            report(
-                "Preparing forced aligner word-timing assets...",
-                90,
-                stage="forced_aligner",
-                status="downloading",
-            )
-            prepare_forced_aligner_model(
-                progress=lambda message, percent: report(
-                    message,
-                    90 + percent // 10,
-                    stage="forced_aligner",
-                    status="downloading",
-                )
-            )
-
         report("Model preparation complete.", 100, stage="complete", status="complete")
+        if not engine_has_native_word_timestamps(transcription_backend):
+            # The aligner only downloads and hashes, so it goes to the CPU
+            # lane rather than holding live ASR's GPU queue behind 1.8 GB.
+            request_pinned_preparation("forced_aligner", recording_id=None)
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
         set_download_progress(
