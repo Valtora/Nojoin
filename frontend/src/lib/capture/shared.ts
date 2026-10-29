@@ -111,6 +111,12 @@ export interface CaptureState {
   /** Lock-free captures needing a decision, independently of an open dialog. */
   attentionRecordings: Recording[];
   runtimeActive: boolean;
+  /**
+   * The recording this tab's runtime captures, as `getOwnedRecordingId()`
+   * returns it. Carried in the state so a change of ownership re-renders
+   * consumers: the React Compiler caches a call on the stable controller.
+   */
+  ownedRecordingId: RecordingId | null;
   settings: CaptureSettings;
   finalizeRetry: FinalizeRetryProgress | null;
   stopStage: CaptureStopStage | null;

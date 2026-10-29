@@ -106,7 +106,7 @@ export function useCapture() {
     recordingId: state.recordingId,
     pausedRecording: state.pausedRecording,
     attentionRecordings: state.attentionRecordings,
-    ownedRecordingId: controller.getOwnedRecordingId(),
+    ownedRecordingId: state.ownedRecordingId,
     runtimeActive: state.runtimeActive,
     support: state.support,
     settings: state.settings,

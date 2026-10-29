@@ -498,6 +498,7 @@ export class CaptureController {
       pausedRecording: null,
       attentionRecordings: [],
       runtimeActive: false,
+      ownedRecordingId: null,
       settings: readCaptureSettings(),
       finalizeRetry: null,
       stopStage: null,
@@ -2576,7 +2577,7 @@ export class CaptureController {
   }
 
   private setState(patch: Partial<CaptureState>) {
-    this.state = { ...this.state, ...patch };
+    this.state = { ...this.state, ...patch, ownedRecordingId: this.getOwnedRecordingId() };
     // A live capture, or a stop still sending audio, must outlive the session
     // ending: a refused request then asks for sign-in in place rather than
     // reloading to the sign-in page (issue #502).
