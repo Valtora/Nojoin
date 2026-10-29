@@ -87,10 +87,11 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
 def live_label_spans(
     session: Any, recording_id: int, labels: Iterable[str]
 ) -> dict[str, tuple[Span, ...]]:
-    """Each live label's speech: the union of the live lines it labels.
+    """Each live label's reference speech, as a union of its live lines.
 
     Superseded rows count: the final pass reads the live lines before it
-    replaces them, and a reprocess reads them after.
+    replaces them, and a reprocess reads them after. Manually assigned rows
+    do not vote: a correction must follow the label's other speech.
     """
     wanted = set(labels)
     if not wanted:
@@ -103,6 +104,7 @@ def live_label_spans(
         )
         .where(TranscriptUtterance.recording_id == recording_id)
         .where(TranscriptUtterance.source_kind == "live")
+        .where(col(TranscriptUtterance.manual_speaker_locked).is_(False))
         .where(TranscriptUtterance.state != TranscriptUtteranceState.DELETED)
         .where(col(TranscriptUtterance.speaker_label).in_(wanted))
     ).all()

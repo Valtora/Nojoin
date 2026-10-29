@@ -43,6 +43,7 @@ import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import { indexOverlaps } from "./transcript/OverlapIndicator";
 import { appendPendingTranscriptGroups, isDiarisationPending } from "./transcript/pendingTranscriptGroups";
+import { liveSpeakerDisplayName, segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 
 interface TranscriptViewProps {
   /** The selected in-flight reader, with its source-specific actions. */
@@ -180,6 +181,11 @@ export default function TranscriptView({
   // often with the same contents; every line reads them.
   const speakerMap = useContentStable(speakerMapProp);
   const speakers = useContentStable(speakersProp);
+  const liveSpeakerLabels = useContentStable(useMemo(() => Object.fromEntries(
+    [...new Set(segments.map((segment) => segment.speaker))]
+      .filter((label) => liveSpeakerDisplayName(label) !== null)
+      .map((label) => [label, segmentSpeakerDisplayName(speakerMap, label)]),
+  ), [segments, speakerMap]));
   const globalSpeakers = useContentStable(globalSpeakersProp);
   const speakerColors = useContentStable(speakerColorsProp);
   const pendingRemoteUtteranceIds = useContentStable(pendingRemoteUtteranceIdsProp);
@@ -410,6 +416,7 @@ export default function TranscriptView({
       preserveLiveIdentity: keepLineGroups,
       speakerMap,
       speakers,
+      liveSpeakerLabels,
       globalSpeakers,
       speakerColors,
       onUpdateSegmentSpeaker: updateSegmentSpeaker,
@@ -428,6 +435,7 @@ export default function TranscriptView({
       keepLineGroups,
       speakerMap,
       speakers,
+      liveSpeakerLabels,
       globalSpeakers,
       speakerColors,
       updateSegmentSpeaker,

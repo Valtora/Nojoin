@@ -1,8 +1,26 @@
 """Speaker assignment targets, segment speakers, and utterance states."""
 
+from backend.utils.live_speaker_labels import live_speaker_display_name
+
 from .constants import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker
+
+
+def _live_assignment_target(session: Any, recording_id: int, label: str | None) -> bool:
+    if live_speaker_display_name(label) is None:
+        return False
+    heard = session.execute(
+        select(TranscriptUtterance.id)
+        .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES))
+        .where(TranscriptUtterance.speaker_label == label)
+        .limit(1)
+    ).first()
+    if heard is None:
+        raise LookupError("Live speaker not found in this recording")
+    return True
 
 
 def resolve_assignment_target(
@@ -15,7 +33,10 @@ def resolve_assignment_target(
     diarization_label: str | None,
     source_speaker: RecordingSpeaker | None = None,
     scope: SpeakerCorrectionScope = SpeakerCorrectionScope.UTTERANCE_ONLY,
-) -> RecordingSpeaker:
+) -> RecordingSpeaker | None:
+    if _live_assignment_target(session, recording_id, diarization_label):
+        return None
+
     cleaned_name = new_speaker_name.strip()
     recording_speakers = ensure_recording_speaker_aliases(session, recording_id)
 

@@ -106,7 +106,15 @@ def _name_events(
     }
     spans = live_label_spans(session, recording_id, set(live.values()))
     return [
-        replace(as_name_event(row), anchor_spans=spans.get(live[row.id], ()))
+        replace(
+            as_name_event(row),
+            anchor_spans=spans.get(live[row.id], ()),
+            # With no reference speech, the former anchor must not confidently
+            # identify a voice after every line on it was manually reassigned.
+            anchor_end_ms=(
+                row.anchor_end_ms if spans.get(live[row.id]) else row.anchor_start_ms
+            ),
+        )
         if row.id in live
         else as_name_event(row)
         for row in rows

@@ -209,17 +209,17 @@ def finalize_utterances_from_segments(
         start_ms: int,
         end_ms: int,
     ) -> dict[str, Any] | None:
-        overlap_by_speaker_id: dict[int, int] = defaultdict(int)
-        source_public_ids_by_speaker_id: dict[int, list[str]] = defaultdict(list)
-        confidence_by_speaker_id: dict[int, float] = defaultdict(float)
-        edit_sources_by_speaker_id: dict[int, set[str]] = defaultdict(set)
+        overlap_by_speaker: dict[int | str, int] = defaultdict(int)
+        source_public_ids_by_speaker: dict[int | str, list[str]] = defaultdict(list)
+        confidence_by_speaker: dict[int | str, float] = defaultdict(float)
+        edit_sources_by_speaker: dict[int | str, set[str]] = defaultdict(set)
 
         for source_utterance in active_utterances:
             if source_utterance.id in matched_utterance_ids:
                 continue
-            if (
-                not source_utterance.manual_speaker_locked
-                or source_utterance.recording_speaker_id is None
+            if not source_utterance.manual_speaker_locked or (
+                source_utterance.recording_speaker_id is None
+                and live_speaker_display_name(source_utterance.speaker_label) is None
             ):
                 continue
             overlap_ms = _range_overlap_ms(
@@ -230,50 +230,57 @@ def finalize_utterances_from_segments(
             )
             if overlap_ms <= 0:
                 continue
-            speaker_id = int(source_utterance.recording_speaker_id)
-            overlap_by_speaker_id[speaker_id] += int(overlap_ms)
-            source_public_ids_by_speaker_id[speaker_id].append(
-                source_utterance.public_id
+            speaker_key = source_utterance.recording_speaker_id or str(
+                source_utterance.speaker_label
             )
+            overlap_by_speaker[speaker_key] += int(overlap_ms)
+            source_public_ids_by_speaker[speaker_key].append(source_utterance.public_id)
             if source_utterance.speaker_confidence is not None:
-                confidence_by_speaker_id[speaker_id] = max(
-                    confidence_by_speaker_id[speaker_id],
+                confidence_by_speaker[speaker_key] = max(
+                    confidence_by_speaker[speaker_key],
                     float(source_utterance.speaker_confidence),
                 )
             if source_utterance.speaker_last_edit_source:
-                edit_sources_by_speaker_id[speaker_id].add(
+                edit_sources_by_speaker[speaker_key].add(
                     source_utterance.speaker_last_edit_source
                 )
 
-        if not overlap_by_speaker_id:
+        if not overlap_by_speaker:
             return None
 
         ranked = sorted(
-            overlap_by_speaker_id.items(),
-            key=lambda item: (-item[1], item[0]),
+            overlap_by_speaker.items(),
+            key=lambda item: (-item[1], str(item[0])),
         )
         if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
             return None
 
-        speaker_id, overlap_ms = ranked[0]
-        speaker = session.get(RecordingSpeaker, speaker_id)
-        if speaker is None:
+        speaker_key, overlap_ms = ranked[0]
+        speaker = (
+            session.get(RecordingSpeaker, speaker_key)
+            if isinstance(speaker_key, int)
+            else None
+        )
+        if isinstance(speaker_key, int) and speaker is None:
             return None
 
         # Attribution is only inherited when every utterance that voted for
         # this speaker was edited by the same surface. Where a person and an
         # assistant both touched the range, neither can honestly claim the
         # inherited assignment, so it goes across unattributed.
-        edit_sources = edit_sources_by_speaker_id.get(speaker_id) or set()
+        edit_sources = edit_sources_by_speaker.get(speaker_key) or set()
         inherited_edit_source = (
             next(iter(edit_sources)) if len(edit_sources) == 1 else None
         )
 
         return {
             "speaker": speaker,
+            "speaker_label": speaker.diarization_label
+            if speaker is not None
+            else str(speaker_key),
             "overlap_ms": int(overlap_ms),
-            "source_public_ids": source_public_ids_by_speaker_id[speaker_id],
-            "speaker_confidence": confidence_by_speaker_id.get(speaker_id) or None,
+            "source_public_ids": source_public_ids_by_speaker[speaker_key],
+            "speaker_confidence": confidence_by_speaker.get(speaker_key) or None,
             "speaker_edit_source": inherited_edit_source,
         }
 
@@ -541,8 +548,10 @@ def finalize_utterances_from_segments(
         effective_segment = dict(segment)
         if manual_speaker_inheritance is not None:
             recording_speaker = manual_speaker_inheritance["speaker"]
-            effective_segment["speaker"] = recording_speaker.diarization_label
-            effective_segment["recording_speaker_id"] = int(recording_speaker.id)
+            effective_segment["speaker"] = manual_speaker_inheritance["speaker_label"]
+            effective_segment["recording_speaker_id"] = (
+                recording_speaker.id if recording_speaker is not None else None
+            )
             effective_segment["speaker_manually_edited"] = True
             effective_segment["speaker_edit_source"] = manual_speaker_inheritance.get(
                 "speaker_edit_source"
@@ -553,15 +562,16 @@ def finalize_utterances_from_segments(
                 )
             confidence_payload = dict(effective_segment.get("confidence_payload") or {})
             confidence_payload["inherited_manual_speaker"] = {
-                "recording_speaker_id": int(recording_speaker.id),
+                "recording_speaker_id": effective_segment["recording_speaker_id"],
                 "source_public_ids": list(
                     manual_speaker_inheritance["source_public_ids"]
                 ),
                 "overlap_ms": int(manual_speaker_inheritance["overlap_ms"]),
             }
             effective_segment["confidence_payload"] = confidence_payload
-            _touch_recording_speaker_bounds(recording_speaker, effective_segment)
-            session.add(recording_speaker)
+            if recording_speaker is not None:
+                _touch_recording_speaker_bounds(recording_speaker, effective_segment)
+                session.add(recording_speaker)
         else:
             recording_speaker = resolved_speaker
         utterance = TranscriptUtterance(

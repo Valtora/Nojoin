@@ -34,6 +34,7 @@ from backend.utils.speaker_names.sources import (
 )
 
 from .constants import *  # noqa: F403
+from .live_speaker_assignment_carryover import carry_live_speaker_assignments
 from .speaker_name_carryover import (
     CarriedNames,
     apply_pending_names,
@@ -669,6 +670,7 @@ def assign_and_identify_speakers(
 
     _run_duplicate_merge_pass(ctx, recording, final_segments, diarization_result)
     apply_pending_names(session, recording, carried.pending)
+    carry_live_speaker_assignments(session, recording, final_segments)
 
 
 __all__ = [

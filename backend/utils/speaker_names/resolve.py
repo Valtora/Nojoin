@@ -110,12 +110,28 @@ def _distance(spans: Sequence[Span], start: int, end: int) -> int:
     return min(max(0, span[0] - end, start - span[1]) for span in spans)
 
 
-def place_event(event: NameEvent, lines: Sequence[Line]) -> Placement:
+def span_coverage(spans: Sequence[Span], lines: Sequence[Line]) -> dict[str, int]:
+    """Attributed milliseconds per final label across disjoint reference spans."""
     held: dict[str, int] = {}
     for label, start, end in lines:
-        overlap = sum(_overlap(*span, start, end) for span in event.spans)
+        overlap = sum(_overlap(*span, start, end) for span in spans)
         if overlap:
             held[str(label)] = held.get(str(label), 0) + overlap
+    return held
+
+
+def held_label_for_spans(spans: Sequence[Span], lines: Sequence[Line]) -> str | None:
+    """One reliable holder, with the same coverage and share floors as names."""
+    held = span_coverage(spans, lines)
+    covered = sum(held.values())
+    if covered < MIN_COVERED_MS:
+        return None
+    top = max(held, key=lambda label: held[label])
+    return top if held[top] / covered >= SHARE_FLOOR else None
+
+
+def place_event(event: NameEvent, lines: Sequence[Line]) -> Placement:
+    held = span_coverage(event.spans, lines)
     covered = sum(held.values())
     if covered < MIN_COVERED_MS:
         offered = None
