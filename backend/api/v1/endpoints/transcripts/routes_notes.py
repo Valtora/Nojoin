@@ -20,7 +20,6 @@ from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import (
     ResolvedNotesTemplate,
     builtin_notes_template,
-    install_default_template_id,
     resolve_notes_template_async,
 )
 from backend.utils.reprocess_publication import (
@@ -88,8 +87,7 @@ async def _refuse_repeated_set(
     )
     used = set(result.scalars())
     if transcript.notes:
-        # Notes that recorded no structure count as the shared default's.
-        used.add(transcript.notes_template_id or install_default_template_id())
+        used.add(transcript.notes_template_id)
     if template.template_id in used:
         raise HTTPException(
             status_code=409,

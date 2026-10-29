@@ -15,7 +15,7 @@ from backend.api.v1.endpoints.transcripts import routes_chat, routes_notes
 from backend.core.db import driver_urls
 from backend.models.context_chunk import ContextChunk
 from backend.models.notes_output import NotesOutput
-from backend.models.notes_template import NotesTemplate, NotesTemplateScope
+from backend.models.notes_template import NotesTemplate
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_DIMENSIONS
@@ -28,7 +28,6 @@ from backend.tests.test_live_settling_readers_postgres import (
 from backend.utils.canonical_pipeline.notes_propagation import (
     propagate_speaker_rename_to_notes,
 )
-from backend.utils.config_manager import config_manager
 from backend.utils.reprocess_publication import REPROCESS_RUNNING_MESSAGE
 from backend.worker import tasks
 
@@ -520,50 +519,24 @@ async def test_renames_and_find_replace_reach_extra_sets(
     )
 
 
-@pytest.fixture(params=["recorded", "unrecorded"])
-async def first_notes(
-    request: pytest.FixtureRequest,
-    reader_sessions: async_sessionmaker[AsyncSession],
-    meeting: tuple[int, int],
-    monkeypatch: pytest.MonkeyPatch,
-) -> SimpleNamespace:
-    """The first notes either recorded their template ("Minutes") or recorded
-    none, and so count as the shared default's ("Shared")."""
-    recorded = request.param == "recorded"
-    async with reader_sessions() as db:
-        minutes = NotesTemplate(name="Minutes", sections=SECTIONS, user_id=1)
-        shared = NotesTemplate(
-            name="Shared", sections=SECTIONS, scope=NotesTemplateScope.INSTALL.value
-        )
-        db.add_all([minutes, shared])
-        await db.flush()
-        transcript = (await db.execute(select(Transcript))).scalar_one()
-        transcript.notes_template_id = minutes.id if recorded else None
-        await db.commit()
-        minutes_id, shared_id = minutes.id, shared.id
-    monkeypatch.setitem(config_manager.config, "install_notes_template_id", shared_id)
-    return SimpleNamespace(
-        recorded_id=minutes_id if recorded else None,
-        shared_id=shared_id,
-        used=minutes_id if recorded else shared_id,
-        free=shared_id if recorded else minutes_id,
-    )
-
-
 async def test_new_set_needs_a_template_not_already_on_the_meeting(
     reader_client: AsyncClient,
+    reader_sessions: async_sessionmaker[AsyncSession],
     meeting: tuple[int, int],
-    first_notes: SimpleNamespace,
     stub_celery_dispatch: list[tuple[str, object, object]],
 ) -> None:
     recording_id, task_list_id = meeting
-    first = (await reader_client.get(PATH)).json()
-    assert first["notes_template_id"] == first_notes.recorded_id
-    # The picker marks the shared default from the template list.
-    listed = (await reader_client.get("/api/v1/notes-templates")).json()["templates"]
-    assert [t["id"] for t in listed if t["is_install_default"]] == [
-        first_notes.shared_id
-    ]
+    async with reader_sessions() as db:
+        minutes = NotesTemplate(name="Minutes", sections=SECTIONS, user_id=1)
+        brief = NotesTemplate(name="Brief", sections=SECTIONS, user_id=1)
+        db.add_all([minutes, brief])
+        await db.flush()
+        transcript = (await db.execute(select(Transcript))).scalar_one()
+        transcript.notes_template_id = minutes.id
+        await db.commit()
+        minutes_id, brief_id = minutes.id, brief.id
+    # The picker reads the first notes' template from here.
+    assert (await reader_client.get(PATH)).json()["notes_template_id"] == minutes_id
 
     async def create(**body: Any) -> Any:
         return await reader_client.post(
@@ -574,7 +547,7 @@ async def test_new_set_needs_a_template_not_already_on_the_meeting(
         response = await create(**body)
         assert response.status_code == 400, response.text
         assert response.json()["detail"] == "Choose a notes template for the new set."
-    response = await create(notes_template_id=first_notes.used)
+    response = await create(notes_template_id=minutes_id)
     assert response.status_code == 409, response.text
     assert "already has a set from that template" in response.json()["detail"]
     assert stub_celery_dispatch == []
@@ -582,7 +555,7 @@ async def test_new_set_needs_a_template_not_already_on_the_meeting(
     first_extra = await create_extra(reader_client, task_list_id)
     response = await create(notes_template_id=task_list_id)
     assert response.status_code == 409, response.text
-    response = await create(notes_template_id=first_notes.free)
+    response = await create(notes_template_id=brief_id)
     assert response.status_code == 200, response.text
     assert response.json()["output"]["notes_status"] == "generating"
     second_extra = response.json()["output"]["id"]
@@ -593,5 +566,5 @@ async def test_new_set_needs_a_template_not_already_on_the_meeting(
     outputs = (await reader_client.get(f"{PATH}/outputs")).json()
     assert [output["notes_template_id"] for output in outputs] == [
         task_list_id,
-        first_notes.free,
+        brief_id,
     ]

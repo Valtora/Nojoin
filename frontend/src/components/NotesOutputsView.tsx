@@ -48,10 +48,9 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
       .catch((cause) => console.error("Failed to load the notes structure", cause));
     return () => { cancelled = true; };
   }, [recordingId, primaryNotes]);
-  // The server refuses the same; first notes that recorded no structure count
-  // as the shared default's.
+  // The server refuses the same.
   const isTemplateUsed = (template: NotesTemplate) => outputs.some((output) => output.notes_template_id === template.id)
-    || (Boolean(primaryNotes) && (primaryTemplateId === null ? template.is_install_default : primaryTemplateId === template.id));
+    || (Boolean(primaryNotes) && primaryTemplateId === template.id);
 
   const load = useCallback(async (onlyGenerating: boolean) => {
     // The public demo replays captured reads only, and has no extra sets.

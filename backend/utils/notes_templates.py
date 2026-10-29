@@ -333,15 +333,6 @@ def _candidate_template_ids(
     return ordered
 
 
-def install_default_template_id() -> Optional[int]:
-    """The shared default structure an administrator chose, if any."""
-    from backend.utils.config_manager import config_manager
-
-    stored = config_manager.get(INSTALL_TEMPLATE_SETTING_KEY)
-    candidates = _candidate_template_ids({INSTALL_TEMPLATE_SETTING_KEY: stored}, None)
-    return candidates[0] if candidates else None
-
-
 def _select_visible_template(
     templates: Iterable[NotesTemplate],
     candidate_ids: Sequence[int],

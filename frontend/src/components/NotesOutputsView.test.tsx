@@ -120,39 +120,29 @@ describe("notes outputs", () => {
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
-  const template = (id: number, name: string, isInstallDefault = false) => ({
-    id, name, description: `${name} description`, is_install_default: isInstallDefault,
-  });
-
-  it.each([
-    { recorded: 8, usedByFirstNotes: "Minutes", free: "Shared" },
-    // First notes that recorded no structure count as the shared default's.
-    { recorded: null, usedByFirstNotes: "Shared", free: "Minutes" },
-  ])("offers only templates not already on the meeting (first notes: $usedByFirstNotes)", async (
-    { recorded, usedByFirstNotes, free },
-  ) => {
+  it("offers only templates not already on the meeting", async () => {
+    const template = (id: number, name: string) => ({ id, name, description: `${name} description` });
     api.listNotesOutputs.mockResolvedValue([extra]);
-    api.getNotes.mockResolvedValue({ notes: "First notes", notes_template_id: recorded });
+    api.getNotes.mockResolvedValue({ notes: "First notes", notes_template_id: 8 });
     api.listNotesTemplates.mockResolvedValue({
-      templates: [template(7, "Task list"), template(8, "Minutes"), template(9, "Shared", true)],
+      templates: [template(7, "Task list"), template(8, "Minutes"), template(9, "Brief")],
       builtin: { name: "Nojoin default", description: null },
     });
     render(<NotesOutputsView {...props()} />);
     await screen.findByRole("tab", { name: "Task list" });
     await waitFor(() => expect(api.getNotes).toHaveBeenCalledWith("rec-1"));
     fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
-    const freeChoice = await screen.findByRole("button", { name: `${free}${free} description` });
+    const free = await screen.findByRole("button", { name: "BriefBrief description" });
     // A template is required: the built-in structure is not a choice for a new set.
     expect(screen.queryByRole("button", { name: /Nojoin default/ })).not.toBeInTheDocument();
-    for (const name of ["Task list", usedByFirstNotes]) {
+    for (const name of ["Task list", "Minutes"]) {
       const used = screen.getByRole("button", { name: `${name}Already in this meeting` });
       expect(used).toBeDisabled();
       fireEvent.click(used);
     }
     expect(api.generateNotes).not.toHaveBeenCalled();
-    fireEvent.click(freeChoice);
-    await waitFor(() => expect(api.generateNotes).toHaveBeenCalledWith(
-      "rec-1", recorded === null ? 8 : 9, { create_output: true }));
+    fireEvent.click(free);
+    await waitFor(() => expect(api.generateNotes).toHaveBeenCalledWith("rec-1", 9, { create_output: true }));
   });
 
   it("supports keyboard navigation and keeps an extra's generation state on its own tab", async () => {
