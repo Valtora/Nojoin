@@ -47,10 +47,14 @@ class LiveSettlingPublicRead(BaseModel):
 def public_settling_fields(
     payload: dict[str, Any] | None,
     *,
+    provisional: bool = False,
     final_utterance_id: str | None = None,
     final_text: str | None = None,
 ) -> dict[str, Any]:
-    """Expose typed live facts or final boundaries; never private comparisons."""
+    """Expose typed live facts or final boundaries; never private comparisons.
+
+    ``provisional`` marks a live row of a recording that requires settling.
+    """
     payload = payload or {}
     review = payload.get("final_review")
     public_review = (
@@ -61,6 +65,10 @@ def public_settling_fields(
     metadata = payload.get("live_text_settling")
     protected = bool(payload.get("human_protection"))
     if not isinstance(metadata, dict) and not protected:
+        # A whole live line on a settling recording, written after a CPU
+        # fallback or a Resume without settling: no pass will ever lock it.
+        if provisional:
+            return {**public_review, "locked": True}
         if final_utterance_id:
             words = final_words(payload, final_utterance_id, text=final_text)
             if words:
@@ -93,11 +101,15 @@ def public_settling_fields(
 def public_transcript_segment(
     segment: dict[str, Any], *, include_final_words: bool = False
 ) -> dict[str, Any]:
-    """Strip private evidence while preserving the typed settling projection."""
+    """Strip private evidence while preserving the typed settling projection.
+
+    ``include_final_words`` marks a recording that requires settling.
+    """
     return {
         **{key: value for key, value in segment.items() if key != "confidence_payload"},
         **public_settling_fields(
             segment.get("confidence_payload"),
+            provisional=include_final_words and bool(segment.get("provisional")),
             final_utterance_id=segment.get("id")
             if include_final_words and not segment.get("provisional")
             else None,
