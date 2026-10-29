@@ -268,3 +268,41 @@ def test_deletion_releases_an_imported_aligner_then_removes_only_its_repo(
     assert releases == [True]
     assert not repo.exists()
     assert assets.control.path("prepare.lock").stat().st_ino == inode
+
+
+def test_offline_failure_holds_off_live_requests_until_the_backoff_passes(
+    model_cache_env: Path,
+    progress: dict[str, Any],
+    stub_celery_dispatch: list,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.processing import forced_aligner_model
+    from backend.utils import pinned_model_control
+    from backend.utils.forced_aligner_manifest import ForcedAlignerError
+    from backend.worker.tasks.system import download_models_task
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    # Task progress goes to the Redis result backend.
+    monkeypatch.setattr(download_models_task, "update_state", lambda **_: None)
+    with pytest.raises(ForcedAlignerError):
+        forced_aligner_model._prepared_path()
+    name, _args, kwargs = stub_celery_dispatch[0]
+    download_models_task.push_request(id=assets.control.pending_task()["task_id"])
+    try:
+        with pytest.raises(ForcedAlignerError):
+            download_models_task.run(**kwargs)
+    finally:
+        download_models_task.pop_request()
+    assert assets.control.pending_task() is None
+    for _ in range(5):
+        with pytest.raises(ForcedAlignerError):
+            forced_aligner_model._prepared_path()
+    assert len(stub_celery_dispatch) == 1
+    later = time.time() + pinned_model_control.FAILURE_BACKOFF + 1
+    monkeypatch.setattr(
+        pinned_model_control, "time", SimpleNamespace(time=lambda: later)
+    )
+    for _ in range(3):
+        with pytest.raises(ForcedAlignerError):
+            forced_aligner_model._prepared_path()
+    assert len(stub_celery_dispatch) == 2

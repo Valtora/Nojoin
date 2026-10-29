@@ -86,7 +86,8 @@ def request_pinned_preparation(
 
     Publishing has no retries and uses two-second connect/socket limits on a
     dedicated connection. It does not subscribe to the result backend. The
-    pending marker keeps later requests from queueing a second transfer.
+    pending marker keeps later requests from queueing a second transfer, and
+    a recent failure holds them off for FAILURE_BACKOFF.
     """
     if target == "nemotron":
         control, inspect = nemotron_control, inspect_nemotron_model
@@ -99,7 +100,11 @@ def request_pinned_preparation(
             if not acquired:
                 logger.info("%s preparation busy (recording=%s)", target, recording_id)
                 return None
-            if inspect().state == "verified" or control.pending_task():
+            if (
+                inspect().state == "verified"
+                or control.pending_task()
+                or control.failed_recently()
+            ):
                 return None
             control.write_pending(task_id)
             try:
