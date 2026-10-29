@@ -14,22 +14,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 
-NO_TRANSCRIPT_SECTION = """# Transcript:
-This meeting has no transcript. If a question needs one, say that the transcript is not available.
-"""
+from backend.prompts import render_prompt
 
-EXCERPTS_PREAMBLE = """This meeting is too long to include its full transcript, so only the passages most relevant to the question are below, in time order, with [...] where passages were left out. The meeting notes above cover the whole meeting. If neither the notes nor these passages answer the question, say so, and do not guess at what the rest of the transcript contains."""
+NO_TRANSCRIPT_SECTION = render_prompt("chat.no_transcript")
 
-NO_EXCERPTS_PREAMBLE = """This meeting is too long to include its full transcript, and no passages of it could be selected for this question. Answer from the meeting notes above, and say so when they do not cover the question."""
+EXCERPTS_PREAMBLE = render_prompt("chat.excerpts_preamble")
+
+NO_EXCERPTS_PREAMBLE = render_prompt("chat.no_excerpts_preamble")
 
 # What a chat reply can do. Each reply is one request: nothing runs after it,
 # so a model left to guess offers to monitor the meeting or send reminders.
 # Only a request that passes the notes tool may say it can change the notes.
-CAPABILITIES_WITH_NOTES_TOOL = """# WHAT YOU CAN DO
-Answer from what is provided here: the meeting notes, the transcript and any related context. Your only action is updating the meeting notes with your tool, when the user asks you to change them. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the question is about a part of the meeting not recorded yet, suggest asking again later."""
+CAPABILITIES_WITH_NOTES_TOOL = render_prompt("chat.capabilities_with_notes_tool")
 
-CAPABILITIES_WITHOUT_TOOLS = """# WHAT YOU CAN DO
-Answer from what is provided here: the meeting notes, the transcript and any related context. You cannot change the meeting notes. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the question is about a part of the meeting not recorded yet, suggest asking again later."""
+CAPABILITIES_WITHOUT_TOOLS = render_prompt("chat.capabilities_without_tools")
 
 
 @dataclass(frozen=True)
@@ -61,45 +59,42 @@ ChatTranscript = Union[str, TranscriptExcerpts, LiveChatTranscript, None]
 def _transcript_section(diarized_transcript: ChatTranscript) -> str:
     if isinstance(diarized_transcript, LiveChatTranscript):
         scope = (
-            "Only the most recent part of the transcript is included: older wording "
-            "was trimmed to fit the model's context. Do not infer what the omitted "
-            "part contains."
+            render_prompt("chat.live_trimmed_scope")
             if diarized_transcript.trimmed
-            else "The transcript so far is included below."
+            else render_prompt("chat.live_scope")
         )
-        return (
-            "# Transcript So Far:\nThis recording is still in progress; wording and "
-            "speakers may still change. " + scope + " Meeting notes may be incomplete "
-            "or from an earlier processing pass; they do not establish what the "
-            "whole meeting contains.\n\n"
-            + (
-                diarized_transcript.text
-                or "No speech or timeline notes are available yet."
-            )
-            + "\n"
+        return render_prompt(
+            "chat.live_transcript",
+            scope=scope,
+            transcript=(
+                diarized_transcript.text or render_prompt("chat.live_no_speech")
+            ),
         )
     if isinstance(diarized_transcript, TranscriptExcerpts):
         if not diarized_transcript.text:
-            return f"# Transcript:\n{NO_EXCERPTS_PREAMBLE}\n"
-        return (
-            f"# Transcript Excerpts:\n{EXCERPTS_PREAMBLE}\n\n"
-            f"{diarized_transcript.text}\n"
+            return render_prompt(
+                "chat.no_excerpt_transcript", preamble=NO_EXCERPTS_PREAMBLE
+            )
+        return render_prompt(
+            "chat.excerpt_transcript",
+            preamble=EXCERPTS_PREAMBLE,
+            transcript=diarized_transcript.text,
         )
     # A missing transcript is stated as such, never passed off as transcript
     # text, so the model cannot quote a status message as something said.
     if not diarized_transcript:
         return NO_TRANSCRIPT_SECTION
-    return f"# Full Diarized Transcript:\n{diarized_transcript}\n"
+    return render_prompt("chat.full_transcript", transcript=diarized_transcript)
 
 
 def _sources(diarized_transcript: ChatTranscript) -> str:
     if isinstance(diarized_transcript, LiveChatTranscript):
-        return "meeting notes, transcript so far,"
+        return render_prompt("chat.sources_live")
     if isinstance(diarized_transcript, TranscriptExcerpts):
-        return "meeting notes, excerpts from the diarized transcript,"
+        return render_prompt("chat.sources_excerpts")
     if diarized_transcript:
-        return "meeting notes, full diarized transcript,"
-    return "meeting notes"
+        return render_prompt("chat.sources_full")
+    return render_prompt("chat.sources_notes")
 
 
 def build_chat_context(
@@ -118,21 +113,13 @@ def build_chat_context(
     capabilities = (
         CAPABILITIES_WITH_NOTES_TOOL if notes_tool else CAPABILITIES_WITHOUT_TOOLS
     )
-    return f"""
-You are a helpful AI assistant. You have access to the following {sources} and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
-
-# CRITICAL INSTRUCTION
-When referencing transcript content, always include the timestamp in [MM:SS] format (e.g., "At [12:30], Speaker A mentioned...").
-
-# FORMATTING
-When an answer compares several items across the same fields, present it as a Markdown table with a header row and a `| --- |` delimiter row beneath it. Keep tables to six columns or fewer, write a line break inside a cell as `<br>` rather than a real newline, and never merge cells.
-
-{capabilities}
-
-# Meeting Notes:
-{meeting_notes}
-
-{_transcript_section(diarized_transcript)}"""
+    return render_prompt(
+        "chat.context",
+        sources=sources,
+        capabilities=capabilities,
+        meeting_notes=meeting_notes,
+        transcript_section=_transcript_section(diarized_transcript),
+    )
 
 
 def build_chat_prompt(
@@ -143,10 +130,9 @@ def build_chat_prompt(
     notes_tool: bool = False,
 ) -> str:
     """Single-string chat prompt (context + question) for providers without caching."""
-    return (
-        build_chat_context(meeting_notes, diarized_transcript, notes_tool=notes_tool)
-        + f"\nUser Question: {user_question}\n"
-    )
+    return build_chat_context(
+        meeting_notes, diarized_transcript, notes_tool=notes_tool
+    ) + render_prompt("chat.question", question=user_question)
 
 
 def anthropic_cached_system(context: str) -> list[dict[str, Any]]:
@@ -170,5 +156,10 @@ def build_chat_messages(
             role = "assistant" if msg["role"] == "model" else msg["role"]
             for part in msg["parts"]:
                 messages.append({"role": role, "content": part["text"]})
-    messages.append({"role": "user", "content": f"\nUser Question: {user_question}\n"})
+    messages.append(
+        {
+            "role": "user",
+            "content": render_prompt("chat.question", question=user_question),
+        }
+    )
     return messages

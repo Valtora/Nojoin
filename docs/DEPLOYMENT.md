@@ -11,6 +11,8 @@ This is the operator reference for running Nojoin. For a first install, follow [
 
 ## Core Requirements
 
+The API and worker images bundle the shipped TOML prompt files and validate their registry during the image build; worker-io inherits them from the worker image. Prompt files are application assets, independent of the process working directory.
+
 - Docker Desktop or Docker Engine with Compose.
 - Disk space for recordings, derived files and models.
 - For a GPU on Linux, the NVIDIA driver and the NVIDIA Container Toolkit.

@@ -49,6 +49,7 @@ from typing import (
 )
 
 from backend.models.timeline_note import TimelineNoteKind
+from backend.prompts import render_prompt
 
 NoteSlot = Literal["head", "body", "tail"]
 
@@ -273,29 +274,11 @@ def render_timeline_for_llm(
     return "\n".join(lines)
 
 
-MEETING_WIDE_NOTES_PREAMBLE = (
-    "The user wrote the following notes about the meeting as a whole, each quoted "
-    "below with every line opening `>`. Use them as "
-    "high-priority supporting context when composing the final notes. Incorporate "
-    "relevant items into the summary, detailed notes, and action items where they "
-    "materially improve accuracy."
-)
+MEETING_WIDE_NOTES_PREAMBLE = render_prompt("shared.meeting_wide_notes_preamble")
 
-INLINE_NOTES_EXPLANATION = (
-    "The transcript also carries notes the user wrote at particular moments, each on "
-    "its own line just after the line it refers to: "
-    '`[Note — name]: text`, or `[Note on "quoted words" at time — name]: text` for a '
-    "note about specific words. These lines are the user's notes, not speech, and "
-    "carry the same high priority. A note about quoted words may correct a "
-    "mistranscription, define a term, or comment on what was said; the user is "
-    "authoritative about what was said."
-)
+INLINE_NOTES_EXPLANATION = render_prompt("shared.inline_notes_explanation")
 
-NOTES_LIST_PREAMBLE = (
-    "The user wrote the following notes about this meeting, in timeline order, "
-    "with the time in the recording where one was written at a particular moment. "
-    "Use them as high-priority supporting context."
-)
+NOTES_LIST_PREAMBLE = render_prompt("shared.notes_list_preamble")
 
 
 def _split_slots(

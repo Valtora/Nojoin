@@ -23,6 +23,7 @@ from typing import Optional, Sequence
 
 from sqlalchemy.orm import Session
 
+from backend.prompts import render_prompt
 from backend.services.timeline_note_service import load_recording_timeline_notes
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.canonical_pipeline.constants import (
@@ -37,10 +38,7 @@ from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.timeline_notes import iter_timeline, render_note_line
 
 # Opens a transcript that carries notes, so the model reads them as the user's.
-NOTES_LEGEND = (
-    "Lines starting [Note …] are notes the user wrote at that point in the meeting, "
-    "not speech; the user is authoritative about what was said."
-)
+NOTES_LEGEND = render_prompt("shared.notes_legend")
 
 
 def _view_hides_unknown(segments: list[dict]) -> bool:

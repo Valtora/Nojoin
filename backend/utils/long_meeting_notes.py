@@ -31,6 +31,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Mapping, Optional, Sequence, TypeVar
 
+from backend.prompts import render_prompt
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_intelligence import (
@@ -119,47 +120,38 @@ class PartsBudget:
 
 # --- Prompts ---------------------------------------------------------------
 
-PART_INTRO = """You are an expert meeting-notes assistant. This meeting is too long to read in one pass, so its transcript has been split into consecutive parts. Write notes for the one part given below. A later step combines the notes of every part into the notes for the whole meeting, working only from what the notes of each part say."""
+PART_INTRO = render_prompt("long_meeting.part_intro")
 
-USE_SPEAKER_MAPPING = """Use the speaker mapping to refer to participants by their inferred names or roles instead of generic labels."""
+USE_SPEAKER_MAPPING = render_prompt("long_meeting.use_speaker_mapping")
 
-PART_INTRO_SPEAKERS = """You are an expert meeting-notes assistant. This meeting is too long to read in one pass, so its transcript has been split into consecutive parts. For the one part given below, write meeting notes in Markdown, then name the unresolved speakers this part gives evidence for. A later step combines the notes of every part into the notes for the whole meeting, working only from what the notes of each part say."""
+PART_INTRO_SPEAKERS = render_prompt("long_meeting.part_intro_speakers")
 
-PART_SPEAKER_RULES = """- Treat any non-generic speaker names already present in the transcript as trusted.
-- In the notes, write every unresolved label exactly as the transcript does, such as SPEAKER_03. Names are put in after the parts are combined.
-- After the notes, list each unresolved label this part gives evidence for, such as someone introducing themselves or being addressed by name, one per line between <speaker_names> tags as below. Give the person's name on its own when the meeting gave one, and otherwise their role. Leave out a label you are not confident about, and leave the tags empty when there is none.
+PART_SPEAKER_RULES = render_prompt("long_meeting.part_speaker_rules")
 
-<speaker_names>
-SPEAKER_00: Person name or role
-</speaker_names>"""
-
-# The example names above. A model sometimes copies them back as an answer.
+# The example names in long_meeting.toml. A model sometimes copies them as an answer.
 EXAMPLE_NAMES = {"person name or role", "one of the names listed for speaker_00"}
 
-PART_CLOSING = """Return only the notes for this part, starting directly with the first section and with no preamble or closing commentary."""
+PART_CLOSING = render_prompt("long_meeting.part_closing")
 
-PART_CLOSING_SPEAKERS = """Return only the notes for this part, starting directly with the first section, followed by the <speaker_names> block."""
+PART_CLOSING_SPEAKERS = render_prompt("long_meeting.part_closing_speakers")
 
-MERGE_INTRO = """You are an expert meeting-notes assistant. A long meeting was split into consecutive parts, and notes were written for each part. Combine the notes of the parts below into one set of notes."""
+MERGE_INTRO = render_prompt("long_meeting.merge_intro")
 
-MERGE_INTRO_TITLE = """You are an expert meeting-notes assistant. A long meeting was split into consecutive parts, and notes were written for each part. From the notes of the parts below, write a title for the meeting and one set of notes for the whole meeting."""
+MERGE_INTRO_TITLE = render_prompt("long_meeting.merge_intro_title")
 
-MERGE_TITLE_RULES = """- Start the answer with the title on its own line between <title> tags, as in <title>Quarterly Budget Review</title>, then the notes in Markdown.
-- The title and the notes must reflect the same meeting interpretation."""
+MERGE_TITLE_RULES = render_prompt("long_meeting.merge_title_rules")
 
-MERGE_LABELS_KEPT = """Leave every diarization label, such as SPEAKER_03, exactly as the notes of the parts write it. Names are put in afterwards."""
+MERGE_LABELS_KEPT = render_prompt("long_meeting.merge_labels_kept")
 
-SETTLE_SPEAKERS = """The parts named these diarization labels differently. After the notes, give the one name the notes of the parts best support for each, copied exactly from its list, one per line between <speaker_names> tags as below, and prefer a name the meeting itself gave (someone introducing themselves or being addressed by name) over a role. Leave a label out when no name on its list is well supported, and name no other label.
+SETTLE_SPEAKERS = render_prompt("long_meeting.settle_speakers")
 
-<speaker_names>
-SPEAKER_00: One of the names listed for SPEAKER_00
-</speaker_names>"""
+MERGE_CLOSING = render_prompt("long_meeting.merge_closing")
 
-MERGE_CLOSING = """Return only the combined notes, starting directly with the first section and with no preamble or closing commentary."""
+MERGE_CLOSING_TITLE = render_prompt("long_meeting.merge_closing_title")
 
-MERGE_CLOSING_TITLE = """Return only the <title> line and then the notes, starting with their first section, with no preamble or closing commentary."""
-
-MERGE_CLOSING_TITLE_SPEAKERS = """Return only the <title> line, then the notes starting with their first section, then the <speaker_names> block, with no preamble or closing commentary."""
+MERGE_CLOSING_TITLE_SPEAKERS = render_prompt(
+    "long_meeting.merge_closing_title_speakers"
+)
 
 
 @dataclass(frozen=True)
@@ -228,13 +220,15 @@ def _shared_blocks(
     context: LongMeetingContext, *, documents: bool
 ) -> list[PromptBlock]:
     blocks: list[PromptBlock] = [
-        ("# Recording Metadata", context.metadata),
-        ("# Glossary", context.glossary),
-        ("# User Notes Context", context.user_notes),
-        ("# Meeting Context", context.meeting_context),
+        (render_prompt("shared.heading_recording_metadata"), context.metadata),
+        (render_prompt("shared.heading_glossary"), context.glossary),
+        (render_prompt("shared.heading_user_notes_context"), context.user_notes),
+        (render_prompt("shared.heading_meeting_context"), context.meeting_context),
     ]
     if documents:
-        blocks.append(("# Attached Documents", context.documents))
+        blocks.append(
+            (render_prompt("shared.heading_attached_documents"), context.documents)
+        )
     # Carries its own heading.
     blocks.append((None, context.language))
     return blocks
@@ -244,32 +238,26 @@ def _part_instructions(
     index: int, total: int, part: TranscriptPart, words: Optional[int]
 ) -> str:
     span = (
-        f", from {part.start} to {part.end} in the recording"
+        render_prompt("long_meeting.part_span", start=part.start, end=part.end)
         if part.start and part.end
         else ""
     )
     length = (
-        f"- Write at most {words:,} words, so the notes of every part fit "
-        "together when they are combined.\n"
+        render_prompt("long_meeting.part_length", words=format(words, ","))
         if words
         else ""
     )
-    return (
-        f"This is part {index} of {total}{span}.\n"
-        "- Follow the notes format above, but write the summary for this part "
-        "alone, and do not guess at what was said before or after it.\n"
-        f"{length}"
-        "- Keep every decision and action item in this part, with its owner, "
-        "deadline and figures, and shorten the discussion before dropping any "
-        "of them. The final notes are built from these notes alone, so "
-        "anything left out here is lost.\n"
-        "- Where this part opens or ends partway through a discussion, record "
-        "the discussion as it stands and leave its outcome open."
+    return render_prompt(
+        "long_meeting.part_instructions",
+        index=str(index),
+        total=str(total),
+        span=span,
+        length=length,
     )
 
 
 def _labels_section(labels: Sequence[str]) -> str:
-    lines = ["Only these diarization labels may be named:"]
+    lines = [render_prompt("long_meeting.labels_intro")]
     lines.extend(f"- {label}" for label in labels)
     return "\n".join(lines)
 
@@ -292,13 +280,16 @@ def build_part_prompt(
     if request is None:
         head: list[PromptBlock] = [
             (None, f"{PART_INTRO} {USE_SPEAKER_MAPPING}"),
-            ("# Speaker Mapping", context.speaker_mapping),
+            (render_prompt("shared.heading_speaker_mapping"), context.speaker_mapping),
         ]
     elif labels:
         head = [
             (None, PART_INTRO_SPEAKERS),
-            ("# Speaker Rules", PART_SPEAKER_RULES),
-            ("# Unresolved Speaker Labels", _labels_section(labels)),
+            (render_prompt("shared.heading_speaker_rules"), PART_SPEAKER_RULES),
+            (
+                render_prompt("shared.heading_unresolved_speaker_labels"),
+                _labels_section(labels),
+            ),
         ]
     else:
         head = [(None, PART_INTRO)]
@@ -307,9 +298,12 @@ def build_part_prompt(
         [
             *head,
             *_shared_blocks(context, documents=True),
-            ("# Notes Format", context.notes_spec),
-            ("# This Part", _part_instructions(index, total, part, words)),
-            ("# Transcript Part", part.text),
+            (render_prompt("shared.heading_notes_format"), context.notes_spec),
+            (
+                render_prompt("shared.heading_this_part"),
+                _part_instructions(index, total, part, words),
+            ),
+            (render_prompt("shared.heading_transcript_part"), part.text),
             (None, _closing(closing, words)),
         ]
     )
@@ -329,41 +323,39 @@ class _Notes:
 def _describe(items: Sequence[_Notes], total: int) -> str:
     first, last = items[0].first, items[-1].last
     parts = (
-        f"part {first} of {total}"
+        render_prompt("long_meeting.single_part", first=str(first), total=str(total))
         if first == last
-        else f"parts {first} to {last} of {total}"
+        else render_prompt(
+            "long_meeting.multiple_parts",
+            first=str(first),
+            last=str(last),
+            total=str(total),
+        )
     )
     start, end = items[0].start, items[-1].end
-    return f"{parts}, from {start} to {end}" if start and end else parts
+    return (
+        render_prompt("long_meeting.described_span", parts=parts, start=start, end=end)
+        if start and end
+        else parts
+    )
 
 
 def _combining_rules(scope: str, words: Optional[int]) -> str:
     length = (
-        f"- Write at most {words:,} words. Where the notes of the parts hold "
-        "more than that allows, shorten the discussion and key points first, "
-        "and keep every decision and action item.\n"
+        render_prompt("long_meeting.merge_length", words=format(words, ","))
         if words
         else ""
     )
-    return (
-        f"- Write one set of notes for {scope}, following the notes format "
-        f"above. The summary gives one account of {scope}, not a summary of "
-        "each part in turn.\n"
-        f"{length}"
-        "- Where the same item appears in more than one part, such as an action "
-        "item raised twice, write it once, keeping the most specific owner, "
-        "deadline and figure.\n"
-        "- Keep every decision and action item in the notes of the parts, with "
-        "its owner, deadline and figures, and add nothing they do not contain.\n"
-        "- Keep topics in the order they came up."
-    )
+    return render_prompt("long_meeting.combining_rules", scope=scope, length=length)
 
 
 def _closing(markdown: str, words: Optional[int]) -> str:
     """The last line of a prompt, which repeats the length a model reads last."""
     if not words:
         return markdown
-    return f"{markdown} Write at most {words:,} words."
+    return render_prompt(
+        "long_meeting.limited_closing", markdown=markdown, words=format(words, ",")
+    )
 
 
 def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speakers
@@ -384,15 +376,15 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
     """
     request = context.request
     scope = (
-        "the whole meeting"
+        render_prompt("long_meeting.whole_meeting")
         if final
-        else f"this stretch of the meeting ({_describe(items, total)})"
+        else render_prompt("long_meeting.stretch", parts=_describe(items, total))
     )
     speakers: PromptBlock = (
-        ("# Speaker Mapping", context.speaker_mapping)
+        (render_prompt("shared.heading_speaker_mapping"), context.speaker_mapping)
         if request is None
         else (
-            "# Unresolved Speaker Labels",
+            render_prompt("shared.heading_unresolved_speaker_labels"),
             MERGE_LABELS_KEPT if request.unresolved_speakers else None,
         )
     )
@@ -408,15 +400,19 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
         )
         head: list[PromptBlock] = [
             (None, MERGE_INTRO_TITLE),
-            ("# Title Rules", MERGE_TITLE_RULES),
+            (render_prompt("shared.heading_title_rules"), MERGE_TITLE_RULES),
             (
-                "# Title Style",
+                render_prompt("shared.heading_title_style"),
                 build_title_preference_instruction(request.prefer_short_titles),
             ),
             speakers,
             (
-                "# Speaker Names To Settle",
-                f"{SETTLE_SPEAKERS}\n\nThe names each label was given:\n{settle}"
+                render_prompt("shared.heading_speaker_names_to_settle"),
+                render_prompt(
+                    "long_meeting.settlement",
+                    SETTLE_SPEAKERS=SETTLE_SPEAKERS,
+                    settle=settle,
+                )
                 if settle
                 else None,
             ),
@@ -431,9 +427,12 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
         [
             *head,
             *_shared_blocks(context, documents=False),
-            ("# Notes Format", context.notes_spec),
-            ("# Combining Rules", _combining_rules(scope, words)),
-            ("# Notes of the Parts", part_notes),
+            (render_prompt("shared.heading_notes_format"), context.notes_spec),
+            (
+                render_prompt("shared.heading_combining_rules"),
+                _combining_rules(scope, words),
+            ),
+            (render_prompt("shared.heading_notes_of_the_parts"), part_notes),
             (None, closing),
         ]
     )

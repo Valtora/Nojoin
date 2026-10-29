@@ -99,6 +99,12 @@ npm test
 
 The check names are `lint`, `format`, `whitespace`, `filesize`, `blindexcept`, `heldpins`, `typecheck`, `docs`, `alembic` and `tests`. The demo server's tests are in [demo/README.md](../demo/README.md#tests).
 
+### Editing Inference Prompts
+
+Edit the feature's TOML blocks in `backend/prompts/`; common fragments belong in `shared.toml`. Add or update the id's placeholder contract in `backend/prompts/__init__.py` when its inputs change. Use `${name}` for a placeholder and `$$` for a literal dollar; Python computes optional blocks and formatted values before substituting once. Whitespace in a block is significant, including leading and trailing newlines. Keep parser examples and analytics method-version requirements in step with their consumers.
+
+`backend/tests/test_prompt_registry.py` loads and renders the entire shipped catalogue independently of the working directory and checks invalid contracts using temporary files. Run it alongside the existing feature prompt tests, then `python scripts/check.py`. For a prose-only relocation, compare the old and new builders' rendered bytes from fixed synthetic inputs, including message roles and each cached prefix and suffix; registry validation alone cannot establish equivalence.
+
 ### Branch Protection
 
 Branch protection lives in GitHub's settings, outside the repository. To restore it on `main`, apply this with an authenticated `gh`:

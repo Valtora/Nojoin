@@ -2,6 +2,7 @@ import logging
 import re
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 
+from backend.prompts import render_prompt
 from backend.utils.chat_prompt import (
     ChatTranscript,
     LiveChatTranscript,
@@ -186,9 +187,9 @@ def build_eligible_speaker_labels_prompt_section(
         str(label).strip() for label in eligible_labels or () if str(label).strip()
     ]
     if not labels:
-        return "All unresolved diarization labels in the transcript are eligible."
+        return render_prompt("speakers.all_eligible")
 
-    lines = ["Only return suggestions for these diarization labels:"]
+    lines = [render_prompt("speakers.eligible_intro")]
     lines.extend(f"- {label}" for label in labels)
     return "\n".join(lines)
 
@@ -498,39 +499,15 @@ class LLMBackend:
 
     # Static prompt text. Plain strings, never format templates: JSON schema
     # examples use real braces, and interpolated values need no escaping.
-    SPEAKER_SUGGESTION_INTRO = """You are an expert meeting assistant. Analyze the diarized meeting transcript below and return only evidence-backed speaker name suggestions for unresolved diarization labels."""
+    SPEAKER_SUGGESTION_INTRO = render_prompt("speakers.suggestion_intro")
 
-    SPEAKER_SUGGESTION_CRITICAL_RULES = """- Return valid JSON only. Do not include Markdown, commentary, or code fences unless the client asks for them.
-- Only include suggestions for the eligible diarization labels listed below.
-- Omit a label entirely if the transcript evidence is weak or ambiguous.
-- Each suggestion must include at least one direct evidence span quoted from the transcript.
-- Prefer names already present in the transcript or linked meeting attendees. Do not invent names.
-- Be conservative. If you are unsure, omit the suggestion instead of guessing.
-- `confidence` must be between 0.0 and 1.0."""
+    SPEAKER_SUGGESTION_CRITICAL_RULES = render_prompt("speakers.suggestion_rules")
 
-    SPEAKER_SUGGESTION_JSON_SCHEMA = """{
-    "suggestions": [
-        {
-            "diarization_label": "SPEAKER_00",
-            "suggested_name": "Alex Johnson",
-            "confidence": 0.93,
-            "rationale": "The speaker says 'I'm Alex' and the attendee list contains Alex Johnson.",
-            "signals": ["self_introduction", "meeting_attendee_exact"],
-            "evidence_spans": [
-                {
-                    "quote": "Hi everyone, I'm Alex from product.",
-                    "reason": "self_introduction",
-                    "start_seconds": 0.0,
-                    "end_seconds": 3.2
-                }
-            ]
-        }
-    ]
-}"""
+    SPEAKER_SUGGESTION_JSON_SCHEMA = render_prompt("speakers.suggestion_schema")
 
-    NOTES_INTRO = """You are an expert meeting-notes assistant. Generate meeting notes from the transcript below. Use the speaker mapping to refer to participants by their inferred names or roles instead of generic labels."""
+    NOTES_INTRO = render_prompt("notes.intro")
 
-    NOTES_CLOSING = """Return only the meeting notes described above, starting directly with the first section and with no preamble or closing commentary."""
+    NOTES_CLOSING = render_prompt("notes.closing")
 
     @staticmethod
     def parse_notes(response_text: str) -> str:
@@ -569,7 +546,7 @@ class LLMBackend:
     def mapping_to_markdown_table(mapping: Dict[str, str]) -> str:
         if not mapping:
             return ""
-        header = "| Diarization Label | Inferred Name/Role |\n|---|---|"
+        header = render_prompt("speakers.mapping_header")
         rows = [f"| {k} | {v} |" for k, v in mapping.items()]
         return "\n".join([header] + rows)
 
@@ -596,21 +573,27 @@ class LLMBackend:
             [
                 (None, LLMBackend.NOTES_INTRO),
                 (
-                    "# Speaker Mapping",
+                    render_prompt("shared.heading_speaker_mapping"),
                     LLMBackend.mapping_to_markdown_table(speaker_mapping),
                 ),
                 (
-                    "# Recording Metadata",
+                    render_prompt("shared.heading_recording_metadata"),
                     build_meeting_metadata_prompt_section(context.metadata),
                 ),
-                ("# Glossary", build_glossary_prompt_section(context.glossary)),
-                ("# User Notes Context", build_user_notes_prompt_section(user_notes)),
                 (
-                    "# Meeting Context",
+                    render_prompt("shared.heading_glossary"),
+                    build_glossary_prompt_section(context.glossary),
+                ),
+                (
+                    render_prompt("shared.heading_user_notes_context"),
+                    build_user_notes_prompt_section(user_notes),
+                ),
+                (
+                    render_prompt("shared.heading_meeting_context"),
                     build_meeting_context_prompt_section(meeting_context),
                 ),
                 (
-                    "# Attached Documents",
+                    render_prompt("shared.heading_attached_documents"),
                     build_documents_prompt_section(context.documents),
                 ),
                 # Carries its own heading.
@@ -620,8 +603,11 @@ class LLMBackend:
                 ),
                 # Structure and fidelity rules come from the shared body spec, so
                 # this prompt and the unified one cannot drift.
-                ("# Notes Format", build_notes_body_spec(context.notes_sections)),
-                ("# Transcript to Analyze", transcript),
+                (
+                    render_prompt("shared.heading_notes_format"),
+                    build_notes_body_spec(context.notes_sections),
+                ),
+                (render_prompt("shared.heading_transcript_to_analyze"), transcript),
                 (None, LLMBackend.NOTES_CLOSING),
             ]
         )
@@ -641,18 +627,27 @@ class LLMBackend:
         body = render_prompt_blocks(
             [
                 (None, LLMBackend.SPEAKER_SUGGESTION_INTRO),
-                ("# Critical Rules", LLMBackend.SPEAKER_SUGGESTION_CRITICAL_RULES),
                 (
-                    "# Eligible Diarization Labels",
+                    render_prompt("shared.heading_critical_rules"),
+                    LLMBackend.SPEAKER_SUGGESTION_CRITICAL_RULES,
+                ),
+                (
+                    render_prompt("shared.heading_eligible_diarization_labels"),
                     build_eligible_speaker_labels_prompt_section(eligible_labels),
                 ),
-                ("# User Notes Context", build_user_notes_prompt_section(user_notes)),
                 (
-                    "# Meeting Context",
+                    render_prompt("shared.heading_user_notes_context"),
+                    build_user_notes_prompt_section(user_notes),
+                ),
+                (
+                    render_prompt("shared.heading_meeting_context"),
                     build_meeting_context_prompt_section(meeting_context),
                 ),
-                ("# Required JSON Schema", LLMBackend.SPEAKER_SUGGESTION_JSON_SCHEMA),
-                ("# Transcript", transcript),
+                (
+                    render_prompt("shared.heading_required_json_schema"),
+                    LLMBackend.SPEAKER_SUGGESTION_JSON_SCHEMA,
+                ),
+                (render_prompt("shared.heading_transcript"), transcript),
             ]
         )
         return f"\n{body}\n"
@@ -673,12 +668,9 @@ class LLMBackend:
             return prompt_override
 
         intro = (
-            "You are an expert meeting-notes assistant. Given the full meeting "
-            "transcript below, provide a title that summarises the main topic or "
-            "purpose of the meeting. "
+            render_prompt("notes.title_intro")
             + build_title_preference_instruction(True)
-            + " Output ONLY the title with no additional commentary, punctuation, "
-            "or formatting."
+            + render_prompt("notes.title_closing")
         )
         body = render_prompt_blocks(
             [
@@ -687,7 +679,7 @@ class LLMBackend:
                     None,
                     build_output_language_prompt_section(output_language_instruction),
                 ),
-                ("# Transcript\n", transcript),
+                (render_prompt("shared.heading_transcript_spaced"), transcript),
             ]
         )
         return f"{body}\n"
@@ -788,21 +780,12 @@ class LLMBackend:
         invalid_response: str,
         validation_error: Exception,
     ) -> str:
-        return f"""Your previous response did not satisfy Nojoin's strict JSON contract.
-
-Validation error:
-{validation_error}
-
-Return a corrected response for the original task as one valid JSON object only.
-Do not include Markdown code fences, commentary, or prose before or after the JSON object.
-Preserve the same schema and do not invent facts not supported by the original task.
-
-# Original Task
-{original_prompt}
-
-# Previous Invalid Response
-{invalid_response}
-"""
+        return render_prompt(
+            "repair.json",
+            validation_error=str(validation_error),
+            original_prompt=original_prompt,
+            invalid_response=invalid_response,
+        )
 
     @staticmethod
     def get_transcript_excerpts_for_llm(

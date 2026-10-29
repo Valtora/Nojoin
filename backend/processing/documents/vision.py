@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import List, Optional
 
+from backend.prompts import render_prompt
 from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 from .types import PageSource
@@ -23,49 +24,7 @@ logger = logging.getLogger(__name__)
 # Second, the model is told to describe rather than interpret. A chart summarised
 # as "sales improved" is useless for later retrieval; the axis labels and the
 # values are what someone will actually ask about.
-_PAGE_PROMPT = """\
-You are transcribing one page of a document into Markdown for a search index.
-
-Reproduce the page faithfully:
-- Transcribe all visible text. Do not summarise, shorten or paraphrase it.
-- Render tables as Markdown tables, preserving every row and column.
-- For a chart, state its type and title, then give the axis labels and every
-  data value you can read. Do not describe the trend instead of the numbers.
-- For a diagram or flowchart, state the labels and the relationships between
-  them, including the direction of any arrows.
-- For a photograph or screenshot, describe what it shows in enough detail that
-  someone who cannot see it understands what it conveys.
-- Use headings that match the page's own visual hierarchy.
-
-Return only the Markdown for this page. No preamble, no commentary, and no
-fenced code block around the whole answer.\
-"""
-
-_TEXT_LAYER_PROMPT = """\
-
-The text layer extracted from this page is below. It is accurate where it has
-content, so prefer it verbatim for body text and spend your effort on what it
-does not capture -- tables, charts, diagrams, and anything rendered as an image.
-
-<extracted_text>
-{text}
-</extracted_text>\
-"""
-
-# Slide pictures and Word images arrive without a page render around them, so
-# the model is describing one figure rather than transcribing a whole page.
-_FIGURE_PROMPT = """\
-Describe the following image or images from {location} of a document, for a
-search index.
-
-State any text visible in the image verbatim. If it is a chart, give its type,
-title, axis labels and every readable data value. If it is a diagram, give the
-labels and the relationships between them. If it is a photograph or screenshot,
-describe what it shows in enough detail that someone who cannot see it
-understands what it conveys.
-
-Return only the description as Markdown. No preamble and no commentary.\
-"""
+_PAGE_PROMPT = render_prompt("vision.page")
 
 
 def build_page_prompt(page: PageSource) -> str:
@@ -73,15 +32,18 @@ def build_page_prompt(page: PageSource) -> str:
     prompt = _PAGE_PROMPT
     text = (page.text or "").strip()
     if text:
-        prompt += _TEXT_LAYER_PROMPT.format(text=text)
+        prompt += render_prompt("vision.text_layer", text=text)
     return prompt
 
 
 def build_figure_prompt(page: PageSource) -> str:
+    # Slide pictures and Word images have no surrounding page render.
     location = (
-        f'the slide titled "{page.title}"' if page.title else f"page {page.page_number}"
+        render_prompt("vision.slide_location", title=page.title)
+        if page.title
+        else render_prompt("vision.page_location", number=str(page.page_number))
     )
-    return _FIGURE_PROMPT.format(location=location)
+    return render_prompt("vision.figure", location=location)
 
 
 @dataclass(frozen=True)

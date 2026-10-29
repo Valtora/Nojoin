@@ -8,6 +8,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from backend.prompts import render_prompt
 from backend.utils.meeting_notes import (
     MeetingEventContext,
     build_glossary_prompt_section,
@@ -37,60 +38,27 @@ MEETING_EDGE_CONTEXT_LEVEL_MAX = 5
 MEETING_EDGE_CONTEXT_LEVEL_DEFAULT = 2
 
 MEETING_EDGE_CONTEXT_GUIDANCE = {
-    1: "Extremely selective (Most Complex). ONLY explain highly specialized, rare technical terms, advanced domain jargon, or obscure acronyms that an expert would use. Absolutely do not explain common business, general software, product, or workplace terms (such as API, database, backend, frontend, server, sprint, deployment, roadmap, blocker, metrics, or checklist). If in doubt, do not explain the term.",
-    2: "Highly selective. Explain only advanced, domain-specific, or proprietary jargon that cross-functional attendees might not understand. Skip standard industry terms and common workplace language.",
-    3: "Selective. Explain technical or domain-specific terms that a general professional might not know. Skip common professional terminology and widely known software concepts.",
-    4: "Balanced. Explain moderately technical or abbreviated terms when a short clarification would help a non-specialist follow along. Skip plain-language terms.",
-    5: "Detailed (Least Complex). Be generous with clarifications for non-trivial technical, domain-specific, or abbreviated terms, while still avoiding obvious plain-language words.",
+    1: render_prompt("meeting_edge.context_level_1"),
+    2: render_prompt("meeting_edge.context_level_2"),
+    3: render_prompt("meeting_edge.context_level_3"),
+    4: render_prompt("meeting_edge.context_level_4"),
+    5: render_prompt("meeting_edge.context_level_5"),
 }
 
-# Heading that separates the stable instruction prefix from the volatile
-# per-refresh context in the Meeting Edge prompt. It appears verbatim in
-# DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE below and is the split point used by
-# build_meeting_edge_prompt_parts for prompt caching. A test keeps the two in
-# sync so a heading rename can't silently disable caching.
-MEETING_EDGE_CACHE_SPLIT_MARKER = "# Earlier Context Summary"
+# Heading that starts the volatile per-refresh context. The halves are composed
+# separately so provider caching never depends on searching the rendered prose.
+MEETING_EDGE_CACHE_SPLIT_MARKER = render_prompt(
+    "shared.heading_earlier_context_summary"
+)
 
 # Static prompt text, split at the cache boundary. Plain strings, never format
 # templates: the JSON schema uses real braces and interpolated values need no
 # escaping. See backend.utils.prompt_blocks.
-MEETING_EDGE_INTRO = """You are Meeting Edge, a live meeting assistant.
+MEETING_EDGE_INTRO = render_prompt("meeting_edge.intro")
 
-Your task is to produce concise, high-signal, real-time guidance that helps the user participate more effectively in the current meeting.
+MEETING_EDGE_CRITICAL_RULES = render_prompt("meeting_edge.critical_rules")
 
-Return one valid JSON object with these keys:
-- `summary`: 1-2 sentences on what matters right now.
-- `rolling_summary`: a 150-300 word running context of the meeting so far. Capture decisions made, open threads, action items, and the key positions of named speakers. Carry forward still-relevant facts from the Earlier Context Summary and fold in what changed in the recent transcript. This is internal working memory for your future turns, not user-facing text.
-- `questions`: 0-3 smart clarifying or high-leverage questions the user could ask next.
-- `points`: 0-3 overlooked points, risks, or considerations the user could raise.
-- `concepts`: brief explanations of the technical or domain terms that were actually mentioned and would help the user follow the discussion, but only when they meet the Technical Context Policy below."""
-
-MEETING_EDGE_CRITICAL_RULES = """- Be tactful, professional, constructive, and non-manipulative.
-- Do not invent facts, commitments, requirements, or attendee intent.
-- Prefer fewer items over weak items.
-- Anchor guidance to the most recent exchanges at the end of the transcript; treat earlier material as supporting context only.
-- Questions must be specific and answerable by the people in this meeting. Avoid generic filler such as "What are the next steps?".
-- Points must reference something concrete from the discussion: a decision, claim, number, risk, contradiction, or omission.
-- Treat the Previously Suggested section as your own prior output. Keep an item verbatim only if it is still clearly relevant and unaddressed; drop items overtaken by the discussion; add fresh items for new developments. Never rephrase a previous item just to make it look new.
-- Align suggestions with the user's stated focus when provided.
-- Only explain concepts that were actually mentioned or clearly implied by the recent transcript.
-- Include all distinct concepts from the recent transcript that materially help comprehension, not just the top one or two.
-- Keep each question, point, and explanation concise.
-- Each entry in `questions` and `points` is a plain JSON string, never an object.
-- Return valid JSON only. Do not include prose before or after the JSON object."""
-
-MEETING_EDGE_JSON_SCHEMA = """{
-    "summary": "One or two sentence read of the meeting right now.",
-    "rolling_summary": "150-300 word running context of the meeting so far.",
-    "questions": ["Question the user could ask"],
-    "points": ["Point the user could raise"],
-    "concepts": [
-        {
-            "term": "Technical term",
-            "explanation": "Short explanation"
-        }
-    ]
-}"""
+MEETING_EDGE_JSON_SCHEMA = render_prompt("meeting_edge.json_schema")
 
 
 class MeetingEdgeContractError(ValueError):
@@ -218,16 +186,22 @@ def build_meeting_edge_prompt_parts(
     prefix = render_prompt_blocks(
         [
             (None, MEETING_EDGE_INTRO),
-            ("# Critical Rules", MEETING_EDGE_CRITICAL_RULES),
             (
-                "# Technical Context Policy",
+                render_prompt("shared.heading_critical_rules"),
+                MEETING_EDGE_CRITICAL_RULES,
+            ),
+            (
+                render_prompt("shared.heading_technical_context_policy"),
                 build_concept_guidance_prompt_section(request.context_level),
             ),
             (
-                "# Glossary",
+                render_prompt("shared.heading_glossary"),
                 build_glossary_prompt_section(request.glossary, for_notes=False),
             ),
-            ("# Required JSON Schema", MEETING_EDGE_JSON_SCHEMA),
+            (
+                render_prompt("shared.heading_required_json_schema"),
+                MEETING_EDGE_JSON_SCHEMA,
+            ),
         ]
     )
     suffix = render_prompt_blocks(
@@ -237,22 +211,28 @@ def build_meeting_edge_prompt_parts(
                 build_rolling_summary_prompt_section(request.rolling_summary),
             ),
             (
-                "# Previously Suggested",
+                render_prompt("shared.heading_previously_suggested"),
                 build_previous_suggestions_prompt_section(
                     request.previous_questions,
                     request.previous_points,
                 ),
             ),
-            ("# User Focus", build_focus_text_prompt_section(request.focus_text)),
             (
-                "# User Notes Context",
+                render_prompt("shared.heading_user_focus"),
+                build_focus_text_prompt_section(request.focus_text),
+            ),
+            (
+                render_prompt("shared.heading_user_notes_context"),
                 build_user_notes_prompt_section(request.user_notes),
             ),
             (
-                "# Meeting Context",
+                render_prompt("shared.heading_meeting_context"),
                 build_meeting_context_prompt_section(request.meeting_context),
             ),
-            ("# Recent Transcript", request.recent_transcript),
+            (
+                render_prompt("shared.heading_recent_transcript"),
+                request.recent_transcript,
+            ),
         ]
     )
     return f"{prefix}\n\n", f"{suffix}\n"
@@ -396,7 +376,7 @@ def merge_meeting_edge_concept_history(
 
 def build_rolling_summary_prompt_section(rolling_summary: str | None) -> str:
     if not rolling_summary:
-        return "No earlier summary is available yet. Infer context from the recent transcript only."
+        return render_prompt("meeting_edge.no_rolling_summary")
     return rolling_summary
 
 
@@ -410,23 +390,23 @@ def build_previous_suggestions_prompt_section(
     points = [str(item).strip() for item in previous_points or () if str(item).strip()]
 
     if not questions and not points:
-        return "No suggestions have been made yet."
+        return render_prompt("meeting_edge.no_previous_suggestions")
 
     lines: list[str] = []
     if questions:
-        lines.append("Questions already suggested:")
+        lines.append(render_prompt("meeting_edge.previous_questions_label"))
         lines.extend(f"- {question}" for question in questions)
     if points:
         if lines:
             lines.append("")
-        lines.append("Points already suggested:")
+        lines.append(render_prompt("meeting_edge.previous_points_label"))
         lines.extend(f"- {point}" for point in points)
     return "\n".join(lines)
 
 
 def build_focus_text_prompt_section(focus_text: str | None) -> str:
     if not focus_text:
-        return "No explicit user focus was provided. Infer the most constructive general guidance from the meeting context."
+        return render_prompt("meeting_edge.no_focus")
     return focus_text
 
 

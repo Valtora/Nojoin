@@ -36,6 +36,7 @@ from backend.models.cli_oauth import (
     CliUsageDaily,
 )
 from backend.processing.cli.env_scrub import scrubbed_environ, subscription_env_payload
+from backend.prompts import render_prompt
 from backend.services.cli_oauth import codex_oauth, oauth
 from backend.services.cli_oauth.persistence import user_cli_dir
 from backend.utils.time import utc_now
@@ -51,12 +52,7 @@ _REFRESH_SKEW_SECONDS = 120
 # endpoint rather than a coding agent. A plain string fully replaces the CLI's
 # large built-in preset (~23k tokens observed), conserving subscription quota and
 # keeping outputs on-contract.
-_SYSTEM_PROMPT = (
-    "You are a precise text-processing engine embedded in an application. "
-    "Follow the user's instructions exactly and return only the requested "
-    "output — no preamble, no commentary, no questions. When the instructions "
-    "ask for JSON, return only valid JSON."
-)
+_SYSTEM_PROMPT = render_prompt("cli.system")
 
 
 @dataclass

@@ -1,0 +1,79 @@
+# Shipped prompt prose. ${name} placeholders accept literal, single-pass input.
+# <title>/<speaker_names> tags and example names are parser contracts;
+# keep example names aligned with EXAMPLE_NAMES in long_meeting_notes.py.
+
+part_intro = '''You are an expert meeting-notes assistant. This meeting is too long to read in one pass, so its transcript has been split into consecutive parts. Write notes for the one part given below. A later step combines the notes of every part into the notes for the whole meeting, working only from what the notes of each part say.'''
+
+use_speaker_mapping = '''Use the speaker mapping to refer to participants by their inferred names or roles instead of generic labels.'''
+
+part_intro_speakers = '''You are an expert meeting-notes assistant. This meeting is too long to read in one pass, so its transcript has been split into consecutive parts. For the one part given below, write meeting notes in Markdown, then name the unresolved speakers this part gives evidence for. A later step combines the notes of every part into the notes for the whole meeting, working only from what the notes of each part say.'''
+
+part_speaker_rules = '''- Treat any non-generic speaker names already present in the transcript as trusted.
+- In the notes, write every unresolved label exactly as the transcript does, such as SPEAKER_03. Names are put in after the parts are combined.
+- After the notes, list each unresolved label this part gives evidence for, such as someone introducing themselves or being addressed by name, one per line between <speaker_names> tags as below. Give the person's name on its own when the meeting gave one, and otherwise their role. Leave out a label you are not confident about, and leave the tags empty when there is none.
+
+<speaker_names>
+SPEAKER_00: Person name or role
+</speaker_names>'''
+
+part_closing = '''Return only the notes for this part, starting directly with the first section and with no preamble or closing commentary.'''
+
+part_closing_speakers = '''Return only the notes for this part, starting directly with the first section, followed by the <speaker_names> block.'''
+
+merge_intro = '''You are an expert meeting-notes assistant. A long meeting was split into consecutive parts, and notes were written for each part. Combine the notes of the parts below into one set of notes.'''
+
+merge_intro_title = '''You are an expert meeting-notes assistant. A long meeting was split into consecutive parts, and notes were written for each part. From the notes of the parts below, write a title for the meeting and one set of notes for the whole meeting.'''
+
+merge_title_rules = '''- Start the answer with the title on its own line between <title> tags, as in <title>Quarterly Budget Review</title>, then the notes in Markdown.
+- The title and the notes must reflect the same meeting interpretation.'''
+
+merge_labels_kept = '''Leave every diarization label, such as SPEAKER_03, exactly as the notes of the parts write it. Names are put in afterwards.'''
+
+settle_speakers = '''The parts named these diarization labels differently. After the notes, give the one name the notes of the parts best support for each, copied exactly from its list, one per line between <speaker_names> tags as below, and prefer a name the meeting itself gave (someone introducing themselves or being addressed by name) over a role. Leave a label out when no name on its list is well supported, and name no other label.
+
+<speaker_names>
+SPEAKER_00: One of the names listed for SPEAKER_00
+</speaker_names>'''
+
+merge_closing = '''Return only the combined notes, starting directly with the first section and with no preamble or closing commentary.'''
+
+merge_closing_title = '''Return only the <title> line and then the notes, starting with their first section, with no preamble or closing commentary.'''
+
+merge_closing_title_speakers = '''Return only the <title> line, then the notes starting with their first section, then the <speaker_names> block, with no preamble or closing commentary.'''
+
+part_span = ''', from ${start} to ${end} in the recording'''
+
+part_length = '''- Write at most ${words} words, so the notes of every part fit together when they are combined.
+'''
+
+part_instructions = '''This is part ${index} of ${total}${span}.
+- Follow the notes format above, but write the summary for this part alone, and do not guess at what was said before or after it.
+${length}- Keep every decision and action item in this part, with its owner, deadline and figures, and shorten the discussion before dropping any of them. The final notes are built from these notes alone, so anything left out here is lost.
+- Where this part opens or ends partway through a discussion, record the discussion as it stands and leave its outcome open.'''
+
+labels_intro = '''Only these diarization labels may be named:'''
+
+single_part = '''part ${first} of ${total}'''
+
+multiple_parts = '''parts ${first} to ${last} of ${total}'''
+
+described_span = '''${parts}, from ${start} to ${end}'''
+
+merge_length = '''- Write at most ${words} words. Where the notes of the parts hold more than that allows, shorten the discussion and key points first, and keep every decision and action item.
+'''
+
+combining_rules = '''- Write one set of notes for ${scope}, following the notes format above. The summary gives one account of ${scope}, not a summary of each part in turn.
+${length}- Where the same item appears in more than one part, such as an action item raised twice, write it once, keeping the most specific owner, deadline and figure.
+- Keep every decision and action item in the notes of the parts, with its owner, deadline and figures, and add nothing they do not contain.
+- Keep topics in the order they came up.'''
+
+limited_closing = '''${markdown} Write at most ${words} words.'''
+
+whole_meeting = '''the whole meeting'''
+
+stretch = '''this stretch of the meeting (${parts})'''
+
+settlement = '''${SETTLE_SPEAKERS}
+
+The names each label was given:
+${settle}'''
