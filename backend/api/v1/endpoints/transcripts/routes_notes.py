@@ -76,21 +76,6 @@ async def _requested_template(
     return template
 
 
-def _validate_output_request(request: GenerateNotesRequest) -> None:
-    if request.extract_more and request.output_id is None:
-        raise HTTPException(
-            status_code=400, detail="Choose a glossary output to extract more."
-        )
-    if request.kind == "glossary" and (
-        request.notes_template_id is not None
-        or (request.output_id is None and not request.create_output)
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Glossary suggestions need a new output, without a notes structure.",
-        )
-
-
 async def _generation_output(
     db: AsyncSession,
     transcript: Transcript,
@@ -98,7 +83,6 @@ async def _generation_output(
     user: User,
 ) -> NotesOutput | None:
     """The extra set a run writes, or None for the meeting's own notes."""
-    _validate_output_request(request)
     if request.output_id is None and not request.create_output:
         if request.notes_template_id is not None:
             await _requested_template(db, user, request.notes_template_id)
@@ -118,11 +102,6 @@ async def _generation_output(
         )
     if request.output_id is not None:
         output = await _get_notes_output(db, transcript.recording_id, request.output_id)
-        if request.extract_more and output.kind != "glossary":
-            raise HTTPException(
-                status_code=400,
-                detail="Extract more is only available for glossary suggestions.",
-            )
         if output.notes_status == "generating":
             raise HTTPException(
                 status_code=409, detail="Meeting notes are already generating."

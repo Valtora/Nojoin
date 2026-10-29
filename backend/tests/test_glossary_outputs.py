@@ -237,49 +237,6 @@ async def test_glossary_limit_settings_bounds(
             assert "glossary_suggestions_limit" not in (user.settings or {})
 
 
-@pytest.mark.parametrize(
-    "request_case",
-    [
-        ({"extract_more": True}, 400),
-        ({"output_id": 0, "extract_more": True}, 400),
-        ({"kind": "glossary", "create_output": True, "notes_template_id": 0}, 400),
-        ({"kind": "unknown", "create_output": True}, 422),
-        ({"kind": "glossary", "create_output": True, "primary_busy": True}, 409),
-    ],
-)
-async def test_glossary_generation_guards_do_not_dispatch(
-    reader_client: AsyncClient,
-    reader_sessions: async_sessionmaker[AsyncSession],
-    meeting: tuple[int, int],
-    stub_celery_dispatch: list[tuple[str, Any, Any]],
-    request_case: tuple[dict[str, Any], int],
-) -> None:
-    original_body, expected_status = request_case
-    body = dict(original_body)
-    async with reader_sessions() as db:
-        output = NotesOutput(
-            recording_id=meeting[0],
-            name="Ordinary notes",
-            notes="Keep notes",
-            notes_status="completed",
-        )
-        db.add(output)
-        if body.pop("primary_busy", False):
-            transcript = (await db.execute(select(Transcript))).scalar_one()
-            transcript.notes_status = "generating"
-            db.add(transcript)
-        await db.commit()
-        if "output_id" in body:
-            body["output_id"] = output.id
-    if "notes_template_id" in body:
-        body["notes_template_id"] = meeting[1]
-    response = await reader_client.post(f"{PATH}/generate", json=body)
-    assert response.status_code == expected_status, response.text
-    assert stub_celery_dispatch == []
-    outputs = (await reader_client.get(f"{PATH}/outputs")).json()
-    assert len(outputs) == 1 and outputs[0]["notes"] == "Keep notes"
-
-
 async def test_glossary_output_rejects_prose_update_without_changing_lines(
     reader_client: AsyncClient,
     reader_sessions: async_sessionmaker[AsyncSession],

@@ -1,5 +1,3 @@
-from typing import Any
-
 from backend.models.notes_output import NotesOutput
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
@@ -34,18 +32,6 @@ def generate_notes_task(
     output_id: int | None = None,
     extract_more: bool = False,
 ):
-    return _generate_notes(
-        self.session, recording_id, notes_template_id, output_id, extract_more
-    )
-
-
-def _generate_notes(
-    session: Any,
-    recording_id: int,
-    notes_template_id: int | None = None,
-    output_id: int | None = None,
-    extract_more: bool = False,
-) -> None:
     """
     Generate meeting notes for a recording.
 
@@ -55,6 +41,7 @@ def _generate_notes(
     behaves exactly as before. ``output_id`` generates that extra set instead,
     with its saved structure (``notes_outputs``).
     """
+    session = self.session
     recording = None
     transcript = None
     output = None
@@ -200,11 +187,7 @@ def _generate_notes(
                 notes = append_user_notes_section(
                     notes, timeline_notes.appendix_lines()
                 )
-            finish_output_generation(
-                session,
-                output,
-                notes,
-            )
+            finish_output_generation(session, output, notes)
             return
         transcript.notes = append_user_notes_section(
             notes, timeline_notes.appendix_lines()

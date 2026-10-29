@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlmodel import select
 
+from backend.celery_app import celery_app
 from backend.models.notes_output import NotesOutput
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
@@ -117,29 +118,29 @@ def fail_output_generation(session: Any, output: NotesOutput, message: str) -> N
     session.commit()
 
 
-def prepare_automatic_glossary(
-    session: Any, recording: Recording
-) -> NotesOutput | None:
-    """Publish the optional output before primary completion, without waiting on its LLM."""
+def queue_automatic_glossary(session: Any, recording: Recording) -> None:
+    """Queue the Glossary output once the meeting's notes are saved, if its owner turned it on.
+
+    It runs as its own ``generate_notes_task`` on the IO lane, so a local model
+    never holds the GPU pipeline open for it. A reprocess leaves an existing
+    Glossary output as it is. A failure stays on the output, never on the notes.
+    """
+    output = None
     try:
         owner = session.get(User, recording.user_id) if recording.user_id else None
         if (
             owner is None
             or (owner.settings or {}).get("glossary_suggestions_enabled") is not True
         ):
-            return None
-        # Serialise creation against another successful notes run for this meeting.
-        session.exec(
-            select(Recording).where(Recording.id == recording.id).with_for_update()
-        ).first()
+            return
         existing = session.exec(
-            select(NotesOutput).where(
+            select(NotesOutput.id).where(
                 NotesOutput.recording_id == recording.id,
                 NotesOutput.kind == GLOSSARY_OUTPUT_KIND,
             )
         ).first()
         if existing is not None:
-            return None
+            return
         output = NotesOutput(
             recording_id=recording.id,
             kind=GLOSSARY_OUTPUT_KIND,
@@ -148,27 +149,18 @@ def prepare_automatic_glossary(
         )
         session.add(output)
         session.commit()
-        return output
-    except Exception:
-        session.rollback()
-        logger.exception(
-            "Automatic glossary preparation failed for recording %s", recording.id
+        celery_app.send_task(
+            "backend.worker.tasks.generate_notes_task",
+            args=[recording.id, None, output.id],
         )
-        return None
-
-
-def generate_automatic_glossary(
-    session: Any, recording: Recording, output: NotesOutput | None
-) -> None:
-    """Generate after primary notes are committed; failures belong to the extra output."""
-    if output is None:
-        return
-    try:
-        from .intelligence import _generate_notes
-
-        _generate_notes(session, recording.id, output_id=output.id)
     except Exception:
-        session.rollback()
         logger.exception(
-            "Automatic glossary extraction failed for recording %s", recording.id
+            "Could not queue glossary suggestions for recording %s", recording.id
         )
+        session.rollback()
+        if output is not None and output.id is not None:
+            fail_output_generation(
+                session,
+                output,
+                "Glossary suggestions could not be started. Regenerate them to try again.",
+            )

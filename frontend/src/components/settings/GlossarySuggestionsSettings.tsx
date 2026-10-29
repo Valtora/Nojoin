@@ -1,37 +1,16 @@
-import { useState } from "react";
 import type { Settings } from "@/types";
-import { InputBase } from "@/components/ui/nativeBases";
+import { SelectBase } from "@/components/ui/nativeBases";
 import { Switch } from "@/components/ui/Switch";
 import SettingsRow from "./SettingsRow";
-import { SETTINGS_CONTROL_END, SETTINGS_INPUT_CLASS } from "./settingsControls";
+import { SETTINGS_CONTROL_END, SETTINGS_SELECT_CLASS } from "./settingsControls";
 
 interface Props {
   settings: Settings;
   onPersist: (settings: Settings) => void | Promise<void>;
 }
 
-function SuggestionLimit({ settings, onPersist }: Props) {
-  const [draft, setDraft] = useState(String(settings.glossary_suggestions_limit ?? 15));
-  const [touched, setTouched] = useState(false);
-  const value = Number(draft);
-  const valid = draft.trim() !== "" && Number.isInteger(value) && value >= 5 && value <= 50;
-  return <>
-    <InputBase id="glossary-suggestions-limit" type="number" min={5} max={50} step={1}
-      value={draft} aria-invalid={touched && !valid}
-      aria-describedby={`glossary-suggestions-limit-help${touched && !valid ? " glossary-suggestions-limit-error" : ""}`}
-      data-ui-fill="control" data-ui-disabled-fill="control-disabled" data-ui-border="full"
-      className={SETTINGS_INPUT_CLASS}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => {
-        setTouched(true);
-        if (valid && value !== (settings.glossary_suggestions_limit ?? 15)) {
-          void onPersist({ ...settings, glossary_suggestions_limit: value });
-        }
-      }} />
-    {touched && !valid && <p id="glossary-suggestions-limit-error" role="alert"
-      className="mt-1 text-xs text-status-danger-fg">Enter a whole number between 5 and 50.</p>}
-  </>;
-}
+/** 5 to 50, the bounds the settings API accepts. */
+const LIMITS = Array.from({ length: 10 }, (_, index) => (index + 1) * 5);
 
 /** Per-user controls for the built-in glossary output, alongside notes structures. */
 export default function GlossarySuggestionsSettings({ settings, onPersist }: Props) {
@@ -46,8 +25,13 @@ export default function GlossarySuggestionsSettings({ settings, onPersist }: Pro
     </SettingsRow>
     <SettingsRow id="notes-glossary-suggestions-limit" label="Glossary suggestions per extraction"
       controlId="glossary-suggestions-limit" descriptionId="glossary-suggestions-limit-help"
-      description="Suggest between 5 and 50 terms each time. You can extract more from the glossary output.">
-      <SuggestionLimit key={settings.glossary_suggestions_limit ?? 15} settings={settings} onPersist={onPersist} />
+      description="How many terms to suggest each time. You can extract more from the glossary output.">
+      <SelectBase id="glossary-suggestions-limit" aria-describedby="glossary-suggestions-limit-help"
+        data-ui-fill="control" data-ui-disabled-fill="control-disabled" data-ui-border="full"
+        className={SETTINGS_SELECT_CLASS} value={settings.glossary_suggestions_limit ?? 15}
+        onChange={(event) => void onPersist({ ...settings, glossary_suggestions_limit: Number(event.target.value) })}>
+        {LIMITS.map((limit) => <option key={limit} value={limit}>{limit}</option>)}
+      </SelectBase>
     </SettingsRow>
   </>;
 }

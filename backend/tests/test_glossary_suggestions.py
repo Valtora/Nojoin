@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import text
 from sqlmodel import Session, select
 
+from backend.celery_app import celery_app
 from backend.models.notes_output import NotesOutput
 from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
@@ -23,7 +24,6 @@ from backend.tests.test_automatic_meeting_intelligence_worker import (
 from backend.utils.glossary_suggestions import (
     glossary_extraction_spec,
     parse_glossary_suggestions,
-    suggestions_limit,
 )
 from backend.utils.long_meeting_notes import (
     PartsBudget,
@@ -33,10 +33,7 @@ from backend.utils.long_meeting_notes import (
 from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceResult
 from backend.utils.meeting_notes import NotesPromptContext
 from backend.worker import tasks
-from backend.worker.tasks.notes_outputs import (
-    generate_automatic_glossary,
-    prepare_automatic_glossary,
-)
+from backend.worker.tasks.notes_outputs import queue_automatic_glossary
 
 
 def test_parser_filters_bad_entries_and_deduplicates_by_term() -> None:
@@ -72,22 +69,22 @@ def test_parser_filters_bad_entries_and_deduplicates_by_term() -> None:
 
 
 @pytest.mark.parametrize(
-    "answer", ["not JSON", '{"terms": []}', "```json\n[]\n```", "null"]
+    "answer",
+    [
+        '```json\n["SLO: service level objective"]\n```',
+        'Here you go:\n["SLO: service level objective"]\nLet me know if you need more.',
+    ],
 )
-def test_parser_rejects_invalid_envelopes(answer: str) -> None:
-    with pytest.raises(ValueError):
+def test_parser_reads_the_array_inside_a_fence_or_commentary(answer: str) -> None:
+    assert (
+        parse_glossary_suggestions(answer, limit=15) == "SLO: service level objective"
+    )
+
+
+@pytest.mark.parametrize("answer", ["not JSON", '{"terms": "none"}', "null", "] ["])
+def test_parser_rejects_an_answer_without_a_list_in_plain_words(answer: str) -> None:
+    with pytest.raises(ValueError, match="did not return a list of terms"):
         parse_glossary_suggestions(answer, limit=15)
-    assert parse_glossary_suggestions("[]", limit=15) == ""
-
-
-@pytest.mark.parametrize(
-    "value, expected",
-    [(None, 15), (True, 15), (4, 15), (51, 15), ("5", 15), (5, 5), (50, 50)],
-)
-def test_worker_limits_ignore_malformed_stored_settings(
-    value: Any, expected: int
-) -> None:
-    assert suggestions_limit({"glossary_suggestions_limit": value}) == expected
 
 
 def test_json_contract_survives_whole_meeting_and_parts_prompts() -> None:
@@ -122,23 +119,22 @@ def test_json_contract_survives_whole_meeting_and_parts_prompts() -> None:
         assert "## Summary" not in prompt
 
 
-@pytest.mark.parametrize("enabled, fail", [(False, False), (True, False), (True, True)])
-def test_automatic_stage_honours_owner_and_isolates_glossary_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool, fail: bool
+@pytest.mark.parametrize(
+    "enabled, dispatch_fails", [(False, False), (True, False), (True, True)]
+)
+def test_automatic_stage_queues_the_glossary_after_the_notes_are_saved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stub_celery_dispatch: list[tuple[str, Any, Any]],
+    enabled: bool,
+    dispatch_fails: bool,
 ) -> None:
     engine = _create_worker_ai_database(tmp_path)
     with engine.begin() as connection:
         connection.execute(text(NOTES_OUTPUTS_SCHEMA))
         for statement in TIMELINE_NOTES_SCHEMA.strip().split(";\n\n"):
             connection.execute(text(statement))
-        _set_owner_settings(
-            connection,
-            {
-                "glossary_suggestions_enabled": enabled,
-                "glossary_suggestions_limit": 5,
-            },
-        )
-    calls: list[str] = []
+        _set_owner_settings(connection, {"glossary_suggestions_enabled": enabled})
     config = _sample_llm_config()
     # Global/merged preference must never opt a recording's owner in.
     config.merged_config["glossary_suggestions_enabled"] = True
@@ -153,28 +149,23 @@ def test_automatic_stage_honours_owner_and_isolates_glossary_failure(
                 notes_markdown="## Summary\nPrimary result.",
             )
 
-        def generate_meeting_notes(self, *args: Any, **kwargs: Any) -> str:
-            # Slow/failed optional extraction must not withhold the primary notes.
-            with Session(engine) as persisted:
-                primary = persisted.exec(select(Transcript)).one()
-                assert primary.notes_status == "completed"
-                assert primary.notes == "## Summary\nPrimary result."
-            calls.append("glossary")
-            return "not JSON" if fail else '["SLO: service level objective"]'
+    if dispatch_fails:
 
+        def broken_dispatch(*args: Any, **kwargs: Any) -> None:
+            raise ConnectionError("broker unavailable")
+
+        monkeypatch.setattr(celery_app, "send_task", broken_dispatch)
     monkeypatch.setattr(tasks, "_llm_backend_from_config", lambda _: LLM())
-    monkeypatch.setattr(tasks, "resolve_llm_config", lambda *args, **kwargs: config)
     try:
         with Session(engine) as session:
             recording = session.get(Recording, 1)
             transcript = session.exec(select(Transcript)).one()
-            speakers = session.exec(select(RecordingSpeaker)).all()
             result = tasks._run_automatic_meeting_intelligence_stage(
                 session=session,
                 task=None,
                 recording=recording,
                 transcript=transcript,
-                speakers=speakers,
+                speakers=session.exec(select(RecordingSpeaker)).all(),
                 transcript_text="Dana explained the SLO.",
                 unresolved_speakers=(),
                 llm_config=config,
@@ -187,14 +178,23 @@ def test_automatic_stage_honours_owner_and_isolates_glossary_failure(
             assert transcript.notes == "## Summary\nPrimary result."
             outputs = session.exec(select(NotesOutput)).all()
             assert len(outputs) == int(enabled)
-            if enabled:
-                assert outputs[0].notes_status == ("error" if fail else "completed")
-                assert outputs[0].notes == (
-                    None if fail else "SLO: service level objective"
+            if not enabled:
+                assert stub_celery_dispatch == []
+                return
+            if dispatch_fails:
+                assert outputs[0].notes_status == "error"
+                return
+            assert outputs[0].notes_status == "generating"
+            assert stub_celery_dispatch == [
+                (
+                    "backend.worker.tasks.generate_notes_task",
+                    [1, None, outputs[0].id],
+                    None,
                 )
-            prepared = prepare_automatic_glossary(session, recording)
-            assert prepared is None
-            generate_automatic_glossary(session, recording, prepared)
-            assert calls == (["glossary"] if enabled else [])
+            ]
+            # A reprocess leaves the existing Glossary output alone.
+            queue_automatic_glossary(session, recording)
+            assert len(session.exec(select(NotesOutput)).all()) == 1
+            assert len(stub_celery_dispatch) == 1
     finally:
         engine.dispose()

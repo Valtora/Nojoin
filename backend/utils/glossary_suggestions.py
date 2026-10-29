@@ -36,11 +36,22 @@ def glossary_extraction_spec(limit: int, excluded: str = "") -> str:
     )
 
 
+def _answer_entries(answer: str) -> list[Any]:
+    """The JSON array in the answer, ignoring a code fence or text around it."""
+    try:
+        entries: list[Any] = json.loads(
+            answer[answer.index("[") : answer.rindex("]") + 1]
+        )
+    except ValueError:  # No brackets, or not JSON between them.
+        raise ValueError(
+            "The model did not return a list of terms. Try again."
+        ) from None
+    return entries
+
+
 def parse_glossary_suggestions(answer: str, *, limit: int, excluded: str = "") -> str:
-    """Read a strict JSON array, discarding malformed and already-known entries."""
-    entries = json.loads(answer)
-    if not isinstance(entries, list):
-        raise ValueError("Glossary extraction must return a JSON array.")
+    """Read the answer's JSON array, discarding malformed and already-known entries."""
+    entries = _answer_entries(answer)
     used = {_exclusion_key(line) for line in excluded.splitlines() if line.strip()}
     result: list[str] = []
     for entry in entries:

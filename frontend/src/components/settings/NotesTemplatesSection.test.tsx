@@ -163,22 +163,10 @@ describe("NotesTemplatesSection install default", () => {
     expect(automatic).not.toBeChecked();
     fireEvent.click(automatic);
     expect(onPersist).toHaveBeenLastCalledWith({ glossary_suggestions_enabled: true });
-    const limit = screen.getByRole("spinbutton", { name: "Glossary suggestions per extraction" });
-    expect(limit).toHaveValue(15);
+    const limit = screen.getByRole("combobox", { name: "Glossary suggestions per extraction" });
+    expect(limit).toHaveValue("15");
     fireEvent.change(limit, { target: { value: "50" } });
-    fireEvent.blur(limit);
     expect(onPersist).toHaveBeenLastCalledWith({ glossary_suggestions_limit: 50 });
   });
 
-  it.each(["", "4", "51", "15.5"])("rejects invalid glossary limit %j without saving", async (value) => {
-    listNotesTemplates.mockResolvedValue(listResponse(false));
-    const onPersist = vi.fn();
-    render(<NotesTemplatesSection settings={{}} onPersist={onPersist} />);
-    await screen.findByText("Board pack");
-    const limit = screen.getByRole("spinbutton", { name: "Glossary suggestions per extraction" });
-    fireEvent.change(limit, { target: { value } });
-    fireEvent.blur(limit);
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter a whole number between 5 and 50.");
-    expect(onPersist).not.toHaveBeenCalled();
-  });
 });

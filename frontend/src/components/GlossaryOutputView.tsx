@@ -10,6 +10,8 @@ import { InputBase } from "./ui/nativeBases";
 interface Props {
   notes: string | null;
   isGenerating: boolean;
+  /** The last run or request failed; its error is shown above this view. */
+  failed: boolean;
   onRegenerate: () => void;
   onExtractMore: () => void;
   toolbarActions?: ReactNode;
@@ -36,14 +38,20 @@ function suggestions(notes: string | null): string[] {
 
 /** Checklist of generated terms; membership is saved through the existing settings API. */
 export default function GlossaryOutputView({
-  notes, isGenerating, onRegenerate, onExtractMore, toolbarActions,
+  notes, isGenerating, failed, onRegenerate, onExtractMore, toolbarActions,
 }: Props) {
   const [glossary, setGlossary] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // The line count when Extract more was clicked, and whether its run has started.
+  const [extract, setExtract] = useState<{ count: number; started: boolean } | null>(null);
   const savingRef = useRef(false);
   const entries = suggestions(notes);
   const personalTerms = new Set((glossary ?? "").split("\n").map(termKey));
+  if (extract && isGenerating && !extract.started) setExtract({ ...extract, started: true });
+  const nothingNew = !isGenerating && !failed
+    && (notes === "" || (extract?.started === true && entries.length === extract.count));
 
   useEffect(() => {
     let cancelled = false;
@@ -60,18 +68,24 @@ export default function GlossaryOutputView({
     savingRef.current = true;
     setSaving(true);
     setError(null);
+    setNotice(null);
     try {
       // Read before each mutation so a change made in Settings is preserved.
       const fresh = (await getSettings()).glossary_terms ?? "";
       setGlossary(fresh);
       const lines = fresh.split("\n");
       const key = termKey(entry);
-      const exists = lines.some((line) => termKey(line) === key);
       const next = checked
-        ? exists ? fresh : [fresh.trimEnd(), entry].filter(Boolean).join("\n")
-        : lines.filter((line) => termKey(line) !== key).join("\n");
-      const saved = await updateSettings({ glossary_terms: next });
-      setGlossary(saved.glossary_terms ?? next);
+        ? lines.some((line) => termKey(line) === key) ? fresh : [fresh.trimEnd(), entry].filter(Boolean).join("\n")
+        // Only the suggestion's own line: a line the user wrote for the term is theirs.
+        : lines.filter((line) => line.trim() !== entry).join("\n");
+      if (!checked && lines.some((line) => termKey(line) === key && line.trim() !== entry)) {
+        setNotice("Your glossary has its own line for this term. Change it in Settings > Transcription > Glossary.");
+      }
+      if (next !== fresh) {
+        const saved = await updateSettings({ glossary_terms: next });
+        setGlossary(saved.glossary_terms ?? next);
+      }
     } catch (cause) {
       setError(getErrorMessage(cause, "Could not save your glossary."));
     } finally {
@@ -82,8 +96,10 @@ export default function GlossaryOutputView({
 
   return <div className="flex h-full min-h-0 flex-col">
     <div className="flex flex-wrap items-center gap-2 border-b border-control-border p-3">
-      <Button size="sm" disabled={isGenerating || saving} onClick={onExtractMore}>Extract more</Button>
-      <Button size="sm" disabled={isGenerating || saving} onClick={onRegenerate}>Regenerate suggestions</Button>
+      <Button size="sm" disabled={isGenerating || saving}
+        onClick={() => { setExtract({ count: entries.length, started: false }); onExtractMore(); }}>Extract more</Button>
+      <Button size="sm" disabled={isGenerating || saving}
+        onClick={() => { setExtract(null); onRegenerate(); }}>Regenerate suggestions</Button>
       {toolbarActions}
     </div>
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
@@ -91,10 +107,12 @@ export default function GlossaryOutputView({
         Check a term to add it to your personal glossary. Uncheck it to remove it. Shared terms are kept separately.
       </p>
       {error && <p role="alert" className="text-sm text-status-danger-fg">{error}</p>}
+      {notice && <p role="status" className="text-sm text-contrast-helper">{notice}</p>}
       {(isGenerating || saving || (glossary === null && !error)) && <p role="status" className="text-sm text-contrast-helper">
         {isGenerating ? "Extracting glossary suggestions…" : saving ? "Saving your glossary…" : "Loading your glossary…"}
       </p>}
-      {!isGenerating && !entries.length && <p className="text-sm text-contrast-helper">No glossary suggestions yet.</p>}
+      {nothingNew && <p role="status" className="text-sm text-contrast-helper">No new terms found.</p>}
+      {!isGenerating && !nothingNew && !entries.length && <p className="text-sm text-contrast-helper">No glossary suggestions yet.</p>}
       <ul className="space-y-2">
         {entries.map((entry) => <li key={termKey(entry)}>
           <label className="flex cursor-pointer items-start gap-3 rounded-lg p-2 hover:bg-surface-inset">

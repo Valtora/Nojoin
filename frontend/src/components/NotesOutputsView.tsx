@@ -132,7 +132,7 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
     <div className="min-h-0 flex-1" role={outputs.length ? "tabpanel" : undefined}
       id="notes-output-panel" aria-labelledby={outputs.length ? selected ? `notes-output-${selected.id}` : "notes-output-primary" : undefined}>
       {selected?.kind === "glossary" ? <GlossaryOutputView key={selected.id} notes={selected.notes}
-        isGenerating={generating}
+        isGenerating={generating} failed={Boolean(error || selected.error_message)}
         onRegenerate={() => void generate(null, false)}
         onExtractMore={() => void generate(null, false, "glossary", true)}
         toolbarActions={toolbarActions} /> : selected ? <NotesView {...props} key={selected.id} notes={selected.notes} localHistory fixedTemplate
