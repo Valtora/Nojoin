@@ -231,7 +231,9 @@ def resume_lane(
     return lane
 
 
-def _assert_newer_task_recovers(lane: ResumeLane) -> None:
+def _assert_newer_task_recovers(
+    lane: ResumeLane, *, tail_consumed: bool = False
+) -> None:
     before = lane.rows()
     lane.upload(3)
     lane.run(3)  # Production dispatches the new upload, never manually retries 1.
@@ -265,7 +267,7 @@ def _assert_newer_task_recovers(lane: ResumeLane) -> None:
     expected_last = (
         (7800, 8100)
         if lane.mode == "on"
-        else ((3100, 4000) if lane.mode == "off" else (2100, 3000))
+        else ((3100, 4000) if lane.mode == "off" or tail_consumed else (2100, 3000))
     )
     assert rows[-1][2:4] == expected_last
     assert sum(sf.info(lane.path / f"{n}.wav").duration for n in range(5)) == 8.4
@@ -274,22 +276,38 @@ def _assert_newer_task_recovers(lane: ResumeLane) -> None:
         assert lane.labels[-1].sequence == 4
 
 
-@pytest.mark.parametrize("resume_lane", [("on", False), ("on", True)], indirect=True)
-def test_paused_snapshot_retains_mid_chunk_tail_for_newer_upload(
+@pytest.mark.parametrize(
+    "resume_lane",
+    [
+        (mode, labels)
+        for mode in ("on", "off", "cpu", "resumed-off")
+        for labels in (False, True)
+    ],
+    indirect=True,
+)
+def test_tail_drained_after_pause_is_decoded_and_locked_while_paused(
     resume_lane: ResumeLane,
 ) -> None:
     lane = resume_lane
     lane.upload(1)
     lane.upload(2, 0.4)
-    files, state = lane.files(), live_transcribe.read_live_state(lane.path / "live")
     lane.boundary, lane.hook = "snapshot", lambda: lane.transition(resume=False)
     lane.run(1)
     assert lane.hook is None
-    assert lane.rows() == lane.closed_rows
-    assert lane.files() == files
-    assert live_transcribe.read_live_state(lane.path / "live") == state
+    assert live_transcribe.read_live_state(lane.path / "live")["next_expected"] == 3
+    rows = lane.rows()
+    tail = [row for row in rows if row not in lane.closed_rows]
+    assert [row[1] for row in tail] == ["speech"]
+    if lane.mode == "on":
+        assert tail[0][2:4] == (3800, 4100)
+        assert all(
+            word["locked"]
+            for row in rows
+            for segment in row[4]["asr_segments"]
+            for word in segment["words"]
+        )
     lane.transition(resume=True)
-    _assert_newer_task_recovers(lane)
+    _assert_newer_task_recovers(lane, tail_consumed=True)
 
 
 @pytest.mark.parametrize(

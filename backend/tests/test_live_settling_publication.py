@@ -227,7 +227,7 @@ def test_speaker_projection_splits_overlap_per_word_and_delta_returns_tombstone(
         assert row_words(old_row) == old_words
 
 
-def test_duplicate_and_paused_results_make_no_public_change(
+def test_duplicate_and_sealed_results_make_no_public_change(
     settling_engine: Engine,
 ) -> None:
     recording_id = _seed(settling_engine)
@@ -243,8 +243,21 @@ def test_duplicate_and_paused_results_make_no_public_change(
         transcript.settling_state = {**transcript.settling_state, "phase": "paused"}
         session.add(transcript)
         session.commit()
-        assert not publish_live_settling(
+        # The tail uploaded just before a pause still publishes.
+        assert publish_live_settling(
             session, request=_request(session, recording_id, 4), words=_words()
+        ).accepted
+        session.commit()
+        transcript, _ = load_capture_publication(session, recording_id)
+        transcript.settling_state = {
+            **transcript.settling_state,
+            "phase": "sealed",
+            "sealed": True,
+        }
+        session.add(transcript)
+        session.commit()
+        assert not publish_live_settling(
+            session, request=_request(session, recording_id, 5), words=_words()
         ).accepted
 
 

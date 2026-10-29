@@ -102,8 +102,8 @@ def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResul
         # paused tail is still transcribed as upstream does.
         if policy.get("enabled") is False:
             return SettlingStepResult(False)
-        if state.get("phase") != "live":
-            return SettlingStepResult(True, False)
+        # A paused episode still decodes the tail uploaded before its pause;
+        # publication then locks it (``_publish_step``).
         if step.sequence <= state.get("last_step_index", -1):
             return SettlingStepResult(True, window_s=float(policy["window_s"]))
         boundary = step.audio_end_ms - round(float(policy["window_s"]) * 1000)
@@ -226,6 +226,7 @@ def _publish_step(
     from backend.processing.live_diarization.step import live_speaker_labels_device
     from backend.utils.canonical_pipeline.live_settling import (
         SettlingPass,
+        close_live_settling,
         expire_live_settling,
         publish_live_settling,
     )
@@ -274,14 +275,17 @@ def _publish_step(
                 decide_speaker=decide,
             )
         accepted = publication.accepted
-        if not accepted:
+        transcript, recording = load_capture_publication(session, step.recording_id)
+        state = getattr(transcript, "settling_state", None) or {}
+        if accepted and state.get("phase") == "paused":
+            # The pause already locked the episode's words; the tail it
+            # uploaded first locks with them instead of waiting for Resume.
+            close_live_settling(session, recording_id=step.recording_id)
+        elif not accepted:
             # A duplicate step is dropped, but ingestion still advances to the
-            # next chunk while its episode stays live.
-            transcript, recording = load_capture_publication(session, step.recording_id)
-            state = getattr(transcript, "settling_state", None) or {}
-            accepted = (
-                publication_is_current(recording, transcript, step.expected_token)
-                and state.get("phase") == "live"
+            # next chunk while its episode is current.
+            accepted = publication_is_current(
+                recording, transcript, step.expected_token
             )
         session.commit()
         return SettlingStepResult(True, accepted, window_s, bool(publication.changed))

@@ -513,7 +513,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         log=logger,
     )
 
-    # Legacy tails can run while paused; marked rolling episodes close on pause.
+    # The tail uploaded at a pause still runs; a rolling episode locks it as it lands.
     # Final/terminal states reject queued work even while chunk files remain.
     session = get_sync_session()
     try:
