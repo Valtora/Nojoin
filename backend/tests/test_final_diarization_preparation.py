@@ -19,6 +19,7 @@ from backend.utils import nemotron_model_utils as assets
 inspect_local_assets = assets.inspect_nemotron_model
 
 
+@pytest.mark.usefixtures("download_progress_in_memory")
 def test_final_first_use_queues_once_then_next_recording_uses_union(
     lane: SimpleNamespace,
     native_assets: tuple[Path, dict[str, bytes]],
@@ -62,6 +63,7 @@ def test_final_first_use_queues_once_then_next_recording_uses_union(
 
 
 @pytest.mark.parametrize("state", ["partial", "invalid"])
+@pytest.mark.usefixtures("download_progress_in_memory")
 def test_final_unverified_assets_request_shared_preparation(
     lane: SimpleNamespace, state: str, stub_celery_dispatch: list
 ) -> None:
@@ -105,6 +107,7 @@ def test_final_does_not_wait_behind_preparation_lock(
     assert "infer" not in lane.calls
 
 
+@pytest.mark.usefixtures("download_progress_in_memory")
 def test_final_dispatch_failure_preserves_community_and_clears_pending(
     lane: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:

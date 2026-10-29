@@ -104,6 +104,8 @@ def build_transient_utterance_payloads_from_segments(
                 "text": str(segment.get("text", "") or ""),
                 **public_settling_fields(
                     segment.get("confidence_payload"),
+                    provisional=settling_required(transcript)
+                    and bool(segment.get("provisional")),
                     final_utterance_id=segment.get("id")
                     if settling_required(transcript) and not segment.get("provisional")
                     else None,

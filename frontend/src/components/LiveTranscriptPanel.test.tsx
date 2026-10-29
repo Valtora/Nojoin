@@ -171,7 +171,7 @@ describe("LiveTranscriptPanel", () => {
     const segment = buildSegment({ id: "a", text: "Words still changing", settling_required: true, locked: false });
     const { rerender } = renderPanel([segment]);
     const line = screen.getByTestId("live-transcript-line");
-    expect(line).toHaveAccessibleDescription("This line is still settling.");
+    expect(line).toHaveAccessibleDescription("Corrections open when this line locks, usually within half a minute.");
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     expect(screen.getByText("Lines settle as the conversation continues. Your corrections are kept."))
       .toBeInTheDocument();

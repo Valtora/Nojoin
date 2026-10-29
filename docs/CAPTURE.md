@@ -92,7 +92,7 @@ Notes typed under the live transcript ([Live Notes](USAGE.md#live-notes)) are pl
 
 To take notes on a second device, such as a phone while a laptop records, sign in there and open the recording from the recordings list. That device shows the live transcript and the note box too, places notes on the same clock, and each device shows the other's notes within a couple of seconds. Taking notes never affects what is captured.
 
-## Naming Speakers During Capture
+## Live Word Settling
 
 [Live word settling](USAGE.md#live-transcription) defaults to **Auto (GPU)**, with **3 unchanged comparisons** and a **10 s settling window**, and revises only recent transcript words and speaker boundaries. Administrators can turn it off; a stored Off stays off on upgrade. Under **Auto (GPU)** CPU processing keeps ordinary whole-line transcription; **GPU and CPU** settles there too, at a high CPU and RAM cost. Pause and Stop lock the last accepted words without another decode, and the partial segment uploaded at Pause is still transcribed while paused, then locked; Resume starts a fresh settling episode; a capture that started with settling Off stays whole-line until it ends. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
 
@@ -100,7 +100,9 @@ A live transcription pass that Pause interrupts still lands, and with settling i
 
 Settled lines follow continuous speech rather than the two-second upload steps. Words from the same person extend the open line until a speaker change, a pause longer than **Line break pause** (1 s by default), or the maximum line length (30 s by default). The pause setting is shared with diarised final transcripts under **Settings > Transcription > Transcript lines**, and the line cap is shared with ordinary live transcription. Earlier words can settle while their line continues growing. Pause and Stop close the remaining line.
 
-Each step decodes while the unlocked part of the settling window holds speech, found by VAD in the new chunks or by the diariser anywhere in that window, so the silent steps after a turn keep decoding until its words lock. When a backlog drains, speech still inside the settling window shares one decode at the latest step, even if the newest chunk is silent. Speech VAD missed and the diariser finds later is decoded at the next step while that audio is still unlocked inside the window, within the same audio cap. ASR never waits for the diariser; evidence arriving after the audio leaves the window cannot reopen it.
+How each step decides whether to transcribe again, from voice activity and speaker evidence, is in [Live Word Settling](ARCHITECTURE.md#live-word-settling).
+
+## Naming Speakers During Capture
 
 With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with the stretch of the meeting it was given for, the label's longest locked turn, or its longest turn when none is locked or the locked one is under a second, and processing gives it to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
 

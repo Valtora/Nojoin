@@ -2,10 +2,14 @@
 
 from collections import Counter, defaultdict
 from copy import deepcopy
+from itertools import groupby
+from operator import itemgetter
 from typing import Any, Sequence
 
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.utils.final_word_boundaries import final_words
+from backend.utils.word_text import reconstruct_text_from_words
+from backend.utils.word_times import has_word_timing
 
 
 def line_is_protected(line: TranscriptUtterance) -> bool:
@@ -74,6 +78,87 @@ def _with_final_review(
     return passed
 
 
+def _middle_ms(word: dict[str, Any]) -> float:
+    return (float(word["start"]) + float(word["end"])) * 500
+
+
+def _part_bounds(
+    words: list[dict[str, Any]],
+    found: list[int],
+    line_bounds: dict[int, tuple[int, int]],
+) -> tuple[float, float]:
+    """A part's span stops at the edges of the protected lines beside it.
+
+    A word straddling a line's edge keeps its own timing, but the part no
+    longer overlaps the line. Otherwise a part before the line, finalised
+    before the line is matched, would inherit the line's manual speaker.
+    """
+    start, end = float(words[0]["start"]), float(words[-1]["end"])
+    first, last = _middle_ms(words[0]), _middle_ms(words[-1])
+    for index in found:
+        line_start, line_end = line_bounds[index]
+        if line_start > last:
+            end = min(end, line_start / 1000)
+        elif line_end <= first:
+            start = max(start, line_end / 1000)
+    return start, end
+
+
+def _consume_overlap(
+    segment: dict[str, Any],
+    found: list[int],
+    line_bounds: dict[int, tuple[int, int]],
+    reviews: dict[int, list[str]],
+) -> list[dict[str, Any]]:
+    """Review only the words over protected lines; return the rest as segments.
+
+    A timed word belongs to the protected line holding its midpoint, and an
+    untimed word goes with the timed word before it, or the first timed word
+    when none precedes it. Runs of words outside every protected line stay
+    ordinary final segments, split wherever a protected line lies between
+    them, even one holding no word's midpoint, and bounded by their timed
+    words and the protected lines beside them. Only a segment with no timed
+    word is reviewed whole on the first line.
+    """
+    words = segment.get("words") or []
+    if not any(has_word_timing(word) for word in words):
+        text = str(segment.get("text") or "").strip()
+        if text:
+            reviews[found[0]].append(text)
+        return []
+
+    def owner(word: dict[str, Any]) -> tuple[int | None, int]:
+        """The protected line holding the midpoint, and how many lines end before it."""
+        middle = _middle_ms(word)
+        line = next(
+            (i for i in found if line_bounds[i][0] <= middle < line_bounds[i][1]),
+            None,
+        )
+        return line, sum(line_bounds[i][1] <= middle for i in found)
+
+    current = next(owner(word) for word in words if has_word_timing(word))
+    owners: list[tuple[int | None, int]] = []
+    for word in words:
+        if has_word_timing(word):
+            current = owner(word)
+        owners.append(current)
+
+    parts: list[dict[str, Any]] = []
+    for (index, _gap), run in groupby(zip(words, owners), key=itemgetter(1)):
+        kept = [word for word, _ in run]
+        text = reconstruct_text_from_words(kept)
+        if index is not None:
+            if text:
+                reviews[index].append(text)
+            continue
+        timed = [word for word in kept if has_word_timing(word)]
+        start, end = _part_bounds(timed, found, line_bounds)
+        parts.append(
+            {**segment, "words": kept, "text": text, "start": start, "end": end}
+        )
+    return parts
+
+
 def preserve_human_segments(
     lines: Sequence[TranscriptUtterance], segments: Sequence[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -82,11 +167,10 @@ def preserve_human_segments(
     A final segment whose bounds match one protected line exactly, and the
     only one touching it, goes to the ordinary finaliser, which pins the
     accepted values; its wording is offered for review when it differs from
-    the kept text. Otherwise each final segment that directly overlaps a
-    protected line is taken as a review candidate on the first line it
-    overlaps, so a merged segment across a split is offered once rather than
-    duplicated beside the kept text. Every other final segment replaces the
-    live lines as usual.
+    the kept text. Otherwise a final segment that directly overlaps a
+    protected line offers the words over it for review there, once, rather
+    than duplicating them beside the kept text; its other words, and every
+    other final segment, replace the live lines as usual.
     """
     protected = [index for index, line in enumerate(lines) if line_is_protected(line)]
     if not protected:
@@ -115,8 +199,8 @@ def preserve_human_segments(
             result.append(dict(segment))
         elif found[0] in exact:
             result.append(_with_final_review(segment, lines[found[0]], text))
-        elif text:
-            reviews[found[0]].append(text)
+        else:
+            result.extend(_consume_overlap(segment, found, line_bounds, reviews))
     for index in protected:
         if index in exact:
             continue

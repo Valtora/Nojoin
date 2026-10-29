@@ -68,7 +68,7 @@ export default function LiveLineMenu({ segment, onNoteOnLine, onNoteAtTime, hand
     />
     {editing && handlers && !settling ? <LiveLineEditor
       key={`${editing.kind}-${editing.segment.id}`} kind={editing.kind} segment={editing.segment} anchor={editing.anchor}
-      handlers={handlers} speakers={speakers} onClose={() => { setEditing(null); editing.anchor.focus(); }}
+      handlers={handlers} speakers={speakers} onClose={() => setEditing(null)}
     /> : null}
     </>
   );

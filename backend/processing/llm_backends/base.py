@@ -455,8 +455,12 @@ class LLMBackend:
         user_question: str,
         meeting_notes: str,
         diarized_transcript: ChatTranscript,
+        *,
+        notes_tool: bool = False,
     ) -> str:
-        return build_chat_prompt(user_question, meeting_notes, diarized_transcript)
+        return build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript, notes_tool=notes_tool
+        )
 
     def _chat_transcript(
         self,

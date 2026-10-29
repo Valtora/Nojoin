@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from kombu.exceptions import KombuError
 
-from backend.celery_app import celery_app
+from backend.celery_app import CPU_QUEUE, celery_app
 from backend.core.task_dispatch import dispatch_task
 from backend.utils import forced_aligner_model_utils as aligner_assets
 from backend.utils.config_manager import config_manager
@@ -20,6 +20,8 @@ from backend.utils.nemotron_model_utils import (
 logger = logging.getLogger(__name__)
 
 MODEL_PREPARATION_TASK = "backend.worker.tasks.download_models_task"
+# Pinned targets only download and hash, so they run on the CPU lane, which
+# mounts the same model cache, rather than holding live ASR's GPU queue.
 _PINNED_TASK_KWARGS: dict[str, dict[str, Any]] = {
     "nemotron": {"nemotron_only": True, "include_core": False},
     "forced_aligner": {"pinned_model": "forced_aligner", "include_core": False},
@@ -54,10 +56,12 @@ async def enqueue_model_preparation(
         or str(config_manager.get("canary_model", "nemo-canary-1b-v2")),
         "include_core": target == "core",
     }
+    options: dict[str, Any] = {}
     if target in _PINNED_TASK_KWARGS:
         kwargs = dict(_PINNED_TASK_KWARGS[target])
+        options["queue"] = CPU_QUEUE
     task = await dispatch_task(
-        MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True
+        MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True, **options
     )
     await asyncio.to_thread(
         set_download_progress,
@@ -86,7 +90,8 @@ def request_pinned_preparation(
 
     Publishing has no retries and uses two-second connect/socket limits on a
     dedicated connection. It does not subscribe to the result backend. The
-    pending marker keeps later requests from queueing a second transfer.
+    pending marker keeps later requests from queueing a second transfer, and
+    a recent failure holds them off for FAILURE_BACKOFF.
     """
     if target == "nemotron":
         control, inspect = nemotron_control, inspect_nemotron_model
@@ -99,13 +104,28 @@ def request_pinned_preparation(
             if not acquired:
                 logger.info("%s preparation busy (recording=%s)", target, recording_id)
                 return None
-            if inspect().state == "verified" or control.pending_task():
+            if (
+                inspect().state == "verified"
+                or control.pending_task()
+                or control.failed_recently()
+            ):
                 return None
             control.write_pending(task_id)
+            # Published first, so the task's own progress is never overwritten
+            # and Settings shows the transfer as queued rather than complete.
+            set_download_progress(
+                0, "Model preparation queued...", status="downloading", stage=target
+            )
             try:
                 _publish_pinned_preparation(target, task_id)
             except (OSError, KombuError, ValueError):
                 control.clear_pending(task_id)
+                set_download_progress(
+                    0,
+                    "Could not queue model preparation.",
+                    status="error",
+                    stage=target,
+                )
                 raise
         return task_id
     except (OSError, KombuError, ValueError, NemotronModelError, ForcedAlignerError):
@@ -130,6 +150,7 @@ def _publish_pinned_preparation(target: str, task_id: str) -> None:
             MODEL_PREPARATION_TASK,
             kwargs=dict(_PINNED_TASK_KWARGS[target]),
             task_id=task_id,
+            queue=CPU_QUEUE,
             connection=connection,
             retry=False,
             ignore_result=True,

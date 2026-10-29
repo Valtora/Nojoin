@@ -16,6 +16,7 @@ export interface TranscriptMenuItem {
   id: string;
   label: string;
   icon: LucideIcon;
+  /** Why the item can't be chosen yet; the menu says it once, below its items. */
   disabledReason?: string;
   /**
    * Runs once the menu has closed and focus is back on its trigger, which is
@@ -69,9 +70,12 @@ export default function TranscriptActionsMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const menuId = useId();
+  const reasonId = useId();
   const { panelRef, panelStyle } = useAnchoredPanel<HTMLDivElement>(open, triggerRef);
   const placed = panelStyle.visibility === "visible";
   const hasItems = items.length > 0;
+  // Said once under the items, not under each one it holds back.
+  const reasons = [...new Set(items.flatMap((item) => (item.disabledReason ? [item.disabledReason] : [])))];
 
   // The first item takes focus once the menu is placed: before that it is
   // hidden, and a hidden button can't be focused.
@@ -219,39 +223,45 @@ export default function TranscriptActionsMenu({
           data-ui-fill="card"
           data-ui-border="full" kind="float"
           ref={panelRef}
-          id={menuId}
-          role="menu"
-          aria-label={label}
-          onKeyDown={moveFocus}
           style={panelStyle}
-          className="z-[var(--z-dropdown)] flex min-w-44 flex-col gap-0.5 rounded-lg border border-surface-border bg-surface-card p-1 shadow-float"
+          className="z-[var(--z-dropdown)] flex min-w-44 flex-col rounded-lg border border-surface-border bg-surface-card p-1 shadow-float"
         >
-          {items.map((item, index) => {
-            const Icon = item.icon;
-            return (
-              <Button
-                key={item.id}
-                ref={(button) => {
-                  itemRefs.current[index] = button;
-                }}
-                role="menuitem"
-                aria-disabled={!!item.disabledReason}
-                title={item.disabledReason}
-                tabIndex={-1}
-                variant="ghost"
-                size="sm"
-                iconLeft={<Icon aria-hidden="true" className="h-4 w-4" />}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  select(item);
-                }}
-                className={cn("w-full justify-start text-sm", TOUCH_TARGET_HEIGHT)}
-              >
-                {item.label}
-                {item.disabledReason ? <span className="text-xs text-contrast-helper">{item.disabledReason}</span> : null}
-              </Button>
-            );
-          })}
+          <div id={menuId} role="menu" aria-label={label} onKeyDown={moveFocus} className="flex flex-col gap-0.5">
+            {items.map((item, index) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.id}
+                  ref={(button) => {
+                    itemRefs.current[index] = button;
+                  }}
+                  role="menuitem"
+                  aria-disabled={!!item.disabledReason}
+                  aria-describedby={item.disabledReason
+                    ? `${reasonId}-${reasons.indexOf(item.disabledReason)}` : undefined}
+                  tabIndex={-1}
+                  variant="ghost"
+                  size="sm"
+                  iconLeft={<Icon aria-hidden="true" className="h-4 w-4" />}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    select(item);
+                  }}
+                  className={cn("w-full justify-start text-sm", TOUCH_TARGET_HEIGHT)}
+                >
+                  {item.label}
+                </Button>
+              );
+            })}
+          </div>
+          {/* Outside the menu role, which holds only its items; w-0 keeps
+              the text from widening the menu past them. */}
+          {reasons.map((reason, index) => (
+            <p key={reason} id={`${reasonId}-${index}`}
+              className="mt-0.5 w-0 min-w-full border-t border-surface-divider px-2 pb-1 pt-1.5 text-xs text-contrast-helper">
+              {reason}
+            </p>
+          ))}
         </SurfaceBase>,
         document.body,
       ) : null}
