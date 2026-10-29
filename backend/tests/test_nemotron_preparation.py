@@ -76,7 +76,7 @@ def test_failed_dispatch_clears_only_its_marker(
     assert control.pending_task() is None
     assert not control._control_path("pending.json").exists()
     # The queued progress written before the publish does not linger.
-    progress = json.loads(download_progress_in_memory[PROGRESS_KEY])
+    progress = json.loads(download_progress_in_memory[f"{PROGRESS_KEY}:nemotron"])
     assert (progress["status"], progress["stage"]) == ("error", "nemotron")
 
 
@@ -102,7 +102,7 @@ def test_native_preparation_is_exclusive_and_keeps_retained_caches(
     native_assets: tuple, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = []
-    monkeypatch.setattr(preload_models, "clear_download_progress", lambda: None)
+    monkeypatch.setattr(preload_models, "clear_download_progress", lambda *_args: None)
     monkeypatch.setattr(
         preload_models,
         "set_download_progress",
@@ -132,7 +132,7 @@ def test_native_offline_failure_reports_not_prepared_without_downloading(
 
     updates: list[tuple[tuple, dict]] = []
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    monkeypatch.setattr(preload_models, "clear_download_progress", lambda: None)
+    monkeypatch.setattr(preload_models, "clear_download_progress", lambda *_args: None)
     monkeypatch.setattr(
         preload_models,
         "set_download_progress",

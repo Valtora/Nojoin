@@ -241,9 +241,9 @@ def _get_ffmpeg_component() -> tuple[dict[str, Any], bool]:
 
 
 def _current_download_summary() -> dict[str, Any]:
-    progress = get_download_progress()
+    progress = get_download_progress("core")
     return {
-        "in_progress": bool(progress and is_download_in_progress()),
+        "in_progress": bool(progress and is_download_in_progress("core")),
         "status": progress.get("status") if progress else None,
         "stage": progress.get("stage") if progress else None,
         "message": progress.get("message") if progress else None,

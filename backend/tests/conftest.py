@@ -202,23 +202,12 @@ def download_progress_in_memory(monkeypatch) -> dict[str, str]:
     The real progress functions run unchanged; only the client is replaced.
     Returns the stored values by key.
     """
+    from backend.tests.download_progress_memory import MemoryProgressRedis
     from backend.utils import download_progress
 
-    store: dict[str, str] = {}
-
-    class _Memory:
-        def get(self, key: str) -> str | None:
-            return store.get(key)
-
-        def set(self, key: str, value: str, **_options: object) -> None:
-            store[key] = value
-
-        def delete(self, key: str) -> None:
-            store.pop(key, None)
-
-    memory = _Memory()
+    memory = MemoryProgressRedis()
     monkeypatch.setattr(download_progress, "_get_redis", lambda: memory)
-    return store
+    return memory.store
 
 
 @pytest.fixture

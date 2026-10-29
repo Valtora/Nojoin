@@ -1132,7 +1132,7 @@ export interface ModelStatusInfo {
   path: string | null;
   checked_paths: string[];
   /** Optional assets report their preparation lifecycle separately from presence. */
-  state?: "absent" | "downloading" | "ready" | "failed" | null;
+  state?: "absent" | "downloading" | "ready" | "failed" | "retry_wait" | null;
   /** Total expected download size from the model's asset manifest. */
   size_bytes?: number | null;
   unused_reason?: string | null;

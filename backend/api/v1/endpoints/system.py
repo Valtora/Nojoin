@@ -551,12 +551,13 @@ async def setup_system(
 
 @router.get("/download-progress")
 async def get_download_progress_endpoint(
+    model: str | None = None,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
     Get current automatic model preparation progress.
     """
-    progress = get_download_progress()
+    progress = get_download_progress(model)
     if progress is None:
         return {
             "progress": 0,
@@ -567,7 +568,7 @@ async def get_download_progress_endpoint(
             "stage": None,
             "in_progress": False,
         }
-    progress["in_progress"] = is_download_in_progress()
+    progress["in_progress"] = is_download_in_progress(model)
     return progress
 
 

@@ -15,22 +15,32 @@ import pytest
 from backend import preload_models
 from backend.api.v1.endpoints import system
 from backend.services import model_preparation, model_status
+from backend.utils import download_progress
 from backend.utils import forced_aligner_model_utils as assets
 
 
 @pytest.fixture
-def progress(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+def progress(
+    monkeypatch: pytest.MonkeyPatch, download_progress_in_memory: dict[str, str]
+) -> dict[str, Any]:
     updates: dict[str, Any] = {}
 
     def record(percent: int, message: str, *args: Any, **kwargs: Any) -> None:
-        updates.update(
-            progress=percent, message=message, updated_at=time.time(), **kwargs
-        )
+        download_progress.set_download_progress(percent, message, *args, **kwargs)
+        updates.clear()
+        updates.update(download_progress.get_download_progress() or {})
 
-    monkeypatch.setattr(preload_models, "clear_download_progress", updates.clear)
+    def clear(model: str | None = None) -> None:
+        download_progress.clear_download_progress(model)
+        updates.clear()
+        updates.update(download_progress.get_download_progress() or {})
+
+    monkeypatch.setattr(preload_models, "clear_download_progress", clear)
     monkeypatch.setattr(preload_models, "set_download_progress", record)
     monkeypatch.setattr(model_preparation, "set_download_progress", record)
-    monkeypatch.setattr(model_status, "get_download_progress", lambda: updates or None)
+    monkeypatch.setattr(
+        model_status, "get_download_progress", lambda _model=None: updates or None
+    )
     return updates
 
 
@@ -128,7 +138,8 @@ def test_active_and_preload_failures_retain_aligner_stage_for_retry(
     assert progress["status"] == "error"
     status = preload_models.check_model_status()
     model_status.add_nemotron_preparation_status(status)
-    assert status["forced_aligner"]["state"] == "failed"
+    # The worker's persistent failure marker exposes first-use retry backoff.
+    assert status["forced_aligner"]["state"] == "retry_wait"
 
 
 @pytest.mark.parametrize("backend", ["whisper", "parakeet", "canary"])
@@ -144,7 +155,7 @@ def test_only_canary_preparation_requests_word_timing_assets(
     preload_models.download_models(
         transcription_backend=backend, include_core=include_core
     )
-    expected = [(model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "cpu")]
+    expected = [(model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "io")]
     assert routed == (expected if backend == "canary" else [])
     # Once Canary is ready, its queued aligner is what Settings shows.
     assert (progress["stage"], progress["status"]) == (
@@ -174,7 +185,7 @@ def test_settings_progress_shows_the_queued_aligner_after_canary_is_ready(
         response = client.get("/system/download-progress")
     assert response.status_code == 200, response.text
     shown = response.json()
-    # Until the CPU lane starts the transfer, the bar shows it queued, not 100%.
+    # Until the IO lane starts the transfer, the bar shows it queued, not 100%.
     assert (shown["stage"], shown["status"], shown["progress"]) == (
         "forced_aligner",
         "downloading",
@@ -217,7 +228,7 @@ def test_engine_preparation_keeps_an_already_queued_aligner_shown_as_queued(
     )
 
 
-def test_startup_on_a_canary_install_prepares_the_aligner_on_the_cpu_lane(
+def test_startup_on_a_canary_install_prepares_the_aligner_on_the_io_lane(
     model_cache_env: Path,
     progress: dict[str, Any],
     routed: list[tuple[dict[str, Any] | None, str]],
@@ -244,10 +255,10 @@ def test_startup_on_a_canary_install_prepares_the_aligner_on_the_cpu_lane(
     assert core_kwargs is not None and core_kwargs["include_core"] is True
     assert core_queue == "gpu"
     # The core run prepares Canary and the speaker models on the GPU lane,
-    # then hands the aligner to the CPU lane instead of downloading it.
+    # then hands the aligner to the IO lane instead of downloading it.
     _run_preparation_task(core_kwargs, "startup-core")
     assert routed[1:] == [
-        (model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "cpu")
+        (model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "io")
     ]
     assert assets.control.pending_task() is not None
 
@@ -459,13 +470,14 @@ def test_offline_failure_holds_off_live_requests_until_the_backoff_passes(
 @pytest.mark.parametrize(
     "case",
     [
-        ("first_use", "forced_aligner", "cpu"),
-        ("first_use", "nemotron", "cpu"),
-        ("settings", "forced_aligner", "cpu"),
+        ("first_use", "forced_aligner", "io"),
+        ("first_use", "nemotron", "io"),
+        ("settings", "forced_aligner", "io"),
+        ("settings", "nemotron", "io"),
         ("settings", "active", "gpu"),
     ],
 )
-def test_pinned_preparation_runs_on_the_cpu_lane(
+def test_pinned_preparation_leaves_cpu_transcodes_and_gpu_asr_available(
     case: tuple[str, Any, str],
     model_cache_env: Path,
     progress: dict[str, Any],
@@ -490,6 +502,8 @@ def test_pinned_preparation_runs_on_the_cpu_lane(
         for key, value in sent[0].items()
         if key not in {"args", "kwargs", "connection"}
     }
+    # Pinned transfers intentionally use IO, preserving CPU transcode slots;
+    # core preparation retains the GPU lane's inference precision selection.
     # Resolve the destination the way Celery does when it publishes.
     route = model_preparation.celery_app.amqp.router.route(
         options, model_preparation.MODEL_PREPARATION_TASK

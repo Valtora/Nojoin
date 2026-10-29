@@ -26,7 +26,9 @@ from backend.utils import nemotron_model_utils as assets
 @pytest.fixture
 def status_app(monkeypatch: pytest.MonkeyPatch) -> tuple[FastAPI, dict[str, Any]]:
     progress: dict[str, Any] = {}
-    monkeypatch.setattr(model_status, "get_download_progress", lambda: progress or None)
+    monkeypatch.setattr(
+        model_status, "get_download_progress", lambda _model=None: progress or None
+    )
     monkeypatch.setattr(
         model_status.config_manager, "get", lambda key, default=None: default
     )
@@ -147,7 +149,9 @@ def test_explicit_worker_transfer_stays_downloading_during_silent_transfer(
     clock = [1000.0]
     observations: list[str] = []
     monkeypatch.setattr(model_status.time, "time", lambda: clock[0])
-    monkeypatch.setattr(preload_models, "clear_download_progress", progress.clear)
+    monkeypatch.setattr(
+        preload_models, "clear_download_progress", lambda *_args: progress.clear()
+    )
     monkeypatch.setattr(download_models_task, "update_state", lambda **kwargs: None)
 
     def record(percent: int, message: str, **kwargs: Any) -> None:
