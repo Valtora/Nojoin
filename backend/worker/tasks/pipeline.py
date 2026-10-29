@@ -5,6 +5,7 @@ from backend.processing.engines.errors import (
     is_task_interruption,
     transcription_error_from,
 )
+from backend.utils.capture_resume import with_resume_boundaries
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
 from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
@@ -625,16 +626,12 @@ def process_recording_task(
         session.add(recording)
         session.commit()
 
-        resume_state = getattr(transcript, "settling_state", None) or {}
         final_segments = combine_and_consolidate_segments(
             transcription_result,
             diarization_result,
             enable_diarization=enable_diarization,
             recording_id=recording_id,
-            config={
-                **merged_config,
-                "resume_boundaries_ms": resume_state.get("resume_boundaries_ms", []),
-            },
+            config=with_resume_boundaries(merged_config, transcript),
         )
 
         if not staged:

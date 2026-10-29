@@ -53,6 +53,14 @@ def durable_resume_state(state: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def with_resume_boundaries(
+    config: dict[str, Any], transcript: Transcript | None
+) -> dict[str, Any]:
+    """``config`` plus the transcript's resume cuts, for the final line building."""
+    state = getattr(transcript, "settling_state", None) or {}
+    return {**config, RESUME_BOUNDARIES: state.get(RESUME_BOUNDARIES, [])}
+
+
 def resolve_resume_boundaries(
     state: dict[str, Any] | None,
     chunks: Sequence[RecordingAudioChunk],
@@ -82,7 +90,7 @@ def load_resume_boundaries(
 ) -> list[int]:
     """Read live cuts without accepting offsets that a missing chunk may move."""
     state = getattr(transcript, "settling_state", None) or {}
-    if not state.get(RESUME_SEQUENCES) or not hasattr(session, "execute"):
+    if not state.get(RESUME_SEQUENCES):
         return list(state.get(RESUME_BOUNDARIES, []))
     cursor = session.execute(
         select(RecordingAudioChunkCursor)

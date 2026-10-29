@@ -41,10 +41,15 @@ def speaker_display_name(label: str, speaker_map: Mapping[str, str]) -> str:
     return live_speaker_display_name(label) or label
 
 
+def prompt_speaker_label(label: str) -> str:
+    """``label`` as a prompt shows it: UNKNOWN reads as an unidentified speaker."""
+    return "Unidentified speaker" if label == "UNKNOWN" else label
+
+
 def speaker_prompt_name(label: str, speaker_map: Mapping[str, str]) -> str:
     """Resolve a prompt label without presenting UNKNOWN as a person's name."""
     if label == "UNKNOWN":
-        return "Unidentified speaker"
+        return prompt_speaker_label(label)
     return speaker_display_name(label, speaker_map)
 
 

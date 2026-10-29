@@ -1213,6 +1213,41 @@ def test_combine_stage_receives_the_owners_merged_settings(monkeypatch):
     assert seen["config"]["word_flip_max_duration_s"] == 0
 
 
+def test_the_merge_breaks_the_line_at_the_transcripts_resume_cut(monkeypatch):
+    """A resume cut stored on the transcript reaches the final line building."""
+    recording = _FakeRecording(739)
+    transcript = _FakeTranscript(739)
+    transcript.settling_state = {"resume_boundaries_ms": [1000]}
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    words = [
+        {"start": 0.2, "end": 0.8, "word": " Before"},
+        {"start": 1.2, "end": 1.8, "word": " after"},
+    ]
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=lambda *a, **k: {
+            "text": " Before after",
+            "language": "en",
+            "segments": [
+                {"start": 0.2, "end": 1.8, "text": " Before after", "words": words}
+            ],
+        },
+        release_model_cache=lambda: None,
+    )
+    _install(
+        monkeypatch,
+        "backend.utils.transcript_utils",
+        combine_transcription_diarization=lambda *a, **k: [],
+        consolidate_diarized_transcript=lambda segs, *a, **k: list(segs),
+    )
+
+    _run_task(monkeypatch, session, recording_id=739)
+
+    assert [segment["text"] for segment in transcript.segments] == ["Before", "after"]
+
+
 @pytest.mark.parametrize("enable_vad", [True, False])
 def test_asr_stage_is_told_whether_vad_muted_its_audio(monkeypatch, enable_vad):
     """An engine may decode skipped speech again only in VAD-muted audio, so
