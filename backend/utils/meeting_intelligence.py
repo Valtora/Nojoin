@@ -308,6 +308,8 @@ def build_automatic_meeting_intelligence_prompt(
                 build_meeting_metadata_prompt_section(request.meeting_metadata),
             ),
             ("# Glossary", build_glossary_prompt_section(request.glossary)),
+            # Before every part of the meeting's own content.
+            tone_block(request.notes_only_tone),
             (
                 "# User Notes Context",
                 build_user_notes_prompt_section(request.user_notes),
@@ -332,7 +334,6 @@ def build_automatic_meeting_intelligence_prompt(
                 "# Notes Markdown Requirements",
                 build_notes_body_spec(request.notes_sections),
             ),
-            tone_block(request.notes_only_tone),
             ("# Transcript", request.resolved_transcript),
         ]
     )

@@ -235,6 +235,8 @@ def _shared_blocks(
     blocks: list[PromptBlock] = [
         ("# Recording Metadata", context.metadata),
         ("# Glossary", context.glossary),
+        # Before every part of the meeting's own content.
+        tone_block(context.tone),
         ("# User Notes Context", context.user_notes),
         ("# Meeting Context", context.meeting_context),
     ]
@@ -313,7 +315,6 @@ def build_part_prompt(
             *head,
             *_shared_blocks(context, documents=True),
             ("# Notes Format", context.notes_spec),
-            tone_block(context.tone),
             ("# This Part", _part_instructions(index, total, part, words)),
             ("# Transcript Part", part.text),
             (None, _closing(closing, words)),
@@ -438,7 +439,6 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
             *head,
             *_shared_blocks(context, documents=False),
             ("# Notes Format", context.notes_spec),
-            tone_block(context.tone),
             ("# Combining Rules", _combining_rules(scope, words)),
             ("# Notes of the Parts", part_notes),
             (None, closing),

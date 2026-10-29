@@ -150,7 +150,7 @@ def test_regenerated_notes_take_the_tone_only_while_the_notes_surface_is_on(
 
     first, second = prompts
     assert NOTES_TONE in first
-    assert first.index("# Notes Format") < first.index(NOTES_TONE)
+    assert first.index(NOTES_TONE) < first.index("# User Notes Context")
     assert first.index(NOTES_TONE) < first.index("# Transcript to Analyze")
     assert with_tone == {"1": PIRATE_NOTES}
     # A later regeneration with the surface off: ordinary notes, no egg.
@@ -237,7 +237,7 @@ def test_the_automatic_pipeline_notes_follow_the_notes_surface(
     if notes_on:
         assert NOTES_TONE in prompt
         assert "applies to notes_markdown only" in prompt
-        assert prompt.index("# Notes Markdown Requirements") < prompt.index(NOTES_TONE)
+        assert prompt.index(NOTES_TONE) < prompt.index("# User Notes Context")
         assert prompt.index(NOTES_TONE) < prompt.index("# Transcript")
         assert stored["notes"] == {"1": PIRATE_NOTES}
     else:

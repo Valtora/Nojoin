@@ -612,6 +612,8 @@ class LLMBackend:
                     build_meeting_metadata_prompt_section(context.metadata),
                 ),
                 ("# Glossary", build_glossary_prompt_section(context.glossary)),
+                # Before every part of the meeting's own content.
+                tone_block(context.tone),
                 ("# User Notes Context", build_user_notes_prompt_section(user_notes)),
                 (
                     "# Meeting Context",
@@ -629,7 +631,6 @@ class LLMBackend:
                 # Structure and fidelity rules come from the shared body spec, so
                 # this prompt and the unified one cannot drift.
                 ("# Notes Format", build_notes_body_spec(context.notes_sections)),
-                tone_block(context.tone),
                 ("# Transcript to Analyze", transcript),
                 (None, LLMBackend.NOTES_CLOSING),
             ]

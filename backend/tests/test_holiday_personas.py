@@ -1,7 +1,8 @@
 """The holiday persona files: every shipped one loads, and a broken one is skipped.
 
-Also the notes prompts for a meeting too long for one call, which are built
-apart from the whole-meeting prompt and must carry the same tone.
+Also where the notes tone sits in every notes prompt builder: the standalone
+and unified prompts, and the part and merge prompts for a meeting too long
+for one call. It comes before all of the meeting's own content.
 """
 
 from __future__ import annotations
@@ -11,13 +12,18 @@ from pathlib import Path
 
 import pytest
 
+from backend.processing.llm_backends.base import LLMBackend
 from backend.utils.long_meeting_notes import (
     _Notes,
     build_merge_prompt,
     build_part_prompt,
     context_for_notes,
 )
-from backend.utils.meeting_notes import NotesPromptContext
+from backend.utils.meeting_intelligence import (
+    AutomaticMeetingIntelligenceRequest,
+    build_automatic_meeting_intelligence_prompt,
+)
+from backend.utils.meeting_notes import AttachedDocument, NotesPromptContext
 from backend.utils.personas import (
     PERSONAS_DIR,
     SURFACES,
@@ -105,29 +111,74 @@ def test_every_persona_tone_carries_the_safety_line() -> None:
             assert safety in tone
 
 
+USER_NOTE = "PRIVATE USER NOTE"
+DOCUMENT = "PRIVATE DOCUMENT CONTENT"
+SPOKEN = "SPEAKER_00: Hello."
+
+
+def _pirate() -> ActivePersona:
+    pirate = persona_by_slug("pirate")
+    assert pirate is not None
+    return ActivePersona(pirate, "command")
+
+
+def _assert_tone_before(prompt: str, section: str, *content: str) -> None:
+    assert prompt.count(TONE_HEADING) == 1
+    for text in content:
+        assert prompt.index(section) < prompt.index(text), text
+
+
+def test_the_standalone_and_unified_notes_prompts_put_the_tone_before_the_meeting() -> (
+    None
+):
+    active = _pirate()
+    documents = [AttachedDocument(title="Agenda", text=DOCUMENT)]
+    standalone = LLMBackend.build_notes_prompt(
+        None,
+        f"[00:00:01] {SPOKEN}",
+        {},
+        user_notes=USER_NOTE,
+        notes_context=NotesPromptContext(persona=active, documents=documents),
+    )
+    request = AutomaticMeetingIntelligenceRequest(
+        resolved_transcript=f"[00:00:01] {SPOKEN}",
+        unresolved_speakers=("SPEAKER_00",),
+        user_notes=USER_NOTE,
+        documents=documents,
+        tone=active.tone("notes"),
+    )
+    unified = build_automatic_meeting_intelligence_prompt(request)
+
+    section = f"{TONE_HEADING}\n{active.tone('notes')}"
+    _assert_tone_before(standalone, section, USER_NOTE, DOCUMENT, SPOKEN)
+    _assert_tone_before(unified, section, USER_NOTE, DOCUMENT, SPOKEN)
+
+
 @pytest.mark.parametrize("with_persona", [True, False], ids=["persona", "none"])
 def test_a_long_meetings_part_and_merge_prompts_carry_the_notes_tone(
     with_persona: bool,
 ) -> None:
-    pirate = persona_by_slug("pirate")
-    assert pirate is not None
-    active = ActivePersona(pirate, "command") if with_persona else None
+    active = _pirate() if with_persona else None
+    documents = [AttachedDocument(title="Agenda", text=DOCUMENT)]
     context = context_for_notes(
-        "| SPEAKER_00 | Mira |", None, None, None, NotesPromptContext(persona=active)
+        "| SPEAKER_00 | Mira |",
+        USER_NOTE,
+        None,
+        None,
+        NotesPromptContext(persona=active, documents=documents),
     )
     part = TranscriptPart(
         text="[00:00:01] SPEAKER_00: Hello.", start="00:00", end="00:01"
     )
     notes = _Notes(text="## Summary\nHello.", first=1, last=1, start=None, end=None)
 
-    prompts = [
-        build_part_prompt(context, 1, 2, part),
-        build_merge_prompt(context, [notes], 2, final=True),
-    ]
+    draft = build_part_prompt(context, 1, 2, part)
+    merge = build_merge_prompt(context, [notes], 2, final=True)
 
-    for prompt in prompts:
-        if active is None:
-            assert TONE_HEADING not in prompt
-        else:
-            section = f"{TONE_HEADING}\n{active.tone('notes')}"
-            assert prompt.index("# Notes Format") < prompt.index(section)
+    if active is None:
+        assert TONE_HEADING not in draft + merge
+    else:
+        section = f"{TONE_HEADING}\n{active.tone('notes')}"
+        _assert_tone_before(draft, section, USER_NOTE, DOCUMENT, SPOKEN)
+        # The merge reads the parts' notes, not the documents or transcript.
+        _assert_tone_before(merge, section, USER_NOTE, "## Summary\nHello.")
