@@ -3,9 +3,15 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureProvider, useCapture } from "@/lib/capture/CaptureProvider";
-import { ClientStatus, RecordingStatus, type Recording } from "@/types";
+import {
+  ClientStatus,
+  RecordingStatus,
+  type CalendarDashboardRecording,
+  type Recording,
+} from "@/types";
 
 import RecordingInfoModal from "../RecordingInfoModal";
+import { DashboardRecordingCard } from "../upcomingMeetings/CalendarCards";
 import ProcessingCard from "./ProcessingCard";
 import RecentRecordingsCard from "./RecentRecordingsCard";
 
@@ -88,6 +94,30 @@ describe("a live capture in the recording info, in a browser that cannot capture
     getRecordingInfo.mockResolvedValue({});
     render(<CaptureProvider><Support />
       <RecordingInfoModal isOpen onClose={() => {}} recording={recording} />
+    </CaptureProvider>);
+    await act(async () => {});
+
+    expect(screen.getByTestId("support")).toHaveTextContent("unsupported");
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.queryByText("UPLOADING")).not.toBeInTheDocument();
+  });
+});
+
+describe("a live capture on the agenda, in a browser that cannot capture", () => {
+  it("reads Live rather than the raw UPLOADING", async () => {
+    // As the calendar dashboard endpoint returns it.
+    const recording: CalendarDashboardRecording = {
+      id: "rec-live",
+      name: "Weekly sync",
+      starts_at: "2026-10-29T09:00:00Z",
+      status: RecordingStatus.UPLOADING,
+      client_status: ClientStatus.RECORDING,
+      speaker_names: [],
+      tags: [],
+    };
+    getUnfinishedCaptures.mockResolvedValue([]);
+    render(<CaptureProvider><Support />
+      <DashboardRecordingCard recording={recording} timeZone="UTC" showDate />
     </CaptureProvider>);
     await act(async () => {});
 

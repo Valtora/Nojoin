@@ -964,6 +964,8 @@ export interface CalendarDashboardRecording {
   ends_at?: string | null;
   duration_seconds?: number | null;
   status: RecordingStatus;
+  /** Tells a capture in progress, which is UPLOADING too, from a finishing upload. */
+  client_status?: ClientStatus | null;
   speaker_names: string[];
   tags: CalendarDashboardTag[];
 }

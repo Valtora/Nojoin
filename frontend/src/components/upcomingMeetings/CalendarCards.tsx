@@ -13,6 +13,8 @@ import {
   Video,
 } from "lucide-react";
 
+import { liveCaptureLabel } from "@/components/ui/Badge";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getColorByKey } from "@/lib/constants";
 import { formatTimeZoneDate } from "@/lib/timezone";
 import {
@@ -82,6 +84,12 @@ export function DashboardRecordingCard({
 }) {
   const startedAt = getRecordingStart(recording);
   const showStatus = recording.status !== RecordingStatus.PROCESSED;
+  const { ownedRecordingId } = useCapture();
+  const statusLabel = liveCaptureLabel(
+    recording.status,
+    recording.client_status,
+    recording.id === ownedRecordingId,
+  ) ?? recording.status;
   const hasTags = recording.tags.length > 0;
   const hasSpeakers = recording.speaker_names.length > 0;
 
@@ -140,7 +148,7 @@ export function DashboardRecordingCard({
               recordingId={recording.id}
               fallback={showStatus ? (
                 <span className={`inline-flex rounded-pill border px-2.5 py-1 text-xs font-semibold ${getRecordingStatusClasses(recording.status)}`}>
-                  {recording.status}
+                  {statusLabel}
                 </span>
               ) : null}
             />

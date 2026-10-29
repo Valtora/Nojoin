@@ -12,6 +12,7 @@ import CaptureShell from "./CaptureShell";
 import LiveMeetingControls from "./LiveMeetingControls";
 import MeetingControls from "./MeetingControls";
 import ProcessingCard from "./dashboardRecordings/ProcessingCard";
+import { DashboardRecordingCard } from "./upcomingMeetings/CalendarCards";
 
 // Browser media and the network are the edges: the provider, controller,
 // recovery dialog and controls are the real ones.
@@ -145,6 +146,14 @@ describe("a recording claimed and resumed from the recovery dialog", () => {
     render(<CaptureProvider><CaptureShell>
       <LiveMeetingControls size="bar" serverPaused />
       <ProcessingCard recordings={[liveCopy]} />
+      <DashboardRecordingCard
+        recording={{
+          id: liveCopy.id, name: liveCopy.name, starts_at: "2026-10-29T09:00:00Z",
+          status: liveCopy.status, client_status: liveCopy.client_status, speaker_names: [], tags: [],
+        }}
+        timeZone="UTC"
+        showDate
+      />
     </CaptureShell></CaptureProvider>);
     await act(async () => {});
     expect(screen.getByTitle("Stop recording")).toBeDisabled();
@@ -156,8 +165,9 @@ describe("a recording claimed and resumed from the recovery dialog", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByTitle("Stop recording")).toBeEnabled();
     expect(screen.getByTitle("Discard recording")).toBeEnabled();
-    // The controls' pill and the dashboard badge both say this tab records.
-    expect(screen.getAllByText("Recording")).toHaveLength(2);
+    // The controls' pill, the dashboard badge and the agenda card all say
+    // this tab records.
+    expect(screen.getAllByText("Recording")).toHaveLength(3);
     expect(screen.queryByText("Live")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("Stop recording"));
