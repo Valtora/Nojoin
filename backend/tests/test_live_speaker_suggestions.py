@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -10,7 +11,8 @@ from sqlmodel import Session, select
 
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
-from backend.tests.live_naming_fixtures import ONE, TWO
+from backend.processing import live_persistence
+from backend.tests.live_naming_fixtures import ONE, THREE, TWO
 from backend.tests.test_canonical_publication_fence import (
     publication_database as publication_database,
 )
@@ -30,7 +32,7 @@ from backend.utils.speaker_names.live_suggestions import (
     refresh_live_speaker_suggestions,
     suggest_live_speaker_names,
 )
-from backend.worker.tasks import meeting_edge_stage
+from backend.worker.tasks import live_naming_stage
 
 
 def _introduce(session: Session, label: str = ONE, words: str = "I'm Alex.") -> None:
@@ -58,14 +60,47 @@ def _pending(session: Session, recording_id: int = 1) -> dict[str, str]:
     )
 
 
-def _run_edge_task(session: Session) -> None:
-    task = meeting_edge_stage.refresh_meeting_edge_task
+def _run_naming_task(session: Session) -> None:
+    task = live_naming_stage.refresh_live_speaker_names_task
     original_session = task._session
     task._session = session
     try:
         task.run(1)
     finally:
         task._session = original_session
+
+
+def _publish(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> live_persistence.LivePublicationResult:
+    """One live publication whose label step changed the public lines."""
+    from backend.core import db
+
+    monkeypatch.setattr(db, "get_sync_session", lambda: Session(session.get_bind()))
+    return live_persistence._persist_live_run(
+        recording_id=1,
+        sequence=0,
+        run=[0],
+        new_segments=[],
+        state={},
+        live_config={"_settling_public_changed": True},
+        live_config_hash="config",
+        live_model_name="model",
+    )
+
+
+def _add_owner(session: Session, settings: dict[str, Any]) -> None:
+    session.execute(
+        text(
+            "INSERT INTO users (id, created_at, updated_at, username, "
+            "hashed_password, is_active, is_superuser, force_password_change, "
+            "role, token_version, settings, has_seen_demo_recording) VALUES "
+            "(1, '2026-10-29', '2026-10-29', 'alice', 'x', 1, 1, 0, 'owner', 0, "
+            ":settings, 1)"
+        ),
+        {"settings": json.dumps(settings)},
+    )
+    session.commit()
 
 
 def test_a_short_intro_is_only_one_persisted_proposal(session: Session) -> None:
@@ -200,63 +235,49 @@ def test_a_paused_capture_still_generates_a_proposal(session: Session) -> None:
     assert _pending(session) == {ONE: "Alex"}
 
 
-@pytest.mark.parametrize("gate", ["held_guard", "edge_disabled", "small_signal"])
-def test_cadence_names_before_edge_guards_without_an_ai_call(
+def test_suggestions_arrive_with_meeting_edge_off(
     session: Session,
     monkeypatch: pytest.MonkeyPatch,
     fake_single_flight: Any,
-    gate: str,
+    stub_celery_dispatch: list[Any],
 ) -> None:
-    from backend.core.single_flight import KEY_PREFIX
-
+    _add_owner(session, {"enable_meeting_edge": False})
     _introduce(session)
-    if gate == "held_guard":
-        fake_single_flight.keys[f"{KEY_PREFIX}meeting-edge:1"] = "another-worker"
-    monkeypatch.setattr(
-        meeting_edge_stage,
-        "is_meeting_edge_enabled",
-        lambda settings: gate != "edge_disabled",
-    )
-    config_calls: list[bool] = []
 
-    def refuse_ai(*args: Any, **kwargs: Any) -> None:
-        config_calls.append(True)
-        raise AssertionError(
-            "Naming a short live intro must not reach AI configuration"
-        )
+    publication = _publish(session, monkeypatch)
+    live_naming_stage.queue_live_naming_check(1)
+    _run_naming_task(session)
 
-    monkeypatch.setattr(meeting_edge_stage, "resolve_llm_config", refuse_ai)
-    _run_edge_task(session)
-
+    assert publication.dispatch_meeting_edge is False
+    assert publication.queue_live_naming is True
+    assert [name for name, _, _ in stub_celery_dispatch] == [
+        live_naming_stage.LIVE_NAMING_TASK
+    ]
     assert _pending(session) == {ONE: "Alex"}
-    assert config_calls == []
 
 
-def test_a_failing_suggestion_pass_does_not_stop_meeting_edge(
-    session: Session, monkeypatch: pytest.MonkeyPatch, fake_single_flight: Any
+@pytest.mark.parametrize("unnamed", [(), (THREE,)])
+def test_no_check_is_queued_once_every_live_label_is_named(
+    session: Session, monkeypatch: pytest.MonkeyPatch, unnamed: tuple[str, ...]
 ) -> None:
-    def broken_pass(db: Session, recording_id: int) -> None:
-        db.execute(text("SELECT * FROM missing_review_state"))
+    for label, name in ((ONE, "Alex"), (TWO, "Blair"), (THREE, "Casey")):
+        if label not in unnamed:
+            _name_live(session, label, name)
 
-    monkeypatch.setattr(
-        meeting_edge_stage, "refresh_live_speaker_suggestions", broken_pass
-    )
-    # With Edge off the refresh's only work is to clear a stale status.
-    monkeypatch.setattr(meeting_edge_stage, "is_meeting_edge_enabled", lambda _: False)
-    session.execute(
-        text(
-            "UPDATE transcripts SET meeting_edge_status = 'error', "
-            "meeting_edge_error_message = 'stale'"
-        )
-    )
-    session.commit()
+    assert _publish(session, monkeypatch).queue_live_naming is bool(unnamed)
 
-    _run_edge_task(session)
 
-    session.expire_all()
-    transcript = session.get(Transcript, 1)
-    assert transcript.meeting_edge_status == "idle"
-    assert transcript.meeting_edge_error_message is None
+def test_at_most_one_check_waits_per_recording(
+    session: Session, fake_single_flight: Any, stub_celery_dispatch: list[Any]
+) -> None:
+    live_naming_stage.queue_live_naming_check(1)
+    live_naming_stage.queue_live_naming_check(1)
+    assert len(stub_celery_dispatch) == 1
+
+    # Lines published once the check has started need a check of their own.
+    _run_naming_task(session)
+    live_naming_stage.queue_live_naming_check(1)
+    assert len(stub_celery_dispatch) == 2
 
 
 def test_an_unchanged_trigger_does_not_wait_for_the_capture_fence(

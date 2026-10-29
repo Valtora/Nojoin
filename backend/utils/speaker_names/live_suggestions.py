@@ -72,25 +72,46 @@ def _live_candidates(
     meeting_context: MeetingEventContext | None,
 ) -> dict[str, SpeakerInferenceSuggestion]:
     """The rule's hits on live labels the user has neither named nor dismissed."""
+    labels = {
+        str(segment.get("speaker", ""))
+        for segment in segments
+        if live_speaker_display_name(segment.get("speaker")) is not None
+    }
+    return {
+        item.diarization_label: item
+        for item in detect_rule_based_speaker_suggestions(
+            segments, _unanswered_labels(session, transcript, labels), meeting_context
+        ).suggestions
+    }
+
+
+def _unanswered_labels(
+    session: Any, transcript: Transcript, labels: set[str]
+) -> list[str]:
+    """The labels the user has neither named nor dismissed a proposal for."""
     dismissed = {
         item["diarization_label"]
         for item in load_transcript_speaker_suggestions(transcript)
         if item.get("origin") == LIVE_SUGGESTION_ORIGIN
         and item.get("status") == SPEAKER_SUGGESTION_STATUS_REJECTED
     }
-    labels = {
-        str(segment.get("speaker", ""))
-        for segment in segments
-        if live_speaker_display_name(segment.get("speaker")) is not None
-    }
     named = live_speaker_names(session, transcript.recording_id, labels=labels)
-    eligible = sorted(labels - dismissed - named.keys())
-    return {
-        item.diarization_label: item
-        for item in detect_rule_based_speaker_suggestions(
-            segments, eligible, meeting_context
-        ).suggestions
-    }
+    return sorted(labels - dismissed - named.keys())
+
+
+def has_unnamed_live_labels(session: Any, transcript: Transcript) -> bool:
+    """Whether a current live line carries a label still open to a proposal.
+
+    Without one, a naming check has nothing to do and is not queued.
+    """
+    heard = session.execute(
+        select(TranscriptUtterance.speaker_label)
+        .where(TranscriptUtterance.recording_id == transcript.recording_id)
+        .where(col(TranscriptUtterance.state).in_(ACTIVE_UTTERANCE_STATES))
+        .distinct()
+    ).scalars()
+    labels = {str(label) for label in heard if live_speaker_display_name(label)}
+    return bool(labels and _unanswered_labels(session, transcript, labels))
 
 
 def _pending_live_proposals(transcript: Transcript) -> dict[str, str]:
@@ -129,13 +150,12 @@ def _retire_stale_proposals(
 
 
 def refresh_live_speaker_suggestions(session: Any, recording_id: int) -> None:
-    """Evaluate current live lines before Meeting Edge's AI-only guards.
+    """Evaluate current live lines for self-introductions.
 
-    Most triggers change nothing, so the rule first runs on an unlocked read
+    Most checks change nothing, so the rule first runs on an unlocked read
     and the capture fence is taken only when its hits differ from the stored
     proposals. Under the fence everything is read again, after waiting for a
-    rename, dismissal or Stop. Commit even a no-op to end the transaction
-    before the potentially slow AI refresh starts.
+    rename, dismissal or Stop.
     """
     evidence = _live_evidence(session, recording_id, lock=False)
     if evidence is not None:

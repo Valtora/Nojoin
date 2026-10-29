@@ -872,6 +872,10 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         # --- Diarisation dispatch (best-effort Meeting Edge refresh) ---
         if publication.dispatch_meeting_edge:
             _dispatch_meeting_edge_refresh_best_effort(recording_id)
+        if publication.queue_live_naming:
+            from backend.worker.tasks.live_naming_stage import queue_live_naming_check
+
+            queue_live_naming_check(recording_id)
 
         for consumed_sequence in run:
             _record_live_sequence_outcome(

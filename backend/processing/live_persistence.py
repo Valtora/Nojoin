@@ -18,6 +18,7 @@ from backend.utils.audio_windows import (
 )
 from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
+from backend.utils.speaker_names.live_suggestions import has_unnamed_live_labels
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     load_capture_publication,
@@ -34,6 +35,7 @@ class LivePublicationResult:
 
     accepted: bool
     dispatch_meeting_edge: bool = False
+    queue_live_naming: bool = False
 
 
 def _load_recording_audio_window_manifests(
@@ -86,11 +88,13 @@ def _persist_live_run(
     invariant requires that provisional writes only land while the recording is
     still in flight (UPLOADING/PAUSED); a late status flip to a terminal/final
     state rejects the result without advancing the obsolete lane checkpoint.
-    Returns acceptance and whether a Meeting Edge refresh should be dispatched.
+    Returns acceptance, whether a Meeting Edge refresh should be dispatched,
+    and whether a live naming check should be queued.
     """
     from backend.core.db import get_sync_session
 
     should_dispatch_meeting_edge = False
+    should_queue_live_naming = False
     session = get_sync_session()
     try:
         transcript, recording = load_capture_publication(session, recording_id)
@@ -98,14 +102,13 @@ def _persist_live_run(
             resolve_capture_settling_policy(
                 transcript, device=live_config.get("_settling_device")
             )
+            use_canonical_live_writes = (
+                bool(config_manager.get("enable_canonical_transcript_writes", True))
+                and hasattr(session, "exec")
+                and hasattr(session, "execute")
+            )
             if new_segments:
                 _mark_pending_speakers(new_segments, live_config)
-                use_canonical_live_writes = (
-                    bool(config_manager.get("enable_canonical_transcript_writes", True))
-                    and hasattr(session, "exec")
-                    and hasattr(session, "execute")
-                )
-
                 if use_canonical_live_writes:
                     append_utterances_from_segments(
                         session,
@@ -148,6 +151,12 @@ def _persist_live_run(
                     user_settings = getattr(user, "settings", None) if user else None
 
                 should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
+                # Live labels exist only on canonical utterances.
+                should_queue_live_naming = (
+                    use_canonical_live_writes
+                    and transcript is not None
+                    and has_unnamed_live_labels(session, transcript)
+                )
 
             manifest_rows = _load_recording_audio_window_manifests(
                 session, recording_id
@@ -181,7 +190,9 @@ def _persist_live_run(
                     },
                     log=logger,
                 )
-            return LivePublicationResult(True, should_dispatch_meeting_edge)
+            return LivePublicationResult(
+                True, should_dispatch_meeting_edge, should_queue_live_naming
+            )
     finally:
         session.close()
     return LivePublicationResult(False)
