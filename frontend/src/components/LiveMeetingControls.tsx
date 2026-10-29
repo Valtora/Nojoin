@@ -2,7 +2,7 @@
 
 import { ButtonBase } from '@/components/ui/nativeBases';
 import { AlertTriangle, CloudUpload, Pause, Play, Square, Trash2, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
 import { updateRecordingMaxSpeakers } from "@/lib/api";
@@ -22,6 +22,17 @@ interface LiveMeetingControlsProps {
   onMeetingDiscard?: () => void;
   /** Extra controls for the `bar` variant, placed before the speaker cap. */
   barTrailing?: ReactNode;
+  /**
+   * Whether the server has this recording paused, from the recording page.
+   * Another tab or device may be capturing it, and this tab's own capture
+   * state, idle, would read "Paused 00:00" whatever the recording is doing.
+   */
+  serverPaused?: boolean;
+  /**
+   * Where the capture is on its audio timeline, in ms, as the page's audio
+   * clock reads it from the server. The clock of a tab that is not capturing.
+   */
+  audioNow?: () => number | null;
 }
 
 // Below this the queue is ordinary upload latency, a segment or two.
@@ -50,6 +61,8 @@ export default function LiveMeetingControls({
   onMeetingEnd,
   onMeetingDiscard,
   barTrailing,
+  serverPaused,
+  audioNow,
 }: LiveMeetingControlsProps) {
   const {
     cancel,
@@ -59,6 +72,8 @@ export default function LiveMeetingControls({
     elapsedSeconds,
     pause,
     recordingId,
+    ownedRecordingId,
+    pausedRecording,
     resume,
     runtimeActive,
     status,
@@ -69,11 +84,29 @@ export default function LiveMeetingControls({
 
   const { addNotification } = useNotificationStore();
   const isRecording = status === "recording";
-  // Pause and resume need live browser tracks. Stop and discard do not: a
-  // recording whose runtime was torn down must still be finishable, or it is
-  // stranded in PAUSED with no route to processing (issue #166).
+  // A conflict's ID is not ownership. A retained runtime can retry a failed
+  // stop, and an eligible recovery offer can finish without browser tracks.
   const transportDisabled = !runtimeActive || status === "finalizing";
-  const stopDisabled = status === "finalizing" || !recordingId;
+  const canControl = Boolean(recordingId &&
+    (ownedRecordingId === recordingId || pausedRecording?.id === recordingId));
+  const stopDisabled = status === "finalizing" || !canControl;
+  // Any tab can open the recording page; only one captures. The others show
+  // the server's state, "Live" rather than "Recording" since nothing records
+  // here, and the server's audio timeline, which every device reads alike and
+  // which stands still while paused, rather than this tab's idle 00:00.
+  const capturedElsewhere = !canControl && serverPaused !== undefined;
+  const showsRecording = capturedElsewhere ? !serverPaused : isRecording;
+  // The timer's state change both re-renders and carries the reading: a bare
+  // call during render is one the React Compiler may cache.
+  const [observedMs, setObservedMs] = useState(() => audioNow?.() ?? null);
+  useEffect(() => {
+    if (!capturedElsewhere || !audioNow) return;
+    const timer = setInterval(() => setObservedMs(audioNow()), 1000);
+    return () => clearInterval(timer);
+  }, [capturedElsewhere, audioNow]);
+  const clockSeconds = capturedElsewhere
+    ? observedMs === null ? null : observedMs / 1000
+    : elapsedSeconds;
 
   // Diarization runs at stop time, so the cap stays editable for the whole
   // recording: whatever is set when capture ends is what gets applied.
@@ -182,9 +215,11 @@ export default function LiveMeetingControls({
     ? stopStage === "flushing-uploads" && uploadQueue.segments > 0
       ? "Uploading"
       : "Finishing"
-    : isRecording
-      ? "Recording"
-      : "Paused";
+    : !showsRecording
+      ? "Paused"
+      : capturedElsewhere
+        ? "Live"
+        : "Recording";
 
   const showUploadBacklog = isFinalizing
     ? uploadQueue.segments > 0
@@ -263,14 +298,16 @@ export default function LiveMeetingControls({
         <div className="flex items-center gap-2">
           <div className="flex flex-1 items-center gap-2 rounded-xl border border-status-danger-border bg-status-danger-bg px-3 py-2 text-status-danger-fg">
             <span
-              className={`inline-block h-2 w-2 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
+              className={`inline-block h-2 w-2 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
             />
             <span className="text-xs font-semibold uppercase tracking-[0.14em]">
               {statusLabel}
             </span>
-            <span className="ml-auto font-mono text-sm font-semibold text-foreground">
-              {formatTime(elapsedSeconds)}
-            </span>
+            {clockSeconds === null ? null : (
+              <span className="ml-auto font-mono text-sm font-semibold text-foreground">
+                {formatTime(clockSeconds)}
+              </span>
+            )}
           </div>
           {isRecording ? (
             <ButtonBase
@@ -343,21 +380,24 @@ export default function LiveMeetingControls({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <div className="density-surface-panel flex shrink-0 items-center gap-3 bg-status-danger-bg px-3 py-1.5 text-status-danger-fg">
             <span
-              className={`h-2.5 w-2.5 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
+              className={`h-2.5 w-2.5 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
             />
             <span className="text-xs font-semibold uppercase tracking-[0.16em]">
               {statusLabel}
             </span>
-            <span className="font-mono text-xl font-semibold tabular-nums text-foreground">
-              {formatTime(elapsedSeconds)}
-            </span>
+            {clockSeconds === null ? null : (
+              <span className="font-mono text-xl font-semibold tabular-nums text-foreground">
+                {formatTime(clockSeconds)}
+              </span>
+            )}
           </div>
 
           {/* The floor stops the transport being squeezed beside the clock,
               but never reaches past the card: a 360px phone leaves it about
               17rem (#538). */}
           <div className="flex min-w-[min(18rem,100%)] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
-            {isRecording ? (
+            {/* Nothing to pause or resume here while another tab records it. */}
+            {capturedElsewhere && showsRecording ? null : isRecording ? (
               <ButtonBase
                 data-ui-fill="card"
                 data-ui-border="full" chrome="action"
@@ -434,15 +474,17 @@ export default function LiveMeetingControls({
       <div className="density-surface-panel flex items-center justify-between gap-4 border border-status-danger-border bg-status-danger-bg px-4 py-4 text-status-danger-fg">
         <div className="flex items-center gap-3">
           <div
-            className={`h-2.5 w-2.5 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
+            className={`h-2.5 w-2.5 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
           />
           <span className="text-sm font-semibold uppercase tracking-[0.16em]">
             {statusLabel}
           </span>
         </div>
-        <span className="font-mono text-3xl font-semibold text-foreground">
-          {formatTime(elapsedSeconds)}
-        </span>
+        {clockSeconds === null ? null : (
+          <span className="font-mono text-3xl font-semibold text-foreground">
+            {formatTime(clockSeconds)}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3">

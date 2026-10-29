@@ -95,7 +95,7 @@ describe("RecordingStatusDisplay", () => {
     expect(screen.getByTestId("processing-notes-panel")).toBeInTheDocument();
   });
 
-  it("states the capture state without a headline", () => {
+  it("leaves the capture state to the live controls while recording", () => {
     render(
       <RecordingStatusDisplay
         recording={buildRecording({
@@ -106,11 +106,25 @@ describe("RecordingStatusDisplay", () => {
       />,
     );
 
-    // The state is a word on the console, not a text-4xl sentence above it.
-    expect(screen.getByText("Recording")).toBeInTheDocument();
+    // The live controls' pill says it, for every tab; the header no longer
+    // repeats it, and there is no text-4xl sentence above it either.
+    expect(screen.getByTestId("live-meeting-controls")).toBeInTheDocument();
+    expect(screen.queryByText("Recording")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Meeting is being recorded"),
     ).not.toBeInTheDocument();
+  });
+
+  it("states the state once capture is over", () => {
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({ status: RecordingStatus.QUEUED })}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Queued")).toBeInTheDocument();
+    expect(screen.queryByTestId("live-meeting-controls")).not.toBeInTheDocument();
   });
 
   it("puts pipeline progress where the transcript sits while recording", () => {
