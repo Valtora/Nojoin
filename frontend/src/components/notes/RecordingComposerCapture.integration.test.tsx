@@ -12,6 +12,7 @@ import RecordingNoteComposer from "./RecordingNoteComposer";
 const track = { readyState: "live" } as MediaStreamTrack;
 const capture = {
   runtimeActive: true,
+  recordingId: "capture-integration",
   displayVideoTrack: vi.fn((): MediaStreamTrack | null => track),
 };
 const grabDisplayFrame = vi.fn(async () => new Blob(["frame"], { type: "image/png" }));
@@ -148,5 +149,19 @@ describe("the recording's composed capture ownership", () => {
     await shortcut();
     expect(grabDisplayFrame).toHaveBeenCalledOnce();
     expect(noteOutboxFor(LIVE.id).getSnapshot().entries).toHaveLength(count);
+  });
+
+  it("keeps notes available but hides still capture and explains why without a shared picture", async () => {
+    capture.displayVideoTrack.mockReturnValue(null);
+    const clock = new AudioClock(() => 0);
+    clock.observe(LIVE);
+    render(<Presentation recording={LIVE} mobile={false} clock={clock} />);
+
+    expect(screen.queryByRole("button", { name: "Capture the shared screen" })).not.toBeInTheDocument();
+    expect(screen.getByText("Screen captures need a shared tab, window or screen.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "New note" })).toBeEnabled();
+    await shortcut();
+    expect(grabDisplayFrame).not.toHaveBeenCalled();
+    expect(noteOutboxFor(LIVE.id).getSnapshot().entries).toHaveLength(0);
   });
 });

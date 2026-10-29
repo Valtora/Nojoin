@@ -351,7 +351,7 @@ export default function CaptureSettings() {
       description={
         microphoneOnly
           ? "The phone microphone used for mobile recording. Nojoin balances levels while recording."
-          : "The microphone added to shared audio. Nojoin balances system and microphone levels while recording."
+          : "The microphone used for recording, on its own or alongside shared audio. Nojoin balances levels while recording."
       }
       headerAside={
         <ButtonBase
@@ -388,7 +388,7 @@ export default function CaptureSettings() {
         description={
           microphoneOnly
             ? "Recorded directly on mobile Chrome."
-            : "Mixed with shared tab or system audio during capture."
+            : "Recorded on its own or with shared tab or system audio, as chosen at Start."
         }
       >
         <SelectBase

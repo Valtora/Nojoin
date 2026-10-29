@@ -88,6 +88,8 @@ vi.mock("@/lib/notes/deletedRecordingNotes", () => ({
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     ...captureState,
+    settings: { startMode: "shared_audio" },
+    updateSettings: vi.fn(),
     cancel: vi.fn(),
     recordingId: null,
     pausedRecording,

@@ -155,19 +155,10 @@ const sharedMocks = vi.hoisted(() => ({
   readPausedCaptureContext: vi.fn(() => null as unknown),
 }));
 
-vi.mock("./shared", () => ({
+vi.mock("./shared", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./shared")>()),
   clearPausedCaptureContext: vi.fn(),
-  DEFAULT_CAPTURE_LEVELS: { system: 0, microphone: 0, mixed: 0 },
-  readCaptureSettings: vi.fn(() => ({
-    microphoneDeviceId: null,
-    microphoneGain: 1,
-    systemGain: 1,
-    echoCancellation: true,
-    noiseSuppression: false,
-    autoGainControl: true,
-  })),
   readPausedCaptureContext: sharedMocks.readPausedCaptureContext,
-  writeCaptureSettings: vi.fn(),
   writePausedCaptureContext: vi.fn(),
 }));
 
@@ -513,6 +504,7 @@ describe("capture controller", () => {
       mode: "microphone_only",
       microphoneDeviceId: null,
       settings: {
+        startMode: "shared_audio",
         microphoneDeviceId: null,
         microphoneGain: 1,
         systemGain: 1,
@@ -528,6 +520,67 @@ describe("capture controller", () => {
       captureReport: sources.captureReport,
       elapsedSeconds: 0,
     });
+  });
+
+  it("remembers the Start source through the controller when microphone settings change", async () => {
+    const controller = new CaptureController();
+    controller.updateSettings({ startMode: "microphone_only" });
+    controller.updateSettings({ microphoneDeviceId: "usb-mic" });
+
+    const reloaded = new CaptureController();
+    expect(reloaded.getState().settings).toMatchObject({
+      startMode: "microphone_only", microphoneDeviceId: "usb-mic",
+    });
+    await controller.destroy();
+    await reloaded.destroy();
+  });
+
+  it.each([
+    { device: "desktop", saved: undefined, expected: "shared_audio" },
+    { device: "desktop", saved: "invalid", expected: "shared_audio" },
+    { device: "desktop", saved: "shared_audio", expected: "shared_audio" },
+    { device: "desktop", saved: "microphone_only", expected: "microphone_only" },
+    { device: "phone", saved: "shared_audio", expected: "microphone_only" },
+    { device: "phone", saved: "microphone_only", expected: "microphone_only" },
+  ])("starts $device from stored choice $saved as $expected", async ({ device, saved, expected }) => {
+    window.localStorage.setItem("nojoin.capture.settings", JSON.stringify({ startMode: saved, version: 2 }));
+    featureDetectMocks.detectCaptureSupport.mockReturnValue({
+      supported: true,
+      mode: device === "phone" ? "microphone_only" : "shared_audio",
+    });
+    const sources = {
+      mode: expected,
+      displayStream: expected === "shared_audio"
+        ? { getAudioTracks: () => [new EventTarget()], getVideoTracks: () => [] }
+        : null,
+      microphoneStream: {} as MediaStream,
+      captureReport: { mode: expected, notes: [] },
+      release: vi.fn(),
+    };
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1" });
+    apiMocks.pauseRecordingCapture.mockResolvedValue({ last_sequence: -1 });
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+    const controller = new CaptureController();
+
+    try {
+      await controller.start();
+      expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledWith(expect.objectContaining({ mode: expected }));
+      expect(controller.getState().status).toBe("recording");
+      expect(notificationMocks.addNotification).not.toHaveBeenCalled();
+      if (expected === "microphone_only") {
+        expect(controller.displayVideoTrack("rec-1")).toBeNull();
+        await controller.pause();
+        await controller.resume();
+        expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledTimes(1);
+        expect(controller.getState().status).toBe("recording");
+      }
+      await controller.stop();
+      expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalled();
+      expect(sources.release).toHaveBeenCalled();
+    } finally {
+      await controller.destroy();
+    }
   });
 
   it("silently rolls back when the display picker is cancelled", async () => {

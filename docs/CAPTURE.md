@@ -6,13 +6,15 @@ Nojoin records live meetings in the browser. This guide covers which browsers ca
 
 | Browser | Live capture |
 | --- | --- |
-| Chrome on Windows, Linux or macOS | Shared audio and microphone |
-| Edge, Brave, Arc or another Chromium-family browser on Windows or Linux | Shared audio and microphone |
-| Other Chromium-family browsers on macOS | Shared audio and microphone, best-effort |
+| Chrome on Windows, Linux or macOS | Microphone only, or shared audio and microphone |
+| Edge, Brave, Arc or another Chromium-family browser on Windows or Linux | Microphone only, or shared audio and microphone |
+| Other Chromium-family browsers on macOS | Microphone only, or shared audio and microphone, best-effort |
 | Chrome on Android or iOS | Microphone only |
 | Firefox, Safari, other mobile browsers | Not supported |
 
 Shared-audio capture records the tab, window or screen you share plus your microphone. On Linux it needs PipeWire screen capture. Mobile browsers cannot share another tab's or app's audio, so a phone records only what its microphone hears.
+
+On desktop, **Microphone only** records what your selected microphone hears without opening the share picker. Use it for an in-room meeting, a call on speaker or a voice memo. **Microphone and a tab or screen** keeps shared-audio capture. The source selector beside **Start Meeting** remembers the last choice in this browser, alongside the microphone settings. Until you choose, desktop capture uses shared audio and microphone; phones always use the microphone alone.
 
 On macOS, tab audio is the most reliable choice. Window and entire-screen audio work on current Chrome and current macOS when the share picker offers an audio toggle; older versions may share video with no audio. Other Chromium-family browsers on macOS are best-effort because their picker can lag Chrome's.
 
@@ -22,24 +24,26 @@ Browsers that cannot record can still play recordings, edit transcripts, manage 
 
 Nojoin records two channels: the shared tab, window or screen audio, and your microphone. It uploads them as you record, in two-second lossless segments, using about 0.15 Mbit/s while one source carries sound and 0.3 Mbit/s while both do. The finished recording is a FLAC file exactly as long as the audio captured.
 
-If you do not share tab audio, the shared channel is silent and everyone in the room is recorded through the microphone. On a phone, remote participants are recorded only if the phone's microphone can hear them.
+With **Microphone only**, the shared channel is silent and everyone is recorded through the microphone. Remote participants are recorded only if the microphone can hear them, on desktop as on a phone. Sharing a picture without its audio also leaves the shared audio channel silent.
 
 While you record, the recording view shows a live waveform in the header and the **Transcript** tab a few seconds behind the conversation ([USAGE.md](USAGE.md#live-transcription)). The same view continues through pause, upload, queueing and processing. **Analytics** shows provisional talk time, speaker share, longest turns and transcript-derived pace estimates; silence, overlapping speech, audio delivery, pitch and AI analysis wait until after processing. **Chat** answers from the transcript so far with current speaker names and your timeline notes, warning that wording and speakers may still change. When the transcript is too long for the model, Chat uses its most recent part and says that it was trimmed. Previous answers stay as written.
 
 Nojoin keeps none of the shared video. While you record, it reads one still from it only when you ask for a [capture](USAGE.md#captures), with the camera button beside the note box or Alt+Shift+C (Option+Shift+C on a Mac), and saves it on a note.
 
+Microphone-only recording has no shared picture: the camera button is hidden, the shortcut does nothing, and a hint explains that screen captures need a shared tab, window or screen. You can still attach files to notes.
+
 A segment the server cannot decode is set aside and leaves a two-second gap instead of stopping the meeting. The API logs it as a `segment_corrupt_skipped` pipeline metric.
 
 ## Starting A Recording
 
-1. On the dashboard, select **Start Meeting**.
-2. On desktop, choose the meeting tab, window or entire screen in the browser's share picker, turn on its audio option if it offers one, and select **Share**.
+1. On desktop, open **Recording source** beside **Start Meeting** on the dashboard's **Meet Now** card, in the recordings list or below its collapsed rail's microphone button. Choose **Microphone only** or **Microphone and a tab or screen**, then select **Start Meeting**.
+2. For **Microphone and a tab or screen**, choose the meeting tab, window or entire screen in the browser's share picker, turn on its audio option if it offers one, and select **Share**. **Microphone only** skips this picker.
 3. Allow microphone access if asked.
 4. Keep the Nojoin tab open and the device awake until you stop.
 
 The browser may switch to the tab or window you shared; Nojoin keeps recording in its own tab. Selecting **Cancel** in the picker returns you to where you were with no recording started. Before relying on Nojoin for an important meeting, record a short test and check that the live waveform moves.
 
-A phone shows no share picker. Allow microphone access, keep the phone near the meeting audio, keep Nojoin in the foreground and stop the phone locking.
+On a phone, select **Start Meeting**; no share picker appears. Allow microphone access, keep the phone near the meeting audio, keep Nojoin in the foreground and stop the phone locking.
 
 ## Choosing Tab, Window, Or Entire Screen
 
@@ -212,7 +216,7 @@ Audio still queued in the browser is not counted as missing; the warning lists i
 
 ### Chrome Memory Saver
 
-Memory Saver puts inactive Chrome tabs to sleep. You should not normally need to change anything: Chrome exempts tabs that are using the microphone or sharing a screen, and a recording tab does both until you stop.
+Memory Saver puts inactive Chrome tabs to sleep. You should not normally need to change anything: Chrome exempts tabs that are using the microphone or sharing a screen, and a recording tab uses the microphone until you stop.
 
 If shortfalls blamed on tab suspension keep happening in desktop Chrome, exempt Nojoin by hand:
 
@@ -252,7 +256,7 @@ If the browser is already supported, check the address. Browsers allow capture o
 
 ## Privacy Notes
 
-The browser decides what Nojoin receives: on desktop, the tab, window or screen you pick and the microphone you allow; on a phone, the microphone only. To end capture, stop the meeting in Nojoin or stop sharing from the browser's indicator.
+The browser decides what Nojoin receives: the microphone you allow and, in shared-audio mode, the tab, window or screen you pick. Phones always use the microphone only. To end capture, stop the meeting in Nojoin or, when sharing, stop sharing from the browser's indicator.
 
 ## Related Docs
 

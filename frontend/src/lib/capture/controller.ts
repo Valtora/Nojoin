@@ -651,6 +651,9 @@ export class CaptureController {
       throw new Error(message);
     }
 
+    const mode = support.mode === "microphone_only"
+      ? "microphone_only"
+      : this.state.settings.startMode;
     this.setState({ status: "starting", error: null });
 
     let initResponse;
@@ -687,7 +690,7 @@ export class CaptureController {
     let sources: PickedCaptureSources | null = null;
     try {
       sources = await pickCaptureSource({
-        mode: resolveCaptureMode(support),
+        mode,
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });

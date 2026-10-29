@@ -15,7 +15,7 @@ const ACTIVITY_HINT_COPY = {
   message:
     "That can be normal during a quiet stretch. If the meeting should be active, check the microphone selection and the browser share picker.",
   microphoneOnlyMessage:
-    "That can be normal during a quiet stretch. If the meeting should be active, check the microphone permission and keep the phone near the speaker.",
+    "That can be normal during a quiet stretch. If the meeting should be active, check the microphone permission and keep the microphone near the speaker.",
 };
 
 const AUDIO_BAR_CLASS_NAME =
@@ -85,9 +85,10 @@ export default function LiveAudioWaveform({
   paused = false,
   compact = false,
 }: LiveAudioWaveformProps) {
-  const { controller, runtimeActive, support } = useCapture();
+  const { controller, runtimeActive, support, displayVideoTrack } = useCapture();
   const levels = useLiveWaveform(controller);
-  const microphoneOnly = support.supported && support.mode === "microphone_only";
+  const microphoneOnly = (support.supported && support.mode === "microphone_only") ||
+    (runtimeActive && displayVideoTrack?.(recordingId) === null);
   const [audioHistory, setAudioHistory] = useState<number[]>(zeroHistory);
   const [showQuietHint, setShowQuietHint] = useState(false);
   const lastAudioActivityAtRef = useRef<number>(0);

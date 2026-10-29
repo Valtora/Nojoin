@@ -14,6 +14,7 @@ import { RecordingStatus } from "@/types";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
+import MeetingCaptureModeSelect from "./MeetingCaptureModeSelect";
 import IconButton from "./ui/IconButton";
 
 type MeetingControlsProps =
@@ -52,6 +53,7 @@ export default function MeetingControls({
     finalizeRetry,
     pausedRecording,
     runtimeActive,
+    settings,
     start,
     status,
     stopStage,
@@ -67,6 +69,7 @@ export default function MeetingControls({
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
   const microphoneOnly = support.supported && support.mode === "microphone_only";
+  const canChooseMode = support.supported && support.mode === "shared_audio";
 
   // Naming the stage keeps a slow stop legible instead of looking hung.
   const stopStageLabel = !stopStage
@@ -155,8 +158,14 @@ export default function MeetingControls({
               buttonDisabled: false,
               buttonTooltip: microphoneOnly
                 ? "Start a phone microphone recording."
-                : "Start a new meeting recording.",
+                : settings.startMode === "microphone_only"
+                  ? "Start a microphone-only recording without sharing a tab or screen."
+                  : "Start a new meeting recording.",
             };
+
+  const modeSelect = canChooseMode ? (
+    <MeetingCaptureModeSelect disabled={meetingSurfaceState.buttonDisabled} />
+  ) : null;
 
   const sendStart = async () => {
     try {
@@ -194,15 +203,18 @@ export default function MeetingControls({
 
   if (variant === "rail") {
     return (
-      <IconButton
-        size="sm"
-        icon={<Mic aria-hidden="true" />}
-        onClick={handlePrimaryAction}
-        disabled={meetingSurfaceState.buttonDisabled}
-        title={meetingSurfaceState.buttonTooltip}
-        aria-label={meetingSurfaceState.buttonLabel}
-        className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
-      />
+      <div className="flex flex-col items-center gap-1">
+        <IconButton
+          size="sm"
+          icon={<Mic aria-hidden="true" />}
+          onClick={handlePrimaryAction}
+          disabled={meetingSurfaceState.buttonDisabled}
+          title={meetingSurfaceState.buttonTooltip}
+          aria-label={meetingSurfaceState.buttonLabel}
+          className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
+        />
+        {modeSelect}
+      </div>
     );
   }
 
@@ -236,7 +248,7 @@ export default function MeetingControls({
             // resolves against the button rather than against the dashboard
             // grid, and the icon is sized in `em` so it tracks the label
             // instead of needing its own scale.
-            <div className="@container">
+            <div className="@container flex items-center gap-2">
               <ButtonBase
                 data-ui-fill="action"
                 data-ui-hover="action-hover"
@@ -251,6 +263,7 @@ export default function MeetingControls({
                 <Mic className="h-[1.15em] w-[1.15em] shrink-0" />
                 {meetingSurfaceState.buttonLabel}
               </ButtonBase>
+              {modeSelect}
             </div>
           ) : (
             <LiveMeetingControls size="full" onMeetingEnd={onMeetingEnd} />
@@ -284,7 +297,7 @@ export default function MeetingControls({
             <div
               className={
                 meetingSurfaceState.buttonMode === "start"
-                  ? "min-w-fit grow basis-0 whitespace-nowrap"
+                  ? "flex min-w-fit grow basis-0 items-center gap-2 whitespace-nowrap"
                   : "basis-full"
               }
             >
@@ -302,6 +315,7 @@ export default function MeetingControls({
                 <Mic className="h-4 w-4" />
                 {meetingSurfaceState.buttonLabel}
               </ButtonBase>
+              {modeSelect}
             </div>
             {pairedAction ? (
               <div className="flex min-w-fit grow basis-0">{pairedAction}</div>

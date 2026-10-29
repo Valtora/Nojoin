@@ -11,6 +11,15 @@ const stored = () => {
 };
 
 describe("capture processing defaults", () => {
+  it("retains the chosen Start source when the microphone settings change", () => {
+    writeCaptureSettings({ ...readCaptureSettings(), startMode: "microphone_only" });
+    writeCaptureSettings({ ...readCaptureSettings(), microphoneDeviceId: "usb-mic", microphoneGain: 1.4 });
+
+    expect(readCaptureSettings()).toMatchObject({
+      startMode: "microphone_only", microphoneDeviceId: "usb-mic", microphoneGain: 1.4,
+    });
+  });
+
   it.each([
     { profile: "fresh", saved: null, expected: false },
     {
@@ -85,6 +94,7 @@ describe("noise suppression migration for settings saved before it defaulted off
     const settings = readCaptureSettings();
 
     expect(settings).toEqual({
+      startMode: "shared_audio",
       microphoneDeviceId: "mic-1",
       microphoneGain: 1.4,
       systemGain: 0.8,
@@ -126,6 +136,7 @@ describe("noise suppression migration for settings saved before it defaulted off
 
   it("gives the defaults and saves nothing when nothing was saved", () => {
     expect(readCaptureSettings()).toEqual({
+      startMode: "shared_audio",
       microphoneDeviceId: null,
       microphoneGain: 1,
       systemGain: 1,

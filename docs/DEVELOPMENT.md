@@ -33,7 +33,7 @@ On Windows, install FFmpeg on `PATH` and the Microsoft Visual C++ Build Tools.
 
 For manual capture checks:
 
-- Chrome or another supported desktop Chromium browser on Windows, Linux or macOS, for shared-audio capture
+- Chrome or another supported desktop Chromium browser on Windows, Linux or macOS, for shared-audio or microphone-only capture
 - Chrome on Android or iOS, for microphone-only capture
 - Microphone permission in the browser
 - PipeWire screen capture, for shared-screen or system audio on Linux
@@ -359,6 +359,8 @@ Capture code lives in `frontend/src/lib/capture/`. After a capture change, check
 - Leave a note draft with a file attached, navigate between tabs, then Stop and wait for the finished transcript. Keep text, file and displayed typing-start, send, Before/After, chosen-line and selected-text placements; only deliberately changing placement retargets them. A carried send-mode draft uses the stopped audio clock or recording end. A new blank finished draft defaults to Before, and an explicit After choice survives sending another note. Keep one composer and one draft recovery owner, including with an empty transcript; failed notes/uploads retain Retry/Discard and pending point/selection notes stay by their lines. Attach a document from the header with Documents already open and check parsing status refreshes there.
 - Meeting Edge: preserve stored summary, questions, history and focus through Stop, processed/error, reload, reprocessing and disabling the installation setting. Its focus/context controls are read-only after capture ends; type just before the transition and check the pending debounce never writes afterwards. Delay both a successful update and a failed update past Stop; neither may replace the retained result or show an error after capture. Error toasts occur only during active/paused capture and appear once per recording/message. A run already started may finish while paused; existing uploading/queued/processing eligibility stays intact.
 - Supported-browser gating for desktop Chromium on Windows, Linux and macOS, and the unsupported-browser message on Firefox, Safari and mobile browsers other than Chrome.
+- Desktop source choice: with no saved choice, Start opens the share picker. From the recordings list, collapsed rail and dashboard's Meet Now card, choose **Microphone only**, then Start: no share picker, the selected microphone records, live transcription updates, and pause/resume, Stop and final processing work. Reload after stopping: microphone-only stays selected. Change the microphone in Settings > Recording and check the source choice remains. Switch back to **Microphone and a tab or screen** and check the usual picker and both audio sources.
+- Microphone-only Captures: no camera button, a short hint that a shared tab, window or screen is needed, and Alt+Shift+C takes no still. Notes and file attachments still work. Quiet-audio guidance asks about the microphone, without suggesting the share picker.
 - Mobile Chrome: microphone-only start, waveform, pause and resume, stop and finalise, and the notice that shared app, tab or system audio is not captured.
 - The share picker for a tab, a window and a screen; shared-audio track detection and the missing-audio message.
 - Microphone permission, the selected device, and the per-source gain controls in **Settings > Recording**.

@@ -2,10 +2,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import MeetingControls from "./MeetingControls";
+import { readCaptureSettings } from "@/lib/capture/shared";
 
 const routerPush = vi.fn();
 const addNotification = vi.fn();
 const start = vi.fn();
+const updateSettings = vi.fn();
 let connectivityStatus = "online";
 
 const captureState = {
@@ -14,6 +16,8 @@ const captureState = {
   },
   pausedRecording: null as { id: string; status: string } | null,
   runtimeActive: false,
+  settings: { startMode: "shared_audio" },
+  updateSettings,
   start: (...args: unknown[]) => start(...args),
   status: "idle",
   support: {
@@ -50,6 +54,9 @@ describe("MeetingControls", () => {
     routerPush.mockReset();
     addNotification.mockReset();
     start.mockReset();
+    updateSettings.mockReset();
+    captureState.settings = { startMode: "shared_audio" };
+    updateSettings.mockImplementation((patch) => Object.assign(captureState.settings, patch));
     connectivityStatus = "online";
     captureState.controller.getState = () => ({ error: null });
     captureState.runtimeActive = false;
@@ -112,6 +119,42 @@ describe("MeetingControls", () => {
     expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
   });
 
+  it.each(["sidebar", "dashboard", "rail"] as const)("chooses a source beside %s Start without starting early", async (variant) => {
+    const view = render(<MeetingControls variant={variant} />);
+    const select = screen.getByRole("combobox", { name: "Recording source" });
+    expect(select).toHaveValue("shared_audio");
+    fireEvent.change(select, { target: { value: "microphone_only" } });
+    expect(updateSettings).toHaveBeenCalledWith({ startMode: "microphone_only" });
+    expect(start).not.toHaveBeenCalled();
+    view.rerender(<MeetingControls variant={variant} />);
+    expect(select).toHaveValue("microphone_only");
+    expect(select).toHaveAttribute("title", "Recording source: Microphone only");
+
+    view.unmount();
+    render(<MeetingControls variant={variant} />);
+    expect(screen.getByRole("combobox", { name: "Recording source" })).toHaveValue("microphone_only");
+    const button = screen.getByRole("button", { name: "Start Meeting" });
+    expect(button).toHaveAttribute("title", "Start a microphone-only recording without sharing a tab or screen.");
+    fireEvent.click(button);
+    await waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(""));
+  });
+
+  it("preselects the browser's saved source", () => {
+    window.localStorage.setItem("nojoin.capture.settings", JSON.stringify({ startMode: "microphone_only", version: 2 }));
+    captureState.settings = readCaptureSettings();
+    render(<MeetingControls variant="dashboard" />);
+    expect(screen.getByRole("combobox", { name: "Recording source" })).toHaveValue("microphone_only");
+  });
+
+  it.each(["sidebar", "dashboard", "rail"] as const)("keeps phone %s Start microphone-only without a selector", async (variant) => {
+    captureState.support.mode = "microphone_only";
+    captureState.settings.startMode = "shared_audio";
+    render(<MeetingControls variant={variant} />);
+    expect(screen.queryByRole("combobox", { name: "Recording source" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+    await waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(""));
+  });
+
   describe.each(["sidebar", "rail"] as const)("%s start availability", (variant) => {
     it.each([
       { state: "paused", label: "Paused recording needs attention", paused: "PAUSED" },
@@ -130,6 +173,9 @@ describe("MeetingControls", () => {
       const button = screen.getByRole("button", { name: label });
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute("title");
+      const select = screen.queryByRole("combobox", { name: "Recording source" });
+      if (unsupported) expect(select).not.toBeInTheDocument();
+      else expect(select).toBeDisabled();
       fireEvent.click(button);
       expect(start).not.toHaveBeenCalled();
       expect(routerPush).not.toHaveBeenCalled();
@@ -143,6 +189,7 @@ describe("MeetingControls", () => {
 
     const button = screen.getByRole("button", { name: "Meeting in progress" });
     expect(button).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Recording source" })).toBeDisabled();
     expect(button).toHaveAttribute(
       "title",
       "A meeting recording is already running. Use the recording controls to pause or stop it.",

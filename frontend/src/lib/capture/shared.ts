@@ -29,6 +29,7 @@ export interface CaptureLevels {
 }
 
 export interface CaptureSettings {
+  startMode: CaptureMode;
   microphoneDeviceId: string | null;
   microphoneGain: number;
   systemGain: number;
@@ -151,7 +152,10 @@ export const DEFAULT_CAPTURE_LEVELS: CaptureLevels = {
   mixed: 0,
 };
 
+export const DEFAULT_CAPTURE_MODE: CaptureMode = "shared_audio";
+
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
+  startMode: DEFAULT_CAPTURE_MODE,
   microphoneDeviceId: null,
   microphoneGain: 1,
   systemGain: 1,
@@ -184,6 +188,10 @@ export const readCaptureSettings = (): CaptureSettings => {
       version?: unknown;
     };
     const settings: CaptureSettings = {
+      startMode:
+        parsed.startMode === "microphone_only" || parsed.startMode === "shared_audio"
+          ? parsed.startMode
+          : DEFAULT_CAPTURE_MODE,
       microphoneDeviceId:
         typeof parsed.microphoneDeviceId === "string"
           ? parsed.microphoneDeviceId

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const track = { readyState: "live" } as MediaStreamTrack;
 const capture = {
   runtimeActive: true,
+  recordingId: "rec-1",
   displayVideoTrack: vi.fn((): MediaStreamTrack | null => track),
 };
 vi.mock("@/lib/capture/CaptureProvider", () => ({ useCapture: () => capture }));
@@ -28,6 +29,7 @@ describe("taking captures during a recording", () => {
     add.mockClear();
     grabDisplayFrame.mockClear();
     capture.runtimeActive = true;
+    capture.recordingId = "rec-1";
     capture.displayVideoTrack.mockImplementation(() => track);
   });
 
@@ -44,6 +46,7 @@ describe("taking captures during a recording", () => {
   it("takes a still on Alt+Shift+C, at the time the keys were pressed", async () => {
     const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow, add));
     expect(result.current.canCaptureScreen).toBe(true);
+    expect(result.current.screenCaptureHint).toBeNull();
 
     await act(async () => {
       press({ code: "KeyC", key: "Ç", altKey: true, shiftKey: true });
@@ -62,10 +65,23 @@ describe("taking captures during a recording", () => {
 
     await act(async () => {
       press({ code: "KeyC", altKey: true, shiftKey: true });
+      await result.current.captureScreen();
     });
 
     expect(result.current.canCaptureScreen).toBe(false);
+    expect(result.current.screenCaptureHint).toBe("Screen captures need a shared tab, window or screen.");
     expect(grabDisplayFrame).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it("does not show a missing-share hint for another recording or after capture ends", () => {
+    capture.displayVideoTrack.mockReturnValue(null);
+    const { result, rerender } = renderHook(() => useCaptureActions("rec-2", readAudioNow, add));
+    expect(result.current.screenCaptureHint).toBeNull();
+    capture.recordingId = "rec-2";
+    capture.runtimeActive = false;
+    rerender();
+    expect(result.current.screenCaptureHint).toBeNull();
   });
 
   it("says why the note for a still was refused", async () => {
