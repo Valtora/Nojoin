@@ -6,6 +6,7 @@ import { Pause, Play, Square, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 const DISCARD_CONFIRM_MESSAGE =
@@ -67,7 +68,8 @@ export default function RecordingFloatingBadge() {
         router.push(`/recordings/${recordingId}`);
       }
     } catch (err: unknown) {
-      if (!controller.getState().error) {
+      // The Stop or Discard that overtook a Resume reports its own outcome.
+      if (!(err instanceof CaptureResumeSupersededError) && !controller.getState().error) {
         addNotification({
           type: "error",
           message:

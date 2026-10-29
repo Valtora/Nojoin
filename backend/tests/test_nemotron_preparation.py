@@ -15,8 +15,10 @@ from backend.tests.nemotron_asset_helpers import local_files
 from backend.tests.nemotron_asset_helpers import native_assets as native_assets
 from backend.utils import nemotron_lock as control
 from backend.utils import nemotron_model_utils as assets
+from backend.utils.download_progress import PROGRESS_KEY
 
 
+@pytest.mark.usefixtures("download_progress_in_memory")
 def test_lazy_enqueue_deduplicates_and_publishes_owned_id(
     native_assets: tuple, stub_celery_dispatch: list, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -61,7 +63,10 @@ def test_ready_assets_do_not_dispatch(
 
 
 def test_failed_dispatch_clears_only_its_marker(
-    native_assets: tuple, stub_celery_dispatch: list, monkeypatch: pytest.MonkeyPatch
+    native_assets: tuple,
+    stub_celery_dispatch: list,
+    download_progress_in_memory: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fail(*args: object, **kwargs: object) -> None:
         raise OSError("fake unavailable broker")
@@ -70,8 +75,12 @@ def test_failed_dispatch_clears_only_its_marker(
     assert preparation.request_nemotron_preparation(recording_id=1) is None
     assert control.pending_task() is None
     assert not control._control_path("pending.json").exists()
+    # The queued progress written before the publish does not linger.
+    progress = json.loads(download_progress_in_memory[PROGRESS_KEY])
+    assert (progress["status"], progress["stage"]) == ("error", "nemotron")
 
 
+@pytest.mark.usefixtures("download_progress_in_memory")
 def test_expired_task_cannot_clear_replacement_marker(
     native_assets: tuple, stub_celery_dispatch: list
 ) -> None:

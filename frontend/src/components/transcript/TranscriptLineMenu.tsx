@@ -143,7 +143,7 @@ export default function TranscriptLineMenu({
         key={`${lineEdit.kind}-${lineEdit.segment.id}`}
         kind={lineEdit.kind} segment={lineEdit.segment} anchor={lineEdit.anchor}
         handlers={editHandlers} speakers={speakers}
-        onClose={() => { setLineEdit(null); lineEdit.anchor.focus(); }}
+        onClose={() => setLineEdit(null)}
       /> : null}
       {noteAnchor && (settling || quoted) && onAddNote ? (
         <NoteOnSelectionPopover
