@@ -29,7 +29,12 @@ import {
 import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 
 import { holdCaptureLock } from "./captureLock";
-import { findAttentionRecordings, selectRecoveryOffer, type RecoveryRequest } from "./recovery";
+import {
+  findAttentionRecordings,
+  reclaimableRecordingId,
+  selectRecoveryOffer,
+  type RecoveryRequest,
+} from "./recovery";
 import { detectCaptureSupport } from "./featureDetect";
 import {
   createLeftOutAudioStore,
@@ -600,7 +605,8 @@ export class CaptureController {
     const ticket = this.captureActionTicket;
     const unfinished = await getUnfinishedCaptures();
     const captures = unfinished.filter(isLiveCaptureInProgress);
-    const attentionRecordings = await findAttentionRecordings(captures, this.getOwnedRecordingId());
+    const attentionRecordings = await findAttentionRecordings(
+      captures, this.getOwnedRecordingId(), reclaimableRecordingId());
     if (ticket !== this.captureActionTicket || options.isCurrent?.() === false) {
       // An action began meanwhile and will look again itself when it ends.
       return this.state.pausedRecording;
@@ -946,10 +952,12 @@ export class CaptureController {
         });
       }
 
+      const reloaded = heldRuntime ? null : readPausedCaptureContext();
+      const reclaimEpoch = reloaded?.recordingId === targetRecordingId ? reloaded.epoch : undefined;
       resumeResponse = await this.forCapture(
         targetRecordingId,
         heldRuntime ? heldRuntime.ownerId : signedInAccountId(),
-        () => resumeRecordingCapture(targetRecordingId, { epoch: heldRuntime?.epoch }),
+        () => resumeRecordingCapture(targetRecordingId, { epoch: heldRuntime?.epoch, reclaimEpoch }),
       );
       // Audio a previous page recorded but never uploaded goes first, and new
       // audio continues numbering after it.
@@ -2472,9 +2480,12 @@ export class CaptureController {
     // never execute. It is the only record of what this tab was capturing, and
     // discardEmptyInterruptedRecording needs its sequence count on the next
     // load to tell an interruption worth resuming from one worth clearing.
+    // The epoch lets this tab take the capture straight back after a reload,
+    // when the pause below never reached the server (issue #778).
     writePausedCaptureContext({
       recordingId,
       lastSequence,
+      epoch,
       persistedAt: Date.now(),
     });
 

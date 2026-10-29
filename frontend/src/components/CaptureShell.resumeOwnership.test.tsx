@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 import { audioTrack, mediaStream } from "@/lib/capture/releaseMicrophone.fixtures";
 import { clearPausedCaptureContext } from "@/lib/capture/shared";
+import { createSegmentUploader } from "@/lib/capture/uploader";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
@@ -255,5 +256,72 @@ describe("a capture the browser refuses", () => {
     await waitFor(() => expect(errors()).not.toEqual([]));
     await act(async () => {});
     expect(errors()).toHaveLength(1);
+  });
+});
+
+describe("a capture whose tab is reloaded while it records", () => {
+  // The server never heard the old page's pause, and the capture is not stalled.
+  const stillUploading = {
+    ...paused, status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING, capture_stalled: false,
+  } as Recording;
+  const lockQuery = vi.fn(async () => ({ held: [] as LockInfo[], pending: [] as LockInfo[] }));
+
+  /** Starts a capture at epoch 3, then reloads the page while it records. */
+  const recordThenReload = async () => {
+    vi.stubGlobal("navigator", {
+      locks: { query: lockQuery, request: (_name: string, _options: unknown, hold: () => Promise<void>) => hold() },
+      // The beacon is queued as the page unloads but never reaches the server.
+      sendBeacon: vi.fn(() => true),
+    });
+    pathname = "/";
+    api.getUnfinishedCaptures.mockResolvedValue([]);
+    const oldPage = render(
+      <CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>,
+    );
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+    await screen.findByTitle("Pause recording");
+    // The server has the first segment, so there is a meeting to go back to.
+    act(() => vi.mocked(createSegmentUploader).mock.calls.at(-1)?.[0].onUploaded?.(0));
+    await act(async () => { window.dispatchEvent(new Event("pagehide")); });
+    oldPage.unmount();
+
+    api.getUnfinishedCaptures.mockResolvedValue([stillUploading]);
+    // The server takes over a capture still uploading only for the epoch its
+    // tab held, and refuses anyone else until two minutes have passed.
+    api.resumeRecordingCapture.mockImplementation(async (_id: string, options: { reclaimEpoch?: number }) => {
+      if (options.reclaimEpoch !== 3) {
+        throw new Error("This recording is still in progress and received audio in the last two minutes.");
+      }
+      return { recording_id: paused.id, status: "UPLOADING", last_sequence: 0, capture_epoch: 4 };
+    });
+    pathname = `/recordings/${paused.id}`;
+  };
+
+  beforeEach(() => {
+    lockQuery.mockResolvedValue({ held: [], pending: [] });
+  });
+
+  it("is offered again in that tab and resumes at once", async () => {
+    await recordThenReload();
+    render(<CaptureProvider><CaptureShell><LiveMeetingControls size="bar" /></CaptureShell></CaptureProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Resume recording/ }));
+
+    await waitFor(() => expect(screen.getByTitle("Pause recording")).toBeEnabled());
+    expect(errors()).toEqual([]);
+  });
+
+  it("is not offered while another tab of this browser holds it", async () => {
+    // A duplicate of the reloaded tab carries the same per-tab storage, so
+    // only the lock tells it the other copy has already taken the capture.
+    await recordThenReload();
+    lockQuery.mockResolvedValue({ held: [{ name: `nojoin-capture:${paused.id}`, mode: "shared" }], pending: [] });
+    render(<CaptureProvider><CaptureShell><LiveMeetingControls size="bar" /></CaptureShell></CaptureProvider>);
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.resumeRecordingCapture).not.toHaveBeenCalled();
   });
 });

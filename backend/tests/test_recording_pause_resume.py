@@ -1548,3 +1548,86 @@ async def test_a_tab_on_an_older_build_sends_no_epoch_and_is_not_checked(
     assert segment.status_code == 200
     assert pause.status_code == 200
     assert pause.json()["capture_epoch"] == 1
+
+
+async def _capture_of_a_reloaded_tab(client: AsyncClient) -> str:
+    """A capture whose tab reloaded mid-upload, so its pause never arrived."""
+    set_session_cookie(client)
+    init = await _post(client, "init", params={"name": "Weekly sync"})
+    recording_id = init.json()["id"]
+    assert init.json()["capture_epoch"] == 0
+    assert (
+        await _upload(client, recording_id, 0, make_wav_bytes(), epoch=0)
+    ).status_code == 200
+    return recording_id
+
+
+@pytest.mark.anyio
+async def test_a_reloaded_tab_takes_its_capture_back_at_once(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Issue #778: the tab that held the epoch need not wait for a stall."""
+    recording_id = await _capture_of_a_reloaded_tab(client)
+
+    reclaim = await _post(client, f"{recording_id}/resume", params={"reclaim_epoch": 0})
+
+    assert reclaim.status_code == 200
+    assert reclaim.json()["capture_epoch"] == 1
+    assert reclaim.json()["last_sequence"] == 0
+    # A pause or segment the old page sent late is refused, not applied.
+    late_pause = await _post(client, f"{recording_id}/pause", params={"epoch": 0})
+    late_segment = await _upload(client, recording_id, 1, make_wav_bytes(), epoch=0)
+    assert late_pause.status_code == 409
+    assert late_pause.json()["detail"] == SUPERSEDED
+    assert late_segment.status_code == 409
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.client_status, row.capture_epoch) == (
+        "UPLOADING",
+        "RECORDING",
+        1,
+    )
+
+
+@pytest.mark.anyio
+async def test_a_reclaim_without_the_current_epoch_still_waits_for_a_stall(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """A wrong epoch, or a second tab whose copy is now stale, changes nothing."""
+    recording_id = await _capture_of_a_reloaded_tab(client)
+
+    wrong = await _post(client, f"{recording_id}/resume", params={"reclaim_epoch": 1})
+    first = await _post(client, f"{recording_id}/resume", params={"reclaim_epoch": 0})
+    # A duplicated tab carries the same per-tab storage, so the same epoch.
+    second = await _post(client, f"{recording_id}/resume", params={"reclaim_epoch": 0})
+
+    assert wrong.status_code == 409
+    assert wrong.json()["detail"] == (
+        "This recording is still in progress and received audio in the last two minutes."
+    )
+    assert first.status_code == 200
+    assert second.status_code == 409
+    row = await _recording_row(test_session_maker, recording_id)
+    assert row.capture_epoch == 1
+
+
+@pytest.mark.anyio
+async def test_a_reclaim_reopens_neither_a_closed_recording_nor_an_import(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    set_session_cookie(client)
+    await insert_recording(
+        test_session_maker, recording_id=3701, public_id="queued", status="QUEUED"
+    )
+    await insert_import(test_session_maker, recording_id=3702, public_id="slow-import")
+
+    closed = await _post(client, "queued/resume", params={"reclaim_epoch": 0})
+    an_import = await _post(client, "slow-import/resume", params={"reclaim_epoch": 0})
+
+    assert (closed.status_code, an_import.status_code) == (409, 409)
+    assert [
+        (await _recording_row(test_session_maker, public_id)).status
+        for public_id in ("queued", "slow-import")
+    ] == ["QUEUED", "UPLOADING"]

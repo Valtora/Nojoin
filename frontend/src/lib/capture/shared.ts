@@ -42,6 +42,12 @@ export interface PausedCaptureContext {
   recordingId: RecordingId;
   lastSequence: number;
   persistedAt: number;
+  /**
+   * The capture epoch this tab held when its page unloaded mid-capture. In
+   * per-tab storage, so only this tab after a reload, or a duplicate of it,
+   * can take the capture back without waiting for it to stall (issue #778).
+   */
+  epoch?: number;
 }
 
 export interface FinalizeRetryProgress {
@@ -289,6 +295,7 @@ export const readPausedCaptureContext = (): PausedCaptureContext | null => {
       recordingId: parsed.recordingId,
       lastSequence: parsed.lastSequence,
       persistedAt: parsed.persistedAt,
+      ...(typeof parsed.epoch === "number" ? { epoch: parsed.epoch } : {}),
     };
   } catch {
     return null;
