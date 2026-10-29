@@ -1437,6 +1437,9 @@ def test_live_missing_head_is_skipped_once_five_later_chunks_wait(
 
     assert len(transcript.segments) == 1
     state = lt.read_live_state(temp_dir / "live")
+    # The skipped chunk takes no time on the live timeline.
+    assert transcript.segments[0]["start"] == 0.0
+    assert state["buffer_abs_start"] + state["buffer_len_s"] == pytest.approx(10.0)
     assert state["next_expected"] == 6
     assert state["sequence_outcomes"]["0"] == {
         "outcome": "skipped",
