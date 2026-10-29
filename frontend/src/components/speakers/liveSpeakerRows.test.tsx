@@ -30,6 +30,7 @@ describe("live speaker rows", () => {
 
   it("adds a live name to People in one request", async () => {
     render(<SpeakerPanel {...props()} />);
+    expect(screen.queryByText(/Choose a name|can be named here/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add to People" }));
     await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex", true));
     expect(mocks.promote).not.toHaveBeenCalled();
@@ -42,6 +43,11 @@ describe("live speaker rows", () => {
     expect(screen.getByRole("button", { name: "Alex" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Change identity for Alex" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Add to People" })).toBeDisabled();
+    // Naming closes at Stop and opens again on the final speakers.
+    const reason = "Speakers can be named here while recording or paused, and again once processing finishes.";
+    expect(screen.getByText(reason)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add to People" })).toHaveAccessibleDescription(reason);
+    expect(screen.getByRole("button", { name: "Change identity for Alex" })).toHaveAccessibleDescription(reason);
     fireEvent.click(screen.getByRole("button", { name: "Add to People" }));
     expect(mocks.rename).not.toHaveBeenCalled();
   });
@@ -76,7 +82,10 @@ describe("live speaker rows", () => {
     expect(screen.getByRole("button", { name: "Change identity for Speaker 1" })).toBeEnabled();
     const add = screen.getByRole("button", { name: "Add to People" });
     expect(add).toBeDisabled();
-    expect(add).toHaveAttribute("title", "Choose a name with Change identity before adding to People.");
+    // On screen, not only in a tooltip that touch and keyboard users never see.
+    const reason = "Choose a name with Change identity before adding to People.";
+    expect(screen.getByText(reason)).toBeVisible();
+    expect(add).toHaveAccessibleDescription(reason);
     fireEvent.click(add);
     expect(mocks.rename).not.toHaveBeenCalled();
   });
