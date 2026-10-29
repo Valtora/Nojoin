@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -74,6 +75,8 @@ from backend.utils.transcript_settling import capture_publication_token
 TRAIL_EPS = 0.20
 _BUFFER_FILENAME = "buffer.wav"
 _CONTEXT_FILENAME = "context.wav"
+# Later chunks (about 10 s of 2 s chunks) that let the lane skip a missing one.
+LIVE_GAP_SKIP_CHUNKS = 5
 
 
 def _record_live_sequence_outcome_metric(
@@ -101,6 +104,38 @@ def _record_live_sequence_outcome_metric(
         payload=payload,
         status="error" if outcome == "failed" else outcome,
         log=logger,
+    )
+
+
+def _first_chunk_past_gap(temp_dir: Path, next_expected: int) -> int | None:
+    """The first chunk after a missing head, once enough later chunks wait.
+
+    A chunk that never arrives (an upload that kept failing, a corrupt segment)
+    would otherwise hold the lane for the rest of the capture. The final pass
+    still includes one that arrives late.
+    """
+    later = sorted(
+        int(path.stem)
+        for path in temp_dir.glob("*.wav")
+        if path.stem.isdigit() and int(path.stem) > next_expected
+    )
+    return later[0] if len(later) >= LIVE_GAP_SKIP_CHUNKS else None
+
+
+def _record_gap_skipped(
+    recording_id: int, state: dict, next_expected: int, resume_at: int
+) -> None:
+    skipped = list(range(next_expected, resume_at))
+    for missing in skipped:
+        _record_live_sequence_outcome(
+            state, sequence=missing, outcome="skipped", reason="gap_skipped"
+        )
+    _record_live_sequence_outcome_metric(
+        recording_id=recording_id,
+        sequence=next_expected,
+        outcome="skipped",
+        reason="gap_skipped",
+        extra_payload={"skipped": skipped, "next_expected": resume_at},
     )
 
 
@@ -639,8 +674,15 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             extra_payload={"next_expected": next_expected},
         )
         return
-    if sequence > next_expected and not (temp_dir / f"{next_expected}.wav").exists():
-        # Only a missing head is a gap; lifecycle rejection can retain it.
+    # Only a missing head is a gap; lifecycle rejection can retain it.
+    head_missing = (
+        sequence > next_expected and not (temp_dir / f"{next_expected}.wav").exists()
+    )
+    resume_at = _first_chunk_past_gap(temp_dir, next_expected) if head_missing else None
+    if resume_at is not None:
+        _record_gap_skipped(recording_id, state, next_expected, resume_at)
+        next_expected = state["next_expected"] = resume_at
+    elif head_missing:
         _record_live_sequence_outcome(
             state,
             sequence=sequence,
