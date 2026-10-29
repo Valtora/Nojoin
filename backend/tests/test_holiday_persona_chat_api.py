@@ -62,6 +62,7 @@ from backend.utils.config_manager import config_manager
 from backend.utils.personas import (
     PERSONA_SAFETY,
     TONE_HEADING,
+    ActivePersona,
     Surface,
     persona_by_slug,
 )
@@ -815,8 +816,11 @@ async def test_the_chat_tone_is_kept_out_of_the_notes_tool(
 @pytest.mark.parametrize("provider", list(PROVIDERS))
 def test_the_one_shot_chat_gets_the_tone_section(provider: str) -> None:
     prompts: list[str] = []
-    backend = PROVIDERS[provider](prompts)
-    wrapped = SecondaryLLMBackend(primary=backend, secondary=backend)
+    secondary_prompts: list[str] = []
+    wrapped = SecondaryLLMBackend(
+        primary=PROVIDERS[provider](prompts),
+        secondary=_anthropic(secondary_prompts),
+    )
 
     wrapped.ask_question_about_meeting(
         "What was decided?", NOTES, TRANSCRIPT, tone="Speak softly."
@@ -825,6 +829,34 @@ def test_the_one_shot_chat_gets_the_tone_section(provider: str) -> None:
 
     assert f"{TONE_HEADING}\nSpeak softly." in prompts[0]
     assert TONE_HEADING not in prompts[1]
+    assert secondary_prompts == []
+
+
+@pytest.mark.parametrize("provider", list(PROVIDERS))
+def test_a_failing_one_shot_primary_hands_the_secondary_one_tone_section(
+    provider: str,
+) -> None:
+    prompts: list[str] = []
+    secondary_prompts: list[str] = []
+    wrapped = SecondaryLLMBackend(
+        primary=_refusing(PROVIDERS[provider](prompts)),
+        secondary=_anthropic(secondary_prompts),
+    )
+    persona = persona_by_slug("pirate")
+    assert persona is not None
+    tone = ActivePersona(persona, "command").tone("chat")
+
+    answer = wrapped.ask_question_about_meeting(
+        "What was decided?", NOTES, TRANSCRIPT, tone=tone
+    )
+
+    assert prompts == []
+    assert len(secondary_prompts) == 1
+    prompt = secondary_prompts[0]
+    assert _line("pirate") in prompt
+    assert prompt.count(TONE_HEADING) == 1
+    assert prompt.count(PERSONA_SAFETY) == 1
+    assert answer
 
 
 @pytest.mark.parametrize("stream", [True, False], ids=["stream", "one-shot"])

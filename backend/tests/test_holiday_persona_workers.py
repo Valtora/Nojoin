@@ -1,9 +1,9 @@
 """Holiday personas in the worker: notes (only with the notes surface on) and Meeting Edge.
 
-Notes regeneration and Meeting Edge run their real tasks on SQLite with the
-real settings resolution (and, for Edge, the real refresh policy) and real
-backends whose SDK clients are faked, so each test reads the prompt the
-provider would receive. The automatic pipeline reuses its stage's harness.
+Notes regeneration, the automatic pipeline's IO-lane notes task and Meeting
+Edge run their real tasks on SQLite with the real settings resolution (and,
+for Edge, the real refresh policy) and real backends whose SDK clients are
+faked, so each test reads the prompt the provider would receive.
 """
 
 from __future__ import annotations
@@ -18,27 +18,15 @@ from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
 
 import backend.worker.tasks as tasks_module
-from backend.models.recording import Recording
-from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.processing.llm_services import AnthropicLLMBackend
-from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
 )
-from backend.tests.test_automatic_meeting_intelligence_worker import (
-    _create_worker_ai_database,
-    _FakeTask,
-)
 from backend.tests.test_generate_notes_task import (
     _create_notes_task_database,
     _run_generate_notes_task,
-)
-from backend.utils.llm_config import ResolvedLLMConfig
-from backend.utils.meeting_intelligence import (
-    AutomaticMeetingIntelligenceResult,
-    build_automatic_meeting_intelligence_prompt,
 )
 from backend.utils.persona_settings import SETTINGS_KEY
 from backend.utils.personas import (
@@ -169,71 +157,87 @@ def test_notes_ignore_a_meeting_persona_by_default(notes_database) -> None:
     assert _stored_personas(engine) == personas
 
 
-def _run_unified_stage(tmp_path: Path, monkeypatch, personas: dict[str, Any]):
-    engine = _create_worker_ai_database(tmp_path)
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "INSERT INTO users (id, created_at, updated_at, username, "
-                "hashed_password, is_active, is_superuser, force_password_change, "
-                "role, token_version, settings, has_seen_demo_recording) VALUES "
-                "(1, '2026-09-19', '2026-09-19', 'mira', 'x', 1, 0, 0, 'owner', 0, "
-                ":settings, 0)"
-            ),
-            {"settings": json.dumps({SETTINGS_KEY: personas})},
-        )
-    captured: dict[str, Any] = {}
+@pytest.fixture
+def unified_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The IO-lane meeting intelligence task's database, and its provider's prompts.
 
-    class FakeLLM:
-        def generate_meeting_intelligence(self, request, timeout: int = 60):
-            captured["request"] = request
-            return AutomaticMeetingIntelligenceResult(
-                speaker_mapping={},
-                title="Launch Review",
-                notes_markdown="## Summary\nNotes.",
+    The task resolves the owner's settings itself and builds a real Anthropic
+    backend through the factory; only the Anthropic SDK client is fake.
+    """
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
+    prompts: list[str] = []
+    answer = json.dumps(
+        {
+            "title": "Launch Review",
+            "speaker_mapping": {},
+            "notes_markdown": "## Summary\nNotes.",
+        }
+    )
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def get_final_message(self):
+            return SimpleNamespace(
+                content=[SimpleNamespace(type="text", text=answer)],
+                stop_reason="end_turn",
             )
 
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda _c: FakeLLM())
-    config = ResolvedLLMConfig(
-        provider="openai",
-        api_key="sk-test",
-        model="gpt-test",
-        api_url=None,
-        # The resolver merges the user's settings in, persona state included.
-        merged_config={"llm_provider": "openai", SETTINGS_KEY: personas},
-    )
-    with Session(engine) as session:
-        tasks_module._run_automatic_meeting_intelligence_stage(
-            session=session,
-            task=_FakeTask(),
-            recording=session.get(Recording, 1),
-            transcript=session.exec(
-                select(Transcript).where(Transcript.recording_id == 1)
-            ).first(),
-            speakers=session.exec(
-                select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
-            ).all(),
-            transcript_text="[00:00:00 - 00:00:04] SPEAKER_00: Opening update.",
-            unresolved_speakers=("SPEAKER_00",),
-            llm_config=config,
-            prefer_short_titles=True,
-            device_suffix="",
-            timeline_notes=RecordingTimelineNotes(),
+    class FakeMessages:
+        def stream(self, **kwargs):
+            prompts.append(kwargs["messages"][0]["content"])
+            return FakeStream()
+
+    class FakeAnthropic:
+        def __init__(self, **_kwargs):
+            self.messages = FakeMessages()
+
+    monkeypatch.setattr("anthropic.Anthropic", FakeAnthropic)
+
+    def make(personas: dict[str, Any]):
+        engine = _create_notes_task_database(
+            tmp_path,
+            owner_settings={
+                "llm_provider": "anthropic",
+                "anthropic_model": "claude-test",
+                "timezone": "UTC",
+                SETTINGS_KEY: personas,
+            },
         )
-    stored = _stored_personas(engine)
-    engine.dispose()
-    return captured["request"], stored
+        monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+        return engine, prompts
+
+    return make
+
+
+def _run_meeting_intelligence_task(engine) -> None:
+    task = tasks_module.generate_meeting_intelligence_task
+    task._session = None
+    try:
+        task.run(1)
+    finally:
+        if task._session is not None:
+            task._session.close()
+        task._session = None
 
 
 @pytest.mark.parametrize("notes_on", [True, False], ids=["notes-on", "notes-off"])
 def test_the_automatic_pipeline_notes_follow_the_notes_surface(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, notes_on: bool
+    unified_database, notes_on: bool
 ) -> None:
-    request, stored = _run_unified_stage(
-        tmp_path, monkeypatch, _personas(notes=notes_on)
-    )
+    engine, prompts = unified_database(_personas(notes=notes_on))
 
-    prompt = build_automatic_meeting_intelligence_prompt(request)
+    _run_meeting_intelligence_task(engine)
+    stored = _stored_personas(engine)
+    engine.dispose()
+
+    [prompt] = prompts
+    assert "# Required JSON Schema" in prompt
     if notes_on:
         assert NOTES_TONE in prompt
         assert "applies to notes_markdown only" in prompt
