@@ -13,6 +13,7 @@ from backend.utils.config_manager import config_manager, get_default_user_settin
 
 CONFIRM_SUGGESTED_NAMES_KEY = "confirm_suggested_names"
 VOICEPRINT_LEARNING_KEY = "voiceprint_learning"
+SUGGEST_LIVE_NAMES_KEY = "suggest_live_speaker_names"
 # A person's library voiceprint learns only from links the user made or
 # confirmed, or from every link, as before sources were recorded.
 LEARNING_CONFIRMED = "confirmed"
@@ -30,6 +31,11 @@ def _user_or_install(settings: dict[str, Any] | None, key: str) -> Any:
 def confirm_suggested_names_enabled(settings: dict[str, Any] | None) -> bool:
     """Whether inferred names are taken as given when processing finishes."""
     return bool(_user_or_install(settings, CONFIRM_SUGGESTED_NAMES_KEY))
+
+
+def live_name_suggestions_enabled(settings: dict[str, Any] | None) -> bool:
+    """Whether live capture proposes names for unnamed speakers."""
+    return bool(_user_or_install(settings, SUGGEST_LIVE_NAMES_KEY))
 
 
 def library_learns_automatically(settings: dict[str, Any] | None) -> bool:

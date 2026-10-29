@@ -627,6 +627,17 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["speaker names", "suggested names", "confirm names", "speakers", "voiceprint", "introduction", "identify", "automatic"],
   },
   {
+    id: "notes-suggest-live-names",
+    label: "Suggest speaker names during a meeting",
+    description:
+      "Offer a name for an unnamed speaker while the meeting records, from a self-introduction or your AI provider.",
+    category: "notes",
+    access: "all",
+    settingsKeys: ["suggest_live_speaker_names"],
+    defaultValue: true,
+    keywords: ["speaker names", "suggested names", "live", "during meeting", "introduction", "ai", "speakers", "identify"],
+  },
+  {
     id: "notes-voiceprint-learning",
     label: "Learn voiceprints from unconfirmed names",
     description:

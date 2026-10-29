@@ -742,6 +742,8 @@ export interface Settings {
   auto_analyse_meetings?: boolean;
   /** Take suggested speaker names as given when processing finishes, rather than asking to confirm each. */
   confirm_suggested_names?: boolean;
+  /** Offer names for unnamed speakers while a meeting records (on unless false). */
+  suggest_live_speaker_names?: boolean;
   /**
    * "confirmed" (the default): a person's library voiceprint learns only from
    * names the user gave or confirmed. "automatic": also from voiceprint matches

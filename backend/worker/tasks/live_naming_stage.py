@@ -8,6 +8,9 @@ recording: the dispatcher claims
 the slot before queueing and the check frees it as it starts, so lines
 published during a check queue the next one.
 
+With the owner's ``suggest_live_speaker_names`` setting off, nothing is
+queued and a check already queued does nothing.
+
 The check runs the self-introduction rule, then queues an AI ask when a label
 is due one (``refresh_live_speaker_suggestions``) and a provider is set up.
 The ask's slot is held until the ask ends, so a second is never queued while
@@ -30,6 +33,10 @@ from backend.utils.speaker_names.live_suggestions import (
     mark_live_asks,
     refresh_live_speaker_suggestions,
     store_live_llm_suggestions,
+)
+from backend.utils.speaker_names.preferences import (
+    live_name_suggestions_enabled,
+    owner_settings,
 )
 from backend.worker.tasks.constants import (
     MEETING_EDGE_TIMEOUT_SECONDS,
@@ -79,6 +86,11 @@ def queue_live_naming_check(recording_id: int) -> None:
 def refresh_live_speaker_names_task(self, recording_id: int) -> None:
     """Propose names for unnamed live labels from the current lines."""
     release_claim(_check_key(recording_id))
+    recording = self.session.get(Recording, recording_id)
+    if recording is None or not live_name_suggestions_enabled(
+        owner_settings(self.session, recording.user_id)
+    ):
+        return
     due = refresh_live_speaker_suggestions(self.session, recording_id)
     if due and _live_llm_config(self.session, recording_id) is not None:
         _queue(LIVE_NAMING_ASK_TASK, _ask_key(recording_id), recording_id)

@@ -448,3 +448,18 @@ async def test_a_name_in_any_script_or_length_is_an_ai_name(
     read = await _read(client)
     assert read["live_speaker_suggestions"] == {ONE: answer}
     assert read["live_speaker_suggestion_sources"] == {ONE: "llm"}
+
+
+async def test_with_live_suggestions_off_a_check_proposes_and_asks_nothing(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(
+        session_maker, {**AI_SETTINGS, "suggest_live_speaker_names": False}
+    )
+    await _say(session_maker, ONE, "I'm Alex.")
+    await _talk_until(session_maker, 64_000)
+
+    await _refresh(session_maker, llm)
+
+    assert llm.dispatched == []
+    assert (await _read(client))["live_speaker_suggestions"] == {}

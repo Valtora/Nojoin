@@ -19,6 +19,10 @@ from backend.utils.audio_windows import (
 from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.speaker_names.live_suggestions import has_unnamed_live_labels
+from backend.utils.speaker_names.preferences import (
+    live_name_suggestions_enabled,
+    owner_settings,
+)
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     load_capture_publication,
@@ -155,6 +159,7 @@ def _persist_live_run(
                 should_queue_live_naming = (
                     use_canonical_live_writes
                     and transcript is not None
+                    and live_name_suggestions_enabled(user_settings)
                     and has_unnamed_live_labels(session, transcript)
                 )
 
@@ -215,6 +220,9 @@ def live_naming_wanted_after_labels(recording_id: int) -> bool:
         return (
             transcript is not None
             and publication_is_current(recording, transcript, None)
+            and live_name_suggestions_enabled(
+                owner_settings(session, recording.user_id)
+            )
             and has_unnamed_live_labels(session, transcript)
         )
     finally:

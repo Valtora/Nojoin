@@ -11,6 +11,8 @@ from typing import Any
 import pytest
 from sqlmodel import Session
 
+from backend.models.recording import Recording
+from backend.models.user import User
 from backend.processing.live_diarization import step as labels_worker
 from backend.tests.live_label_fakes import (
     SAMPLE_RATE,
@@ -71,6 +73,36 @@ def test_a_line_labelled_after_its_publication_gets_a_naming_check(
     lane.run(1)
 
     assert _naming_checks(stub_celery_dispatch) == 1
+
+
+@pytest.mark.parametrize("resume_lane", [("off", True)], indirect=True)
+def test_with_live_suggestions_off_no_naming_check_is_queued(
+    resume_lane: ResumeLane,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_single_flight: Any,
+    stub_celery_dispatch: list[Any],
+) -> None:
+    lane = resume_lane
+    with Session(lane.engine) as session:
+        owner = User(
+            username="owner",
+            hashed_password="x",
+            settings={"suggest_live_speaker_names": False},
+        )
+        session.add(owner)
+        session.commit()
+        recording = session.get(Recording, lane.recording_id)
+        assert recording is not None
+        recording.user_id = owner.id
+        session.commit()
+    _label_every_line(lane, monkeypatch)
+
+    lane.upload(1)
+    lane.run(1)  # The label write gives the lines a label.
+    lane.upload(2)
+    lane.run(2)  # The publication now carries a label nobody has named.
+
+    assert _naming_checks(stub_celery_dispatch) == 0
 
 
 def test_the_label_step_reports_whether_it_changed_a_line(

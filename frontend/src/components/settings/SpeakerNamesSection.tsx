@@ -10,7 +10,10 @@ interface SpeakerNamesSectionProps {
   onPersist: (newSettings: Settings) => void;
 }
 
-/** How suggested speaker names are settled, and what voiceprints learn from (per user). */
+/**
+ * How suggested speaker names are settled, what voiceprints learn from, and
+ * whether names are suggested while a meeting records (per user).
+ */
 export default function SpeakerNamesSection({ settings, onPersist }: SpeakerNamesSectionProps) {
   return (
     <SettingsCard
@@ -53,6 +56,24 @@ export default function SpeakerNamesSection({ settings, onPersist }: SpeakerName
               ...settings,
               voiceprint_learning: checked ? "automatic" : "confirmed",
             })
+          }
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        id="notes-suggest-live-names"
+        label="Suggest speaker names during a meeting"
+        labelId="notes-suggest-live-names-label"
+        descriptionId="notes-suggest-live-names-help"
+        description="Offers a name for an unnamed speaker when they introduce themselves, and asks your AI provider when one may have been said. Nothing is applied until you accept it."
+        controlClassName={SETTINGS_CONTROL_END}
+      >
+        <Switch
+          checked={settings.suggest_live_speaker_names !== false}
+          aria-labelledby="notes-suggest-live-names-label"
+          aria-describedby="notes-suggest-live-names-help"
+          onCheckedChange={(checked) =>
+            onPersist({ ...settings, suggest_live_speaker_names: checked })
           }
         />
       </SettingsRow>

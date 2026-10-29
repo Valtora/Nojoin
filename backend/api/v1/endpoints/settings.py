@@ -131,6 +131,7 @@ class SettingsUpdate(BaseModel):
     secondary_anthropic_api_key: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
     confirm_suggested_names: Optional[bool] = None
+    suggest_live_speaker_names: Optional[bool] = None
     voiceprint_learning: Optional[str] = None
     prefer_short_titles: Optional[bool] = None
     # Notes structure and vocabulary (issue #137). The install_* keys are
