@@ -230,7 +230,7 @@ The recording was stopped in another tab or on another device and sent for proce
 
 ### Stop did not finish
 
-The meeting button names the stage while stopping. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. You can then stop it again from the controls on the recording's page or from the resume-or-discard dialog. A failed discard works the same way: the recording stays paused, on the server too, and you can discard it again. Stopping does not need the original capture, so it works after a reload.
+The meeting button names the stage while stopping. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. Until the server has that pause, **Start Meeting** says the last recording was not stopped instead of starting a new one. You can then stop it again from the controls on the recording's page or from the resume-or-discard dialog. A failed discard works the same way: the recording stays paused, on the server too, and you can discard it again. Stopping does not need the original capture, so it works after a reload.
 
 ### Browser recording unavailable
 

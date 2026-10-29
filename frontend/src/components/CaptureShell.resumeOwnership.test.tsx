@@ -349,3 +349,32 @@ describe("Start Meeting", () => {
     expect(checksBeforePicker).toBe(checksBeforeStart);
   });
 });
+
+describe("Start Meeting after a failed stop", () => {
+  it("says why it does not start while this tab still holds the capture", async () => {
+    pathname = "/";
+    api.getUnfinishedCaptures.mockResolvedValue([]);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+    await screen.findByTitle("Pause recording");
+    // The stop fails, and the pause owed after it has not reached the server,
+    // which still lists the capture as uploading.
+    api.getUnfinishedCaptures.mockResolvedValue([
+      { ...paused, status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING },
+    ]);
+    api.finalizeRecordingCapture.mockRejectedValue(new Error("Internal Server Error"));
+    api.pauseRecordingCapture.mockReturnValue(new Promise(() => {}));
+
+    fireEvent.click(screen.getByTitle("Stop recording"));
+    const start = await screen.findByRole("button", { name: "Start Meeting" });
+    expect(start).toBeEnabled();
+    fireEvent.click(start);
+
+    await waitFor(() => expect(errors()).toContainEqual(expect.objectContaining({
+      message: "The last recording was not stopped or discarded. Stop or discard it from its page before starting a new one.",
+    })));
+    expect(api.initRecording).toHaveBeenCalledOnce();
+  });
+});

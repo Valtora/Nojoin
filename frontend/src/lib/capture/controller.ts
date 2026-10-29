@@ -686,7 +686,15 @@ export class CaptureController {
   };
 
   start = async (name?: string): Promise<StartCaptureResponse> => {
-    if (this.runtime || this.state.status === "starting" || this.state.status === "finalizing") return null;
+    if (this.state.status === "starting" || this.state.status === "finalizing") return null;
+    if (this.runtime) {
+      // Only a failed stop or discard leaves Start enabled over this tab's own
+      // capture, until its pause reaches the server and the recording is offered.
+      this.setState({
+        error: "The last recording was not stopped or discarded. Stop or discard it from its page before starting a new one.",
+      });
+      return null;
+    }
     this.captureActionTicket += 1;
     const support = detectCaptureSupport();
     this.setState({ support });
