@@ -1,6 +1,10 @@
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.live_speaker_labels import (
+    prompt_speaker_label,
+    speaker_display_name,
+    speaker_prompt_name,
+)
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 from backend.utils.transcript_change import change_sequence_bump
@@ -325,9 +329,11 @@ def infer_speakers_task(self, recording_id: int):
                     return f"{h:02}.{m:02}.{s:05.2f}s"
 
                 diarization_label = seg.get("speaker", "Unknown")
+                # Inference returns raw label keys; only UNKNOWN is prose.
+                prompt_label = prompt_speaker_label(diarization_label)
                 text = seg.get("text", "")
                 transcript_for_llm += (
-                    f"[{fmt(start)} - {fmt(end)}] - {diarization_label} - {text}\n"
+                    f"[{fmt(start)} - {fmt(end)}] - {prompt_label} - {text}\n"
                 )
 
             backend = _llm_backend_from_config(llm_config)
@@ -456,11 +462,12 @@ def index_transcript_task(self, recording_id: int):
             end = seg["end"]
             speaker_label = seg["speaker"]
             speaker_name = speaker_display_name(speaker_label, speaker_map)
+            prompt_name = speaker_prompt_name(speaker_label, speaker_map)
 
             if current_length == 0:
                 temp_chunk_start = start
 
-            temp_chunk_text += f"{speaker_name}: {text}\n"
+            temp_chunk_text += f"{prompt_name}: {text}\n"
             current_length += len(text)
             temp_meta_speakers.add(speaker_name)
             temp_chunk_end = end

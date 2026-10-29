@@ -293,6 +293,8 @@ export interface LiveTranscriptWord {
 
 /** Live settling evidence, or timed final words on a recording that used settling. */
 export interface LiveTranscriptSettling {
+  /** Capture interval between resume cuts; absent means the initial interval. */
+  capture_interval?: number;
   /** Live diarisation has not covered these words yet; UNKNOWN remains unassigned. */
   diarisation_pending?: boolean;
   /** Sticky recording policy, copied onto local segments by the delta reader. */
