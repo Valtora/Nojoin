@@ -227,12 +227,12 @@ async def test_resident_estimates_cross_real_endpoint(
         m["method"] == "estimate unavailable" and m["estimated_bytes"] is None
         for m in models[4:]
     )
-    assert {m["name"].split(":")[0] for m in models} == {
+    assert {m["name"] for m in models} == {
         "Whisper base",
-        "nemotron_model",
-        "segmentation_model",
-        "embedding_core",
-        "parakeet",
-        "canary",
+        "Nemotron",
+        "Overlap detection",
+        "Voice embedding",
+        "Parakeet",
+        "Canary 1B",
     }
     assert worker["cuda_reserved_bytes"] == {"cuda:0": 4096}
