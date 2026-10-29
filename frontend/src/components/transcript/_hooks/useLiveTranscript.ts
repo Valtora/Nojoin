@@ -54,7 +54,7 @@ export interface LiveTranscript {
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
   /** The last read said live transcription is behind the uploads. */
-  liveBehind: boolean;
+  liveBehind?: boolean;
 }
 
 const NO_NAMES: Readonly<Record<string, string>> = {};

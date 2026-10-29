@@ -202,13 +202,14 @@ export default function TranscriptSection({
   }, [recordingId, refreshSelectedReader, readOnly, lineActions]);
   const paused = recording.status === RecordingStatus.PAUSED || recording.client_status === ClientStatus.PAUSED;
   const hasLoaded = liveTranscript?.hasLoaded ?? false;
+  const liveBehind = liveTranscript?.liveBehind ?? false;
   const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed && presentFeed ? ({
-    hasLoaded, isPaused: paused, lineHandlers: liveLineHandlers,
+    hasLoaded, isPaused: paused, liveBehind, lineHandlers: liveLineHandlers,
     onNoteOnLine: activeCapture ? noteOnLine : undefined,
     onNoteAtTime: activeCapture ? noteAtTime : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,
     loadPeopleNames: liveNaming.loadPeopleNames,
-  }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveLineHandlers, activeCapture,
+  }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveBehind, liveLineHandlers, activeCapture,
     noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.loadPeopleNames]);
   const discardNote = useCallback(
     (key: string) => {

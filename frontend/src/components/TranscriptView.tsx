@@ -474,6 +474,9 @@ export default function TranscriptView({
           ? "Lines settle as the conversation continues. Your corrections are kept."
           : "Provisional. Corrected when the recording is processed."}
       </p> : null}
+      {live?.liveBehind && !live.isPaused ? <p role="status" className="px-4 py-2 text-sm text-contrast-helper">
+        Live transcript is behind the recording. Nothing is lost: the full transcript is made when the meeting ends.
+      </p> : null}
 
       <div
         ref={scrollContainerRef}
