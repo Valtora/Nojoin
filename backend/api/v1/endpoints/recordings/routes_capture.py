@@ -8,7 +8,6 @@ from uuid import uuid4
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_recording_client_user, get_db
@@ -667,7 +666,7 @@ async def finalize_upload(
     recordings_module._ensure_recording_can_finalize_upload(recording)
     # Before the chunk and window rows: a live publisher holds Transcript and
     # then marks windows processed, so taking it later could deadlock.
-    await seal_live_settling(db, recording)
+    transcript = await seal_live_settling(db, recording)
 
     await recordings_module._sync_recording_audio_chunks_from_directory(
         db,
@@ -725,11 +724,6 @@ async def finalize_upload(
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
 
-    transcript = await db.run_sync(
-        lambda session: session.execute(
-            select(Transcript).where(Transcript.recording_id == recording.id)
-        ).scalar_one_or_none()
-    )
     persist_resume_boundaries(transcript, chunk_rows)
 
     final_audio_path = recordings_module._browser_master_output_path(recording)
