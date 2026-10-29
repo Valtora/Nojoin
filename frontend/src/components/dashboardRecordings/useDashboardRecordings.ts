@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getRecordings } from "@/lib/api";
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { Recording, RecordingStatus } from "@/types";
@@ -89,7 +90,10 @@ export function useDashboardRecordings(): DashboardRecordings {
 
   return {
     recent: sorted.slice(0, RECENT_LIMIT),
-    processing: sorted.filter((recording) => IN_FLIGHT.has(recording.status)),
+    // A capture in progress is UPLOADING too, but it is live, not processing;
+    // an import sending its bytes stays.
+    processing: sorted.filter((recording) =>
+      IN_FLIGHT.has(recording.status) && !isLiveCaptureInProgress(recording)),
     loading,
   };
 }
