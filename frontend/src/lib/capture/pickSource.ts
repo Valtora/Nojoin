@@ -325,14 +325,15 @@ export const pickCaptureSource = async (
     settings: options.settings,
   });
 
-  return {
+  const sources: PickedCaptureSources = {
     mode,
     displayStream,
     microphoneStream,
     captureReport,
     release: () => {
-      stopTracks(displayStream);
-      stopTracks(microphoneStream);
+      stopTracks(sources.displayStream);
+      stopTracks(sources.microphoneStream);
     },
   };
+  return sources;
 };

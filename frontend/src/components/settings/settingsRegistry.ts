@@ -273,6 +273,16 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["microphone", "mic", "device", "input", "capture", "browser capture"],
   },
   {
+    id: "recording-release-microphone-on-pause",
+    label: "Release the microphone while paused",
+    description: "Free the microphone after Pause. Shared audio stays open; Resume opens the microphone again.",
+    category: "recording",
+    access: "all",
+    scope: "browser",
+    defaultValue: DEFAULT_CAPTURE_SETTINGS.releaseMicrophoneOnPause,
+    keywords: ["release microphone", "mic", "pause", "resume", "privacy", "free microphone"],
+  },
+  {
     id: "recording-microphone-gain",
     label: "Microphone gain",
     description: "The local microphone level mixed into the recording.",
