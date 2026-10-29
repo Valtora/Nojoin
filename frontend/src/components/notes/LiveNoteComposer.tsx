@@ -291,7 +291,7 @@ export default function LiveNoteComposer({
   const status = showNotice
     ? { text: notice.text, tone: notice.tone }
     : (message ?? { text: !captureActive && draft.mode === "send" && !selection
-      ? "Carried placement: at send, using the stopped audio clock (or the recording's end)."
+      ? "At send places this note where capture stopped, at the end of the recording."
       : modeHint(draft, draftFile !== null), tone: "info" as const });
 
   return (
@@ -446,7 +446,7 @@ export default function LiveNoteComposer({
       <p className="mt-1 text-xs text-contrast-helper">
         {finished
           ? "New notes are included, labelled as yours, the next time meeting notes are generated."
-          : "These notes are fed into note generation and the final notes will label them as user-authored."}
+          : "Your notes go into the meeting notes when they are generated, labelled as yours."}
       </p>
     </form>
   );
