@@ -9,6 +9,7 @@ from sqlmodel import select
 
 from backend.core.task_dispatch import dispatch_task_best_effort
 from backend.models.live_settling_public import LiveSettlingPublicRead
+from backend.models.notes_output import NotesOutput
 from backend.models.pipeline import SpeakerCorrectionScope
 from backend.models.recording import (
     LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL,
@@ -46,6 +47,15 @@ async def _get_owned_recording(
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
     return recording
+
+
+async def _get_notes_output(
+    db: AsyncSession, recording_id: int, output_id: int
+) -> NotesOutput:
+    output = await db.get(NotesOutput, output_id)
+    if output is None or output.recording_id != recording_id:
+        raise HTTPException(status_code=404, detail="Notes output not found")
+    return output
 
 
 async def _dispatch_meeting_edge_refresh(
@@ -345,3 +355,24 @@ def _apply_find_replace(
         transcript.text = full_text
 
     return total_segment_replacements
+
+
+async def _apply_find_replace_to_notes_outputs(
+    db: AsyncSession, recording_id: int, request: FindReplaceRequest
+) -> None:
+    """Carry a find and replace into every extra notes set, as into the first."""
+    result = await db.execute(
+        select(NotesOutput).where(NotesOutput.recording_id == recording_id)
+    )
+    for output in result.scalars():
+        staged = Transcript(segments=[], notes=output.notes)
+        _apply_find_replace(
+            staged,
+            request.find_text,
+            request.replace_text,
+            request.case_sensitive,
+            request.use_regex,
+        )
+        if staged.notes != output.notes:
+            output.notes = staged.notes
+            db.add(output)

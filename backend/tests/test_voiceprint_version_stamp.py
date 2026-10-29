@@ -36,6 +36,7 @@ from backend.tests.sqlite_schemas import (
     DIARIZATION_WINDOW_RESULTS_SCHEMA,
     DIARIZATION_WINDOW_TURNS_SCHEMA,
     GLOBAL_SPEAKERS_SCHEMA,
+    NOTES_OUTPUTS_SCHEMA,
     P_TAGS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
     PROCESSING_RUNS_SCHEMA,
@@ -73,6 +74,7 @@ async def session_maker():
         for schema in (
             RECORDINGS_SCHEMA,
             TRANSCRIPTS_SCHEMA,
+            NOTES_OUTPUTS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
             RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,

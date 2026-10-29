@@ -18,6 +18,7 @@ from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import (
+    ResolvedNotesTemplate,
     builtin_notes_template,
     resolve_notes_template_async,
 )
@@ -35,6 +36,7 @@ from .helpers import (
     MeetingEdgeFocusUpdate,
     NotesUpdate,
     _dispatch_meeting_edge_refresh,
+    _get_notes_output,
     _get_owned_recording,
 )
 from .router import router
@@ -43,20 +45,31 @@ logger = logging.getLogger(__name__)
 
 
 class GenerateNotesRequest(BaseModel):
-    """Optional body for Regenerate Notes: which structure to use this run."""
+    """Optional body for Regenerate Notes.
+
+    ``notes_template_id`` picks the structure for this run of the meeting's
+    notes, or for a new extra set (``create_output``), where null is the
+    built-in structure. ``output_id`` reruns an extra set, always with the
+    structure saved when it was created.
+    """
 
     notes_template_id: Optional[int] = None
     create_output: bool = False
     output_id: int | None = None
 
 
-async def get_notes_output(
-    db: AsyncSession, recording_id: int, output_id: int
-) -> NotesOutput:
-    output = await db.get(NotesOutput, output_id)
-    if output is None or output.recording_id != recording_id:
-        raise HTTPException(status_code=404, detail="Notes output not found")
-    return output
+async def _requested_template(
+    db: AsyncSession, user: User, template_id: int
+) -> ResolvedNotesTemplate:
+    # Resolution is done here rather than in the worker so an unusable choice
+    # is a 404 the user sees at once, instead of a failed job they discover
+    # minutes later.
+    template = await resolve_notes_template_async(
+        db, user.settings or {}, user_id=user.id, explicit_template_id=template_id
+    )
+    if template.template_id != template_id:
+        raise HTTPException(status_code=404, detail="Notes template not found")
+    return template
 
 
 async def _generation_output(
@@ -65,41 +78,34 @@ async def _generation_output(
     request: GenerateNotesRequest,
     user: User,
 ) -> NotesOutput | None:
-    if request.create_output and request.output_id is not None:
+    """The extra set a run writes, or None for the meeting's own notes."""
+    if request.output_id is None and not request.create_output:
+        if request.notes_template_id is not None:
+            await _requested_template(db, user, request.notes_template_id)
+        return None
+    if request.output_id is not None and (
+        request.create_output or request.notes_template_id is not None
+    ):
         raise HTTPException(
-            status_code=400, detail="Choose an existing or a new output."
+            status_code=400,
+            detail="An existing set reruns its own structure; "
+            "choose a structure only for a new set.",
         )
-    if request.create_output or request.output_id is not None:
-        if transcript.transcript_status != "completed" or not transcript.notes:
-            raise HTTPException(
-                status_code=409,
-                detail="Generate the meeting's first notes before adding another set.",
-            )
+    if transcript.transcript_status != "completed" or not transcript.notes:
+        raise HTTPException(
+            status_code=409,
+            detail="Generate the meeting's first notes before adding another set.",
+        )
     if request.output_id is not None:
-        output = await get_notes_output(db, transcript.recording_id, request.output_id)
+        output = await _get_notes_output(db, transcript.recording_id, request.output_id)
         if output.notes_status == "generating":
             raise HTTPException(
                 status_code=409, detail="Meeting notes are already generating."
             )
         return output
-    template = await resolve_notes_template_async(
-        db,
-        user.settings or {},
-        user_id=user.id,
-        explicit_template_id=request.notes_template_id,
-    )
-    if (
-        request.notes_template_id is None
-        and "notes_template_id" in request.model_fields_set
-    ):
-        template = builtin_notes_template()
-    if (
-        request.notes_template_id is not None
-        and template.template_id != request.notes_template_id
-    ):
-        raise HTTPException(status_code=404, detail="Notes template not found")
-    if not request.create_output:
-        return None
+    template = builtin_notes_template()
+    if request.notes_template_id is not None:
+        template = await _requested_template(db, user, request.notes_template_id)
     return NotesOutput(
         recording_id=transcript.recording_id,
         name=template.name,
@@ -132,7 +138,7 @@ async def update_notes_output(
     current_user: User = Depends(get_current_user),
 ) -> NotesOutput:
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    output = await get_notes_output(db, recording.id, output_id)
+    output = await _get_notes_output(db, recording.id, output_id)
     if output.notes_status == "generating":
         raise HTTPException(
             status_code=409, detail="Meeting notes are already generating."
@@ -152,7 +158,7 @@ async def delete_notes_output(
     current_user: User = Depends(get_current_user),
 ) -> None:
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    output = await get_notes_output(db, recording.id, output_id)
+    output = await _get_notes_output(db, recording.id, output_id)
     if output.notes_status == "generating":
         raise HTTPException(
             status_code=409, detail="Meeting notes are already generating."
@@ -265,8 +271,8 @@ async def generate_notes(
     Generate meeting notes using the configured LLM provider.
 
     An optional ``notes_template_id`` picks the structure for this run. Omitting
-    it reruns the selected output's saved structure, falling through to the
-    defaults when no structure has yet been saved. Explicit null picks built-in.
+    it falls through to the user's default, then the install default, then the
+    built-in structure. See ``GenerateNotesRequest`` for extra sets.
     """
     recording = await _get_owned_recording(
         db,
@@ -324,7 +330,6 @@ async def generate_notes(
             detail=f"{missing_llm_config}. Configure an AI provider and model in Settings.",
         )
 
-    requested_template_id = request.notes_template_id
     target = output if output is not None else transcript
     target.notes_status = "generating"
     target.set_notes_error_message(None)
@@ -337,12 +342,7 @@ async def generate_notes(
         args=(
             [recording.id, None, output.id]
             if output is not None
-            else [recording.id, requested_template_id]
-        ),
-        kwargs=(
-            {"use_saved_template": False}
-            if output is None and "notes_template_id" in request.model_fields_set
-            else None
+            else [recording.id, request.notes_template_id]
         ),
     )
     from backend.models.task import register_task_ownership

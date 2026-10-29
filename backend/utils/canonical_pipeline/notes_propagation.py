@@ -11,10 +11,11 @@ string substitution is not safe in general:
 
 * It matches on word boundaries, so renaming "Matt" does not maul "Matthew"
   or "matter".
-* It only touches the generated part of ``Transcript.notes``. The timeline
-  notes, and the ``## User Notes`` section that quotes them at the end of the
-  generated notes, are the user's own writing, and rewriting what a person
-  wrote themselves is a different act from updating text a model produced.
+* It only touches the generated part of ``Transcript.notes`` and of each extra
+  notes set (``NotesOutput``). The timeline notes, and the ``## User Notes``
+  section that quotes them at the end of the generated notes, are the user's
+  own writing, and rewriting what a person wrote themselves is a different act
+  from updating text a model produced.
 * It skips a rename whose old name is short enough to collide by accident, and
   skips the no-op case where the name has not actually changed.
 
@@ -32,6 +33,7 @@ from typing import Any
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
+from backend.models.notes_output import NotesOutput
 from backend.models.transcript import Transcript
 from backend.utils.meeting_notes import split_user_notes_section
 
@@ -70,23 +72,34 @@ def propagate_speaker_rename_to_notes(
     transcript = session.execute(
         select(Transcript).where(Transcript.recording_id == recording_id)
     ).scalar_one_or_none()
-    if transcript is None or not transcript.notes:
-        return 0
+    outputs = session.execute(
+        select(NotesOutput).where(NotesOutput.recording_id == recording_id)
+    ).scalars()
+    replacements = 0
+    for holder in [transcript, *outputs]:
+        if holder is None or not holder.notes:
+            continue
+        notes, count = _rename_in_notes(holder.notes, candidates, resolved_new_name)
+        if count:
+            holder.notes = notes
+            flag_modified(holder, "notes")
+            session.add(holder)
+            replacements += count
 
+    return replacements
+
+
+def _rename_in_notes(
+    notes: str, candidates: set[str], new_name: str
+) -> tuple[str, int]:
     # The ``## User Notes`` section quotes the user's own notes, so it is left
     # exactly as they wrote it.
-    notes, user_notes_section = split_user_notes_section(transcript.notes)
+    generated, user_notes_section = split_user_notes_section(notes)
     replacements = 0
     # Longest first, so a rename from "Mark Clampin" does not get pre-empted by
     # a shorter candidate that is a prefix of it.
     for old_name in sorted(candidates, key=len, reverse=True):
         pattern = re.compile(rf"(?<!\w){re.escape(old_name)}(?!\w)")
-        notes, count = pattern.subn(resolved_new_name, notes)
+        generated, count = pattern.subn(new_name, generated)
         replacements += count
-
-    if replacements:
-        transcript.notes = notes + user_notes_section
-        flag_modified(transcript, "notes")
-        session.add(transcript)
-
-    return replacements
+    return generated + user_notes_section, replacements

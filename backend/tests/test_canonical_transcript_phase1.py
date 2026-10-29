@@ -17,6 +17,7 @@ from backend.api.v1.api import api_router
 from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
 from backend.models.transcript import Transcript
 from backend.tests.sqlite_schemas import (
+    NOTES_OUTPUTS_SCHEMA,
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
@@ -384,6 +385,7 @@ async def test_session_maker() -> sessionmaker:
     async with engine.begin() as connection:
         await connection.execute(text(RECORDINGS_SCHEMA))
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
+        await connection.execute(text(NOTES_OUTPUTS_SCHEMA))
         await connection.execute(text(CHAT_MESSAGES_SCHEMA))
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
         await connection.execute(text(GLOBAL_SPEAKERS_SCHEMA))

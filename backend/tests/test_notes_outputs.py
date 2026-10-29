@@ -25,6 +25,9 @@ from backend.tests.test_live_settling_readers_postgres import (
 from backend.tests.test_live_settling_readers_postgres import (
     reader_sessions as reader_sessions,
 )
+from backend.utils.canonical_pipeline.notes_propagation import (
+    propagate_speaker_rename_to_notes,
+)
 from backend.worker import tasks
 
 pytestmark = [
@@ -36,7 +39,7 @@ PATH = "/api/v1/transcripts/meeting/notes"
 
 
 @pytest.fixture(autouse=True)
-def configured_ai(monkeypatch: pytest.MonkeyPatch) -> None:
+def configured_ai(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     config = SimpleNamespace(
         missing_configuration_message=lambda: None,
         provider="ollama",
@@ -50,6 +53,7 @@ def configured_ai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(routes_notes, "resolve_llm_config_async", resolve)
     monkeypatch.setattr(routes_chat, "resolve_llm_config_async", resolve)
     monkeypatch.setattr(tasks, "resolve_llm_config", lambda *args, **kwargs: config)
+    return config
 
 
 @pytest.fixture
@@ -156,6 +160,11 @@ async def test_extra_lifecycle_preserves_primary_and_other_output(
     worker(LLM())
     second_extra = await create_extra(reader_client, template_id)
     worker(LLM())
+    response = await reader_client.post(
+        f"{PATH}/generate",
+        json={"output_id": first_extra, "notes_template_id": template_id},
+    )
+    assert response.status_code == 400, response.text
     response = await reader_client.post(
         f"{PATH}/generate", json={"output_id": first_extra}
     )
@@ -303,6 +312,7 @@ async def test_extra_export_and_chat_still_default_to_primary(
     assert default.status_code == selected.status_code == 200
     assert "Primary decision" in default.text and "Extra secret" not in default.text
     assert "Extra secret" in selected.text and "Primary decision" not in selected.text
+    assert "_Notes_Tasks." in selected.headers["content-disposition"]
     seen: list[str] = []
 
     class LLM:
@@ -354,36 +364,45 @@ async def test_saved_template_and_worker_failure_are_isolated(
         assert transcript.notes == "## Minutes\nPrimary decision."
 
 
-@pytest.mark.parametrize("builtin", [False, True])
-async def test_primary_regeneration_preserves_extra_and_uses_saved_structure(
-    reader_client: AsyncClient,
-    reader_sessions: async_sessionmaker[AsyncSession],
-    meeting: tuple[int, int],
-    worker: Callable[[Any], None],
-    builtin: bool,
+EXTRA_NOTES = "## Tasks\nAlice ships.\n\n## User Notes\nAsk Alice."
+
+
+@pytest.fixture
+async def extra_set(
+    reader_sessions: async_sessionmaker[AsyncSession], meeting: tuple[int, int]
 ) -> None:
     async with reader_sessions() as db:
         db.add(
             NotesOutput(
                 recording_id=meeting[0],
                 name="Tasks",
-                notes="Keep these tasks.",
+                notes=EXTRA_NOTES,
                 notes_template_sections=SECTIONS,
                 notes_status="completed",
             )
         )
         await db.commit()
 
+
+@pytest.mark.usefixtures("extra_set")
+@pytest.mark.parametrize("body", [{}, {"notes_template_id": None}])
+async def test_primary_regeneration_uses_current_default_and_preserves_extra(
+    reader_client: AsyncClient,
+    meeting: tuple[int, int],
+    worker: Callable[[Any], None],
+    configured_ai: SimpleNamespace,
+    body: dict[str, None],
+) -> None:
+    # The user changed their default since the notes were generated; an
+    # explicit null (as MCP sends) means the same as no choice.
+    configured_ai.merged_config["notes_template_id"] = meeting[1]
+
     class LLM:
         def generate_meeting_notes(self, *args: Any, **kwargs: Any) -> str:
-            assert kwargs["notes_context"].notes_sections == (
-                None if builtin else "## Minutes\nDecisions."
-            )
+            assert kwargs["notes_context"].notes_sections == SECTIONS
             return "## Minutes\nRegenerated primary."
 
-    response = await reader_client.post(
-        f"{PATH}/generate", json={"notes_template_id": None} if builtin else {}
-    )
+    response = await reader_client.post(f"{PATH}/generate", json=body)
     assert response.status_code == 200, response.text
     worker(LLM())
     assert (await reader_client.get(PATH)).json()[
@@ -391,4 +410,27 @@ async def test_primary_regeneration_preserves_extra_and_uses_saved_structure(
     ] == "## Minutes\nRegenerated primary."
     assert (await reader_client.get(f"{PATH}/outputs")).json()[0][
         "notes"
-    ] == "Keep these tasks."
+    ] == EXTRA_NOTES
+
+
+@pytest.mark.usefixtures("extra_set")
+async def test_renames_and_find_replace_reach_extra_sets(
+    reader_client: AsyncClient,
+    reader_sessions: async_sessionmaker[AsyncSession],
+    meeting: tuple[int, int],
+) -> None:
+    async with reader_sessions() as db:
+        await db.run_sync(
+            lambda session: propagate_speaker_rename_to_notes(
+                session, recording_id=meeting[0], old_names=["Alice"], new_name="Ana"
+            )
+        )
+        await db.commit()
+    response = await reader_client.post(
+        "/api/v1/transcripts/meeting/replace",
+        json={"find_text": "ships", "replace_text": "launches"},
+    )
+    assert response.status_code == 200, response.text
+    assert (await reader_client.get(f"{PATH}/outputs")).json()[0]["notes"] == (
+        "## Tasks\nAna launches.\n\n## User Notes\nAsk Alice."
+    )

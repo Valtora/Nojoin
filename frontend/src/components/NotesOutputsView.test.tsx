@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NotesOutput } from "@/types";
 import type { NotesViewProps } from "./NotesView";
 import NotesOutputsView from "./NotesOutputsView";
@@ -14,17 +14,18 @@ vi.mock("./NotesView", () => ({ default: (props: NotesViewProps) => <div>
   <button disabled={props.isGenerating} onClick={() => void props.onGenerateNotes()}>Regenerate Notes</button>
   <button onClick={() => props.onNotesChange("Edited extra")}>Edit notes</button>
   <button onClick={props.onExport}>Export Notes</button>
+  <button onClick={() => void props.onFindAndReplace("tasks", "jobs")}>Replace all</button>
   {props.toolbarActions}
 </div> }));
 
 const extra: NotesOutput = {
-  id: 11, name: "Task list", notes: "Extra tasks", notes_template_id: 7,
+  id: 11, kind: "notes", name: "Task list", notes: "Extra tasks", notes_template_id: 7,
   notes_template_sections: "## Tasks", notes_status: "completed", error_message: null,
   created_at: "2026-10-29", updated_at: "2026-10-29",
 };
 const props = (): NotesViewProps => ({
   recordingId: "rec-1", notes: "First notes", onNotesChange: vi.fn(),
-  onGenerateNotes: vi.fn().mockResolvedValue(undefined), onFindAndReplace: vi.fn(),
+  onGenerateNotes: vi.fn().mockResolvedValue(undefined), onFindAndReplace: vi.fn().mockResolvedValue(undefined),
   onUndo: vi.fn(), onRedo: vi.fn(), canUndo: false, canRedo: false,
   isGenerating: false, onExport: vi.fn(),
 });
@@ -41,6 +42,8 @@ beforeEach(() => {
   api.updateNotesOutput.mockResolvedValue({ ...extra, notes: "Edited extra" });
   api.exportContent.mockResolvedValue(undefined);
 });
+
+afterEach(() => { vi.useRealTimers(); });
 
 describe("notes outputs", () => {
   it("creates, regenerates and deletes an extra set, returning to a single view", async () => {
@@ -110,5 +113,42 @@ describe("notes outputs", () => {
     fireEvent.keyDown(tasks, { key: "Home" });
     expect(primary).toHaveAttribute("aria-selected", "true");
     expect(primary).toHaveFocus();
+  });
+
+  it("polls only while a set generates, leaving the other sets as they are", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const other = { ...extra, id: 12, notes: "Other set" };
+    api.listNotesOutputs
+      .mockResolvedValueOnce([{ ...extra, notes: null, notes_status: "generating" }, other])
+      .mockResolvedValue([extra, { ...other, notes: "Older server copy" }]);
+    render(<NotesOutputsView {...props()} />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Task list 2" }));
+    expect(screen.getByText("Other set")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(api.listNotesOutputs).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Other set")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Task list" }));
+    expect(screen.getByText("Extra tasks")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(9000));
+    expect(api.listNotesOutputs).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows no alert when the sets cannot be loaded", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    api.listNotesOutputs.mockRejectedValue(new Error("Not available in the demo"));
+    render(<NotesOutputsView {...props()} />);
+    await waitFor(() => expect(logged).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("First notes")).toBeInTheDocument();
+  });
+
+  it("replaces through the meeting-wide replace, then shows the set's new text", async () => {
+    api.listNotesOutputs.mockResolvedValueOnce([extra]).mockResolvedValue([{ ...extra, notes: "Extra jobs" }]);
+    const primary = props();
+    render(<NotesOutputsView {...primary} />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Task list" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace all" }));
+    expect(await screen.findByText("Extra jobs")).toBeInTheDocument();
+    expect(primary.onFindAndReplace).toHaveBeenCalledWith("tasks", "jobs", undefined);
   });
 });

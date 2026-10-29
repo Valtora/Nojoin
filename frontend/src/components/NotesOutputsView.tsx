@@ -1,14 +1,25 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import NotesView, { type NotesViewProps } from "./NotesView";
 import NotesTemplatePicker from "./NotesTemplatePicker";
 import ConfirmationModal from "./ConfirmationModal";
 import Button from "./ui/Button";
 import { ButtonBase } from "./ui/nativeBases";
 import { deleteNotesOutput, exportContent, generateNotes, listNotesOutputs, updateNotesOutput } from "@/lib/api";
+import { DEMO_MODE } from "@/lib/demo";
 import { getErrorMessage } from "@/lib/errors";
 import type { NotesOutput } from "@/types";
+
+/** Tab labels, numbering a repeated name ("Minutes", "Minutes 2"). */
+function outputLabels(outputs: NotesOutput[]): Map<number, string> {
+  const seen = new Map<string, number>();
+  return new Map(outputs.map((output) => {
+    const count = (seen.get(output.name) ?? 0) + 1;
+    seen.set(output.name, count);
+    return [output.id, count > 1 ? `${output.name} ${count}` : output.name];
+  }));
+}
 
 /** Extra sets never enter the primary notes editor's history or save path. */
 export default function NotesOutputsView(props: NotesViewProps & { onPrimarySelected?: (primary: boolean) => void }) {
@@ -18,25 +29,39 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const selected = outputs.find((output) => output.id === selectedId);
-  const generating = props.isGenerating || busy || outputs.some((output) => output.notes_status === "generating");
+  const extraGenerating = outputs.some((output) => output.notes_status === "generating");
+  const generating = props.isGenerating || busy || extraGenerating;
+  const labels = outputLabels(outputs);
   const primarySelected = !selected;
-  const onPrimarySelected = props.onPrimarySelected;
+  const { onPrimarySelected, recordingId, notes: primaryNotes } = props;
   useEffect(() => { onPrimarySelected?.(primarySelected); }, [onPrimarySelected, primarySelected]);
 
+  const load = useCallback(async (onlyGenerating: boolean) => {
+    // The public demo replays captured reads only, and has no extra sets.
+    if (DEMO_MODE) return;
+    try {
+      const fresh = await listNotesOutputs(recordingId);
+      // While polling, only a generating set can change on the server. The
+      // others change only by this user's edits, and a reply that crossed one
+      // in flight would reset the editor under them.
+      setOutputs((previous) => onlyGenerating
+        ? previous.map((output) => output.notes_status === "generating"
+          ? fresh.find((item) => item.id === output.id) ?? output : output)
+        : fresh);
+    } catch (cause) {
+      console.error("Failed to load notes sets", cause);
+    }
+  }, [recordingId]);
+
+  // A find and replace or a speaker rename rewrites every set along with the
+  // first notes, so a change to those reloads the sets too.
+  useEffect(() => { void load(false); }, [load, primaryNotes]);
+
   useEffect(() => {
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const result = await listNotesOutputs(props.recordingId);
-        if (!cancelled) setOutputs(result);
-      } catch (cause) {
-        if (!cancelled) setError(getErrorMessage(cause, "Could not load notes outputs."));
-      }
-    };
-    void refresh();
-    const timer = setInterval(() => void refresh(), 3000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [props.recordingId]);
+    if (!extraGenerating) return;
+    const timer = setInterval(() => void load(true), 3000);
+    return () => clearInterval(timer);
+  }, [extraGenerating, load]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -47,7 +72,7 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
   };
 
   const generate = (templateId: number | null, create: boolean) => run(async () => {
-    const response = await generateNotes(props.recordingId, templateId,
+    const response = await generateNotes(recordingId, templateId,
       create ? { create_output: true } : { output_id: selected?.id });
     if (response.output) {
       const output = response.output;
@@ -58,14 +83,14 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
 
   const save = async (outputId: number, notes: string) => {
     try {
-      const output = await updateNotesOutput(props.recordingId, outputId, notes);
+      const output = await updateNotesOutput(recordingId, outputId, notes);
       setOutputs((previous) => previous.map((item) => item.id === output.id ? output : item));
     } catch (cause) { setError(getErrorMessage(cause, "Could not save notes output.")); }
   };
 
   const remove = () => run(async () => {
     if (!selected) return;
-    await deleteNotesOutput(props.recordingId, selected.id);
+    await deleteNotesOutput(recordingId, selected.id);
     setOutputs((previous) => previous.filter((item) => item.id !== selected.id));
     setSelectedId(null);
   });
@@ -96,7 +121,7 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
       {outputs.map((output) => <ButtonBase key={output.id} role="tab" id={`notes-output-${output.id}`}
         aria-controls="notes-output-panel" aria-selected={selected?.id === output.id}
         tabIndex={selected?.id === output.id ? 0 : -1}
-        onClick={() => setSelectedId(output.id)} className="rounded px-3 py-2 text-sm text-foreground aria-selected:bg-surface-inset">{output.name}</ButtonBase>)}
+        onClick={() => setSelectedId(output.id)} className="rounded px-3 py-2 text-sm text-foreground aria-selected:bg-surface-inset">{labels.get(output.id)}</ButtonBase>)}
     </div>}
     {(error || selected?.error_message) && <p role="alert" className="p-3 text-sm text-status-danger-fg">{error || selected?.error_message}</p>}
     <div className="min-h-0 flex-1" role={outputs.length ? "tabpanel" : undefined}
@@ -105,16 +130,18 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
         activeTemplateId={selected.notes_template_id} isGenerating={busy || props.isGenerating || selected.notes_status === "generating"}
         onNotesChange={(notes) => void save(selected.id, notes)}
         onGenerateNotes={() => generate(null, false)}
+        // The same replace as the first notes' (transcript and every set), then
+        // this set's new text.
         onFindAndReplace={async (find, replacement, options) => {
-          const pattern = options?.useRegex ? find : find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          await save(selected.id, (selected.notes || "").replace(new RegExp(pattern, options?.caseSensitive ? "g" : "gi"), replacement));
+          await props.onFindAndReplace(find, replacement, options);
+          await load(false);
         }}
-        onExport={() => void run(() => exportContent(props.recordingId, ["notes"], "txt", {}, true, selected.id))}
+        onExport={() => void run(() => exportContent(recordingId, ["notes"], "txt", {}, true, selected.id))}
         toolbarActions={toolbarActions} />
         : <NotesView {...props} key="primary" toolbarActions={toolbarActions} isGenerating={busy || props.isGenerating} />}
     </div>
     <ConfirmationModal isOpen={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => void remove()}
-      title="Delete notes set?" message={`Delete “${selected?.name || "this set"}”? The meeting's first notes will be kept.`}
+      title="Delete notes set?" message={`Delete “${selected ? labels.get(selected.id) : "this set"}”? The meeting's first notes will be kept.`}
       confirmText="Delete set" isDangerous />
   </div>;
 }

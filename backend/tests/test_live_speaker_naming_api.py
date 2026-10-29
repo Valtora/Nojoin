@@ -30,6 +30,7 @@ from backend.tests.live_naming_fixtures import (
 )
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
+    NOTES_OUTPUTS_SCHEMA,
     PROCESSING_RUNS_SCHEMA,
     RECORDING_SPEAKER_ALIASES_SCHEMA,
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
@@ -61,6 +62,7 @@ async def session_maker():
         for schema in (
             RECORDINGS_SCHEMA,
             TRANSCRIPTS_SCHEMA,
+            NOTES_OUTPUTS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
             RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,

@@ -520,10 +520,12 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
 }
 
 export interface NotesOutput extends BaseDBModel {
+  /** "notes" for a set generated from a notes template. */
+  kind: string;
   name: string;
   notes: string | null;
   notes_template_id: number | null;
-  notes_template_sections: string;
+  notes_template_sections: string | null;
   notes_status: string;
   error_message: string | null;
 }

@@ -809,8 +809,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     if (!recording) return;
     setIsGeneratingNotes(true);
     try {
-      // Omitted reruns this output's structure; the picker changes this run only.
-      await generateNotes(recording.id, notesTemplateId);
+      // Undefined means "use my default"; an id regenerates with that structure
+      // for this run only, without changing the user's default.
+      await generateNotes(recording.id, notesTemplateId ?? null);
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
       setRecording(updated);

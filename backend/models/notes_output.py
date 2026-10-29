@@ -1,9 +1,13 @@
 """Additional notes; Transcript.notes remains the meeting's primary output."""
 
-from sqlalchemy import BigInteger, Column, ForeignKey, Text
+from sqlalchemy import BigInteger, Column, ForeignKey, String, Text
 from sqlmodel import Field
 
 from .base import BaseDBModel
+
+# A set generated from a notes template. Other kinds of output need no template,
+# which is why the template columns are nullable.
+NOTES_OUTPUT_KIND_NOTES = "notes"
 
 
 class NotesOutput(BaseDBModel, table=True):
@@ -17,6 +21,12 @@ class NotesOutput(BaseDBModel, table=True):
             index=True,
         )
     )
+    kind: str = Field(
+        default=NOTES_OUTPUT_KIND_NOTES,
+        sa_column=Column(
+            String, nullable=False, server_default=NOTES_OUTPUT_KIND_NOTES
+        ),
+    )
     name: str
     notes: str | None = Field(default=None, sa_column=Column(Text))
     notes_template_id: int | None = Field(
@@ -27,7 +37,9 @@ class NotesOutput(BaseDBModel, table=True):
             nullable=True,
         ),
     )
-    notes_template_sections: str = Field(sa_column=Column(Text, nullable=False))
+    # The structure saved when the set was created, so a later edit or deletion
+    # of its template never changes what Regenerate produces.
+    notes_template_sections: str | None = Field(default=None, sa_column=Column(Text))
     notes_status: str = "pending"
     error_message: str | None = Field(default=None, sa_column=Column(Text))
 
@@ -36,9 +48,10 @@ class NotesOutput(BaseDBModel, table=True):
 
 
 class NotesOutputRead(BaseDBModel):
+    kind: str
     name: str
     notes: str | None = None
     notes_template_id: int | None = None
-    notes_template_sections: str
+    notes_template_sections: str | None = None
     notes_status: str
     error_message: str | None = None

@@ -38,10 +38,14 @@ from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.stored_paths import confined_document_path
 from backend.utils.timezones import get_user_timezone_name
 
-from .helpers import _build_speaker_map, _get_owned_recording, _sanitize_filename
+from .helpers import (
+    _build_speaker_map,
+    _get_notes_output,
+    _get_owned_recording,
+    _sanitize_filename,
+)
 from .router import router
 from .routes_analytics import read_recording_analytics
-from .routes_notes import get_notes_output
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +92,17 @@ def _speaker_name(speaker: RecordingSpeaker) -> str:
 
 
 def _filename(
-    recording: Recording, sections: tuple[str, ...], export_format: str
+    recording: Recording,
+    sections: tuple[str, ...],
+    export_format: str,
+    output_name: str | None = None,
 ) -> str:
     timestamp = (
         recording.created_at.strftime("%Y%m%d") if recording.created_at else "export"
     )
     label = FILE_LABELS[sections[0]] if len(sections) == 1 else "FullExport"
+    if output_name and _sanitize_filename(output_name):
+        label = f"{label}_{_sanitize_filename(output_name)}"
     return f"{timestamp}_{_sanitize_filename(recording.name)}_{label}.{export_format}"
 
 
@@ -216,26 +225,21 @@ async def export_content(
     transcript = result.scalar_one_or_none()
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
-    if (
-        sections == ("notes",)
-        and query.notes_output_id is None
-        and not (transcript.notes or "").strip()
-    ):
-        raise HTTPException(
-            status_code=404, detail="No meeting notes available to export"
-        )
-
-    parts = await _meeting_parts(db, recording, transcript, query, current_user)
+    output = None
     if query.notes_output_id is not None:
         if sections != ("notes",):
             raise HTTPException(
                 status_code=400, detail="An extra output exports only its own notes."
             )
-        output = await get_notes_output(db, recording.id, query.notes_output_id)
-        if not output.notes:
-            raise HTTPException(
-                status_code=404, detail="No meeting notes available to export"
-            )
+        output = await _get_notes_output(db, recording.id, query.notes_output_id)
+    notes = output.notes if output is not None else transcript.notes
+    if sections == ("notes",) and not (notes or "").strip():
+        raise HTTPException(
+            status_code=404, detail="No meeting notes available to export"
+        )
+
+    parts = await _meeting_parts(db, recording, transcript, query, current_user)
+    if output is not None:
         parts = replace(parts, notes=output.notes)
     document = build_document(
         parts,
@@ -250,7 +254,12 @@ async def export_content(
         logger.exception("Export generation failed for recording %s", recording_id)
         raise HTTPException(status_code=500, detail="Export generation failed")
 
-    filename = _filename(recording, sections, query.export_format)
+    filename = _filename(
+        recording,
+        sections,
+        query.export_format,
+        output.name if output is not None else None,
+    )
     return Response(
         content=content,
         media_type=MEDIA_TYPES[query.export_format],

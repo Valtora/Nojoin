@@ -509,7 +509,8 @@ export default function NotesView({
                 )}
                 {isGenerating ? "Generating..." : generateNotesLabel}
               </ButtonBase>
-              {/* The main button reruns this output's saved structure. */}
+              {/* Structure picker: the plain button uses the default structure.
+                  An extra set has none: it always reruns its own. */}
               {!fixedTemplate && <NotesTemplatePicker
                 disabled={isGenerating}
                 activeTemplateId={activeTemplateId}

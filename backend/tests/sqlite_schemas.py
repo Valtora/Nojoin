@@ -184,6 +184,22 @@ CREATE TABLE timeline_note_tombstones (
 )
 """
 
+NOTES_OUTPUTS_SCHEMA = """
+CREATE TABLE notes_outputs (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+    kind VARCHAR NOT NULL DEFAULT 'notes',
+    name VARCHAR NOT NULL,
+    notes TEXT,
+    notes_template_id INTEGER,
+    notes_template_sections TEXT,
+    notes_status VARCHAR NOT NULL,
+    error_message TEXT
+)
+"""
+
 GLOBAL_SPEAKERS_SCHEMA = """
 CREATE TABLE global_speakers (
     embedding_version INTEGER,

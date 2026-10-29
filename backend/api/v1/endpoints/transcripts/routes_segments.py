@@ -48,6 +48,7 @@ from .helpers import (
     TranscriptSegmentsUpdate,
     TranscriptSegmentTextUpdate,
     _apply_find_replace,
+    _apply_find_replace_to_notes_outputs,
     _canonical_transcript_writes_enabled,
     _dispatch_meeting_edge_refresh,
     _get_owned_recording,
@@ -624,6 +625,7 @@ async def find_and_replace(
 
     if staged is not transcript:
         transcript.notes = staged.notes
+    await _apply_find_replace_to_notes_outputs(db, recording.id, replace_request)
 
     db.add(transcript)
     await db.execute(change_sequence_bump(recording.id))

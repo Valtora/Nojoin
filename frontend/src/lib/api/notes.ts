@@ -180,8 +180,10 @@ export const generateNotes = async (
     message?: string;
     output?: NotesOutput | null;
   }>(`/transcripts/${recordingId}/notes/generate`, {
-    // Omitted reruns the saved structure; explicit null selects built-in.
-    notes_template_id: notesTemplateId,
+    // null when no template was picked, so the backend falls through to the
+    // user default, the install default and then the built-in structure. For
+    // a new extra set, null is the built-in structure.
+    notes_template_id: notesTemplateId ?? null,
     ...output,
   });
   return response.data;

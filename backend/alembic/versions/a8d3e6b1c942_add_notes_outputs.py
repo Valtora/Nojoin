@@ -25,6 +25,7 @@ def upgrade() -> None:
             sa.ForeignKey("recordings.id", ondelete="CASCADE"),
             nullable=False,
         ),
+        sa.Column("kind", sa.String(), nullable=False, server_default="notes"),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column(
@@ -33,7 +34,7 @@ def upgrade() -> None:
             sa.ForeignKey("notes_templates.id", ondelete="SET NULL"),
             nullable=True,
         ),
-        sa.Column("notes_template_sections", sa.Text(), nullable=False),
+        sa.Column("notes_template_sections", sa.Text(), nullable=True),
         sa.Column("notes_status", sa.String(), nullable=False),
         sa.Column("error_message", sa.Text(), nullable=True),
     )
