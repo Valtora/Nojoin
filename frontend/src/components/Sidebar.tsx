@@ -62,7 +62,7 @@ import { GlobalSpeaker } from "@/types";
 import { useNavigationStore } from "@/lib/store";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { createFuse } from "@/lib/searchUtils";
-import { getColorByKey } from "@/lib/constants";
+import ActiveTagFilters from "./ActiveTagFilters";
 import { useViewportDensity } from "./ViewportDensityProvider";
 import { Badge } from "./ui/Badge";
 import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingNotes";
@@ -939,44 +939,12 @@ export default function Sidebar() {
         </div>
 
         {/* Active Tag Filter Pills */}
-        {selectedTagIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            {selectedTagIds.map((tagId) => {
-              const tag = tags.find((t) => t.id === tagId);
-              if (!tag) return null;
-              const color = getColorByKey(tag.color);
-              return (
-                <div
-                  key={tagId}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-status-neutral-bg border border-status-neutral-border text-xs group hover:border-action-border transition-colors"
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full ${color.dot} shrink-0`}
-                  />
-                  <span className="text-status-neutral-fg font-medium">
-                    {tag.name}
-                  </span>
-                  <ButtonBase
-                    onClick={() => toggleTagFilter(tagId)}
-                    className="ml-0.5 text-contrast-icon-muted hover:text-danger-text transition-colors"
-                    title={`Remove ${tag.name} filter`}
-                  >
-                    <X className="w-3 h-3" />
-                  </ButtonBase>
-                </div>
-              );
-            })}
-            <ButtonBase
-              data-ui-hover="status-danger"
-              data-ui-border="full" chrome="action"
-              onClick={clearTagFilters}
-              className="px-2.5 py-1 rounded-pill text-xs font-medium text-danger-text hover:bg-status-danger-bg border border-status-danger-border transition-colors"
-              title="Clear all tag filters"
-            >
-              Clear All
-            </ButtonBase>
-          </div>
-        )}
+        <ActiveTagFilters
+          tags={tags}
+          selectedTagIds={selectedTagIds}
+          toggleTagFilter={toggleTagFilter}
+          clearTagFilters={clearTagFilters}
+        />
 
         {showFilters && (
           <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">

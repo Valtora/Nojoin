@@ -2,6 +2,7 @@ import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { Archive, Calendar, Check, Loader2, Trash2 } from "lucide-react";
 
 import { UserTask } from "@/types";
+import TagChips from "@/components/TagChips";
 
 import {
   DEADLINE_TRIGGER_CLASS,
@@ -188,6 +189,12 @@ export default function TaskRow(props: TaskRowProps) {
             </p>
           )}
 
+          {task.tags && task.tags.length > 0 && (
+            <div className="mt-2">
+              <TagChips tags={task.tags} limit={2} />
+            </div>
+          )}
+
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {timeRemainingState && (
               <span
@@ -270,6 +277,12 @@ export default function TaskRow(props: TaskRowProps) {
           >
             {task.title}
           </p>
+        )}
+
+        {task.tags && task.tags.length > 0 && (
+          <div className="mt-2">
+            <TagChips tags={task.tags} limit={2} />
+          </div>
         )}
 
         {deadline && (

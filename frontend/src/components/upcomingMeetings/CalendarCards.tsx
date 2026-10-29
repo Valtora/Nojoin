@@ -13,7 +13,7 @@ import {
   Video,
 } from "lucide-react";
 
-import { getColorByKey } from "@/lib/constants";
+import TagChips from "@/components/TagChips";
 import { formatTimeZoneDate } from "@/lib/timezone";
 import {
   CalendarDashboardEvent,
@@ -95,23 +95,7 @@ export function DashboardRecordingCard({
               <span className="line-clamp-2">{recording.name}</span>
             </div>
             {hasTags ? (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {recording.tags.map((tag) => {
-                  const colour = getColorByKey(tag.color || "orange");
-
-                  return (
-                    <span
-                      key={tag.id}
-                      className="inline-flex items-center rounded-pill border border-action-border bg-action-tint px-2 py-0.5 text-[11px] font-semibold text-action-text"
-                    >
-                      <span
-                        className={`mr-1.5 h-1.5 w-1.5 rounded-full ${colour.dot}`}
-                      />
-                      {tag.name}
-                    </span>
-                  );
-                })}
-              </div>
+              <TagChips tags={recording.tags} />
             ) : null}
           </div>
 

@@ -102,6 +102,25 @@ describe("DashboardHome", () => {
     expect(moduleIds(container)).toHaveLength(6);
   });
 
+  it("shows two recent-meeting tag chips and counts the remaining tags", () => {
+    useDashboardRecordings.mockReturnValue({
+      recent: [{
+        ...recording("1"),
+        tags: ["Planning", "Product", "Research", "Review"].map((name, id) => ({ id, name })),
+      }],
+      processing: [],
+    });
+
+    renderWithProviders(<DashboardHome />);
+
+    expect(screen.getByText("Planning")).toBeInTheDocument();
+    expect(screen.getByText("Product")).toBeInTheDocument();
+    expect(screen.queryByText("Research")).not.toBeInTheDocument();
+    expect(screen.queryByText("Review")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("2 more tags: Research, Review")).toHaveTextContent("+2");
+    expect(screen.getByRole("link", { name: /Recording 1/ })).toHaveAttribute("href", "/recordings/1");
+  });
+
   it("puts the month grid above the agenda on a desktop, but not on a phone", () => {
     useDashboardRecordings.mockReturnValue({ recent: [], processing: [] });
 

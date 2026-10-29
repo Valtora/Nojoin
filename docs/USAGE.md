@@ -19,6 +19,8 @@ The dashboard holds:
 - **Processing**, while anything is still being processed.
 - **Recent Meetings**, once you have recordings.
 
+**Recent Meetings** shows meeting tags. It displays up to two tag chips per row, with **+N** for any others; hover over **+N** to see their names.
+
 **Settings > Appearance > Density** sets the spacing. **Automatic (by window size)** uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing elsewhere, **Comfortable** and **Compact** use one spacing at every size, and **Dense** is tighter still for mouse and keyboard while keeping compact-sized controls on a touch screen.
 
 **Settings > Appearance > Style** offers **Default** (the original flat look), **Classic** (bevelled buttons, sunken fields and panes, and your system's interface font) and **Depth** (layered shadows and shaded panels, with a stronger focus ring and control borders where the shading needs them). Classic looks best with **Square** corners; choose those separately under **Corner style**. Style keeps your colour palette and density, supports light and dark, and is saved in this browser only.
@@ -35,11 +37,13 @@ The dashboard holds:
 
 ### Task List
 
-Create, rename, complete, reopen, archive and delete tasks, and give them deadlines. A task with a deadline shows a live time-remaining badge. Archiving a task removes it from the dashboard, whether or not it was completed.
+Create, rename, complete, reopen, archive and delete tasks, and give them deadlines. Open and completed tasks show up to two tag chips, with **+N** for any others. A task with a deadline shows a live time-remaining badge. Archiving a task removes it from the dashboard, whether or not it was completed.
 
 ## Tasks Workspace
 
 The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Create Task** button. A task has a title, a body, a deadline, linked recordings and tags, using the same tags as recordings. **Archive** hides a task and **Restore** brings it back. **Delete** is permanent.
+
+Select tags under **Tags** in the navigation to filter tasks, just as in Recordings. Selecting several tags shows tasks with **any** of them, within the current Open, Completed or Archived view. Remove an individual filter using its **×**, or choose **Clear All** to show every task in the current view again.
 
 ## Recordings List
 

@@ -10,9 +10,12 @@ export type UserTaskStatusFilter =
 
 export const getUserTasks = async (
   status: UserTaskStatusFilter = "active",
+  tagIds: number[] = [],
 ): Promise<UserTask[]> => {
+  const params = new URLSearchParams({ status });
+  tagIds.forEach((id) => params.append("tag_ids", id.toString()));
   const response = await api.get<UserTask[]>("/tasks/", {
-    params: { status },
+    params,
   });
   return response.data;
 };

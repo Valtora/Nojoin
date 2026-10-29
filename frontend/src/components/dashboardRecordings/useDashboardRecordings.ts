@@ -48,7 +48,7 @@ const sortByNewest = (recordings: Recording[]): Recording[] =>
  * dashboard free of a backend change.
  *
  * Refreshes on the `recording-updated` event the app already dispatches when a
- * capture ends or a recording changes, rather than adding a poller. A recording
+ * capture ends or a recording changes, and on tag edits. A recording
  * that finishes processing therefore leaves the in-flight list on the next
  * event rather than on a timer.
  */
@@ -74,6 +74,7 @@ export function useDashboardRecordings(): DashboardRecordings {
 
     const handleUpdate = () => void load();
     window.addEventListener("recording-updated", handleUpdate);
+    window.addEventListener("tags-updated", handleUpdate);
     // A discard is explicit and irreversible, so the row goes now rather than
     // after the re-fetch a generic update would need.
     const unsubscribeRemoved = subscribeRecordingRemoved((id) => {
@@ -81,6 +82,7 @@ export function useDashboardRecordings(): DashboardRecordings {
     });
     return () => {
       window.removeEventListener("recording-updated", handleUpdate);
+      window.removeEventListener("tags-updated", handleUpdate);
       unsubscribeRemoved();
     };
   }, [load]);

@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 
 import Workspace from "./Workspace";
+import ActiveTagFilters from "./ActiveTagFilters";
+import { useNavigationStore } from "@/lib/store";
 import {
   createUserTask,
   deleteUserTask,
@@ -264,19 +266,48 @@ export default function TasksWorkspace() {
     null,
   );
   const addNotification = useNotificationStore((state) => state.addNotification);
+  const selectedTagIds = useNavigationStore((state) => state.selectedTagIds);
+  const toggleTagFilter = useNavigationStore((state) => state.toggleTagFilter);
+  const clearTagFilters = useNavigationStore((state) => state.clearTagFilters);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadTasks = async () => {
+      setLoading(true);
+      try {
+        const taskData = await getUserTasks("all", selectedTagIds);
+        if (!cancelled) setTasks(sortTasks(taskData));
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setTasks([]);
+          addNotification({
+            type: "error",
+            message: getErrorMessage(error, "Failed to load tasks."),
+          });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void loadTasks();
+    const handleTagsUpdated = () => void loadTasks();
+    window.addEventListener("tags-updated", handleTagsUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("tags-updated", handleTagsUpdated);
+    };
+  }, [addNotification, selectedTagIds]);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       try {
-        const [taskData, tagData, recordingData] = await Promise.all([
-          getUserTasks("all"),
+        const [tagData, recordingData] = await Promise.all([
           getTags(),
           getRecordings({ include_archived: true }),
         ]);
         if (!cancelled) {
-          setTasks(sortTasks(taskData));
           setTags(tagData);
           setRecordings(recordingData.filter((recording) => !recording.is_deleted));
         }
@@ -286,10 +317,6 @@ export default function TasksWorkspace() {
             type: "error",
             message: getErrorMessage(error, "Failed to load tasks."),
           });
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
         }
       }
     };
@@ -318,11 +345,15 @@ export default function TasksWorkspace() {
   }, [addNotification]);
 
   const taskGroups = useMemo(() => {
-    const open = tasks.filter((task) => !task.archived_at && !task.completed_at);
-    const completed = tasks.filter((task) => !task.archived_at && task.completed_at);
-    const archived = tasks.filter((task) => task.archived_at);
+    // Keep newly created or edited tasks within the server filter's selection.
+    const matching = selectedTagIds.length === 0 ? tasks : tasks.filter((task) =>
+      task.tags?.some((tag) => selectedTagIds.includes(tag.id)),
+    );
+    const open = matching.filter((task) => !task.archived_at && !task.completed_at);
+    const completed = matching.filter((task) => !task.archived_at && task.completed_at);
+    const archived = matching.filter((task) => task.archived_at);
     return { open, completed, archived };
-  }, [tasks]);
+  }, [tasks, selectedTagIds]);
 
   const visibleTasks = taskGroups[view];
 
@@ -526,6 +557,16 @@ export default function TasksWorkspace() {
           </div>
         </div>
 
+        <p className="mt-4 text-sm text-contrast-helper">
+          Select tags in the navigation to show tasks matching any selected tag.
+        </p>
+        <ActiveTagFilters
+          tags={tags}
+          selectedTagIds={selectedTagIds}
+          toggleTagFilter={toggleTagFilter}
+          clearTagFilters={clearTagFilters}
+        />
+
         {isCreateOpen && (
           <form
             onSubmit={handleCreateTask}
@@ -617,7 +658,9 @@ export default function TasksWorkspace() {
           </SurfaceBase>
         ) : visibleTasks.length === 0 ? (
           <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface-subtle border border-dashed border-control-border bg-surface-card p-8 text-center text-sm text-contrast-helper">
-            No {view} tasks.
+            {selectedTagIds.length > 0
+              ? `No ${view} tasks match the selected tags.`
+              : `No ${view} tasks.`}
           </SurfaceBase>
         ) : (
           visibleTasks.map((task) => {

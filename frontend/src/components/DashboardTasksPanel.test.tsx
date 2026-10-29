@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   fireEvent,
+  act,
   renderWithProviders,
   screen,
   waitFor,
@@ -121,6 +122,54 @@ describe("DashboardTasksPanel", () => {
       .getAllByTitle("Double-click to edit")
       .map((node) => node.textContent);
     expect(titles).toEqual(["Overdue", "Later"]);
+  });
+
+  it.each([null, "2026-06-02T00:00:00Z"])(
+    "caps task tags in the open and completed sections (completed_at=%s)",
+    async (completed_at) => {
+      const tags = ["Planning", "Product", "Research", "Review"].map((name, id) => ({
+        id, name, created_at: "2026-06-01T00:00:00Z", updated_at: "2026-06-01T00:00:00Z",
+      }));
+      getUserTasks.mockResolvedValue([makeTask({ tags, completed_at })]);
+
+      renderWithProviders(<DashboardTasksPanel />);
+
+      expect(await screen.findByText("Planning")).toBeInTheDocument();
+      expect(screen.getByText("Product")).toBeInTheDocument();
+      expect(screen.queryByText("Research")).not.toBeInTheDocument();
+      expect(screen.queryByText("Review")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("2 more tags: Research, Review")).toHaveTextContent("+2");
+    },
+  );
+
+  it("shows all tags at the two-chip boundary without an overflow count", async () => {
+    getUserTasks.mockResolvedValue([makeTask({
+      tags: ["Planning", "Product"].map((name, id) => ({
+        id, name, created_at: "2026-06-01T00:00:00Z", updated_at: "2026-06-01T00:00:00Z",
+      })),
+    })]);
+
+    renderWithProviders(<DashboardTasksPanel />);
+
+    expect(await screen.findByText("Planning")).toBeInTheDocument();
+    expect(screen.getByText("Product")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/more tags:/)).not.toBeInTheDocument();
+  });
+
+  it("refreshes task chips after a tag is renamed or deleted", async () => {
+    const tag = { id: 1, name: "Planning", created_at: "2026-06-01T00:00:00Z", updated_at: "2026-06-01T00:00:00Z" };
+    getUserTasks.mockResolvedValue([makeTask({ tags: [tag] })]);
+    renderWithProviders(<DashboardTasksPanel />);
+    await screen.findByText("Planning");
+
+    getUserTasks.mockResolvedValue([makeTask({ tags: [{ ...tag, name: "Research" }] })]);
+    act(() => { window.dispatchEvent(new Event("tags-updated")); });
+    expect(await screen.findByText("Research")).toBeInTheDocument();
+    expect(screen.queryByText("Planning")).not.toBeInTheDocument();
+
+    getUserTasks.mockResolvedValue([makeTask({ tags: [] })]);
+    act(() => { window.dispatchEvent(new Event("tags-updated")); });
+    await waitFor(() => expect(screen.queryByText("Research")).not.toBeInTheDocument());
   });
 
   it("creates a task through the composer and notifies success", async () => {

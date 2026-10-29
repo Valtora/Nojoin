@@ -1,6 +1,6 @@
-from typing import List, Literal
+from typing import Annotated, List, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -177,15 +177,19 @@ async def _replace_task_recordings(
 @router.get("", response_model=List[UserTaskRead])
 async def read_tasks_root(
     status: TaskStatusFilter = "active",
+    tag_ids: Annotated[list[int] | None, Query()] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await read_tasks(status=status, db=db, current_user=current_user)
+    return await read_tasks(
+        status=status, tag_ids=tag_ids, db=db, current_user=current_user
+    )
 
 
 @router.get("/", response_model=List[UserTaskRead])
 async def read_tasks(
     status: TaskStatusFilter = "active",
+    tag_ids: Annotated[list[int] | None, Query()] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -199,6 +203,13 @@ async def read_tasks(
             ),
         )
     )
+
+    if tag_ids:
+        statement = statement.where(
+            UserTask.id.in_(
+                select(UserTaskTag.task_id).where(UserTaskTag.tag_id.in_(tag_ids))
+            )
+        )
 
     if status == "active":
         statement = statement.where(UserTask.archived_at.is_(None))

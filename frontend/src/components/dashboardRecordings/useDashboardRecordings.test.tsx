@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Recording, RecordingStatus } from "@/types";
@@ -124,5 +124,21 @@ describe("useDashboardRecordings", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.recent).toEqual([]);
     expect(result.current.processing).toEqual([]);
+  });
+
+  it("refreshes recent-meeting tags after navigation tag edits", async () => {
+    const tag = { id: 1, name: "Planning", created_at: "2026-06-01T00:00:00Z", updated_at: "2026-06-01T00:00:00Z" };
+    const meeting = recording({ id: "1", created_at: "2026-07-01T10:00:00Z", tags: [tag] });
+    getRecordings.mockResolvedValue([meeting]);
+    const { result } = renderHook(() => useDashboardRecordings());
+    await waitFor(() => expect(result.current.recent).toHaveLength(1));
+
+    getRecordings.mockResolvedValue([{ ...meeting, tags: [{ ...tag, name: "Research" }] }]);
+    act(() => { window.dispatchEvent(new Event("tags-updated")); });
+    await waitFor(() => expect(result.current.recent[0].tags?.[0].name).toBe("Research"));
+
+    getRecordings.mockResolvedValue([{ ...meeting, tags: [] }]);
+    act(() => { window.dispatchEvent(new Event("tags-updated")); });
+    await waitFor(() => expect(result.current.recent[0].tags).toEqual([]));
   });
 });

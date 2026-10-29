@@ -61,9 +61,12 @@ export function useDashboardTasks() {
     };
 
     void loadTasks();
+    const handleTagsUpdated = () => void loadTasks();
+    window.addEventListener("tags-updated", handleTagsUpdated);
 
     return () => {
       cancelled = true;
+      window.removeEventListener("tags-updated", handleTagsUpdated);
     };
   }, [addNotification]);
 
