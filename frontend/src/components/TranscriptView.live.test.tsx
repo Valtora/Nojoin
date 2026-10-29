@@ -116,20 +116,20 @@ describe("LiveTranscriptPanel", () => {
     expect(screen.getAllByTestId("live-transcript-line")).toHaveLength(3);
   });
 
-  it("names a live speaker label only where the speaker changes", () => {
+  it("names the speaker on every labelled line, as the finished transcript does", () => {
+    const marked = (id: string, speaker: string, start: number) => buildSegment({
+      id, speaker, start, settling_required: true, locked: true,
+    });
     renderPanel([
       buildSegment({ id: "a", start: 0, text: "opening", speaker: "LIVE_PROVISIONAL_1" }),
       buildSegment({ id: "b", start: 2, text: "still me", speaker: "LIVE_PROVISIONAL_1" }),
-      buildSegment({ id: "c", start: 4, text: "a reply", speaker: "LIVE_PROVISIONAL_12" }),
-      buildSegment({ id: "d", start: 6, text: "who said that", speaker: "UNKNOWN" }),
-      buildSegment({ id: "e", start: 8, text: "me again", speaker: "LIVE_PROVISIONAL_1" }),
+      buildSegment({ id: "c", start: 4, text: "who said that", speaker: "UNKNOWN" }),
+      marked("d", "SPEAKER_0", 6),
+      marked("e", "SPEAKER_0", 9),
     ]);
 
-    // An unlabelled line in between shows no label and breaks the run, so the
-    // returning speaker is named again.
-    expect(
-      screen.getAllByTestId("live-transcript-speaker").map((node) => node.textContent),
-    ).toEqual(["Speaker 1", "Speaker 12", "Speaker 1"]);
+    expect(screen.getAllByTestId("live-transcript-speaker").map((node) => node.textContent))
+      .toEqual(["Speaker 1", "Speaker 1", "SPEAKER_0", "SPEAKER_0"]);
   });
 
   it("styles a provisional label apart from a locked one without relying on colour", () => {
@@ -155,37 +155,6 @@ describe("LiveTranscriptPanel", () => {
     expect(locked.className).not.toContain("italic");
     expect(provisional).toHaveAttribute("data-locked", "false");
     expect(provisional.className).toContain("italic");
-  });
-
-  it("shows marked speaker headers only when the speaker changes, including assigned speakers", () => {
-    const marked = (id: string, speaker: string, start: number) => buildSegment({
-      id, speaker, start, settling_required: true, locked: true,
-    });
-    renderPanel([
-      marked("a", "LIVE_PROVISIONAL_1", 0),
-      marked("b", "LIVE_PROVISIONAL_1", 3),
-      marked("c", "SPEAKER_0", 6),
-      marked("d", "SPEAKER_0", 9),
-      marked("e", "UNKNOWN", 12),
-      marked("f", "SPEAKER_0", 15),
-      marked("g", "LIVE_PROVISIONAL_1", 18),
-    ]);
-
-    expect(screen.getAllByTestId("live-transcript-speaker").map((node) => node.textContent))
-      .toEqual(["Speaker 1", "SPEAKER_0", "SPEAKER_0", "Speaker 1"]);
-  });
-
-  it("separates marked same-speaker lines after a pause without repeating their header", () => {
-    renderPanel([
-      buildSegment({ id: "a", start: 0, end: 1, speaker: "LIVE_PROVISIONAL_1", settling_required: true }),
-      buildSegment({ id: "b", start: 3, end: 4, speaker: "LIVE_PROVISIONAL_1", settling_required: true }),
-    ]);
-
-    const lines = screen.getAllByTestId("live-transcript-line");
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).not.toHaveClass("pt-2");
-    expect(lines[1]).toHaveClass("pt-2");
-    expect(screen.getAllByTestId("live-transcript-speaker")).toHaveLength(1);
   });
 
   it("keeps marked label italics tied to the line lock rather than the speaker state", () => {
@@ -215,17 +184,15 @@ describe("LiveTranscriptPanel", () => {
     expect(line).not.toHaveAttribute("aria-describedby");
   });
 
-  it("keeps unmarked lines free of marked spacing and settling descriptions", () => {
+  it("keeps unmarked lines free of settling descriptions", () => {
     renderPanel([
       buildSegment({ id: "a", speaker: "LIVE_PROVISIONAL_1", locked: false }),
       buildSegment({ id: "b", start: 3, speaker: "LIVE_PROVISIONAL_1", locked: false }),
     ]);
 
     for (const line of screen.getAllByTestId("live-transcript-line")) {
-      expect(line.className).toBe("group/line");
       expect(line).not.toHaveAttribute("aria-describedby");
     }
-    expect(screen.getAllByTestId("live-transcript-speaker")).toHaveLength(1);
     expect(screen.getByText("Provisional. Corrected when the recording is processed.")).toBeInTheDocument();
   });
 
