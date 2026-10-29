@@ -16,7 +16,10 @@ from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceStat
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.utils.canonical_pipeline.constants import UNKNOWN_SPEAKER
 from backend.utils.canonical_pipeline.queries import list_active_utterances
-from backend.utils.live_speaker_labels import live_speaker_display_name
+from backend.utils.live_speaker_labels import (
+    live_speaker_display_name,
+    prompt_speaker_label,
+)
 from backend.utils.speaker_names.live import live_speaker_names
 
 from .metrics import UtteranceRow, compute_deterministic_metrics
@@ -127,7 +130,9 @@ def _describe_unlisted_key(
         return {
             "speaker_key": speaker_key,
             "public_id": None,
-            "name": live_name or live_speaker_display_name(label) or label,
+            "name": live_name
+            or live_speaker_display_name(label)
+            or prompt_speaker_label(label),
             "diarization_label": label,
             "color": None,
             "global_speaker_id": None,

@@ -25,7 +25,6 @@ from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.processing.pipeline_metrics import pipeline_metric_timer
 from backend.utils.analytics_payload import AI_KEY, merge_analytics_payload
-from backend.utils.live_speaker_labels import prompt_speaker_label
 from backend.utils.meeting_analysis import (
     MEETING_ANALYSIS_METHOD_VERSION,
     MeetingAnalysisRequest,
@@ -81,12 +80,10 @@ def _build_analysis_inputs(session, recording) -> dict[str, Any]:
     from backend.utils.canonical_pipeline import list_active_utterances
 
     analytics = compute_recording_analytics(session, recording)
-    prompt_speakers = [
-        {**speaker, "name": prompt_speaker_label(speaker["name"])}
-        for speaker in analytics["speakers"]
-    ]
-    allowlist = build_speaker_allowlist(prompt_speakers)
-    names = {speaker["speaker_key"]: speaker["name"] for speaker in prompt_speakers}
+    allowlist = build_speaker_allowlist(analytics["speakers"])
+    names = {
+        speaker["speaker_key"]: speaker["name"] for speaker in analytics["speakers"]
+    }
 
     utterances, _ = split_analysed_utterances(
         list_active_utterances(session, recording.id)
