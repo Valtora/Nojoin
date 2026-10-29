@@ -45,6 +45,8 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 
 **Recordings** in the navigation lists your meetings, with **Archived** and **Deleted** views beside it.
 
+On a phone or a window narrower than 1024 px, **Start** beside **Import** in the list header starts a meeting with the same capture checks as **Start Meeting** on the dashboard.
+
 On desktop, **Collapse recordings list** leaves a narrow rail. In **Recordings**, its microphone button starts a meeting and **Import Audio** imports a file, and each is unavailable whenever its full-size button is. In **Archived** and **Deleted**, the archive and bin icons label the view. **Expand recordings list** brings the list back.
 
 - **Search...** above the list matches meeting titles, tags and speaker names. Its filter button adds a date filter (a range, after or before) and a speaker filter.
@@ -75,6 +77,8 @@ The **People** page is your speaker library: the people Nojoin can recognise acr
 ## Live Recording
 
 **Start Meeting** on the dashboard begins a recording. Desktop Chromium browsers record the shared tab, window or screen audio together with your microphone, and Chrome on Android and iOS records the phone microphone only. [CAPTURE.md](CAPTURE.md) covers supported browsers, choosing what to share, and the **Pause**, **Resume**, **Stop** and **Discard** controls.
+
+Each **Resume** starts a new transcript line, even when you continue the same sentence. The break remains after processing; time spent paused is excluded from the recording's timeline.
 
 Every recording uses the same header and tabs, while recording, paused, uploading, queued, processing, processed or in error. You can rename it, edit its tags and link a calendar event in any state. On the recording being captured by this tab, the header's player area holds the waveform, elapsed time, **Pause**, **Resume**, **Stop**, **Discard** and **Max Speakers**. Another tab or device shows the server's status without local recording controls; interrupted-recording recovery remains in the global dialog. **Attach Docs** is available to either, and a note can hold a still of the shared screen or a file ([Captures](#captures)).
 

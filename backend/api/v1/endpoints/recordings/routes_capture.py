@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_recording_client_user, get_db
@@ -35,6 +36,7 @@ from backend.utils.browser_capture_audio import (
     BROWSER_FLAC_SEGMENT_SUFFIX,
     BrowserAudioFormatError,
 )
+from backend.utils.capture_resume import mark_capture_resume, persist_resume_boundaries
 from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
@@ -272,6 +274,8 @@ async def resume_upload(
         recording.capture_epoch += 1
 
     stalled_last_activity = recording.last_activity_at
+    last_sequence = recordings_module._get_last_uploaded_sequence(recording.id)
+    mark_capture_resume(transcript, last_sequence + 1)
     recording.status = RecordingStatus.UPLOADING
     update_capture_settling_state(
         transcript, capture_epoch=recording.capture_epoch, sealed=False, phase="live"
@@ -311,7 +315,7 @@ async def resume_upload(
     return RecordingCaptureLifecycleResponse(
         recording_id=recording.public_id,
         status=recording.status,
-        last_sequence=recordings_module._get_last_uploaded_sequence(recording.id),
+        last_sequence=last_sequence,
         capture_epoch=recording.capture_epoch,
     )
 
@@ -694,6 +698,13 @@ async def finalize_upload(
             status_code=409,
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
+
+    transcript = await db.run_sync(
+        lambda session: session.execute(
+            select(Transcript).where(Transcript.recording_id == recording.id)
+        ).scalar_one_or_none()
+    )
+    persist_resume_boundaries(transcript, chunk_rows)
 
     final_audio_path = recordings_module._browser_master_output_path(recording)
 

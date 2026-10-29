@@ -558,6 +558,9 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             settling_state.get("eligible")
             and settling_state.get("policy", {}).get("enabled") is not False
         )
+        from backend.utils.capture_resume import load_resume_boundaries
+
+        resume_boundaries = load_resume_boundaries(session, recording.transcript)
     finally:
         session.close()
 
@@ -768,6 +771,9 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             forced_max_s=float(live_config["forced_max_s"]),
             max_segment_s=float(live_config["max_segment_s"]),
         )
+        from backend.utils.capture_resume import split_resume_regions
+
+        complete = split_resume_regions(complete, combined_abs_start, resume_boundaries)
         record_pipeline_metric(
             stage="live_vad_classified",
             recording_id=recording_id,

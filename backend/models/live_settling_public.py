@@ -46,6 +46,9 @@ class LiveSettlingPublicRead(BaseModel):
     diarisation_pending: bool | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    capture_interval: int | None = Field(
+        default=None, gt=0, exclude_if=lambda value: value is None
+    )
 
 
 def public_settling_fields(
@@ -63,6 +66,9 @@ def public_settling_fields(
         if isinstance(review, dict)
         else {}
     )
+    interval = payload.get("capture_interval")
+    if type(interval) is int and interval > 0:
+        public_review["capture_interval"] = interval
     label = payload.get("live_speaker_label")
     if (
         isinstance(label, dict)

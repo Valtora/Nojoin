@@ -50,6 +50,26 @@ describe("pending diarisation inside the previous utterance", () => {
     expect(container.querySelector('p[data-segment-id="tail"]')).toHaveClass("inline", "italic", "text-contrast-helper");
   });
 
+  it.each([
+    { isLive: true, overlaps: false }, { isLive: false, overlaps: false },
+    { isLive: true, overlaps: true }, { isLive: false, overlaps: true },
+  ])("keeps a resumed pending tail separate (live=$isLive, overlap=$overlaps)", ({ isLive, overlaps }) => {
+    const [anchor, tail] = pendingTailLines();
+    const before = { ...anchor, end: overlaps ? 1.1 : anchor.end, capture_interval: 0 };
+    const after = { ...tail, capture_interval: 1 };
+    const props = { ...viewProps([before, after]), live: isLive ? live : undefined };
+    const { container, rerender } = render(<TranscriptView {...props} />);
+    expect(bubbles(container)).toHaveLength(2);
+    const anchorBubble = container.querySelector('p[data-segment-id="anchor"]')!
+      .closest('[data-ui-reading="bubble"]');
+    expect(container.querySelector('p[data-segment-id="tail"]')!
+      .closest('[data-ui-reading="bubble"]')).not.toBe(anchorBubble);
+
+    // Pending speech in one resumed interval still shares its anchor's bubble.
+    rerender(<TranscriptView {...props} segments={[{ ...before, capture_interval: 1 }, after]} />);
+    expect(bubbles(container)).toHaveLength(1);
+  });
+
   it("keeps covered UNKNOWN and source-channel changes separate", () => {
     const [anchor, tail] = pendingTailLines();
     const props = viewProps([anchor, tail]);

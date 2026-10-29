@@ -12,6 +12,7 @@ from typing import Any
 
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.processing.processing_tuning import LINE_BREAK_PAUSE_KEY, resolve_tuning
+from backend.utils.transcript_resume_segments import resume_segment_groups
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +117,13 @@ def combine_and_consolidate_segments(
                 fallback_segment["alignment_error"] = seg["alignment_error"]
             combined_segments.append(fallback_segment)
 
-    final_segments = consolidate_diarized_transcript(
-        combined_segments, **consolidation_options
-    )
+    final_segments = [
+        segment
+        for group in resume_segment_groups(
+            combined_segments, (config or {}).get("resume_boundaries_ms", [])
+        )
+        for segment in consolidate_diarized_transcript(group, **consolidation_options)
+    ]
 
     # The cluster label the diariser gave each line. Speaker assignment and the
     # merge pass rewrite ``speaker`` to the survivor's label; this one is kept

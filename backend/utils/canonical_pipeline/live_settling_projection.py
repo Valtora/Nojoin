@@ -332,7 +332,7 @@ def _payload(
     if not any(word_extent(word) is not None for word in partition.words):
         start = metadata.get("utterance_start_ms", start)
         end = metadata.get("utterance_end_ms", end)
-    return {
+    payload = {
         **(dict(rows[0].confidence_payload or {}) if rows else {}),
         **metadata,
         **partition_source_metadata(partition.words),
@@ -366,6 +366,11 @@ def _payload(
             "diarisation_pending": partition.diarisation_pending,
         },
     }
+    if partition.capture_interval is not None:
+        payload["capture_interval"] = partition.capture_interval
+    else:
+        payload.pop("capture_interval", None)
+    return payload
 
 
 def _event(session: Session, row: TranscriptUtterance, event_type: str) -> None:

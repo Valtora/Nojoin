@@ -625,12 +625,16 @@ def process_recording_task(
         session.add(recording)
         session.commit()
 
+        resume_state = getattr(transcript, "settling_state", None) or {}
         final_segments = combine_and_consolidate_segments(
             transcription_result,
             diarization_result,
             enable_diarization=enable_diarization,
             recording_id=recording_id,
-            config=merged_config,
+            config={
+                **merged_config,
+                "resume_boundaries_ms": resume_state.get("resume_boundaries_ms", []),
+            },
         )
 
         if not staged:
