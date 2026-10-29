@@ -226,7 +226,7 @@ def test_empty_success_keeps_only_protected_lines(publication_engine: Engine) ->
         ]
 
 
-def test_exact_final_clears_an_old_review_without_replacing_human_atoms(
+def test_exact_final_replaces_an_old_review_without_replacing_human_atoms(
     publication_engine: Engine,
 ) -> None:
     with Session(publication_engine) as session:
@@ -246,14 +246,21 @@ def test_exact_final_clears_an_old_review_without_replacing_human_atoms(
                 {
                     "start": 0,
                     "end": 2,
-                    "text": "Different native final",
-                    "words": [{"word": "Different", "start": 0, "end": 1}],
+                    "text": " Human wording ",
+                    "words": [{"word": "Human", "start": 0, "end": 1}],
                 },
                 {"start": 2, "end": 4, "text": "Native second final"},
             ],
         )
         lines = _lines(session, recording_id)
+        # Identical wording needs no review; a different final is offered
+        # beside the kept text instead of vanishing.
         assert "final_review" not in lines[0]
+        assert [line["text"] for line in lines] == ["Human wording", "after split"]
+        assert lines[1]["final_review"] == {
+            "text": "Native second final",
+            "reason": "ambiguous_alignment",
+        }
         assert lines[0]["words"][0]["word"] == "Human wording"
         assert lines[0]["words"][0]["start_ms"] is None
 
@@ -466,7 +473,11 @@ def test_actual_locked_line_actions_survive_final_publication(
         assert [(row["id"], row["text"], row["words"]) for row in after] == [
             (row["id"], row["text"], row["words"]) for row in before
         ]
-        assert sum("final_review" in row for row in after) == (outcome == "drift")
+        reviews = [
+            row["final_review"]["text"] for row in after if "final_review" in row
+        ]
+        expected = {"drift": 1, "exact": len(after)}.get(outcome, 0)
+        assert reviews == ["Machine alternative"] * expected
         if outcome == "rollback":
             assert [row["revision"] for row in after] == [
                 row["revision"] for row in before
