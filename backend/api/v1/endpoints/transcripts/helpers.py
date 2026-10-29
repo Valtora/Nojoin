@@ -26,6 +26,10 @@ from backend.utils.canonical_pipeline.live_compatibility import (
 )
 from backend.utils.config_manager import config_manager
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.reprocess_publication import (
+    REPROCESS_RUNNING_MESSAGE,
+    reprocess_replacement_running,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,13 +89,25 @@ def _canonical_transcript_writes_enabled() -> bool:
     return bool(config_manager.get("enable_canonical_transcript_writes", True))
 
 
+def _refuse_while_reprocess_runs(transcript: Transcript | None) -> None:
+    """Refuse an edit the running reprocess would delete when it publishes.
+
+    The pass replaces the retained lines, speakers and edit history in one
+    transaction, so an edit accepted now would answer 200 and then vanish.
+    """
+    if reprocess_replacement_running(transcript):
+        raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
+
+
 async def _prepare_live_transcript_mutation(
     db: AsyncSession, recording_id: int
 ) -> bool:
+    transcript = await _get_recording_transcript(db, recording_id)
+    _refuse_while_reprocess_runs(transcript)
     if not _canonical_transcript_writes_enabled():
         from backend.utils.canonical_pipeline.guards import settling_required
 
-        if not settling_required(await _get_recording_transcript(db, recording_id)):
+        if not settling_required(transcript):
             return False
     return await db.run_sync(prepare_live_compatibility_mutation, recording_id)
 
