@@ -19,7 +19,7 @@ const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 function formatClock(seconds: number) {
-  const whole = Math.max(0, Math.round(seconds));
+  const whole = Math.max(0, Math.floor(seconds));
   const hours = Math.floor(whole / 3600);
   const minutes = Math.floor((whole % 3600) / 60);
   const remaining = (whole % 60).toString().padStart(2, "0");

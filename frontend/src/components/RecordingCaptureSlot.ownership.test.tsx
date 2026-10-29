@@ -206,14 +206,15 @@ describe("the header of a tab that is not capturing", () => {
   it("runs the server's audio clock while live and shows its reading while paused", async () => {
     let now = 0;
     const audioClock = new AudioClock(() => now);
-    audioClock.observe({ ...stillUploading, live_audio_ms: 65_000 });
+    audioClock.observe({ ...stillUploading, live_audio_ms: 65_900 });
     api.getUnfinishedCaptures.mockResolvedValue([stillUploading]);
     // Another tab of this browser holds the capture, so this one is offered nothing.
     lockQuery.mockResolvedValue({ held: [{ name: `nojoin-capture:${base.id}`, mode: "shared" }], pending: [] });
     const view = renderSlot(stillUploading, audioClock);
     await act(async () => {});
 
-    // `duration_seconds` is still 0: the clock is the server's audio.
+    // `duration_seconds` is still 0: the clock is the server's audio, in whole
+    // seconds heard, as the live controls count them (65.9 s reads 01:05).
     expect(within(slot()).getByText("Live")).toBeInTheDocument();
     expect(within(slot()).getByText("01:05")).toBeInTheDocument();
     now = 3_000;
