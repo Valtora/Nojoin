@@ -108,7 +108,7 @@ export default function TranscriptLineMenu({
       {splitEdit && onSplitSegment && !isSegmentReadOnly ? <LiveLineEditor
         kind="split" segment={splitEdit.segment} anchor={splitEdit.anchor}
         handlers={{ split: onSplitSegment, editText: async () => false, changeSpeaker: async () => false }}
-        onClose={() => { setSplitEdit(null); splitEdit.anchor.focus(); }}
+        onClose={() => setSplitEdit(null)}
       /> : null}
       {noteAnchor && (settling || quoted) && onAddNote ? (
         <NoteOnSelectionPopover
