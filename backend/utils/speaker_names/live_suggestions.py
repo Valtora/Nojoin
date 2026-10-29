@@ -210,18 +210,8 @@ def _due_for_ask(
 ) -> dict[str, float]:
     """Unanswered labels with a rule proposal newer than their last ask, or
     ``NEW_SPEECH_PER_ASK_SECONDS`` more speech since it, with their speech."""
-    asks = {
-        item["diarization_label"]: item
-        for item in load_transcript_speaker_suggestions(transcript)
-        if item.get("origin") == LIVE_ASK_ORIGIN
-    }
-    introduced = {
-        label
-        for label, item in _pending_live_entries(
-            transcript, (LIVE_SUGGESTION_ORIGIN,)
-        ).items()
-        if item["created_at"] > asks.get(label, {}).get("asked_at", "")
-    }
+    asks = _live_asks(transcript)
+    introduced = _introduced_since_ask(transcript)
     speech: dict[str, float] = {}
     for segment in segments:
         label = str(segment.get("speaker", ""))
@@ -234,6 +224,26 @@ def _due_for_ask(
         or speech.get(label, 0.0)
         - float(asks.get(label, {}).get("speech_seconds") or 0.0)
         >= NEW_SPEECH_PER_ASK_SECONDS
+    }
+
+
+def _live_asks(transcript: Transcript) -> dict[str, dict[str, Any]]:
+    return {
+        item["diarization_label"]: item
+        for item in load_transcript_speaker_suggestions(transcript)
+        if item.get("origin") == LIVE_ASK_ORIGIN
+    }
+
+
+def _introduced_since_ask(transcript: Transcript) -> set[str]:
+    """Labels whose pending rule proposal is newer than their last ask."""
+    asks = _live_asks(transcript)
+    return {
+        label
+        for label, item in _pending_live_entries(
+            transcript, (LIVE_SUGGESTION_ORIGIN,)
+        ).items()
+        if item["created_at"] > asks.get(label, {}).get("asked_at", "")
     }
 
 
@@ -282,7 +292,9 @@ def store_live_llm_suggestions(
     """Offer the model's names, under the capture fence; returns how many.
 
     An omitted label or a role is no proposal. A name that agrees with the
-    label's pending one leaves it as it is; another replaces it.
+    label's pending one leaves it as it is; another replaces it, unless the
+    rule heard an introduction after the ask: that proposal stays, due an ask
+    of its own.
     """
     evidence = _live_evidence(session, recording_id, lock=True)
     if evidence is None:
@@ -290,6 +302,7 @@ def store_live_llm_suggestions(
         return 0
     transcript, segments, _ = evidence
     eligible = set(_unanswered_labels(session, transcript, _live_labels(segments)))
+    eligible -= _introduced_since_ask(transcript)
     pending = _pending_live_proposals(transcript, LIVE_PROPOSAL_ORIGINS)
     added = [
         item

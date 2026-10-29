@@ -41,8 +41,14 @@ from backend.tests.test_live_speaker_naming_api import (
     session_maker as session_maker,
 )
 from backend.utils.speaker_name_suggestions import (
+    SpeakerInferenceResult,
+    SpeakerInferenceSuggestion,
     load_transcript_speaker_suggestions,
     parse_speaker_inference_response,
+)
+from backend.utils.speaker_names.live_suggestions import (
+    mark_live_asks,
+    store_live_llm_suggestions,
 )
 from backend.worker.tasks import live_naming_stage
 
@@ -381,3 +387,35 @@ async def test_the_finished_transcript_read_leaves_out_ask_records(
 
     assert response.status_code == 200, response.text
     assert response.json()["transcript"]["speaker_name_suggestions"] == []
+
+
+async def test_an_answer_to_an_older_ask_leaves_a_newer_introduction_due(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM, fake_single_flight: Any
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _say(session_maker, ONE, "I'm Alex.")
+    await _run_task(session_maker, live_naming_stage.refresh_live_speaker_names_task)
+    engine = session_maker.kw["bind"]
+    async with AsyncSession(engine, sync_session_class=Session) as db:
+        # The queued ask starts: it is recorded, then the provider is called.
+        marked = await db.run_sync(lambda sync: mark_live_asks(sync, 1))
+        assert marked is not None and marked[0] == [ONE]
+        # While the provider answers, the speaker corrects the introduction.
+        await _say(session_maker, ONE, "I'm Priya.")
+        await _run_task(
+            session_maker, live_naming_stage.refresh_live_speaker_names_task
+        )
+        answer = SpeakerInferenceResult((SpeakerInferenceSuggestion(ONE, "Alex", 0.9),))
+        await db.run_sync(
+            lambda sync: store_live_llm_suggestions(sync, 1, answer, "test")
+        )
+
+    read = await _read(client)
+    assert read["live_speaker_suggestions"] == {ONE: "Priya"}
+    assert read["live_speaker_suggestion_sources"] == {ONE: "heuristic"}
+
+    # Once that ask ends, the next check asks about the newer introduction.
+    del fake_single_flight.keys[f"{KEY_PREFIX}live-naming-ask:1"]
+    llm.ran = len(llm.dispatched)
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE]]
