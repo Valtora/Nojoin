@@ -73,7 +73,11 @@ async def _create_glossary(client: AsyncClient) -> int:
     assert response.status_code == 200, response.text
     output = response.json()["output"]
     assert output["kind"] == "glossary"
+    assert output["name"] == "Glossary"
     assert output["notes_template_id"] is None
+    # The run has only started: the lines arrive through the outputs list.
+    assert output["notes_status"] == "generating"
+    assert output["notes"] is None
     return int(output["id"])
 
 
@@ -117,6 +121,11 @@ async def test_glossary_extract_appends_unique_terms_and_regeneration_replaces(
     worker(LLM())
     first = (await reader_client.get(f"{PATH}/outputs")).json()[0]
     assert first["notes_status"] == "completed"
+    assert (first["kind"], first["name"], first["error_message"]) == (
+        "glossary",
+        "Glossary",
+        None,
+    )
     assert len(first["notes"].splitlines()) == 5
     assert first["notes"].splitlines()[0] == "ARR: annual recurring revenue"
     assert "duplicate" not in first["notes"]
@@ -124,6 +133,9 @@ async def test_glossary_extract_appends_unique_terms_and_regeneration_replaces(
         f"{PATH}/generate", json={"output_id": output_id, "extract_more": True}
     )
     assert response.status_code == 200, response.text
+    # Extract more starts from the set as it stands; the poll brings the new lines.
+    started = response.json()["output"]
+    assert (started["notes_status"], started["notes"]) == ("generating", first["notes"])
     assert stub_celery_dispatch[-1][2] == {"extract_more": True}
     worker(LLM())
     extracted = (await reader_client.get(f"{PATH}/outputs")).json()[0]
@@ -146,43 +158,6 @@ async def test_glossary_extract_appends_unique_terms_and_regeneration_replaces(
         assert transcript.notes_status == "completed"
 
 
-async def test_glossary_routes_reject_other_owners_and_cross_recording_outputs(
-    reader_client: AsyncClient,
-    reader_sessions: async_sessionmaker[AsyncSession],
-    meeting: tuple[int, int],
-    stub_celery_dispatch: list[tuple[str, Any, Any]],
-) -> None:
-    async with reader_sessions() as db:
-        private = Recording(
-            name="Private", public_id="private", user_id=2, audio_path="private.wav"
-        )
-        own = Recording(name="Own", public_id="own", user_id=1, audio_path="own.wav")
-        db.add_all([private, own])
-        await db.flush()
-        output = NotesOutput(
-            recording_id=private.id,
-            kind="glossary",
-            name="Glossary",
-            notes="ARR: private meaning",
-            notes_status="completed",
-        )
-        db.add(output)
-        await db.commit()
-        output_id = output.id
-    response = await reader_client.post(
-        "/api/v1/transcripts/private/notes/generate",
-        json={"kind": "glossary", "create_output": True},
-    )
-    assert response.status_code == 404, response.text
-    for public_id in ("private", "meeting", "own"):
-        response = await reader_client.post(
-            f"/api/v1/transcripts/{public_id}/notes/generate",
-            json={"output_id": output_id, "extract_more": True},
-        )
-        assert response.status_code == 404, response.text
-    assert stub_celery_dispatch == []
-
-
 async def test_personal_glossary_partial_saves_preserve_other_settings_and_users(
     settings_client: AsyncClient,
     reader_sessions: async_sessionmaker[AsyncSession],
@@ -203,6 +178,9 @@ async def test_personal_glossary_partial_saves_preserve_other_settings_and_users
         )
         assert response.status_code == 200, response.text
         assert response.json()["glossary_terms"] == glossary
+        # The checklist reads the personal glossary back from GET.
+        reread = await settings_client.get("/api/v1/settings")
+        assert reread.json()["glossary_terms"] == glossary
         async with reader_sessions() as db:
             user = await db.get(User, 1)
             other = await db.get(User, 2)

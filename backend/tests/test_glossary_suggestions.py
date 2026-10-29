@@ -185,6 +185,11 @@ def test_automatic_stage_queues_the_glossary_after_the_notes_are_saved(
                 assert outputs[0].notes_status == "error"
                 return
             assert outputs[0].notes_status == "generating"
+            assert (outputs[0].kind, outputs[0].name, outputs[0].notes) == (
+                "glossary",
+                "Glossary",
+                None,
+            )
             assert stub_celery_dispatch == [
                 (
                     "backend.worker.tasks.generate_notes_task",

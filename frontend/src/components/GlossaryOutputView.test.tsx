@@ -82,12 +82,15 @@ describe("glossary suggestions checklist", () => {
   });
 
   it("keeps the saved checkbox state when a settings write fails", async () => {
-    api.updateSettings.mockRejectedValue({ response: { data: { detail: "Glossary is too long." } } });
+    // The settings API rejects an invalid glossary as a 422 whose detail is a list of field errors.
+    api.updateSettings.mockRejectedValue({ response: { status: 422, data: { detail: [{
+      type: "value_error", loc: ["body", "glossary_terms"], msg: "Value error, Glossary must be at most 8000 characters.",
+    }] } } });
     render(<GlossaryOutputView {...props} />);
     const kafka = screen.getByRole("checkbox", { name: "Kafka: event streaming" });
     await waitFor(() => expect(kafka).toBeEnabled());
     fireEvent.click(kafka);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Glossary is too long.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not save your glossary.");
     expect(kafka).not.toBeChecked();
     expect(kafka).toBeEnabled();
   });
