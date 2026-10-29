@@ -339,6 +339,8 @@ export interface TranscriptUtteranceList {
    * capture. Whole on every read, delta or not: naming changes no utterance.
    */
   live_speaker_names?: Record<string, string>;
+  /** The live lane is behind a running capture's uploads. */
+  live_behind?: boolean;
 }
 
 /** The answer to naming a live speaker: every live name, as the live read gives it. */
