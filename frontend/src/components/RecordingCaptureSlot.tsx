@@ -13,6 +13,7 @@ import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import { ButtonBase } from "./ui/nativeBases";
+import { useResumeRecoveryOffer } from "./useResumeRecoveryOffer";
 
 const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
@@ -59,6 +60,7 @@ function useAudioClockSeconds(readAudioMs: () => number | null, enabled: boolean
 export default function RecordingCaptureSlot({ recording, audioClock, onDiscarded }: RecordingCaptureSlotProps) {
   const capture = useCapture();
   const actions = useRecordingActions();
+  const resumeOffer = useResumeRecoveryOffer();
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   // The live controls' own test for Stop: this tab's runtime holds the capture
@@ -128,6 +130,7 @@ export default function RecordingCaptureSlot({ recording, audioClock, onDiscarde
           onMeetingEnd={() => window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: recording.id } }))}
           onMeetingDiscard={onDiscarded}
           barTrailing={attachDocuments}
+          onResumeOffer={() => void resumeOffer(recording.id)}
         />
       ) : (
         <div className="flex flex-wrap items-center gap-3">

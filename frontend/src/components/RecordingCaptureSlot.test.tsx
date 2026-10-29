@@ -28,6 +28,7 @@ const capture = {
 };
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({ useCapture: () => capture }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("./recordings/_hooks/useRecordingActions", () => ({
   useRecordingActions: () => ({ discard }),
 }));

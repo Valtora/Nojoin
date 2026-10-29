@@ -156,13 +156,32 @@ describe("the header of a tab reloaded while it records", () => {
     renderSlot(stillUploading);
     await screen.findByRole("dialog");
 
-    // No runtime survives the reload: Resume shares again, from the dialog.
-    expect(within(slot()).getByTitle("Resume recording")).toBeDisabled();
     expect(within(slot()).getByTitle("Discard recording")).toBeEnabled();
     fireEvent.click(within(slot()).getByTitle("Stop recording"));
 
     await waitFor(() => expect(api.finalizeRecordingCapture).toHaveBeenCalledOnce());
     expect(api.finalizeRecordingCapture.mock.calls[0][0]).toBe(base.id);
+  });
+
+  it("resumes from the header's Resume as from the dialog's, with no runtime", async () => {
+    await recordThenReload();
+    api.getUnfinishedCaptures.mockResolvedValue([stillUploading]);
+    // The server takes over a capture still uploading only for the epoch its
+    // tab held, and refuses anyone else until two minutes have passed.
+    api.resumeRecordingCapture.mockImplementation(async (_id: string, options: { reclaimEpoch?: number }) => {
+      if (options.reclaimEpoch !== 3) {
+        throw new Error("This recording is still in progress and received audio in the last two minutes.");
+      }
+      return { recording_id: base.id, status: "UPLOADING", last_sequence: 0, capture_epoch: 4 };
+    });
+    renderSlot(stillUploading);
+    await screen.findByRole("dialog");
+
+    fireEvent.click(within(slot()).getByTitle("Resume recording"));
+
+    await waitFor(() => expect(within(slot()).getByTitle("Pause recording")).toBeEnabled());
+    expect(api.resumeRecordingCapture).toHaveBeenCalledOnce();
+    expect(useNotificationStore.getState().activeNotifications.filter(({ type }) => type === "error")).toEqual([]);
   });
 
   it("shows the server's state, without transport, once another device has taken the capture over", async () => {
