@@ -104,8 +104,10 @@ def clear_previous_reprocess_state(session: Session, recording_id: int) -> None:
     """Retire old generated dependencies under the publication fence, without committing.
 
     The caller replaces speakers, canonical rows and projection before committing.
-    A rollback therefore restores the whole previous publication. Notes, title,
-    suggestions and Meeting Edge retain their individual regeneration boundaries.
+    A rollback therefore restores the whole previous publication. Notes, title
+    and Meeting Edge retain their individual regeneration boundaries. Speaker
+    name suggestions point at the speakers and labels being replaced, so they
+    go with them, and the new pass's suggestions start from none.
     """
     transcript = _load_transcript(session, recording_id, lock=True)
     session.execute(delete(ChatMessage).where(ChatMessage.recording_id == recording_id))
@@ -138,6 +140,7 @@ def clear_previous_reprocess_state(session: Session, recording_id: int) -> None:
             "analytics_error_message",
             "analytics_ai_status",
             "analytics_ai_error_message",
+            "speaker_name_suggestions",
         ):
             setattr(transcript, field, getattr(defaults, field))
         session.add(transcript)

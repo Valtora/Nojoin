@@ -323,8 +323,10 @@ def test_replacement_is_fresh_and_committed_before_notes(
             ("SPEAKER_01", None, None),
         ]
     )
-    for field in ("notes", "focus", "edge", "suggestions"):
+    for field in ("notes", "focus", "edge"):
         assert after[field] == before[field]
+    # Suggestions named the old speakers, by row id and diarisation label.
+    assert before["suggestions"] and after["suggestions"] == []
     assert (after["chat"], after["context"], after["names"]) == ([], [], [])
     # A finished page's conditional read notices the replacement.
     assert after["change_sequence"] > before["change_sequence"]
@@ -499,6 +501,7 @@ def test_vad_empty_replacement_retires_old_authority(
     )
     assert after["notes"] == "Previous notes"
     assert after["focus"] == "Keep my focus"
+    assert after["suggestions"] == []
     assert after["change_sequence"] > before["change_sequence"]
     with Session(engine) as session:
         assert session.exec(select(Transcript)).one().language_detection is None
