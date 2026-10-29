@@ -14,6 +14,7 @@ import { RecordingStatus } from "@/types";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
+import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
 
 type MeetingControlsProps =
@@ -28,7 +29,7 @@ type MeetingControlsProps =
     }
   | {
       onMeetingEnd?: () => void;
-      variant: "dashboard" | "rail";
+      variant: "dashboard" | "rail" | "compact";
       pairedAction?: never;
     };
 
@@ -205,6 +206,22 @@ export default function MeetingControls({
         aria-label={meetingSurfaceState.buttonLabel}
         className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
       />
+    );
+  }
+
+  if (variant === "compact") {
+    return (
+      <Button
+        variant="primary"
+        iconLeft={<Mic aria-hidden="true" className="h-4 w-4 shrink-0" />}
+        onClick={handlePrimaryAction}
+        disabled={meetingSurfaceState.buttonDisabled}
+        title={meetingSurfaceState.buttonTooltip}
+        aria-label={meetingSurfaceState.buttonLabel}
+        className="rounded-md px-3 disabled:bg-action-tint disabled:text-action-tint-fg disabled:opacity-100"
+      >
+        Start
+      </Button>
     );
   }
 

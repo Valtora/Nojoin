@@ -15,6 +15,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
 from backend.utils.canonical_pipeline.constants import _load_transcript
+from backend.utils.capture_resume import durable_resume_state
 from backend.utils.transcript_change import change_sequence_bump
 
 
@@ -130,6 +131,7 @@ def clear_previous_reprocess_state(session: Session, recording_id: int) -> None:
         # canonical-off publication would hide the new compatibility projection.
         if reprocess_publication_pending(transcript):
             transcript.settling_state = {
+                **durable_resume_state(transcript.settling_state),
                 "reprocess_pending": True,
                 "reprocess_published": True,
             }

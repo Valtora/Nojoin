@@ -47,12 +47,13 @@ def test_live_canonical_names_and_read_only_estimates(session: Session) -> None:
     before_new, before_dirty = set(session.new), set(session.dirty)
     result = _live(session)
     assert result["provisional"] is True
-    # The shared fixture also has a third speaker and provisional UNKNOWN lines.
+    # The shared fixture also has a third speaker and provisional UNKNOWN lines,
+    # which are no participant's.
     assert {speaker["name"] for speaker in result["speakers"]} == {
         "Alex",
         "Speaker 2",
         "Speaker 3",
-        "UNKNOWN",
+        "Unattributed",
     }
     assert result["metrics"]["utterance_count"] > 0
     assert set(result["metrics"]) == {"utterance_count", "talk_time", "turn_structure"}

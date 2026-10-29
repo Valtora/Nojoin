@@ -12,6 +12,8 @@ from typing import Any
 
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.processing.processing_tuning import LINE_BREAK_PAUSE_KEY, resolve_tuning
+from backend.utils.capture_resume import RESUME_BOUNDARIES
+from backend.utils.transcript_resume_segments import resume_segment_groups
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,8 @@ def combine_and_consolidate_segments(
     transcript even without usable diarization. ``config`` (the owner's merged
     settings) supplies the single-word flip smoothing limits and diarised pause
     boundaries, including short-segment folding. Raw ASR fallback keeps the
-    default consolidation policy.
+    default consolidation policy. Its ``resume_boundaries_ms`` (the capture
+    resume cuts) are breaks that no line or short-segment fold crosses.
     """
     from backend.utils.transcript_utils import (
         combine_transcription_diarization,
@@ -116,9 +119,13 @@ def combine_and_consolidate_segments(
                 fallback_segment["alignment_error"] = seg["alignment_error"]
             combined_segments.append(fallback_segment)
 
-    final_segments = consolidate_diarized_transcript(
-        combined_segments, **consolidation_options
-    )
+    final_segments = [
+        segment
+        for group in resume_segment_groups(
+            combined_segments, (config or {}).get(RESUME_BOUNDARIES, [])
+        )
+        for segment in consolidate_diarized_transcript(group, **consolidation_options)
+    ]
 
     # The cluster label the diariser gave each line. Speaker assignment and the
     # merge pass rewrite ``speaker`` to the survivor's label; this one is kept
