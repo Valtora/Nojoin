@@ -488,7 +488,8 @@ def test_redecoded_words_keep_their_own_audio_source_when_the_window_changes_sou
     "case",
     [
         ("live", "episode", True),
-        ("paused", "episode", False),
+        ("paused", "episode", True),
+        ("sealed", "episode", False),
         ("live", "replaced", False),
     ],
 )
@@ -510,6 +511,7 @@ def test_rejected_step_drops_observation_without_stalling_current_episode(
             "eligible": True,
             "generation": generation,
             "phase": phase,
+            "sealed": phase == "sealed",
             "policy": {"enabled": True},
         }
     )
