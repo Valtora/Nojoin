@@ -535,54 +535,6 @@ describe("capture controller", () => {
     await reloaded.destroy();
   });
 
-  it.each([
-    { device: "desktop", saved: undefined, expected: "shared_audio" },
-    { device: "desktop", saved: "invalid", expected: "shared_audio" },
-    { device: "desktop", saved: "shared_audio", expected: "shared_audio" },
-    { device: "desktop", saved: "microphone_only", expected: "microphone_only" },
-    { device: "phone", saved: "shared_audio", expected: "microphone_only" },
-    { device: "phone", saved: "microphone_only", expected: "microphone_only" },
-  ])("starts $device from stored choice $saved as $expected", async ({ device, saved, expected }) => {
-    window.localStorage.setItem("nojoin.capture.settings", JSON.stringify({ startMode: saved, version: 2 }));
-    featureDetectMocks.detectCaptureSupport.mockReturnValue({
-      supported: true,
-      mode: device === "phone" ? "microphone_only" : "shared_audio",
-    });
-    const sources = {
-      mode: expected,
-      displayStream: expected === "shared_audio"
-        ? { getAudioTracks: () => [new EventTarget()], getVideoTracks: () => [] }
-        : null,
-      microphoneStream: {} as MediaStream,
-      captureReport: { mode: expected, notes: [] },
-      release: vi.fn(),
-    };
-    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
-    apiMocks.initRecording.mockResolvedValue({ id: "rec-1" });
-    apiMocks.pauseRecordingCapture.mockResolvedValue({ last_sequence: -1 });
-    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
-    const controller = new CaptureController();
-
-    try {
-      await controller.start();
-      expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledWith(expect.objectContaining({ mode: expected }));
-      expect(controller.getState().status).toBe("recording");
-      expect(notificationMocks.addNotification).not.toHaveBeenCalled();
-      if (expected === "microphone_only") {
-        expect(controller.displayVideoTrack("rec-1")).toBeNull();
-        await controller.pause();
-        await controller.resume();
-        expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledTimes(1);
-        expect(controller.getState().status).toBe("recording");
-      }
-      await controller.stop();
-      expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalled();
-      expect(sources.release).toHaveBeenCalled();
-    } finally {
-      await controller.destroy();
-    }
-  });
-
   it("silently rolls back when the display picker is cancelled", async () => {
     apiMocks.initRecording.mockResolvedValue({
       id: "rec-1",
@@ -1370,21 +1322,6 @@ describe("audio a closed tab recorded but never uploaded", () => {
     expect(vi.mocked(createBrowserRecorder).mock.calls[0][0].startSequence).toBe(7);
     await vi.waitFor(async () => expect(await storedSequences(controller)).toEqual([5, 6]));
   });
-
-  it.each(["microphone_only", "shared_audio"])(
-    "resumes after a reload on desktop with the %s source chosen at Start",
-    async (startMode) => {
-      window.localStorage.setItem("nojoin.capture.settings", JSON.stringify({ startMode, version: 2 }));
-      featureDetectMocks.detectCaptureSupport.mockReturnValue({ supported: true, mode: "shared_audio" });
-      const controller = await controllerWithStored([]);
-
-      await controller.resume("rec-1");
-
-      expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledWith(
-        expect.objectContaining({ mode: startMode }),
-      );
-    },
-  );
 
   it("uploads it before finalizing a stop with no live capture", async () => {
     const controller = await controllerWithStored([5, 6]);

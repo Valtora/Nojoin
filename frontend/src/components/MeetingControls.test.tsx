@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import MeetingControls from "./MeetingControls";
-import { readCaptureSettings } from "@/lib/capture/shared";
 
 const routerPush = vi.fn();
 const addNotification = vi.fn();
@@ -56,7 +55,6 @@ describe("MeetingControls", () => {
     start.mockReset();
     updateSettings.mockReset();
     captureState.settings = { startMode: "shared_audio" };
-    updateSettings.mockImplementation((patch) => Object.assign(captureState.settings, patch));
     connectivityStatus = "online";
     captureState.controller.getState = () => ({ error: null });
     captureState.runtimeActive = false;
@@ -119,31 +117,27 @@ describe("MeetingControls", () => {
     expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
   });
 
-  it.each(["sidebar", "dashboard", "rail"] as const)("chooses a source beside %s Start without starting early", async (variant) => {
-    const view = render(<MeetingControls variant={variant} />);
+  // Saving the choice and starting with it run for real in
+  // MeetingCaptureSource.integration.test.tsx; here each surface offers it.
+  it.each(["sidebar", "dashboard", "rail"] as const)("chooses a source beside %s Start without starting early", (variant) => {
+    render(<MeetingControls variant={variant} />);
     const select = screen.getByRole("combobox", { name: "Recording source" });
     expect(select).toHaveValue("shared_audio");
     fireEvent.change(select, { target: { value: "microphone_only" } });
-    expect(updateSettings).toHaveBeenCalledWith({ startMode: "microphone_only" });
+    expect(updateSettings).toHaveBeenCalledExactlyOnceWith({ startMode: "microphone_only" });
     expect(start).not.toHaveBeenCalled();
-    view.rerender(<MeetingControls variant={variant} />);
+  });
+
+  it.each(["sidebar", "dashboard", "rail"] as const)("says %s Start shares nothing once Microphone only is chosen", async (variant) => {
+    captureState.settings = { startMode: "microphone_only" };
+    render(<MeetingControls variant={variant} />);
+    const select = screen.getByRole("combobox", { name: "Recording source" });
     expect(select).toHaveValue("microphone_only");
     expect(select).toHaveAttribute("title", "Recording source: Microphone only");
-
-    view.unmount();
-    render(<MeetingControls variant={variant} />);
-    expect(screen.getByRole("combobox", { name: "Recording source" })).toHaveValue("microphone_only");
     const button = screen.getByRole("button", { name: "Start Meeting" });
     expect(button).toHaveAttribute("title", "Start a microphone-only recording without sharing a tab or screen.");
     fireEvent.click(button);
     await waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(""));
-  });
-
-  it("preselects the browser's saved source", () => {
-    window.localStorage.setItem("nojoin.capture.settings", JSON.stringify({ startMode: "microphone_only", version: 2 }));
-    captureState.settings = readCaptureSettings();
-    render(<MeetingControls variant="dashboard" />);
-    expect(screen.getByRole("combobox", { name: "Recording source" })).toHaveValue("microphone_only");
   });
 
   it.each(["sidebar", "dashboard", "rail"] as const)("keeps phone %s Start microphone-only without a selector", async (variant) => {

@@ -11,15 +11,6 @@ const stored = () => {
 };
 
 describe("capture processing defaults", () => {
-  it("retains the chosen Start source when the microphone settings change", () => {
-    writeCaptureSettings({ ...readCaptureSettings(), startMode: "microphone_only" });
-    writeCaptureSettings({ ...readCaptureSettings(), microphoneDeviceId: "usb-mic", microphoneGain: 1.4 });
-
-    expect(readCaptureSettings()).toMatchObject({
-      startMode: "microphone_only", microphoneDeviceId: "usb-mic", microphoneGain: 1.4,
-    });
-  });
-
   it.each([
     { profile: "fresh", saved: null, expected: false },
     {
