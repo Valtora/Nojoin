@@ -19,6 +19,10 @@ async def get_person_meetings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PersonMeetingsRead:
+    """
+    Get a person's meeting history and talk-time statistics.
+    Lists their newest 50 owned meetings; the statistics cover all of them.
+    """
     assert current_user.id is not None
     # Selecting scalars avoids loading the person's voiceprint or tag relations.
     result = await db.execute(

@@ -16,36 +16,64 @@ from backend.models.speaker_public import (
     PersonTalkMonthRead,
 )
 
-# Canonical presence includes every active line, even when none belongs to this
-# person: stale JSON must never give them speech that has been reassigned.
-# EXISTS keeps multiple labels linked to the person from multiplying meetings
-# or legacy segments. Only scalar aggregates leave Postgres, even for history
-# beyond the fifty displayed meetings.
+# `links` holds the person's active speakers in meetings the user still owns;
+# matching against it keeps several labels for one person from multiplying
+# meetings or speech. A meeting with any active line is canonical, even when
+# none is this person's, so stale JSON never gives them reassigned speech.
+# Transcripts with no lines yet (the demo meeting until its lines are first
+# read, a restore still rebuilding) fall back to their JSON segments. Only segments
+# with numeric times are summed, so one malformed row counts as no speech
+# instead of failing the whole history. Only scalar aggregates leave Postgres,
+# even for history beyond the fifty displayed meetings.
 _MEETINGS = text("""
-    WITH meetings AS (
+    WITH links AS (
+        SELECT rs.id, rs.recording_id, rs.diarization_label, rs.local_name, rs.name
+        FROM recording_speakers rs
+        JOIN recordings r ON r.id = rs.recording_id
+        WHERE rs.global_speaker_id = :speaker_id
+          AND rs.merged_into_id IS NULL AND rs.speaker_status <> 'merged'
+          AND r.user_id = :user_id AND NOT r.is_deleted
+    ), meetings AS (
         SELECT r.id, r.public_id, r.name, r.created_at, r.duration_seconds
         FROM recordings r
-        WHERE r.user_id = :user_id AND NOT r.is_deleted
-          AND EXISTS (
-              SELECT 1 FROM recording_speakers rs
-              WHERE rs.recording_id = r.id
-                AND rs.global_speaker_id = :speaker_id
-                AND rs.merged_into_id IS NULL AND rs.speaker_status <> 'merged'
-          )
+        WHERE r.id IN (SELECT recording_id FROM links)
     ), canonical AS (
         SELECT u.recording_id,
-               SUM(CASE WHEN EXISTS (
-                   SELECT 1 FROM recording_speakers rs
-                   WHERE rs.recording_id = u.recording_id
-                     AND rs.global_speaker_id = :speaker_id
-                     AND rs.id = u.recording_speaker_id
-                     AND rs.merged_into_id IS NULL AND rs.speaker_status <> 'merged'
-               ) THEN GREATEST(0, u.end_ms - u.start_ms) ELSE 0 END) / 1000.0
+               SUM(CASE WHEN l.id IS NULL THEN 0
+                        ELSE GREATEST(0, u.end_ms - u.start_ms) END) / 1000.0
                    AS talk_time_seconds
         FROM transcript_utterances u
         JOIN meetings m ON m.id = u.recording_id
+        LEFT JOIN links l ON l.id = u.recording_speaker_id
         WHERE u.state IN ('provisional', 'stable', 'finalized')
         GROUP BY u.recording_id
+    ), legacy AS (
+        SELECT t.recording_id,
+               SUM(GREATEST(0, (s->>'end')::double precision
+                               - (s->>'start')::double precision))
+                   AS talk_time_seconds
+        FROM transcripts t
+        JOIN meetings m ON m.id = t.recording_id
+        CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(t.segments) = 'array'
+                 THEN t.segments ELSE '[]'::jsonb END
+        ) AS s
+        WHERE t.recording_id NOT IN (SELECT recording_id FROM canonical)
+          AND NOT (
+              COALESCE(t.settling_state->>'eligible', 'false') = 'true'
+              AND COALESCE(t.settling_state->'policy'->>'enabled', 'false') = 'true'
+          )
+          AND jsonb_typeof(s->'start') = 'number'
+          AND jsonb_typeof(s->'end') = 'number'
+          AND EXISTS (
+              SELECT 1 FROM links l
+              WHERE l.recording_id = t.recording_id
+                AND (s->>'recording_speaker_id' = l.id::text
+                     OR (s->>'recording_speaker_id' IS NULL AND s->>'speaker' IN (
+                         l.diarization_label, l.local_name, l.name, :person_name
+                     )))
+          )
+        GROUP BY t.recording_id
     )
     SELECT m.public_id AS recording_id, m.name AS title, m.created_at AS date,
            m.duration_seconds,
@@ -53,37 +81,7 @@ _MEETINGS = text("""
                AS talk_time_seconds
     FROM meetings m
     LEFT JOIN canonical c ON c.recording_id = m.id
-    LEFT JOIN transcripts t ON t.recording_id = m.id
-    LEFT JOIN LATERAL (
-        SELECT CASE WHEN jsonb_typeof(t.segments) = 'string'
-                    THEN (t.segments #>> '{}')::jsonb ELSE t.segments END AS segments
-    ) projection ON c.recording_id IS NULL
-    LEFT JOIN LATERAL (
-        SELECT SUM(GREATEST(0,
-            (segment->>'end')::double precision -
-            (segment->>'start')::double precision)) AS talk_time_seconds
-        FROM jsonb_array_elements(
-            CASE WHEN jsonb_typeof(projection.segments) = 'array'
-                 THEN projection.segments ELSE '[]'::jsonb END
-        ) AS segment
-        WHERE c.recording_id IS NULL
-          AND NOT (
-              COALESCE(t.settling_state->>'eligible', 'false') = 'true'
-              AND COALESCE(t.settling_state->'policy'->>'enabled', 'false') = 'true'
-          )
-          AND EXISTS (
-              SELECT 1 FROM recording_speakers rs
-              WHERE rs.recording_id = m.id AND rs.global_speaker_id = :speaker_id
-                AND rs.merged_into_id IS NULL AND rs.speaker_status <> 'merged'
-                AND (
-                    (segment->>'recording_speaker_id') = rs.id::text
-                    OR (segment->>'recording_speaker_id' IS NULL AND
-                        segment->>'speaker' IN (
-                            rs.diarization_label, rs.local_name, rs.name, :person_name
-                        ))
-                )
-          )
-    ) legacy ON TRUE
+    LEFT JOIN legacy ON legacy.recording_id = m.id
     ORDER BY m.created_at DESC, m.id DESC
 """)
 

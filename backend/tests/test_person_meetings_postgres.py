@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +27,7 @@ from backend.models.recording import Recording, RecordingStatus
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.services.meeting_analytics.query import compute_recording_analytics
 from backend.tests.postgres_setup import fresh_schema
 
 SCHEMA = "person_meetings_test"
@@ -326,11 +326,8 @@ async def test_link_without_transcript_still_counts_a_meeting(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("encoded", [False, True])
 async def test_legacy_projection_fallback_is_scoped_to_linked_labels(
-    history: HistoryDatabase,
-    client: AsyncClient,
-    encoded: bool,
+    history: HistoryDatabase, client: AsyncClient
 ) -> None:
     segments = [
         {"start": 0, "end": 2.5, "speaker": "SPEAKER_00", "text": "one"},
@@ -342,17 +339,71 @@ async def test_legacy_projection_fallback_is_scoped_to_linked_labels(
         recording = _meeting(session, history.owner, "legacy")
         _link(session, recording, history.person)
         _link(session, recording, history.person, "SPEAKER_01")
-        session.add(
-            Transcript(
-                recording_id=recording.id,
-                segments=json.dumps(segments) if encoded else segments,
-            )
-        )
+        session.add(Transcript(recording_id=recording.id, segments=segments))
         session.commit()
     result = await _read(client, history.person)
     assert result["meeting_count"] == 1
     assert result["total_talk_time_seconds"] == 5.75
     assert result["meetings"][0]["talk_time_seconds"] == 5.75
+
+
+@pytest.mark.anyio
+async def test_malformed_legacy_segments_count_as_no_speech_for_that_meeting(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    malformed: list[Any] = [
+        {"start": "soon", "end": 800, "speaker": "SPEAKER_00"},
+        {"start": "", "end": 800, "speaker": "SPEAKER_00"},
+        {"start": True, "end": 800, "speaker": "SPEAKER_00"},
+        {"start": [0], "end": 800, "speaker": "SPEAKER_00"},
+        "not a segment",
+        {"start": 0, "end": 1.5, "speaker": "SPEAKER_00"},
+    ]
+    with Session(history.engine) as session:
+        for name, segments in (("malformed", malformed), ("encoded", "{not json")):
+            recording = _meeting(session, history.owner, name)
+            _link(session, recording, history.person)
+            session.add(Transcript(recording_id=recording.id, segments=segments))
+        good = _meeting(session, history.owner, "good")
+        _line(session, _link(session, good, history.person), 2)
+        session.commit()
+    result = await _read(client, history.person)
+    assert {row["title"]: row["talk_time_seconds"] for row in result["meetings"]} == {
+        "malformed": 1.5,
+        "encoded": 0,
+        "good": 2,
+    }
+    assert result["total_talk_time_seconds"] == 3.5
+
+
+@pytest.mark.anyio
+async def test_meeting_talk_time_matches_the_recordings_analytics(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    with Session(history.engine) as session:
+        recording = _meeting(session, history.owner, "analysed", duration_seconds=60)
+        first = _link(session, recording, history.person)
+        second = _link(session, recording, history.person, "SPEAKER_01")
+        stranger = _link(session, recording, history.foreign_person, "SPEAKER_02")
+        _line(session, first, 2.5)
+        _line(session, first, 1.25, TranscriptUtteranceState.STABLE)
+        _line(session, second, 3.5, TranscriptUtteranceState.PROVISIONAL)
+        _line(session, second, 40, TranscriptUtteranceState.SUPERSEDED)
+        _line(session, first, -3)
+        _line(session, stranger, 9)
+        session.commit()
+        analytics = compute_recording_analytics(session, recording)
+    person_keys = {
+        speaker["speaker_key"]
+        for speaker in analytics["speakers"]
+        if speaker["global_speaker_id"] == history.person.id
+    }
+    expected = sum(
+        analytics["metrics"]["talk_time"][key]["speech_ms"] for key in person_keys
+    )
+    result = await _read(client, history.person)
+    assert len(person_keys) == 2
+    assert result["meetings"][0]["talk_time_seconds"] * 1000 == expected == 7250
 
 
 @pytest.mark.anyio
