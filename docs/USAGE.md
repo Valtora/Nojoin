@@ -260,7 +260,7 @@ A voiceprint that cannot be rebuilt, because its meeting's audio was removed or 
 ## Notes, Chat, Documents, And Search
 
 - **Notes** holds the AI meeting notes, which you can edit. **Generate Notes** (or **Regenerate Notes**) writes them again when AI is configured, overwriting your edits. Notes you type during the meeting are fed into the generated notes and kept when you reprocess.
-- **Meeting Chat** answers questions from the transcript, with your edits and speaker names, the notes and the meeting's documents. **Context** in the chat header adds meetings with the tags you choose.
+- **Meeting Chat** answers questions from the transcript, with your edits and speaker names, the notes and the meeting's documents. Each answer reflects the meeting as it was when you asked; chat cannot watch a meeting or act later. **Context** in the chat header adds meetings with the tags you choose.
 - **Documents** holds files attached to the meeting, which the notes and Meeting Chat draw on. A note's file is with its note, and the AI reads it only while it is switched on ([Captures](#captures)).
 - **Analytics** reports how the conversation went, measured from the transcript and audio, with an optional AI reading of what was discussed.
 - **Search** in the recordings list and **Search** and **Find & Replace** in the transcript are covered under [Recordings List](#recordings-list) and [Transcript And Playback](#transcript-and-playback).
