@@ -906,10 +906,11 @@ export default function Sidebar() {
               {currentViewLabel}
             </div>
           </div>
-          {/* Start Meeting is not in the list on a phone, so Import stands
-              alone here, beside the title rather than squeezing search. */}
           {view === "recordings" && (
-            <ImportAudioButton appearance="compact" className="ml-auto" />
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <MeetingControls variant="compact" onMeetingEnd={fetchRecordings} />
+              <ImportAudioButton appearance="compact" />
+            </div>
           )}
         </div>
 

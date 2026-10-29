@@ -15,6 +15,7 @@ from backend.processing.processing_tuning import (
     line_break_pause_exceeded,
     resolve_tuning,
 )
+from backend.utils.capture_resume import capture_interval, load_resume_boundaries
 from backend.utils.config_manager import config_manager
 from backend.utils.live_word_settling import (
     close_word_state,
@@ -42,6 +43,7 @@ from .live_settling_projection import (
     partition_words,
     row_words,
     word_decisions,
+    word_extent,
     write_partitions,
 )
 
@@ -195,7 +197,7 @@ def _line_boundaries(
     or followed by recovered speech), the end stays a time cutoff instead.
     """
     closed_ends: dict[str, int | None] = {}
-    cutoffs: set[int] = set()
+    cutoffs: set[int] = set(state.get("resume_boundaries_ms", []))
     for row in rows:
         stored = (row.confidence_payload or {}).get(SETTLING_KEY, {})
         if (
@@ -246,13 +248,34 @@ def _project(
         speaker_enabled=speaker_enabled,
         closing=context.closing,
     )
+    resume_boundaries = load_resume_boundaries(session, transcript)
     partitions = partition_words(
         words,
         decisions,
         closing=context.closing is not None,
         barriers=[row.start_ms for row in rows if not mutable_row(row)],
-        boundaries=_line_boundaries(mutable, state, context.silence_start_ms, words),
+        boundaries=_line_boundaries(
+            mutable,
+            {
+                **state,
+                "resume_boundaries_ms": resume_boundaries,
+            },
+            context.silence_start_ms,
+            words,
+        ),
     )
+    for partition in partitions:
+        extent = next(
+            (
+                extent
+                for word in partition.words
+                if (extent := word_extent(word)) is not None
+            ),
+            None,
+        )
+        partition.capture_interval = (
+            capture_interval(extent[0], resume_boundaries) if extent else None
+        )
     tombstones, ids, changed = write_partitions(
         session,
         PartitionWrite(

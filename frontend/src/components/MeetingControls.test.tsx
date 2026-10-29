@@ -63,7 +63,7 @@ describe("MeetingControls", () => {
     };
   });
 
-  it.each(["dashboard", "rail"] as const)("toasts %s start failures instead of rendering them inline", async (variant) => {
+  it.each(["dashboard", "rail", "compact"] as const)("toasts %s start failures instead of rendering them inline", async (variant) => {
     start.mockRejectedValue(new Error("Permission denied by user"));
 
     render(<MeetingControls variant={variant} />);
@@ -81,7 +81,7 @@ describe("MeetingControls", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  it.each(["dashboard", "rail"] as const)("does not toast or navigate when the %s share picker is cancelled", async (variant) => {
+  it.each(["dashboard", "rail", "compact"] as const)("does not toast or navigate when the %s share picker is cancelled", async (variant) => {
     start.mockResolvedValue(null);
 
     render(<MeetingControls variant={variant} />);
@@ -96,7 +96,7 @@ describe("MeetingControls", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  it.each(["dashboard", "sidebar", "rail"] as const)("hands %s Start directly to the controller so its reservation covers preflight", async (variant) => {
+  it.each(["dashboard", "sidebar", "rail", "compact"] as const)("hands %s Start directly to the controller so its reservation covers preflight", async (variant) => {
     start.mockResolvedValue({ recordingId: "rec-new" });
     render(<MeetingControls variant={variant} />);
 
@@ -107,7 +107,7 @@ describe("MeetingControls", () => {
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/recordings/rec-new"));
   });
 
-  it.each(["sidebar", "rail"] as const)("starts and opens a recording from the %s control", async (variant) => {
+  it.each(["sidebar", "rail", "compact"] as const)("starts and opens a recording from the %s control", async (variant) => {
     const onMeetingEnd = vi.fn();
     start.mockResolvedValue({ recordingId: "rec-new" });
     render(<MeetingControls variant={variant} onMeetingEnd={onMeetingEnd} />);
@@ -153,7 +153,7 @@ describe("MeetingControls", () => {
     });
   });
 
-  describe.each(["sidebar", "rail"] as const)("%s start availability", (variant) => {
+  describe.each(["sidebar", "rail", "compact"] as const)("%s start availability", (variant) => {
     it.each([
       { state: "paused", label: "Paused recording needs attention", paused: "PAUSED" },
       { state: "interrupted", label: "Interrupted recording needs attention", paused: "UPLOADING" },
@@ -177,29 +177,31 @@ describe("MeetingControls", () => {
     });
   });
 
-  it.each(["recording", "paused"])("keeps the rail disabled during live %s without rendering live controls", (status) => {
-    captureState.runtimeActive = true;
-    captureState.status = status;
-    const { rerender } = render(<MeetingControls variant="rail" />);
+  describe.each(["rail", "compact"] as const)("%s during capture", (variant) => {
+    it.each(["recording", "paused"])("stays disabled during live %s without rendering live controls", (status) => {
+      captureState.runtimeActive = true;
+      captureState.status = status;
+      const { rerender } = render(<MeetingControls variant={variant} />);
 
-    const button = screen.getByRole("button", { name: "Meeting in progress" });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute(
-      "title",
-      "A meeting recording is already running. Use the recording controls to pause or stop it.",
-    );
-    expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
-    fireEvent.click(button);
-    expect(start).not.toHaveBeenCalled();
+      const button = screen.getByRole("button", { name: "Meeting in progress" });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute(
+        "title",
+        "A meeting recording is already running. Use the recording controls to pause or stop it.",
+      );
+      expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+      fireEvent.click(button);
+      expect(start).not.toHaveBeenCalled();
 
-    rerender(<MeetingControls variant="sidebar" />);
-    expect(screen.getByTestId("live-controls")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
-    rerender(<MeetingControls variant="rail" />);
-    expect(screen.getByRole("button", { name: "Meeting in progress" })).toBeDisabled();
+      rerender(<MeetingControls variant="sidebar" />);
+      expect(screen.getByTestId("live-controls")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
+      rerender(<MeetingControls variant={variant} />);
+      expect(screen.getByRole("button", { name: "Meeting in progress" })).toBeDisabled();
+    });
   });
 
-  it.each(["sidebar", "rail"] as const)("blocks %s start when an errored capture still has a runtime", (variant) => {
+  it.each(["sidebar", "rail", "compact"] as const)("blocks %s start when an errored capture still has a runtime", (variant) => {
     captureState.runtimeActive = true;
     captureState.status = "error";
     render(<MeetingControls variant={variant} />);
