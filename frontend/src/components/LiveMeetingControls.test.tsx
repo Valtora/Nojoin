@@ -118,6 +118,7 @@ describe("LiveMeetingControls", () => {
     expect(screen.getByText("Paused")).toBeInTheDocument();
     expect(screen.queryByText("Recording")).not.toBeInTheDocument();
     expect(screen.getByText("00:12")).toBeInTheDocument();
+    expect(screen.getByText("· this tab")).toBeInTheDocument();
   });
 
   it("says a stop is finishing once nothing is left to send", () => {

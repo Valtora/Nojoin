@@ -140,6 +140,7 @@ describe("a recording claimed and resumed from the recovery dialog", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByTitle("Stop recording")).toBeEnabled();
     expect(screen.getByTitle("Discard recording")).toBeEnabled();
+    expect(screen.getByText("· this tab")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("Stop recording"));
 

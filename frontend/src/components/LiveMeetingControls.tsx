@@ -88,6 +88,10 @@ export default function LiveMeetingControls({
   // as the page header does, and no clock rather than a wrong one.
   const capturedElsewhere = !canControl && serverPaused !== undefined;
   const showsRecording = capturedElsewhere ? !serverPaused : isRecording;
+  // On the recording page, which any tab can open, say whose capture it is.
+  const captureMarker = serverPaused === undefined
+    ? null
+    : capturedElsewhere ? "another tab or device" : "this tab";
 
   // Diarization runs at stop time, so the cap stays editable for the whole
   // recording: whatever is set when capture ends is what gets applied.
@@ -361,8 +365,11 @@ export default function LiveMeetingControls({
             <span
               className={`h-2.5 w-2.5 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
             />
-            <span className="text-xs font-semibold uppercase tracking-[0.16em]">
-              {statusLabel}
+            <span className="flex items-baseline gap-1.5 whitespace-nowrap text-xs">
+              <span className="font-semibold uppercase tracking-[0.16em]">
+                {statusLabel}
+              </span>
+              {captureMarker ? <span>· {captureMarker}</span> : null}
             </span>
             {capturedElsewhere ? null : (
               <span className="font-mono text-xl font-semibold tabular-nums text-foreground">

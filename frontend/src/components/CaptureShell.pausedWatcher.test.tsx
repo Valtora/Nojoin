@@ -470,6 +470,7 @@ describe("the recording page in a tab that is not capturing", () => {
     expect(screen.getByText(label)).toBeInTheDocument();
     expect(screen.queryByText(label === "Recording" ? "Paused" : "Recording")).not.toBeInTheDocument();
     expect(screen.queryByText(clock)).not.toBeInTheDocument();
+    expect(screen.getByText("· another tab or device")).toBeInTheDocument();
     expect(screen.getByTitle("Stop recording")).toBeDisabled();
   });
 });
