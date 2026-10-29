@@ -86,6 +86,9 @@ def _part_bounds(
     words: list[dict[str, Any]],
     found: list[int],
     line_bounds: dict[int, tuple[int, int]],
+    *,
+    segment: dict[str, Any],
+    gap: int,
 ) -> tuple[float, float]:
     """A part's span stops at the edges of the protected lines beside it.
 
@@ -93,6 +96,16 @@ def _part_bounds(
     longer overlaps the line. Otherwise a part before the line, finalised
     before the line is matched, would inherit the line's manual speaker.
     """
+    if not words:
+        # Unplaced edge runs have segment bounds, but no observed word times.
+        boundaries = sorted(line_bounds[index] for index in found)
+        start, end = float(segment["start"]), float(segment["end"])
+        if gap:
+            start = max(start, boundaries[gap - 1][1] / 1000)
+        if gap < len(boundaries):
+            end = min(end, boundaries[gap][0] / 1000)
+            start = min(start, end)
+        return start, max(start, end)
     start, end = float(words[0]["start"]), float(words[-1]["end"])
     first, last = _middle_ms(words[0]), _middle_ms(words[-1])
     for index in found:
@@ -104,6 +117,21 @@ def _part_bounds(
     return start, end
 
 
+def _untimed_owner(
+    before: tuple[int | None, int] | None,
+    after: tuple[int | None, int] | None,
+) -> tuple[int | None, int]:
+    """Only agreeing timed neighbours can place unknown words in a review."""
+    if before is not None and before == after:
+        return before
+    for neighbour in (before, after):
+        if neighbour is not None and neighbour[0] is None:
+            return neighbour
+    if after is not None:
+        return None, after[1]
+    return None, before[1] + 1 if before is not None else 0
+
+
 def _consume_overlap(
     segment: dict[str, Any],
     found: list[int],
@@ -112,9 +140,10 @@ def _consume_overlap(
 ) -> list[dict[str, Any]]:
     """Review only the words over protected lines; return the rest as segments.
 
-    A timed word belongs to the protected line holding its midpoint, and an
-    untimed word goes with the timed word before it, or the first timed word
-    when none precedes it. Runs of words outside every protected line stay
+    A timed word belongs to the protected line holding its midpoint. Untimed
+    runs belong to a protected line only when both timed neighbours agree;
+    otherwise they join an ordinary neighbour or remain ordinary edge runs.
+    Runs of words outside every protected line stay
     ordinary final segments, split wherever a protected line lies between
     them, even one holding no word's midpoint, and bounded by their timed
     words and the protected lines beside them. Only a segment with no timed
@@ -136,15 +165,22 @@ def _consume_overlap(
         )
         return line, sum(line_bounds[i][1] <= middle for i in found)
 
-    current = next(owner(word) for word in words if has_word_timing(word))
-    owners: list[tuple[int | None, int]] = []
-    for word in words:
-        if has_word_timing(word):
-            current = owner(word)
-        owners.append(current)
+    timed_owners = [
+        (position, owner(word))
+        for position, word in enumerate(words)
+        if has_word_timing(word)
+    ]
+    owners: list[tuple[int | None, int]] = [(None, 0)] * len(words)
+    for position, assignment in timed_owners:
+        owners[position] = assignment
+    for (before, before_owner), (after, after_owner) in zip(
+        [(-1, None), *timed_owners], [*timed_owners, (len(words), None)]
+    ):
+        assignment = _untimed_owner(before_owner, after_owner)
+        owners[before + 1 : after] = [assignment] * (after - before - 1)
 
     parts: list[dict[str, Any]] = []
-    for (index, _gap), run in groupby(zip(words, owners), key=itemgetter(1)):
+    for (index, gap), run in groupby(zip(words, owners), key=itemgetter(1)):
         kept = [word for word, _ in run]
         text = reconstruct_text_from_words(kept)
         if index is not None:
@@ -152,11 +188,21 @@ def _consume_overlap(
                 reviews[index].append(text)
             continue
         timed = [word for word in kept if has_word_timing(word)]
-        start, end = _part_bounds(timed, found, line_bounds)
+        start, end = _part_bounds(timed, found, line_bounds, segment=segment, gap=gap)
         parts.append(
             {**segment, "words": kept, "text": text, "start": start, "end": end}
         )
     return parts
+
+
+def _has_unplaced_edges(segment: dict[str, Any]) -> bool:
+    """Mixed alignment cannot attribute its untimed edges to an exact remap."""
+    words = segment.get("words") or []
+    return bool(
+        words
+        and any(has_word_timing(word) for word in words)
+        and not (has_word_timing(words[0]) and has_word_timing(words[-1]))
+    )
 
 
 def preserve_human_segments(
@@ -167,7 +213,8 @@ def preserve_human_segments(
     A final segment whose bounds match one protected line exactly, and the
     only one touching it, goes to the ordinary finaliser, which pins the
     accepted values; its wording is offered for review when it differs from
-    the kept text. Otherwise a final segment that directly overlaps a
+    the kept text. Partial alignments with untimed edges use the word-level
+    path instead. Otherwise a final segment that directly overlaps a
     protected line offers the words over it for review there, once, rather
     than duplicating them beside the kept text; its other words, and every
     other final segment, replace the live lines as usual.
@@ -186,10 +233,11 @@ def preserve_human_segments(
     touches = Counter(index for found in hits for index in found)
     exact = {
         found[0]
-        for bounds, found in zip(segment_bounds, hits)
+        for segment, bounds, found in zip(segments, segment_bounds, hits)
         if len(found) == 1
         and touches[found[0]] == 1
         and line_bounds[found[0]] == bounds
+        and not _has_unplaced_edges(segment)
     }
     reviews: dict[int, list[str]] = defaultdict(list)
     result: list[dict[str, Any]] = []
