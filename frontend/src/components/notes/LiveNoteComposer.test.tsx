@@ -46,6 +46,18 @@ describe("LiveNoteComposer", () => {
     expect(onSubmit).toHaveBeenLastCalledWith({ kind: "tail", body: "Another follow up", anchorMs: null });
   });
 
+  it.each([true, false])("says nothing about the meeting notes under the box (capturing: %s)", (captureActive) => {
+    render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={captureActive} />);
+    const composer = screen.getByTestId("live-note-composer");
+    expect(composer).not.toHaveTextContent(/labelled as yours|meeting notes/);
+    expect(composer).not.toHaveTextContent("Also listed in My notes");
+    // Before the transcript, where a finished recording opens, has no hint;
+    // a timed mode still says where the note lands.
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent(
+      captureActive ? "Placed where you start typing." : /^$/,
+    );
+  });
+
   it("shows a carried send placement after Stop until a deliberate change retargets it", () => {
     const draft = { text: "Carried thought", mode: "send" as const, typingStartMs: 12_000 };
     const onDraftChange = vi.fn();

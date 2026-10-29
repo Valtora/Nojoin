@@ -122,7 +122,7 @@ The automatic speaker engine favours small meetings. In larger meetings, or if t
 
 ### Live Notes
 
-The note composer stays under **Transcript** in every recording state. Enter adds a note and Shift+Enter starts a new line. The menu before the box, **Place note**, sets where it goes, and the line under the box says where the next note will land. During recording or a pause:
+The note composer stays under **Transcript** in every recording state. Enter adds a note and Shift+Enter starts a new line. The menu before the box, **Place note**, sets where it goes. For every place but **Before the transcript**, the line under the box says where the next note will land. During recording or a pause:
 
 - **At typing start**, the default, places the note where the recording was when you typed its first character, however long you take to finish it. Clearing the box starts again.
 - **At send** places it where the recording is when you press Enter.
