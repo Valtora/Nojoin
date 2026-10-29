@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
+from sqlalchemy import func
+from sqlmodel import col, select
+
 from backend.models.pipeline import RecordingAudioWindowManifest
 
 DEFAULT_AUDIO_WINDOW_MS = 20_000
@@ -34,6 +37,27 @@ PROCESSED_ASR_WINDOW_STATUSES = {
     WINDOW_ASR_STATUS_LIVE_PROCESSED,
     WINDOW_ASR_STATUS_CATCH_UP_PROCESSED,
 }
+
+# Uploaded audio the live lane has not reached that counts as waiting (issue #780).
+# The lane's own lag stays under a hop plus one upload and a run's latency.
+LIVE_WAITING_LAG_MS = 20_000
+
+
+def live_lane_lag_ms(session: Any, recording_id: int) -> int:
+    """Audio time uploaded past the last window the live lane has processed.
+
+    Windows, not lines: the lane marks a window processed when it has read its
+    audio, silence included, so a quiet room does not lag.
+    """
+    window = RecordingAudioWindowManifest
+    processed = col(window.asr_status).in_(PROCESSED_ASR_WINDOW_STATUSES)
+    uploaded_end, processed_end = session.execute(
+        select(
+            func.max(window.window_end_ms),
+            func.max(window.window_end_ms).filter(processed),
+        ).where(window.recording_id == recording_id)
+    ).one()
+    return int(uploaded_end or 0) - int(processed_end or 0)
 
 
 @dataclass(frozen=True)

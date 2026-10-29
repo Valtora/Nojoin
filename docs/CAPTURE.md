@@ -170,7 +170,7 @@ Meeting Edge needs AI configured and enough completed speech to work from, so a 
 
 ### The Live Transcript panel stays empty
 
-Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. The panel is always empty for an imported file, which is transcribed after upload.
+Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. Live transcription waits while the server finishes processing another recording; after about 20 seconds of uploaded audio the panel says so, and the lines arrive once it catches up. The panel is always empty for an imported file, which is transcribed after upload.
 
 ### Linux screen audio does not work
 

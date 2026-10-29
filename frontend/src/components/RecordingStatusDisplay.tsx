@@ -458,6 +458,7 @@ export default function RecordingStatusDisplay({
                     refreshAfter(actions.splitTranscriptLine(recording.id, segment, wordId)),
                 }}
                 isPaused={isPaused}
+                liveWaiting={liveTranscript.liveWaiting}
                 notes={liveNotes}
                 onMoveNote={settlingRequired ? noteEdits?.move : undefined}
                 onRetryNote={outbox.retry}

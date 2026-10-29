@@ -31,6 +31,7 @@ from backend.tests.live_naming_fixtures import (
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     PROCESSING_RUNS_SCHEMA,
+    RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
     RECORDING_SPEAKER_ALIASES_SCHEMA,
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
@@ -71,6 +72,7 @@ async def session_maker():
             SPEAKER_CORRECTION_EVENTS_SCHEMA,
             SPEAKER_NAME_EVENTS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
+            RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
         ):
             await connection.execute(text(schema))
     try:
