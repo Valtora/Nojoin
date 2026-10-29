@@ -32,6 +32,7 @@ from backend.utils.canonical_pipeline import (
     finalize_utterances_from_segments,
     refresh_transcript_projection_from_canonical,
     serialize_canonical_utterances,
+    update_utterance_speaker,
     update_utterance_text,
 )
 from backend.utils.canonical_pipeline.constants import _load_transcript
@@ -146,6 +147,63 @@ def test_drift_keeps_human_components_and_offers_final_wording_once(
             session, recording_id=recording_id, segments=final
         )
         assert [line["revision"] for line in _lines(session, recording_id)] == revisions
+
+
+def test_speaker_correction_takes_final_wording_and_keeps_the_chosen_speaker(
+    publication_engine: Engine,
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": index * 2,
+                    "end": index * 2 + 2,
+                    "text": f"live {index}",
+                    "speaker": "LIVE_00",
+                }
+                for index in range(20)
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        corrected = serialize_canonical_utterances(session, recording_id)[7]
+        _, speaker = update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=corrected["id"],
+            new_speaker_name="Chosen person",
+            expected_revision=corrected["revision"],
+        )
+        speaker_id = speaker.id
+        session.commit()
+        # Final boundaries drift half a second, so each segment overlaps two lines.
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": index * 2 + 0.5,
+                    "end": index * 2 + 2.5,
+                    "text": f"final {index}",
+                    "speaker": "SPEAKER_00",
+                }
+                for index in range(20)
+            ],
+        )
+        lines = _lines(session, recording_id)
+        assert [line["text"] for line in lines] == [f"final {i}" for i in range(20)]
+        assert not any("final_review" in line for line in lines)
+        assert lines[7]["recording_speaker_id"] == speaker_id
+        assert lines[7]["speaker_manually_edited"]
+        assert lines[0]["recording_speaker_id"] != speaker_id
 
 
 def test_empty_success_keeps_only_protected_lines(publication_engine: Engine) -> None:
