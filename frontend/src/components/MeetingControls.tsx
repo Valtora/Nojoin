@@ -63,7 +63,7 @@ export default function MeetingControls({
   const router = useRouter();
   const hasLiveRecording =
     runtimeActive && (status === "recording" || status === "paused");
-  const hasPausedBlock = Boolean(pausedRecording && !runtimeActive);
+  const hasPausedBlock = Boolean(pausedRecording && (!runtimeActive || status === "error"));
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
   const microphoneOnly = support.supported && support.mode === "microphone_only";
@@ -110,15 +110,17 @@ export default function MeetingControls({
                 buttonLabel: "Interrupted recording needs attention",
                 buttonMode: "wait",
                 buttonDisabled: true,
-                buttonTooltip:
-                  "Resume, stop or discard the interrupted recording in the dialog before starting anything new.",
+                buttonTooltip: runtimeActive
+                  ? "Stop or discard the current recording from its page before starting anything new."
+                  : "Resume, stop or discard the interrupted recording in the dialog before starting anything new.",
               }
             : {
                 buttonLabel: "Paused recording needs attention",
                 buttonMode: "wait",
                 buttonDisabled: true,
-                buttonTooltip:
-                  "Resume or discard the paused recording in the modal before starting anything new.",
+                buttonTooltip: runtimeActive
+                  ? "Stop or discard the current recording from its page before starting anything new."
+                  : "Resume or discard the paused recording in the modal before starting anything new.",
               }
           : isBusy
             ? {

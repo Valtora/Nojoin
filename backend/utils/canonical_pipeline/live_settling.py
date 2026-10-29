@@ -32,9 +32,11 @@ from backend.utils.transcript_settling import (
 
 from .live_settling_projection import (
     SETTLING_KEY,
+    Closing,
     DecideSpeaker,
     LineBoundaries,
     PartitionWrite,
+    lead_speaker,
     live_rows,
     mutable_row,
     partition_words,
@@ -76,7 +78,7 @@ class _Projection:
     transcript: Transcript
     rows: list[TranscriptUtterance]
     decide: DecideSpeaker | None = None
-    closing: bool = False
+    closing: Closing | None = None
     metadata: dict[str, Any] | None = None
     decode_id: str | None = None
     silence_start_ms: int | None = None
@@ -247,7 +249,7 @@ def _project(
     partitions = partition_words(
         words,
         decisions,
-        closing=context.closing,
+        closing=context.closing is not None,
         barriers=[row.start_ms for row in rows if not mutable_row(row)],
         boundaries=_line_boundaries(mutable, state, context.silence_start_ms, words),
     )
@@ -526,6 +528,14 @@ def close_live_settling(session: Session, *, recording_id: int) -> bool:
         return False
     rows = live_rows(session, recording_id, lock=True)
     words = close_word_state([word for row in rows for word in row_words(row)])
-    _project(session, _Projection(transcript, rows, closing=True), words)
+    _project(
+        session,
+        _Projection(
+            transcript,
+            rows,
+            closing=Closing(lead_speaker(session, recording_id, rows)),
+        ),
+        words,
+    )
     refresh_transcript_projection_from_canonical(session, recording_id)
     return True

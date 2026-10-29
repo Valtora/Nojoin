@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Pause, Play } from "lucide-react";
 
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
+import { formatTimelineMs } from "@/lib/notes/placement";
 import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import {
@@ -30,9 +31,15 @@ import {
   type TranscriptGroup as TranscriptGroupData,
 } from "./transcriptGroups";
 import TranscriptLine from "./TranscriptLine";
+import { liveRenderIdentity, type LiveLinePresentation,
+  type LiveTranscriptPresentation } from "./liveTranscriptPresentation";
+import { pendingTranscriptRuns } from "./pendingTranscriptGroups";
 
 /** What every line of the view shares; memoised by the view. */
 export interface TranscriptLineShared {
+  preserveLiveIdentity?: boolean;
+  live?: LiveTranscriptPresentation;
+  liveLines?: ReadonlyMap<string, LiveLinePresentation>;
   readOnly: boolean;
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
@@ -42,7 +49,7 @@ export interface TranscriptLineShared {
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
-  ) => void | Promise<void>;
+  ) => boolean | void | Promise<boolean | void>;
   /** Confirms or dismisses a suggested speaker name; null where names can't be reviewed. */
   onReviewSpeakerName:
     | ((label: string, name: string, decision: SpeakerNameDecision) => Promise<void>)
@@ -119,20 +126,25 @@ function TranscriptGroup({
   /** The play button pauses this group's playback rather than starting it. */
   const pauses = isGroupActive && isPlaying;
   const { speakerMap, speakerColors } = lineShared;
+  const timeLabel = lineShared.live ? formatTimelineMs(Math.max(0, group.start) * 1000) : formatTime(group.start);
   const activeKeys = activeLineKeys.split(LINE_KEY_SEPARATOR);
   const recentKeys = recentLineKeys.split(LINE_KEY_SEPARATOR);
 
-  const renderLine = (item: IndexedTranscriptSegment) => {
+  const renderLine = ([item, ...continuations]: IndexedTranscriptSegment[]) => {
     const { segment, segmentId } = item;
     const isEditingSpeaker = editingSpeakerLineId === segmentId;
     const isEditingText = editingTextId === segmentId;
     return (
       <TranscriptLine
-        key={segmentId}
+        key={lineShared.preserveLiveIdentity ? liveRenderIdentity(segment, item.index) : segmentId}
         segment={segment}
         index={item.index}
         segmentId={segmentId}
-        isActive={activeKeys.includes(segmentId)}
+        isActive={[item, ...continuations].some((line) => activeKeys.includes(line.segmentId))}
+        continuations={continuations.length ? continuations.map((line) => ({
+          item: line, decorations: searchDecorations(line.segmentId), noteDecorations: noteDecorations(line.segmentId),
+        })) : undefined}
+        lineShared={continuations.length ? lineShared : undefined}
         readOnly={lineShared.readOnly}
         allowProvisionalEdits={lineShared.allowProvisionalEdits}
         speakerMap={speakerMap}
@@ -157,6 +169,8 @@ function TranscriptGroup({
         onPlayFrom={lineShared.onPlayFrom}
         onSplitSegment={lineShared.onSplitSegment}
         editor={isEditingSpeaker || isEditingText ? editor : null}
+        live={lineShared.live}
+        liveLine={lineShared.liveLines?.get(segmentId)}
       />
     );
   };
@@ -181,10 +195,9 @@ function TranscriptGroup({
       {/* Timestamp & Play Control */}
       <div className="flex flex-col items-end min-w-16 md:min-w-[60px] pt-1 mt-1">
         <span className="text-sm text-contrast-icon-muted font-mono mb-1">
-          {formatTime(group.start)}
+          {timeLabel}
         </span>
-        {!disableSegmentPlayback && (
-          <IconButton
+        <IconButton
             data-ui-fill={(isGroupActive) ? "status-success" : "inset"}
             data-ui-hover={(isGroupActive) ? "status-success" : "action"}
             size="sm"
@@ -193,8 +206,9 @@ function TranscriptGroup({
               involvedSpeakers.map((speaker) =>
                 segmentSpeakerDisplayName(speakerMap, speaker),
               ),
-            )} at ${formatTime(group.start)}`}
+            )} at ${timeLabel}`}
             title={pauses ? "Pause segment" : "Play segment"}
+            disabled={disableSegmentPlayback}
             onClick={() => {
               if (isGroupActive) {
                 if (isPlaying) onPause();
@@ -215,13 +229,12 @@ function TranscriptGroup({
                 <Play aria-hidden="true" className="fill-current" />
               )
             }
-          />
-        )}
+        />
       </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex flex-col w-full">{group.items.map(renderLine)}</div>
+        <div className="flex flex-col w-full">{pendingTranscriptRuns(group.items).map(renderLine)}</div>
       </div>
     </div>
   );
@@ -234,6 +247,28 @@ function TranscriptGroup({
  * and note decorations, functions that are new whenever any line's marks
  * change. Those compare by what this group would draw from them.
  */
+function sameLiveLine(left: LiveLinePresentation | undefined, right: LiveLinePresentation | undefined): boolean {
+  return left === right || !!left && !!right &&
+    left.sourceLabel === right.sourceLabel && left.speakerLabel === right.speakerLabel &&
+    left.speakerLocked === right.speakerLocked;
+}
+
+function sameLineShared(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
+  const left = previous.lineShared;
+  const right = next.lineShared;
+  const keys = Object.keys(right) as (keyof TranscriptLineShared)[];
+  return keys.length === Object.keys(left).length && keys.every((key) => {
+    if (key === "liveLines") return next.group.items.every(({ segmentId }) =>
+      sameLiveLine(left.liveLines?.get(segmentId), right.liveLines?.get(segmentId)));
+    if (key === "live" && left.live && right.live) {
+      const liveKeys = Object.keys(right.live) as (keyof LiveTranscriptPresentation)[];
+      return liveKeys.length === Object.keys(left.live).length &&
+        liveKeys.every((liveKey) => Object.is(left.live![liveKey], right.live![liveKey]));
+    }
+    return Object.is(left[key], right[key]);
+  });
+}
+
 function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
   const keys = Object.keys(next) as (keyof TranscriptGroupProps)[];
   return (
@@ -242,6 +277,8 @@ function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupPro
       switch (key) {
         case "group":
           return sameGroup(previous.group, next.group);
+        case "lineShared":
+          return sameLineShared(previous, next);
         case "speakerDisplayOrder":
           return [...next.group.involved].every(
             (speaker) =>

@@ -2,6 +2,8 @@
 
 import { lazy, Suspense } from "react";
 
+import LiveAnalyticsView from "@/components/analytics/LiveAnalyticsView";
+import { useLiveAnalytics } from "@/components/analytics/useLiveAnalytics";
 import type { RecordingId } from "@/types";
 
 // Recharts is the largest dependency the app carries, and the recording route
@@ -11,6 +13,7 @@ const AnalyticsView = lazy(() => import("@/components/analytics/AnalyticsView"))
 
 interface AnalyticsSectionProps {
   active: boolean;
+  inFlight?: boolean;
   recordingId: RecordingId;
   /**
    * The meeting's speaker colours, so a person is the same colour here as in
@@ -24,11 +27,19 @@ interface AnalyticsSectionProps {
 
 export default function AnalyticsSection({
   active,
+  inFlight = false,
   recordingId,
   speakerColors,
   onPlaySegment,
   onReviewSpeakers,
 }: AnalyticsSectionProps) {
+  // Keep the reader's last snapshot outside either view: completion and tab
+  // switches stop its requests without discarding estimates still on screen.
+  const { analytics, error, clearAnalytics } = useLiveAnalytics(recordingId, active && inFlight);
+  const estimates = analytics ? (
+    <LiveAnalyticsView analytics={analytics} error={inFlight ? error : null} speakerColors={speakerColors} />
+  ) : undefined;
+
   return (
     <div
       role="tabpanel"
@@ -36,22 +47,25 @@ export default function AnalyticsSection({
       aria-labelledby="tab-analytics"
       className={`absolute inset-0 flex flex-col ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
-      {/* Mounted only once the tab has been opened, so an unopened tab costs
-          neither the chunk nor the request behind it. */}
+      {/* The final view and its chart chunk are mounted only while the tab is open. */}
       {active && (
         <Suspense
-          fallback={
+          fallback={estimates ?? (
             <div className="flex h-full items-center justify-center text-sm text-contrast-helper">
               Loading analytics...
             </div>
-          }
+          )}
         >
-          <AnalyticsView
+          {inFlight ? <LiveAnalyticsView analytics={analytics} error={error}
+            speakerColors={speakerColors} /> : <AnalyticsView
+            key={recordingId}
             recordingId={recordingId}
             speakerColors={speakerColors}
             onPlaySegment={onPlaySegment}
             onReviewSpeakers={onReviewSpeakers}
-          />
+            initialFallback={estimates}
+            onLoaded={clearAnalytics}
+          />}
         </Suspense>
       )}
     </div>

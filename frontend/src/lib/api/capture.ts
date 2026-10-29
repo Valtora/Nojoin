@@ -38,15 +38,17 @@ export const reportRecordingCaptureSources = async (
 /**
  * Resumes a capture. With the epoch this tab holds, it carries on with its own
  * capture; without one, it takes the capture over and is issued the next epoch.
+ * `reclaimEpoch`, the epoch this tab held before its page reloaded, lets that
+ * takeover go ahead while the server still holds the capture as uploading.
  */
 export const resumeRecordingCapture = async (
   recordingId: RecordingId,
-  options: CaptureEpochOption = {},
+  options: CaptureEpochOption & { reclaimEpoch?: number } = {},
 ): Promise<RecordingCaptureLifecycleResponse> => {
   const response = await api.post<RecordingCaptureLifecycleResponse>(
     `/recordings/${recordingId}/resume`,
     undefined,
-    { params: { epoch: options.epoch } },
+    { params: { epoch: options.epoch, reclaim_epoch: options.reclaimEpoch } },
   );
   return response.data;
 };

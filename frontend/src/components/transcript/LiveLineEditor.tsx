@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { getGlobalSpeakers } from "@/lib/api";
 import type { GlobalSpeaker, RecordingSpeaker, TranscriptSegment, TranscriptSpeakerAssignment } from "@/types";
 import { splitWords } from "@/lib/transcript/settling";
@@ -60,14 +60,20 @@ export default function LiveLineEditor({
     panelRef, anchor, unchanged: kind !== "changeSpeaker" && unchanged && !saving,
     dismiss: onClose, close: () => { if (!saving) close(); },
   });
-  // A refusal keeps the editor open. Save was disabled while it ran, which
-  // dropped focus to the page, so it goes back to the text or the picker.
+  // A refusal keeps the editor open. Save and the text were disabled while it
+  // ran, which dropped focus to the page, so the text is enabled again first
+  // and focus goes back to it or the picker.
   const save = async (command: () => Promise<boolean>) => {
     if (saving) return;
     setSaving(true);
     try {
       if (await command()) close();
-      else (kind === "split" ? splitPickerRef : textEditorRef).current?.focus();
+      else {
+        flushSync(() => setSaving(false));
+        (kind === "split" ? splitPickerRef : textEditorRef).current?.focus();
+      }
+    } catch (error) {
+      console.error("Failed to save the transcript line", error);
     } finally { setSaving(false); }
   };
   // Text as it opened closes without a request, as in the finished view: the
@@ -88,7 +94,8 @@ export default function LiveLineEditor({
       onKeyDown={handlePanelKeyDown}
       className="z-[var(--z-dropdown)] w-80 max-w-[calc(100vw-2rem)] rounded border border-surface-border bg-surface-card p-3 text-foreground shadow-float">
       {kind === "editText" ? (
-        <TextareaBase ref={textEditorRef} aria-label="Line text" value={text} onChange={(event) => setText(event.target.value)}
+        <TextareaBase ref={textEditorRef} aria-label="Line text" value={text} disabled={saving}
+          onChange={(event) => setText(event.target.value)}
           className="w-full rounded border border-control-border bg-surface-input p-2 text-foreground" />
       ) : (
         <label className="block text-sm">Split before word

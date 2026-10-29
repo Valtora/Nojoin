@@ -33,6 +33,7 @@ interface MyNotesListProps {
   noteEdits: NoteEdits;
   /** Plays the audio from a time in seconds. */
   onPlay: (seconds: number) => void;
+  disablePlayback?: boolean;
   /** Called on a jump to a note, before the transcript scrolls: a phone opens it. */
   onShowTranscript?: () => void;
   className?: string;
@@ -42,7 +43,7 @@ const startMsOf = (note: TimelineNote) =>
   note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0);
 
 /**
- * Every saved note on a processed meeting, in the transcript's order: notes
+ * Every saved note on the recording, in the transcript's order: notes
  * before the transcript first, then the rest by time, then notes after it.
  * A note at a time scrolls the transcript to it, and plays from there; each
  * note is edited or deleted here as on its line, through the same edits, so
@@ -54,6 +55,7 @@ export default function MyNotesList({
   segments,
   noteEdits,
   onPlay,
+  disablePlayback = false,
   onShowTranscript,
   className,
 }: MyNotesListProps) {
@@ -128,7 +130,10 @@ export default function MyNotesList({
                 aria-label={`Play from ${time}`}
                 title="Play from here"
                 icon={<Play aria-hidden="true" />}
-                onClick={() => onPlay(startMsOf(note) / 1000)}
+                disabled={disablePlayback}
+                onClick={() => {
+                  if (!disablePlayback) onPlay(startMsOf(note) / 1000);
+                }}
                 className={`-my-1.5 ${TOUCH_TARGET_SQUARE}`}
               />
             ) : null}
@@ -137,7 +142,11 @@ export default function MyNotesList({
               aria-label={`Edit note ${name}`}
               title="Edit or delete this note"
               icon={<Pencil aria-hidden="true" />}
-              onClick={(event) => setEditing({ noteId: note.id, anchor: event.currentTarget })}
+              // An editor still open holds unsaved text: an unchanged one closed on the press.
+              onClick={(event) => {
+                const next = { noteId: note.id, anchor: event.currentTarget };
+                setEditing((open) => open ?? next);
+              }}
               className={`-my-1.5 ${TOUCH_TARGET_SQUARE}`}
             />
           </div>

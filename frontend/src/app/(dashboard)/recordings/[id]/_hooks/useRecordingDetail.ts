@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import {
-  getRecording,
   getRecordingIfChanged,
   getSettings,
   updateSettings,
@@ -51,7 +50,9 @@ import {
   sortTranscriptSegments,
 } from "@/lib/transcriptSegments";
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { AudioClock } from "@/lib/notes/audioClock";
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
 import { useRecordingNotes } from "@/lib/notes/useNoteOutbox";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
@@ -68,10 +69,12 @@ import {
   shouldPollRecordingUpdates,
 } from "./recordingDetailUtils";
 import { useRecordingNotFound } from "./useRecordingNotFound";
-import { useDetailTranscript } from "./useDetailTranscript";
+import { useRecordingTranscript } from "./useRecordingTranscript";
+import { createRecordingMetadataReader } from "./recordingMetadataReader";
 
 interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
+  capture?: { ownedRecordingId: string | null; status: string };
 }
 
 // A finished page still notices changes made from another tab or device: a
@@ -84,11 +87,16 @@ export const IDLE_RECORDING_POLL_INTERVAL_MS = 15_000;
  * logic for the recording detail page, so the page component itself stays
  * focused on rendering.
  */
-export function useRecordingDetail({ params }: UseRecordingDetailParams) {
+export function useRecordingDetail({ params, capture }: UseRecordingDetailParams) {
   const [recording, setRecording] = useState<Recording | null>(null);
   // Fed every read of the recording, changed or not: `recording` ignores
   // `live_audio_ms`, which changes on every poll.
   const [audioClock] = useState(() => new AudioClock());
+  const metadataReader = useMemo(() => createRecordingMetadataReader(audioClock, params), [audioClock, params]);
+  useEffect(() => {
+    metadataReader.activate();
+    return () => metadataReader.cancel();
+  }, [metadataReader]);
   // Fetched when `timeline_notes_list_signature` changes; null while loading.
   // The note box's outbox is kept per recording, here and in every view.
   const timelineNotes = useRecordingNotes(
@@ -100,11 +108,16 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   // A note's file switched on keeps the recording polled until it is read.
   const filesBeingRead = noteFilesBeingRead(timelineNotes);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
-  const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState(true);
+  // Unknown until settings answer, so an installation with it off never flashes its tab.
+  const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState<boolean | null>(null);
   const [meetingEdgeContextLevel, setMeetingEdgeContextLevel] = useState(
     DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
   );
   const [loading, setLoading] = useState(true);
+  useOnDepsChange([params], () => {
+    setRecording(null);
+    setLoading(true);
+  });
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
   const { addNotification } = useNotificationStore();
@@ -145,17 +158,28 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   // The notes error already showing when a recording opens is not news: only a
   // change after that raises a toast. Keyed by recording so each one primes.
   const lastNotesErrorRef = useRef<{ recordingId: string; error: string | null } | null>(null);
-  const lastMeetingEdgeErrorRef = useRef<string | null>(null);
+  const meetingEdgeErrorsShownRef = useRef(new Set<string>());
   // When the page first saw the audio as unavailable. It bounds how long the
   // page keeps re-checking for it.
   const audioUnavailableSinceRef = useRef<number | null>(null);
   const idleEtagRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
+  // Only this tab's runtime, a failed stop's included, keeps a recording in
+  // flight here ahead of the server. A stored ID outlives a reload after which
+  // another device may have finished the recording, and a recovery offer alone
+  // has nothing to play back from either.
+  const localCaptureActive = !!recording && capture?.ownedRecordingId === recording.id &&
+    (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
+  const canPlayback = !!recording && !isInFlightRecording && !localCaptureActive;
+  const canExport = canPlayback;
   const {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
-    liveSpeakerNames, history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
+    transcriptSpeakerNames, transcriptSpeakers, liveTranscript, usesInFlightTranscript, transcriptIsAuthoritative,
+    hasRetainedPublication,
+    history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
     setActiveTranscriptEditId, handleUndo, handleRedo,
-  } = useDetailTranscript(recording, setRecording);
+  } = useRecordingTranscript(recording, setRecording, localCaptureActive);
+  const { refresh: refreshInFlightTranscript } = liveTranscript;
   const compactChatPanelHeight = isCompact
     ? Math.min(chatPanelHeight, 42)
     : chatPanelHeight;
@@ -184,23 +208,21 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     let id: string | null = null;
     try {
       ({ id } = await params);
-      const sentAt = audioClock.stamp();
-      const [recData, gsData, settingsData] = await Promise.all([
-        getRecording(id),
-        getGlobalSpeakers(),
-        getSettings().catch(() => null),
-      ]);
-      audioClock.observe(recData, sentAt);
+      const speakersAndSettings = Promise.all([getGlobalSpeakers().catch(() => []), getSettings().catch(() => null)]);
+      const recData = await metadataReader.read(id);
+      if (!recData || !metadataReader.isActive()) return null;
       recordingNotFound.loaded(id);
       recordingNotFound.found();
       setRecording(recData);
-      setGlobalSpeakers(gsData);
-      if (settingsData) {
-        setMeetingEdgeEnabled(settingsData.enable_meeting_edge !== false);
-        setMeetingEdgeContextLevel(
-          clampMeetingEdgeContextLevel(settingsData.meeting_edge_context_level),
-        );
-      }
+      void speakersAndSettings.then(([gsData, settingsData]) => {
+        if (!metadataReader.isActive()) return;
+        setGlobalSpeakers(gsData);
+        // Settings that cannot load leave Meeting Edge on.
+        setMeetingEdgeEnabled(settingsData?.enable_meeting_edge !== false);
+        if (settingsData) {
+          setMeetingEdgeContextLevel(clampMeetingEdgeContextLevel(settingsData.meeting_edge_context_level));
+        }
+      });
       // Only set title if not editing, or on first load
       if (!isEditingTitle) {
         setTitleValue(recData.name);
@@ -208,6 +230,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       return recData;
 
         } catch (e: unknown) {
+      if (!metadataReader.isActive()) return null;
       console.error("Failed to fetch recording:", e);
       // A refresh of the recording on screen answered 404: checked as a
       // poll's is, so another account's sign-in doesn't send the page away.
@@ -222,21 +245,22 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       router.push("/recordings");
       return null;
     } finally {
-      setLoading(false);
+      if (metadataReader.isActive()) setLoading(false);
     }
-  }, [addNotification, audioClock, params, isEditingTitle, router, recordingNotFound]);
+  }, [addNotification, metadataReader, params, isEditingTitle, router, recordingNotFound]);
 
   const refreshRecordingView = useCallback(async () => {
     const refreshedRecording = await fetchRecording();
 
-    if (!refreshedRecording?.id || isRecordingInFlight(refreshedRecording)) {
+    if (!refreshedRecording?.id || (isRecordingInFlight(refreshedRecording) && !hasRetainedPublication)) {
+      if (refreshedRecording?.id) refreshInFlightTranscript();
       return;
     }
 
     await syncTranscriptState("full").catch((e) => {
       console.error("Failed to refresh transcript state:", e);
     });
-  }, [fetchRecording, syncTranscriptState]);
+  }, [fetchRecording, syncTranscriptState, refreshInFlightTranscript, hasRetainedPublication]);
 
   useEffect(() => {
     fetchRecording();
@@ -248,18 +272,22 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }
   }, [isMobile]);
 
-  // The "speakers", "my-notes" and "captures" panels exist only on mobile,
+  // Meeting Edge shows while it is switched on, and afterwards wherever it left guidance.
+  const showMeetingEdge = meetingEdgeEnabled === true || Boolean(recording?.transcript?.meeting_edge_payload);
+
+  // The "speakers", "my-notes", "captures" and "meeting-edge" panels exist only on mobile,
   // where they have tabs; desktop shows them in the side column. Leaving
-  // mobile while one is active would blank the main content, so fall back to
-  // the transcript.
+  // mobile while one is active, or a remembered Meeting Edge panel that is not
+  // shown, would blank the main content, so fall back to the transcript.
   useEffect(() => {
     if (
-      !isMobile &&
-      (activePanel === "speakers" || activePanel === "my-notes" || activePanel === "captures")
+      (!isMobile &&
+        (activePanel === "speakers" || activePanel === "my-notes" || activePanel === "captures" || activePanel === "meeting-edge")) ||
+      (meetingEdgeEnabled !== null && !showMeetingEdge && activePanel === "meeting-edge")
     ) {
       setActivePanel("transcript");
     }
-  }, [isMobile, activePanel, setActivePanel]);
+  }, [isMobile, activePanel, setActivePanel, showMeetingEdge, meetingEdgeEnabled]);
 
   useEffect(() => {
     if (!recording) return;
@@ -293,14 +321,18 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       }
       try {
         const { id } = await params;
-        const sentAt = audioClock.stamp();
-        const polled = idle
-          ? await getRecordingIfChanged(id, idleEtagRef.current)
-          : { recording: await getRecording(id), etag: idleEtagRef.current };
+        let polled: { recording: Recording; etag: string | null } | null;
+        if (idle) {
+          const sentAt = audioClock.stamp();
+          polled = await getRecordingIfChanged(id, idleEtagRef.current);
+          if (polled) audioClock.observe(polled.recording, sentAt);
+        } else {
+          const read = await metadataReader.read(id);
+          polled = read && { recording: read, etag: idleEtagRef.current };
+        }
         recordingNotFound.found();
         if (!polled) return;
         const data = polled.recording;
-        audioClock.observe(data, sentAt);
 
         const transcriptMoved = idle &&
           data.transcript?.change_sequence !== recording.transcript?.change_sequence;
@@ -314,6 +346,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         }
 
             } catch (e: unknown) {
+        if (!metadataReader.isActive()) return;
         console.error("Polling failed", e);
         if (
           !pollFailureMeansRemoved(
@@ -329,7 +362,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead, syncTranscriptState]);
+  }, [params, recording, isEditingTitle, audioClock, metadataReader, recordingNotFound, filesBeingRead,
+    syncTranscriptState]);
 
   // Listen for recording updates (e.g. from Sidebar retry or rename)
   useEffect(() => {
@@ -415,22 +449,21 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   }, [addNotification, recording]);
 
   useEffect(() => {
+    if (!recording || !isLiveCaptureInProgress(recording)) return;
     const meetingEdgeError =
       recording?.transcript?.meeting_edge_status === "error"
         ? recording.transcript?.meeting_edge_error_message ||
           "Meeting Edge is temporarily unavailable."
         : null;
 
-    if (meetingEdgeError && meetingEdgeError !== lastMeetingEdgeErrorRef.current) {
+    const errorKey = JSON.stringify([recording.id, meetingEdgeError]);
+    if (meetingEdgeError && !meetingEdgeErrorsShownRef.current.has(errorKey)) {
+      meetingEdgeErrorsShownRef.current.add(errorKey);
       addNotification({ type: "error", message: meetingEdgeError });
-      lastMeetingEdgeErrorRef.current = meetingEdgeError;
-    }
-
-    if (!meetingEdgeError) {
-      lastMeetingEdgeErrorRef.current = null;
     }
   }, [
     addNotification,
+    recording,
     recording?.transcript?.meeting_edge_error_message,
     recording?.transcript?.meeting_edge_status,
   ]);
@@ -485,31 +518,36 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   };
 
   // Transcript Handlers
-  const handleRenameSpeaker = async (label: string, newName: string) => {
-    if (!recording) return;
+  const handleRenameSpeaker = async (label: string, newName: string): Promise<boolean> => {
+    if (!recording) return false;
+    let accepted = false;
     try {
       const renamed = await updateSpeaker(recording.id, label, newName);
-      const updated = await getRecording(recording.id);
+      accepted = true;
+      const updated = await metadataReader.read(recording.id);
+      if (!updated) return true;
       setRecording(updated);
       await syncTranscriptState("full");
       for (const message of libraryVoiceprintNotices(renamed)) {
         addNotification({ type: "info", message });
       }
-
-        } catch (error: unknown) {
+      return true;
+    } catch (error: unknown) {
       console.error("Failed to rename speaker:", error);
       addNotification({
-        type: "error",
-        message: "Failed to rename speaker. Please try again.",
+        type: accepted ? "warning" : "error",
+        message: accepted ? "Speaker renamed, but the recording could not be refreshed."
+          : "Failed to rename speaker. Please try again.",
       });
+      return accepted;
     }
   };
 
   const handleUpdateSegmentSpeaker = async (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
-  ) => {
-    if (!recording) return;
+  ): Promise<boolean> => {
+    if (!recording) return false;
 
     const previousSegments = cloneTranscriptSegments(transcriptSegments);
 
@@ -520,7 +558,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     };
 
     if (!nextAssignment.name) {
-      return;
+      return false;
     }
 
     const currentSpeaker = recording.speakers?.find(
@@ -542,16 +580,19 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         nextAssignment.name === currentSpeakerName);
 
     if (isSameSelection) {
-      return;
+      return true;
     }
 
+    let accepted = false;
     try {
       if (segment.id) {
         await updateTranscriptUtteranceSpeaker(
           recording.id,
           segment.id,
           nextAssignment,
+          segment.revision,
         );
+        accepted = true;
         const syncResult = await syncTranscriptState("delta", {
           deferActiveEdit: false,
         });
@@ -575,7 +616,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       } else {
         const segmentIndex = transcriptSegments.indexOf(segment);
         if (segmentIndex === -1) {
-          return;
+          return false;
         }
 
         await updateTranscriptSegmentSpeaker(
@@ -583,7 +624,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
           segmentIndex,
           nextAssignment,
         );
-        const updated = await getRecording(recording.id);
+        accepted = true;
+        const updated = await metadataReader.read(recording.id);
+        if (!updated) return true;
         setRecording(updated);
         const nextSegments = sortTranscriptSegments(updated.transcript?.segments || []);
         setTranscriptState({
@@ -601,24 +644,27 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
           nextSegments,
         );
       }
-
-        } catch (error: unknown) {
+      return true;
+    } catch (error: unknown) {
       console.error("Failed to update segment speaker:", error);
       addNotification({
-        type: "error",
-        message: getErrorDetail(error) ?? "Failed to update segment speaker. Please try again.",
+        type: accepted ? "warning" : "error",
+        message: accepted ? "Speaker changed, but the transcript could not be refreshed."
+          : getErrorDetail(error) ?? "Failed to update segment speaker. Please try again.",
       });
+      return accepted;
     }
   };
 
   const handleUpdateSegmentText = async (
     segment: TranscriptSegment,
     text: string,
-  ) => {
-    if (!recording) return;
+  ): Promise<boolean> => {
+    if (!recording) return false;
 
     const previousSegments = cloneTranscriptSegments(transcriptSegments);
 
+    let accepted = false;
     try {
       if (segment.id) {
         await updateTranscriptUtteranceText(
@@ -627,6 +673,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
           text,
           segment.revision,
         );
+        accepted = true;
         const syncResult = await syncTranscriptState("delta", {
           deferActiveEdit: false,
         });
@@ -640,16 +687,18 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
             syncResult.segments,
           );
         }
-        return;
+        return true;
       }
 
       const segmentIndex = transcriptSegments.indexOf(segment);
       if (segmentIndex === -1) {
-        return;
+        return false;
       }
 
       await updateTranscriptSegmentText(recording.id, segmentIndex, text);
-      const updated = await getRecording(recording.id);
+      accepted = true;
+      const updated = await metadataReader.read(recording.id);
+      if (!updated) return true;
       setRecording(updated);
       const nextSegments = sortTranscriptSegments(updated.transcript?.segments || []);
       setTranscriptState({
@@ -666,10 +715,13 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         previousSegments,
         nextSegments,
       );
-
-        } catch (error: unknown) {
+      return true;
+    } catch (error: unknown) {
       console.error("Failed to update segment text:", error);
-      addNotification({ type: "error", message: getErrorDetail(error) ?? "Failed to update segment text." });
+      addNotification({ type: accepted ? "warning" : "error", message: accepted
+        ? "Text saved, but the transcript could not be refreshed."
+        : getErrorDetail(error) ?? "Failed to update segment text." });
+      return accepted;
     }
   };
 
@@ -683,11 +735,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     try {
       await findAndReplace(recording.id, find, replace, options);
 
-      const [updated] = await Promise.all([
-        getRecording(recording.id),
-        syncTranscriptState("full"),
-      ]);
-      setRecording(updated);
+      await syncTranscriptState("full");
+      const updated = await metadataReader.read(recording.id);
+      if (updated) setRecording(updated);
 
         } catch (error: unknown) {
       console.error("Failed to find and replace:", error);
@@ -709,7 +759,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
     try {
       await renameRecording(recording.id, titleValue.trim());
-      const updated = await getRecording(recording.id);
+      const updated = await metadataReader.read(recording.id);
+      if (!updated) return;
       setRecording(updated);
       setIsEditingTitle(false);
       router.refresh();
@@ -746,7 +797,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       try {
         await updateSpeakerColor(recording.id, targetLabel, colorKey);
         // Refresh recording to get updated speaker data
-        const updated = await getRecording(recording.id);
+        const updated = await metadataReader.read(recording.id);
+        if (!updated) return;
         setRecording(updated);
 
             } catch (e: unknown) {
@@ -764,14 +816,16 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       // Undefined means "use my default"; an id regenerates with that structure
       // for this run only, without changing the user's default.
       await generateNotes(recording.id, notesTemplateId ?? null);
-      const updated = await getRecording(recording.id);
+      const updated = await metadataReader.read(recording.id);
+      if (!updated) return;
       setRecording(updated);
       setActivePanel("notes"); // Switch to notes panel after generation
 
         } catch (e: unknown) {
       console.error("Failed to generate notes:", e);
       try {
-        const updated = await getRecording(recording.id);
+        const updated = await metadataReader.read(recording.id);
+        if (!updated) return;
         setRecording(updated);
         setActivePanel("notes");
 
@@ -797,7 +851,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
     try {
       await updateNotes(recording.id, notes);
-      const updated = await getRecording(recording.id);
+      const updated = await metadataReader.read(recording.id);
+      if (!updated) return;
       setRecording(updated);
 
         } catch (e: unknown) {
@@ -817,7 +872,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
     try {
       await updateNotes(recording.id, previousNotes || "");
-      const updated = await getRecording(recording.id);
+      const updated = await metadataReader.read(recording.id);
+      if (!updated) return;
       setRecording(updated);
 
         } catch (e: unknown) {
@@ -837,7 +893,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
     try {
       await updateNotes(recording.id, nextNotes || "");
-      const updated = await getRecording(recording.id);
+      const updated = await metadataReader.read(recording.id);
+      if (!updated) return;
       setRecording(updated);
 
         } catch (e: unknown) {
@@ -893,26 +950,39 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   };
 
   const speakerMap = useMemo(() => {
-    const speakers = buildRecordingSpeakerDisplayMap(recording?.speakers, globalSpeakerById);
+    const speakers = buildRecordingSpeakerDisplayMap(transcriptSpeakers ? [...transcriptSpeakers] : undefined, globalSpeakerById);
     // A live label has no speaker of the recording, so no name is replaced.
-    return liveSpeakerNames && liveSpeakerNames.recordingId === recording?.id
-      ? { ...liveSpeakerNames.names, ...speakers }
-      : speakers;
-  }, [globalSpeakerById, recording?.speakers, recording?.id, liveSpeakerNames]);
+    return { ...transcriptSpeakerNames, ...speakers };
+  }, [globalSpeakerById, transcriptSpeakers, transcriptSpeakerNames]);
+  const refreshPeople = useCallback(async () => {
+    try { setGlobalSpeakers(await getGlobalSpeakers()); }
+    catch (error) { console.error("Failed to refresh People after speaker naming", error); }
+  }, []);
+  const presentedRecording = useMemo(() => recording && hasRetainedPublication
+    ? { ...recording, speakers: transcriptSpeakers ? [...transcriptSpeakers] : recording.speakers }
+    : recording, [recording, hasRetainedPublication, transcriptSpeakers]);
 
   return {
     // Core data
-    recording,
+    recording: presentedRecording,
     setRecording,
     audioClock,
     timelineNotes,
     noteEdits,
     globalSpeakers,
+    refreshPeople,
     loading,
-    meetingEdgeEnabled,
+    showMeetingEdge,
     meetingEdgeContextLevel,
     // Derived
     isInFlightRecording,
+    localCaptureActive,
+    canPlayback,
+    canExport,
+    liveTranscript,
+    usesInFlightTranscript,
+    transcriptIsAuthoritative,
+    hasRetainedPublication,
     transcriptSegments,
     deferredTranscriptUtteranceIds,
     speakerMap,

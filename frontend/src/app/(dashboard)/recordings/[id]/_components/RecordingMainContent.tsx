@@ -8,9 +8,11 @@ import {
   useRef,
   type KeyboardEvent,
   type RefObject,
+  type ReactNode,
 } from "react";
 
 import { useNavigationStore, type ActivePanel } from "@/lib/store";
+import type { LiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import {
   GlobalSpeaker,
   Recording,
@@ -19,9 +21,7 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 
-import SpeakerPanel from "@/components/SpeakerPanel";
 import CapturesGallery from "@/components/notes/CapturesGallery";
-import MyNotesList from "@/components/notes/MyNotesList";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 
 import RecordingHeader from "./RecordingHeader";
@@ -33,7 +33,19 @@ import AnalyticsSection from "./AnalyticsSection";
 import { useScrollEdges } from "../_hooks/useScrollEdges";
 
 interface RecordingMainContentProps {
+  liveTranscript?: LiveTranscript;
+  liveNoteBoxRef?: RefObject<HTMLTextAreaElement | null>;
   recording: Recording;
+  playerSlot?: ReactNode;
+  inFlightContent?: ReactNode;
+  speakersContent?: ReactNode;
+  myNotesContent?: ReactNode;
+  meetingEdgeContent?: ReactNode;
+  inFlight?: boolean;
+  canPlayback?: boolean;
+  canExport?: boolean;
+  transcriptIsAuthoritative?: boolean;
+  hasRetainedPublication?: boolean;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes: readonly TimelineNote[] | null;
   /** The page's note edits, shared by the transcript and My notes. */
@@ -48,7 +60,6 @@ interface RecordingMainContentProps {
   currentTime: number;
   isPlaying: boolean;
   audioRef: RefObject<HTMLAudioElement | null>;
-  setRecording: (recording: Recording) => void;
   setTitleValue: (value: string) => void;
   setIsEditingTitle: (editing: boolean) => void;
   setIsMobileHeaderActionsOpen: (
@@ -69,18 +80,18 @@ interface RecordingMainContentProps {
   onPlaySegment: (start: number, end?: number) => void | Promise<void>;
   onPause: () => void;
   onResume: () => void;
-  onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
+  onRenameSpeaker: (label: string, newName: string) => void | boolean | Promise<void | boolean>;
   onColorChange: (speakerLabel: string, colorKey: string) => void;
   onRefresh: () => void;
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onUpdateSegmentText: (
     segment: TranscriptSegment,
     text: string,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onFindAndReplace: (
     find: string,
     replace: string,
@@ -121,6 +132,7 @@ const MOBILE_TABS: { panel: ActivePanel; label: string }[] = [
   { panel: "captures", label: "Captures" },
   ...TABS.slice(2),
   { panel: "speakers", label: "Speakers" },
+  { panel: "meeting-edge", label: "Meeting Edge" },
 ];
 
 // Marks a side of the mobile tab row with tabs scrolled out of view. Decorative:
@@ -144,7 +156,19 @@ function MoreTabsHint({ side }: { side: "left" | "right" }) {
 }
 
 export default function RecordingMainContent({
+  liveTranscript,
+  liveNoteBoxRef,
   recording,
+  playerSlot,
+  inFlightContent,
+  speakersContent,
+  myNotesContent,
+  meetingEdgeContent,
+  inFlight = false,
+  canPlayback = true,
+  canExport = true,
+  transcriptIsAuthoritative = false,
+  hasRetainedPublication = false,
   timelineNotes,
   noteEdits,
   isMobile,
@@ -156,7 +180,6 @@ export default function RecordingMainContent({
   currentTime,
   isPlaying,
   audioRef,
-  setRecording,
   setTitleValue,
   setIsEditingTitle,
   setIsMobileHeaderActionsOpen,
@@ -175,9 +198,7 @@ export default function RecordingMainContent({
   onPause,
   onResume,
   onRenameSpeaker,
-  onColorChange,
   onRefresh,
-  onSpeakerRenamed,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
@@ -199,7 +220,8 @@ export default function RecordingMainContent({
   const setSideTab = useNavigationStore((state) => state.setSideTab);
   const tablistRef = useRef<HTMLDivElement>(null);
   const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
-  const tabs = isMobile ? MOBILE_TABS : TABS;
+  const tabs = !isMobile ? TABS
+    : meetingEdgeContent ? MOBILE_TABS : MOBILE_TABS.filter(({ panel }) => panel !== "meeting-edge");
   // The tab that Tab and the arrow keys start from: the current panel's, or the
   // first when it has no tab here (desktop holds "speakers" for one render
   // before useRecordingDetail falls back to the transcript).
@@ -224,8 +246,6 @@ export default function RecordingMainContent({
     tablistRef.current?.querySelector<HTMLElement>(`#tab-${panel}`)?.focus();
   };
 
-  // A jump from My notes opens the transcript, and focus goes with it once
-  // it shows: the list's row is hidden from then on.
   const showTranscript = () => {
     setActivePanel("transcript");
     requestAnimationFrame(() =>
@@ -251,13 +271,14 @@ export default function RecordingMainContent({
         onBack={onBack}
         setIsMobileHeaderActionsOpen={setIsMobileHeaderActionsOpen}
         recording={recording}
+        playerSlot={playerSlot}
         isMobile={isMobile}
         isEditingTitle={isEditingTitle}
         titleValue={titleValue}
         isMobileHeaderActionsOpen={isMobileHeaderActionsOpen}
         currentTime={currentTime}
         audioRef={audioRef}
-        setRecording={setRecording}
+        onRefresh={onRefresh}
         setTitleValue={setTitleValue}
         setIsEditingTitle={setIsEditingTitle}
         onTitleSubmit={onTitleSubmit}
@@ -309,8 +330,15 @@ export default function RecordingMainContent({
       {/* Panel Content */}
       <SurfaceBase data-ui-fill="card" kind="pane" className="flex-1 flex flex-col bg-surface-card overflow-hidden min-h-0 h-full relative">
         <TranscriptSection
+          liveTranscript={liveTranscript}
+          liveNoteBoxRef={liveNoteBoxRef}
           active={activePanel === "transcript"}
           recording={recording}
+          inFlightContent={inFlightContent}
+          transcriptIsAuthoritative={transcriptIsAuthoritative}
+          hasRetainedPublication={hasRetainedPublication}
+          canPlayback={canPlayback}
+          canExport={canExport}
           timelineNotes={timelineNotes}
           noteEdits={noteEdits}
           transcriptSegments={transcriptSegments}
@@ -339,7 +367,10 @@ export default function RecordingMainContent({
         <NotesSection
           active={activePanel === "notes"}
           recording={recording}
+          canExport={canExport}
+          inFlight={inFlight}
           isGenerating={isGeneratingNotes}
+          hasRetainedPublication={hasRetainedPublication}
           canUndo={notesCanUndo}
           canRedo={notesCanRedo}
           onNotesChange={onNotesChange}
@@ -356,10 +387,11 @@ export default function RecordingMainContent({
         />
 
         <AnalyticsSection
+          inFlight={inFlight}
           active={activePanel === "analytics"}
           recordingId={recording.id}
           speakerColors={speakerColors}
-          onPlaySegment={(startMs) => onPlaySegment(startMs / 1000)}
+          onPlaySegment={canPlayback ? (startMs) => onPlaySegment(startMs / 1000) : undefined}
           // Two routes to one panel: mobile switches to it, desktop reveals it
           // in the side column, which may have been collapsed away.
           onReviewSpeakers={
@@ -379,15 +411,7 @@ export default function RecordingMainContent({
             aria-labelledby="tab-my-notes"
             className={`absolute inset-0 flex flex-col ${activePanel === "my-notes" ? "z-10 visible" : "z-0 invisible"}`}
           >
-            <MyNotesList
-              recordingId={recording.id}
-              timelineNotes={timelineNotes}
-              segments={transcriptSegments}
-              noteEdits={noteEdits}
-              onPlay={onPlaySegment}
-              onShowTranscript={showTranscript}
-              className="flex-1"
-            />
+            {myNotesContent}
           </div>
         )}
 
@@ -416,23 +440,14 @@ export default function RecordingMainContent({
             aria-labelledby="tab-speakers"
             className={`absolute inset-0 flex flex-col ${activePanel === "speakers" ? "z-10 visible" : "z-0 invisible"}`}
           >
-            <SpeakerPanel
-              speakers={recording.speakers || []}
-              segments={transcriptSegments}
-              onPlaySegment={onPlaySegment}
-              recordingId={recording.id}
-              speakerColors={speakerColors}
-              onColorChange={onColorChange}
-              currentTime={currentTime}
-              isPlaying={isPlaying}
-              onPause={onPause}
-              onResume={onResume}
-              onRefresh={onRefresh}
-              globalSpeakers={globalSpeakers}
-              onSpeakerRenamed={onSpeakerRenamed}
-            />
+            {speakersContent}
           </div>
         )}
+
+        {isMobile && meetingEdgeContent && <div role="tabpanel" id="panel-meeting-edge" aria-labelledby="tab-meeting-edge"
+          className={`absolute inset-0 flex flex-col overflow-y-auto ${activePanel === "meeting-edge" ? "z-10 visible" : "z-0 invisible"}`}>
+          {meetingEdgeContent}
+        </div>}
       </SurfaceBase>
     </div>
   );

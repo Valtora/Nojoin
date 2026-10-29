@@ -54,6 +54,7 @@ interface NotesViewProps {
   canRedo: boolean;
   isGenerating: boolean;
   onExport: () => void;
+  disableExport?: boolean;
 }
 
 export default function NotesView({
@@ -68,6 +69,7 @@ export default function NotesView({
   canRedo,
   isGenerating,
   onExport,
+  disableExport = false,
 }: NotesViewProps) {
   const displayNotes = notes
     ? notes.replace(/^#+\s*Meeting Notes\s*/i, "").trim()
@@ -515,8 +517,11 @@ export default function NotesView({
             </ButtonBase>
             <div className="w-px h-4 bg-surface-card mx-1" />
             <ButtonBase
-              onClick={onExport}
-              className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors"
+              onClick={() => {
+                if (!disableExport) onExport();
+              }}
+              disabled={disableExport}
+              className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               title="Export Notes"
             >
               <Download className="w-4 h-4" />

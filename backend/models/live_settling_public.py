@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from backend.utils.final_word_boundaries import final_words
+from backend.utils.live_speaker_labels import live_speaker_display_name
 
 
 class LiveWordPublicRead(BaseModel):
@@ -42,6 +43,9 @@ class LiveSettlingPublicRead(BaseModel):
     final_review: FinalReviewPublicRead | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    diarisation_pending: bool | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 def public_settling_fields(
@@ -50,6 +54,7 @@ def public_settling_fields(
     provisional: bool = False,
     final_utterance_id: str | None = None,
     final_text: str | None = None,
+    include_live_label_lock: bool = False,
 ) -> dict[str, Any]:
     """Expose typed live facts or final boundaries; never private comparisons.
 
@@ -57,11 +62,20 @@ def public_settling_fields(
     """
     payload = payload or {}
     review = payload.get("final_review")
-    public_review = (
+    public_review: dict[str, Any] = (
         {"final_review": FinalReviewPublicRead.model_validate(review).model_dump()}
         if isinstance(review, dict)
         else {}
     )
+    label = payload.get("live_speaker_label")
+    if (
+        isinstance(label, dict)
+        and "diarisation_pending" in label
+        and not payload.get("human_protection")
+    ):
+        public_review["diarisation_pending"] = label["diarisation_pending"] is True
+    if include_live_label_lock and isinstance(label, dict):
+        public_review["locked"] = label.get("locked") is True
     metadata = payload.get("live_text_settling")
     protected = bool(payload.get("human_protection"))
     if not isinstance(metadata, dict) and not protected:
@@ -105,8 +119,15 @@ def public_transcript_segment(
 
     ``include_final_words`` marks a recording that requires settling.
     """
+    # Canonical reads are already public. Where private evidence exists it is
+    # authoritative, including final publication's removal of live pending state.
     return {
-        **{key: value for key, value in segment.items() if key != "confidence_payload"},
+        **{
+            key: value
+            for key, value in segment.items()
+            if key != "confidence_payload"
+            and not (key == "diarisation_pending" and "confidence_payload" in segment)
+        },
         **public_settling_fields(
             segment.get("confidence_payload"),
             provisional=include_final_words and bool(segment.get("provisional")),
@@ -114,5 +135,7 @@ def public_transcript_segment(
             if include_final_words and not segment.get("provisional")
             else None,
             final_text=segment.get("text"),
+            include_live_label_lock=live_speaker_display_name(segment.get("speaker"))
+            is not None,
         ),
     }

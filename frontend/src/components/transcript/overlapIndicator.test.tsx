@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import TranscriptView from "../TranscriptView";
-import LiveTranscriptPanel from "../LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import { buildTranscriptGroups, indexSegments } from "./transcriptGroups";
 import { line, viewProps } from "./transcriptTestFixtures";
 import { indexOverlaps } from "./OverlapIndicator";

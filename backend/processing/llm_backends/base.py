@@ -4,6 +4,7 @@ from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 
 from backend.utils.chat_prompt import (
     ChatTranscript,
+    LiveChatTranscript,
     TranscriptExcerpts,
     build_chat_prompt,
 )
@@ -462,6 +463,15 @@ class LLMBackend:
             user_question, meeting_notes, diarized_transcript, notes_tool=notes_tool
         )
 
+    @staticmethod
+    def _offers_notes_tool(diarized_transcript: ChatTranscript) -> bool:
+        """Whether a chat request may carry ``update_meeting_notes``.
+
+        Not while the recording is in flight: the pass still running writes
+        the notes when it finishes, over anything the tool saved.
+        """
+        return not isinstance(diarized_transcript, LiveChatTranscript)
+
     def _chat_transcript(
         self,
         diarized_transcript: ChatTranscript,
@@ -477,6 +487,8 @@ class LLMBackend:
         the backend has a window to fit them in.
         """
         if recording_id is None:
+            return diarized_transcript
+        if isinstance(diarized_transcript, LiveChatTranscript):
             return diarized_transcript
         if isinstance(diarized_transcript, TranscriptExcerpts):
             return self.get_transcript_excerpts_for_llm(
@@ -812,7 +824,9 @@ Preserve the same schema and do not invent facts not supported by the original t
         return TranscriptExcerpts(ranges=tuple(ranges), text=text)
 
     @staticmethod
-    def get_mapped_transcript_for_llm(recording_id: int) -> str | None:
+    def get_mapped_transcript_for_llm(
+        recording_id: int, *, live: bool = False
+    ) -> str | None:
         """Render a recording's transcript for Meeting Chat, or None without one.
 
         See ``backend.utils.llm_transcript.render_transcript_for_llm``.
@@ -821,7 +835,7 @@ Preserve the same schema and do not invent facts not supported by the original t
         from backend.utils.llm_transcript import render_transcript_for_llm
 
         with get_sync_session() as session:
-            return render_transcript_for_llm(session, recording_id)
+            return render_transcript_for_llm(session, recording_id, live=live)
 
     def _update_notes_in_db(self, recording_id: int, new_notes: str):
         """

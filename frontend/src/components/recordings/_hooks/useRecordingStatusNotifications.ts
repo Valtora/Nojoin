@@ -79,8 +79,8 @@ export function useRecordingStatusNotifications(
             message: `Transcript ready for "${rec.name}"`,
           });
         }
-        // Reprocessing deletes the transcript, so a failed retry's row is new:
-        // there is no previous transcript status, only an in-flight recording.
+        // A run first seen without a transcript has no previous transcript
+        // status, only an in-flight recording.
         const sawTranscriptionRun =
           prevTranscriptStatus !== undefined ||
           (prevStatus !== undefined && prevStatus !== RecordingStatus.ERROR);

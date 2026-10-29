@@ -269,6 +269,9 @@ def _to_dashboard_recording(
         ends_at=utc_naive_to_aware(ends_at),
         duration_seconds=recording.duration_seconds,
         status=_recording_status_value(recording),
+        client_status=getattr(
+            recording.client_status, "value", recording.client_status
+        ),
         speaker_names=list(speaker_names or []),
         tags=list(tags or []),
     )

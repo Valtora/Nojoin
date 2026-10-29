@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { createPortal } from "react-dom";
 
 import { stripNote } from "@/lib/notes/headNoteSync";
+import { useUnsavedNoteWarning } from "@/lib/notes/useUnsavedNoteWarning";
 
 import Button from "../ui/Button";
 import { useAnchoredPanel } from "../ui/useAnchoredPanel";
@@ -45,7 +46,8 @@ interface NoteOnSelectionPopoverProps {
  * A note in the finished view: the quote it is on, a box and Save, and for a
  * note being edited, Delete. Enter saves and Shift+Enter starts a new line, as
  * in the live note box; Escape and Cancel close it. A press outside closes it
- * only while the text is as it opened, so a stray tap never throws a note away.
+ * only while the text is as it opened, so a stray tap never throws a note away,
+ * and until it is saved, leaving the page asks first (`useUnsavedNoteWarning`).
  */
 export default function NoteOnSelectionPopover({
   quote,
@@ -69,6 +71,7 @@ export default function NoteOnSelectionPopover({
   const errorId = useId();
   const isBlank = stripNote(text) === "";
   const isUnchanged = stripNote(text) === stripNote(initialText);
+  useUnsavedNoteWarning(!isUnchanged);
 
   const close = () => {
     onClose();
@@ -169,6 +172,8 @@ export default function NoteOnSelectionPopover({
         ref={boxRef}
         rows={3}
         value={text}
+        // Text typed while a save is on its way would not be in it.
+        readOnly={busy}
         onChange={(event) => {
           setText(event.target.value);
           setError(null);

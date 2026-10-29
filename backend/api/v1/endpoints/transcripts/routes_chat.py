@@ -26,7 +26,8 @@ from backend.models.tag import RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
-from backend.utils.chat_prompt import TranscriptExcerpts
+from backend.services.live_chat import chat_transcript_in_progress
+from backend.utils.chat_prompt import ChatTranscript, TranscriptExcerpts
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import CLI_PROVIDER, resolve_llm_config_async
 from backend.utils.meeting_notes import escape_prompt_attribute
@@ -206,22 +207,19 @@ async def chat_with_meeting(
     Chat with the meeting transcript using LLM (Streaming).
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    # The view blanks the transcript of an in-flight recording and the UI
-    # hides chat for it; the API must not answer from it either.
-    if recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES:
-        raise HTTPException(
-            status_code=409,
-            detail="Meeting Chat is available once the recording has finished processing.",
-        )
+    in_flight = recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
 
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript_obj = result.scalar_one_or_none()
 
-    if not transcript_obj:
+    if not transcript_obj and not in_flight:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    transcript_in_progress = chat_transcript_in_progress(
+        recording.status, transcript_obj
+    )
 
-    meeting_notes = transcript_obj.notes or ""
+    meeting_notes = (transcript_obj.notes if transcript_obj else "") or ""
 
     # Full history; the LLM backend truncates it if it must.
     stmt = (
@@ -428,7 +426,7 @@ async def chat_with_meeting(
         logger.error(f"Failed to initialize LLM backend: {e}")
         raise HTTPException(status_code=500, detail="Failed to initialize AI service")
 
-    def ask(diarized_transcript: TranscriptExcerpts | None):
+    def ask(diarized_transcript: ChatTranscript):
         # None: the backend reads the whole transcript itself via recording_id.
         return llm_backend.ask_question_streaming(
             user_question=augmented_message,
@@ -443,7 +441,12 @@ async def chat_with_meeting(
         answered = False
         excerpts: TranscriptExcerpts | None = None
         try:
-            generator = ask(None)
+            if transcript_in_progress:
+                from backend.services.live_chat import stream_live_chat
+
+                generator = stream_live_chat(ask, recording.id)
+            else:
+                generator = ask(None)
             while True:
                 try:
                     # Iterate over the generator response asynchronously using
@@ -462,7 +465,7 @@ async def chat_with_meeting(
                 except ContextWindowExceededError as overflow:
                     # Refused before any text, by every provider configured:
                     # ask again from the passages relevant to the question.
-                    if answered or excerpts is not None:
+                    if transcript_in_progress or answered or excerpts is not None:
                         raise
                     logger.info(
                         "Meeting %s is too long for chat; answering from excerpts: %s",

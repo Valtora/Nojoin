@@ -98,6 +98,8 @@ export function useRecordingNotFound(
       const askedAt = askedAtRef.current;
       if (askedAt !== null && Date.now() - askedAt < NOT_FOUND_RECHECK_MS) return;
       checkingRef.current = true;
+      // The minute counts from asking, not from the answer.
+      const askedNow = Date.now();
       const generation = generationRef.current;
       const current = () => generation === generationRef.current;
       try {
@@ -128,7 +130,7 @@ export function useRecordingNotFound(
             return;
           }
         }
-        askedAtRef.current = Date.now();
+        askedAtRef.current = askedNow;
         if (answer?.kind === "signed-in-elsewhere" && !signedInElsewhereRef.current) {
           signedInElsewhereRef.current = true;
           addNotification({

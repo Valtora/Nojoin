@@ -28,6 +28,7 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     resume,
     runtimeActive: false,
     stop,
+    support: { supported: true, mode: "shared_audio" },
   }),
 }));
 
@@ -73,6 +74,16 @@ describe("CaptureShell", () => {
     expect(
       screen.getByText(/no audio from this recording for over two minutes/),
     ).toBeInTheDocument();
+  });
+
+  it("renders an already-offered paused recording as paused, with Resume", () => {
+    // Which recordings are offered is discovery's decision, covered with the
+    // real provider in CaptureShell.pausedWatcher.test.tsx; this gives the
+    // dialog an offer directly.
+    guardState.pausedRecording = { ...interrupted, status: "PAUSED", client_status: "PAUSED" };
+    render(<CaptureShell><div /></CaptureShell>);
+    expect(screen.getByText("Recording paused")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume recording" })).toBeEnabled();
   });
 
   it("stops the recording it offers, by its own id", async () => {

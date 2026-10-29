@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LINE_CHANGED_MESSAGE, transcriptLineActions } from "@/components/recordings/_hooks/transcriptLineActions";
 import type { TranscriptSegment } from "@/types";
 import type { LiveLineHandlers } from "./LiveLineEditor";
-import LiveLineMenu from "./LiveLineMenu";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 
 const text = vi.fn();
 vi.mock("@/lib/api", () => ({
@@ -40,7 +40,7 @@ function renderEditor(handlers: Partial<LiveLineHandlers> = {}) {
     editText: vi.fn().mockResolvedValue(true), changeSpeaker: vi.fn().mockResolvedValue(true),
     split: vi.fn().mockResolvedValue(true), ...handlers,
   };
-  render(<LiveLineMenu segment={segment} handlers={all} onNoteOnLine={vi.fn()} />);
+  render(<LiveTranscriptPanel segments={[segment]} hasLoaded lineHandlers={all} onNoteOnLine={vi.fn()} />);
   const trigger = screen.getByRole("button", { name: "Actions for the line at 00:00" });
   trigger.focus();
   fireEvent.keyDown(trigger, { key: "ArrowDown" });

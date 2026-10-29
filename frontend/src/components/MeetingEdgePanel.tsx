@@ -11,7 +11,7 @@ import {
   Target,
 } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   clampMeetingEdgeContextLevel,
@@ -19,18 +19,28 @@ import {
   MEETING_EDGE_CONTEXT_OPTIONS,
 } from "@/lib/meetingEdgeContext";
 import { MeetingEdgePayload } from "@/types";
-
-const SAVE_DEBOUNCE_MS = 1200;
-
-type SaveState = "idle" | "saving" | "saved" | "error";
+import MarkdownBubble from "./MarkdownBubble";
+import { useMeetingEdgeFocus } from "./useMeetingEdgeFocus";
 
 interface MeetingEdgePanelProps {
+  readOnly?: boolean;
   payload?: MeetingEdgePayload | null;
   focusText?: string | null;
   status?: string | null;
   onSaveFocus: (focus: string) => Promise<void>;
   contextLevel?: number;
   onSaveContextLevel?: (level: number) => Promise<void>;
+}
+
+/** Shared model-text rendering, with card typography and raw HTML disabled. */
+function EdgeMarkdown({ content }: { content: string }) {
+  return (
+    <MarkdownBubble
+      content={content}
+      html={false}
+      className="max-w-none break-words text-inherit focus:outline-none [&_p]:m-0 [&_strong]:font-semibold"
+    />
+  );
 }
 
 /**
@@ -95,6 +105,7 @@ function EdgeSection({
 }
 
 function MeetingEdgePanel({
+  readOnly = false,
   payload,
   focusText,
   status,
@@ -102,126 +113,32 @@ function MeetingEdgePanel({
   contextLevel,
   onSaveContextLevel,
 }: MeetingEdgePanelProps) {
-  const normalisedFocus = focusText ?? "";
   const resolvedContextLevel = clampMeetingEdgeContextLevel(
     contextLevel ?? payload?.context_level ?? DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
   );
   const contextStepCount = MEETING_EDGE_CONTEXT_OPTIONS.length - 1;
-  const [draftFocus, setDraftFocus] = useState(normalisedFocus);
-  const [focusSaveState, setFocusSaveState] = useState<SaveState>("idle");
+  const { draftFocus, focusSaveState, handleChange, handleBlur } = useMeetingEdgeFocus(
+    focusText, readOnly, onSaveFocus,
+  );
   const [draftContextLevel, setDraftContextLevel] = useState(resolvedContextLevel);
   const [isGuidanceOpen, setIsGuidanceOpen] = useState(true);
   const toggleGuidance = useCallback(
     () => setIsGuidanceOpen((open) => !open),
     [],
   );
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const draftFocusRef = useRef(normalisedFocus);
-  const lastSavedRef = useRef(normalisedFocus);
-  const lastPropValueRef = useRef(normalisedFocus);
-  const focusSaveStateRef = useRef<SaveState>("idle");
-  const flushSaveRef = useRef<(valueToSave: string) => Promise<void>>(
-    async () => {},
-  );
+  const contextSaveGenerationRef = useRef(0);
 
-  const setVisibleFocusSaveState = useCallback((nextState: SaveState) => {
-    if (focusSaveStateRef.current === nextState) {
-      return;
-    }
-
-    focusSaveStateRef.current = nextState;
-    setFocusSaveState(nextState);
-  }, []);
-
-  const clearPendingSave = useCallback(() => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-  }, []);
-
-  const flushSave = useCallback(
-    async (valueToSave: string) => {
-      clearPendingSave();
-
-      if (valueToSave === lastSavedRef.current) {
-        return;
-      }
-
-      setVisibleFocusSaveState("saving");
-      try {
-        await onSaveFocus(valueToSave);
-        lastSavedRef.current = valueToSave;
-        lastPropValueRef.current = valueToSave;
-        setVisibleFocusSaveState(
-          draftFocusRef.current === valueToSave ? "saved" : "idle",
-        );
-      } catch {
-        setVisibleFocusSaveState("error");
-      }
-    },
-    [clearPendingSave, onSaveFocus, setVisibleFocusSaveState],
-  );
-
-  useEffect(() => {
-    flushSaveRef.current = flushSave;
-  }, [flushSave]);
-
-  useEffect(() => {
-    if (normalisedFocus === lastPropValueRef.current) {
-      return;
-    }
-
-    lastPropValueRef.current = normalisedFocus;
-
-    if (draftFocusRef.current !== lastSavedRef.current) {
-      return;
-    }
-
-    setDraftFocus(normalisedFocus);
-    draftFocusRef.current = normalisedFocus;
-    lastSavedRef.current = normalisedFocus;
-  }, [normalisedFocus]);
-
-  useEffect(() => {
-    return () => {
-      clearPendingSave();
-    };
-  }, [clearPendingSave]);
+  useLayoutEffect(() => {
+    return () => { contextSaveGenerationRef.current += 1; };
+  }, [readOnly, resolvedContextLevel]);
 
   useEffect(() => {
     setDraftContextLevel(resolvedContextLevel);
   }, [resolvedContextLevel]);
 
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
-      const nextValue = event.target.value;
-      draftFocusRef.current = nextValue;
-      setDraftFocus(nextValue);
-      if (focusSaveStateRef.current !== "idle") {
-        setVisibleFocusSaveState("idle");
-      }
-
-      clearPendingSave();
-      if (nextValue === lastSavedRef.current) {
-        return;
-      }
-
-      saveTimeoutRef.current = setTimeout(() => {
-        saveTimeoutRef.current = null;
-        void flushSaveRef.current(draftFocusRef.current);
-      }, SAVE_DEBOUNCE_MS);
-    },
-    [clearPendingSave, setVisibleFocusSaveState],
-  );
-
-  const handleBlur = useCallback(() => {
-    void flushSaveRef.current(draftFocusRef.current);
-  }, []);
-
   const handleContextLevelChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
-      if (!onSaveContextLevel) {
+      if (readOnly || !onSaveContextLevel) {
         return;
       }
 
@@ -232,13 +149,16 @@ function MeetingEdgePanel({
         return;
       }
 
+      const generation = ++contextSaveGenerationRef.current;
       try {
         await onSaveContextLevel(nextLevel);
       } catch {
-        setDraftContextLevel(resolvedContextLevel);
+        if (generation === contextSaveGenerationRef.current) {
+          setDraftContextLevel(resolvedContextLevel);
+        }
       }
     },
-    [onSaveContextLevel, resolvedContextLevel],
+    [onSaveContextLevel, readOnly, resolvedContextLevel],
   );
 
   const questions = payload?.questions ?? [];
@@ -298,9 +218,9 @@ function MeetingEdgePanel({
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
                   Current Read
                 </div>
-                <p className="mt-2 text-sm leading-6 text-contrast-muted">
-                  {payload.summary}
-                </p>
+                <div className="mt-2 text-sm leading-6 text-contrast-muted">
+                  <EdgeMarkdown content={payload.summary} />
+                </div>
               </div>
             ) : null}
 
@@ -324,7 +244,7 @@ function MeetingEdgePanel({
                   {questions.length > 0 ? (
                     questions.map((question, index) => (
                       <li key={`${question}-${index}`} className="rounded-xl bg-action-tint px-3 py-2">
-                        {question}
+                        <EdgeMarkdown content={question} />
                       </li>
                     ))
                   ) : (
@@ -345,7 +265,7 @@ function MeetingEdgePanel({
                   {points.length > 0 ? (
                     points.map((point, index) => (
                       <li key={`${point}-${index}`} className="rounded-xl bg-status-warning-bg px-3 py-2">
-                        {point}
+                        <EdgeMarkdown content={point} />
                       </li>
                     ))
                   ) : (
@@ -376,11 +296,11 @@ function MeetingEdgePanel({
                       className="rounded-xl border border-action-border bg-action-tint px-3 py-3"
                     >
                       <div className="text-sm font-semibold text-foreground">
-                        {concept.term}
+                        <EdgeMarkdown content={concept.term} />
                       </div>
-                      <p className="mt-1 text-sm leading-6 text-contrast-helper">
-                        {concept.explanation}
-                      </p>
+                      <div className="mt-1 text-sm leading-6 text-contrast-helper">
+                        <EdgeMarkdown content={concept.explanation} />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -402,16 +322,17 @@ function MeetingEdgePanel({
               Guide Meeting Edge
             </div>
             <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-contrast-helper">
-              {saveMessage}
+              {readOnly ? "Read-only" : saveMessage}
             </span>
           </div>
           <p className="mt-2 text-sm leading-6 text-contrast-helper">
-            Add a short goal, concern, or angle you want this guidance to optimize for.
+            Add a short goal, concern, or angle you want this guidance to optimise for.
           </p>
           <TextareaBase
             data-ui-fill="card"
             data-ui-border="full"
             value={draftFocus}
+            readOnly={readOnly}
             onChange={handleChange}
             onBlur={handleBlur}
             placeholder="Example: Help me ask sharper timeline questions and flag hidden risks or missing owners."
@@ -434,6 +355,7 @@ function MeetingEdgePanel({
 
               <InputBase
                 type="range"
+                disabled={readOnly}
                 min={1}
                 max={5}
                 step={1}

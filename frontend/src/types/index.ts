@@ -266,6 +266,8 @@ export interface LiveTranscriptWord {
 
 /** Live settling evidence, or timed final words on a recording that used settling. */
 export interface LiveTranscriptSettling {
+  /** Live diarisation has not covered these words yet; UNKNOWN remains unassigned. */
+  diarisation_pending?: boolean;
   /** Sticky recording policy, copied onto local segments by the delta reader. */
   settling_required?: boolean;
   /** Final words retain identities and timings, with locked=true and no live lock reason. */
@@ -610,6 +612,10 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   duration_seconds?: number;
   file_size_bytes?: number;
   status: RecordingStatus;
+  /** A previous publication retained until this reprocess publishes; false by default. */
+  previous_publication_available?: boolean;
+  /** This reprocess has published, including while optional notes are still running. */
+  reprocess_publication_complete?: boolean;
   client_status?: ClientStatus;
   upload_progress?: number;
   processing_progress?: number;
@@ -653,6 +659,11 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * Such a capture can be resumed, stopped or discarded from another tab.
    */
   capture_stalled?: boolean;
+  /**
+   * The capture's current epoch. A reloaded tab offers its capture at once only
+   * while this is still the epoch it held (issue #778).
+   */
+  capture_epoch?: number;
   /**
    * A file import that has received no part for 15 minutes, so the page
    * sending it went away. Judged by the server. It cannot be resumed, only
@@ -1005,6 +1016,8 @@ export interface CalendarDashboardRecording {
   ends_at?: string | null;
   duration_seconds?: number | null;
   status: RecordingStatus;
+  /** Tells a capture in progress, which is UPLOADING too, from a finishing upload. */
+  client_status?: ClientStatus | null;
   speaker_names: string[];
   tags: CalendarDashboardTag[];
 }
@@ -1476,6 +1489,21 @@ export interface AnalyticsWarningReason {
 
 export interface AnalyticsAttributionWarning {
   reasons: AnalyticsWarningReason[];
+}
+
+/** Read-only estimates from the transcript so far; contains no measured audio or AI tiers. */
+export interface LiveRecordingAnalytics {
+  recording_id: RecordingId;
+  provisional: true;
+  change_sequence: number;
+  speakers: AnalyticsSpeaker[];
+  metrics: Pick<AnalyticsMetrics, "utterance_count" | "talk_time" | "turn_structure">;
+  transcript_wpm: Record<string, {
+    words_per_minute: number | null;
+    sample_count: number;
+    excluded_short: number;
+    excluded_overlapping: number;
+  }>;
 }
 
 export interface RecordingAnalytics {

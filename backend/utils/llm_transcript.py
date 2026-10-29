@@ -73,7 +73,7 @@ class _ChatTimeline:
 
 
 def _chat_timeline(
-    session: Session, recording_id: int, segments: list[dict]
+    session: Session, recording_id: int, segments: list[dict], *, live: bool = False
 ) -> _ChatTimeline:
     # The loader fetches each speaker's global speaker up front; name
     # resolution reads it, and a lazy load costs a query per speaker.
@@ -81,6 +81,21 @@ def _chat_timeline(
         session,
         recording_id,
         build_recording_speaker_map(_load_recording_speakers(session, recording_id)),
+        **(
+            {
+                "labels": {
+                    str(label)
+                    for segment in segments
+                    for label in [
+                        segment.get("speaker"),
+                        *(segment.get("overlapping_speakers") or []),
+                    ]
+                    if label
+                }
+            }
+            if live
+            else {}
+        ),
     )
     notes = load_recording_timeline_notes(session, recording_id)
     hide_unknown = _view_hides_unknown(segments)
@@ -104,12 +119,14 @@ def _chat_timeline(
     return timeline
 
 
-def render_transcript_for_llm(session: Session, recording_id: int) -> str | None:
+def render_transcript_for_llm(
+    session: Session, recording_id: int, *, live: bool = False
+) -> str | None:
     """The recording's transcript as prompt text, or None when it has none."""
     segments = build_transcript_segments_for_read(session, recording_id)
-    if not segments:
+    if not segments and not live:
         return None
-    timeline = _chat_timeline(session, recording_id, segments)
+    timeline = _chat_timeline(session, recording_id, segments, live=live)
     lines = [NOTES_LEGEND] if timeline.has_notes else []
     lines.extend(timeline.opening)
     for block in timeline.blocks:

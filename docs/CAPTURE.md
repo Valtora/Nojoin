@@ -24,7 +24,7 @@ Nojoin records two channels: the shared tab, window or screen audio, and your mi
 
 If you do not share tab audio, the shared channel is silent and everyone in the room is recorded through the microphone. On a phone, remote participants are recorded only if the phone's microphone can hear them.
 
-While you record, the recording page shows a live waveform and a **Live Transcript** panel a few seconds behind the conversation ([USAGE.md](USAGE.md#live-transcription)).
+While you record, the recording view shows a live waveform in the header and the **Transcript** tab a few seconds behind the conversation ([USAGE.md](USAGE.md#live-transcription)). The same view continues through pause, upload, queueing and processing. **Analytics** shows provisional talk time, speaker share, longest turns and transcript-derived pace estimates; silence, overlapping speech, audio delivery, pitch and AI analysis wait until after processing. **Chat** answers from the transcript so far with current speaker names and your timeline notes, warning that wording and speakers may still change. When the transcript is too long for the model, Chat uses its most recent part and says that it was trimmed. Previous answers stay as written.
 
 Nojoin keeps none of the shared video. While you record, it reads one still from it only when you ask for a [capture](USAGE.md#captures), with the camera button beside the note box or Alt+Shift+C (Option+Shift+C on a Mac), and saves it on a note.
 
@@ -58,15 +58,19 @@ Brave may need its shields or site settings relaxed before it shows capture prom
 
 Selecting the browser's own **Stop sharing** button, or closing its sharing indicator, stops and saves the recording with everything captured so far, and Nojoin tells you it did.
 
+The recording keeps the same header and tabs through every stage. Its header shows the waveform and transport only in the tab capturing that recording, and in a tab reloaded during that capture while it offers the recording for recovery ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). There **Stop**, **Discard** and **Resume** work as they do in the dialog, and **Resume** asks you to share again. Opening another recording cannot control the capture from that recording's header; the global recording badge remains available. Any other tab, and a second device, sees the server's state, **Live** or **Paused** with the length of audio the server has received, and the transcript, notes and documents, with recovery actions in the global dialog.
+
+After **Stop**, the header's player area shows the upload stage and backlog, then queue or pipeline progress, estimated time remaining and discard. The transcript continues updating below it through uploading, queued and processing, with its note composer underneath. **Speakers**, **My notes**, **Captures** and **Meeting Edge** stay in the side column on desktop and the main tab row on a phone; attached documents stay in **Documents**. A failed final read keeps the feed visible while Nojoin retries; an empty successful read replaces it too. Playback and export remain unavailable while the recording is in flight.
+
 Switching tabs or windows, using another application or moving between Nojoin pages does not pause recording. On every page except the recording itself, a floating badge at the top of the screen shows the status and elapsed time, with pause, resume, stop and discard controls, and opens the recording when clicked.
 
 The release setting has been tested in desktop browsers and in Chrome for Android, which records the microphone only. It has not been tested on iOS yet. **Stop** and **Discard** work while the microphone is released and do not need microphone permission.
 
 ### Closing Or Reloading The Tab
 
-Closing or reloading the Nojoin tab pauses the recording. Audio the server already has stays there, and audio recorded but not yet uploaded is kept in this browser's storage for the Nojoin site. Only the unfinished last segment, under two seconds, is lost. Next time you open Nojoin, it asks you to resume, stop and process, or discard; resuming or stopping in the same browser uploads the kept audio first.
+Closing or reloading the Nojoin tab pauses the recording. Audio the server already has stays there, and audio recorded but not yet uploaded is kept in this browser's storage for the Nojoin site. Only the unfinished last segment, under two seconds, is lost. Open the recording's page, including after a reload or in a fresh tab, to choose Resume, Stop and process, or Discard. **Start Meeting** and **Import Audio** also request that decision ([Paused Recording Lock](#paused-recording-lock)). Resuming or stopping in the same browser uploads the kept audio first.
 
-The pause can fail to arrive: the tab closed while signed out, or with no connection to the server. The recording then stays in progress with no tab capturing it. Once no audio has reached the server for two minutes, Nojoin offers it in the same dialog as an interrupted recording, in any tab or on any device, without a reload. Until then, **Start Meeting** reports that a recording is still in progress. A recording still open in another tab of the same browser is never offered, however long it has gone without uploading, since that tab may only be waiting for you to sign in again or for the connection to return.
+The pause can fail to arrive: the tab closed while signed out, or with no connection to the server. The recording then stays in progress with no tab capturing it. Once no audio has reached the server for two minutes, its links show **Interrupted, needs attention**. Opening that recording's page or selecting **Start Meeting** or **Import Audio** opens the recovery dialog ([Paused Recording Lock](#paused-recording-lock)). Until it stalls, **Start Meeting** reports that a recording is still in progress. A tab that was reloaded doesn't wait: it remembers the recording it was capturing and offers it straight away, so **Resume** works in that tab at once. Another tab or device still waits the two minutes. A recording still open in another tab of the same browser is never offered, however long it has gone without uploading, since that tab may only be waiting for you to sign in again or for the connection to return.
 
 If the tab was lost before any audio reached the server, Nojoin discards the empty recording and tells you to start again. The usual cause is a server upgrade while the tab was open: the first page change after **Start Meeting** reloads the app. Select **Start Meeting** again.
 
@@ -78,7 +82,7 @@ Sign in as the account that started the recording. Signing in from another tab w
 
 **Stop recording** in the dialog, or the browser's **Stop sharing** button, stops capturing and releases the microphone and shared tab at once. The rest of the audio uploads, and the recording is processed, after you sign in. Pause and discard need you to sign in first.
 
-Keep the tab open until you have signed in. A tab closed or reloaded while signed out cannot pause the recording, so it stays in progress, and the audio it had not uploaded stays in this browser. Two minutes after its last upload, Nojoin offers it as an interrupted recording ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). Resume it or choose **Stop and process** in the same browser to upload the kept audio first.
+Keep the tab open until you have signed in. A tab closed or reloaded while signed out cannot pause the recording, so it stays in progress, and the audio it had not uploaded stays in this browser. Two minutes after its last upload it shows **Interrupted, needs attention**, at once in the tab that was reloaded, and opening it, **Start Meeting** or **Import Audio** offers it ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). Resume it or choose **Stop and process** in the same browser to upload the kept audio first.
 
 ### Background Tabs And Sleep
 
@@ -92,6 +96,10 @@ Notes typed under the live transcript ([Live Notes](USAGE.md#live-notes)) are pl
 
 To take notes on a second device, such as a phone while a laptop records, sign in there and open the recording from the recordings list. That device shows the live transcript and the note box too, places notes on the same clock, and each device shows the other's notes within a couple of seconds. Taking notes never affects what is captured.
 
+The composer remains beneath **Transcript** after Stop. A carried draft keeps its text, attached file and displayed placement through uploading and processing; **At send** places it where capture stopped, at the end of the recording. Changing **Place note** deliberately retargets it. A new blank draft after capture defaults to **Before the transcript**, with **After the transcript** also available. Notes that have not saved and files that have not uploaded retain **Retry** and **Discard**, without duplicating the composer's draft.
+
+Use the camera button beside the composer or the screen-capture shortcut to take a still. One key press takes one still, including after changing tabs. Files still accept paste/drop into the composer, and saved files remain in **Captures**.
+
 ## Live Word Settling
 
 [Live word settling](USAGE.md#live-transcription) defaults to **Auto (GPU)**, with **3 unchanged comparisons** and a **10 s settling window**, and revises only recent transcript words and speaker boundaries. Administrators can turn it off; a stored Off stays off on upgrade. Under **Auto (GPU)** CPU processing keeps ordinary whole-line transcription; **GPU and CPU** settles there too, at a high CPU and RAM cost. Pause and Stop lock the last accepted words without another decode, and the partial segment uploaded at Pause is still transcribed while paused, then locked; Resume starts a fresh settling episode; a capture that started with settling Off stays whole-line until it ends. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
@@ -104,15 +112,26 @@ How each step decides whether to transcribe again, from voice activity and speak
 
 ## Naming Speakers During Capture
 
-With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with the stretch of the meeting it was given for, the label's longest locked turn, or its longest turn when none is locked or the locked one is under a second, and processing gives it to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
+With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with that label's speech, and processing gives it to the speaker who holds most of it, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
+
+Live speech uses the same speaker-coloured cards as the finished transcript, with **Microphone** and **Shared audio** labels where the capture channel changes. Every line names its speaker, as finished lines do. A refused name or correction keeps its draft to retry; Stop closes any that are open. Scrolling away stops live following; **Jump to latest** follows new lines and in-place growth again. Play buttons remain visible but disabled until playback is available, and export has its own disabled control.
+
+The **Speakers** tab also shows live labels, with **Change identity** and **Add to People**. An ordinary name can link an existing person; only **Add to People** explicitly creates one. Name the label first. This creates no live voiceprint, and final processing still checks the speaker identity and can ask for confirmation. If Stop has closed the recording, the action is refused without creating a person.
 
 ## Paused Recording Lock
 
-Each user can run one browser capture at a time. While this tab is capturing, the microphone button in the collapsed recordings list reads **Meeting in progress**, and **Start Meeting** reads the same if the recorder fails while this tab still holds the capture. Pause or stop from the recording's page. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
+Each user can run one browser capture at a time. While this tab is capturing, the microphone button in the collapsed recordings list reads **Meeting in progress**, and **Start Meeting** reads the same if the recorder fails while this tab still holds the capture, unless a recording is offered for recovery. Pause or stop from the recording's page.
+
+A recording paused in another open tab of the same browser stays with that tab. Other tabs show no badge or recovery dialog for it, even on its own page; their **Start Meeting** refuses a new capture and says the recording is open in another tab, as it does while that tab records. Imports stay available. Resume, stop or discard it in the capturing tab. A recording's page reads **Recording** in the tab capturing it and **Live** in any other tab or on another device, and **Paused** in all of them while it is paused. Its clock there follows the audio the server has received, so it stands still while paused.
+
+A paused recording that no open tab of this browser holds shows **Paused, needs attention** wherever it is linked: the recordings list, recent meetings and calendar cards, calendar details and task links. A recording still capturing, paused or interrupted is not listed under **Processing** on the dashboard. An interrupted one, whose tab closed without pausing it, shows **Interrupted, needs attention**. Opening the recording, or selecting **Start Meeting** or **Import Audio**, brings up the recovery dialog, on a phone as well as desktop. The badges update when a page loads and while the recordings list is open in a tab you can see, without opening a dialog over the page you are on. The dialog warns that the recording may still be open on another device: finish it there if so.
+
+While a recording is offered, the **Start Meeting** button reads **Paused recording needs attention**, or **Interrupted recording needs attention**, and imports are blocked until you choose in the dialog. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
 
 - **Resume recording** continues the same recording. The browser asks you to share again.
 - **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.
 - **Discard recording** deletes the partial recording.
+- **Not now** closes the dialog and leaves the recording as it is, still badged. Opening it again, or **Start Meeting** or **Import Audio**, offers it again.
 
 Nojoin keeps a paused or interrupted recording until you choose. It never pauses, cleans up or finalizes one for you. If the tab recording an interrupted capture was only cut off and starts uploading again, the dialog closes by itself within 30 seconds, and Nojoin refuses to resume that recording anywhere else while it is receiving audio.
 
@@ -168,9 +187,11 @@ After 20 seconds without sound, Nojoin shows an "Audio has been quiet for a bit"
 
 Meeting Edge needs AI configured and enough completed speech to work from, so a short test can show waveform activity and live transcript lines before any guidance appears.
 
-### The Live Transcript panel stays empty
+Open the **Meeting Edge** tab in the desktop side column or the phone's main tab row. It retains earlier guidance, questions, tracked-term history and focus after Stop, processing success or failure, and after an administrator switches the feature off. Focus and the recording-specific context slider become read-only after capture ends; any pending focus autosave is cancelled. Guidance can continue while uploading, queued or processing, and an update already running can finish while paused. Update status and errors show only during recording or a pause, and an update still running when you press Stop is dropped.
 
-Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. Live transcription can fall behind, for example while the server processes another recording; once about 20 seconds of uploaded audio is waiting, the panel says so. Nothing is lost: the full transcript is made when the meeting ends. The panel is always empty for an imported file, which is transcribed after upload.
+### The Transcript tab stays empty
+
+Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. Live transcription can fall behind, for example while the server processes another recording; once about 20 seconds of uploaded audio is waiting, the tab says so. Nothing is lost: the full transcript is made when the meeting ends. Imported files have no browser capture feed; wait for upload and transcription to finish.
 
 ### Linux screen audio does not work
 
@@ -217,7 +238,7 @@ No browser API lets a page opt out of Memory Saver or read whether it is on, so 
 
 When more than 30 seconds of audio is waiting to upload, the controls say how far behind uploads are. The audio is kept in this browser and sent as the connection allows. Keep the tab open, though nothing is lost if it closes and you return in the same browser.
 
-If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The tab keeps the queued audio and the shared tab. It keeps the microphone too unless **Release the microphone while paused** is on, in which case Resume opens it again and may ask for permission. **Start Meeting** stays unavailable until you resume, stop or discard. When the server cannot be told about the pause, Nojoin tells it once the connection returns, after uploading the queued audio, and **Resume** carries on with the same recording without asking you to share again. Two minutes after the last upload the server offers the recording as interrupted in any tab or on any device ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). If it is resumed or stopped somewhere else meanwhile, this tab stops once the connection returns and says so ([This recording continued elsewhere](#this-recording-continued-elsewhere), [This recording has already been stopped](#this-recording-has-already-been-stopped)). An ended sign-in is different: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
+If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The tab keeps the queued audio and the shared tab. It keeps the microphone too unless **Release the microphone while paused** is on, in which case Resume opens it again and may ask for permission. **Start Meeting** stays unavailable until you resume, stop or discard. When the server cannot be told about the pause, Nojoin tells it once the connection returns, after uploading the queued audio, and **Resume** carries on with the same recording without asking you to share again. Two minutes after the last upload it shows **Interrupted, needs attention** in other tabs and on other devices, and opening it there offers it ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). If it is resumed or stopped somewhere else meanwhile, this tab stops once the connection returns and says so ([This recording continued elsewhere](#this-recording-continued-elsewhere), [This recording has already been stopped](#this-recording-has-already-been-stopped)). An ended sign-in is different: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
 
 ### This recording continued elsewhere
 
@@ -233,11 +254,11 @@ The recording was stopped in another tab or on another device and sent for proce
 
 ### Stop did not finish
 
-The meeting button names the stage while stopping. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. You can then stop it again from the controls on the recording's page or from the resume-or-discard dialog. Stopping does not need the original capture, so it works after a reload.
+The meeting button and the recording header name the stage while stopping. The header keeps the upload backlog visible even if the server still reports recording or paused; its transport is disabled while Stop finishes. The transcript remains visible. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. Until the server has that pause, **Start Meeting** says the last recording was not stopped instead of starting a new one. You can then stop it again from this tab's controls on the recording's page or from the global resume-or-discard dialog. A failed discard works the same way: the recording stays paused, on the server too, and you can discard it again. Stopping does not need the original capture, so it works after a reload.
 
 ### Browser recording unavailable
 
-The meeting button reads **Unsupported browser**. Open Nojoin in a browser from [Supported Environments](#supported-environments).
+The meeting button reads **Unsupported browser**. Open Nojoin in a browser from [Supported Environments](#supported-environments). The recovery dialog there offers **Stop and process** and **Discard recording** but not **Resume recording**, which needs capture.
 
 If the browser is already supported, check the address. Browsers allow capture only on a secure origin, so a supported browser reaching Nojoin over plain HTTP on any address other than `localhost` reports as unsupported. See [HTTPS Is Required for Live Capture](DEPLOYMENT.md#https-is-required-for-live-capture).
 

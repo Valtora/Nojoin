@@ -30,6 +30,10 @@ from backend.processing.embedding import (
     VoiceprintStatus,
 )
 from backend.utils.language_notice import language_notice
+from backend.utils.reprocess_publication import (
+    reprocess_publication_complete,
+    reprocess_publication_pending,
+)
 from backend.utils.speaker_names.sources import name_is_pending
 
 
@@ -224,6 +228,8 @@ class RecordingPublicRead(PublicModel):
     client_status: Optional[ClientStatus] = None
     upload_progress: int = 0
     processing_progress: int = 0
+    previous_publication_available: bool = False
+    reprocess_publication_complete: bool = False
     processing_step: Optional[str] = None
     processing_eta_seconds: Optional[int] = None
     processing_eta_learning: bool = False
@@ -266,6 +272,10 @@ class RecordingPublicRead(PublicModel):
     # Computed server-side, like Document.is_stalled, because last_activity_at
     # carries no timezone and the browser's clock may disagree with the server's.
     capture_stalled: bool = False
+    # The capture's current epoch (Recording.capture_epoch). A reloaded tab
+    # offers its capture at once only while this is still the epoch it held,
+    # so it never offers one taken over elsewhere since (issue #778).
+    capture_epoch: int = 0
     # A file import that has received no part for STALLED_IMPORT_AFTER: the page
     # sending it went away. The client offers to import it again or discard it.
     import_stalled: bool = False
@@ -494,6 +504,12 @@ def serialize_recording(
         client_status=recording.client_status,
         upload_progress=recording.upload_progress,
         processing_progress=recording.processing_progress,
+        previous_publication_available=reprocess_publication_pending(
+            recording.__dict__.get("transcript")
+        ),
+        reprocess_publication_complete=reprocess_publication_complete(
+            recording.__dict__.get("transcript")
+        ),
         processing_step=recording.processing_step,
         processing_eta_seconds=processing_eta_seconds,
         processing_eta_learning=processing_eta_learning,
@@ -507,6 +523,7 @@ def serialize_recording(
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,
         capture_stalled=capture_looks_stalled(recording),
+        capture_epoch=getattr(recording, "capture_epoch", 0) or 0,
         import_stalled=import_looks_stalled(recording),
         language_notice=LanguageNoticeRead(**notice) if notice else None,
         transcript=transcript,

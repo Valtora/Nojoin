@@ -116,10 +116,11 @@ export const nameLiveSpeaker = async (
   recordingId: RecordingId,
   label: string,
   name: string,
+  createPerson = false,
 ): Promise<Record<string, string>> => {
   const response = await api.put<LiveSpeakerNames>(
     `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}`,
-    { name },
+    { name, ...(createPerson ? { create_person: true } : {}) },
   );
   return response.data.live_speaker_names;
 };

@@ -62,6 +62,7 @@ files = [
     "backend/models/base.py",
     "backend/models/recording.py",
     "backend/models/recording_public.py",
+    "backend/models/analytics_public.py",
     "backend/models/speaker.py",
     "backend/models/transcript.py",
     "backend/models/user.py",

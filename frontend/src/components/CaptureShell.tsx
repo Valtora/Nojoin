@@ -10,6 +10,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 
 import ResumeRecordingModal from "./ResumeRecordingModal";
 import SessionSignInDialog from "./SessionSignInDialog";
+import { useResumeRecoveryOffer } from "./useResumeRecoveryOffer";
 
 interface CaptureShellProps {
   children: React.ReactNode;
@@ -18,7 +19,10 @@ interface CaptureShellProps {
 export default function CaptureShell({ children }: CaptureShellProps) {
   const router = useRouter();
   const { pausedRecording, hasPausedRecording } = usePausedRecordingGuard();
-  const { cancel, controller, resume, runtimeActive, stop } = useCapture();
+  const {
+    cancel, controller, dismissRecoveryOffer, runtimeActive, stop, support,
+  } = useCapture();
+  const resumeOffer = useResumeRecoveryOffer();
   const [busyAction, setBusyAction] = useState<
     "resume" | "cancel" | "stop" | null
   >(null);
@@ -33,19 +37,7 @@ export default function CaptureShell({ children }: CaptureShellProps) {
 
     setBusyAction("resume");
     try {
-      await resume(pausedRecording.id);
-      router.push(`/recordings/${pausedRecording.id}`);
-
-        } catch (resumeError: unknown) {
-      if (!controller.getState().error) {
-        addNotification({
-          type: "error",
-          message: getErrorMessage(
-            resumeError,
-            "Failed to resume the paused recording.",
-          ),
-        });
-      }
+      await resumeOffer(pausedRecording.id);
     } finally {
       setBusyAction(null);
     }
@@ -110,9 +102,11 @@ export default function CaptureShell({ children }: CaptureShellProps) {
         isOpen={modalOpen}
         recording={pausedRecording}
         busyAction={busyAction}
+        support={support}
         onResume={handleResume}
         onCancel={handleCancel}
         onStop={handleStop}
+        onDismiss={dismissRecoveryOffer}
       />
       <SessionSignInDialog />
     </>
