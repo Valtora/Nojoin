@@ -518,3 +518,29 @@ describe("ChatPanel auto-scroll", () => {
     expect(box.scrollTop).toBe(1000);
   });
 });
+
+describe("ChatPanel persona egg", () => {
+  beforeEach(() => {
+    getSettings.mockResolvedValue(SERVER_READY);
+    getUserMe.mockResolvedValue(SETUP_ACCOUNT);
+    getChatHistory.mockReset().mockResolvedValue([]);
+  });
+
+  it("puts the egg and its tooltip beside the Chat title only while a persona applies", async () => {
+    const persona = {
+      slug: "pirate",
+      name: "Talk Like a Pirate Day",
+      tooltip: "Talk Like a Pirate Day: friendly storybook pirate speech.",
+      reason: "Set with /persona.",
+    };
+    const view = render(<ChatPanel persona={persona} />);
+    const egg = await screen.findByRole("img", {
+      name: "Talk Like a Pirate Day: friendly storybook pirate speech. Set with /persona.",
+    });
+    expect(egg).toHaveAttribute("title", egg.getAttribute("aria-label"));
+    expect(screen.getByRole("heading", { name: /^Chat/ })).toContainElement(egg);
+
+    view.rerender(<ChatPanel persona={null} />);
+    expect(screen.queryByRole("img", { name: /Talk Like a Pirate Day/ })).toBeNull();
+  });
+});

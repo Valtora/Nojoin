@@ -18,8 +18,9 @@ import {
   DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
   MEETING_EDGE_CONTEXT_OPTIONS,
 } from "@/lib/meetingEdgeContext";
-import { MeetingEdgePayload } from "@/types";
+import { ActivePersona, MeetingEdgePayload } from "@/types";
 import MarkdownBubble from "./MarkdownBubble";
+import PersonaEgg from "./PersonaEgg";
 import { useMeetingEdgeFocus } from "./useMeetingEdgeFocus";
 
 interface MeetingEdgePanelProps {
@@ -30,6 +31,8 @@ interface MeetingEdgePanelProps {
   onSaveFocus: (focus: string) => Promise<void>;
   contextLevel?: number;
   onSaveContextLevel?: (level: number) => Promise<void>;
+  /** The holiday persona Meeting Edge writes in, from the recording read. */
+  persona?: ActivePersona | null;
 }
 
 /** Shared model-text rendering, with card typography and raw HTML disabled. */
@@ -112,6 +115,7 @@ function MeetingEdgePanel({
   onSaveFocus,
   contextLevel,
   onSaveContextLevel,
+  persona,
 }: MeetingEdgePanelProps) {
   const resolvedContextLevel = clampMeetingEdgeContextLevel(
     contextLevel ?? payload?.context_level ?? DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
@@ -191,6 +195,7 @@ function MeetingEdgePanel({
             <Brain className="h-3.5 w-3.5" />
           )}
           Meeting Edge
+          <PersonaEgg persona={persona} />
         </div>
         {status === "error" && !hasPayload ? (
           <span className="text-xs font-semibold uppercase tracking-[0.2em] text-status-danger-fg">

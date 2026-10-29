@@ -27,9 +27,10 @@ import {
 import { getCliOAuthStatus } from "@/lib/api/cliOauth";
 import { AiAvailability, resolveAiAvailability } from "@/lib/aiAvailability";
 import { isAdministrator } from "@/lib/roles";
-import { ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
+import { ActivePersona, ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
 import Link from "next/link";
 import MarkdownBubble from "./MarkdownBubble";
+import PersonaEgg from "./PersonaEgg";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useStickToBottom } from "@/lib/useStickToBottom";
 import ConfirmationModal from "./ConfirmationModal";
@@ -40,11 +41,15 @@ export default function ChatPanel({
   onNotesUpdate,
   onCollapse,
   inFlight = false,
+  persona,
 }: {
+  /** Also called after a /persona or /eastereggs command, to read the recording again. */
   onNotesUpdate?: () => void;
   /** Desktop side-column collapse; the mobile full-screen chat omits it. */
   onCollapse?: () => void;
   inFlight?: boolean;
+  /** The holiday persona chat answers in, from the recording read. */
+  persona?: ActivePersona | null;
 }) {
   const params = useParams();
   const recordingId: RecordingId | null =
@@ -271,6 +276,7 @@ export default function ChatPanel({
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-action-text" />
           Chat
+          <PersonaEgg persona={persona} />
         </h2>
         <div className="flex items-center gap-1">
           {recordingId && (

@@ -21,6 +21,7 @@ import ChatPanel from "@/components/ChatPanel";
 import IconButton from "@/components/ui/IconButton";
 import { cn } from "@/lib/cn";
 import { useNavigationStore, type SideTab } from "@/lib/store";
+import type { ActivePersona } from "@/types";
 
 const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
   { tab: "speakers", label: "Speakers", icon: Users },
@@ -45,6 +46,8 @@ interface RecordingSideColumnProps {
   onChatPanelHeightChange: (height: number) => void;
   onNotesUpdate: () => void;
   onResizeDragging: (dragging: boolean) => void;
+  /** The holiday persona chat answers in, from the recording read. */
+  chatPersona?: ActivePersona | null;
 }
 
 /**
@@ -180,6 +183,7 @@ export default function RecordingSideColumn({
   onChatPanelHeightChange,
   onNotesUpdate,
   onResizeDragging,
+  chatPersona,
 }: RecordingSideColumnProps) {
   const isSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.isSpeakerPanelCollapsed,
@@ -215,6 +219,7 @@ export default function RecordingSideColumn({
             inFlight={inFlight}
             onNotesUpdate={onNotesUpdate}
             onCollapse={() => setChatPanelCollapsed(true)}
+            persona={chatPersona}
           />
         </div>}
       </div>
@@ -283,6 +288,7 @@ export default function RecordingSideColumn({
           inFlight={inFlight}
           onNotesUpdate={onNotesUpdate}
           onCollapse={() => setChatPanelCollapsed(true)}
+          persona={chatPersona}
         />
       </Panel>
     </PanelGroup>

@@ -193,6 +193,7 @@ export default function RecordingPage({ params }: PageProps) {
     onSaveFocus={handleMeetingEdgeFocusChange}
     contextLevel={meetingEdgeContextLevel}
     onSaveContextLevel={handleMeetingEdgeContextLevelChange}
+    persona={recording.personas?.edge}
   /> : undefined;
 
   const mainContent = (
@@ -322,7 +323,11 @@ export default function RecordingPage({ params }: PageProps) {
                   </ButtonBase>
                 </header>
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
-                  <ChatPanel inFlight={transcriptInProgress} onNotesUpdate={fetchRecording} />
+                  <ChatPanel
+                    inFlight={transcriptInProgress}
+                    onNotesUpdate={fetchRecording}
+                    persona={recording.personas?.chat}
+                  />
                 </div>
               </SurfaceBase>
             )}
@@ -379,6 +384,7 @@ export default function RecordingPage({ params }: PageProps) {
                       onChatPanelHeightChange={setChatPanelHeight}
                       onNotesUpdate={fetchRecording}
                       onResizeDragging={setIsPanelResizing}
+                      chatPersona={recording.personas?.chat}
                     />
                   </Panel>
                 </>
