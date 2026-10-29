@@ -110,7 +110,7 @@ function ConsentNoticeDialog({ recordingId, onClose }: Props) {
           <p>Some places require everyone&apos;s consent to record a conversation. This reminder is not legal advice.</p>
           <p>You could ask the meeting:</p>
           <blockquote className="border-l-2 border-control-border pl-3">
-            &ldquo;I&apos;m recording this meeting to help prepare notes. Does everyone agree to being recorded?&rdquo;
+            &ldquo;May I record and transcribe this meeting to prepare AI notes? Does everyone agree?&rdquo;
           </blockquote>
           <p>Recording has started. Closing this notice or leaving it unanswered keeps recording.</p>
           <label className="flex items-center gap-2">
