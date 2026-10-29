@@ -268,7 +268,7 @@ describe("recording consent notice in the tab that starts the recording", () => 
     const toggle = screen.getByRole("switch", { name: "Show the notice" });
     expect(toggle).toHaveAttribute("aria-checked", "false");
     fireEvent.click(toggle);
-    await act(() => vi.advanceTimersByTimeAsync(1_100));
+    await settle();
     expect(server.settings.hide_recording_consent_notice).toBe(false);
     view.rerender(tab());
 

@@ -26,7 +26,7 @@ export default function CaptureProcessingSettings() {
     (state) => state.suppressQuietAudioWarnings,
   );
   const resetWarnings = useAudioWarningStore((state) => state.resetWarnings);
-  const { settings: accountSettings, updateSetting } = useSettingsContext();
+  const { settings: accountSettings, persistNow } = useSettingsContext();
 
   return (
     <>
@@ -147,7 +147,7 @@ export default function CaptureProcessingSettings() {
             aria-describedby="recording-consent-notice-help"
             checked={accountSettings.hide_recording_consent_notice !== true}
             onCheckedChange={(checked) =>
-              updateSetting({ ...accountSettings, hide_recording_consent_notice: !checked })
+              void persistNow({ ...accountSettings, hide_recording_consent_notice: !checked })
             }
           />
         </SettingsRow>
