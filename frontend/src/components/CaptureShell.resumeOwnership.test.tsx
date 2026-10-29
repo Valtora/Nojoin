@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 import { audioTrack, mediaStream } from "@/lib/capture/releaseMicrophone.fixtures";
 import { clearPausedCaptureContext } from "@/lib/capture/shared";
+import { useNotificationStore } from "@/lib/notificationStore";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
 import CaptureShell from "./CaptureShell";
@@ -31,9 +32,16 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api")>(),
   ...api,
 }));
-vi.mock("@/lib/capture/featureDetect", () => ({
-  detectCaptureSupport: () => ({ supported: true, mode: "microphone_only" }),
-}));
+const browser = vi.hoisted(() => ({ realDetection: false }));
+vi.mock("@/lib/capture/featureDetect", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/capture/featureDetect")>();
+  return {
+    ...actual,
+    detectCaptureSupport: () => browser.realDetection
+      ? actual.detectCaptureSupport()
+      : { supported: true, mode: "microphone_only" },
+  };
+});
 vi.mock("@/lib/capture/pickSource", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/capture/pickSource")>(),
   pickCaptureSource,
@@ -83,6 +91,8 @@ const lifecycle = (status: string) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  browser.realDetection = false;
+  useNotificationStore.setState({ activeNotifications: [], history: [] });
   clearPausedCaptureContext();
   pathname = `/recordings/${paused.id}`;
   vi.stubGlobal("navigator", {
@@ -177,5 +187,57 @@ describe("a recording paused and resumed in the tab capturing it", () => {
 
     await waitFor(() => expect(api.finalizeRecordingCapture).toHaveBeenCalledOnce());
     expect(api.finalizeRecordingCapture.mock.calls[0][0]).toBe(paused.id);
+  });
+});
+
+const errors = () =>
+  useNotificationStore.getState().activeNotifications.filter(({ type }) => type === "error");
+
+describe("the recovery dialog in a browser that cannot capture", () => {
+  it("reports a refused Resume once", async () => {
+    browser.realDetection = true;
+    vi.stubGlobal("navigator", {
+      userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+      mediaDevices: { getUserMedia: vi.fn(), getDisplayMedia: vi.fn() },
+      locks: { query: async () => ({ held: [], pending: [] }) },
+    });
+    render(<CaptureProvider><CaptureShell><div /></CaptureShell></CaptureProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resume recording" }));
+
+    await waitFor(() => expect(errors()).not.toEqual([]));
+    await act(async () => {});
+    expect(errors()).toEqual([expect.objectContaining({ message: expect.stringMatching(/Firefox/) })]);
+  });
+});
+
+describe("a capture the browser refuses", () => {
+  const refused = new Error("Permission to use the microphone was denied.");
+
+  it("reports a refused Resume once", async () => {
+    pickCaptureSource.mockRejectedValue(refused);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<CaptureProvider><CaptureShell><div /></CaptureShell></CaptureProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resume recording" }));
+
+    await waitFor(() => expect(errors()).not.toEqual([]));
+    await act(async () => {});
+    expect(errors()).toHaveLength(1);
+  });
+
+  it("reports a refused Start once", async () => {
+    pathname = "/";
+    api.getUnfinishedCaptures.mockResolvedValue([]);
+    pickCaptureSource.mockRejectedValue(refused);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+    await waitFor(() => expect(errors()).not.toEqual([]));
+    await act(async () => {});
+    expect(errors()).toHaveLength(1);
   });
 });

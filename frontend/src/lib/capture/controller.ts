@@ -693,9 +693,11 @@ export class CaptureController {
     const support = detectCaptureSupport();
     this.setState({ support });
     if (!support.supported) {
-      const message = formatUnsupportedMessage(support.reason);
-      this.setState({ error: message, status: "error" });
-      throw new Error(message);
+      // Thrown inside the click, so the provider has reported and cleared a
+      // state error before the caller's catch looks for it: the caller alone
+      // reports this one.
+      this.setState({ status: "error" });
+      throw new Error(formatUnsupportedMessage(support.reason));
     }
 
     this.setState({ status: "starting", error: null });
@@ -901,9 +903,11 @@ export class CaptureController {
     const support = detectCaptureSupport();
     this.setState({ support });
     if (!support.supported) {
-      const message = formatUnsupportedMessage(support.reason);
-      this.setState({ error: message, status: "error" });
-      throw new Error(message);
+      // Thrown inside the click, so the provider has reported and cleared a
+      // state error before the caller's catch looks for it: the caller alone
+      // reports this one.
+      this.setState({ status: "error" });
+      throw new Error(formatUnsupportedMessage(support.reason));
     }
 
     this.setState({
