@@ -189,11 +189,7 @@ export default function TaskRow(props: TaskRowProps) {
             </p>
           )}
 
-          {task.tags && task.tags.length > 0 && (
-            <div className="mt-2">
-              <TagChips tags={task.tags} limit={2} />
-            </div>
-          )}
+          <TagChips tags={task.tags} limit={2} className="mt-2" />
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {timeRemainingState && (
@@ -279,11 +275,7 @@ export default function TaskRow(props: TaskRowProps) {
           </p>
         )}
 
-        {task.tags && task.tags.length > 0 && (
-          <div className="mt-2">
-            <TagChips tags={task.tags} limit={2} />
-          </div>
-        )}
+        <TagChips tags={task.tags} limit={2} className="mt-2" />
 
         {deadline && (
           <div className="mt-3 flex flex-wrap items-center gap-2">

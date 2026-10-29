@@ -63,11 +63,7 @@ export default function RecentRecordingsCard({
                     ) : "Unknown date"}
                     {duration ? ` · ${duration}` : ""}
                   </span>
-                  {recording.tags && recording.tags.length > 0 && (
-                    <span className="mt-1.5 block">
-                      <TagChips tags={recording.tags} limit={2} />
-                    </span>
-                  )}
+                  <TagChips tags={recording.tags} limit={2} className="mt-1.5" />
                 </span>
                 {/* A processed recording carries no badge: ready is the normal
                     state, so a badge here means something went wrong. */}

@@ -5,16 +5,18 @@ import type { CalendarDashboardTag } from "@/types";
 export default function TagChips({
   tags = [],
   limit,
+  className = "",
 }: {
   tags?: CalendarDashboardTag[];
   limit?: number;
+  className?: string;
 }) {
   if (tags.length === 0) return null;
   const visible = limit === undefined ? tags : tags.slice(0, limit);
   const hidden = tags.slice(visible.length);
 
   return (
-    <span className={`flex min-w-0 items-center gap-1.5 ${limit === undefined ? "flex-wrap" : ""}`}>
+    <span className={`flex min-w-0 items-center gap-1.5 ${limit === undefined ? "flex-wrap" : ""} ${className}`}>
       {visible.map((tag) => {
         const colour = getColorByKey(tag.color || "orange");
         return (

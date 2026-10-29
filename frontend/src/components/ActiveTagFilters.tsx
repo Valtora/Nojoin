@@ -27,13 +27,13 @@ export default function ActiveTagFilters({
         return (
           <div
             key={tagId}
-            className="flex min-w-0 items-center gap-1.5 px-2.5 py-1 rounded-pill bg-status-neutral-bg border border-status-neutral-border text-xs group hover:border-action-border transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-status-neutral-bg border border-status-neutral-border text-xs group hover:border-action-border transition-colors"
           >
             <span className={`w-2 h-2 rounded-full ${colour.dot} shrink-0`} />
-            <span className="truncate text-status-neutral-fg font-medium">{tag.name}</span>
+            <span className="text-status-neutral-fg font-medium">{tag.name}</span>
             <ButtonBase
               onClick={() => toggleTagFilter(tagId)}
-              className="ml-0.5 shrink-0 text-contrast-icon-muted hover:text-danger-text transition-colors"
+              className="ml-0.5 text-contrast-icon-muted hover:text-danger-text transition-colors"
               title={`Remove ${tag.name} filter`}
             >
               <X className="w-3 h-3" />
