@@ -393,13 +393,14 @@ class OpenAILLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ):
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
 
         # Lead with the stable meeting context as a system message so OpenAI's
         # automatic prefix caching can reuse it across turns; the volatile
         # question is sent last.
-        context = build_chat_context(meeting_notes, diarized_transcript)
+        context = build_chat_context(meeting_notes, diarized_transcript, tone=tone)
         messages = [{"role": "system", "content": context}] + build_chat_messages(
             user_question, conversation_history
         )
@@ -431,6 +432,7 @@ class OpenAILLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ) -> Generator[Any, None, None]:
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
         notes_tool = self._offers_notes_tool(diarized_transcript)
@@ -439,7 +441,7 @@ class OpenAILLMBackend(LLMBackend):
         # automatic prefix caching can reuse it across turns; the volatile
         # question is sent last.
         context = build_chat_context(
-            meeting_notes, diarized_transcript, notes_tool=notes_tool
+            meeting_notes, diarized_transcript, notes_tool=notes_tool, tone=tone
         )
         messages = [{"role": "system", "content": context}] + build_chat_messages(
             user_question, conversation_history

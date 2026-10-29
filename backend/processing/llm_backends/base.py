@@ -411,6 +411,7 @@ class LLMBackend:
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ):
         """
         Ask a question about the meeting.
@@ -425,6 +426,7 @@ class LLMBackend:
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ) -> Generator[str, None, None]:
         """
         Ask a question about the meeting and yield response chunks.
@@ -458,9 +460,14 @@ class LLMBackend:
         diarized_transcript: ChatTranscript,
         *,
         notes_tool: bool = False,
+        tone: Optional[str] = None,
     ) -> str:
         return build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript, notes_tool=notes_tool
+            user_question,
+            meeting_notes,
+            diarized_transcript,
+            notes_tool=notes_tool,
+            tone=tone,
         )
 
     @staticmethod

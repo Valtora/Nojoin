@@ -62,6 +62,7 @@ from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
 )
+from backend.utils.persona_settings import SETTINGS_KEY as PERSONA_SETTINGS_KEY
 from backend.utils.primary_owner import get_primary_owner_async
 from backend.utils.speaker_names.preferences import VOICEPRINT_LEARNING_CHOICES
 from backend.utils.timezones import validate_timezone_name
@@ -547,6 +548,9 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
 
     _apply_default_user_settings(merged, default_user_settings)
     sanitized_user_settings = _get_mutable_user_settings(user_settings)
+    # Holiday personas are steered only from Meeting Chat and stay off the
+    # Settings page; they are still stored, and kept by every save.
+    sanitized_user_settings.pop(PERSONA_SETTINGS_KEY, None)
     if sanitized_user_settings:
         merged.update(
             {k: v for k, v in sanitized_user_settings.items() if v is not None}

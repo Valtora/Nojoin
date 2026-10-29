@@ -79,7 +79,7 @@ async def session_maker() -> AsyncIterator[sessionmaker]:
 @pytest.fixture
 def acting() -> SimpleNamespace:
     """The signed-in user, by id."""
-    return SimpleNamespace(id=OWNER)
+    return SimpleNamespace(id=OWNER, settings={})
 
 
 @pytest.fixture

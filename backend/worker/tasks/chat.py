@@ -14,6 +14,7 @@ from backend.models.chat import ChatMessage
 from backend.services.chat_relay import ChatStreamPublisher, friendly_chat_error
 from backend.services.live_chat import chat_transcript_in_progress, stream_live_chat
 from backend.utils.chat_prompt import ChatTranscript
+from backend.utils.persona_settings import surface_tone
 
 from .constants import *  # noqa: F401,F403 - shared task imports (celery_app, models, resolvers)
 
@@ -52,6 +53,7 @@ def meeting_chat_task(
             session, user_settings, user_id=recording.user_id
         )
         backend = _llm_backend_from_config(llm_config)  # noqa: F405
+        tone = surface_tone(user_settings, recording.id, "chat")
 
         full_response = ""
 
@@ -62,6 +64,7 @@ def meeting_chat_task(
                 diarized_transcript=diarized_transcript,
                 conversation_history=conversation_history,
                 recording_id=recording.id,
+                tone=tone,
             )
 
         # The same rule as the API's own chat path (routes_chat.py).

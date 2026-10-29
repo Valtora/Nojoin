@@ -32,6 +32,8 @@ from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import CLI_PROVIDER, resolve_llm_config_async
 from backend.utils.meeting_notes import escape_prompt_attribute
 from backend.utils.note_attachments import unread_attachment_ids
+from backend.utils.persona_commands import CommandResult, run_persona_command
+from backend.utils.persona_settings import surface_tone
 
 from .helpers import ChatRequest, _build_speaker_map, _get_owned_recording
 from .router import router
@@ -196,6 +198,51 @@ async def _transcript_excerpts(
     return TranscriptExcerpts(ranges=_excerpt_ranges(metas))
 
 
+async def _answer_persona_command(
+    db: AsyncSession,
+    user: User,
+    recording: Recording,
+    message: str,
+    result: CommandResult,
+) -> StreamingResponse:
+    """Answer ``/persona`` or ``/eastereggs`` without the model.
+
+    Both turns are kept in the chat history like any other. The user's turn is
+    committed first, so the reply's timestamp always sorts after it. A
+    ``persona_update`` event tells the page to read the recording again.
+    """
+    db.add(
+        ChatMessage(
+            recording_id=recording.id, user_id=user.id, role="user", content=message
+        )
+    )
+    await db.commit()
+    if result.settings is not None:
+        user.settings = result.settings
+        db.add(user)
+    db.add(
+        ChatMessage(
+            recording_id=recording.id,
+            user_id=user.id,
+            role="assistant",
+            content=result.reply,
+        )
+    )
+    await db.commit()
+    frames = [
+        f"data: {json.dumps({'token': result.reply})}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    if result.settings is not None:
+        frames.insert(0, "event: persona_update\ndata: {}\n\n")
+
+    async def stream():
+        for frame in frames:
+            yield frame
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 @router.post("/{recording_id}/chat")
 async def chat_with_meeting(
     recording_id: str,
@@ -207,6 +254,11 @@ async def chat_with_meeting(
     Chat with the meeting transcript using LLM (Streaming).
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    command = run_persona_command(request.message, current_user.settings, recording.id)
+    if command is not None:
+        return await _answer_persona_command(
+            db, current_user, recording, request.message, command
+        )
     in_flight = recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
 
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
@@ -426,6 +478,8 @@ async def chat_with_meeting(
         logger.error(f"Failed to initialize LLM backend: {e}")
         raise HTTPException(status_code=500, detail="Failed to initialize AI service")
 
+    tone = surface_tone(user_settings, recording.id, "chat")
+
     def ask(diarized_transcript: ChatTranscript):
         # None: the backend reads the whole transcript itself via recording_id.
         return llm_backend.ask_question_streaming(
@@ -434,6 +488,7 @@ async def chat_with_meeting(
             diarized_transcript=diarized_transcript,
             conversation_history=formatted_history,
             recording_id=recording.id,
+            tone=tone,
         )
 
     async def stream_generator():

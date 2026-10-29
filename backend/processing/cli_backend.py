@@ -21,6 +21,7 @@ from backend.processing.cli.manager import (
     CliOAuthUnavailableError,
 )
 from backend.processing.llm_services import LLMBackend
+from backend.utils.chat_prompt import ChatTranscript
 from backend.utils.meeting_analysis import (
     MeetingAnalysisRequest,
     MeetingAnalysisResult,
@@ -227,13 +228,14 @@ class CliLLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ):
         prompt = self._chat_prompt(
             user_question,
             meeting_notes,
-            diarized_transcript,
+            self._chat_transcript(diarized_transcript, recording_id),
             conversation_history,
-            recording_id,
+            tone,
         )
         return self._run(prompt)
 
@@ -245,13 +247,14 @@ class CliLLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ) -> Generator[str, None, None]:
         prompt = self._chat_prompt(
             user_question,
             meeting_notes,
-            diarized_transcript,
+            self._chat_transcript(diarized_transcript, recording_id),
             conversation_history,
-            recording_id,
+            tone,
         )
         yield from self._manager.stream_single_turn(
             self.user_id, prompt, model=self.model
@@ -278,15 +281,15 @@ class CliLLMBackend(LLMBackend):
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: str | None,
+        diarized_transcript: ChatTranscript,
         conversation_history: list,
-        recording_id: Optional[str],
+        tone: Optional[str],
     ) -> str:
-        # Mirror the other backends: prefer the DB-mapped transcript when a
-        # recording id is supplied (resolves diarization labels to names).
-        diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
+        # ``diarized_transcript`` comes from ``_chat_transcript``, as in the
+        # other backends: the DB-mapped transcript when a recording id is
+        # supplied (resolves diarization labels to names).
         base = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+            user_question, meeting_notes, diarized_transcript, tone=tone
         )
         history = self._render_history(conversation_history)
         return f"{history}\n\n{base}" if history else base

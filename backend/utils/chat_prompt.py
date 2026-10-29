@@ -14,6 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 
+from backend.utils.personas import tone_block
+from backend.utils.prompt_blocks import render_prompt_blocks
+
 NO_TRANSCRIPT_SECTION = """# Transcript:
 This meeting has no transcript. If a question needs one, say that the transcript is not available.
 """
@@ -107,17 +110,23 @@ def build_chat_context(
     diarized_transcript: ChatTranscript,
     *,
     notes_tool: bool = False,
+    tone: Optional[str] = None,
 ) -> str:
     """Stable, cacheable chat context: instructions, notes, and the transcript.
 
     ``notes_tool`` is True only when the request also sends the
     ``update_meeting_notes`` tool, so the prompt never claims an action the
-    provider was not given.
+    provider was not given. ``tone`` is a holiday persona's tone, placed after
+    the instructions and before the meeting content
+    (``backend.utils.persona_settings``).
     """
     sources = _sources(diarized_transcript)
     capabilities = (
         CAPABILITIES_WITH_NOTES_TOOL if notes_tool else CAPABILITIES_WITHOUT_TOOLS
     )
+    tone_section = render_prompt_blocks([tone_block(tone)])
+    if tone_section:
+        tone_section += "\n\n"
     return f"""
 You are a helpful AI assistant. You have access to the following {sources} and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
 
@@ -129,7 +138,7 @@ When an answer compares several items across the same fields, present it as a Ma
 
 {capabilities}
 
-# Meeting Notes:
+{tone_section}# Meeting Notes:
 {meeting_notes}
 
 {_transcript_section(diarized_transcript)}"""
@@ -141,10 +150,13 @@ def build_chat_prompt(
     diarized_transcript: ChatTranscript,
     *,
     notes_tool: bool = False,
+    tone: Optional[str] = None,
 ) -> str:
     """Single-string chat prompt (context + question) for providers without caching."""
     return (
-        build_chat_context(meeting_notes, diarized_transcript, notes_tool=notes_tool)
+        build_chat_context(
+            meeting_notes, diarized_transcript, notes_tool=notes_tool, tone=tone
+        )
         + f"\nUser Question: {user_question}\n"
     )
 

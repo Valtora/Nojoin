@@ -27,6 +27,7 @@ from backend.models.recording_public import (
     RecordingPublicRead,
     RecordingsCalendarRead,
     serialize_recording,
+    serialize_recording_personas,
 )
 from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag, Tag
@@ -48,6 +49,7 @@ from backend.utils.live_audio_clock import (
     capture_is_advancing,
     estimate_live_audio_ms,
 )
+from backend.utils.persona_settings import personas_signature, recording_personas
 from backend.utils.processing_eta import estimate_processing_eta
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
@@ -346,28 +348,39 @@ async def get_recordings_calendar(
 
 
 def _recording_etag(
-    status: RecordingStatus, change_sequence: int | None, notes_status: str | None
+    status: RecordingStatus,
+    change_sequence: int | None,
+    notes_status: str | None,
+    personas: str = "",
 ) -> str:
-    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}"'
+    """The detail read's ETag. ``personas`` is ``personas_signature``: a
+    ``/persona`` command or a new day moves it without touching the recording."""
+    suffix = f"-{personas}" if personas else ""
+    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}{suffix}"'
 
 
 async def _unchanged_since(
-    db: AsyncSession, recording_id: str, user_id: int, if_none_match: str
+    db: AsyncSession, recording_id: str, user: User, if_none_match: str
 ) -> str | None:
     """The current ETag when the caller already holds it, read without the body."""
     row = (
         await db.execute(
             select(
-                Recording.status, Transcript.change_sequence, Transcript.notes_status
+                Recording.id,
+                Recording.status,
+                Transcript.change_sequence,
+                Transcript.notes_status,
             )
             .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
             .where(Recording.public_id == recording_id)
-            .where(Recording.user_id == user_id)
+            .where(Recording.user_id == user.id)
         )
     ).first()
     if row is None:
         return None
-    etag = _recording_etag(*row)
+    row_id, status, change_sequence, notes_status = row
+    personas = personas_signature(recording_personas(user.settings, row_id))
+    etag = _recording_etag(status, change_sequence, notes_status, personas)
     held = {tag.strip() for tag in if_none_match.split(",")}
     return etag if etag in held else None
 
@@ -389,7 +402,7 @@ async def get_recording(
     reads with it.
     """
     if if_none_match is not None:
-        etag = await _unchanged_since(db, recording_id, current_user.id, if_none_match)
+        etag = await _unchanged_since(db, recording_id, current_user, if_none_match)
         if etag is not None:
             return Response(
                 status_code=304, headers={"ETag": etag, "Cache-Control": "no-store"}
@@ -525,10 +538,12 @@ async def get_recording(
             transcript_text_override = ""
 
     transcript = recording.transcript
+    personas = recording_personas(current_user.settings, recording.id)
     response.headers["ETag"] = _recording_etag(
         recording.status,
         transcript.change_sequence if transcript else None,
         transcript.notes_status if transcript else None,
+        personas_signature(personas),
     )
     response.headers["Cache-Control"] = "no-store"
     return serialize_recording(
@@ -549,6 +564,7 @@ async def get_recording(
         captured_audio_seconds=captured_audio_seconds,
         live_audio_ms=live_audio_ms,
         timeline_notes_list_signature=timeline_notes_list_signature,
+        personas=serialize_recording_personas(personas),
     )
 
 

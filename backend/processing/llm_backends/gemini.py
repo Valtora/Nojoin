@@ -361,11 +361,12 @@ class GeminiLLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ):
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
 
         prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+            user_question, meeting_notes, diarized_transcript, tone=tone
         )
 
         contents = []
@@ -394,12 +395,17 @@ class GeminiLLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ) -> Generator[Any, None, None]:
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
         notes_tool = self._offers_notes_tool(diarized_transcript)
 
         prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript, notes_tool=notes_tool
+            user_question,
+            meeting_notes,
+            diarized_transcript,
+            notes_tool=notes_tool,
+            tone=tone,
         )
 
         contents = []
