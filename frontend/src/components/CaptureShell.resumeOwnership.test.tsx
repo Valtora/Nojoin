@@ -449,6 +449,9 @@ describe("Start Meeting after a failed stop", () => {
 
     fireEvent.click(screen.getByTitle("Stop recording"));
     const start = await screen.findByRole("button", { name: "Start Meeting" });
+    // The stop's own error is reported first; a click before the provider has
+    // taken it would race its clearing of the controller's error.
+    await waitFor(() => expect(errors()).toHaveLength(1));
     expect(start).toBeEnabled();
     fireEvent.click(start);
 
