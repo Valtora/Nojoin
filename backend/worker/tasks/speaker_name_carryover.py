@@ -4,7 +4,12 @@ Runs inside ``assign_and_identify_speakers`` before any label is resolved. The
 machine events of an earlier run are dropped first, because this run derives
 its own; what stands after that is the user's. Each standing event goes to the
 final speaker holding its span (``resolve_names``), so a name given for a turn
-follows that voice even when the labels change.
+follows that voice even when the labels change. A name given to a live speaker
+follows all of that label's live lines (``live_label_spans``).
+
+A user's name is never dropped silently: one that lands on no speaker is
+offered as pending on the speaker nearest it (``REASON_UNPLACED``), where the
+LLM pass may not replace it.
 
 A user's name for a person applies only where the cluster sounds like them:
 when both voiceprints exist and can be compared, the cluster must score at
@@ -33,7 +38,8 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_names.anchors import lines_from_final_segments
 from backend.utils.speaker_names.events import as_name_event
-from backend.utils.speaker_names.resolve import ResolvedName, resolve_names
+from backend.utils.speaker_names.live import SURFACE_LIVE, live_label_spans
+from backend.utils.speaker_names.resolve import NameEvent, ResolvedName, resolve_names
 from backend.utils.speaker_names.sources import MACHINE_SOURCES
 
 logger = logging.getLogger(__name__)
@@ -89,6 +95,24 @@ def _standing_rows_after_dropping_machine_ones(
     return kept
 
 
+def _name_events(
+    session: Any, recording_id: int, rows: list[SpeakerNameEvent]
+) -> list[NameEvent]:
+    """Each row as an event; a live name follows all of its label's speech."""
+    live = {
+        row.id: str(row.anchor_label)
+        for row in rows
+        if row.surface == SURFACE_LIVE and row.anchor_label
+    }
+    spans = live_label_spans(session, recording_id, set(live.values()))
+    return [
+        replace(as_name_event(row), anchor_spans=spans.get(live[row.id], ()))
+        if row.id in live
+        else as_name_event(row)
+        for row in rows
+    ]
+
+
 def carry_names_to_final_speakers(
     session: Any,
     recording: Any,
@@ -107,7 +131,7 @@ def carry_names_to_final_speakers(
     from backend.processing.embedding import IDENTIFIED_MERGE_VOICEPRINT_FLOOR
 
     resolved, placements = resolve_names(
-        [as_name_event(row) for row in rows],
+        _name_events(session, recording.id, rows),
         lines_from_final_segments(final_segments),
     )
     floor_scores: dict[str, float | None] = {}

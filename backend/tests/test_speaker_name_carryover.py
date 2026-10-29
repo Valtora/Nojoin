@@ -429,30 +429,36 @@ def test_a_requeued_run_derives_machine_rows_again_and_keeps_the_users(
     assert _speakers(session)["SPEAKER_00"]["local_name"] is None
 
 
-def test_an_event_that_lands_nowhere_changes_nothing(session, monkeypatch) -> None:
+def test_a_user_name_that_lands_nowhere_is_offered_where_the_llm_cannot_replace_it(
+    session, monkeypatch, metrics
+) -> None:
+    from backend.utils.meeting_intelligence import (
+        get_speakers_eligible_for_llm_renaming,
+    )
+
     segments = _segments(
         ("SPEAKER_00", 0.0, 10.0),
         ("SPEAKER_01", 10.0, 20.0),
         ("SPEAKER_00", 20.0, 30.0),
     )
     _add_person(session, 5, "Bob", PERSON)
-    voiceprints = {"SPEAKER_01": PERSON}
-
-    without = copy.deepcopy(segments)
-    _run(session, monkeypatch, without, voiceprints)
-    before = _speakers(session)
-    session.execute(text("DELETE FROM recording_speakers"))
-    session.execute(
-        text("UPDATE global_speakers SET embedding = :e"), {"e": json.dumps(PERSON)}
-    )
-
-    # Named on speech the final pass has nowhere.
+    # Named on speech the final pass has nowhere; SPEAKER_00 speaks nearest it.
     _add_event(session, 101, "Alex", (100000, 110000))
     with_event = copy.deepcopy(segments)
-    _run(session, monkeypatch, with_event, voiceprints)
 
-    assert _speakers(session) == before
-    assert with_event == without
+    _run(session, monkeypatch, with_event, {"SPEAKER_01": PERSON})
+
+    speakers = _speakers(session)
+    assert {
+        key: speakers["SPEAKER_00"][key] for key in ("local_name", "source", "locked")
+    } == {"local_name": "Alex", "source": "user", "locked": False}
+    assert speakers["SPEAKER_01"]["person"] == 5
+    assert with_event == segments
+    assert [m["payload"]["applied"] for m in metrics] == ["unplaced"]
+    rows = list(session.exec(select(RecordingSpeaker)).all())
+    named = next(row for row in rows if row.diarization_label == "SPEAKER_00")
+    assert name_is_pending(named)
+    assert "SPEAKER_00" not in get_speakers_eligible_for_llm_renaming(rows)
 
 
 @pytest.mark.parametrize(

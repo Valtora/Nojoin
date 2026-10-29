@@ -6,6 +6,8 @@ label holds, so the share against the 0.60 floor reads off the numbers.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from backend.utils.speaker_names.anchors import (
@@ -137,12 +139,52 @@ def test_speech_nobody_holds_does_not_count_against_the_holder() -> None:
 
 def test_a_span_with_under_a_second_of_speech_names_nobody() -> None:
     lines = [("SPEAKER_00", 0, MIN_COVERED_MS - 1)]
-    placement = place_event(_event(1, "Alex", 0, 10000), lines)
+    machine = _event(1, "Alex", 0, 10000, source="llm", authority=20)
+    placement = place_event(machine, lines)
     assert (placement.outcome, placement.label) == ("unresolved", None)
-    resolved, _ = resolve_names([_event(1, "Alex", 0, 10000)], lines)
+    resolved, _ = resolve_names([machine], lines)
     assert resolved == {}
     lines = [("SPEAKER_00", 0, MIN_COVERED_MS)]
     assert place_event(_event(1, "Alex", 0, 10000), lines).outcome == "held"
+
+
+@pytest.mark.parametrize(
+    ("lines", "offered_on"),
+    [
+        # 999 ms of SPEAKER_01's speech is in the span: too little to hold it.
+        ([("SPEAKER_00", 20000, 30000), ("SPEAKER_01", 9001, 12000)], "SPEAKER_01"),
+        # None of the span is in the final transcript: the nearest speaker.
+        ([("SPEAKER_00", 13000, 20000), ("SPEAKER_01", 30000, 40000)], "SPEAKER_00"),
+    ],
+)
+def test_a_users_name_that_lands_on_nobody_is_offered_as_pending(
+    lines: list[tuple[str, int, int]], offered_on: str
+) -> None:
+    resolved, placements = resolve_names([_event(1, "Alex", 0, 10000)], lines)
+    assert (placements[0].outcome, placements[0].label) == ("unresolved", offered_on)
+    name = resolved[offered_on]
+    assert (name.name, name.source, name.authority, name.pending, name.reason) == (
+        "Alex",
+        "user",
+        40,
+        True,
+        "unplaced",
+    )
+
+
+def test_a_live_name_is_placed_on_all_of_its_labels_speech() -> None:
+    # The final transcript starts at 6 s, after the turn the name was given on.
+    lines = [("SPEAKER_00", 6000, 20000), ("SPEAKER_01", 20000, 30000)]
+    event = replace(
+        _event(1, "Alex", 240, 2080),
+        anchor_spans=((240, 2080), (7000, 19000), (21000, 22000)),
+    )
+    placement = place_event(event, lines)
+    assert (placement.outcome, placement.label, placement.covered_ms) == (
+        "held",
+        "SPEAKER_00",
+        13000,
+    )
 
 
 # ------------------------------------------------------------- resolution

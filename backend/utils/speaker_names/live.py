@@ -4,10 +4,13 @@ A live label (``LIVE_PROVISIONAL_<n>``) is no speaker of the recording, so a
 name given for it is kept only as the user's name event: anchored on the
 label's longest turn so far, tied to no recording speaker, with surface
 ``live``. The final pass carries it as it carries any user's name
-(``speaker_name_carryover``): the span goes to the final speaker holding at
-least 60% of it, and a link to a person must also pass the 0.60 voiceprint
-floor. Nothing is learned from it before then, and nothing reads live labels
-at the final pass.
+(``speaker_name_carryover``), measured on all of the label's live lines
+(``live_label_spans``) rather than that one turn: the name goes to the final
+speaker holding at least 60% of the label's speech, and a link to a person
+must also pass the 0.60 voiceprint floor. The final transcript may not cover
+the turn the name was given on (it can start later than the live one), and
+the user named the voice on every line, not one turn. Nothing is learned from
+it before then.
 
 Until the final pass replaces the live lines, every reader that would show
 "Speaker <n>" for the label shows the newest name given for it instead
@@ -22,10 +25,10 @@ from typing import Any
 from sqlalchemy import func
 from sqlmodel import col, select
 
-from backend.models.pipeline import TranscriptUtterance
+from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.models.speaker_name_event import SpeakerNameEvent
 
-from .anchors import Line, Span, longest_turn
+from .anchors import Line, Span, longest_turn, turns_of
 from .events import UserNameAct
 from .resolve import MIN_COVERED_MS
 from .sources import AUTHORITY, KIND_NAME, SOURCE_USER
@@ -79,6 +82,40 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
         if turn is not None and turn[1] - turn[0] >= MIN_COVERED_MS:
             return turn
     return longest_turn([*others, *locked, *unlocked], label)
+
+
+def live_label_spans(
+    session: Any, recording_id: int, labels: Iterable[str]
+) -> dict[str, tuple[Span, ...]]:
+    """Each live label's speech: the union of the live lines it labels.
+
+    Superseded rows count: the final pass reads the live lines before it
+    replaces them, and a reprocess reads them after.
+    """
+    wanted = set(labels)
+    if not wanted:
+        return {}
+    rows = session.execute(
+        select(
+            TranscriptUtterance.speaker_label,
+            TranscriptUtterance.start_ms,
+            TranscriptUtterance.end_ms,
+        )
+        .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(TranscriptUtterance.state != TranscriptUtteranceState.DELETED)
+        .where(col(TranscriptUtterance.speaker_label).in_(wanted))
+    ).all()
+    spans: dict[str, tuple[Span, ...]] = {}
+    for label in wanted:
+        lines = [
+            (label, int(start), int(end)) for key, start, end in rows if key == label
+        ]
+        # A 1 ms gap joins touching and overlapping lines, so no speech counts twice.
+        merged = tuple((start, end) for _, start, end in turns_of(lines, gap_ms=1))
+        if merged:
+            spans[label] = merged
+    return spans
 
 
 def record_live_speaker_name(
