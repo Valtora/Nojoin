@@ -1,10 +1,12 @@
 """Holiday personas through the real Meeting Chat and recording endpoints.
 
-The routes run on SQLite with the caller loaded in the request's own session,
-so a command's settings write is read back by the next request. The provider
-is a real backend whose SDK client is faked (the LLM edge), so each test reads
-the prompt that would have been sent. The clock is fixed through the persona
-module's ``utc_now``.
+The routes run on a SQLite file shared by the async API sessions and the sync
+transcript reader, with the caller loaded in the request's own session, so a
+command's settings write is read back by the next request. Provider settings
+resolve for real from the install config and environment keys; each provider
+is a real backend whose SDK client is faked (the LLM edge), behind the real
+secondary wrapper, so each test reads the prompt that would have been sent.
+Task dispatch and the persona module's clock are the other faked edges.
 """
 
 from __future__ import annotations
@@ -18,11 +20,12 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlmodel import Session
 
+import backend.core.db as core_db
 import backend.utils.persona_settings as persona_settings
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
@@ -31,6 +34,7 @@ from backend.celery_app import celery_app
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.processing.llm_backends import factory
 from backend.processing.llm_backends.base import LLMBackend
 from backend.processing.llm_backends.factory import SecondaryLLMBackend
 from backend.processing.llm_services import (
@@ -41,18 +45,20 @@ from backend.processing.llm_services import (
 )
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
+    GLOBAL_SPEAKERS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
     TAGS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
 )
-from backend.tests.test_chat_cli_relay_api import _fake_async, _rag_and_dispatch_stubs
+from backend.tests.test_chat_cli_relay_api import _rag_and_dispatch_stubs
 from backend.tests.test_timeline_notes_api import _session_user
-from backend.utils.llm_config import ResolvedLLMConfig
+from backend.utils.config_manager import config_manager
 from backend.utils.personas import (
     PERSONA_SAFETY,
     TONE_HEADING,
@@ -65,6 +71,8 @@ CHAT = f"/api/v1/transcripts/{REC}/chat"
 DETAIL = f"/api/v1/recordings/{REC}"
 NOTES = "# Notes\n- launch moved to May"
 TRANSCRIPT = "[00:01] Speaker A: we move the launch to May"
+SPOKEN = "we move the launch to May"
+SECONDARY_KEY = "sk-ant-secondary"
 PIRATE_DAY = datetime(2026, 9, 19, 12, 0)
 ORDINARY_DAY = datetime(2026, 3, 3, 12, 0)
 
@@ -188,16 +196,44 @@ PROVIDERS: dict[str, Callable[[list[str]], LLMBackend]] = {
 }
 
 
+def _refusing(backend: LLMBackend) -> LLMBackend:
+    """``backend`` with an SDK that raises on every request."""
+
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("deliberate primary SDK failure")
+
+    for attribute in ("client", "requests"):
+        sdk = getattr(backend, attribute, None)
+        if sdk is not None:
+            setattr(backend, attribute, _Refusing(refuse))
+    return backend
+
+
+class _Refusing:
+    """An SDK object whose every attribute, at any depth, raises when called."""
+
+    def __init__(self, refuse: Callable[..., Any]) -> None:
+        self._refuse = refuse
+
+    def __getattr__(self, _name: str) -> "_Refusing":
+        return self
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._refuse(*args, **kwargs)
+
+
 # --- the app -----------------------------------------------------------------
 
 
 @pytest.fixture
-async def session_maker() -> AsyncIterator[sessionmaker]:
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+async def session_maker(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[sessionmaker]:
+    path = tmp_path / "chat.sqlite"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
+    # The transcript reader and the notes tool use the worker's sync session.
+    sync_engine = create_engine(f"sqlite:///{path}")
+    monkeypatch.setattr(core_db, "get_sync_session", lambda: Session(sync_engine))
     async with engine.begin() as connection:
         for schema in (
             USERS_SCHEMA,
@@ -209,6 +245,8 @@ async def session_maker() -> AsyncIterator[sessionmaker]:
             TIMELINE_NOTES_SCHEMA,
             DOCUMENTS_SCHEMA,
             TRANSCRIPT_UTTERANCES_SCHEMA,
+            GLOBAL_SPEAKERS_SCHEMA,
+            SPEAKER_NAME_EVENTS_SCHEMA,
             CHAT_MESSAGES_SCHEMA,
         ):
             await connection.execute(text(schema))
@@ -237,7 +275,9 @@ async def session_maker() -> AsyncIterator[sessionmaker]:
         session.add(
             Transcript(
                 recording_id=1,
-                segments=[],
+                segments=[
+                    {"start": 1.0, "end": 3.0, "speaker": "SPEAKER_00", "text": SPOKEN}
+                ],
                 notes=NOTES,
                 notes_status="completed",
                 transcript_status="completed",
@@ -248,6 +288,7 @@ async def session_maker() -> AsyncIterator[sessionmaker]:
         yield maker
     finally:
         await engine.dispose()
+        sync_engine.dispose()
 
 
 @pytest.fixture
@@ -272,17 +313,44 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Callable[[datetime], None]:
 
 
 @pytest.fixture
-def use_provider(
-    monkeypatch: pytest.MonkeyPatch, prompts: list[str]
-) -> Callable[[str], None]:
-    """Answer chat with ``provider``'s real backend, behind the secondary wrapper."""
+def secondary_prompts() -> list[str]:
+    """Every prompt the secondary provider (Anthropic) was sent, in order."""
+    return []
 
-    def use(provider: str) -> None:
-        backend = PROVIDERS[provider](prompts)
-        monkeypatch.setattr(
-            "backend.api.v1.endpoints.transcripts.get_llm_backend_with_secondary",
-            lambda _config: SecondaryLLMBackend(primary=backend, secondary=backend),
-        )
+
+@pytest.fixture
+def use_provider(
+    monkeypatch: pytest.MonkeyPatch, prompts: list[str], secondary_prompts: list[str]
+) -> Callable[..., None]:
+    """Make ``provider`` the install's chat provider, with Anthropic as secondary.
+
+    The settings resolve for real; only each backend's SDK client is fake.
+    ``primary_fails`` makes the primary's SDK raise on every call.
+    """
+    install: dict[str, Any] = {
+        "ollama_api_url": "http://ollama.local",
+        "secondary_llm_provider": "anthropic",
+        "secondary_anthropic_model": "claude-secondary",
+    }
+    monkeypatch.setattr(config_manager, "get_all", lambda: dict(install))
+    for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.setenv(name, "sk-primary")
+    monkeypatch.setenv("SECONDARY_ANTHROPIC_API_KEY", SECONDARY_KEY)
+    failing: dict[str, bool] = {}
+
+    def backend_for(provider: str, api_key=None, **_options) -> LLMBackend:
+        if api_key == SECONDARY_KEY:
+            return _anthropic(secondary_prompts)
+        if failing["primary"]:
+            return _refusing(PROVIDERS[provider](prompts))
+        return PROVIDERS[provider](prompts)
+
+    monkeypatch.setattr(factory, "get_llm_backend", backend_for)
+
+    def use(provider: str, *, primary_fails: bool = False) -> None:
+        install["llm_provider"] = provider
+        install[f"{provider}_model"] = f"{provider}-test"
+        failing["primary"] = primary_fails
 
     use("openai")
     return use
@@ -305,25 +373,8 @@ async def client(
 
     app.dependency_overrides[get_db] = _db
     app.dependency_overrides[get_current_user] = _session_user(1)
-    config = ResolvedLLMConfig(
-        provider="openai",
-        api_key="sk-test",
-        model="gpt-test",
-        api_url=None,
-        merged_config={},
-    )
-    monkeypatch.setattr(
-        routes_chat, "resolve_llm_config_async", lambda *a, **k: _fake_async(config)
-    )
     monkeypatch.setattr(celery_app, "send_task", _rag_and_dispatch_stubs(dispatched))
     monkeypatch.setattr(routes_chat, "async_session_maker", session_maker)
-    # The transcript is read through the worker's sync engine, which these
-    # SQLite tests do not have.
-    monkeypatch.setattr(
-        LLMBackend,
-        "get_mapped_transcript_for_llm",
-        staticmethod(lambda *a, **k: TRANSCRIPT),
-    )
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://testserver"
     ) as async_client:
@@ -711,8 +762,31 @@ async def test_every_provider_gets_the_tone_section_and_none_when_off(
     assert section in on
     # After the instructions, before the meeting content.
     assert on.index("# WHAT YOU CAN DO") < on.index(section) < on.index(NOTES)
-    assert on.index(section) < on.index(TRANSCRIPT)
+    assert on.index(section) < on.index(SPOKEN)
     assert TONE_HEADING not in off and PERSONA_SAFETY not in off
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider", list(PROVIDERS))
+async def test_a_failing_primary_hands_the_secondary_one_tone_section(
+    client: AsyncClient,
+    prompts: list[str],
+    secondary_prompts: list[str],
+    use_provider,
+    provider: str,
+) -> None:
+    use_provider(provider, primary_fails=True)
+    await _send(client, "/persona pirate")
+
+    await _send(client, "What was decided?")
+
+    assert prompts == []
+    assert len(secondary_prompts) == 1
+    prompt = secondary_prompts[0]
+    assert _line("pirate") in prompt
+    assert prompt.count(TONE_HEADING) == 1
+    assert prompt.count(PERSONA_SAFETY) == 1
+    assert prompt.index(TONE_HEADING) < prompt.index(NOTES) < prompt.index(SPOKEN)
 
 
 @pytest.mark.anyio

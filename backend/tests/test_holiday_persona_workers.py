@@ -1,9 +1,9 @@
 """Holiday personas in the worker: notes (only with the notes surface on) and Meeting Edge.
 
-Notes regeneration runs the real task on SQLite with the real settings
-resolution and a real Anthropic backend whose SDK client is faked, so the test
-reads the prompt the provider would receive. The automatic pipeline and
-Meeting Edge reuse those stages' own harnesses.
+Notes regeneration and Meeting Edge run their real tasks on SQLite with the
+real settings resolution (and, for Edge, the real refresh policy) and real
+backends whose SDK clients are faked, so each test reads the prompt the
+provider would receive. The automatic pipeline reuses its stage's harness.
 """
 
 from __future__ import annotations
@@ -35,9 +35,7 @@ from backend.tests.test_generate_notes_task import (
     _create_notes_task_database,
     _run_generate_notes_task,
 )
-from backend.tests.test_meeting_edge_toggle import _FakeSession, _run_live_edge_refresh
 from backend.utils.llm_config import ResolvedLLMConfig
-from backend.utils.meeting_edge import build_meeting_edge_prompt_parts
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceResult,
     build_automatic_meeting_intelligence_prompt,
@@ -247,46 +245,6 @@ def test_the_automatic_pipeline_notes_follow_the_notes_surface(
         assert stored["notes"] == {}
 
 
-@pytest.mark.parametrize("edge_on", [True, False], ids=["edge-on", "edge-off"])
-def test_meeting_edge_takes_the_tone_in_its_stable_prefix(
-    monkeypatch: pytest.MonkeyPatch, fake_single_flight, edge_on: bool
-) -> None:
-    personas = {
-        "surfaces": {"chat": True, "edge": edge_on, "notes": False},
-        "meetings": {"1": "pirate"},
-    }
-    session = _FakeSession(
-        SimpleNamespace(id=1, status=tasks_module.RecordingStatus.UPLOADING, user_id=7),
-        SimpleNamespace(
-            meeting_edge_status=tasks_module.MEETING_EDGE_STATUS_READY,
-            meeting_edge_error_message=None,
-            meeting_edge_payload={"summary": "Earlier guidance"},
-            meeting_edge_source_signature="old-signature",
-            segments=[],
-            meeting_edge_focus=None,
-        ),
-        SimpleNamespace(
-            id=7, settings={"enable_meeting_edge": True, SETTINGS_KEY: personas}
-        ),
-    )
-    captured: dict[str, Any] = {}
-
-    class FakeLLM:
-        def generate_meeting_edge(self, request, timeout):
-            captured["request"] = request
-            return "Guidance"
-
-    _run_live_edge_refresh(monkeypatch, session, FakeLLM())
-
-    prefix, suffix = build_meeting_edge_prompt_parts(captured["request"])
-    section = f"{TONE_HEADING}\n{PIRATE.edge} {PERSONA_SAFETY}"
-    if edge_on:
-        assert prefix.rstrip().endswith(section)
-        assert TONE_HEADING not in suffix
-    else:
-        assert TONE_HEADING not in prefix + suffix
-
-
 # --- Meeting Edge through the real refresh task ----------------------------------
 
 EDGE_SEGMENTS = [
@@ -301,35 +259,51 @@ EDGE_SEGMENTS = [
 
 @pytest.fixture
 def edge_meeting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_single_flight):
-    """A meeting in capture for the real Edge task, and the prompts OpenAI is sent.
+    """A meeting in capture for the real Edge task, and what the provider is sent.
 
     The refresh policy, settings and provider resolution are real; the OpenAI
-    SDK client is the fake edge.
+    and Anthropic SDK clients are the fake edge. Each call is recorded as its
+    text blocks: one for OpenAI, the cached prefix and the suffix for Anthropic.
     """
     monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    prompts: list[str] = []
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    calls: list[list[str]] = []
+
+    def answer() -> str:
+        return json.dumps({"summary": f"Guidance {len(calls)}"})
 
     class FakeCompletions:
         def create(self, **kwargs):
-            prompts.append(kwargs["messages"][0]["content"])
-            content = json.dumps({"summary": f"Guidance {len(prompts)}"})
-            message = SimpleNamespace(content=content)
+            calls.append([kwargs["messages"][0]["content"]])
+            message = SimpleNamespace(content=answer())
             return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
     class FakeOpenAI:
         def __init__(self, **_kwargs):
             self.chat = SimpleNamespace(completions=FakeCompletions())
 
+    class FakeMessages:
+        def create(self, **kwargs):
+            content = kwargs["messages"][0]["content"]
+            calls.append([block["text"] for block in content])
+            block = SimpleNamespace(type="text", text=answer())
+            return SimpleNamespace(content=[block], stop_reason="end_turn")
+
+    class FakeAnthropic:
+        def __init__(self, **_kwargs):
+            self.messages = FakeMessages()
+
     monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+    monkeypatch.setattr("anthropic.Anthropic", FakeAnthropic)
     engines = []
 
-    def make(personas: dict[str, Any]):
+    def make(personas: dict[str, Any], provider: str = "openai"):
         engine = _create_notes_task_database(
             tmp_path,
             owner_settings={
-                "llm_provider": "openai",
-                "openai_model": "gpt-test",
+                "llm_provider": provider,
+                f"{provider}_model": f"{provider}-test",
                 "enable_meeting_edge": True,
                 "timezone": "UTC",
                 SETTINGS_KEY: personas,
@@ -341,7 +315,7 @@ def edge_meeting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_single_fl
             connection.execute(text(TRANSCRIPT_UTTERANCES_SCHEMA))
             connection.execute(text("UPDATE recordings SET status = 'UPLOADING'"))
         engines.append(engine)
-        return engine, prompts
+        return engine, calls
 
     yield make
     for engine in engines:
@@ -362,8 +336,29 @@ def _refresh_edge(engine) -> dict[str, Any]:
         return dict(transcript.meeting_edge_payload or {})
 
 
+@pytest.mark.parametrize("edge_on", [True, False], ids=["edge-on", "edge-off"])
+def test_meeting_edge_takes_the_tone_in_its_stable_prefix(
+    edge_meeting, edge_on: bool
+) -> None:
+    surfaces = {"chat": True, "edge": edge_on, "notes": False}
+    engine, calls = edge_meeting(
+        {"surfaces": surfaces, "meetings": {"1": "pirate"}}, provider="anthropic"
+    )
+
+    _refresh_edge(engine)
+
+    [(prefix, suffix)] = calls
+    section = f"{TONE_HEADING}\n{PIRATE.edge} {PERSONA_SAFETY}"
+    assert "The team discussed the launch plan." in suffix
+    if edge_on:
+        assert prefix.rstrip().endswith(section)
+        assert TONE_HEADING not in suffix
+    else:
+        assert TONE_HEADING not in prefix + suffix
+
+
 def test_a_persona_change_refreshes_meeting_edge_at_once(edge_meeting) -> None:
-    engine, prompts = edge_meeting({"meetings": {"1": "pirate"}})
+    engine, calls = edge_meeting({"meetings": {"1": "pirate"}})
 
     _refresh_edge(engine)
     _set_personas(engine, {"meetings": {"1": "hobbit"}})
@@ -373,6 +368,7 @@ def test_a_persona_change_refreshes_meeting_edge_at_once(edge_meeting) -> None:
     unchanged = _refresh_edge(engine)
 
     # The speech has not moved on, so only the tone changes ask the model again.
+    prompts = ["".join(call) for call in calls]
     assert len(prompts) == 3
     assert PIRATE.edge in prompts[0]
     assert HOBBIT.edge in prompts[1] and PIRATE.edge not in prompts[1]
