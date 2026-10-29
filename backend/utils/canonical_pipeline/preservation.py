@@ -3,6 +3,7 @@
 from collections import Counter, defaultdict
 from copy import deepcopy
 from itertools import groupby
+from operator import itemgetter
 from typing import Any, Sequence
 
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
@@ -111,13 +112,15 @@ def _consume_overlap(
 ) -> list[dict[str, Any]]:
     """Review only the words over protected lines; return the rest as segments.
 
-    A timed word belongs to the protected line holding its midpoint. Runs of
-    words outside every protected line stay ordinary final segments, bounded
-    by the protected lines beside them. A segment without timings for all its
-    words is reviewed whole on the first line.
+    A timed word belongs to the protected line holding its midpoint, and an
+    untimed word goes with the timed word before it, or the first timed word
+    when none precedes it. Runs of words outside every protected line stay
+    ordinary final segments, bounded by their timed words and the protected
+    lines beside them. Only a segment with no timed word is reviewed whole on
+    the first line.
     """
     words = segment.get("words") or []
-    if not words or not all(has_word_timing(word) for word in words):
+    if not any(has_word_timing(word) for word in words):
         text = str(segment.get("text") or "").strip()
         if text:
             reviews[found[0]].append(text)
@@ -130,15 +133,23 @@ def _consume_overlap(
             None,
         )
 
+    current = next(owner(word) for word in words if has_word_timing(word))
+    owners: list[int | None] = []
+    for word in words:
+        if has_word_timing(word):
+            current = owner(word)
+        owners.append(current)
+
     parts: list[dict[str, Any]] = []
-    for index, run in groupby(words, key=owner):
-        kept = list(run)
+    for index, run in groupby(zip(words, owners), key=itemgetter(1)):
+        kept = [word for word, _ in run]
         text = reconstruct_text_from_words(kept)
         if index is not None:
             if text:
                 reviews[index].append(text)
             continue
-        start, end = _part_bounds(kept, found, line_bounds)
+        timed = [word for word in kept if has_word_timing(word)]
+        start, end = _part_bounds(timed, found, line_bounds)
         parts.append(
             {**segment, "words": kept, "text": text, "start": start, "end": end}
         )

@@ -683,3 +683,74 @@ def test_a_word_straddling_a_protected_line_spreads_its_speaker_to_neither_side(
             (10, 12),
             (12, 20),
         ]
+
+
+def test_one_untimed_word_keeps_the_speech_beside_a_correction_in_the_transcript(
+    publication_engine: Engine,
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {"start": i * 2, "end": i * 2 + 2, "text": f"live {i}", "speaker": "L0"}
+                for i in range(15)
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        update_utterance_text(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=serialize_canonical_utterances(session, recording_id)[
+                7
+            ]["id"],
+            text="Corrected words",
+        )
+        session.commit()
+        # Partial Canary alignment: one word of the 30 s segment over the
+        # corrected 14-16 s line has no timing.
+        words = [
+            {
+                "word": f" w{second}",
+                "start": None if second == 5 else second,
+                "end": None if second == 5 else second + 1,
+                "source_id": f"source-{second}",
+            }
+            for second in range(30)
+        ]
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": 0,
+                    "end": 30,
+                    "text": " ".join(f"w{second}" for second in range(30)),
+                    "speaker": "SPEAKER_00",
+                    "words": words,
+                }
+            ],
+        )
+        stored = _load_transcript(session, recording_id)
+        assert stored is not None and stored.text is not None
+        assert "w0" in stored.text and "w5" in stored.text and "w29" in stored.text
+        lines = _lines(session, recording_id)
+        # The untimed word stays with the timed word before it.
+        assert [line["text"] for line in lines] == [
+            " ".join(f"w{second}" for second in range(14)),
+            "Corrected words",
+            " ".join(f"w{second}" for second in range(16, 30)),
+        ]
+        assert [(line["start"], line["end"]) for line in lines] == [
+            (0, 14),
+            (14, 16),
+            (16, 30),
+        ]
+        assert lines[1]["final_review"]["text"] == "w14 w15"
