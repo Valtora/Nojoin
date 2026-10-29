@@ -73,7 +73,7 @@ def client_for(monkeypatch):
             return MagicMock(is_superuser=True, role="owner")
 
         app.dependency_overrides[get_current_active_superuser] = superuser
-        monkeypatch.setattr(system, "client", docker_client)
+        monkeypatch.setattr(system, "get_docker_client", lambda: docker_client)
         return TestClient(app)
 
     return _client
