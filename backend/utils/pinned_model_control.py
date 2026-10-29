@@ -16,6 +16,9 @@ from typing import Any
 from backend.utils.model_cache_paths import hf_hub_cache_root
 
 PENDING_TTL = 30 * 60
+# After a failed preparation, first-use requests wait this long before queueing
+# another, so an offline install does not queue one per live step.
+FAILURE_BACKOFF = 10 * 60
 logger = logging.getLogger(__name__)
 
 
@@ -118,6 +121,21 @@ class PinnedModelControl:
         except (OSError, ValueError, TypeError):
             if task_id is None:
                 path.unlink(missing_ok=True)
+
+    def record_failure(self) -> None:
+        """Note a failed preparation; an explicit download still runs at once."""
+        try:
+            atomic_json(self.path("failed.json"), {"failed_at": time.time()})
+        except OSError:
+            logger.warning("Could not record %s preparation failure", self.name)
+
+    def failed_recently(self) -> bool:
+        """Whether a preparation failed within the last FAILURE_BACKOFF."""
+        try:
+            failed_at = float(read_json(self.path("failed.json"))["failed_at"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+        return 0 <= time.time() - failed_at < FAILURE_BACKOFF
 
     def complete_pending(self, task_id: str | None) -> None:
         """Preserve the task outcome if completion housekeeping fails."""

@@ -51,8 +51,8 @@ Brave may need its shields or site settings relaxed before it shows capture prom
 
 ## Pause, Resume, Stop, And Discard
 
-- **Pause** stops capturing and keeps everything recorded so far. The controls read **Paused** as soon as capture stops. If Nojoin cannot reach the server, it says so, keeps the recording paused in this tab, and tells the server once the connection returns. If the server refuses the pause, this tab stays paused and shows the server's reason.
-- **Resume** continues the same recording. After a pause in the live controls it carries on with the same shared tab and microphone. After the tab was closed or reloaded, the browser asks you to share again.
+- **Pause** stops capturing and keeps everything recorded so far. The controls read **Paused** as soon as capture stops. By default, the microphone stays open. Turn on **Release the microphone while paused** in **Settings > Recording**, beside **Microphone**, to free it for another application while the recording is paused. Shared tab or screen audio stays open, although none is recorded while paused. If Nojoin cannot reach the server, it says so, keeps the recording paused in this tab, and tells the server once the connection returns. If the server refuses the pause, this tab stays paused and shows the server's reason.
+- **Resume** continues the same recording. After a pause in the live controls it keeps the same shared tab. If the microphone was released, Nojoin opens the microphone chosen in Settings again, and the browser may ask for permission ([Capture Settings](#capture-settings) covers a chosen microphone that has gone). A microphone that is busy, unavailable or refused permission leaves the recording paused with an explanation: reconnect it, close the application using it or allow microphone access, then choose **Resume** again. The same happens if the browser has not restarted audio for the tab within a couple of seconds, which a phone can hold back during a call. Recorded and queued audio stays safe. After the Nojoin tab was closed or reloaded, the browser asks you to share again.
 - **Stop** releases the microphone and shared tab, uploads any audio still queued, and queues the recording for processing. While queued audio uploads, the controls read **Uploading** and show how much is left, and the meeting button names the current stage. Stop also works on a paused recording, including one whose tab was closed.
 - **Discard** permanently deletes an unfinished recording, whether it is recording, paused, queued or processing: its audio, any attached documents, any processing under way and the meeting itself. Nojoin asks you to confirm first. Discard is in the live controls, the floating recording badge, the resume-or-discard dialog and the recordings list's context menu (**Discard Recording**).
 
@@ -63,6 +63,8 @@ The recording keeps the same header and tabs through every stage. Its header sho
 After **Stop**, the header's player area shows the upload stage and backlog, then queue or pipeline progress, estimated time remaining and discard. The transcript continues updating below it through uploading, queued and processing, with its note composer underneath. **Speakers**, **My notes**, **Captures** and **Meeting Edge** stay in the side column on desktop and the main tab row on a phone; attached documents stay in **Documents**. A failed final read keeps the feed visible while Nojoin retries; an empty successful read replaces it too. Playback and export remain unavailable while the recording is in flight.
 
 Switching tabs or windows, using another application or moving between Nojoin pages does not pause recording. On every page except the recording itself, a floating badge at the top of the screen shows the status and elapsed time, with pause, resume, stop and discard controls, and opens the recording when clicked.
+
+The release setting has been tested in desktop browsers and in Chrome for Android, which records the microphone only. It has not been tested on iOS yet. **Stop** and **Discard** work while the microphone is released and do not need microphone permission.
 
 ### Closing Or Reloading The Tab
 
@@ -98,7 +100,7 @@ The composer remains beneath **Transcript** after Stop. A carried draft keeps it
 
 Use the camera button beside the composer or the screen-capture shortcut to take a still. One key press takes one still, including after changing tabs. Files still accept paste/drop into the composer, and saved files remain in **Captures**.
 
-## Naming Speakers During Capture
+## Live Word Settling
 
 [Live word settling](USAGE.md#live-transcription) defaults to **Auto (GPU)**, with **3 unchanged comparisons** and a **10 s settling window**, and revises only recent transcript words and speaker boundaries. Administrators can turn it off; a stored Off stays off on upgrade. Under **Auto (GPU)** CPU processing keeps ordinary whole-line transcription; **GPU and CPU** settles there too, at a high CPU and RAM cost. Pause and Stop lock the last accepted words without another decode, and the partial segment uploaded at Pause is still transcribed while paused, then locked; Resume starts a fresh settling episode; a capture that started with settling Off stays whole-line until it ends. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
 
@@ -106,7 +108,9 @@ A live transcription pass that Pause interrupts still lands, and with settling i
 
 Settled lines follow continuous speech rather than the two-second upload steps. Words from the same person extend the open line until a speaker change, a pause longer than **Line break pause** (1 s by default), or the maximum line length (30 s by default). The pause setting is shared with diarised final transcripts under **Settings > Transcription > Transcript lines**, and the line cap is shared with ordinary live transcription. Earlier words can settle while their line continues growing. Pause and Stop close the remaining line.
 
-Each step decodes while the unlocked part of the settling window holds speech, found by VAD in the new chunks or by the diariser anywhere in that window, so the silent steps after a turn keep decoding until its words lock. When a backlog drains, speech still inside the settling window shares one decode at the latest step, even if the newest chunk is silent. Speech VAD missed and the diariser finds later is decoded at the next step while that audio is still unlocked inside the window, within the same audio cap. ASR never waits for the diariser; evidence arriving after the audio leaves the window cannot reopen it.
+How each step decides whether to transcribe again, from voice activity and speaker evidence, is in [Live Word Settling](ARCHITECTURE.md#live-word-settling).
+
+## Naming Speakers During Capture
 
 With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with that label's speech, and processing gives it to the speaker who holds most of it, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
 
@@ -147,6 +151,7 @@ Nojoin offers the audio only while the browser is signed in as the account that 
 **Settings > Recording** holds the capture settings for this browser:
 
 - **Microphone**, the input mixed with shared audio (**System default** unless you pick one).
+- **Release the microphone while paused**, off by default. Frees the microphone after a pause so another application can use it; shared audio stays open. Resume opens the microphone again. A change applies at the next pause, including during a recording.
 - **Microphone gain** and **Shared-audio gain**. Nojoin also balances the two levels automatically while recording.
 - **Live microphone input test**, which shows raw and gain-adjusted levels.
 - Under **Advanced**, the browser's echo cancellation, noise suppression and auto gain, and the **Quiet audio warnings** reset.
@@ -155,7 +160,7 @@ Noise suppression is off by default: in a room it makes speaker labels less accu
 
 These settings are stored in the browser, so they do not follow you to another browser or device.
 
-If the microphone you chose is unavailable when a recording starts or resumes, Nojoin stops with an error instead of falling back to the system default. Pick another microphone first.
+If the microphone you chose is unavailable when a recording starts or resumes, Nojoin stops with an error instead of falling back to the system default. Pick another microphone first. The exception is **Resume** in the tab that released its microphone during the pause: if the chosen microphone is missing, Nojoin falls back to the system default microphone, shows a warning and keeps your saved choice. With the microphone released, a **Microphone** chosen in Settings while paused is used by the next Resume.
 
 Each start and resume writes a `Capture source report` line to the API log with the requested and granted microphone and whether shared audio was granted. Browsers do not reveal which speaker or headset sits behind shared system audio.
 
@@ -191,7 +196,7 @@ Use current Chrome and current macOS, share the meeting tab and turn on the pick
 
 ### The browser asks for permissions again on resume
 
-This is expected after a reload, a closed tab or a failed stop. Browsers do not let a page reopen shared tab, window, screen or microphone capture without asking.
+This is expected after a reload, a closed tab or a failed stop. Browsers do not let a page reopen shared tab, window, screen or microphone capture without asking. With **Release the microphone while paused** on, a live resume may ask for microphone permission too; the shared tab or screen stays connected and needs no new share picker.
 
 ### Recorded audio is shorter than the meeting
 
@@ -212,7 +217,7 @@ Audio still queued in the browser is not counted as missing; the warning lists i
 
 ### Chrome Memory Saver
 
-Memory Saver puts inactive Chrome tabs to sleep. You should not normally need to change anything: Chrome exempts tabs that are using the microphone or sharing a screen, and a recording tab does both until you stop.
+Memory Saver puts inactive Chrome tabs to sleep. You should not normally need to change anything: Chrome exempts tabs that are using the microphone or sharing a screen. Desktop capture keeps its share open while paused; the microphone stays open too unless **Release the microphone while paused** is on. Keep Nojoin open and the device awake before resuming.
 
 If shortfalls blamed on tab suspension keep happening in desktop Chrome, exempt Nojoin by hand:
 
@@ -226,7 +231,7 @@ No browser API lets a page opt out of Memory Saver or read whether it is on, so 
 
 When more than 30 seconds of audio is waiting to upload, the controls say how far behind uploads are. The audio is kept in this browser and sent as the connection allows. Keep the tab open, though nothing is lost if it closes and you return in the same browser.
 
-If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The tab keeps the queued audio, the microphone and the shared tab, and **Start Meeting** stays unavailable until you resume, stop or discard. When the server cannot be told about the pause, Nojoin tells it once the connection returns, after uploading the queued audio, and **Resume** carries on with the same recording without asking you to share again. Two minutes after the last upload the server offers the recording as interrupted in any tab or on any device ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). If it is resumed or stopped somewhere else meanwhile, this tab stops once the connection returns and says so ([This recording continued elsewhere](#this-recording-continued-elsewhere), [This recording has already been stopped](#this-recording-has-already-been-stopped)). An ended sign-in is different: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
+If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The tab keeps the queued audio and the shared tab. It keeps the microphone too unless **Release the microphone while paused** is on, in which case Resume opens it again and may ask for permission. **Start Meeting** stays unavailable until you resume, stop or discard. When the server cannot be told about the pause, Nojoin tells it once the connection returns, after uploading the queued audio, and **Resume** carries on with the same recording without asking you to share again. Two minutes after the last upload the server offers the recording as interrupted in any tab or on any device ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). If it is resumed or stopped somewhere else meanwhile, this tab stops once the connection returns and says so ([This recording continued elsewhere](#this-recording-continued-elsewhere), [This recording has already been stopped](#this-recording-has-already-been-stopped)). An ended sign-in is different: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
 
 ### This recording continued elsewhere
 

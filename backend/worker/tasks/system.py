@@ -103,6 +103,10 @@ def download_models_task(
             include_core=include_core,
             **kwargs,
         )
+    except Exception:
+        if control is not None:
+            control.record_failure()
+        raise
     finally:
         if control is not None:
             control.complete_pending(self.request.id)

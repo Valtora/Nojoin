@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CaptureResumeSupersededError } from "@/lib/capture/shared";
+
 import LiveMeetingControls from "./LiveMeetingControls";
 
 const addNotification = vi.fn();
@@ -172,6 +174,27 @@ describe("LiveMeetingControls", () => {
     });
 
     expect(screen.queryByText("Pause failed")).not.toBeInTheDocument();
+  });
+
+  it("stays quiet about a Resume that a Stop or Discard overtook", async () => {
+    captureState.status = "paused";
+    resume.mockRejectedValueOnce(new CaptureResumeSupersededError());
+    resume.mockRejectedValueOnce(new Error("Resume failed"));
+
+    render(<LiveMeetingControls size="full" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(resume).toHaveBeenCalledOnce());
+    // A Resume that failed on its own still toasts, and only that one.
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+
+    await waitFor(() => {
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "error",
+        message: "Resume failed",
+      });
+    });
+    expect(addNotification).toHaveBeenCalledOnce();
   });
 });
 

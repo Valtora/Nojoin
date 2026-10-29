@@ -1,6 +1,7 @@
 import type { TranscriptSegment } from "@/types";
 
-export const LINE_SETTLING_REASON = "This line is still settling.";
+/** Why a settling line's corrections wait: shown once per menu, and on the line itself. */
+export const LINE_SETTLING_REASON = "Corrections open when this line locks, usually within half a minute.";
 
 /** Final lines shed runtime lock evidence; provisional marked lines must lock explicitly. */
 export const lineIsSettling = (segment: TranscriptSegment): boolean =>
