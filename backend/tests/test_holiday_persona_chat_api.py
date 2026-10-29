@@ -529,6 +529,11 @@ async def test_an_unknown_name_lists_the_valid_ones_and_changes_nothing(
     reply = _reply(body)
     assert reply.startswith('Unknown persona "dragon". Valid names: ')
     assert "pirate" in reply and "hobbit" in reply and "crossword" in reply
+    assert reply.endswith(
+        ". Dated personas: off. Surfaces: Chat on, Meeting Edge on, notes off. "
+        "This meeting: none. Usage: /persona <name>, /persona off, "
+        "/eastereggs on|off, /eastereggs chat|edge|notes on|off."
+    )
     assert "event: persona_update" not in body
     assert prompts == []
     assert await _stored(session_maker) == {}

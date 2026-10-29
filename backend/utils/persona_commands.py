@@ -67,6 +67,7 @@ def _set_persona(
     preferences: PersonaPreferences,
     recording_key: str,
     name: str,
+    status: str,
 ) -> CommandResult:
     meetings = {k: v for k, v in preferences.meetings.items() if k != recording_key}
     if name in PERSONA_OFF:
@@ -77,7 +78,9 @@ def _set_persona(
     persona = persona_by_slug(name)
     if persona is None:
         names = ", ".join(persona.slug for persona in personas())
-        return CommandResult(f'Unknown persona "{name}". Valid names: {names}.')
+        return CommandResult(
+            f'Unknown persona "{name}". Valid names: {names}. {status}'
+        )
     meetings[recording_key] = persona.slug
     reply = f"Persona for this meeting: {persona.slug}."
     if preferences.enabled is False:
@@ -127,7 +130,7 @@ def run_persona_command(
         return CommandResult(status)
     result = None
     if command == "/persona" and len(arguments) == 1:
-        result = _set_persona(current, preferences, recording_key, arguments[0])
+        result = _set_persona(current, preferences, recording_key, arguments[0], status)
     elif command == "/eastereggs" and len(arguments) <= 2:
         result = _set_eastereggs(current, preferences, arguments)
     return result or CommandResult(f"That command was not understood. {status}")
