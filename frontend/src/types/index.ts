@@ -266,6 +266,8 @@ export interface LiveTranscriptWord {
 
 /** Live settling evidence, or timed final words on a recording that used settling. */
 export interface LiveTranscriptSettling {
+  /** Live diarisation has not covered these words yet; UNKNOWN remains unassigned. */
+  diarisation_pending?: boolean;
   /** Sticky recording policy, copied onto local segments by the delta reader. */
   settling_required?: boolean;
   /** Final words retain identities and timings, with locked=true and no live lock reason. */
@@ -608,6 +610,10 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   duration_seconds?: number;
   file_size_bytes?: number;
   status: RecordingStatus;
+  /** A previous publication retained until this reprocess publishes; false by default. */
+  previous_publication_available?: boolean;
+  /** This reprocess has published, including while optional notes are still running. */
+  reprocess_publication_complete?: boolean;
   client_status?: ClientStatus;
   upload_progress?: number;
   processing_progress?: number;
@@ -1481,6 +1487,21 @@ export interface AnalyticsWarningReason {
 
 export interface AnalyticsAttributionWarning {
   reasons: AnalyticsWarningReason[];
+}
+
+/** Read-only estimates from the transcript so far; contains no measured audio or AI tiers. */
+export interface LiveRecordingAnalytics {
+  recording_id: RecordingId;
+  provisional: true;
+  change_sequence: number;
+  speakers: AnalyticsSpeaker[];
+  metrics: Pick<AnalyticsMetrics, "utterance_count" | "talk_time" | "turn_structure">;
+  transcript_wpm: Record<string, {
+    words_per_minute: number | null;
+    sample_count: number;
+    excluded_short: number;
+    excluded_overlapping: number;
+  }>;
 }
 
 export interface RecordingAnalytics {

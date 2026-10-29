@@ -1,5 +1,15 @@
-import type { RecordingAnalytics, RecordingId } from "@/types";
+import type { LiveRecordingAnalytics, RecordingAnalytics, RecordingId } from "@/types";
 import api from "./client";
+
+export const getLiveRecordingAnalytics = async (
+  recordingId: RecordingId,
+  signal?: AbortSignal,
+): Promise<LiveRecordingAnalytics> => {
+  const response = await api.get<LiveRecordingAnalytics>(
+    `/transcripts/${recordingId}/analytics/live`, { signal },
+  );
+  return response.data;
+};
 
 export const getRecordingAnalytics = async (
   recordingId: RecordingId,

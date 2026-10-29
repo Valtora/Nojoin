@@ -20,6 +20,12 @@ from backend.processing.vad_muting import (
     muted_stages,
     write_union_muted_audio,
 )
+from backend.utils.reprocess_publication import (
+    clear_previous_reprocess_state,
+    clear_reprocess_pending,
+    clear_reprocess_published,
+    reprocess_publication_pending,
+)
 
 from .constants import *  # noqa: F403
 from .final_asr import mark_transcript_without_speech
@@ -64,6 +70,13 @@ def _complete_without_speech(session, recording: Recording) -> None:
 
     if not transcript:
         transcript = Transcript(recording_id=recording.id)
+    transcript.clear_meeting_edge_error()
+
+    if reprocess_publication_pending(transcript):
+        clear_previous_reprocess_state(session, recording.id)
+        clear_reprocess_pending(transcript)
+        clear_reprocess_published(transcript)
+        transcript.language_detection = None
 
     if (getattr(transcript, "settling_state", None) or {}).get("settled") is True:
         from backend.utils.canonical_pipeline import (

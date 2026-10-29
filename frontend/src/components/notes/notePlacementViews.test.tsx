@@ -1,9 +1,8 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import LiveTranscriptPanel from "@/components/LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import TranscriptView from "@/components/TranscriptView";
-import type { InlineNote } from "@/lib/notes/noteOutbox";
 import { expectedRenderOrder, PLACEMENT_CASES, type PlacementCase } from "@/test/placementCases";
 import type { TimelineNote, TranscriptSegment } from "@/types";
 
@@ -40,17 +39,6 @@ const toNotes = (golden: PlacementCase): TimelineNote[] =>
     updated_at: note.created_at,
   }));
 
-const toInline = (notes: TimelineNote[]): InlineNote[] =>
-  notes
-    .filter((note) => note.kind === "point" || note.kind === "selection")
-    .map((note) => ({
-      ...note,
-      kind: note.kind as "point" | "selection",
-      key: note.id,
-      status: "saved",
-      error: null,
-    }));
-
 /** `line:i` and `note:id` in document order, with every line's folded notes shown. */
 const renderedOrder = (container: HTMLElement, lineAttribute: string) => {
   container
@@ -69,7 +57,7 @@ const liveOrder = (golden: PlacementCase) => {
     <LiveTranscriptPanel
       segments={toSegments(golden, "UNKNOWN")}
       hasLoaded
-      notes={toInline(toNotes(golden))}
+      notes={toNotes(golden)}
     />,
   );
   const order = renderedOrder(container, "data-line-index");

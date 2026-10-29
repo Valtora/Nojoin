@@ -9,11 +9,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlmodel import select
+from sqlalchemy.orm import Session
+from sqlmodel import col, select
 
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.utils.canonical_pipeline import UNKNOWN_SPEAKER, list_active_utterances
+from backend.utils.canonical_pipeline.constants import UNKNOWN_SPEAKER
+from backend.utils.canonical_pipeline.queries import list_active_utterances
 from backend.utils.live_speaker_labels import live_speaker_display_name
 from backend.utils.speaker_names.live import live_speaker_names
 
@@ -77,11 +79,16 @@ def _display_name(session, speaker: RecordingSpeaker) -> str:
     return speaker.diarization_label or "Unknown"
 
 
-def _build_speaker_directory(session, recording_id: int) -> dict[str, dict[str, Any]]:
+def _build_speaker_directory(
+    session: Session, recording_id: int, *, active_only: bool = False
+) -> dict[str, dict[str, Any]]:
     """Map each grouping key to the identity the interface should show."""
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id
     )
+    if active_only:
+        statement = statement.where(col(RecordingSpeaker.merged_into_id).is_(None))
+        statement = statement.where(RecordingSpeaker.speaker_status != "merged")
     speakers = session.execute(statement).scalars().all()
     directory: dict[str, dict[str, Any]] = {}
     for speaker in speakers:

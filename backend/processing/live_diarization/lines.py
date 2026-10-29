@@ -53,6 +53,8 @@ class LabelTimeline:
 
     def label_line(self, start_s: float, end_s: float) -> LiveLabelDecision:
         complete = end_s <= self.complete_until_s
+        if not complete:
+            return LiveLabelDecision(UNKNOWN_SPEAKER, False, None, True)
         overlap = np.minimum(self.end, end_s) - np.maximum(self.start, start_s)
         inside = overlap > 0
         if not inside.any():

@@ -40,6 +40,8 @@ export const interpolatedTokens = (text: string, startMs: number, endMs: number)
 
 /** A line as the page draws it. */
 export interface DrawnLine {
+  /** An inline punctuation fragment touches the preceding original source line. */
+  joinsPrevious?: boolean;
   words?: TimedToken[];
   settling?: boolean;
   segmentId: string;
@@ -79,14 +81,17 @@ export const pickSpan = ({ line, from, to }: LinePick) => {
  */
 export const selectionFromPicks = (picks: readonly LinePick[]): NoteSelection | null => {
   const spans = picks
-    .map((pick, index) => ({ span: pickSpan(pick), index }))
-    .flatMap(({ span, index }) => (span ? [{ ...span, index }] : []))
+    .map((pick, index) => ({ span: pickSpan(pick), index, joinsPrevious: pick.line.joinsPrevious }))
+    .flatMap(({ span, index, joinsPrevious }) => (span ? [{ ...span, index, joinsPrevious }] : []))
     .sort((left, right) => left.startMs - right.startMs || left.index - right.index);
   if (spans.length === 0) return null;
   return selectionOf({
     startMs: Math.min(...spans.map((span) => span.startMs)),
     endMs: Math.max(...spans.map((span) => span.endMs)),
-    quotedText: clampQuote(spans.map((span) => span.text).join(" ")),
+    quotedText: clampQuote(spans.map((span, at) => {
+      const separator = at === 0 || (span.joinsPrevious && span.index === spans[at - 1].index + 1) ? "" : " ";
+      return `${separator}${span.text}`;
+    }).join("")),
   });
 };
 
@@ -130,6 +135,7 @@ export const linePicksOfRange = (range: Range, root: Element): LinePick[] =>
     const to = offsetIn(paragraph, range.endContainer, range.endOffset, text.length);
     return from < to ? [{
       line: { segmentId, text, startMs, endMs, words,
-        settling: paragraph.dataset.settling === "true" }, from, to,
+        settling: paragraph.dataset.settling === "true",
+        ...(paragraph.dataset.joinsPrevious === "true" ? { joinsPrevious: true } : {}) }, from, to,
     }] : [];
   });

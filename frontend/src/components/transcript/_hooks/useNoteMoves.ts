@@ -58,10 +58,7 @@ export function useNoteMoves<N extends MovableNote>({
   );
   const [refusal, setRefusal] = useState<{ noteId: string; message: string } | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  // Notes moved here, which never fold behind a line's count from under the
-  // person moving them.
-  const [moved, setMoved] = useState<ReadonlySet<string>>(() => new Set());
-  const pendingFocus = useRef<{ noteId: string; direction: Direction } | null>(null);
+  const pendingFocus = useRef<{ noteId: string; direction: Direction | null } | null>(null);
 
   // After a step, or a refusal that put the note back, the note's line is a
   // new one: focus goes to the same button on it, else one that still works.
@@ -73,16 +70,18 @@ export function useNoteMoves<N extends MovableNote>({
     const line = region.querySelector<HTMLElement>(
       `[data-testid="timeline-note"][data-note-id="${CSS.escape(pending.noteId)}"]`,
     );
-    const button =
+    const button = pending.direction === null ? line :
       line?.querySelector<HTMLElement>(`[data-note-move="${pending.direction}"]:not(:disabled)`) ??
       line?.querySelector<HTMLElement>("[data-note-move]:not(:disabled)");
-    button?.focus();
+    const chip = region.querySelector<HTMLElement>(
+      `[data-testid="line-notes-chip"][data-note-gap="${shownAfter.get(pending.noteId)}"] button`,
+    );
+    (button ?? chip ?? region).focus();
   });
 
   const moveTo = async (note: N, target: MoveTarget, direction: Direction | null) => {
     if (!onMoveNote) return;
     setRefusal(null);
-    setMoved((previous) => (previous.has(note.id) ? previous : new Set(previous).add(note.id)));
     if (direction) pendingFocus.current = { noteId: note.id, direction };
     const release = holdPendingNoteWrite();
     try {
@@ -127,6 +126,9 @@ export function useNoteMoves<N extends MovableNote>({
 
   /** The gap a note shows in, for a drag over it: the shown line it follows. */
   const gapOf = (noteId: string) => shownAfter.get(noteId);
+  // Retrying can now fold the focused recovery row into the same chip.
+  const focusAfterRetry = (noteId: string) => { pendingFocus.current = { noteId, direction: null }; };
 
-  return { controlsFor, gapOf, wasMoved: (noteId: string) => moved.has(noteId), drag, announcement };
+  return { controlsFor, gapOf, focusAfterRetry,
+    hasRefusal: (noteId: string) => refusal?.noteId === noteId, drag, announcement };
 }

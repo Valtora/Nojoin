@@ -9,7 +9,7 @@ import type { RecordingId } from "@/types";
 
 export interface LiveSpeakerNaming {
   /** Names live speaker `label`; a failure is reported, never thrown. */
-  renameLiveSpeaker: (label: string, name: string) => Promise<void>;
+  renameLiveSpeaker: (label: string, name: string, createPerson?: boolean) => Promise<boolean>;
   /** People's names, read once on the first rename and kept. */
   loadPeopleNames: () => Promise<readonly string[]>;
 }
@@ -23,14 +23,19 @@ export interface LiveSpeakerNaming {
 export function useLiveSpeakerNaming(
   recordingId: RecordingId,
   applyNames: (names: Record<string, string>) => void,
+  onAccepted?: () => Promise<void> | void,
 ): LiveSpeakerNaming {
   const { addNotification } = useNotificationStore();
   const peopleNames = useRef<Promise<readonly string[]> | null>(null);
 
   const renameLiveSpeaker = useCallback(
-    async (label: string, name: string) => {
+    async (label: string, name: string, createPerson = false) => {
       try {
-        applyNames(await nameLiveSpeaker(recordingId, label, name));
+        applyNames(await nameLiveSpeaker(recordingId, label, name, createPerson));
+        peopleNames.current = null;
+        try { await onAccepted?.(); }
+        catch (error) { console.error("Failed to refresh accepted speaker naming", error); }
+        return true;
       } catch (error) {
         console.error("Failed to name the live speaker", error);
         addNotification({
@@ -38,9 +43,10 @@ export function useLiveSpeakerNaming(
           // The server says why, as when the meeting has just been stopped.
           message: getErrorDetail(error) ?? "Failed to rename the speaker.",
         });
+        return false;
       }
     },
-    [recordingId, applyNames, addNotification],
+    [recordingId, applyNames, addNotification, onAccepted],
   );
 
   const loadPeopleNames = useCallback(() => {

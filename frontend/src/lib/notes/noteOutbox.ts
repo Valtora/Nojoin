@@ -328,7 +328,8 @@ const BODY_KINDS: readonly InlineNote["kind"][] = ["point", "selection"];
 /**
  * The point and selection notes to place among a transcript's lines: the
  * saved ones (`shownNotes`) and those still on their way, of `entryKinds`.
- * Head and tail notes belong to the Notes box, which lists its own.
+ * Saved head and tail notes are placed separately at the transcript's ends;
+ * pending ones retain the shared unsaved-note recovery controls.
  */
 export const inlineNotes = (
   listed: readonly TimelineNote[] | null | undefined,

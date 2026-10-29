@@ -81,6 +81,7 @@ class _FakeTranscript:
     fail_transcription = Transcript.fail_transcription
     complete_transcription = Transcript.complete_transcription
     set_notes_error_message = Transcript.set_notes_error_message
+    clear_meeting_edge_error = Transcript.clear_meeting_edge_error
 
     def __init__(self, recording_id: int):
         self.recording_id = recording_id
@@ -90,6 +91,9 @@ class _FakeTranscript:
         self.transcript_status = "pending"
         self.notes_status = "pending"
         self.error_message = None
+        self.meeting_edge_status = "idle"
+        self.meeting_edge_error_message = None
+        self.meeting_edge_payload = None
 
 
 class _FakeRecording:
@@ -755,6 +759,38 @@ def test_successful_run_clears_a_previous_failure(monkeypatch):
     assert transcript.transcript_status == "completed"
     assert transcript.error_message is None
     assert transcript.notes_status == "pending"
+
+
+@pytest.mark.parametrize("speech_seconds", [10.0, 0.0])
+def test_finalising_clears_a_stale_meeting_edge_error(monkeypatch, speech_seconds):
+    """A guidance error from the capture is retired once the recording is
+    processed, with or without speech; the stored guidance stays."""
+    recording = _FakeRecording(713)
+    recording.status = RecordingStatus.PROCESSING
+    transcript = _FakeTranscript(713)
+    transcript.settling_state = None
+    transcript.meeting_edge_status = "error"
+    transcript.meeting_edge_error_message = "Meeting Edge is temporarily unavailable."
+    transcript.meeting_edge_payload = {"questions_to_ask": ["Who owns the budget?"]}
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    monkeypatch.setattr(
+        tasks_module, "update_recording_status", update_recording_status
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.vad",
+        mute_non_speech_segments=lambda *a, **k: (True, speech_seconds),
+    )
+
+    _run_task(monkeypatch, session, recording_id=713)
+
+    assert recording.status == RecordingStatus.PROCESSED
+    assert transcript.meeting_edge_status == "ready"
+    assert transcript.meeting_edge_error_message is None
+    assert transcript.meeting_edge_payload == {
+        "questions_to_ask": ["Who owns the budget?"]
+    }
 
 
 # --- speaker assignment seam: manual-edit authority & stable-id alignment ----

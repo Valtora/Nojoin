@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 
 import NotesView from "./NotesView";
 
@@ -19,7 +20,7 @@ vi.mock("./RichTextEditor", () => ({
 
 const NOTES = "## Summary\n\n- First point";
 
-function renderNotes(onNotesChange: (notes: string) => void) {
+function renderNotes(onNotesChange: (notes: string) => void, overrides: Partial<ComponentProps<typeof NotesView>> = {}) {
   return render(
     <NotesView
       recordingId="r1"
@@ -33,11 +34,26 @@ function renderNotes(onNotesChange: (notes: string) => void) {
       canRedo={false}
       isGenerating={false}
       onExport={vi.fn()}
+      {...overrides}
     />,
   );
 }
 
 describe("NotesView autosave", () => {
+  it("disables notes export independently of autosaving edits", () => {
+    const onExport = vi.fn();
+    const onNotesChange = vi.fn();
+    renderNotes(onNotesChange, { disableExport: true, onExport });
+    expect(screen.getByTitle("Export Notes")).toBeDisabled();
+    fireEvent.click(screen.getByTitle("Export Notes"));
+    expect(onExport).not.toHaveBeenCalled();
+    act(() => {
+      reportUpdate(`${NOTES}\n- Still editable`);
+      vi.advanceTimersByTime(1100);
+    });
+    expect(onNotesChange).toHaveBeenCalledWith(`${NOTES}\n- Still editable`);
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
   });

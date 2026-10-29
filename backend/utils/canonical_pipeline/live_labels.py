@@ -55,6 +55,7 @@ class LiveLabelDecision:
     speaker: str
     locked: bool
     share: float | None
+    diarisation_pending: bool = False
 
 
 @dataclass(frozen=True)
@@ -87,8 +88,12 @@ def _needs_write(
     current = utterance.speaker_label or UNKNOWN_SPEAKER
     if stored is None:
         # Never labelled: an unlabelled line stays as the lane wrote it.
-        return decision.speaker != current
-    return decision.speaker != current or bool(stored.get("locked")) != decision.locked
+        return decision.speaker != current or decision.diarisation_pending
+    return (
+        decision.speaker != current
+        or bool(stored.get("locked")) != decision.locked
+        or bool(stored.get("diarisation_pending")) != decision.diarisation_pending
+    )
 
 
 def _write_label(
@@ -102,6 +107,7 @@ def _write_label(
     payload[LIVE_SPEAKER_LABEL_PAYLOAD_KEY] = {
         "locked": decision.locked,
         "share": decision.share,
+        "diarisation_pending": decision.diarisation_pending,
     }
     utterance.speaker_label = decision.speaker
     utterance.confidence_payload = payload

@@ -9,7 +9,8 @@ import {
 import {
   applyTranscriptDelta, createLocalTranscriptState, flushDeferredTranscriptState, type LocalTranscriptState,
 } from "@/lib/transcriptState";
-import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
+import { RecordingStatus, type Recording, type RecordingSpeaker, type TranscriptSegment } from "@/types";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { isRecordingInFlight, shouldPollRecordingUpdates, type TranscriptHistoryItem } from "./recordingDetailUtils";
 
@@ -17,10 +18,24 @@ import { isRecordingInFlight, shouldPollRecordingUpdates, type TranscriptHistory
 export function useDetailTranscript(
   recording: Recording | null,
   setRecording: Dispatch<SetStateAction<Recording | null>>,
+  { authoritativeEmpty = false, inFlight = isRecordingInFlight(recording), retainedPublication = false }:
+    { authoritativeEmpty?: boolean; inFlight?: boolean; retainedPublication?: boolean } = {},
 ) {
   const transcriptStateRef = useRef<LocalTranscriptState | null>(null);
+  const acceptedSnapshotRecordingIdRef = useRef<string | null>(null);
   const { addNotification } = useNotificationStore();
-  const isInFlightRecording = isRecordingInFlight(recording);
+  const isInFlightRecording = inFlight;
+  const [readerGeneration, setReaderGeneration] = useState(0);
+  // Keyed on the publication too: in the render where it changes, the
+  // generation bump below has not applied yet.
+  const [fullReadReady, setFullReadReady] = useState<{
+    recordingId: string; generation: number; publicationPending: boolean;
+  } | null>(null);
+  const publicationPending = recording?.previous_publication_available === true;
+  useOnDepsChange([recording?.id, isInFlightRecording, publicationPending], () => {
+    setReaderGeneration((generation) => generation + 1);
+    setFullReadReady(null);
+  });
   // Undo/Redo State
   const [history, setHistory] = useState<TranscriptHistoryItem[]>([]);
   const [future, setFuture] = useState<TranscriptHistoryItem[]>([]);
@@ -34,25 +49,36 @@ export function useDetailTranscript(
   const [transcriptState, setTranscriptState] = useState<LocalTranscriptState | null>(
     null,
   );
+  const [publicationSpeakers, setPublicationSpeakers] = useState<{
+    recordingId: string; speakers: RecordingSpeaker[];
+  } | null>(null);
   const [activeTranscriptEditId, setActiveTranscriptEditId] = useState<
     string | null
   >(null);
   const recordingRef = useRef(recording);
+  const inFlightRef = useRef(isInFlightRecording);
   const activeEditRef = useRef(activeTranscriptEditId);
+  // A read answers for the reader generation it was sent under, or not at all.
+  const generationRef = useRef(readerGeneration);
 
   useEffect(() => {
     recordingRef.current = recording;
+    inFlightRef.current = isInFlightRecording;
     activeEditRef.current = activeTranscriptEditId;
-  }, [recording, activeTranscriptEditId]);
+    generationRef.current = readerGeneration;
+  }, [recording, isInFlightRecording, activeTranscriptEditId, readerGeneration]);
 
   const transcriptSegments = useMemo(
     () => {
-      const segments = transcriptState?.segments || recording?.transcript?.segments || [];
+      const segments = transcriptState?.recordingId === recording?.id
+        ? transcriptState?.segments ?? []
+        : recording?.transcript?.segments ?? [];
       return recording?.transcript?.settling_required
         ? segments.map((segment) => segment.settling_required ? segment : { ...segment, settling_required: true })
         : segments;
     },
-    [recording?.transcript?.segments, recording?.transcript?.settling_required, transcriptState?.segments],
+    [recording?.id, recording?.transcript?.segments, recording?.transcript?.settling_required,
+      transcriptState?.recordingId, transcriptState?.segments],
   );
   const deferredTranscriptUtteranceIds = useMemo(
     () => Object.keys(transcriptState?.deferredById || {}),
@@ -68,22 +94,30 @@ export function useDetailTranscript(
       return;
     }
 
+    if (retainedPublication) {
+      setPublicationSpeakers((previous) => previous?.recordingId === recording.id ? previous
+        : { recordingId: recording.id, speakers: recording.speakers ?? [] });
+    }
     setTranscriptState((prev) => {
-      if (prev && prev.recordingId === recording.id && prev.revision > 0) {
+      // A successful empty snapshot may have revision zero. Metadata remains
+      // a fallback only until this recording's reader accepts a snapshot.
+      if (prev && prev.recordingId === recording.id &&
+        (prev.revision > 0 || acceptedSnapshotRecordingIdRef.current === recording.id || retainedPublication)) {
         transcriptStateRef.current = prev;
         return prev;
       }
 
+      acceptedSnapshotRecordingIdRef.current = null;
       const nextState = createLocalTranscriptState(
         recording.id,
-        isRecordingInFlight(recording) ? [] : (recording.transcript?.segments || []),
+        isInFlightRecording ? [] : (recording.transcript?.segments || []),
         prev?.recordingId === recording.id ? prev.revision : 0,
         prev?.recordingId === recording.id ? prev.deferredById : {},
       );
       transcriptStateRef.current = nextState;
       return nextState;
     });
-  }, [recording]);
+  }, [recording, isInFlightRecording, retainedPublication]);
 
   const pushTranscriptHistory = useCallback(
     (
@@ -113,17 +147,17 @@ export function useDetailTranscript(
       options: { deferActiveEdit?: boolean } = {},
     ) => {
       const recording = recordingRef.current;
-      if (!recording) {
+      if (!recording || inFlightRef.current) {
         return null;
       }
-
+      const generation = generationRef.current;
       const currentTranscriptState = transcriptStateRef.current;
       const afterRevision =
         mode === "delta" && currentTranscriptState?.recordingId === recording.id
           ? currentTranscriptState.revision
           : undefined;
       const transcriptDelta = await getTranscriptUtterances(recording.id, afterRevision);
-      if (recordingRef.current?.id !== recording.id) return null;
+      if (generationRef.current !== generation || recordingRef.current?.id !== recording.id) return null;
 
       const latestTranscriptState = transcriptStateRef.current;
       if (
@@ -142,15 +176,19 @@ export function useDetailTranscript(
       const nextState = applyTranscriptDelta({
         currentState: latestTranscriptState,
         recordingId: recording.id,
-        fallbackSegments: recording.transcript?.segments || [],
+        // Only a handoff treats an empty utterance snapshot as authoritative;
+        // direct opens retain the established legacy metadata fallback.
+        fallbackSegments: authoritativeEmpty ? [] : recording.transcript?.segments || [],
         delta: transcriptDelta,
         mode,
         activeEditUtteranceId:
           options.deferActiveEdit === false ? null : activeEditRef.current,
       });
       const nextSegments = nextState.segments;
+      acceptedSnapshotRecordingIdRef.current = recording.id;
       transcriptStateRef.current = nextState;
       setTranscriptState(nextState);
+      setPublicationSpeakers({ recordingId: recording.id, speakers: transcriptDelta.speakers });
       const liveNames = transcriptDelta.live_speaker_names ?? {};
       setLiveSpeakerNames((current) =>
         current?.recordingId === recording.id &&
@@ -180,13 +218,18 @@ export function useDetailTranscript(
         };
       });
 
+      if (mode === "full") {
+        setFullReadReady({ recordingId: recording.id, generation,
+          publicationPending: recording.previous_publication_available === true });
+      }
+
       return {
         revision: transcriptDelta.revision,
         segments: nextSegments,
         speakers: transcriptDelta.speakers,
       };
     },
-    [setRecording],
+    [setRecording, authoritativeEmpty],
   );
 
   useEffect(() => {
@@ -214,10 +257,10 @@ export function useDetailTranscript(
     // syncTranscriptState intentionally runs once per recording load; later
     // delta polling and explicit mutation refreshes keep this state current.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording?.id, isInFlightRecording]);
+  }, [recording?.id, isInFlightRecording, publicationPending]);
 
   useEffect(() => {
-    if (!recording || isInFlightRecording || !shouldPollRecordingUpdates(recording)) {
+    if (!recording || isInFlightRecording || retainedPublication || !shouldPollRecordingUpdates(recording)) {
       return;
     }
 
@@ -233,7 +276,7 @@ export function useDetailTranscript(
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [isInFlightRecording, recording, syncTranscriptState]);
+  }, [isInFlightRecording, recording, retainedPublication, syncTranscriptState]);
 
   // History Management
   const applyTranscriptHistory = useCallback(
@@ -324,9 +367,16 @@ export function useDetailTranscript(
     }
   };
 
+  const isSettledTranscriptReady = !isInFlightRecording &&
+    fullReadReady?.recordingId === recording?.id && fullReadReady?.generation === readerGeneration &&
+    fullReadReady.publicationPending === publicationPending;
+
   return {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
     liveSpeakerNames, history, future, isUndoing, syncTranscriptState, pushTranscriptHistory,
+    publicationSpeakers: publicationSpeakers && publicationSpeakers.recordingId === recording?.id
+      ? publicationSpeakers.speakers : undefined,
     setActiveTranscriptEditId, handleUndo, handleRedo,
+    isSettledTranscriptReady,
   };
 }

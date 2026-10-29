@@ -144,7 +144,12 @@ def _name_live(db, label: str, name: str, person: int | None = None) -> None:
     db.commit()
 
 
-def _finalise(db, monkeypatch, voiceprints: dict[str, list[float]] | None = None):
+def _finalise(
+    db,
+    monkeypatch,
+    voiceprints: dict[str, list[float]] | None = None,
+    final: list[tuple[str, float, float]] = FINAL,
+):
     monkeypatch.setattr(
         speaker_assignment,
         "_extract_speaker_voiceprints",
@@ -164,7 +169,7 @@ def _finalise(db, monkeypatch, voiceprints: dict[str, list[float]] | None = None
         db.get(Recording, 1),
         [
             {"start": start, "end": end, "speaker": label, "text": "words"}
-            for label, start, end in FINAL
+            for label, start, end in final
         ],
         None,
     )
@@ -224,6 +229,23 @@ def test_live_names_follow_their_speech_onto_the_final_speakers(
     assert speakers["SPEAKER_02"]["source"] is None
     # The user's name stopped identification, so Bob learned nothing.
     assert _person_embedding(session, 5) == PERSON
+
+
+def test_a_live_name_follows_its_label_when_the_final_pass_misses_its_turn(
+    session, monkeypatch
+) -> None:
+    # Named on Alex's locked turn (0-6 s); the final transcript starts at 9.5 s.
+    _name_live(session, ONE, "Alex")
+
+    _finalise(session, monkeypatch, final=FINAL[2:])
+
+    assert _speakers(session)["SPEAKER_01"] == {
+        "name": "Alex",
+        "local_name": "Alex",
+        "person": None,
+        "source": "user",
+        "locked": True,
+    }
 
 
 def test_only_the_newest_live_name_reaches_the_final_pass(session, monkeypatch) -> None:

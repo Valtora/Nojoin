@@ -1406,12 +1406,12 @@ async def test_import_low_bitrate_audio_succeeds(
 
 
 @pytest.mark.anyio
-async def test_reprocess_resets_and_rebuilds_pipeline_state(
+async def test_reprocess_retains_published_pipeline_state_until_success(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     monkeypatch,
 ) -> None:
-    """Reprocessing a recording clears all its pipeline tables and artifacts."""
+    """#749 defers the old destructive reset until a successful replacement."""
     from backend.models.chat import ChatMessage
     from backend.models.context_chunk import ContextChunk
     from backend.models.pipeline import (
@@ -1539,52 +1539,54 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
 
     assert response.status_code == 200
 
-    # 4. Verify that generated artifacts and pipeline tables are completely cleared
+    # Previously these were cleared at queue time. A candidate can fail, so the
+    # previous publication and its dependent state must survive until cutover.
+    assert response.json()["previous_publication_available"] is True
     async with test_session_maker() as session:
         res = await session.execute(
             text("SELECT COUNT(*) FROM chat_messages WHERE recording_id = 201")
         )
-        assert res.scalar() == 0
+        assert res.scalar() == 1
 
         res = await session.execute(
             text("SELECT COUNT(*) FROM context_chunks WHERE recording_id = 201")
         )
-        assert res.scalar() == 0
+        assert res.scalar() == 1
 
         res = await session.execute(
             text("SELECT COUNT(*) FROM recording_speakers WHERE recording_id = 201")
         )
-        assert res.scalar() == 0
+        assert res.scalar() == 1
 
         res = await session.execute(
             text("SELECT COUNT(*) FROM processing_runs WHERE recording_id = 201")
         )
-        assert res.scalar() == 0
+        assert res.scalar() == 1
 
         res = await session.execute(
             text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 201")
         )
-        assert res.scalar() == 0
+        assert res.scalar() == 1
 
         res = await session.execute(
             text(
                 "SELECT COUNT(*) FROM speaker_correction_events WHERE recording_id = 201"
             )
         )
-        assert res.scalar() == 0
+        assert res.scalar() == 1
 
         res = await session.execute(
             text(
                 "SELECT COUNT(*) FROM diarization_window_results WHERE recording_id = 201"
             )
         )
-        assert res.scalar() == 0
+        assert res.scalar() == 1
 
-        # Naming acts go with the speakers they named, as correction events do.
+        # Names still describe the retained speakers until publication succeeds.
         res = await session.execute(
             text("SELECT COUNT(*) FROM speaker_name_events WHERE recording_id = 201")
         )
-        assert res.scalar() == 0
+        assert res.scalar() == 1
 
         # The user's notes hang off the recording, not the transcript, so they
         # come through the reset exactly as they were.

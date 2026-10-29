@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import LiveTranscriptPanel from "@/components/LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import LiveNoteComposer from "@/components/notes/LiveNoteComposer";
 import { applyTranscriptDelta } from "@/lib/transcriptState";
 import type { TranscriptSegment, TranscriptUtteranceList } from "@/types";

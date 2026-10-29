@@ -7,7 +7,12 @@ runner-up holds at most 0.40 however many speakers share the span, which is
 stricter than ``inherit_manual_speaker_for_range``, which refuses only an exact
 tie. Below the floor the name is offered on the top holder as pending, never
 applied as given. A span with under ``MIN_COVERED_MS`` of attributed speech
-names nobody.
+names nobody, except that a user's name is never dropped: it is offered as
+pending on the speaker holding most of what little speech there is, or on the
+speaker nearest in time, so the user sees it and decides.
+
+A name given to a live speaker follows all of that label's speech
+(``anchor_spans``), not only the turn it was given on.
 
 Each speaker then takes the highest-authority name among the events it holds.
 Within that authority the overlap is summed per name (or per person), and the
@@ -20,8 +25,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from .anchors import Line
-from .sources import KIND_NAME
+from .anchors import Line, Span
+from .sources import KIND_NAME, SOURCE_USER
 
 SHARE_FLOOR = 0.60
 MIN_COVERED_MS = 1000
@@ -33,6 +38,7 @@ OUTCOME_UNRESOLVED = "unresolved"
 REASON_HELD = "held"
 REASON_NEAR_TIE = "near_tie"
 REASON_CONFLICT = "conflict"
+REASON_UNPLACED = "unplaced"
 
 
 @dataclass(frozen=True)
@@ -46,13 +52,21 @@ class NameEvent:
     anchor_start_ms: int
     anchor_end_ms: int
     supersedes_event_id: int | None = None
+    # The speech the name follows, when not just the anchor: a live label's
+    # lines, as disjoint spans.
+    anchor_spans: tuple[Span, ...] = ()
+
+    @property
+    def spans(self) -> tuple[Span, ...]:
+        return self.anchor_spans or ((self.anchor_start_ms, self.anchor_end_ms),)
 
 
 @dataclass(frozen=True)
 class Placement:
     event: NameEvent
     outcome: str
-    # The holder for "held", the top holder for "near_tie", None otherwise.
+    # The holder for "held", the top holder for "near_tie", where an
+    # "unresolved" user's name is offered, None otherwise.
     label: str | None
     share: float
     covered_ms: int
@@ -92,15 +106,26 @@ def _overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> int:
     return max(0, min(end_a, end_b) - max(start_a, start_b))
 
 
+def _distance(spans: Sequence[Span], start: int, end: int) -> int:
+    return min(max(0, span[0] - end, start - span[1]) for span in spans)
+
+
 def place_event(event: NameEvent, lines: Sequence[Line]) -> Placement:
     held: dict[str, int] = {}
     for label, start, end in lines:
-        overlap = _overlap(event.anchor_start_ms, event.anchor_end_ms, start, end)
+        overlap = sum(_overlap(*span, start, end) for span in event.spans)
         if overlap:
             held[str(label)] = held.get(str(label), 0) + overlap
     covered = sum(held.values())
     if covered < MIN_COVERED_MS:
-        return Placement(event, OUTCOME_UNRESOLVED, None, 0.0, covered)
+        offered = None
+        if event.source == SOURCE_USER and held:
+            offered = max(held, key=lambda label: held[label])
+        elif event.source == SOURCE_USER and lines:
+            offered = str(
+                min(lines, key=lambda line: _distance(event.spans, *line[1:]))[0]
+            )
+        return Placement(event, OUTCOME_UNRESOLVED, offered, 0.0, covered)
     # Ties on overlap go to the label first in time order of the lines, so
     # the result does not depend on dict ordering.
     top = max(held, key=lambda label: held[label])
@@ -130,7 +155,8 @@ def _resolve_label(label: str, placements: Sequence[Placement]) -> ResolvedName:
     # The newest act speaks for a name given more than once.
     shown = max(winners, key=lambda p: p.event.event_id).event
     if not held:
-        reason = REASON_NEAR_TIE
+        unplaced = all(p.outcome == OUTCOME_UNRESOLVED for p in pool)
+        reason = REASON_UNPLACED if unplaced else REASON_NEAR_TIE
     elif weights[winner_key] / sum(weights.values()) < SHARE_FLOOR:
         reason = REASON_CONFLICT
     else:

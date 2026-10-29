@@ -143,6 +143,8 @@ export const notFoundMeans = async (
 
 export const hasPolledRecordingChanged = (current: Recording, polled: Recording) =>
   polled.status !== current.status ||
+  !!polled.previous_publication_available !== !!current.previous_publication_available ||
+  !!polled.reprocess_publication_complete !== !!current.reprocess_publication_complete ||
   polled.client_status !== current.client_status ||
   polled.processing_step !== current.processing_step ||
   polled.upload_progress !== current.upload_progress ||

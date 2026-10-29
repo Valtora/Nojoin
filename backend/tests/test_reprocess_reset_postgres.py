@@ -1,4 +1,8 @@
-"""Reprocess and retry reset generated transcript products in place."""
+"""Retrying a failed recording resets generated transcript products in place.
+
+A completed recording's reprocess retains its publication instead
+(`test_reprocess_retention_api.py`).
+"""
 
 from __future__ import annotations
 
@@ -109,15 +113,15 @@ def _seed_generated_products(
         return transcript.id
 
 
-@pytest.mark.parametrize("status", [RecordingStatus.PROCESSED, RecordingStatus.ERROR])
-def test_reprocess_and_retry_reset_generated_products_in_place(
+def test_retry_resets_generated_products_in_place(
     publication_database: Database,
     stub_celery_dispatch: Any,
     monkeypatch: pytest.MonkeyPatch,
-    status: RecordingStatus,
 ) -> None:
     engine, recording_id, _ = publication_database
-    transcript_id = _seed_generated_products(engine, recording_id, status)
+    transcript_id = _seed_generated_products(
+        engine, recording_id, RecordingStatus.ERROR
+    )
     monkeypatch.setattr(routes_actions, "_recording_has_audio", lambda recording: True)
     asyncio.run(_reprocess(engine, recording_id))
     with Session(engine) as session:
@@ -136,17 +140,18 @@ def test_reprocess_and_retry_reset_generated_products_in_place(
             "notes",
             "notes_template_id",
             "notes_template_sections",
-            "meeting_edge_focus",
             "meeting_edge_error_message",
             "meeting_edge_source_signature",
             "error_message",
             "analytics_error_message",
             "analytics_ai_error_message",
             "language_detection",
-            "meeting_edge_payload",
             "analytics_payload",
             "settling_state",
         ):
             assert getattr(transcript, field) is None, field
+        # The last Meeting Edge guidance and its focus stay readable on a retry.
+        assert transcript.meeting_edge_focus == "old generated result"
+        assert transcript.meeting_edge_payload == {"old": True}
         assert session.exec(select(TranscriptUtterance)).first() is None
     assert len(stub_celery_dispatch) == 1

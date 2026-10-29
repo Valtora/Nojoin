@@ -45,6 +45,12 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
         "generate_recording_analytics",
         "AnalyticsGenerateResponse",
     ),
+    (
+        "/{recording_id}/analytics/live",
+        ("GET",),
+        "get_live_recording_analytics",
+        "LiveRecordingAnalyticsRead",
+    ),
     ("/{recording_id}/chat", ("DELETE",), "clear_chat_history", None),
     ("/{recording_id}/chat", ("GET",), "get_chat_history", "List"),
     ("/{recording_id}/chat", ("POST",), "chat_with_meeting", None),

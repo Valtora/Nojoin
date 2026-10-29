@@ -180,6 +180,15 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
     }
   }, [recordingId, fetchDocuments]);
 
+  useEffect(() => {
+    const onDocumentsUpdated = (event: Event) => {
+      const changed = (event as CustomEvent<{ recordingId?: string }>).detail;
+      if (changed?.recordingId === recordingId) void fetchDocuments();
+    };
+    window.addEventListener("recording-documents-updated", onDocumentsUpdated);
+    return () => window.removeEventListener("recording-documents-updated", onDocumentsUpdated);
+  }, [recordingId, fetchDocuments]);
+
   // Poll while anything is in flight, quickly, because the progress bar is the
   // primary signal that work is still moving.
   useEffect(() => {

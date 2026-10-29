@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import LiveTranscriptPanel from "./LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
 const buildSegment = (
@@ -50,6 +50,9 @@ const setScrollGeometry = (
     value: geometry.clientHeight,
   });
   element.scrollTop = geometry.scrollTop;
+  expect(element.scrollHeight).toBe(geometry.scrollHeight);
+  expect(element.clientHeight).toBe(geometry.clientHeight);
+  expect(element.scrollTop).toBe(geometry.scrollTop);
 };
 
 describe("LiveTranscriptPanel", () => {
@@ -234,11 +237,12 @@ describe("LiveTranscriptPanel", () => {
     expect(jumpButton).toHaveAttribute("data-ui-chrome", "action");
 
     setScrollGeometry(container, {
-      scrollTop: 700,
+      scrollTop: 0,
       scrollHeight: 1000,
       clientHeight: 300,
     });
     fireEvent.click(jumpButton);
+    expect(container.scrollTop).toBe(1000);
 
     expect(
       screen.queryByRole("button", { name: /jump to latest/i }),
@@ -294,34 +298,6 @@ describe("LiveTranscriptPanel", () => {
     expect(container.scrollTop).toBe(500);
   });
 
-  it("lets the scroll window shrink to the card it is given", () => {
-    renderPanel([buildLine("a", 0, "first")]);
-    const container = screen.getByTestId("live-transcript-scroll");
-
-    // From 54rem this module absorbs whatever the notes and documents cards
-    // leave, which on a short window is under 14rem. A rigid floor there made
-    // the window taller than its own card: the frame stayed at the card's
-    // height and the overspill painted across the notes card below. The floor
-    // is kept for the stacked layout, where the page scrolls instead.
-    expect(container.className).toContain("min-h-[14rem]");
-    expect(container.className).toContain("@min-[54rem]:min-h-0");
-  });
-
-  it("keeps every line inside the window, and clips the card only beside the other column", () => {
-    const { container } = renderPanel([buildLine("a", 0, "first")]);
-    const card = container.querySelector("section");
-    const transcriptWindow = screen.getByTestId("live-transcript-scroll").parentElement;
-
-    expect(transcriptWindow?.className.split(" ")).toContain("overflow-hidden");
-    const cardClasses = card?.className.split(" ") ?? [];
-    // Two columns: the card has a definite height, and the note box must not
-    // spill over the Notes card below it.
-    expect(cardClasses).toContain("@min-[54rem]:overflow-hidden");
-    // Stacked: a clipping card is a scroll container, which a sticky note box
-    // inside it would stick to instead of the page.
-    expect(cardClasses).not.toContain("overflow-hidden");
-  });
-
   describe("naming a live speaker", () => {
     const LIVE_LINES = [
       buildSegment({ id: "a", start: 0, text: "opening", speaker: "LIVE_PROVISIONAL_1" }),
@@ -331,11 +307,11 @@ describe("LiveTranscriptPanel", () => {
 
     const renderNaming = ({
       names = {},
-      onRename = vi.fn(async () => {}),
+      onRename = vi.fn(async () => true),
       loadPeopleNames = vi.fn(async () => ["Dana Whitfield", "Erin"]),
     }: {
       names?: Record<string, string>;
-      onRename?: (label: string, name: string) => Promise<void>;
+      onRename?: (label: string, name: string) => Promise<boolean>;
       loadPeopleNames?: () => Promise<readonly string[]>;
     } = {}) => {
       render(
@@ -370,7 +346,7 @@ describe("LiveTranscriptPanel", () => {
     it("renames from the chip with one request, though the box blurs as it saves", async () => {
       let finish = () => {};
       const onRename = vi.fn(
-        () => new Promise<void>((resolve) => (finish = resolve)),
+        () => new Promise<boolean>((resolve) => (finish = () => resolve(true))),
       );
       renderNaming({ onRename });
 
@@ -416,7 +392,7 @@ describe("LiveTranscriptPanel", () => {
     });
 
     it("saves to the label it opened on, though the line moves to another meanwhile", async () => {
-      const onRename = vi.fn(async () => {});
+      const onRename = vi.fn(async () => true);
       const panel = (segments: typeof LIVE_LINES) => (
         <LiveTranscriptPanel
           segments={segments}

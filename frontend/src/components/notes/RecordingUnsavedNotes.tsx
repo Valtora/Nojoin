@@ -30,6 +30,8 @@ interface RecordingUnsavedNotesProps {
   onEmptied?: () => void;
   /** Lists notes' files not uploaded yet too, where no note line shows them. */
   listUploads?: boolean;
+  /** The persistent composer already owns the unsent draft and its controls. */
+  composerOwnsDraft?: boolean;
   className?: string;
 }
 
@@ -62,6 +64,7 @@ export default function RecordingUnsavedNotes({
   readEndMs,
   onEmptied,
   listUploads = false,
+  composerOwnsDraft = false,
   className = "",
 }: RecordingUnsavedNotesProps) {
   const { outbox, snapshot } = useNoteOutbox(recordingId);
@@ -73,7 +76,7 @@ export default function RecordingUnsavedNotes({
     [kinds, snapshot.entries],
   );
   const { draft, draftFile, notice } = snapshot;
-  const hasDraft = stripNote(draft.text) !== "" || draftFile !== null;
+  const hasDraft = !composerOwnsDraft && (stripNote(draft.text) !== "" || draftFile !== null);
   const uploads = listUploads ? [...snapshot.uploads.values()] : [];
 
   const clearDraft = () => {

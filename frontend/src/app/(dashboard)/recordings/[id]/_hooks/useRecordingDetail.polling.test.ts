@@ -1,7 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useLiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import { ClientStatus, RecordingStatus, type Recording, type TranscriptUtteranceList } from "@/types";
 import { IDLE_RECORDING_POLL_INTERVAL_MS, useRecordingDetail } from "./useRecordingDetail";
 
@@ -10,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   router: { push: vi.fn(), refresh: vi.fn() },
   navigation: { activePanel: "transcript", chatPanelHeight: 30, setChatPanelHeight: vi.fn(), setActivePanel: vi.fn() },
   notes: [],
+  isMobile: false,
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => mocks.router }));
@@ -30,7 +30,7 @@ vi.mock("@/lib/notes/useNoteOutbox", () => ({ useRecordingNotes: () => mocks.not
 vi.mock("@/lib/notes/useNoteEdits", () => ({ useNoteEdits: () => ({}) }));
 vi.mock("@/components/recordings/_hooks/useRecordingActions", () => ({ useRecordingActions: () => ({}) }));
 vi.mock("@/components/ViewportDensityProvider", () => ({
-  useViewportDensity: () => ({ isCompact: false, isMobile: false }),
+  useViewportDensity: () => ({ isCompact: false, isMobile: mocks.isMobile }),
 }));
 
 const recording = (overrides: Partial<Recording> = {}): Recording => ({
@@ -52,7 +52,7 @@ const params = Promise.resolve({ id: "rec-1" });
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const mount = () => renderHook(() => {
   const detail = useRecordingDetail({ params });
-  const live = useLiveTranscript(detail.recording);
+  const live = detail.liveTranscript;
   return { detail, live };
 });
 
@@ -63,6 +63,9 @@ describe("recording detail polling", () => {
     mocks.getRecordingIfChanged.mockReset().mockResolvedValue(null);
     mocks.getTranscript.mockReset().mockResolvedValue(delta());
     mocks.notify.mockReset();
+    mocks.navigation.setActivePanel.mockReset();
+    mocks.navigation.activePanel = "transcript";
+    mocks.isMobile = false;
   });
   afterEach(() => {
     cleanup();
@@ -107,7 +110,48 @@ describe("recording detail polling", () => {
     expect(mocks.getTranscript).toHaveBeenCalledTimes(3);
   });
 
-  it("discovers a live capture on the slow check and starts three-second delta reads", async () => {
+
+  it("falls back from the mobile Meeting Edge panel when switching to desktop", async () => {
+    mocks.navigation.activePanel = "meeting-edge";
+    mocks.isMobile = true;
+    const { rerender } = mount();
+    await advance(0);
+    expect(mocks.navigation.setActivePanel).not.toHaveBeenCalled();
+    mocks.isMobile = false;
+    rerender();
+    await advance(0);
+    expect(mocks.navigation.setActivePanel).toHaveBeenCalledWith("transcript");
+  });
+
+  it.each([RecordingStatus.PROCESSED, RecordingStatus.ERROR, RecordingStatus.QUEUED, RecordingStatus.PROCESSING])(
+    "does not toast stored Meeting Edge failures in %s", async (status) => {
+      mocks.getRecording.mockResolvedValue(recording({ status,
+        transcript: { meeting_edge_status: "error", meeting_edge_error_message: "Edge failed" } as Recording["transcript"] }));
+      mount();
+      await advance(0);
+      expect(mocks.notify).not.toHaveBeenCalledWith({ type: "error", message: "Edge failed" });
+    },
+  );
+
+  it("toasts active and paused errors once per recording and message, even after clear and recurrence", async () => {
+    const failed = recording({ status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
+      transcript: { meeting_edge_status: "error", meeting_edge_error_message: "Edge failed" } as Recording["transcript"] });
+    mocks.getRecording.mockResolvedValue(failed);
+    mount();
+    await advance(0);
+    expect(mocks.notify).toHaveBeenCalledWith({ type: "error", message: "Edge failed" });
+    mocks.getRecording.mockResolvedValue({ ...failed, transcript: { ...failed.transcript, meeting_edge_status: "ready" } });
+    await advance(1_000);
+    mocks.getRecording.mockResolvedValue({ ...failed, status: RecordingStatus.PAUSED, client_status: ClientStatus.PAUSED });
+    await advance(1_000);
+    expect(mocks.notify).toHaveBeenCalledTimes(1);
+    mocks.getRecording.mockResolvedValue({ ...failed, transcript: { ...failed.transcript, meeting_edge_error_message: "New failure" } });
+    await advance(1_000);
+    expect(mocks.notify).toHaveBeenLastCalledWith({ type: "error", message: "New failure" });
+    expect(mocks.notify).toHaveBeenCalledTimes(2);
+  });
+
+  it("discovers a live capture on the slow check and starts full then three-second delta reads", async () => {
     const { result } = mount();
     await advance(0);
     mocks.getRecordingIfChanged.mockResolvedValueOnce({

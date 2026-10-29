@@ -256,8 +256,11 @@ describe("Moving a point note with Move up and Move down", () => {
     expect(listOrder()).toEqual(["n-early", "n-point"]);
 
     fireEvent.click(moveButton("n-early", "down"));
-    // Moved in beside a saved note, it stays shown rather than folding into "2 notes".
-    expect(screen.queryByTestId("line-notes-chip")).toBeNull();
+    // A second note folds immediately; the chip becomes the keyboard target.
+    const chip = screen.getByRole("button", { name: "2 notes on the line at 01:05" });
+    expect(noteLine("n-early")).toBeUndefined();
+    expect(document.activeElement).toBe(chip);
+    fireEvent.click(chip);
     fireEvent.click(moveButton("n-early", "down"));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Note moved after the line at 02:10."));
     expect(myNotesTime("n-early")).toBe("02:10");
@@ -278,6 +281,19 @@ describe("Moving a point note with Move up and Move down", () => {
     expect(moveButton("n-point", "down")).toBeInTheDocument();
   });
 
+  it("preserves an expanded destination when an optimistic move adds a third note", async () => {
+    const request = deferred<TimelineNote>();
+    updateTimelineNote.mockReturnValueOnce(request.promise);
+    const others = [note("n2", "point", "Already there", { anchor_ms: 131_000 }),
+      note("n3", "point", "Also there", { anchor_ms: 132_000 })];
+    render(<Page notes={[POINT, ...others]} />);
+    fireEvent.click(screen.getByRole("button", { name: "2 notes on the line at 02:10" }));
+    fireEvent.click(moveButton(POINT.id, "down"));
+    expect(screen.getByRole("button", { name: "3 notes on the line at 02:10" })).toHaveAttribute("aria-expanded", "true");
+    expect(document.activeElement).toBe(moveButton(POINT.id, "down"));
+    await act(async () => request.resolve(moved(130_000)));
+  });
+
   it("offers no move for a selection note, whose words fix its place", () => {
     render(<Page notes={[POINT, SELECTION]} />);
 
@@ -288,6 +304,19 @@ describe("Moving a point note with Move up and Move down", () => {
 });
 
 describe("A refused move", () => {
+  it("exposes a refused note even when other notes at its restored destination remain folded", async () => {
+    const request = deferred<TimelineNote>();
+    updateTimelineNote.mockReturnValueOnce(request.promise);
+    const others = [note("n2", "point", "First at destination", { anchor_ms: 131_000 }),
+      note("n3", "point", "Second at destination", { anchor_ms: 132_000 })];
+    render(<Page notes={[POINT, ...others]} />);
+    fireEvent.click(moveButton(POINT.id, "down"));
+    expect(screen.getByRole("button", { name: "3 notes on the line at 02:10" })).toHaveFocus();
+    await act(async () => request.reject(conflict({ ...POINT, anchor_ms: 130_500, revision: 3 })));
+    expect(screen.getByRole("button", { name: "2 notes on the line at 02:10" })).toHaveAttribute("aria-expanded", "false");
+    expect(noteLine(POINT.id)).toHaveTextContent("This note was changed elsewhere");
+    expect(moveButton(POINT.id, "down")).toHaveFocus();
+  });
   it("shows the note at its new place while it saves, and puts it back on a 409 with the note as it is now", async () => {
     const answer = deferred<TimelineNote>();
     updateTimelineNote.mockReturnValueOnce(answer.promise);
@@ -471,6 +500,8 @@ describe("Dragging a point note by its grip", () => {
         anchor_ms: 130_000,
       }),
     );
+    expect(screen.getByRole("button", { name: "2 notes on the line at 02:10" })).toHaveAttribute("aria-expanded", "false");
+    expect(noteLine(POINT.id)).toBeUndefined();
   });
 
   it("stays put when let go over its own line, outside the lines, or after Escape", () => {

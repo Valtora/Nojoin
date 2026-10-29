@@ -103,11 +103,11 @@ describe("useLiveTranscript", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not poll at all when there is no live capture", () => {
+  it("does not poll for settled recordings", () => {
     renderHook(() =>
       useLiveTranscript(
         buildRecording({
-          status: RecordingStatus.UPLOADING,
+          status: RecordingStatus.PROCESSED,
           client_status: undefined,
         }),
       ),
@@ -302,7 +302,7 @@ describe("useLiveTranscript", () => {
     expect(hung?.aborted).toBe(true);
   });
 
-  it("stops polling once the capture is finalized", async () => {
+  it("keeps the same cursor through Stop and pipeline processing, then stops when settled", async () => {
     getTranscriptUtterances.mockResolvedValue(
       buildDelta(1, [buildUtterance("a", 0, "line", 1)]),
     );
@@ -324,11 +324,26 @@ describe("useLiveTranscript", () => {
       }),
     });
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(LIVE_TRANSCRIPT_POLL_INTERVAL_MS * 3);
-    });
+    await advanceOnePoll();
+    expect(getTranscriptUtterances.mock.calls.length).toBe(callsWhileLive + 1);
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 1, expect.any(AbortSignal));
+    rerender({ recording: buildRecording({ status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE }) });
+    await advanceOnePoll();
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 1, expect.any(AbortSignal));
+    const callsInPipeline = getTranscriptUtterances.mock.calls.length;
+    rerender({ recording: buildRecording({ status: RecordingStatus.PROCESSED, client_status: ClientStatus.IDLE }) });
+    await advanceOnePoll();
 
-    expect(getTranscriptUtterances.mock.calls.length).toBe(callsWhileLive);
+    expect(getTranscriptUtterances.mock.calls.length).toBe(callsInPipeline);
+  });
+
+  it("reads an importing file without treating it as a browser capture", async () => {
+    getTranscriptUtterances.mockResolvedValue(buildDelta(1, [buildUtterance("a", 0, "Imported", 1)]));
+    const { result } = renderHook(() => useLiveTranscript(buildRecording({ client_status: undefined })));
+    await flushPendingRequests();
+    expect(result.current.segments[0].text).toBe("Imported");
+    await advanceOnePoll();
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 1, expect.any(AbortSignal));
   });
 
   it("shows the live names every read carries, and a rename's at once", async () => {

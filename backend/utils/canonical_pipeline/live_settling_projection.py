@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from itertools import groupby
 from typing import Any
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from backend.utils.word_text import reconstruct_text_from_words
 from .constants import LIVE_SPEAKER_LABEL_PAYLOAD_KEY, _append_utterance_event
 from .live_labels import LiveLabelDecision
 from .live_settling_lines import LineBoundaries, Partition, partition_words, word_extent
-from .live_settling_sources import partition_source_metadata
+from .live_settling_sources import partition_source_metadata, words_source_channel
 
 SETTLING_KEY = "live_text_settling"
 DecideSpeaker = Callable[[int, int], LiveLabelDecision]
@@ -111,6 +112,59 @@ def live_rows(
     )
 
 
+LeadSpeaker = Callable[[str | None], str | None]
+
+
+@dataclass(frozen=True)
+class Closing:
+    """A close seals the tail; pending words continue ``lead_speaker`` if no word does."""
+
+    lead_speaker: LeadSpeaker
+
+
+def lead_speaker(
+    session: Session, recording_id: int, rows: Sequence[TranscriptUtterance]
+) -> LeadSpeaker:
+    """Look up the speaker of the newest immutable live line before the tail, by source.
+
+    A line's source is the badge it shows (``None`` when unattributed), as the
+    transcript compares sources before continuing a speaker.
+    """
+    tail = [row for row in rows if mutable_row(row)]
+
+    def speaker_from(channel: str | None) -> str | None:
+        if not tail:
+            return None
+        # Streamed newest first: the line just before the tail usually matches,
+        # so a long meeting's older lines are never read.
+        with session.execute(
+            select(
+                TranscriptUtterance.speaker_label,
+                TranscriptUtterance.confidence_payload,
+            )
+            .where(TranscriptUtterance.recording_id == recording_id)
+            .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
+            .where(TranscriptUtterance.source_kind == "live")
+            .where(col(TranscriptUtterance.id).not_in([row.id for row in tail]))
+            .where(TranscriptUtterance.start_ms <= tail[0].start_ms)
+            .order_by(
+                col(TranscriptUtterance.start_ms).desc(),
+                col(TranscriptUtterance.id).desc(),
+            )
+            .execution_options(yield_per=8)
+        ) as lines:
+            return next(
+                (
+                    speaker
+                    for speaker, payload in lines
+                    if source_channel_from_confidence_payload(payload) == channel
+                ),
+                None,
+            )
+
+    return speaker_from
+
+
 def mutable_row(row: TranscriptUtterance) -> bool:
     """Manual results and fully locked lines are immutable machine anchors."""
     return not (
@@ -124,7 +178,7 @@ def word_decisions(
     decide: DecideSpeaker | None,
     *,
     speaker_enabled: bool,
-    closing: bool = False,
+    closing: Closing | None = None,
 ) -> list[LiveLabelDecision]:
     """Assign timed words independently; untimed atoms follow their neighbour."""
     previous = {
@@ -139,6 +193,7 @@ def word_decisions(
         if word.get("locked") and previous[word.get("id")].locked
     }
     decisions: list[LiveLabelDecision | None] = []
+    covered_untimed: dict[int, LiveLabelDecision] = {}
     for word in words:
         old = previous.get(word.get("id"))
         start, end = word.get("start_ms"), word.get("end_ms")
@@ -147,30 +202,93 @@ def word_decisions(
         elif decide is not None and start is not None and end is not None:
             decision = decide(int(start), max(int(start) + 1, int(end)))
         elif start is not None and end is not None:
-            decision = old or LiveLabelDecision("UNKNOWN", not speaker_enabled, None)
+            decision = old or LiveLabelDecision(
+                "UNKNOWN", not speaker_enabled, None, speaker_enabled
+            )
         else:
-            decision = None
+            extent = word_extent(word)
+            if decide is not None and extent is not None:
+                coverage = decide(extent[0], max(extent[0] + 1, extent[1]))
+                decision = coverage if coverage.diarisation_pending else None
+                if not coverage.diarisation_pending:
+                    covered_untimed[len(decisions)] = LiveLabelDecision(
+                        "UNKNOWN", coverage.locked, None
+                    )
+            else:
+                decision = old
         decisions.append(decision)
     for index, decision in enumerate(decisions):
         if decision is None:
             neighbour = next(
                 (
-                    decisions[j]
+                    candidate
                     for j in range(index - 1, -1, -1)
-                    if decisions[j] is not None
+                    if (candidate := decisions[j]) is not None
+                    and (
+                        index not in covered_untimed
+                        or not candidate.diarisation_pending
+                    )
                 ),
                 None,
             ) or next(
-                (item for item in decisions[index + 1 :] if item is not None), None
+                (
+                    item
+                    for item in decisions[index + 1 :]
+                    if item is not None
+                    and (index not in covered_untimed or not item.diarisation_pending)
+                ),
+                None,
             )
-            decisions[index] = neighbour or LiveLabelDecision(
-                "UNKNOWN", not speaker_enabled, None
+            decisions[index] = (
+                neighbour
+                or covered_untimed.get(index)
+                or LiveLabelDecision(
+                    "UNKNOWN", not speaker_enabled, None, speaker_enabled
+                )
             )
+    decided = [item for item in decisions if item is not None]
+    if closing is not None:
+        return _sealed(words, decided, closing)
     return [
-        LiveLabelDecision(item.speaker, closing or item.locked, item.share)
-        for item in decisions
-        if item is not None
+        LiveLabelDecision(
+            "UNKNOWN" if item.diarisation_pending else item.speaker,
+            item.locked,
+            item.share,
+            item.diarisation_pending,
+        )
+        for item in decided
     ]
+
+
+def _sealed(
+    words: Sequence[dict[str, Any]],
+    decisions: list[LiveLabelDecision],
+    closing: Closing,
+) -> list[LiveLabelDecision]:
+    """Seal each pending run with the nearest earlier decision from its audio source.
+
+    The transcript continues a speaker only within one source, so a microphone
+    tail never takes a shared-audio speaker. The final pass corrects a wrong
+    guess; Unknown remains only with nothing before it from that source.
+    """
+    latest: dict[str | None, str] = {}
+    sealed: list[LiveLabelDecision] = []
+    for (pending, _), group in groupby(zip(words, decisions, strict=True), key=_run):
+        run = list(group)
+        channel = words_source_channel([word for word, _ in run])
+        if pending:
+            speaker = latest.get(channel) or closing.lead_speaker(channel) or "UNKNOWN"
+        else:
+            speaker = run[0][1].speaker
+            latest[channel] = speaker
+        sealed.extend(LiveLabelDecision(speaker, True, item.share) for _, item in run)
+    return sealed
+
+
+def _run(pair: tuple[dict[str, Any], LiveLabelDecision]) -> tuple[bool, str | None]:
+    """Pending words form one run; decided words run while their speaker holds."""
+    item = pair[1]
+    return item.diarisation_pending, None if item.diarisation_pending else item.speaker
 
 
 def _stored_speaker(
@@ -184,6 +302,7 @@ def _stored_speaker(
             stored.get("locked") or word.get("id") in stored.get("locked_word_ids", [])
         ),
         None,
+        bool(stored.get("diarisation_pending")),
     )
 
 
@@ -244,6 +363,7 @@ def _payload(
             "locked": partition.speaker_locked,
             "locked_word_ids": partition.locked_speaker_words,
             "share": None,
+            "diarisation_pending": partition.diarisation_pending,
         },
     }
 

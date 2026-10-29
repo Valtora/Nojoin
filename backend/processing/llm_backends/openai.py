@@ -433,12 +433,13 @@ class OpenAILLMBackend(LLMBackend):
         recording_id: str = None,
     ) -> Generator[Any, None, None]:
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
+        notes_tool = self._offers_notes_tool(diarized_transcript)
 
         # Lead with the stable meeting context as a system message so OpenAI's
         # automatic prefix caching can reuse it across turns; the volatile
         # question is sent last.
         context = build_chat_context(
-            meeting_notes, diarized_transcript, notes_tool=True
+            meeting_notes, diarized_transcript, notes_tool=notes_tool
         )
         messages = [{"role": "system", "content": context}] + build_chat_messages(
             user_question, conversation_history
@@ -469,8 +470,9 @@ class OpenAILLMBackend(LLMBackend):
             "messages": messages,
             "stream": True,
             "timeout": timeout,
-            "tools": tools,
         }
+        if notes_tool:
+            request_kwargs["tools"] = tools
 
         # Skip temperature for reasoning models (OpenAI) that enforce default temperature
         if self.model.startswith("gpt") or "gpt" in self.model:
