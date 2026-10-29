@@ -206,7 +206,7 @@ function TranscriptLine({
             onRename={!readOnly && live.onRenameLiveSpeaker && liveSpeakerDisplayName(segment.speaker) !== null
               ? live.onRenameLiveSpeaker : undefined}
             loadPeopleNames={live.loadPeopleNames}
-            suggestion={speakerName === liveSpeakerDisplayName(liveLine.speakerLabel)
+            suggestion={liveLine.speakersLatestLine && speakerName === liveSpeakerDisplayName(liveLine.speakerLabel)
               ? live.liveSpeakerSuggestions?.[liveLine.speakerLabel] : undefined}
             onDismissSuggestion={!readOnly ? live.onDismissLiveSpeakerSuggestion : undefined}
           />

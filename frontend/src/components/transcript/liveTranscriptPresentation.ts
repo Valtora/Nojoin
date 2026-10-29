@@ -28,6 +28,8 @@ export interface LiveLinePresentation {
   sourceLabel: string | null;
   speakerLabel: string | null;
   speakerLocked: boolean;
+  /** The speaker's last line, the one that offers a pending name. */
+  speakersLatestLine: boolean;
 }
 
 const sourceChannelOf = (segment: TranscriptSegment) =>
@@ -43,14 +45,17 @@ const speakerLabelOf = (segment: TranscriptSegment) => liveLabelOf(segment) ??
 export function buildLiveTranscriptPresentation(
   segments: readonly TranscriptSegment[],
 ): ReadonlyMap<string, LiveLinePresentation> {
+  const latestLines = new Map(segments.map((segment, index) => [speakerLabelOf(segment), index]));
   return new Map(segments.map((segment, index) => {
     const previous = index > 0 ? segments[index - 1] : undefined;
     const channel = sourceChannelOf(segment);
+    const speakerLabel = speakerLabelOf(segment);
     return [getTranscriptSegmentKey(segment, index), {
       sourceLabel: channel !== null && channel !== (previous ? sourceChannelOf(previous) : null)
         ? channel === "microphone" ? "Microphone" : "Shared audio" : null,
-      speakerLabel: speakerLabelOf(segment),
+      speakerLabel,
       speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
+      speakersLatestLine: latestLines.get(speakerLabel) === index,
     }];
   }));
 }

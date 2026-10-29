@@ -250,7 +250,7 @@ function TranscriptGroup({
 function sameLiveLine(left: LiveLinePresentation | undefined, right: LiveLinePresentation | undefined): boolean {
   return left === right || !!left && !!right &&
     left.sourceLabel === right.sourceLabel && left.speakerLabel === right.speakerLabel &&
-    left.speakerLocked === right.speakerLocked;
+    left.speakerLocked === right.speakerLocked && left.speakersLatestLine === right.speakersLatestLine;
 }
 
 function sameLineShared(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
