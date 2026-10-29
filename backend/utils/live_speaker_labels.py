@@ -39,3 +39,27 @@ def speaker_display_name(label: str, speaker_map: Mapping[str, str]) -> str:
     if label in speaker_map:
         return speaker_map[label]
     return live_speaker_display_name(label) or label
+
+
+def speaker_prompt_name(label: str, speaker_map: Mapping[str, str]) -> str:
+    """Resolve a prompt label without presenting UNKNOWN as a person's name."""
+    if label == "UNKNOWN":
+        return "Unidentified speaker"
+    return speaker_display_name(label, speaker_map)
+
+
+def render_indexed_transcript_for_llm(text: str, speaker_map: Mapping[str, str]) -> str:
+    """Resolve indexed transcript line labels, leaving spoken text untouched.
+
+    Older chunks can still carry UNKNOWN or raw diarisation labels. Resolve
+    those at read time so they do not require a library-wide reindex.
+    """
+    names = {
+        label: speaker_prompt_name(label, speaker_map)
+        for label in {"UNKNOWN", *speaker_map}
+        if label
+    }
+    pattern = re.compile(
+        r"^(" + "|".join(re.escape(label) for label in names) + r"):", re.MULTILINE
+    )
+    return pattern.sub(lambda match: f"{names[match.group(1)]}:", text)

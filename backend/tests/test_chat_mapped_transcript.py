@@ -370,7 +370,9 @@ def test_chat_leaves_out_the_lines_of_a_removed_speaker_like_the_view(engine):
 
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
-    assert transcript == "[00:00] Priya: Kept.\n[00:02] UNKNOWN: Still live."
+    assert (
+        transcript == "[00:00] Priya: Kept.\n[00:02] Unidentified speaker: Still live."
+    )
 
 
 def test_chat_keeps_unknown_lines_when_no_speaker_is_known(engine):
@@ -379,7 +381,7 @@ def test_chat_keeps_unknown_lines_when_no_speaker_is_known(engine):
 
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
-    assert transcript == "[00:00] UNKNOWN: Hello."
+    assert transcript == "[00:00] Unidentified speaker: Hello."
 
 
 def test_chat_names_a_merged_speakers_lines_after_the_target(engine):

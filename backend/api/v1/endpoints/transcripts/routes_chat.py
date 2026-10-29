@@ -28,6 +28,7 @@ from backend.models.user import User
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
 from backend.utils.chat_prompt import ChatTranscript, TranscriptExcerpts
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.live_speaker_labels import render_indexed_transcript_for_llm
 from backend.utils.llm_config import CLI_PROVIDER, resolve_llm_config_async
 from backend.utils.meeting_notes import escape_prompt_attribute
 from backend.utils.note_attachments import unread_attachment_ids
@@ -316,12 +317,9 @@ async def chat_with_meeting(
                 rec_name = rec.name if rec else f"Recording {chunk.recording_id}"
 
                 content = chunk.content
-                if chunk.meta and chunk.meta.get("source") == "transcript" and rec:
-                    speaker_map = _build_speaker_map(rec.speakers)
-                    # Replace raw diarization labels (e.g. "SPEAKER_XX:") with resolved names.
-                    for label, name in speaker_map.items():
-                        if label and name and label != name:
-                            content = content.replace(f"{label}:", f"{name}:")
+                if chunk.meta and chunk.meta.get("source") == "transcript":
+                    speaker_map = _build_speaker_map(rec.speakers) if rec else {}
+                    content = render_indexed_transcript_for_llm(content, speaker_map)
 
                 if is_document_chunk:
                     # Document text is authored outside the meeting, so it is
