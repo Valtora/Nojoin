@@ -17,7 +17,7 @@ from backend.models.context_chunk import ContextChunk
 from backend.models.notes_output import NotesOutput
 from backend.models.notes_template import NotesTemplate
 from backend.models.recording import Recording, RecordingStatus
-from backend.models.transcript import Transcript
+from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_DIMENSIONS
 from backend.tests.test_live_settling_readers_postgres import (
     reader_client as reader_client,
@@ -28,6 +28,7 @@ from backend.tests.test_live_settling_readers_postgres import (
 from backend.utils.canonical_pipeline.notes_propagation import (
     propagate_speaker_rename_to_notes,
 )
+from backend.utils.reprocess_publication import REPROCESS_RUNNING_MESSAGE
 from backend.worker import tasks
 
 pytestmark = [
@@ -196,6 +197,74 @@ async def test_extra_lifecycle_preserves_primary_and_other_output(
     ] == "## Minutes\nPrimary decision."
 
 
+def without_timestamps(output: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in output.items() if k not in ("created_at", "updated_at")}
+
+
+async def test_extra_set_generates_then_saves_an_edit(
+    reader_client: AsyncClient,
+    meeting: tuple[int, int],
+    worker: Callable[[Any], None],
+) -> None:
+    class LLM:
+        def generate_meeting_notes(self, *args: Any, **kwargs: Any) -> str:
+            return "## Tasks\nGenerated."
+
+    template_id = meeting[1]
+    response = await reader_client.post(
+        f"{PATH}/generate",
+        json={"create_output": True, "notes_template_id": template_id},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["notes_status"], body["error_message"]) == ("generating", None)
+    output_id = body["output"]["id"]
+    generating = {
+        "id": output_id,
+        "kind": "notes",
+        "name": "Task list",
+        "notes": None,
+        "notes_template_id": template_id,
+        "notes_template_sections": SECTIONS,
+        "notes_status": "generating",
+        "error_message": None,
+    }
+    assert without_timestamps(body["output"]) == generating
+    listed = (await reader_client.get(f"{PATH}/outputs")).json()
+    assert [without_timestamps(output) for output in listed] == [generating]
+    worker(LLM())
+
+    edited = "## Tasks\nEdited by hand."
+    response = await reader_client.put(
+        f"{PATH}/outputs/{output_id}", json={"notes": edited}
+    )
+    assert response.status_code == 200, response.text
+    saved = {**generating, "notes": edited, "notes_status": "completed"}
+    assert without_timestamps(response.json()) == saved
+    listed = (await reader_client.get(f"{PATH}/outputs")).json()
+    assert [without_timestamps(output) for output in listed] == [saved]
+    assert (await reader_client.get(PATH)).json()[
+        "notes"
+    ] == "## Minutes\nPrimary decision."
+
+    # A rerun keeps the edited text on screen until the new run lands, and
+    # refuses a save that the run would overwrite.
+    response = await reader_client.post(
+        f"{PATH}/generate", json={"output_id": output_id}
+    )
+    assert response.status_code == 200, response.text
+    assert without_timestamps(response.json()["output"]) == {
+        **saved,
+        "notes_status": "generating",
+    }
+    response = await reader_client.put(
+        f"{PATH}/outputs/{output_id}", json={"notes": "Lost edit"}
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "Meeting notes are already generating."
+    assert (await reader_client.get(f"{PATH}/outputs")).json()[0]["notes"] == edited
+
+
 @pytest.mark.parametrize("state", ["reprocess", "failed", "primary_busy", "extra_busy"])
 async def test_generation_conflicts(
     reader_client: AsyncClient,
@@ -207,6 +276,11 @@ async def test_generation_conflicts(
     output_id = await create_extra(reader_client, meeting[1])
     async with reader_sessions() as db:
         transcript = (await db.execute(select(Transcript))).scalar_one()
+        # Only the guard under test may refuse: the set is idle unless it is
+        # the one generating.
+        if state != "extra_busy":
+            output = await db.get(NotesOutput, output_id)
+            output.notes_status = "completed"
         if state == "reprocess":
             transcript.transcript_status = "pending"
             transcript.settling_state = {"reprocess_pending": True}
@@ -216,10 +290,15 @@ async def test_generation_conflicts(
             transcript.notes_status = "generating"
         await db.commit()
     stub_celery_dispatch.clear()
+    reason = {
+        "reprocess": REPROCESS_RUNNING_MESSAGE,
+        "failed": TRANSCRIPTION_FAILED_NOTES_MESSAGE,
+    }.get(state, "Meeting notes are already generating.")
     response = await reader_client.post(
         f"{PATH}/generate", json={"output_id": output_id}
     )
     assert response.status_code == 409, response.text
+    assert response.json()["detail"] == reason
     assert stub_celery_dispatch == []
     if state != "extra_busy":
         response = await reader_client.post(
@@ -227,6 +306,7 @@ async def test_generation_conflicts(
             json={"create_output": True, "notes_template_id": meeting[1]},
         )
         assert response.status_code == 409, response.text
+        assert response.json()["detail"] == reason
     if state == "extra_busy":
         assert (
             await reader_client.delete(f"{PATH}/outputs/{output_id}")
