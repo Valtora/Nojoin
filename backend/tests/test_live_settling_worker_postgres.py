@@ -31,6 +31,9 @@ from backend.utils.transcript_settling import (
     update_capture_settling_state,
 )
 
+# Captured at import, before ``worker_db`` replaces the dispatcher.
+REAL_TRANSCRIBE_AUDIO = transcribe.transcribe_audio
+
 
 @pytest.fixture
 def worker_db(
@@ -140,6 +143,49 @@ def test_actual_cpu_fallback_closes_last_successful_words_before_legacy_lane(
         ]
         assert words[0]["locked"] and words[0]["lock_reason"] == "closure"
         assert transcript.segments[0]["text"] == "hello"
+
+
+def test_unprepared_aligner_still_locks_canary_lines_and_queues_it_once(
+    worker_db: Any,
+    settling_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    stub_celery_dispatch: list,
+) -> None:
+    """Canary keeps its text untimed while the aligner downloads elsewhere."""
+    from backend.processing import forced_aligner_model
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("Live alignment must not fetch or hash aligner assets")
+
+    monkeypatch.setattr(transcribe, "transcribe_audio", REAL_TRANSCRIBE_AUDIO)
+    canary = SimpleNamespace(
+        transcribe=lambda *_args: {
+            "text": "hello",
+            "language": "en",
+            "segments": [{"start": 0.1, "end": 0.5, "text": "hello"}],
+        },
+        loaded_device=lambda _: "cuda",
+    )
+    monkeypatch.setattr(transcribe, "_ENGINE_REGISTRY", {"canary": canary})
+    assets = forced_aligner_model.assets
+    monkeypatch.setattr(assets, "prepare_forced_aligner_model", forbidden)
+    monkeypatch.setattr(assets, "verify_forced_aligner_model", forbidden)
+    for sequence in range(6):
+        result = worker.run_settling_step(
+            worker_db.step(sequence), {"transcription_backend": "canary"}
+        )
+        assert result.handled and result.accepted
+    with Session(settling_engine) as session:
+        rows = _active(session, worker_db.recording_id)
+        words = [word for row in rows for word in row_words(row)]
+    # The window end locks untimed text, as after any alignment failure; the
+    # fake engine hears "hello" again in the audio after it.
+    assert {(word["word"], word["start_ms"]) for word in words} == {("hello", None)}
+    assert words[0]["locked"] and words[0]["lock_reason"] == "expiry"
+    assert "not prepared" in rows[0].confidence_payload["alignment_error"]
+    assert [kwargs for _name, _args, kwargs in stub_celery_dispatch] == [
+        {"pinned_model": "forced_aligner", "include_core": False}
+    ]
 
 
 def _lifecycle(engine: Engine, recording_id: int, phase: str) -> Any:
