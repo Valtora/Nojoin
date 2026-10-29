@@ -28,6 +28,7 @@ from backend.models.calendar import (  # noqa: F401
 from backend.models.chat import ChatMessage  # noqa: F401
 from backend.models.document import Document  # noqa: F401
 from backend.models.document_page import DocumentPage  # noqa: F401
+from backend.models.notes_output import NotesOutput
 from backend.models.notes_template import NotesTemplate  # noqa: F401
 from backend.models.people_tag import PeopleTag, PeopleTagLink  # noqa: F401
 from backend.models.recording import Recording  # noqa: F401
@@ -64,6 +65,7 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("recording_speaker_drift_refusals", RecordingSpeakerDriftRefusal),
     ("recording_tags", RecordingTag),
     ("transcripts", Transcript),
+    ("notes_outputs", NotesOutput),
     # After transcripts, so a version 2 archive's transcript, whose user_notes
     # become a head note on restore, is in before any note is.
     ("timeline_notes", TimelineNote),

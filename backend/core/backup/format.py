@@ -150,6 +150,10 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
         # text itself, so losing the link costs a label, never the notes.
         _enrich("notes_template_id", "notes_templates"),
     ),
+    "notes_outputs": (
+        _own("recording_id", "recordings"),
+        _enrich("notes_template_id", "notes_templates"),
+    ),
     # The author is attribution only; reads are scoped by the recording's owner.
     "timeline_notes": (
         _own("recording_id", "recordings"),

@@ -4,7 +4,7 @@ import { ButtonBase } from "@/components/ui/nativeBases";
 import { useState } from "react";
 import { FileText, RefreshCw, X } from "lucide-react";
 
-import NotesView from "@/components/NotesView";
+import NotesOutputsView from "@/components/NotesOutputsView";
 import RichTextEditor from "@/components/RichTextEditor";
 import type { Recording } from "@/types";
 
@@ -48,7 +48,9 @@ export default function NotesSection({
   // Dismissal is local and deliberately not persisted: the banner is advice,
   // not a task, and it reappears on reload while the notes remain stale.
   const [dismissed, setDismissed] = useState(false);
+  const [primarySelected, setPrimarySelected] = useState(true);
   const showStaleBanner =
+    primarySelected &&
     !inFlight &&
     !isGenerating &&
     !dismissed &&
@@ -91,7 +93,8 @@ export default function NotesSection({
       )}
       {inFlight && hasRetainedPublication && recording.transcript?.notes ? (
         <RichTextEditor content={recording.transcript.notes} editable={false} onChange={() => undefined} />
-      ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the live transcript.</p> : <NotesView
+      ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the live transcript.</p> : <NotesOutputsView
+        onPrimarySelected={setPrimarySelected}
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
         onNotesChange={onNotesChange}

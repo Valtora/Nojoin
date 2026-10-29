@@ -66,6 +66,7 @@ export const exportContent = async (
   format: ExportFormat = "pdf",
   speakerColors: Record<string, string> = {},
   includeNotes = true,
+  notesOutputId?: number,
 ): Promise<void> => {
   try {
     const response = await api.get(`/transcripts/${recordingId}/export`, {
@@ -74,6 +75,7 @@ export const exportContent = async (
         export_format: format,
         speaker_colors: JSON.stringify(speakerColors),
         include_notes: includeNotes,
+        notes_output_id: notesOutputId,
       },
       // Repeated keys (sections=notes&sections=analytics), which is how
       // FastAPI reads a list, rather than axios's default sections[]=notes.

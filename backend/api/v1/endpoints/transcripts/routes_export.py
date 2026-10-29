@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 from typing import Annotated, Literal
 
 from fastapi import Depends, HTTPException, Query, Response
@@ -40,6 +41,7 @@ from backend.utils.timezones import get_user_timezone_name
 from .helpers import _build_speaker_map, _get_owned_recording, _sanitize_filename
 from .router import router
 from .routes_analytics import read_recording_analytics
+from .routes_notes import get_notes_output
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,7 @@ class ExportQuery(BaseModel):
     # Notes`` section that ends the generated notes. Off for a file shared
     # without them.
     include_notes: bool = True
+    notes_output_id: int | None = None
 
     def requested_sections(self) -> tuple[str, ...]:
         if self.sections:
@@ -213,12 +216,27 @@ async def export_content(
     transcript = result.scalar_one_or_none()
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
-    if sections == ("notes",) and not (transcript.notes or "").strip():
+    if (
+        sections == ("notes",)
+        and query.notes_output_id is None
+        and not (transcript.notes or "").strip()
+    ):
         raise HTTPException(
             status_code=404, detail="No meeting notes available to export"
         )
 
     parts = await _meeting_parts(db, recording, transcript, query, current_user)
+    if query.notes_output_id is not None:
+        if sections != ("notes",):
+            raise HTTPException(
+                status_code=400, detail="An extra output exports only its own notes."
+            )
+        output = await get_notes_output(db, recording.id, query.notes_output_id)
+        if not output.notes:
+            raise HTTPException(
+                status_code=404, detail="No meeting notes available to export"
+            )
+        parts = replace(parts, notes=output.notes)
     document = build_document(
         parts,
         sections,

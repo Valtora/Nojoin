@@ -1,6 +1,11 @@
+from dataclasses import replace
+
+from backend.models.notes_output import NotesOutput
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.notes_templates import ResolvedNotesTemplate, builtin_notes_template
+from backend.utils.reprocess_publication import reprocess_replacement_running
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 from backend.utils.transcript_change import change_sequence_bump
@@ -12,18 +17,26 @@ from .speaker_name_apply import apply_inferred_names
 @celery_app.task(
     name="backend.worker.tasks.generate_notes_task", base=DatabaseTask, bind=True
 )
-def generate_notes_task(self, recording_id: int, notes_template_id: int | None = None):
+def generate_notes_task(
+    self,
+    recording_id: int,
+    notes_template_id: int | None = None,
+    output_id: int | None = None,
+    use_saved_template: bool = True,
+):
     """
     Generate meeting notes for a recording.
 
     ``notes_template_id`` is the template picked for this run (Regenerate Notes).
-    ``None`` falls back through the user's default, the install default and then
-    the built-in structure, so an existing queued task with a single argument
-    behaves exactly as before.
+    ``None`` reuses the selected output's saved structure, falling through the
+    defaults when none is saved. ``use_saved_template=False`` lets the picker
+    explicitly choose the built-in structure. ``output_id`` targets an extra
+    set, whose generation never replaces or indexes the primary notes.
     """
     session = self.session
     recording = None
     transcript = None
+    output = None
     try:
         recording = session.get(Recording, recording_id)
         if not recording:
@@ -35,6 +48,21 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         ).first()
         if not transcript:
             logger.error(f"Transcript for recording {recording_id} not found.")
+            return
+        if output_id is not None:
+            output = session.get(NotesOutput, output_id)
+            if output is None or output.recording_id != recording_id:
+                return
+        if output is not None and (
+            transcript.transcription_failed()
+            or reprocess_replacement_running(transcript)
+        ):
+            _mark_notes_generation_error(
+                session,
+                recording,
+                output,
+                "Transcript is being replaced or has failed.",
+            )
             return
         if transcript.transcription_failed():
             # The API refuses this; a task queued before the failure lands here.
@@ -49,14 +77,17 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 session.commit()
             return
 
-        transcript.notes_status = "generating"
-        transcript.set_notes_error_message(None)
-        recording.processing_step = "Generating meeting notes..."
-        recording.processing_progress = 97
-        session.add(transcript)
-        session.add(recording)
+        target = output if output is not None else transcript
+        target.notes_status = "generating"
+        target.set_notes_error_message(None)
+        session.add(target)
+        if output is None:
+            recording.processing_step = "Generating meeting notes..."
+            recording.processing_progress = 97
+            session.add(recording)
         session.commit()
-        update_recording_status(session, recording.id)
+        if output is None:
+            update_recording_status(session, recording.id)
 
         user_settings = {}
         if recording.user_id:
@@ -70,9 +101,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         missing_llm_config = llm_config.missing_configuration_message()
         if missing_llm_config:
             logger.warning("Cannot generate notes: %s", missing_llm_config)
-            _mark_notes_generation_error(
-                session, recording, transcript, missing_llm_config
-            )
+            _mark_notes_generation_error(session, recording, target, missing_llm_config)
             return
 
         segments = build_transcript_segments_for_read(
@@ -82,7 +111,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         )
         if not segments:
             _mark_notes_generation_error(
-                session, recording, transcript, "Transcript is empty"
+                session, recording, target, "Transcript is empty"
             )
             return
 
@@ -117,6 +146,23 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             user_id=recording.user_id,
             explicit_template_id=notes_template_id,
         )
+        # Rerun a tab's saved structure even if its template was later deleted.
+        if (
+            notes_template_id is None
+            and use_saved_template
+            and target.notes_template_sections
+        ):
+            resolved_template = ResolvedNotesTemplate(
+                sections=target.notes_template_sections,
+                name=output.name if output is not None else "Meeting notes",
+                template_id=target.notes_template_id,
+            )
+            notes_context = replace(
+                notes_context, notes_sections=resolved_template.sections
+            )
+        elif notes_template_id is None and not use_saved_template:
+            resolved_template = builtin_notes_template()
+            notes_context = replace(notes_context, notes_sections=None)
         notes_arguments = {
             "user_notes": timeline_notes.user_notes_context(),
             "meeting_context": _resolve_meeting_event_context(session, recording),
@@ -144,25 +190,28 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 **notes_arguments,
             )
 
-        transcript.notes = append_user_notes_section(
-            notes, timeline_notes.appendix_lines()
-        )
-        transcript.notes_status = "completed"
+        target.notes = append_user_notes_section(notes, timeline_notes.appendix_lines())
+        target.notes_status = "completed"
         # Freshly generated notes reflect every READY document by definition.
-        transcript.notes_stale_documents = False
-        transcript.set_notes_error_message(None)
+        if output is None:
+            transcript.notes_stale_documents = False
+        target.set_notes_error_message(None)
         # Provenance: which template produced these notes, and its text at the
         # time, so a later edit or deletion cannot rewrite the record.
-        transcript.notes_template_id = resolved_template.template_id
-        transcript.notes_template_sections = resolved_template.sections
-        recording.processing_step = "Completed"
-        recording.processing_progress = 100
-        session.add(transcript)
-        session.add(recording)
+        target.notes_template_id = resolved_template.template_id
+        target.notes_template_sections = resolved_template.sections
+        session.add(target)
+        if output is None:
+            recording.processing_step = "Completed"
+            recording.processing_progress = 100
+            session.add(recording)
         # A regeneration can finish between two of another tab's checks, with
         # its notes status back where that tab last saw it.
-        session.execute(change_sequence_bump(recording.id))
+        if output is None:
+            session.execute(change_sequence_bump(recording.id))
         session.commit()
+        if output is not None:
+            return
         update_recording_status(session, recording.id)
         logger.info(f"Generated meeting notes for recording {recording_id}")
 
@@ -218,7 +267,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == recording_id)
             ).first()
-        _mark_notes_generation_error(session, recording, transcript, e)
+        _mark_notes_generation_error(
+            session, recording, output if output is not None else transcript, e
+        )
 
 
 @celery_app.task(
@@ -524,9 +575,15 @@ def _format_notes_generation_error(error: Exception | str) -> str:
 def _mark_notes_generation_error_impl(
     session,
     recording: Recording | None,
-    transcript: Transcript | None,
+    transcript: Transcript | NotesOutput | None,
     error: Exception | str,
 ) -> None:
+    if isinstance(transcript, NotesOutput):
+        transcript.notes_status = "error"
+        transcript.set_notes_error_message(_format_notes_generation_error(error))
+        session.add(transcript)
+        session.commit()
+        return
     if not transcript or transcript.transcription_failed():
         return
 

@@ -519,6 +519,15 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
   note: TimelineNote;
 }
 
+export interface NotesOutput extends BaseDBModel {
+  name: string;
+  notes: string | null;
+  notes_template_id: number | null;
+  notes_template_sections: string;
+  notes_status: string;
+  error_message: string | null;
+}
+
 export interface Transcript extends BaseDBModel {
   /** Captured settling policy or settled history; independent of current settings. */
   settling_required?: boolean;

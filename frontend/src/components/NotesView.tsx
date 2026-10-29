@@ -2,7 +2,7 @@
 
 import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 
 import { DEMO_MODE } from "@/lib/demo";
 import {
@@ -36,7 +36,7 @@ import { getSettings } from "@/lib/api";
 import type { RecordingId } from "@/types";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
 
-interface NotesViewProps {
+export interface NotesViewProps {
   recordingId: RecordingId;
   notes: string | null;
   onNotesChange: (notes: string) => void;
@@ -55,6 +55,9 @@ interface NotesViewProps {
   isGenerating: boolean;
   onExport: () => void;
   disableExport?: boolean;
+  toolbarActions?: ReactNode;
+  fixedTemplate?: boolean;
+  localHistory?: boolean;
 }
 
 export default function NotesView({
@@ -70,6 +73,9 @@ export default function NotesView({
   isGenerating,
   onExport,
   disableExport = false,
+  toolbarActions,
+  fixedTemplate = false,
+  localHistory = false,
 }: NotesViewProps) {
   const displayNotes = notes
     ? notes.replace(/^#+\s*Meeting Notes\s*/i, "").trim()
@@ -84,6 +90,13 @@ export default function NotesView({
   const [editor, setEditor] = useState<Editor | null>(null);
   const lastSavedNotes = useRef(displayNotes || "");
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingSaveRef = useRef<(() => void) | null>(null);
+
+  // Switching output tabs must save a pending edit to the tab it came from.
+  useEffect(() => () => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    pendingSaveRef.current?.();
+  }, []);
 
   // Find & Replace State
   const [showSearch, setShowSearch] = useState(false);
@@ -135,12 +148,17 @@ export default function NotesView({
     // The editor can report the notes exactly as they were saved: on load, or
     // after an edit is undone. Saving that would rewrite them for nothing.
     if (newContent === lastSavedNotes.current) {
+      pendingSaveRef.current = null;
       return;
     }
 
-    saveTimeoutRef.current = setTimeout(() => {
+    pendingSaveRef.current = () => {
       lastSavedNotes.current = newContent;
       onNotesChange(newContent);
+    };
+    saveTimeoutRef.current = setTimeout(() => {
+      pendingSaveRef.current?.();
+      pendingSaveRef.current = null;
     }, 1000); // 1 second debounce
   };
 
@@ -481,7 +499,7 @@ export default function NotesView({
                 data-ui-fill="action"
                 data-ui-hover="action-hover" chrome="action"
                 {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
+                className={`flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm ${fixedTemplate ? "rounded-md" : "rounded-l-md"} hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed`}
                 title="Generate Notes with AI"
               >
                 {isGenerating ? (
@@ -491,25 +509,26 @@ export default function NotesView({
                 )}
                 {isGenerating ? "Generating..." : generateNotesLabel}
               </ButtonBase>
-              {/* Structure picker: the plain button uses the default structure. */}
-              <NotesTemplatePicker
+              {/* The main button reruns this output's saved structure. */}
+              {!fixedTemplate && <NotesTemplatePicker
                 disabled={isGenerating}
                 activeTemplateId={activeTemplateId}
                 onSelect={(templateId) => onGenerateNotes(templateId)}
-              />
+              />}
             </div>
+            {toolbarActions}
             <div className="w-px h-4 bg-surface-card mx-1" />
             <ButtonBase
-              onClick={onUndo}
-              disabled={!canUndo}
+              onClick={localHistory ? () => editor?.chain().focus().undo().run() : onUndo}
+              disabled={localHistory ? !editor?.can().undo() : !canUndo}
               className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Undo"
             >
               <Undo2 className="w-4 h-4" />
             </ButtonBase>
             <ButtonBase
-              onClick={onRedo}
-              disabled={!canRedo}
+              onClick={localHistory ? () => editor?.chain().focus().redo().run() : onRedo}
+              disabled={localHistory ? !editor?.can().redo() : !canRedo}
               className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Redo"
             >
@@ -719,7 +738,7 @@ export default function NotesView({
               onChange={handleEditorChange}
               onEditorReady={setEditor}
               // The public demo cannot save, so its notes are read-only.
-              editable={!DEMO_MODE}
+              editable={!DEMO_MODE && !isGenerating}
             />
           </div>
         ) : (

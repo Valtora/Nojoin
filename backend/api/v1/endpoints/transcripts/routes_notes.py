@@ -9,6 +9,7 @@ from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
+from backend.models.notes_output import NotesOutput, NotesOutputRead
 from backend.models.recording import Recording, is_live_capture
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
@@ -16,7 +17,10 @@ from backend.models.user import User
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
-from backend.utils.notes_templates import resolve_notes_template_async
+from backend.utils.notes_templates import (
+    builtin_notes_template,
+    resolve_notes_template_async,
+)
 from backend.utils.reprocess_publication import (
     REPROCESS_RUNNING_MESSAGE,
     reprocess_replacement_running,
@@ -42,6 +46,119 @@ class GenerateNotesRequest(BaseModel):
     """Optional body for Regenerate Notes: which structure to use this run."""
 
     notes_template_id: Optional[int] = None
+    create_output: bool = False
+    output_id: int | None = None
+
+
+async def get_notes_output(
+    db: AsyncSession, recording_id: int, output_id: int
+) -> NotesOutput:
+    output = await db.get(NotesOutput, output_id)
+    if output is None or output.recording_id != recording_id:
+        raise HTTPException(status_code=404, detail="Notes output not found")
+    return output
+
+
+async def _generation_output(
+    db: AsyncSession,
+    transcript: Transcript,
+    request: GenerateNotesRequest,
+    user: User,
+) -> NotesOutput | None:
+    if request.create_output and request.output_id is not None:
+        raise HTTPException(
+            status_code=400, detail="Choose an existing or a new output."
+        )
+    if request.create_output or request.output_id is not None:
+        if transcript.transcript_status != "completed" or not transcript.notes:
+            raise HTTPException(
+                status_code=409,
+                detail="Generate the meeting's first notes before adding another set.",
+            )
+    if request.output_id is not None:
+        output = await get_notes_output(db, transcript.recording_id, request.output_id)
+        if output.notes_status == "generating":
+            raise HTTPException(
+                status_code=409, detail="Meeting notes are already generating."
+            )
+        return output
+    template = await resolve_notes_template_async(
+        db,
+        user.settings or {},
+        user_id=user.id,
+        explicit_template_id=request.notes_template_id,
+    )
+    if (
+        request.notes_template_id is None
+        and "notes_template_id" in request.model_fields_set
+    ):
+        template = builtin_notes_template()
+    if (
+        request.notes_template_id is not None
+        and template.template_id != request.notes_template_id
+    ):
+        raise HTTPException(status_code=404, detail="Notes template not found")
+    if not request.create_output:
+        return None
+    return NotesOutput(
+        recording_id=transcript.recording_id,
+        name=template.name,
+        notes_template_id=template.template_id,
+        notes_template_sections=template.sections,
+    )
+
+
+@router.get("/{recording_id}/notes/outputs", response_model=list[NotesOutputRead])
+async def list_notes_outputs(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[NotesOutput]:
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    result = await db.execute(
+        select(NotesOutput)
+        .where(NotesOutput.recording_id == recording.id)
+        .order_by(NotesOutput.id)
+    )
+    return list(result.scalars().all())
+
+
+@router.put("/{recording_id}/notes/outputs/{output_id}", response_model=NotesOutputRead)
+async def update_notes_output(
+    recording_id: str,
+    output_id: int,
+    update: NotesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> NotesOutput:
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    output = await get_notes_output(db, recording.id, output_id)
+    if output.notes_status == "generating":
+        raise HTTPException(
+            status_code=409, detail="Meeting notes are already generating."
+        )
+    output.notes = update.notes
+    db.add(output)
+    await db.commit()
+    await db.refresh(output)
+    return output
+
+
+@router.delete("/{recording_id}/notes/outputs/{output_id}", status_code=204)
+async def delete_notes_output(
+    recording_id: str,
+    output_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    output = await get_notes_output(db, recording.id, output_id)
+    if output.notes_status == "generating":
+        raise HTTPException(
+            status_code=409, detail="Meeting notes are already generating."
+        )
+    await db.delete(output)
+    await db.commit()
 
 
 @router.get("/{recording_id}/notes")
@@ -148,8 +265,8 @@ async def generate_notes(
     Generate meeting notes using the configured LLM provider.
 
     An optional ``notes_template_id`` picks the structure for this run. Omitting
-    it falls through to the user's default, then the install default, then the
-    built-in structure.
+    it reruns the selected output's saved structure, falling through to the
+    defaults when no structure has yet been saved. Explicit null picks built-in.
     """
     recording = await _get_owned_recording(
         db,
@@ -189,45 +306,44 @@ async def generate_notes(
             status_code=409, detail="Meeting notes are already generating."
         )
 
+    request = request or GenerateNotesRequest()
+    output = await _generation_output(db, transcript, request, current_user)
+
     llm_config = await resolve_llm_config_async(
         db, current_user.settings or {}, user_id=current_user.id
     )
     missing_llm_config = llm_config.missing_configuration_message()
     if missing_llm_config:
-        transcript.notes_status = "error"
-        transcript.set_notes_error_message(missing_llm_config)
-        db.add(transcript)
-        await db.commit()
+        if output is None:
+            transcript.notes_status = "error"
+            transcript.set_notes_error_message(missing_llm_config)
+            db.add(transcript)
+            await db.commit()
         raise HTTPException(
             status_code=400,
             detail=f"{missing_llm_config}. Configure an AI provider and model in Settings.",
         )
 
-    # Resolve the requested template, if any. Resolution is done here rather
-    # than in the worker so an unusable choice is a 400 the user sees at once,
-    # instead of a failed job they discover minutes later.
-    requested_template_id = request.notes_template_id if request else None
-    if requested_template_id is not None:
-        resolved_template = await resolve_notes_template_async(
-            db,
-            current_user.settings or {},
-            user_id=current_user.id,
-            explicit_template_id=requested_template_id,
-        )
-        if resolved_template.template_id != requested_template_id:
-            raise HTTPException(
-                status_code=404,
-                detail="Notes template not found",
-            )
-
-    transcript.notes_status = "generating"
-    transcript.set_notes_error_message(None)
-    db.add(transcript)
+    requested_template_id = request.notes_template_id
+    target = output if output is not None else transcript
+    target.notes_status = "generating"
+    target.set_notes_error_message(None)
+    db.add(target)
     await db.commit()
+    await db.refresh(target)
 
     task = await dispatch_task(
         "backend.worker.tasks.generate_notes_task",
-        args=[recording.id, requested_template_id],
+        args=(
+            [recording.id, None, output.id]
+            if output is not None
+            else [recording.id, requested_template_id]
+        ),
+        kwargs=(
+            {"use_saved_template": False}
+            if output is None and "notes_template_id" in request.model_fields_set
+            else None
+        ),
     )
     from backend.models.task import register_task_ownership
 
@@ -235,7 +351,10 @@ async def generate_notes(
 
     return {
         "status": "success",
-        "notes_status": transcript.notes_status,
-        "error_message": transcript.error_message,
+        "notes_status": target.notes_status,
+        "error_message": target.error_message,
+        "output": NotesOutputRead.model_validate(output)
+        if output is not None
+        else None,
         "message": "Note generation started",
     }

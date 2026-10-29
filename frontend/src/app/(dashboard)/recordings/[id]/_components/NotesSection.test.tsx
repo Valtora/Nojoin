@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { RecordingStatus, type Recording } from "@/types";
 import NotesSection from "./NotesSection";
 
-vi.mock("@/components/NotesView", () => ({ default: () => <div>Finished notes editor</div> }));
+vi.mock("@/components/NotesOutputsView", () => ({ default: () => <div>Finished notes editor</div> }));
 
 describe("generated notes eligibility", () => {
   it("keeps retained generated notes readable without editing or regeneration during processing", async () => {

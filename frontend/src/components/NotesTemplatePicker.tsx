@@ -11,6 +11,7 @@ interface NotesTemplatePickerProps {
   /** Template that produced the current notes, if any. */
   activeTemplateId?: number | null;
   onSelect: (notesTemplateId: number | null) => void;
+  label?: string;
 }
 
 /**
@@ -23,6 +24,7 @@ export default function NotesTemplatePicker({
   disabled = false,
   activeTemplateId = null,
   onSelect,
+  label,
 }: NotesTemplatePickerProps) {
   const [open, setOpen] = useState(false);
   const [templates, setTemplates] = useState<NotesTemplate[] | null>(null);
@@ -79,9 +81,10 @@ export default function NotesTemplatePicker({
         onClick={() => setOpen((value) => !value)}
         disabled={disabled}
         title="Generate with a different structure"
-        aria-label="Choose notes structure"
-        className="flex items-center px-2 bg-action text-action-on text-sm rounded-r-md border-l border-action hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        aria-label={label || "Choose notes structure"}
+        className={`flex items-center gap-1 px-2 bg-action text-action-on text-sm ${label ? "rounded-md" : "rounded-r-md border-l border-action"} hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors`}
       >
+        {label}
         <ChevronDown className="w-4 h-4" />
       </ButtonBase>
 

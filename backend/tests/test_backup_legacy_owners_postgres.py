@@ -312,7 +312,19 @@ def test_an_old_archive_restores_as_the_upgraded_install_would(
     with psycopg.connect(databases.src) as conn:
         _seed_before(conn)
         _add_columns_added_after_before(conn)
-    old_archive = _back_up(databases.src, monkeypatch)
+    # An archive from BEFORE has no extra outputs table. Match that older
+    # export's table list while using today's exporter for the shared tables.
+    with monkeypatch.context() as old_schema:
+        old_schema.setattr(
+            runtime,
+            "MODELS",
+            [
+                (name, model)
+                for name, model in runtime.MODELS
+                if name != "notes_outputs"
+            ],
+        )
+        old_archive = _back_up(databases.src, old_schema)
     with psycopg.connect(databases.src) as conn:
         _drop_columns_added_after_before(conn)
     _alembic(databases.src, "upgrade", "head")

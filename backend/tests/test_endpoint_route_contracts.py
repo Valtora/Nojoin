@@ -64,6 +64,19 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
     ("/{recording_id}/notes", ("GET",), "get_notes", None),
     ("/{recording_id}/notes", ("PUT",), "update_notes", None),
     ("/{recording_id}/notes/generate", ("POST",), "generate_notes", None),
+    ("/{recording_id}/notes/outputs", ("GET",), "list_notes_outputs", "list"),
+    (
+        "/{recording_id}/notes/outputs/{output_id}",
+        ("DELETE",),
+        "delete_notes_output",
+        None,
+    ),
+    (
+        "/{recording_id}/notes/outputs/{output_id}",
+        ("PUT",),
+        "update_notes_output",
+        "NotesOutputRead",
+    ),
     (
         "/{recording_id}/replace",
         ("POST",),

@@ -86,6 +86,16 @@ describe("NotesView autosave", () => {
     expect(onNotesChange).toHaveBeenCalledWith(`${NOTES}\n- Second point`);
   });
 
+  it("flushes a pending edit when switching away from an output", () => {
+    const saveFirst = vi.fn();
+    const view = renderNotes(saveFirst);
+    act(() => reportUpdate(`${NOTES}\n- Pending edit`));
+    view.unmount();
+    expect(saveFirst).toHaveBeenCalledExactlyOnceWith(`${NOTES}\n- Pending edit`);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(saveFirst).toHaveBeenCalledTimes(1);
+  });
+
   it("drops a pending edit that is undone before it saves", () => {
     const onNotesChange = vi.fn();
     renderNotes(onNotesChange);

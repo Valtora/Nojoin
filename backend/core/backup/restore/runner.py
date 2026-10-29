@@ -102,6 +102,14 @@ def _prepare_row(
             "change_sequence": 0,
             "settling_state": durable_settling_state(item_data.get("settling_state")),
         }
+    elif (
+        table_name == "notes_outputs" and item_data.get("notes_status") == "generating"
+    ):
+        item_data = {
+            **item_data,
+            "notes_status": "error",
+            "error_message": "Notes generation was interrupted by the backup. Regenerate this set.",
+        }
 
     return _adapt_record(model_cls, item_data)
 

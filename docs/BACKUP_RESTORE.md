@@ -12,6 +12,8 @@
 - The system configuration, with keys, tokens and passwords redacted.
 - Optionally, each recording's audio.
 
+Additional notes sets are included with their saved structures. A set still generating when backed up restores with a retryable error; open its tab and choose **Regenerate Notes** to finish it.
+
 ## What Is Not Included
 
 - **Set again on the target:** LLM provider API keys and the Hugging Face token, which live in `.env`, and each person's own Claude or ChatGPT subscription, which they reconnect in **Settings > Your AI**.

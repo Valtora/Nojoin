@@ -1,6 +1,7 @@
 import type {
   NoteAttachment,
   NoteFileRemoval,
+  NotesOutput,
   RecordingId,
   TimelineNote,
   TimelineNoteCreate,
@@ -164,23 +165,40 @@ export const updateMeetingEdgeFocus = async (
 export const generateNotes = async (
   recordingId: RecordingId,
   notesTemplateId?: number | null,
+  output?: { create_output?: boolean; output_id?: number },
 ): Promise<{
   status: string;
   notes_status?: string;
   error_message?: string | null;
   message?: string;
+  output?: NotesOutput | null;
 }> => {
   const response = await api.post<{
     status: string;
     notes_status?: string;
     error_message?: string | null;
     message?: string;
+    output?: NotesOutput | null;
   }>(`/transcripts/${recordingId}/notes/generate`, {
-    // null when no template was picked, so the backend falls through to the
-    // user default, the install default and then the built-in structure.
-    notes_template_id: notesTemplateId ?? null,
+    // Omitted reruns the saved structure; explicit null selects built-in.
+    notes_template_id: notesTemplateId,
+    ...output,
   });
   return response.data;
+};
+
+export const listNotesOutputs = async (recordingId: RecordingId): Promise<NotesOutput[]> => {
+  const response = await api.get<NotesOutput[]>(`/transcripts/${recordingId}/notes/outputs`);
+  return response.data;
+};
+
+export const updateNotesOutput = async (recordingId: RecordingId, outputId: number, notes: string): Promise<NotesOutput> => {
+  const response = await api.put<NotesOutput>(`/transcripts/${recordingId}/notes/outputs/${outputId}`, { notes });
+  return response.data;
+};
+
+export const deleteNotesOutput = async (recordingId: RecordingId, outputId: number): Promise<void> => {
+  await api.delete(`/transcripts/${recordingId}/notes/outputs/${outputId}`);
 };
 
 export const findAndReplaceNotes = async (
