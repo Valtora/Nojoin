@@ -193,4 +193,117 @@ describe("capture source picker", () => {
 
     expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
   });
+
+  describe("when the listing cannot vouch for the saved microphone", () => {
+    // Listed before the page has microphone permission (Media Capture and
+    // Streams, section 9.2.1).
+    const placeholder = { kind: "audioinput", deviceId: "", label: "", groupId: "" };
+    const listings = [
+      { description: "blank-id placeholders", listed: () => Promise.resolve([placeholder]) },
+      { description: "no microphones", listed: () => Promise.resolve([]) },
+      { description: "a failed enumeration", listed: () => Promise.reject(new Error("not visible")) },
+    ];
+    const modes = ["shared_audio", "microphone_only"] as const;
+
+    const build = (
+      listed: () => Promise<unknown[]>,
+      getUserMedia: ReturnType<typeof vi.fn>,
+      shared = buildTrack("audio", "Shared"),
+    ) =>
+      ({
+        enumerateDevices: vi.fn(listed),
+        getDisplayMedia: vi.fn().mockResolvedValue(buildStream({ audioTracks: [shared] })),
+        getUserMedia,
+      }) as unknown as MediaDevices;
+
+    it.each(listings.flatMap((listing) => modes.map((mode) => ({ ...listing, mode }))))(
+      "starts with the exact id after $description in $mode",
+      async ({ listed, mode }) => {
+        const microphoneStream = buildStream({
+          audioTracks: [buildTrack("audio", "USB Microphone", { deviceId: "mic-1" })],
+        });
+        const getUserMedia = vi.fn().mockResolvedValue(microphoneStream);
+
+        const sources = await pickCaptureSource({
+          mode,
+          mediaDevices: build(listed, getUserMedia),
+          microphoneDeviceId: "mic-1",
+          settings: DEFAULT_CAPTURE_SETTINGS,
+        });
+
+        expect(sources.microphoneStream).toBe(microphoneStream);
+        expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({
+          audio: expect.objectContaining({ deviceId: { exact: "mic-1" } }),
+        });
+        expect(sources.captureReport.notes).toEqual([]);
+      },
+    );
+
+    it("keeps the placeholders in the source report", async () => {
+      const sources = await pickCaptureSource({
+        mode: "microphone_only",
+        mediaDevices: build(
+          () => Promise.resolve([placeholder]),
+          vi.fn().mockResolvedValue(
+            buildStream({ audioTracks: [buildTrack("audio", "USB Microphone", { deviceId: "mic-1" })] }),
+          ),
+        ),
+        microphoneDeviceId: "mic-1",
+        settings: DEFAULT_CAPTURE_SETTINGS,
+      });
+
+      expect(sources.captureReport.available_microphones).toEqual([
+        { device_id: "", label: "Microphone 1" },
+      ]);
+      expect(sources.captureReport.requested_microphone_label).toBeNull();
+    });
+
+    it.each(["NotFoundError", "OverconstrainedError"])(
+      "refuses once getUserMedia rejects the saved id with %s",
+      async (name) => {
+        const shared = buildTrack("audio", "Shared");
+        const getUserMedia = vi.fn().mockRejectedValue(Object.assign(new Error(name), { name }));
+
+        const failure = pickCaptureSource({
+          mode: "shared_audio",
+          mediaDevices: build(() => Promise.resolve([placeholder]), getUserMedia, shared),
+          microphoneDeviceId: "mic-1",
+          settings: DEFAULT_CAPTURE_SETTINGS,
+        });
+
+        await expect(failure).rejects.toMatchObject({
+          code: "selected_microphone_unavailable",
+          captureReport: expect.objectContaining({
+            available_microphones: [{ device_id: "", label: "Microphone 1" }],
+            notes: ["selected_microphone_rejected_by_getUserMedia"],
+          }),
+        } satisfies Partial<PickSourceError>);
+        expect(shared.stop).toHaveBeenCalledOnce();
+      },
+    );
+
+    it("still refuses up front when a listing with real ids lacks it", async () => {
+      const getUserMedia = vi.fn();
+      const mediaDevices = build(
+        () => Promise.resolve([{ kind: "audioinput", deviceId: "mic-2", label: "Fallback Microphone" }]),
+        getUserMedia,
+      );
+
+      await expect(
+        pickCaptureSource({
+          mode: "shared_audio",
+          mediaDevices,
+          microphoneDeviceId: "mic-1",
+          settings: DEFAULT_CAPTURE_SETTINGS,
+        }),
+      ).rejects.toMatchObject({
+        code: "selected_microphone_unavailable",
+        captureReport: expect.objectContaining({
+          notes: ["selected_microphone_missing_from_enumerated_devices"],
+        }),
+      } satisfies Partial<PickSourceError>);
+      expect(mediaDevices.getDisplayMedia).not.toHaveBeenCalled();
+      expect(getUserMedia).not.toHaveBeenCalled();
+    });
+  });
 });
