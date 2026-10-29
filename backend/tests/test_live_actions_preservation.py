@@ -522,3 +522,87 @@ def test_reprocess_backfills_archived_human_work_before_refreshing_projection(
         )
         assert correction["text_manually_edited"] is True
         assert len(restored) == 3
+
+
+def test_final_speech_beside_a_text_correction_stays_ordinary_transcript(
+    publication_engine: Engine,
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": index * 2,
+                    "end": index * 2 + 2,
+                    "text": f"live {index}",
+                    "speaker": "LIVE_00",
+                }
+                for index in range(15)
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        live = serialize_canonical_utterances(session, recording_id)
+        update_utterance_text(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=live[7]["id"],
+            text="Corrected words",
+        )
+        _, speaker = update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=live[8]["id"],
+            new_speaker_name="Chosen person",
+            expected_revision=live[8]["revision"],
+        )
+        speaker_id = speaker.id
+        session.commit()
+        # One 30 s final segment spans the 2 s correction at 14-16 s.
+        words = [
+            {"word": f" w{second}", "start": second, "end": second + 1}
+            for second in range(30)
+        ]
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": 0,
+                    "end": 30,
+                    "text": " ".join(f"w{second}" for second in range(30)),
+                    "speaker": "SPEAKER_00",
+                    "words": words,
+                }
+            ],
+        )
+        lines = _lines(session, recording_id)
+        assert [line["text"] for line in lines] == [
+            " ".join(f"w{second}" for second in range(14)),
+            "Corrected words",
+            " ".join(f"w{second}" for second in range(16, 30)),
+        ]
+        assert [(line["start"], line["end"]) for line in lines] == [
+            (0, 14),
+            (14, 16),
+            (16, 30),
+        ]
+        assert lines[1]["final_review"] == {
+            "text": "w14 w15",
+            "reason": "ambiguous_alignment",
+        }
+        assert not any("final_review" in line for line in (lines[0], lines[2]))
+        # The speaker chosen beside the text correction reaches the final line.
+        assert lines[2]["recording_speaker_id"] == speaker_id
+        assert lines[2]["speaker_manually_edited"]
+        assert lines[0]["recording_speaker_id"] != speaker_id
+        stored = _load_transcript(session, recording_id)
+        assert stored is not None and stored.text is not None
+        assert "w0" in stored.text and "w29" in stored.text
