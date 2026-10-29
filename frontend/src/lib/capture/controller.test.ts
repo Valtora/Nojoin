@@ -1691,6 +1691,30 @@ describe("a capture whose tab closed without pausing it (issue #519)", () => {
     expect(controller.getState().pausedRecording).toBeNull();
   });
 
+  it("skips its checks while the tab is hidden and looks once it shows again", async () => {
+    const setVisibility = (state: DocumentVisibilityState) => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    vi.useFakeTimers();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([capture()]);
+    const controller = newController();
+    await controller.refreshPausedRecording();
+    try {
+      setVisibility("hidden");
+      expect(document.visibilityState).toBe("hidden");
+
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(apiMocks.getUnfinishedCaptures).toHaveBeenCalledTimes(1);
+
+      setVisibility("visible");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(apiMocks.getUnfinishedCaptures).toHaveBeenCalledTimes(2);
+    } finally {
+      setVisibility("visible");
+    }
+  });
+
   it("stops looking once nothing is left unfinished", async () => {
     vi.useFakeTimers();
     apiMocks.getUnfinishedCaptures.mockResolvedValueOnce([capture()]).mockResolvedValue([]);

@@ -631,19 +631,30 @@ export class CaptureController {
     if (this.captureRecheckTimerId) {
       return;
     }
+    // A hidden tab skips the checks and looks once it shows again.
     this.captureRecheckTimerId = setInterval(() => {
-      // A start, resume or stop under way looks again itself when it ends.
-      if (this.state.status === "starting" || this.state.status === "finalizing") {
-        return;
-      }
-      void this.refreshPausedRecording().catch(() => {});
+      if (document.visibilityState !== "hidden") this.recheckCaptures();
     }, CAPTURE_RECHECK_INTERVAL_MS);
+    document.addEventListener("visibilitychange", this.recheckCapturesOnShow);
   }
+
+  private recheckCaptures() {
+    // A start, resume or stop under way looks again itself when it ends.
+    if (this.state.status === "starting" || this.state.status === "finalizing") {
+      return;
+    }
+    void this.refreshPausedRecording().catch(() => {});
+  }
+
+  private recheckCapturesOnShow = () => {
+    if (document.visibilityState !== "hidden") this.recheckCaptures();
+  };
 
   private stopCaptureRecheck() {
     if (this.captureRecheckTimerId) {
       clearInterval(this.captureRecheckTimerId);
       this.captureRecheckTimerId = null;
+      document.removeEventListener("visibilitychange", this.recheckCapturesOnShow);
     }
   }
 
