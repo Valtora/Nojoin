@@ -48,20 +48,32 @@ function typeUnparseable(input: HTMLElement) {
 }
 
 describe("ProcessingTuningSettings", () => {
-  it("resets every tuning value to inherit, keeping other settings", () => {
+  it("resets displayed tuning values to inherit, keeping settings from other pages", () => {
     const { onUpdate } = renderTuning({
       theme: "dark",
       vad_threshold: 0.3,
       phantom_merge_threshold: 0.7,
+      line_break_pause_s: 2,
     });
 
     fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
 
     const next = onUpdate.mock.calls[0][0] as Settings;
     expect(next.theme).toBe("dark");
+    expect(next.line_break_pause_s).toBe(2);
     for (const key of PROCESSING_TUNING_KEYS) {
+      // This field has its own control on Transcription, outside this card.
+      if (key === "line_break_pause_s") continue;
       expect(next[key], key).toBeNull();
     }
+  });
+
+  it("does not introduce a transcription-page pause when resetting unset tuning", () => {
+    const { onUpdate } = renderTuning({});
+
+    fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
+
+    expect(onUpdate.mock.calls[0][0]).not.toHaveProperty("line_break_pause_s");
   });
 
   it("sends a typed value as a number and an emptied field as null", () => {

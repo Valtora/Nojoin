@@ -20,6 +20,14 @@ export interface Box {
 
 /** A text selection in a transcript, as it was when it was made. */
 export interface CapturedSelection {
+  /** It takes a settling line with no word timings; its words can't take a note. */
+  settling?: boolean;
+  /**
+   * The selected words still settling when selected, by id, with their wording
+   * then. The note waits until they lock unchanged: a word keeps its id while
+   * its wording settles, and the note quotes the selected wording.
+   */
+  pendingWords?: Readonly<Record<string, string>>;
   /** Counts captures, so a view can tell a new selection from the one it shows. */
   seq: number;
   /** The note it would make; null when it takes no words with a span. */
@@ -80,6 +88,10 @@ export function useCapturedSelection(root: RefObject<HTMLElement | null>, paused
       setCaptured({
         seq: seqRef.current,
         selection: selectionFromPicks(picks),
+        pendingWords: Object.fromEntries(picks.flatMap(({ line, from, to }) => (line.words ?? [])
+          .filter((word) => word.id && word.from < to && word.to > from && !word.locked)
+          .map((word) => [word.id!, word.text.trim()]))),
+        settling: picks.some(({ line }) => !line.words && line.settling),
         text: selection.toString(),
         segmentId: picks[0].line.segmentId,
         box: boxOf(range),

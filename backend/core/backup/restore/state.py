@@ -50,6 +50,8 @@ class _RestoreState:
     recordings_requiring_proxy: Set[int] = field(default_factory=set)
     # Every recording newly inserted by this restore, for post-restore finalisation.
     restored_recording_ids: Set[int] = field(default_factory=set)
+    # Only newly inserted settled transcripts need their excluded name acts rebuilt.
+    recordings_with_name_anchors: Set[int] = field(default_factory=set)
     # Directory the archive's payload is unpacked into. Files only move from here into
     # their real homes once the database transaction has committed, so a failed restore
     # cannot have touched a single existing file.

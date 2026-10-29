@@ -251,13 +251,38 @@ export interface TranscriptSpeakerAssignment {
 /** A browser capture channel: the local microphone or the shared system audio. */
 export type CaptureSourceChannel = "microphone" | "system";
 
-export interface TranscriptUtterance {
+export interface LiveTranscriptWord {
+  id: string;
+  order: number;
+  word: string;
+  start_ms: number | null;
+  end_ms: number | null;
+  source_start?: number | null;
+  source_end?: number | null;
+  join_left?: boolean | null;
+  locked: boolean;
+  lock_reason?: "agreement" | "expiry" | "closure" | null;
+}
+
+/** Live settling evidence, or timed final words on a recording that used settling. */
+export interface LiveTranscriptSettling {
+  /** Sticky recording policy, copied onto local segments by the delta reader. */
+  settling_required?: boolean;
+  /** Final words retain identities and timings, with locked=true and no live lock reason. */
+  words?: LiveTranscriptWord[];
+  text_locked?: boolean;
+  locked?: boolean;
+  final_review?: { text: string; reason: "ambiguous_alignment" } | null;
+}
+
+export interface TranscriptUtterance extends LiveTranscriptSettling {
   id: string;
   start: number;
   end: number;
   start_ms?: number;
   end_ms?: number;
   text: string;
+  alignment_error?: string | null;
   speaker: string;
   recording_speaker_id?: number;
   /** The diariser's own cluster label for this span, kept across merges. */
@@ -299,6 +324,7 @@ export interface TranscriptUtterance {
 }
 
 export interface TranscriptUtteranceList {
+  settling_required?: boolean;
   recording_id: RecordingId;
   revision: number;
   utterances: TranscriptUtterance[];
@@ -316,11 +342,12 @@ export interface LiveSpeakerNames {
   live_speaker_names: Record<string, string>;
 }
 
-export interface TranscriptSegment {
+export interface TranscriptSegment extends LiveTranscriptSettling {
   id?: string;
   start: number;
   end: number;
   text: string;
+  alignment_error?: string | null;
   speaker: string;
   recording_speaker_id?: number;
   /** The diariser's own cluster label for this span, kept across merges. */
@@ -491,7 +518,11 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
 }
 
 export interface Transcript extends BaseDBModel {
+  /** Captured settling policy or settled history; independent of current settings. */
+  settling_required?: boolean;
   recording_id: RecordingId;
+  /** Moves when a writer changes what this transcript shows; idle pages poll it. */
+  change_sequence?: number;
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;
@@ -669,6 +700,9 @@ export interface ActiveRecordingConflictDetail {
   status: RecordingStatus;
 }
 
+/** Off; Auto: GPU only; always: GPU and CPU. */
+export type LiveTextSettlingMode = "off" | "auto" | "always";
+
 export interface Settings {
   whisper_model_size?: string;
   transcription_backend?: string;
@@ -680,6 +714,10 @@ export interface Settings {
   enable_live_transcription?: boolean;
   /** Install-wide, admin-only: provisional labels require CUDA. */
   live_speaker_labels?: "off" | "auto";
+  /** Install-wide: rolling word agreement; "auto" (the default) on CUDA, "always" on CPU too. */
+  live_text_settling?: LiveTextSettlingMode;
+  live_text_settling_k?: number;
+  live_text_settling_window_s?: number;
   /** Install-wide, admin-only: selected when a capture's live labels start. */
   speaker_engine?: "auto" | "classic";
   enable_meeting_edge?: boolean;
@@ -767,6 +805,7 @@ export interface Settings {
   phantom_merge_threshold?: number | null;
   word_flip_max_duration_s?: number | null;
   word_flip_max_gap_s?: number | null;
+  line_break_pause_s?: number | null;
   // Read-only, from GET: the installation's config.json tuning values, keyed
   // by tuning key (null where unset or unusable). Today it holds the phantom
   // pair, which the floor/merge check counts for a field left empty.
@@ -1102,7 +1141,7 @@ export interface SystemModelStatus {
 
 /** Which local model assets a preparation request should fetch. `active` covers
  * whatever the saved transcription settings need. */
-export type ModelPreparationTarget = "active" | "core" | "parakeet" | "canary" | "nemotron";
+export type ModelPreparationTarget = "active" | "core" | "parakeet" | "canary" | "nemotron" | "forced_aligner";
 
 export interface ModelPreparationResponse {
   task_id: string;

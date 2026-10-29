@@ -740,6 +740,8 @@ def update_recording_speaker_identity(
     )
     from .startup import ensure_canonical_backfill
 
+    # Transcript first, as the live publisher takes it, before any line lock.
+    _load_transcript(session, recording_id, lock=True)
     recording = session.get(Recording, recording_id)
     if recording is None:
         raise LookupError("Recording not found")
@@ -866,6 +868,8 @@ def merge_recording_speakers_by_label(
     )
     from .startup import ensure_canonical_backfill
 
+    # Transcript first, as the live publisher takes it, before any line lock.
+    _load_transcript(session, recording_id, lock=True)
     recording = session.get(Recording, recording_id)
     if recording is None:
         raise LookupError("Recording not found")

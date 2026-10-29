@@ -23,6 +23,7 @@ from backend.utils.document_storage import (
 )
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
+from backend.utils.transcript_settling import new_capture_settling_state
 
 from .helpers import revoke_recording_task
 from .router import router
@@ -239,7 +240,15 @@ async def init_upload(
     await db.commit()
     await db.refresh(recording)
 
-    db.add(Transcript(recording_id=recording.id, transcript_status="processing"))
+    db.add(
+        Transcript(
+            recording_id=recording.id,
+            transcript_status="processing",
+            settling_state=new_capture_settling_state(
+                capture_epoch=recording.capture_epoch
+            ),
+        )
+    )
     await db.commit()
 
     temp_dir = recordings_module.recording_upload_temp_dir(recording.id, create=False)

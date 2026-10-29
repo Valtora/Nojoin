@@ -4,11 +4,12 @@ from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, List, Optional
 
 import aiofiles
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, or_, select
 
 import backend.api.v1.endpoints.recordings as recordings_module
@@ -19,7 +20,7 @@ from backend.models.calendar import (
     CalendarEvent,
     CalendarSource,
 )
-from backend.models.pipeline import RecordingAudioChunk
+from backend.models.pipeline import RecordingAudioChunk, TranscriptUtterance
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.recording_public import (
     CalendarEventLinkRead,
@@ -39,6 +40,7 @@ from backend.services.timeline_note_service import (
     load_timeline_notes_list_signature_async,
 )
 from backend.utils.canonical_pipeline import (
+    ACTIVE_UTTERANCE_STATES,
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
 )
@@ -74,6 +76,32 @@ RECORDING_AUDIO_UNAVAILABLE_DETAIL = (
 # A paused recording counts: it can be resumed, and the shortfall accrued before
 # the pause is still what the user needs told.
 _CAPTURE_IN_PROGRESS_STATUSES = {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}
+
+
+def _transcript_search_text() -> ColumnElement[str]:
+    """Search current live words without maintaining a growing JSON snapshot."""
+    ordered_text = (
+        select(TranscriptUtterance.text)
+        .where(TranscriptUtterance.recording_id == Recording.id)
+        .where(TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES))
+        .order_by(TranscriptUtterance.sort_key, TranscriptUtterance.id)
+        .correlate(Recording)
+        .subquery()
+    )
+    # Aggregate the ordered input so phrases spanning two lines still match.
+    # aggregate_strings emits string_agg on Postgres and group_concat on SQLite.
+    canonical_text = select(
+        func.aggregate_strings(ordered_text.c.text, " ")
+    ).scalar_subquery()
+    state = col(Transcript.settling_state)
+    return case(
+        (
+            state["eligible"].as_boolean().is_(True)
+            & state["policy"]["enabled"].as_boolean().is_(True),
+            func.coalesce(canonical_text, ""),
+        ),
+        else_=Transcript.text,
+    )
 
 
 @router.get("", response_model=List[RecordingPublicRead])
@@ -167,7 +195,7 @@ async def list_recordings(
     if q:
         search_filter = or_(
             col(Recording.name).ilike(f"%{q}%"),
-            col(Transcript.text).ilike(f"%{q}%"),
+            _transcript_search_text().ilike(f"%{q}%"),
             col(RecordingSpeaker.name).ilike(f"%{q}%"),
             col(Tag.name).ilike(f"%{q}%"),
         )
@@ -317,15 +345,55 @@ async def get_recordings_calendar(
     )
 
 
+def _recording_etag(
+    status: RecordingStatus, change_sequence: int | None, notes_status: str | None
+) -> str:
+    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}"'
+
+
+async def _unchanged_since(
+    db: AsyncSession, recording_id: str, user_id: int, if_none_match: str
+) -> str | None:
+    """The current ETag when the caller already holds it, read without the body."""
+    row = (
+        await db.execute(
+            select(
+                Recording.status, Transcript.change_sequence, Transcript.notes_status
+            )
+            .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
+            .where(Recording.public_id == recording_id)
+            .where(Recording.user_id == user_id)
+        )
+    ).first()
+    if row is None:
+        return None
+    etag = _recording_etag(*row)
+    held = {tag.strip() for tag in if_none_match.split(",")}
+    return etag if etag in held else None
+
+
 @router.get("/{recording_id}", response_model=RecordingPublicRead)
 async def get_recording(
     recording_id: str,
+    response: Response,
+    if_none_match: Optional[str] = Header(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Get a specific recording by ID with all relationships loaded.
+
+    The ETag covers only the status, the transcript change counter and the
+    notes status: a finished recording's page sends it back as If-None-Match
+    and gets a 304 until one of them moves. no-store keeps browsers from revalidating ordinary
+    reads with it.
     """
+    if if_none_match is not None:
+        etag = await _unchanged_since(db, recording_id, current_user.id, if_none_match)
+        if etag is not None:
+            return Response(
+                status_code=304, headers={"ETag": etag, "Cache-Control": "no-store"}
+            )
     statement = (
         select(Recording)
         .where(Recording.public_id == recording_id)
@@ -455,6 +523,13 @@ async def get_recording(
             transcript_segments_override = []
             transcript_text_override = ""
 
+    transcript = recording.transcript
+    response.headers["ETag"] = _recording_etag(
+        recording.status,
+        transcript.change_sequence if transcript else None,
+        transcript.notes_status if transcript else None,
+    )
+    response.headers["Cache-Control"] = "no-store"
     return serialize_recording(
         recording,
         has_proxy=_recording_has_proxy(recording),

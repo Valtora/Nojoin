@@ -7,12 +7,11 @@ to ``UNKNOWN``), the label's lock goes in ``confidence_payload`` under
 so the ``after_revision`` read returns the line again.
 
 The transaction locks the transcript first, so its copy of the projection is
-current and no other writer of it lands in between. Only provisional live
-utterances without a manual speaker are touched, read ``FOR UPDATE SKIP
-LOCKED``: a line a person is editing is left for the next run, so the label
-step never waits on an edit while holding the transcript, and the edit, which
-locks its line before checking its revision, sees the label. A skipped line
-counts as open, so the settled prefix stops at it. The projection's speaker
+current and no other writer of it lands in between. Human edits take the same
+fence before lines. Only provisional live utterances without a manual speaker
+are touched, locked in ID order with ``FOR UPDATE SKIP LOCKED``. The settled
+prefix is then processed in end-time order. A line held outside the shared
+fence is left for the next run and counts as open. The projection's speaker
 fields are rebuilt from every live provisional row, settled or not, so a
 projection written from an older copy is put right on the next run. No
 ``RecordingSpeaker`` row is created:
@@ -145,7 +144,7 @@ def _live_rows(session, recording_id: int) -> list[TranscriptUtterance]:
 def _refresh_projection(
     session, transcript: Transcript, rows: list[TranscriptUtterance]
 ) -> None:
-    """Write the rows' speaker fields into the projection, if any differ."""
+    """Copy current speaker fields and private evidence into the projection."""
     by_id = {utterance.public_id: utterance for utterance in rows}
     segments = [dict(segment) for segment in (transcript.segments or [])]
     stale = False
@@ -154,6 +153,7 @@ def _refresh_projection(
         if utterance is None:
             continue
         fields = _projected_speaker(utterance)
+        fields["confidence_payload"] = dict(utterance.confidence_payload or {})
         if any(segment.get(key) != value for key, value in fields.items()):
             segment.update(fields)
             stale = True
@@ -195,12 +195,21 @@ def apply_live_speaker_labels(
 ) -> LiveLabelWrite:
     """Bring every unsettled live line's label up to date. The caller commits."""
     transcript = _load_transcript(session, recording_id, lock=True)
+    from .live_settling import project_live_settling_speakers, settling_enabled
+
+    if transcript is not None and settling_enabled(transcript):
+        result, settled, open_from = project_live_settling_speakers(
+            session, transcript, decide
+        )
+        return LiveLabelWrite(result.changed, max(settled_ms, settled), open_from)
     held = {
         utterance.id: utterance
         for utterance in session.execute(
-            _unsettled(
-                select(TranscriptUtterance), recording_id, settled_ms
-            ).with_for_update(skip_locked=True)
+            _unsettled(select(TranscriptUtterance), recording_id, settled_ms)
+            .order_by(None)
+            .order_by(col(TranscriptUtterance.id))
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
         )
         .scalars()
         .all()

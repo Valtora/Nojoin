@@ -46,12 +46,14 @@ from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.services.recording_identity_service import get_recordings_by_public_ids
 from backend.services.tag_ownership import require_own_tag_ids
 from backend.utils.canonical_pipeline import (
+    build_transcript_segments_for_read,
     recording_ready_for_canonical_backfill,
     update_recording_speaker_identity,
 )
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.utils.speaker_names.preferences import library_learns_automatically
 from backend.utils.speaker_names.review import link_voice_match
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -67,6 +69,7 @@ from .helpers import (
     _merge_local_speakers,
     _persist_segments_for_speaker_work,
     _require_recordings_support_speaker_mutations,
+    _settling_recordings,
 )
 from .router import router
 from .split_voiceprints import (
@@ -253,6 +256,7 @@ async def merge_speakers(
         db,
         [rs.recording_id for rs in source_recording_speakers],
     )
+    marked_recordings = await _settling_recordings(db, source_recording_speakers)
 
     for rs in source_recording_speakers:
         # Check if target already has a speaker in this recording
@@ -276,7 +280,7 @@ async def merge_speakers(
                 )
         else:
             recording = await db.get(Recording, rs.recording_id)
-            if (
+            if rs.recording_id in marked_recordings or (
                 recording is not None
                 and _canonical_transcript_writes_enabled()
                 and recording_ready_for_canonical_backfill(recording.status)
@@ -365,6 +369,8 @@ async def update_global_speaker(
         for rs in linked_speakers:
             rs.name = speaker_in.name
             db.add(rs)
+        renamed = {rs.recording_id for rs in linked_speakers}
+        await db.execute(change_sequence_bump(*renamed))
 
     if speaker_in.color is not None:
         speaker.color = speaker_in.color
@@ -471,8 +477,11 @@ async def get_speaker_segments(
 
     segments = []
     for rs, rec, trans in rows:
-        if not trans or not trans.segments:
+        if not trans:
             continue
+        transcript_segments = await db.run_sync(
+            lambda sync: build_transcript_segments_for_read(sync, rec.id)
+        )
 
         labels = {rs.diarization_label}
         if rs.local_name:
@@ -482,7 +491,7 @@ async def get_speaker_segments(
         labels.add(speaker.name)
 
         rec_segments = []
-        for seg in trans.segments:
+        for seg in transcript_segments:
             if seg.get("speaker") in labels:
                 duration = seg["end"] - seg["start"]
                 if duration > 10.0:
@@ -707,6 +716,7 @@ async def split_speaker(
 
     new_speaker_voiceprints: list[RecordingVoiceprint] = []
     new_speaker_links: list[RecordingSpeaker] = []
+    split_segments: list[tuple[Recording, Transcript, list[dict]]] = []
 
     for recording_public_id, segments in recording_segments.items():
         rec = recordings_by_public_id.get(recording_public_id)
@@ -751,12 +761,7 @@ async def split_speaker(
                 new_trans_segments.append(seg_copy)
 
             if segments_modified:
-                await _persist_segments_for_speaker_work(
-                    db,
-                    recording=rec,
-                    transcript=transcript,
-                    segments=new_trans_segments,
-                )
+                split_segments.append((rec, transcript, new_trans_segments))
 
         stmt = select(RecordingSpeaker).where(
             RecordingSpeaker.recording_id == rec_id,
@@ -803,6 +808,13 @@ async def split_speaker(
         new_speaker, new_speaker_voiceprints, new_speaker_links
     )
     db.add(new_speaker)
+    # The split label's linked speaker must exist before canonical writes
+    # resolve it, or they create an unlinked placeholder speaker instead.
+    await db.flush()
+    for rec, transcript, new_trans_segments in split_segments:
+        await _persist_segments_for_speaker_work(
+            db, recording=rec, transcript=transcript, segments=new_trans_segments
+        )
 
     original_speaker_voiceprints: list[RecordingVoiceprint] = []
 

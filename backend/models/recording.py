@@ -272,6 +272,7 @@ class RecordingSpeakerRead(BaseDBModel):
 
 
 class TranscriptRead(BaseDBModel):
+    change_sequence: int = 0
     text: Optional[str] = None
     segments: List[Dict[str, Any]] = []
     notes: Optional[str] = None

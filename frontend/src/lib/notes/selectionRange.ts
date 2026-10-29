@@ -10,14 +10,14 @@ import { selectionOf, type NoteSelection } from "./noteOutbox";
  * (`TranscriptLineText`). So a DOM `Range` goes to the lines it touches, then
  * to character offsets in each, then to ms through the line's words.
  *
- * No word timings reach the client, so a word's time is interpolated: linearly
- * by character offset across the line's span. A selection's time runs from the
- * first word it touches to the last, whole words, while its quote is the text
- * as selected. When word timings arrive, only `interpolatedTokens` changes.
+ * Marked lines expose each word's times and lock in the DOM. Older
+ * recordings retain character interpolation across the line's span.
  */
 
 /** A word of a line, with its character range and its time on the audio timeline. */
 export interface TimedToken {
+  id?: string;
+  locked?: boolean;
   text: string;
   /** Character offsets into the line's text, `to` exclusive. */
   from: number;
@@ -40,6 +40,8 @@ export const interpolatedTokens = (text: string, startMs: number, endMs: number)
 
 /** A line as the page draws it. */
 export interface DrawnLine {
+  words?: TimedToken[];
+  settling?: boolean;
   segmentId: string;
   text: string;
   startMs: number;
@@ -55,13 +57,16 @@ export interface LinePick {
 
 /** A pick's time, from its first word to its last, and its text; null for whitespace only. */
 export const pickSpan = ({ line, from, to }: LinePick) => {
-  const words = interpolatedTokens(line.text, line.startMs, line.endMs).filter(
+  const words = (line.words ?? interpolatedTokens(line.text, line.startMs, line.endMs)).filter(
     (token) => token.from < to && token.to > from,
   );
   if (words.length === 0) return null;
+  const startMs = line.words ? Math.min(...words.map((word) => word.startMs)) : words[0].startMs;
+  const endMs = line.words ? Math.max(...words.map((word) => word.endMs)) : words[words.length - 1].endMs;
   return {
-    startMs: words[0].startMs,
-    endMs: words[words.length - 1].endMs,
+    startMs,
+    // An identity can name zero-duration punctuation; notes still need a span.
+    endMs: line.words ? Math.max(startMs + 1, endMs) : endMs,
     text: line.text.slice(from, to).trim(),
   };
 };
@@ -110,8 +115,21 @@ export const linePicksOfRange = (range: Range, root: Element): LinePick[] =>
     const segmentId = paragraph.dataset.segmentId;
     if (startMs === null || endMs === null || !segmentId) return [];
     const text = paragraph.textContent ?? "";
+    const wordElements = Array.from(paragraph.querySelectorAll<HTMLElement>("[data-word-id]"));
+    const words = wordElements.length ? wordElements.map((word): TimedToken => ({
+      id: word.dataset.wordId,
+      text: word.textContent ?? "",
+      from: Number(word.dataset.wordFrom),
+      to: Number(word.dataset.wordTo),
+      startMs: numberOf(word.dataset.wordStartMs) ?? startMs,
+      endMs: numberOf(word.dataset.wordEndMs) ?? endMs,
+      locked: word.dataset.wordLocked === "true",
+    })) : undefined;
     // A boundary outside this line is before it (the start) or after it (the end).
     const from = offsetIn(paragraph, range.startContainer, range.startOffset, 0);
     const to = offsetIn(paragraph, range.endContainer, range.endOffset, text.length);
-    return from < to ? [{ line: { segmentId, text, startMs, endMs }, from, to }] : [];
+    return from < to ? [{
+      line: { segmentId, text, startMs, endMs, words,
+        settling: paragraph.dataset.settling === "true" }, from, to,
+    }] : [];
   });

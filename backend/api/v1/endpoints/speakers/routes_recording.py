@@ -32,6 +32,7 @@ from backend.utils.canonical_pipeline import (
     unmerge_recording_speaker,
     update_recording_speaker_identity,
 )
+from backend.utils.canonical_pipeline.guards import settling_required
 from backend.utils.canonical_pipeline.notes_propagation import (
     propagate_speaker_rename_to_notes,
 )
@@ -44,6 +45,7 @@ from backend.utils.speaker_names.events import (
     record_user_name_events,
 )
 from backend.utils.speaker_names.sources import SOURCE_USER
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     MergedRecordingSpeakerRead,
@@ -57,6 +59,7 @@ from .helpers import (
     _mark_pending_speaker_suggestions_superseded,
     _merge_local_speakers,
     _persist_segments_for_speaker_work,
+    _recording_transcript,
     _require_recording_speaker_mutations_supported,
     _serialize_recording_speakers,
 )
@@ -125,7 +128,9 @@ async def apply_recording_speaker_update(
     result = await db.execute(statement)
     global_speaker = result.scalar_one_or_none()
 
-    if (
+    action_transcript = await _recording_transcript(db, recording.id)
+
+    if settling_required(action_transcript) or (
         _canonical_transcript_writes_enabled()
         and speakers_module.recording_ready_for_canonical_backfill(recording.status)
     ):
@@ -348,6 +353,7 @@ async def apply_recording_speaker_update(
             ),
         )
     )
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     speakers_module.record_pipeline_metric(
         stage="speaker_correction_applied",
@@ -398,6 +404,8 @@ async def promote_speaker_to_global(
             status_code=404, detail="Speaker not found in this recording"
         )
 
+    action_transcript = await _recording_transcript(db, recording.id)
+
     speaker_name = (
         recording_speaker.local_name
         or recording_speaker.name
@@ -429,7 +437,7 @@ async def promote_speaker_to_global(
         await db.flush()
         target_global_speaker_id = global_speaker.id
 
-    if (
+    if settling_required(action_transcript) or (
         _canonical_transcript_writes_enabled()
         and speakers_module.recording_ready_for_canonical_backfill(recording.status)
     ):
@@ -506,6 +514,7 @@ async def promote_speaker_to_global(
             flag_modified(transcript, "speaker_name_suggestions")
             db.add(transcript)
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(recording_speaker)
 
@@ -577,6 +586,7 @@ async def merge_recording_speakers(
         reason="manual_speaker_merge",
     )
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.flush()
     await db.commit()
 
@@ -718,6 +728,7 @@ async def delete_recording_speaker(
     else:
         raise HTTPException(status_code=404, detail="Speaker not found in recording")
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     return {"ok": True}
 
@@ -750,6 +761,7 @@ async def update_speaker_color(
 
     recording_speaker.color = update.color
     db.add(recording_speaker)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
 
     return {"status": "success", "color": update.color}
@@ -851,6 +863,7 @@ async def split_local_speaker(
                 segments=new_segments,
             )
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
 
     stmt = select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)

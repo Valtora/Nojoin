@@ -7,12 +7,18 @@ import os
 import re
 import traceback
 from collections.abc import Sequence
-from typing import NamedTuple, Protocol
+from typing import Literal, NamedTuple, Protocol
 
 from ...utils.languages import resolve_transcription_language_code
 from ...utils.onnx_asr_cache import onnx_asr_model
 from ...utils.word_times import exceeds
-from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
+from ..onnx_providers import (
+    CUDA_PROVIDER,
+    gpu_is_present,
+    iter_inference_sessions,
+    sessions_use_cuda,
+    verify_gpu_providers,
+)
 from ..onnx_threads import onnx_session_options
 from ..processing_tuning import (
     ASR_WORD_LENGTH_CAP_KEY,
@@ -558,6 +564,29 @@ class OnnxAsrEngine(TranscriptionEngine):
         loading asks for, which is CUDA exactly when a GPU is present.
         """
         return self._model_on_gpu.get(self._onnx_id_for(config), gpu_is_present())
+
+    def loaded_device(self, config: dict) -> Literal["cpu", "cuda"] | None:
+        """Read active providers only; uninspectable or unloaded models stay unknown.
+
+        A model uses CUDA when any of its sessions does, including mixed placement.
+        Unlike OOM attribution, settling cannot infer placement from GPU presence.
+        """
+        model = self._model_cache.get(self._onnx_id_for(config))
+        if model is None:
+            return None
+        try:
+            providers = [
+                session.get_providers() for session in iter_inference_sessions(model)
+            ]
+        except (ImportError, AttributeError, RuntimeError, TypeError):
+            return None
+        if not providers:
+            return None
+        if any(CUDA_PROVIDER in active for active in providers):
+            return "cuda"
+        if all("CPUExecutionProvider" in active for active in providers):
+            return "cpu"
+        return None
 
     def _get_model(self, config: dict):
         """Load (once, lazily) and return the onnx-asr model for the given config."""

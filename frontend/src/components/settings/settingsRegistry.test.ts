@@ -296,6 +296,12 @@ describe("advanced gate", () => {
 });
 
 describe("changed-count badge", () => {
+  it("counts Off as a change from the default live word settling policy", () => {
+    const policy = { live_text_settling: "auto", live_text_settling_k: 3, live_text_settling_window_s: 10 };
+    expect(countChangedAdvanced("transcription", policy, ADMIN)).toBe(0);
+    expect(countChangedAdvanced("transcription", { ...policy, live_text_settling: "off" }, ADMIN)).toBe(1);
+  });
+
   it("counts nothing when values match their defaults", () => {
     expect(
       countChangedAdvanced(

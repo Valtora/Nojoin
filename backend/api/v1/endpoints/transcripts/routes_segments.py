@@ -1,3 +1,4 @@
+import copy
 import logging
 import uuid
 from typing import Optional
@@ -30,6 +31,7 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline import (
     update_utterance_text as update_canonical_utterance_text,
 )
+from backend.utils.canonical_pipeline.guards import settling_required
 from backend.utils.canonical_pipeline.public_ids import SegmentIdConflictError
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.speaker_assignment import (
@@ -38,6 +40,7 @@ from backend.utils.speaker_assignment import (
     segment_references_label,
 )
 from backend.utils.speaker_names.events import UserNameAct, record_user_link
+from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     FindReplaceRequest,
@@ -49,6 +52,7 @@ from .helpers import (
     _dispatch_meeting_edge_refresh,
     _get_owned_recording,
     _get_recording_speaker_display_name,
+    _prepare_live_transcript_mutation,
     _require_recording_transcript_mutations_supported,
 )
 from .router import router
@@ -84,7 +88,12 @@ async def update_segment_speaker(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -93,17 +102,23 @@ async def update_segment_speaker(
 
     _require_recording_transcript_mutations_supported(recording)
 
+    await _prepare_live_transcript_mutation(db, recording.id)
+
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
 
-    if _canonical_transcript_writes_enabled() and (
-        transcript.segments[segment_index].get("id")
-        or recording_ready_for_canonical_backfill(recording.status)
+    if (
+        settling_required(transcript)
+        or _canonical_transcript_writes_enabled()
+        and (
+            transcript.segments[segment_index].get("id")
+            or recording_ready_for_canonical_backfill(recording.status)
+        )
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
         )
-        await db.commit()
+        await db.flush()
         await db.refresh(transcript)
         if segment_index < 0 or segment_index >= len(transcript.segments):
             raise HTTPException(status_code=400, detail="Invalid segment index")
@@ -384,6 +399,7 @@ async def update_segment_speaker(
                 await db.delete(old_speaker_entry)
                 # The GlobalSpeaker stays; only the local association goes.
 
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     record_pipeline_metric(
         stage="speaker_correction_applied",
@@ -442,7 +458,12 @@ async def update_transcript_segment_text(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -451,17 +472,23 @@ async def update_transcript_segment_text(
 
     _require_recording_transcript_mutations_supported(recording)
 
+    await _prepare_live_transcript_mutation(db, recording.id)
+
     if segment_index < 0 or segment_index >= len(transcript.segments):
         raise HTTPException(status_code=400, detail="Invalid segment index")
 
-    if _canonical_transcript_writes_enabled() and (
-        transcript.segments[segment_index].get("id")
-        or recording_ready_for_canonical_backfill(recording.status)
+    if (
+        settling_required(transcript)
+        or _canonical_transcript_writes_enabled()
+        and (
+            transcript.segments[segment_index].get("id")
+            or recording_ready_for_canonical_backfill(recording.status)
+        )
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
         )
-        await db.commit()
+        await db.flush()
         await db.refresh(transcript)
         if segment_index < 0 or segment_index >= len(transcript.segments):
             raise HTTPException(status_code=400, detail="Invalid segment index")
@@ -515,6 +542,7 @@ async def update_transcript_segment_text(
     transcript.text = full_text
 
     db.add(transcript)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(transcript)
     record_pipeline_metric(
@@ -547,7 +575,12 @@ async def find_and_replace(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -555,6 +588,8 @@ async def find_and_replace(
         raise HTTPException(status_code=404, detail="Transcript not found")
 
     _require_recording_transcript_mutations_supported(recording)
+
+    live_projection = await _prepare_live_transcript_mutation(db, recording.id)
 
     find_text = replace_request.find_text
     replace_text = replace_request.replace_text
@@ -564,11 +599,19 @@ async def find_and_replace(
     if not find_text:
         raise HTTPException(status_code=400, detail="Find text cannot be empty")
 
-    _apply_find_replace(transcript, find_text, replace_text, case_sensitive, use_regex)
+    staged = transcript
+    if settling_required(transcript):
+        staged = Transcript(
+            segments=copy.deepcopy(transcript.segments), notes=transcript.notes
+        )
+    _apply_find_replace(staged, find_text, replace_text, case_sensitive, use_regex)
 
     if (
-        _canonical_transcript_writes_enabled()
-        and recording_ready_for_canonical_backfill(recording.status)
+        settling_required(transcript)
+        or _canonical_transcript_writes_enabled()
+        and (
+            live_projection or recording_ready_for_canonical_backfill(recording.status)
+        )
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
@@ -576,10 +619,14 @@ async def find_and_replace(
         await _apply_segment_replace(
             db,
             recording_id=recording.id,
-            segments=[dict(segment) for segment in (transcript.segments or [])],
+            segments=[dict(segment) for segment in (staged.segments or [])],
         )
 
+    if staged is not transcript:
+        transcript.notes = staged.notes
+
     db.add(transcript)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(transcript)
     await _dispatch_meeting_edge_refresh(
@@ -603,7 +650,12 @@ async def update_transcript_segments(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
@@ -612,14 +664,21 @@ async def update_transcript_segments(
 
     _require_recording_transcript_mutations_supported(recording)
 
-    if _canonical_transcript_writes_enabled() and (
-        any(segment.get("id") for segment in update.segments)
-        or recording_ready_for_canonical_backfill(recording.status)
+    live_projection = await _prepare_live_transcript_mutation(db, recording.id)
+
+    if (
+        settling_required(transcript)
+        or _canonical_transcript_writes_enabled()
+        and (
+            live_projection
+            or any(segment.get("id") for segment in update.segments)
+            or recording_ready_for_canonical_backfill(recording.status)
+        )
     ):
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
         )
-        await db.commit()
+        await db.flush()
         await db.refresh(transcript)
 
         canonical_segments = [dict(segment) for segment in update.segments]
@@ -650,6 +709,7 @@ async def update_transcript_segments(
     transcript.text = full_text
 
     db.add(transcript)
+    await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(transcript)
     await _dispatch_meeting_edge_refresh(

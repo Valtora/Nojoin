@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -106,6 +107,54 @@ def test_a_non_admin_can_store_a_value() -> None:
     assert response.status_code == 200
     assert row["vad_threshold"] == 0.3
     assert response.json()["vad_threshold"] == 0.3
+
+
+@pytest.mark.parametrize("pause", [0.5, 1.0, 5.0])
+def test_line_break_pause_saves_for_members_and_resets_to_inherit(pause: float) -> None:
+    (saved, reset), row = _run(
+        [
+            ("POST", {"line_break_pause_s": pause}),
+            ("POST", {"line_break_pause_s": None}),
+        ]
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["line_break_pause_s"] == pause
+    assert reset.status_code == 200
+    assert reset.json()["line_break_pause_s"] is None
+    assert row["line_break_pause_s"] is None
+
+
+@pytest.mark.parametrize("pause", [0.49, 5.01, True, "1", 10**400])
+def test_line_break_pause_rejects_unusable_values(pause: object) -> None:
+    (response,), row = _run(
+        [("POST", {"line_break_pause_s": pause})],
+        stored={"line_break_pause_s": 2.0},
+    )
+
+    assert response.status_code == 422
+    assert row == {"line_break_pause_s": 2.0}
+
+
+def test_line_break_pause_install_default_and_owner_override(tmp_path: Path) -> None:
+    from backend.processing.processing_tuning import resolve_tuning
+    from backend.utils.llm_config import _merge_llm_config
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"line_break_pause_s": 2.0}))
+    base = ConfigManager(config_path=str(config_path)).get_all()
+
+    def effective(own: float | None) -> float:
+        merged = _merge_llm_config(
+            base_config=base,
+            system_keys={},
+            owner_settings=None,
+            user_settings={"line_break_pause_s": own},
+        ).merged_config
+        return resolve_tuning(merged, "line_break_pause_s")
+
+    assert effective(None) == 2.0
+    assert effective(0.75) == 0.75
 
 
 @pytest.mark.parametrize(

@@ -3,6 +3,7 @@ from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
+from backend.utils.transcript_change import change_sequence_bump
 
 from .constants import *
 from .speaker_name_apply import apply_inferred_names
@@ -158,6 +159,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         recording.processing_progress = 100
         session.add(transcript)
         session.add(recording)
+        # A regeneration can finish between two of another tab's checks, with
+        # its notes status back where that tab last saw it.
+        session.execute(change_sequence_bump(recording.id))
         session.commit()
         update_recording_status(session, recording.id)
         logger.info(f"Generated meeting notes for recording {recording_id}")
@@ -561,6 +565,9 @@ def _complete_speaker_inference_task(
         recording.processing_step = "Completed"
     recording.client_status = ClientStatus.IDLE
     session.add(recording)
+    # The status returns to where another tab last saw it, so only the counter
+    # tells that tab the speakers and suggestions changed.
+    session.execute(change_sequence_bump(recording.id))
     session.commit()
 
 

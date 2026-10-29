@@ -2,12 +2,13 @@ import logging
 from typing import List, Optional
 
 from fastapi import HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from backend.core.task_dispatch import dispatch_task_best_effort
+from backend.models.live_settling_public import LiveSettlingPublicRead
 from backend.models.pipeline import SpeakerCorrectionScope
 from backend.models.recording import (
     LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL,
@@ -20,6 +21,9 @@ from backend.models.recording_public import (
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
+from backend.utils.canonical_pipeline.live_compatibility import (
+    prepare_live_compatibility_mutation,
+)
 from backend.utils.config_manager import config_manager
 from backend.utils.live_speaker_labels import speaker_display_name
 
@@ -81,6 +85,17 @@ def _canonical_transcript_writes_enabled() -> bool:
     return bool(config_manager.get("enable_canonical_transcript_writes", True))
 
 
+async def _prepare_live_transcript_mutation(
+    db: AsyncSession, recording_id: int
+) -> bool:
+    if not _canonical_transcript_writes_enabled():
+        from backend.utils.canonical_pipeline.guards import settling_required
+
+        if not settling_required(await _get_recording_transcript(db, recording_id)):
+            return False
+    return await db.run_sync(prepare_live_compatibility_mutation, recording_id)
+
+
 def _require_recording_transcript_mutations_supported(recording: Recording) -> None:
     if recording_supports_unified_mutations(recording):
         return
@@ -138,13 +153,14 @@ class TranscriptUtteranceSpeakerPatch(BaseModel):
     expected_revision: Optional[int] = None
 
 
-class TranscriptUtteranceRead(BaseModel):
+class TranscriptUtteranceRead(LiveSettlingPublicRead):
     id: str
     start: float
     end: float
     start_ms: int
     end_ms: int
     text: str
+    alignment_error: Optional[str] = None
     speaker: str
     recording_speaker_id: Optional[int] = None
     # The diariser's own cluster label for this span, kept across merges. Null
@@ -177,6 +193,9 @@ class TranscriptUtteranceRead(BaseModel):
 
 class TranscriptUtteranceListRead(BaseModel):
     recording_id: str
+    settling_required: bool = Field(
+        default=False, exclude_if=lambda value: value is False
+    )
     revision: int
     utterances: List[TranscriptUtteranceRead]
     tombstones: List[str] = []
@@ -184,6 +203,13 @@ class TranscriptUtteranceListRead(BaseModel):
     # Live label -> the name the user gave it during capture. Sent whole on every
     # read, delta or not: naming a live speaker changes no utterance.
     live_speaker_names: dict[str, str] = {}
+
+
+class TranscriptUtteranceSplit(BaseModel):
+    """Split immediately before a current genuine word identity."""
+
+    before_word_id: str
+    expected_revision: int = Field(ge=1)
 
 
 class NotesUpdate(BaseModel):

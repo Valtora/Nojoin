@@ -230,7 +230,7 @@ describe("TranscriptView", () => {
     });
   });
 
-  it("keeps overlap lanes in transcript order and reserves space for revised overlap groups", () => {
+  it("keeps revised overlapping lines in transcript order without speaker lanes or reserved empty space", () => {
     const now = new Date().toISOString();
 
     const { container } = renderTranscriptView([
@@ -262,24 +262,15 @@ describe("TranscriptView", () => {
       }),
     ]);
 
-    const laneOrder = Array.from(
-      container.querySelectorAll<HTMLElement>(
-        "[data-testid^='overlap-lane-']:not([data-testid*='body'])",
-      ),
-    ).map((element) => element.dataset.testid || element.getAttribute("data-testid"));
-
-    expect(laneOrder).toEqual([
-      "overlap-lane-SPEAKER_B",
-      "overlap-lane-SPEAKER_A",
-    ]);
-    // Assert the declared inline value rather than the computed one: jsdom 30
-    // normalises computed lengths to pixels, so toHaveStyle would compare
-    // against "112px" and stop describing the rem floor the component sets.
-    expect(screen.getByTestId("overlap-lane-body-SPEAKER_B").style.minHeight).toBe("7rem");
+    expect(Array.from(container.querySelectorAll<HTMLElement>("div[data-line-actions]"))
+      .map((element) => element.dataset.segmentId)).toEqual(["lead-b", "overlap-b", "overlap-a"]);
+    expect(container.querySelector("[data-testid^='overlap-lane-']")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Overlap" })).toHaveLength(2);
+    expect(screen.queryByRole("region", { name: "Overlapping speech" })).toBeNull();
   });
 
   // A capture whose processing failed keeps its live lines, labels included.
-  it("shows live speaker labels as Speaker N, in lines and overlap lanes", () => {
+  it("shows live speaker labels as Speaker N on credited lines", () => {
     const now = new Date().toISOString();
 
     const { container } = renderTranscriptView([

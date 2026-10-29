@@ -44,8 +44,14 @@ from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.stored_paths import require_recording_path
 from backend.utils.time import utc_now
+from backend.utils.transcript_settling import update_capture_settling_state
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
+from .capture_settling import (
+    close_live_words,
+    lock_capture_publication,
+    seal_live_settling,
+)
 from .router import router
 
 logger = logging.getLogger(__name__)
@@ -173,7 +179,7 @@ async def pause_upload(
     )
     # A late pause from a tab whose capture was resumed elsewhere would mark
     # the capture paused under the tab now running it.
-    await recordings_module._lock_capture(db, recording)
+    transcript = await lock_capture_publication(db, recording)
     recordings_module._ensure_capture_epoch(recording, epoch)
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
@@ -182,6 +188,13 @@ async def pause_upload(
         )
 
     if recording.status != RecordingStatus.PAUSED:
+        await close_live_words(db, transcript, recording.id)
+        update_capture_settling_state(
+            transcript,
+            capture_epoch=recording.capture_epoch,
+            sealed=False,
+            phase="paused",
+        )
         recording.status = RecordingStatus.PAUSED
         recording.client_status = ClientStatus.PAUSED
         recording.last_activity_at = utc_now()
@@ -245,15 +258,33 @@ async def resume_upload(
         db, recording_id, current_user.id
     )
     # Two takeovers at once must not both be issued the same epoch.
-    await recordings_module._lock_capture(db, recording)
+    transcript = await lock_capture_publication(db, recording)
 
     if epoch is not None:
         recordings_module._ensure_capture_epoch(recording, epoch)
         _ensure_holder_can_resume(recording)
         resumed_after_stall = False
+        if (getattr(transcript, "settling_state", None) or {}).get("phase") != "live":
+            await close_live_words(db, transcript, recording.id)
     else:
         resumed_after_stall = _ensure_capture_can_be_taken_over(recording)
+        await close_live_words(db, transcript, recording.id)
         recording.capture_epoch += 1
+
+    stalled_last_activity = recording.last_activity_at
+    recording.status = RecordingStatus.UPLOADING
+    update_capture_settling_state(
+        transcript, capture_epoch=recording.capture_epoch, sealed=False, phase="live"
+    )
+    recording.client_status = ClientStatus.RECORDING
+    recording.last_activity_at = utc_now()
+    db.add(recording)
+    # A resume after a failed stop follows a finalize that sealed the chunks.
+    await recordings_module._reopen_recording_audio_cursor(
+        db, recording_id=recording.id
+    )
+    await db.commit()
+    await db.refresh(recording)
 
     if resumed_after_stall:
         try:
@@ -263,8 +294,8 @@ async def resume_upload(
                 payload={
                     "public_id": recording.public_id,
                     "last_activity_at": (
-                        recording.last_activity_at.isoformat()
-                        if recording.last_activity_at
+                        stalled_last_activity.isoformat()
+                        if stalled_last_activity
                         else None
                     ),
                 },
@@ -276,17 +307,6 @@ async def resume_upload(
                 recording.id,
                 exc,
             )
-
-    recording.status = RecordingStatus.UPLOADING
-    recording.client_status = ClientStatus.RECORDING
-    recording.last_activity_at = utc_now()
-    db.add(recording)
-    # A resume after a failed stop follows a finalize that sealed the chunks.
-    await recordings_module._reopen_recording_audio_cursor(
-        db, recording_id=recording.id
-    )
-    await db.commit()
-    await db.refresh(recording)
 
     return RecordingCaptureLifecycleResponse(
         recording_id=recording.public_id,
@@ -615,6 +635,9 @@ async def finalize_upload(
     recordings_module._ensure_capture_epoch(recording, epoch)
 
     recordings_module._ensure_recording_can_finalize_upload(recording)
+    # Before the chunk and window rows: a live publisher holds Transcript and
+    # then marks windows processed, so taking it later could deadlock.
+    await seal_live_settling(db, recording)
 
     await recordings_module._sync_recording_audio_chunks_from_directory(
         db,
@@ -794,6 +817,7 @@ async def discard_upload(
     )
     # Locked, so a worker cannot repoint audio_path between this read and the
     # delete (keep_imported_audio_task) and leave its new file behind.
+    await lock_capture_publication(db, recording)
     await db.refresh(recording, with_for_update=True)
     # A tab whose capture continued elsewhere must not delete it from under the
     # tab running it. The list and the dialogs discard without an epoch.
@@ -837,17 +861,7 @@ async def discard_upload(
             current_user.id,
         )
 
-    # Revoke any in-flight processing task first so the worker stops touching the
-    # recording before its row and files disappear. terminate=True sends SIGTERM
-    # to a task that is already running; a queued-but-not-started task is simply
-    # dropped. Mirrors the permanent-delete path in routes_actions.py.
-    if recording.celery_task_id:
-        try:
-            recordings_module.celery_app.control.revoke(
-                recording.celery_task_id, terminate=True
-            )
-        except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
-            pass
+    task_id = recording.celery_task_id
 
     # Attached documents go with the row by FK cascade, so read their paths
     # first. The lock taken above holds back any document insert until the
@@ -870,6 +884,13 @@ async def discard_upload(
     await db.execute(delete(Transcript).where(Transcript.recording_id == recording.id))
     await db.execute(delete(Recording).where(Recording.id == recording.id))
     await db.commit()
+    # Broker contact can stall. Release the publication fence first, then stop
+    # the snapshotted task before removing its files.
+    if task_id:
+        try:
+            recordings_module.celery_app.control.revoke(task_id, terminate=True)
+        except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
+            pass
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
 

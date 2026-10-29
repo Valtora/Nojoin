@@ -3,6 +3,7 @@
 import { Sparkles } from "lucide-react";
 
 import { TranscriptSegment } from "@/types";
+import { lineIsSettling } from "@/lib/transcript/settling";
 
 interface TranscriptLineBadgesProps {
   segment: TranscriptSegment;
@@ -33,6 +34,7 @@ export default function TranscriptLineBadges({
 
   return (
     <div className="flex flex-wrap items-center gap-1">
+      {lineIsSettling(segment) ? <span className="text-xs text-contrast-helper">Settling…</span> : null}
       {isAiTextEdit ? (
         <span
           className="inline-flex items-center gap-1 rounded-pill border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"

@@ -30,7 +30,8 @@ export type ProcessingTuningKey =
   | "phantom_embedding_floor"
   | "phantom_merge_threshold"
   | "word_flip_max_duration_s"
-  | "word_flip_max_gap_s";
+  | "word_flip_max_gap_s"
+  | "line_break_pause_s";
 
 interface TuningBounds {
   default: number;
@@ -64,6 +65,7 @@ export const PROCESSING_TUNING_SPECS: Record<ProcessingTuningKey, ProcessingTuni
   phantom_merge_threshold: tuningSpec("phantom_merge_threshold", "Merge similarity", 0.05),
   word_flip_max_duration_s: tuningSpec("word_flip_max_duration_s", "Max word length (seconds)", 0.05),
   word_flip_max_gap_s: tuningSpec("word_flip_max_gap_s", "Max gap (seconds)", 0.05),
+  line_break_pause_s: tuningSpec("line_break_pause_s", "Line break pause (seconds)", 0.1),
 };
 
 export const PROCESSING_TUNING_KEYS = Object.keys(

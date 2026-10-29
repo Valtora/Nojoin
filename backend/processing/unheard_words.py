@@ -25,7 +25,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any, NamedTuple
 
 from backend.utils.word_text import reconstruct_text_from_words
-from backend.utils.word_times import WORD_TIME_TOLERANCE_S, exceeds, falls_short
+from backend.utils.word_times import (
+    WORD_TIME_TOLERANCE_S,
+    exceeds,
+    falls_short,
+    has_untimed_words,
+)
 
 # Exact-zero audio, in seconds, that must lie on each side of a word, inside
 # the same run, for the word to be dropped. Word times stray from the sound
@@ -130,6 +135,9 @@ def _without_words(
     """``segment`` holding only ``kept`` of its words, its text and edges to match."""
     words = segment["words"]
     trimmed = {**segment, "words": kept, "text": reconstruct_text_from_words(kept)}
+    if has_untimed_words(trimmed):
+        # Unknown word positions retain the source window's envelope.
+        return trimmed
     if kept[0] is not words[0]:
         trimmed["start"] = kept[0]["start"]
     if kept[-1] is not words[-1]:

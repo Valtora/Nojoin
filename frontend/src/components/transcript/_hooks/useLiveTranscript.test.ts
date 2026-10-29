@@ -80,6 +80,19 @@ const advanceOnePoll = () =>
   });
 
 describe("useLiveTranscript", () => {
+  it("coalesces action refreshes behind the current read and then repairs from a full read", async () => {
+    let answer!: (value: ReturnType<typeof buildDelta>) => void;
+    getTranscriptUtterances.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }))
+      .mockResolvedValueOnce(buildDelta(8, [buildUtterance("new", 0, "After split", 8)]));
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    act(() => { result.current.refresh(); result.current.refresh(); });
+    expect(getTranscriptUtterances).toHaveBeenCalledTimes(1);
+    await act(async () => answer(buildDelta(4, [buildUtterance("old", 0, "Before split", 4)])));
+    await flushPendingRequests();
+    expect(getTranscriptUtterances).toHaveBeenCalledTimes(2);
+    expect(getTranscriptUtterances.mock.calls[1][1]).toBeUndefined();
+    expect(result.current.segments.map((segment) => segment.id)).toEqual(["new"]);
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     getTranscriptUtterances.mockReset();

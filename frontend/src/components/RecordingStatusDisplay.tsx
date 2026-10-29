@@ -15,6 +15,7 @@ import type { AudioClock } from "@/lib/notes/audioClock";
 import { inlineNotes, type NoteSelection } from "@/lib/notes/noteOutbox";
 import { segmentStartMs } from "@/lib/notes/placement";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 import { ClientStatus, Recording, RecordingStatus, type TimelineNote } from "@/types";
 
 import Workspace from "./Workspace";
@@ -84,6 +85,7 @@ interface RecordingStatusDisplayProps {
    * knows whether there is one.
    */
   timelineNotes?: readonly TimelineNote[] | null;
+  noteEdits?: NoteEdits;
 }
 
 const NO_TIMELINE_NOTES: readonly TimelineNote[] = [];
@@ -100,11 +102,18 @@ export default function RecordingStatusDisplay({
   showMobileBackButton = false,
   audioClock,
   timelineNotes = NO_TIMELINE_NOTES,
+  noteEdits,
 }: RecordingStatusDisplayProps) {
   const actions = useRecordingActions();
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const liveTranscript = useLiveTranscript(recording);
+  const settlingRequired = liveTranscript.segments.some((segment) => segment.settling_required);
+  const refreshAfter = async (save: Promise<boolean>) => {
+    const saved = await save;
+    if (saved) liveTranscript.refresh();
+    return saved;
+  };
   const liveNaming = useLiveSpeakerNaming(
     recording.id,
     liveTranscript.applyLiveSpeakerNames,
@@ -116,13 +125,15 @@ export default function RecordingStatusDisplay({
   const { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded } =
     outboxState;
   const liveNotes = useMemo(
-    () =>
-      inlineNotes(timelineNotes, {
+    () => {
+      const notes = inlineNotes(timelineNotes, {
         entries: outboxEntries,
         saved: outboxSaved,
         discarded: outboxDiscarded,
-      }),
-    [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
+      });
+      return noteEdits && settlingRequired ? noteEdits.apply(notes) : notes;
+    },
+    [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded, noteEdits, settlingRequired],
   );
   const pendingMeetingNotes = useMemo(
     () => outboxEntries.filter((entry) => entry.kind === "head" || entry.kind === "tail"),
@@ -173,6 +184,17 @@ export default function RecordingStatusDisplay({
   const noteOnLine = useCallback(
     (selection: NoteSelection) => {
       outbox.setDraft({ ...outbox.getSnapshot().draft, selection });
+      composerBoxRef.current?.focus();
+    },
+    [outbox],
+  );
+  // On a line still settling: the box's next note is a typed note anchored at
+  // the line's start, quoting nothing.
+  const noteAtTime = useCallback(
+    (atMs: number) => {
+      outbox.setDraft({
+        ...outbox.getSnapshot().draft, selection: null, mode: "typing", typingStartMs: atMs, typingStartFromLine: true,
+      });
       composerBoxRef.current?.focus();
     },
     [outbox],
@@ -426,11 +448,22 @@ export default function RecordingStatusDisplay({
               <LiveTranscriptPanel
                 segments={liveTranscript.segments}
                 hasLoaded={liveTranscript.hasLoaded}
+                speakers={liveTranscript.speakers}
+                lineHandlers={{
+                  editText: (segment, text) =>
+                    refreshAfter(actions.editTranscriptLine(recording.id, segment, text)),
+                  changeSpeaker: (segment, assignment) =>
+                    refreshAfter(actions.assignTranscriptLine(recording.id, segment, assignment)),
+                  split: (segment, wordId) =>
+                    refreshAfter(actions.splitTranscriptLine(recording.id, segment, wordId)),
+                }}
                 isPaused={isPaused}
                 notes={liveNotes}
+                onMoveNote={settlingRequired ? noteEdits?.move : undefined}
                 onRetryNote={outbox.retry}
                 onDiscardNote={discardInlineNote}
                 onNoteOnLine={noteOnLine}
+                onNoteAtTime={noteAtTime}
                 liveSpeakerNames={liveTranscript.liveSpeakerNames}
                 onRenameLiveSpeaker={liveNaming.renameLiveSpeaker}
                 loadPeopleNames={liveNaming.loadPeopleNames}

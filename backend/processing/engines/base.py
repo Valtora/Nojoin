@@ -17,7 +17,10 @@ LANGUAGE_DETECTION_AUDIO = "language_detection_audio"
 class TranscriptionEngine(ABC):
     """Base of a pluggable transcription engine.
 
-    transcribe() returns the canonical schema the rest of the pipeline expects
+    transcribe() returns raw native recognition in the canonical schema.
+    Call processing.transcribe.transcribe_audio() for the complete pipeline,
+    including forced alignment for engines without native word timestamps.
+    The schema the rest of the pipeline expects
     (consumed by backend/utils/transcript_utils.py:combine_transcription_diarization):
 
         {

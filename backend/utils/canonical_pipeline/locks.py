@@ -5,6 +5,8 @@ write surface: releasing a lock is an audited utterance event exactly like
 the edits that set it.
 """
 
+from backend.utils.transcript_change import change_sequence_bump
+
 from .core import (
     TranscriptUtterance,
     _append_utterance_event,
@@ -12,6 +14,7 @@ from .core import (
     _load_transcript,
     _update_projection_segment_by_public_id,
 )
+from .guards import settling_required
 
 
 def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, matching core's write functions
@@ -30,7 +33,8 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
     is itself an audited event, so the fact that the utterance was once
     manually edited remains in the event log even after the lock is gone.
     """
-    utterance = _get_utterance(session, recording_id, utterance_public_id)
+    transcript = _load_transcript(session, recording_id, lock=True)
+    utterance = _get_utterance(session, recording_id, utterance_public_id, lock=True)
     if utterance is None:
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
@@ -50,6 +54,11 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
     # never reach, since every pill is gated on the lock.
     utterance.text_last_edit_source = None
     utterance.speaker_last_edit_source = None
+    if settling_required(transcript):
+        payload = dict(utterance.confidence_payload or {})
+        payload.pop("human_protection", None)
+        payload.pop("final_review", None)
+        utterance.confidence_payload = payload
     utterance.revision += 1
     session.add(utterance)
     session.flush()
@@ -68,7 +77,6 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
         resulting_revision=utterance.revision,
     )
 
-    transcript = _load_transcript(session, recording_id)
     if transcript is not None:
         _update_projection_segment_by_public_id(
             transcript,
@@ -81,8 +89,17 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
                 "revision": utterance.revision,
                 "state": utterance.state.value,
                 "updated_at": utterance.updated_at.isoformat(),
+                **(
+                    {
+                        "confidence_payload": utterance.confidence_payload,
+                        "final_review": None,
+                    }
+                    if settling_required(transcript)
+                    else {}
+                ),
             },
         )
         session.add(transcript)
+        session.execute(change_sequence_bump(recording_id))
 
     return utterance

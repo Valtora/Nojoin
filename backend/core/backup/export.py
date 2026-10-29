@@ -26,6 +26,7 @@ from backend.core.backup.format import (
     ARCHIVE_QUALITY_COMPRESSED,
     BACKUP_FORMAT_VERSION,
 )
+from backend.core.backup.live_transcripts import project_live_transcript_rows
 from backend.core.backup.plans import (
     _AudioPlan,
     _build_audio_plan,
@@ -356,6 +357,8 @@ def _read_snapshot(
             data = _serialise_backup_table_rows(
                 table_name, items, audio_plan, document_plan
             )
+            if table_name == "transcripts":
+                project_live_transcript_rows(session, data)
             db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
 
     return _Snapshot(

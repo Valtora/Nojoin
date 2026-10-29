@@ -96,6 +96,9 @@ def carry_names_to_final_speakers(
     speaker_voiceprints: dict[str, Any],
 ) -> CarriedNames:
     """Resolve the standing events against this run's speakers."""
+    from backend.utils.speaker_names.durability import restore_name_anchors
+
+    restore_name_anchors(session, recording.id)
     rows = _standing_rows_after_dropping_machine_ones(session, recording.id)
     carried = CarriedNames()
     if not rows:

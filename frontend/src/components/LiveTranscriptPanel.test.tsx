@@ -113,20 +113,20 @@ describe("LiveTranscriptPanel", () => {
     expect(screen.getAllByTestId("live-transcript-line")).toHaveLength(3);
   });
 
-  it("names a live speaker label only where the speaker changes", () => {
+  it("names the speaker on every labelled line, as the finished transcript does", () => {
+    const marked = (id: string, speaker: string, start: number) => buildSegment({
+      id, speaker, start, settling_required: true, locked: true,
+    });
     renderPanel([
       buildSegment({ id: "a", start: 0, text: "opening", speaker: "LIVE_PROVISIONAL_1" }),
       buildSegment({ id: "b", start: 2, text: "still me", speaker: "LIVE_PROVISIONAL_1" }),
-      buildSegment({ id: "c", start: 4, text: "a reply", speaker: "LIVE_PROVISIONAL_12" }),
-      buildSegment({ id: "d", start: 6, text: "who said that", speaker: "UNKNOWN" }),
-      buildSegment({ id: "e", start: 8, text: "me again", speaker: "LIVE_PROVISIONAL_1" }),
+      buildSegment({ id: "c", start: 4, text: "who said that", speaker: "UNKNOWN" }),
+      marked("d", "SPEAKER_0", 6),
+      marked("e", "SPEAKER_0", 9),
     ]);
 
-    // An unlabelled line in between shows no label and breaks the run, so the
-    // returning speaker is named again.
-    expect(
-      screen.getAllByTestId("live-transcript-speaker").map((node) => node.textContent),
-    ).toEqual(["Speaker 1", "Speaker 12", "Speaker 1"]);
+    expect(screen.getAllByTestId("live-transcript-speaker").map((node) => node.textContent))
+      .toEqual(["Speaker 1", "Speaker 1", "SPEAKER_0", "SPEAKER_0"]);
   });
 
   it("styles a provisional label apart from a locked one without relying on colour", () => {
@@ -152,6 +152,45 @@ describe("LiveTranscriptPanel", () => {
     expect(locked.className).not.toContain("italic");
     expect(provisional).toHaveAttribute("data-locked", "false");
     expect(provisional.className).toContain("italic");
+  });
+
+  it("keeps marked label italics tied to the line lock rather than the speaker state", () => {
+    const segment = buildSegment({ id: "a", speaker: "LIVE_PROVISIONAL_1",
+      settling_required: true, locked: false, speaker_state: "stable" });
+    const { rerender } = renderPanel([segment]);
+    const chip = screen.getByTestId("live-transcript-speaker");
+    expect(chip).toHaveAttribute("data-locked", "false");
+    expect(chip).toHaveClass("italic");
+
+    rerender(<LiveTranscriptPanel segments={[{ ...segment, locked: true, speaker_state: "provisional" }]} hasLoaded />);
+    expect(chip).toHaveAttribute("data-locked", "true");
+    expect(chip).not.toHaveClass("italic");
+  });
+
+  it("describes settling on the line without a visible caption and removes the description when locked", () => {
+    const segment = buildSegment({ id: "a", text: "Words still changing", settling_required: true, locked: false });
+    const { rerender } = renderPanel([segment]);
+    const line = screen.getByTestId("live-transcript-line");
+    expect(line).toHaveAccessibleDescription("Corrections open when this line locks, usually within half a minute.");
+    expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
+    expect(screen.getByText("Lines settle as the conversation continues. Your corrections are kept."))
+      .toBeInTheDocument();
+    expect(line.querySelector("p[data-segment-id]")?.textContent).toBe("Words still changing");
+
+    rerender(<LiveTranscriptPanel segments={[{ ...segment, locked: true }]} hasLoaded />);
+    expect(line).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("keeps unmarked lines free of settling descriptions", () => {
+    renderPanel([
+      buildSegment({ id: "a", speaker: "LIVE_PROVISIONAL_1", locked: false }),
+      buildSegment({ id: "b", start: 3, speaker: "LIVE_PROVISIONAL_1", locked: false }),
+    ]);
+
+    for (const line of screen.getAllByTestId("live-transcript-line")) {
+      expect(line).not.toHaveAttribute("aria-describedby");
+    }
+    expect(screen.getByText("Provisional. Corrected when the recording is processed.")).toBeInTheDocument();
   });
 
   it("shows no speaker for lines the live lane left unlabelled", () => {

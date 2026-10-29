@@ -1,12 +1,13 @@
 "use client";
 
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { useEffect, useLayoutEffect, useMemo, useState, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Copy, StickyNote } from "lucide-react";
 
 import type { NoteSelection, OutboxDraft } from "@/lib/notes/noteOutbox";
 import { formatTimelineMs } from "@/lib/notes/placement";
+import type { TranscriptSegment } from "@/types";
 
 import NoteOnSelectionPopover from "../notes/NoteOnSelectionPopover";
 import Button from "../ui/Button";
@@ -78,7 +79,11 @@ const lineTrigger = (root: HTMLElement | null, segmentId: string) => {
   return text?.closest("[data-line-actions]")?.querySelector<HTMLElement>('[aria-haspopup="menu"]') ?? null;
 };
 
+/** A note needs locked words: a settling word's wording and time can still change. */
+const SELECTION_SETTLING_REASON = "Selected words are still settling.";
+
 interface TranscriptSelectionToolbarProps {
+  disabledReason?: string;
   captured: CapturedSelection;
   onClose: () => void;
   /** The processed view: starts a note on the selection, from where it is now. */
@@ -97,20 +102,23 @@ export function TranscriptSelectionToolbar({
   onClose,
   onWrite,
   onNoteOnText,
+  disabledReason,
 }: TranscriptSelectionToolbarProps) {
   const box = useFollowedBox(captured.range, captured.box);
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const anchorRef = useMemo(() => ({ current: anchor }), [anchor]);
   const { panelRef, panelStyle, reposition } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
   const { selection } = captured;
+  const reasonId = useId();
+  const visibleReason = selection ? disabledReason : undefined;
 
-  // Placed again once the selection's place has moved with a scroll.
+  // Follow the selection and remeasure when its explanation changes the panel's height.
   useLayoutEffect(() => {
     reposition();
-  }, [box, reposition]);
+  }, [box, reposition, visibleReason]);
 
   const addNote = () => {
-    if (!selection) return;
+    if (!selection || disabledReason) return;
     if (onWrite) {
       onWrite(box);
       return;
@@ -140,28 +148,38 @@ export function TranscriptSelectionToolbar({
         aria-label="Selected text"
         data-selection-ui
         style={panelStyle}
-        className="z-[var(--z-dropdown)] flex gap-1 rounded-lg border border-surface-border bg-surface-card p-1 shadow-float"
+        className="z-[var(--z-dropdown)] flex flex-col gap-1 rounded-lg border border-surface-border bg-surface-card p-1 shadow-float"
       >
-        {selection ? (
+        <div className="flex gap-1">
+          {selection ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconLeft={<StickyNote aria-hidden="true" className="h-4 w-4" />}
+              onClick={addNote}
+              disabled={!!disabledReason}
+              title={disabledReason}
+              aria-describedby={visibleReason ? reasonId : undefined}
+              className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
+            >
+              Add note
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
-            iconLeft={<StickyNote aria-hidden="true" className="h-4 w-4" />}
-            onClick={addNote}
+            iconLeft={<Copy aria-hidden="true" className="h-4 w-4" />}
+            onClick={() => void copy()}
             className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
           >
-            Add note
+            Copy
           </Button>
+        </div>
+        {visibleReason ? (
+          <p id={reasonId} className="max-w-64 px-2 pb-1 text-xs text-contrast-helper">
+            {visibleReason}
+          </p>
         ) : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          iconLeft={<Copy aria-hidden="true" className="h-4 w-4" />}
-          onClick={() => void copy()}
-          className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
-        >
-          Copy
-        </Button>
       </SurfaceBase>
     </>,
     document.body,
@@ -220,7 +238,8 @@ export default function TranscriptSelectionNotes({
   root,
   onAddNote,
   onNoteOnText,
-}: NoteHandlers & { root: RefObject<HTMLElement | null> }) {
+  segments,
+}: NoteHandlers & { root: RefObject<HTMLElement | null>; segments?: readonly TranscriptSegment[] }) {
   const [writing, setWriting] = useState<Writing | null>(null);
   const writingNote = writing && onAddNote ? writing : null;
   const { captured, clear } = useCapturedSelection(root, writingNote !== null);
@@ -238,10 +257,16 @@ export default function TranscriptSelectionNotes({
   }
   if (!captured || (!onAddNote && !onNoteOnText)) return null;
   const { selection } = captured;
+  const lockedAsSelected = ([id, text]: [string, string]) => segments?.some((line) =>
+    line.words?.some((word) => word.id === id && word.locked && word.word.trim() === text)) ?? false;
+  const disabledReason = captured.settling ||
+    Object.entries(captured.pendingWords ?? {}).some((word) => !lockedAsSelected(word))
+    ? SELECTION_SETTLING_REASON : undefined;
   return (
     <TranscriptSelectionToolbar
       key={captured.seq}
       captured={captured}
+      disabledReason={disabledReason}
       onClose={clear}
       onWrite={
         onAddNote && selection

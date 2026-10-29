@@ -9,7 +9,7 @@ import {
   applyTranscriptDelta,
   LocalTranscriptState,
 } from "@/lib/transcriptState";
-import { Recording, TranscriptSegment } from "@/types";
+import { Recording, RecordingSpeaker, TranscriptSegment } from "@/types";
 
 /**
  * Poll interval while a capture is running.
@@ -44,6 +44,8 @@ export const LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS = 10;
 export const LIVE_TRANSCRIPT_READ_TIMEOUT_MS = 15_000;
 
 export interface LiveTranscript {
+  speakers: readonly RecordingSpeaker[];
+  refresh: () => void;
   segments: TranscriptSegment[];
   /** False until the first fetch resolves, so callers can tell empty from unknown. */
   hasLoaded: boolean;
@@ -92,8 +94,10 @@ export function useLiveTranscript(
 ): LiveTranscript {
   const recordingId = recording?.id ?? null;
   const isLive = isLiveCaptureInProgress(recording);
+  const refreshRef = useRef<(() => void) | null>(null);
 
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [speakers, setSpeakers] = useState<RecordingSpeaker[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [liveSpeakerNames, setLiveSpeakerNames] =
     useState<Readonly<Record<string, string>>>(NO_NAMES);
@@ -106,6 +110,7 @@ export function useLiveTranscript(
       setSegments([]);
       setHasLoaded(false);
       setLiveSpeakerNames(NO_NAMES);
+      setSpeakers([]);
     }
   });
 
@@ -157,6 +162,7 @@ export function useLiveTranscript(
 
       stateRef.current = nextState;
       setSegments(nextState.segments);
+      setSpeakers((previous) => JSON.stringify(previous) === JSON.stringify(delta.speakers) ? previous : delta.speakers);
       setLiveSpeakerNames((previous) =>
         sameOrNext(previous, delta.live_speaker_names),
       );
@@ -166,6 +172,7 @@ export function useLiveTranscript(
     // One read at a time: a slow full read landing after a newer delta would
     // put the older transcript back. A tick that finds one running is skipped.
     let inFlight = false;
+    let pendingFullRead = false;
     // A poll failure is not worth surfacing over a running meeting: it does not
     // affect the capture or the final transcript, and the next tick retries.
     const poll = (mode: "full" | "delta") => {
@@ -176,7 +183,16 @@ export function useLiveTranscript(
         })
         .finally(() => {
           inFlight = false;
+          if (!cancelled && pendingFullRead) {
+            pendingFullRead = false;
+            poll("full");
+          }
         });
+    };
+
+    refreshRef.current = () => {
+      if (inFlight) pendingFullRead = true;
+      else poll("full");
     };
 
     poll("full");
@@ -191,6 +207,7 @@ export function useLiveTranscript(
 
     return () => {
       cancelled = true;
+      refreshRef.current = null;
       clearInterval(interval);
     };
   }, [recordingId, isLive]);
@@ -201,5 +218,6 @@ export function useLiveTranscript(
     [],
   );
 
-  return { segments, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames };
+  const refresh = useCallback(() => refreshRef.current?.(), []);
+  return { segments, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames, refresh };
 }

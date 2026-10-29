@@ -23,7 +23,7 @@ from backend.core import db as db_module
 from backend.models.pipeline import RecordingAudioWindowManifest, TranscriptUtterance
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
-from backend.processing.live_transcribe import _persist_live_run
+from backend.processing.live_persistence import _persist_live_run
 from backend.tests.storage_hygiene_harness import add_recording, postgres_engine
 from backend.utils.recording_audio_sync import lock_recording_audio
 
@@ -92,7 +92,7 @@ def test_live_write_during_stop_waits_for_finalize_and_writes_nothing(
 
         def live_write() -> None:
             try:
-                outcome["dispatch"] = _persist_live_run(
+                outcome["publication"] = _persist_live_run(
                     recording_id=recording_id,
                     sequence=1,
                     run=[0, 1],
@@ -133,7 +133,8 @@ def test_live_write_during_stop_waits_for_finalize_and_writes_nothing(
         live.join(10)
         assert not live.is_alive()
         assert "error" not in outcome, outcome.get("error")
-        assert outcome["dispatch"] is False
+        assert outcome["publication"].accepted is False
+        assert outcome["publication"].dispatch_meeting_edge is False
 
         with Session(engine) as session:
             recording = session.get(Recording, recording_id)

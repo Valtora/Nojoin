@@ -8,6 +8,7 @@ here writes, and core.py calls none of it, so the dependency runs one way.
 
 from typing import Any
 
+from backend.models.live_settling_public import public_settling_fields
 from backend.models.pipeline import TranscriptUtteranceState
 from backend.models.transcript import Transcript
 
@@ -23,6 +24,7 @@ from .core import (
     select,
     serialize_canonical_utterances,
 )
+from .guards import settling_required
 from .speaker import (
     _derive_default_speaker_assignment_authority,
     _derive_default_speaker_assignment_source,
@@ -100,6 +102,20 @@ def build_transient_utterance_payloads_from_segments(
                 "start_ms": _segment_to_ms(segment.get("start", 0.0)),
                 "end_ms": _segment_to_ms(segment.get("end", 0.0)),
                 "text": str(segment.get("text", "") or ""),
+                **public_settling_fields(
+                    segment.get("confidence_payload"),
+                    provisional=settling_required(transcript)
+                    and bool(segment.get("provisional")),
+                    final_utterance_id=segment.get("id")
+                    if settling_required(transcript) and not segment.get("provisional")
+                    else None,
+                    final_text=segment.get("text"),
+                ),
+                **(
+                    {"alignment_error": segment["alignment_error"]}
+                    if segment.get("alignment_error")
+                    else {}
+                ),
                 "speaker": str(segment.get("speaker") or UNKNOWN_SPEAKER),
                 "recording_speaker_id": segment.get("recording_speaker_id"),
                 "diarization_label": segment.get("diarization_label"),

@@ -22,12 +22,14 @@ export const updateTranscriptUtteranceSpeaker = async (
   recordingId: RecordingId,
   utteranceId: string,
   assignment: TranscriptSpeakerAssignment,
+  expectedRevision?: number,
 ): Promise<void> => {
   await api.patch(`/transcripts/${recordingId}/utterances/${utteranceId}/speaker`, {
     new_speaker_name: assignment.name,
     global_speaker_id: assignment.globalSpeakerId,
     diarization_label: assignment.diarizationLabel,
     scope: assignment.scope,
+    ...(expectedRevision !== undefined ? { expected_revision: expectedRevision } : {}),
   });
 };
 

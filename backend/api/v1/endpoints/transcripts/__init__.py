@@ -9,6 +9,7 @@ from . import (
     routes_analytics,
     routes_chat,
     routes_export,
+    routes_line_split,
     routes_note_attachments,
     routes_notes,
     routes_segments,

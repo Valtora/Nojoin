@@ -643,7 +643,7 @@ class ModelPreparationRequest(BaseModel):
     @field_validator("target")
     @classmethod
     def validate_target(cls, value: str) -> str:
-        allowed = {"active", "core", "parakeet", "canary", "nemotron"}
+        allowed = {"active", "core", "parakeet", "canary", "nemotron", "forced_aligner"}
         if value not in allowed:
             raise ValueError(f"target must be one of {sorted(allowed)}")
         return value
@@ -689,8 +689,8 @@ async def prepare_models_endpoint(
     try:
         task_id = await enqueue_model_preparation(
             transcription_backend=transcription_backend,
-            target="nemotron"
-            if target == "nemotron"
+            target=target
+            if target in {"nemotron", "forced_aligner"}
             else "core"
             if include_core
             else "active",
@@ -728,6 +728,7 @@ async def delete_model_endpoint(
         "parakeet",
         "canary",
         "nemotron",
+        "forced_aligner",
     ]:
         raise HTTPException(status_code=400, detail="Invalid model name")
 

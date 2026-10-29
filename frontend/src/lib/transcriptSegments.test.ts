@@ -9,10 +9,63 @@ import {
   extendRollingSpeakerHistoryWithSegments,
   getTranscriptSegmentKey,
   mergeTranscriptUtteranceDelta,
+  sortTranscriptSegments,
   transcriptSegmentFromUtterance,
 } from "./transcriptSegments";
 
 describe("transcriptSegments", () => {
+  it("keeps edge and interior untimed wording in source order after mapping and sorting", () => {
+    // HTTP rows use only the retained words' bounds, including when diarisation
+    // separates the timed neighbours. UUID order must have no effect.
+    const utterances = [
+      {
+        id: "z-first",
+        start: 2,
+        end: 3,
+        text: "Edge, valid! interior?",
+        speaker: "A",
+        revision: 1,
+      },
+      { id: "a-last", start: 12, end: 13, text: "kept. last!", speaker: "B", revision: 1 },
+    ];
+    const single = [{
+      id: "single", start: 2, end: 13,
+      text: "Edge, valid! interior? kept. last!", speaker: "UNKNOWN", revision: 1,
+    }];
+    for (const rows of [utterances, single]) {
+      const full = sortTranscriptSegments(
+        rows.map(transcriptSegmentFromUtterance),
+      );
+      const delta = mergeTranscriptUtteranceDelta([], [...rows].reverse(), []);
+      for (const segments of [full, delta]) {
+        expect(segments.map((segment) => segment.text).join(" ")).toBe(
+          "Edge, valid! interior? kept. last!",
+        );
+      }
+    }
+  });
+
+  it("preserves a whole-window failure through full and delta mapping", () => {
+    const utterance = {
+      id: "failed",
+      start: 0,
+      end: 30,
+      text: "Unplaced",
+      speaker: "UNKNOWN",
+      revision: 1,
+      alignment_error: "No usable word timings",
+    };
+    expect(transcriptSegmentFromUtterance(utterance).alignment_error).toBe(
+      utterance.alignment_error,
+    );
+    const failed = mergeTranscriptUtteranceDelta([], [utterance], []);
+    expect(failed[0].alignment_error).toBe(utterance.alignment_error);
+    const recovered = mergeTranscriptUtteranceDelta(
+      failed, [{ ...utterance, alignment_error: null }], [],
+    );
+    expect(recovered[0].alignment_error).toBeNull();
+  });
+
   it("maps canonical utterances into transcript segment display fields", () => {
     expect(
       transcriptSegmentFromUtterance({

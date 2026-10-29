@@ -6,7 +6,6 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
-from backend.utils.language_notice import language_detection_record
 from backend.utils.transcription_models import known_engine_override
 
 from .constants import *
@@ -14,6 +13,11 @@ from .final_asr import (
     mark_transcript_failed,
     transcribe_with_gpu_oom_retry,
 )
+from .final_publication import (
+    canonical_finalization_required,
+    staged_publication_required,
+)
+from .final_publication import persist_final_transcript as _persist_final_transcript
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
@@ -58,6 +62,7 @@ class _PipelineRunContext:
     # (segment, track) of each turn the phantom filter confirmed as non-speech;
     # the union file transcription reads keeps them muted (#678).
     non_speech_turns: tuple = ()
+    final_transcript_published: bool = False
 
 
 @dataclass
@@ -306,53 +311,10 @@ def _run_final_diarization_stage(
     return diarization_result
 
 
-def _persist_final_transcript(
-    ctx: _PipelineRunContext,
-    recording: Recording,
-    final_segments: list[dict],
-    transcription_result: dict,
-) -> Transcript:
-    """Create or update the transcript row with the consolidated segments.
-
-    Clears any error a previous run left, and resets a stale
-    ``notes_status == "error"`` back to ``pending`` so notes regenerate.
-    """
-    session = ctx.session
-
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording.id)
-    ).first()
-
-    full_text = transcription_result.get("text", "")
-    detection = language_detection_record(transcription_result, ctx.merged_config)
-
-    if transcript:
-        transcript.text = full_text
-        transcript.segments = final_segments
-        transcript.language_detection = detection
-        transcript.complete_transcription()
-        transcript.set_notes_error_message(None)
-        if transcript.notes_status == "error":
-            transcript.notes_status = "pending"
-        session.add(transcript)
-    else:
-        transcript = Transcript(
-            recording_id=recording.id,
-            text=full_text,
-            segments=final_segments,
-            language_detection=detection,
-            transcript_status="completed",
-        )
-        session.add(transcript)
-
-    session.commit()
-    return transcript
-
-
 def _finalize_transcript_and_notes(
     ctx: _PipelineRunContext,
     recording: Recording,
-    transcript: Transcript,
+    transcript: Transcript | None,
     final_segments: list[dict],
     llm_config: ResolvedLLMConfig,
     transcription_result: dict,
@@ -376,7 +338,9 @@ def _finalize_transcript_and_notes(
     recording.processing_step = f"Finalizing transcript structure...{device_suffix}"
     recording.processing_progress = 92
     session.add(recording)
-    session.commit()
+    staged = staged_publication_required(transcript)
+    if not staged:
+        session.commit()
 
     final_speaker_counts = {}
     for seg in updated_segments:
@@ -386,9 +350,14 @@ def _finalize_transcript_and_notes(
             final_speaker_counts[ov_spk] = final_speaker_counts.get(ov_spk, 0) + 1
     logger.info("Final transcript speaker distribution: %s", final_speaker_counts)
 
-    transcript.segments = updated_segments
-    session.add(transcript)
-    if config_manager.get("enable_canonical_transcript_writes", True):
+    if staged:
+        transcript = _persist_final_transcript(
+            ctx, recording, updated_segments, transcription_result, staged=True
+        )
+    else:
+        transcript.segments = updated_segments
+        session.add(transcript)
+    if canonical_finalization_required(transcript):
         finalize_utterances_from_segments(
             session,
             recording_id=recording.id,
@@ -402,6 +371,7 @@ def _finalize_transcript_and_notes(
         # Make the finalized utterances and their projection durable before the
         # notes and title stages: a failure there rolls the session back.
         session.commit()
+        ctx.final_transcript_published = True
 
     recording_speakers = session.exec(
         select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
@@ -500,6 +470,50 @@ def _release_pipeline_vram() -> None:
         logger.error("Error releasing VRAM: %s", e)
 
 
+def _prepare_pipeline_run(
+    task: Task,
+    session: Any,
+    recording: Recording,
+    temp_files: list[str],
+) -> tuple[_PipelineRunContext, ResolvedLLMConfig]:
+    """Resolve settings and release live models before final inference starts."""
+    # Clear any live ASR model left warm by another capture before this finalise
+    # loads its diarisation stack, so the two are never resident together.
+    _release_pipeline_vram()
+    user_settings = {}
+    if recording.user_id:
+        user = session.get(User, recording.user_id)
+        if user and user.settings:
+            user_settings = user.settings
+            logger.info(
+                f"Loaded settings for user {user.username}: {list(user_settings.keys())}"
+            )
+    llm_config = resolve_llm_config(session, user_settings, user_id=recording.user_id)
+    merged_config = llm_config.merged_config
+    # The recording's language over the owner's (#671). In place, like the
+    # engine override: the notes stage reads this same dict.
+    merged_config.update(apply_recording_language(merged_config, recording))
+
+    # Platform/Device detection for UX
+    import torch
+
+    device_type = "cpu"
+    if config_manager.get("use_gpu", True) and torch.cuda.is_available():
+        device_type = "cuda"
+    device_suffix = " (GPU)" if device_type == "cuda" else " (CPU, may take a while)"
+    return (
+        _PipelineRunContext(
+            task=task,
+            session=session,
+            recording_id=recording.id,
+            device_suffix=device_suffix,
+            temp_files=temp_files,
+            merged_config=merged_config,
+        ),
+        llm_config,
+    )
+
+
 @celery_app.task(
     name="backend.worker.tasks.process_recording_task",
     base=DatabaseTask,
@@ -539,46 +553,27 @@ def process_recording_task(
         logger.info("Recording %s was cancelled. Aborting task.", recording_id)
         return
 
-    # Clear any live ASR model left warm by another capture before this finalise
-    # loads its diarisation stack, so the two are never resident together.
-    _release_pipeline_vram()
-
-    user_settings = {}
-    if recording.user_id:
-        user = session.get(User, recording.user_id)
-        if user and user.settings:
-            user_settings = user.settings
-            logger.info(
-                f"Loaded settings for user {user.username}: {list(user_settings.keys())}"
-            )
-
-    llm_config = resolve_llm_config(session, user_settings, user_id=recording.user_id)
-    merged_config = llm_config.merged_config
-    # The recording's language over the owner's (#671). In place, like the
-    # engine override: the notes stage reads this same dict.
-    merged_config.update(apply_recording_language(merged_config, recording))
-
-    # Platform/Device detection for UX
-    import torch
-
-    device_type = "cpu"
-    if config_manager.get("use_gpu", True) and torch.cuda.is_available():
-        device_type = "cuda"
-
-    device_suffix = " (GPU)" if device_type == "cuda" else " (CPU, may take a while)"
-
-    ctx = _PipelineRunContext(
-        task=self,
-        session=session,
-        recording_id=recording_id,
-        device_suffix=device_suffix,
-        temp_files=temp_files,
-        merged_config=merged_config,
-    )
+    transcript = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording_id)
+    ).first()
+    staged = staged_publication_required(transcript)
+    ctx = None
+    if not staged:
+        # Ordinary recordings retain HEAD's preparation and exception timing.
+        ctx, llm_config = _prepare_pipeline_run(self, session, recording, temp_files)
 
     from backend.processing.audio_preprocessing import cleanup_temp_file
 
     try:
+        if staged:
+            # Settled failures preserve the previous view and a terminal ERROR,
+            # including preparation failures before the first inference.
+            ctx, llm_config = _prepare_pipeline_run(
+                self, session, recording, temp_files
+            )
+        merged_config = ctx.merged_config
+        device_suffix = ctx.device_suffix
+
         recording.status = RecordingStatus.PROCESSING
         # Stamp the task actually doing the work, not just the one the API dispatched.
         # The startup sweep uses this to tell a live run from one whose worker died,
@@ -639,9 +634,10 @@ def process_recording_task(
             config=merged_config,
         )
 
-        transcript = _persist_final_transcript(
-            ctx, recording, final_segments, transcription_result
-        )
+        if not staged:
+            transcript = _persist_final_transcript(
+                ctx, recording, final_segments, transcription_result
+            )
 
         # --- Stage: speaker assignment / identification ---
         assign_and_identify_speakers(ctx, recording, final_segments, diarization_result)
@@ -682,14 +678,6 @@ def process_recording_task(
             f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds"
         )
 
-        from backend.worker.tasks.followups import (
-            dispatch_post_processing_followups,
-        )
-
-        dispatch_post_processing_followups(recording_id)
-
-        return {"status": "success", "recording_id": recording_id}
-
     except AudioProcessingError as e:
         record_pipeline_metric(
             stage="final_processing_failed",
@@ -717,7 +705,9 @@ def process_recording_task(
             recording.processing_completed_at = None
             session.add(recording)
             session.commit()
-            update_recording_status(session, recording.id)
+            if not staged or (ctx is not None and ctx.final_transcript_published):
+                update_recording_status(session, recording.id)
+        return None
 
     except Exception as e:
         interrupted = is_task_interruption(e) or isinstance(e, CancelledError)
@@ -748,12 +738,13 @@ def process_recording_task(
             recording.processing_completed_at = None
             session.add(recording)
             session.commit()
-            # Component state can still be pending, processing or completed;
-            # it must not overwrite an interrupted run's terminal ERROR.
-            if not interrupted:
+            if not interrupted and (
+                not staged or (ctx is not None and ctx.final_transcript_published)
+            ):
                 update_recording_status(session, recording.id)
         if interrupted:
             raise
+        return None
 
     finally:
         for temp_file in temp_files:
@@ -761,6 +752,23 @@ def process_recording_task(
 
         # --- VRAM Management ---
         _release_pipeline_vram()
+
+    # Processing has committed its terminal state. Optional work must never
+    # enter the processing-failure handlers or retry the completed pipeline.
+    try:
+        from backend.worker.tasks.followups import dispatch_post_processing_followups
+
+        dispatch_post_processing_followups(recording_id)
+    except Exception as exc:
+        if is_task_interruption(exc) or isinstance(exc, CancelledError):
+            raise
+        logger.warning(
+            "Could not dispatch follow-up work for recording %s: %s",
+            recording_id,
+            exc,
+            exc_info=True,
+        )
+    return {"status": "success", "recording_id": recording_id}
 
 
 def _live_task_ids() -> set[str] | None:
