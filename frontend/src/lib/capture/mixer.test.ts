@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   computeAutomaticGainTarget,
@@ -197,9 +197,30 @@ describe("capture mixer", () => {
     context.state = "suspended";
     context.resumed = false;
 
-    await mixer.resumeContext();
+    await expect(mixer.resumeContext(2_000)).resolves.toBe(true);
 
     expect(context.resumed).toBe(true);
+  });
+
+  it("gives up on a context that stays interrupted after the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const context = new FakeAudioContext();
+      const mixer = await createCaptureMixer({
+        microphoneStream: {} as MediaStream,
+        audioContextFactory: () => context as unknown as AudioContext,
+      });
+      // WebKit's non-standard "interrupted" state, whose resume() can stay pending.
+      context.state = "interrupted" as AudioContextState;
+      context.resume = () => new Promise<void>(() => {});
+
+      const resuming = mixer.resumeContext(2_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      await expect(resuming).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("can dispose a mixer after its microphone was detached", async () => {

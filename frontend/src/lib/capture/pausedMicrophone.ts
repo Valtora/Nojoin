@@ -24,7 +24,7 @@ export const releasePausedMicrophone = (runtime: PausedMicrophoneRuntime, enable
 
 export const assertMicrophoneResumeCurrent = (isCurrent: () => boolean) => {
   if (!isCurrent()) {
-    throw new Error("The recording changed while the microphone was opening. Try Resume again if it is still paused.");
+    throw new Error("The recording changed while Resume was waiting. Try Resume again if it is still paused.");
   }
 };
 

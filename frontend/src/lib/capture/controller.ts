@@ -193,6 +193,12 @@ const RECORDER_STOP_TIMEOUT_MS = 8_000;
 
 const UPLOAD_FLUSH_TIMEOUT_MS = 60_000;
 
+/** How long Resume waits for a suspended or interrupted audio context. */
+const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 2_000;
+
+const AUDIO_CONTEXT_NOT_RUNNING_MESSAGE =
+  "The browser has not restarted audio capture, so the recording is still paused. End any call or other app using audio, return to this tab, then choose Resume again.";
+
 /**
  * Coverage thresholds. Both must be exceeded, so the ordinary few seconds of
  * trailing segment latency stays quiet.
@@ -982,6 +988,12 @@ export class CaptureController {
       if (released) {
         usedDefault = await reconnectPausedMicrophone(runtime, this.state.settings, isCurrent);
       }
+      // A context the browser suspended or interrupted during the pause would
+      // record nothing, so the server is told only once it renders again.
+      if (!(await runtime.mixer.resumeContext(AUDIO_CONTEXT_RESUME_TIMEOUT_MS))) {
+        throw new Error(AUDIO_CONTEXT_NOT_RUNNING_MESSAGE);
+      }
+      assertMicrophoneResumeCurrent(isCurrent);
       // Keep this tab's epoch: resuming elsewhere must still refuse this holder.
       response = await retryAfterSignIn(() =>
         this.forCapture(recordingId, runtime.ownerId, () =>
@@ -990,9 +1002,6 @@ export class CaptureController {
       );
       // A stalled uploader retries its retained queue before new audio.
       runtime.uploader.recover();
-      // Not awaited: a context the browser keeps interrupted must not hold
-      // Resume. The recorder's flush gives it a moment to start rendering.
-      void runtime.mixer.resumeContext().catch(() => {});
       await runtime.recorder.resume();
       // A Stop or Discard while the server or recorder resumed owns it now.
       assertMicrophoneResumeCurrent(isCurrent);

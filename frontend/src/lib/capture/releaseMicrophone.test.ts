@@ -50,7 +50,7 @@ vi.mock("./captureLock", () => ({
 vi.mock("./mixer", () => ({
   createCaptureMixer: vi.fn(async () => ({
     pcmSource: {}, systemAnalyser: {}, microphoneAnalyser: {}, mixedAnalyser: {},
-    detachMicrophone: vi.fn(), replaceMicrophone: vi.fn(), resumeContext: vi.fn(async () => {}),
+    detachMicrophone: vi.fn(), replaceMicrophone: vi.fn(), resumeContext: vi.fn(async () => true),
     applySettings: vi.fn(), updateAutomaticGain: vi.fn(), dispose: vi.fn(async () => {}),
   })),
 }));
@@ -334,6 +334,21 @@ describe("releasing only the microphone while paused", () => {
     expect(mixer.replaceMicrophone).not.toHaveBeenCalled();
     // A context the browser suspended during the pause renders again.
     expect(mixer.resumeContext).toHaveBeenCalledOnce();
+    expect(capture.getState().status).toBe("recording");
+  });
+  it.each([false, true])("stays paused with a reason while the audio context stays interrupted, release=%s", async (release) => {
+    const { capture, recorder, mixer } = await start("shared_audio", release);
+    await capture.pause();
+    vi.mocked(mixer.resumeContext).mockResolvedValueOnce(false);
+    await expect(capture.resume()).rejects.toThrow(/has not restarted audio capture/);
+    expect(api.resumeRecordingCapture).not.toHaveBeenCalled();
+    expect(recorder.resume).not.toHaveBeenCalled();
+    expect(capture.getState()).toMatchObject({ status: "paused", runtimeActive: true });
+    expect(capture.getState().error).toMatch(/has not restarted audio capture/);
+    // A reopened microphone is released again, so nothing stays live while paused.
+    expect(replacement.readyState).toBe(release ? "ended" : "live");
+    getUserMedia.mockResolvedValueOnce(mediaStream(audioTrack()));
+    await expect(capture.resume()).resolves.toMatchObject({ recordingId: "rec-1", resumed: true });
     expect(capture.getState().status).toBe("recording");
   });
   it("reacquires a released mic after the release setting is disabled", async () => {

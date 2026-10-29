@@ -190,7 +190,7 @@ vi.mock("./mixer", () => ({
     microphoneAnalyser: {},
     mixedAnalyser: {},
     updateAutomaticGain: vi.fn(),
-    resumeContext: vi.fn(async () => {}),
+    resumeContext: vi.fn(async () => true),
     dispose: vi.fn(),
   })),
 }));

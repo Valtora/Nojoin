@@ -21,8 +21,11 @@ export interface CaptureMixer {
   detachMicrophone: () => void;
   /** Attaches a fresh microphone to the existing analyser, gain and PCM paths. */
   replaceMicrophone: (stream: MediaStream) => void;
-  /** Restarts rendering after the browser suspended or interrupted the context. */
-  resumeContext: () => Promise<void>;
+  /**
+   * Asks a suspended or interrupted context to render again, waiting at most
+   * `timeoutMs`. True once the context is running.
+   */
+  resumeContext: (timeoutMs: number) => Promise<boolean>;
   dispose: () => Promise<void>;
 }
 
@@ -243,10 +246,17 @@ export const createCaptureMixer = async (
     microphoneSource = null;
   };
 
-  const resumeContext = async () => {
+  const resumeContext = async (timeoutMs: number) => {
     if (context.state !== "running") {
-      await context.resume();
+      // An interrupted context (iOS during a call) can leave resume() pending.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        context.resume().catch(() => {}),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+      ]);
+      clearTimeout(timer);
     }
+    return context.state === "running";
   };
 
   const replaceMicrophone = (stream: MediaStream) => {
