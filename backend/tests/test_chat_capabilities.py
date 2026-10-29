@@ -5,6 +5,10 @@ Each case drives a real backend chat path against a fake SDK or HTTP client
 carried and the prompt text. The capability statement must match the tools:
 a path that sends ``update_meeting_notes`` says it can change the notes, and
 every other path says it cannot. Neither may offer to act after the reply.
+
+The subscription (CLI) backend is covered for its prompt only: the tools it
+gives the Claude Agent SDK are set inside its manager, and the SDK is not
+installed outside the io worker, so these tests make no claim about them.
 """
 
 from __future__ import annotations
@@ -34,6 +38,17 @@ NOTES_TOOL = "update_meeting_notes"
 
 # What one chat request sent: the tool names it offered and its prompt text.
 Sent = tuple[set[str], str]
+
+
+def _assert_offers_nothing_after_the_reply(prompt: str, can_edit_notes: bool) -> None:
+    """The restriction itself, checked apart from the prompt constants.
+
+    Comparing against the constants alone would pass if both were rewritten to
+    promise monitoring, so the key phrases are pinned here independently.
+    """
+    assert "cannot watch the meeting" in prompt
+    assert "never offer to" in prompt
+    assert ("cannot change the meeting notes" in prompt) is not can_edit_notes
 
 
 def _chat(backend, stream: bool) -> None:
@@ -164,12 +179,11 @@ def _ollama(stream: bool) -> Sent:
     return set(sent.get("tools") or []), sent["messages"][-1]["content"]
 
 
-def _cli(stream: bool) -> Sent:
+def _cli_prompt(stream: bool) -> str:
+    """The prompt the CLI backend hands its manager, which runs the SDK."""
     prompts: list[str] = []
 
     class FakeManager:
-        # The real manager runs the SDK with allowed_tools=[] (cli/manager.py),
-        # so a subscription chat never has the notes tool.
         def run_single_turn(self, user_id, prompt, *, model=None, timeout=300):
             prompts.append(prompt)
             return "An answer."
@@ -182,7 +196,7 @@ def _cli(stream: bool) -> Sent:
     backend._manager = FakeManager()
     _chat(backend, stream)
 
-    return set(), prompts[0]
+    return prompts[0]
 
 
 PATHS: dict[str, tuple[Callable[[bool], Sent], bool, bool]] = {
@@ -195,8 +209,6 @@ PATHS: dict[str, tuple[Callable[[bool], Sent], bool, bool]] = {
     "gemini-ask": (_gemini, False, False),
     "ollama-stream": (_ollama, True, False),
     "ollama-ask": (_ollama, False, False),
-    "cli-stream": (_cli, True, False),
-    "cli-ask": (_cli, False, False),
 }
 
 
@@ -214,3 +226,14 @@ def test_chat_capability_statement_matches_the_tools_sent(path: str) -> None:
     else:
         assert CAPABILITIES_WITHOUT_TOOLS in prompt
         assert CAPABILITIES_WITH_NOTES_TOOL not in prompt
+    _assert_offers_nothing_after_the_reply(prompt, has_notes_tool)
+
+
+@pytest.mark.parametrize("stream", [True, False], ids=["cli-stream", "cli-ask"])
+def test_cli_chat_prompt_offers_no_actions(stream: bool) -> None:
+    prompt = _cli_prompt(stream)
+
+    assert NOTES in prompt and TRANSCRIPT in prompt
+    assert CAPABILITIES_WITHOUT_TOOLS in prompt
+    assert CAPABILITIES_WITH_NOTES_TOOL not in prompt
+    _assert_offers_nothing_after_the_reply(prompt, can_edit_notes=False)

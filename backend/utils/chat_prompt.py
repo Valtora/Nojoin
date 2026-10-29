@@ -29,7 +29,7 @@ CAPABILITIES_WITH_NOTES_TOOL = """# WHAT YOU CAN DO
 Answer from what is provided here: the meeting notes, the transcript and any related context. Your only action is updating the meeting notes with your tool, when the user asks you to change them. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the meeting is still being recorded, suggest asking again later instead."""
 
 CAPABILITIES_WITHOUT_TOOLS = """# WHAT YOU CAN DO
-Answer from what is provided here: the meeting notes, the transcript and any related context. You cannot change the meeting notes, watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the meeting is still being recorded, suggest asking again later instead."""
+Answer from what is provided here: the meeting notes, the transcript and any related context. You cannot change the meeting notes. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the meeting is still being recorded, suggest asking again later instead."""
 
 
 @dataclass(frozen=True)
