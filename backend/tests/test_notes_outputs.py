@@ -247,7 +247,10 @@ async def test_extra_set_generates_then_saves_an_edit(
     saved = {
         **generating,
         "notes": edited,
-        "notes_generation_metadata": {"event_watermark": 0, "generated_through_ms": 1000},
+        "notes_generation_metadata": {
+            "event_watermark": 0,
+            "generated_through_ms": 1000,
+        },
         "notes_status": "completed",
     }
     assert without_timestamps(response.json()) == saved

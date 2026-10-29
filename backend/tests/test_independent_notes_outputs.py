@@ -41,6 +41,11 @@ pytestmark = [
 ]
 
 
+def generate_body(extra: bool, template_id: int) -> dict[str, Any]:
+    """A new set needs a template the meeting lacks; its own notes take none."""
+    return {"create_output": True, "notes_template_id": template_id} if extra else {}
+
+
 @pytest.mark.parametrize(
     "case",
     list(
@@ -85,7 +90,7 @@ async def test_outputs_generate_without_changing_recording(
         await db.commit()
 
     response = await reader_client.post(
-        f"{PATH}/generate", json={"create_output": extra}
+        f"{PATH}/generate", json=generate_body(extra, meeting[1])
     )
     assert response.status_code == 200, response.text
 
@@ -140,7 +145,7 @@ async def test_older_notes_completion_cannot_replace_a_newer_result(
 ) -> None:
     extra, fail = case
     response = await reader_client.post(
-        f"{PATH}/generate", json={"create_output": extra}
+        f"{PATH}/generate", json=generate_body(extra, meeting[1])
     )
     assert response.status_code == 200, response.text
     output_id = response.json()["output"]["id"] if extra else None
@@ -189,7 +194,7 @@ async def test_a_run_superseded_while_the_newer_one_still_generates_is_discarded
     still with the provider. A must not write while B is generating."""
     extra, fail = case
     response = await reader_client.post(
-        f"{PATH}/generate", json={"create_output": extra}
+        f"{PATH}/generate", json=generate_body(extra, meeting[1])
     )
     assert response.status_code == 200, response.text
     output_id = response.json()["output"]["id"] if extra else None
@@ -241,7 +246,9 @@ async def test_coverage_reaches_clients_without_the_request_id(
     recording = (await reader_client.get("/api/v1/recordings/meeting")).json()
     assert recording["transcript"]["notes_generation_metadata"] == coverage
 
-    created = await reader_client.post(f"{PATH}/generate", json={"create_output": True})
+    created = await reader_client.post(
+        f"{PATH}/generate", json=generate_body(True, meeting[1])
+    )
     assert created.json()["output"]["notes_generation_metadata"] == {}
     worker(_NotesLLM())
     (listed,) = (await reader_client.get(f"{PATH}/outputs")).json()
@@ -262,7 +269,7 @@ async def test_a_claim_whose_worker_was_lost_can_be_generated_again(
     extra: bool,
 ) -> None:
     response = await reader_client.post(
-        f"{PATH}/generate", json={"create_output": extra}
+        f"{PATH}/generate", json=generate_body(extra, meeting[1])
     )
     assert response.status_code == 200, response.text
     again = {"output_id": response.json()["output"]["id"]} if extra else {}
