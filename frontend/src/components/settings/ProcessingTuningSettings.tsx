@@ -231,7 +231,7 @@ export default function ProcessingTuningSettings({
         labelId={labelId("recording-phantom-filter")}
         descriptionId={descriptionId("recording-phantom-filter")}
         label="Phantom speaker filter"
-        description="A speaker under both limits is checked: below the floor it is treated as noise and reassigned, at or above the merge similarity it joins the closest speaker, and in between it is kept. Lower limits or a higher merge similarity keep more brief speakers. A limit of 0 turns the filter off."
+        description="A speaker under both limits is checked: below the floor it is treated as noise and reassigned, at or above the merge similarity it joins the closest speaker, and in between it is kept. Lower limits or a higher merge similarity keep more brief speakers. A limit of 0 turns the filter off. Turn it off if short replies from people who barely speak, such as a single 'yes' or 'agreed', go missing: the filter treats someone who says very little in the whole recording as noise, so their words can be merged into another speaker or dropped from the transcript."
       >
         {group("recording-phantom-filter", [
           "phantom_max_duration_s",
