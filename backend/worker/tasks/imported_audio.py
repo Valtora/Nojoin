@@ -9,16 +9,17 @@ files, so no recording is left holding a video. See "Imported Media Input" in
 docs/ARCHITECTURE.md.
 
 The audio is extracted into the recording's temp directory and moved beside
-the upload only while the task holds the recording's row, so a delete or
-discard either removes it with that directory or waits and removes it by its
-stored path. Every write is conditional on the recording still waiting for
-this task with the same ``audio_path``, and the upload is deleted only once
-the kept audio is stored. A duplicate or re-queued copy is therefore
-harmless: the copy whose write lands keeps its audio, every other copy
-removes only the file it extracted itself, and a copy that fails before
-storing anything leaves the upload for the next one. The cpu worker re-queues imports still waiting when
-it starts (``requeue_imports_waiting_for_audio``), since a task lost with a
-worker is not redelivered.
+the upload only while the task holds the recording's audio lock and then its
+row, the order discard takes them in, so a delete or discard either removes it
+with that directory or waits and removes it by its stored path. Every write is
+conditional on the recording still waiting for this task with the same
+``audio_path``, and the upload is deleted only once the kept audio is stored.
+A duplicate or re-queued copy is therefore harmless: the copy whose write
+lands keeps its audio, every other copy removes only the file it extracted
+itself, and a copy that fails before storing anything leaves the upload for
+the next one. The cpu worker re-queues imports still waiting when it starts
+(``requeue_imports_waiting_for_audio``), since a task lost with a worker is
+not redelivered.
 """
 
 import logging
@@ -44,6 +45,7 @@ from backend.utils.import_audio import (
 )
 from backend.utils.recording_audio_sync import (
     list_recording_audio_chunks,
+    lock_recording_audio,
     sync_recording_audio_chunks_from_entries,
     sync_recording_audio_window_manifests,
 )
@@ -166,6 +168,10 @@ def _store_kept_audio(
         )
     moved = False
     try:
+        # The audio lock before the row, as discard takes them. The window
+        # rebuild needs the lock, and waiting for it while holding the row
+        # deadlocked with a discard that held the lock (issue #787).
+        lock_recording_audio(session, recording_id)
         result = session.execute(
             update(Recording)
             .where(_waiting_for_audio(recording_id, source))
