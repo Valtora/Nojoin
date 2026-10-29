@@ -326,6 +326,46 @@ async def test_link_without_transcript_still_counts_a_meeting(
 
 
 @pytest.mark.anyio
+async def test_each_meeting_row_reports_its_own_date_duration_and_talk_time(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    mid_january = datetime(2026, 1, 15, 8, 30)
+    with Session(history.engine) as session:
+        long = _meeting(
+            session, history.owner, "long", created_at=FEBRUARY, duration_seconds=45.5
+        )
+        _line(session, _link(session, long, history.person), 3.5)
+        # Linked with no speech; a zero duration must not read as unknown.
+        silent = _meeting(
+            session,
+            history.owner,
+            "silent",
+            created_at=mid_january,
+            duration_seconds=0,
+        )
+        _link(session, silent, history.person)
+        unknown = _meeting(session, history.owner, "unknown", created_at=JANUARY)
+        _line(session, _link(session, unknown, history.person), 2)
+        expected = [
+            (long.public_id, "long", FEBRUARY, 45.5, 3.5),
+            (silent.public_id, "silent", mid_january, 0, 0),
+            (unknown.public_id, "unknown", JANUARY, None, 2),
+        ]
+        session.commit()
+    result = await _read(client, history.person)
+    assert [
+        (
+            row["recording_id"],
+            row["title"],
+            datetime.fromisoformat(row["date"]).replace(tzinfo=None),
+            row["duration_seconds"],
+            row["talk_time_seconds"],
+        )
+        for row in result["meetings"]
+    ] == expected
+
+
+@pytest.mark.anyio
 async def test_legacy_projection_fallback_is_scoped_to_linked_labels(
     history: HistoryDatabase, client: AsyncClient
 ) -> None:

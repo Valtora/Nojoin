@@ -1,12 +1,12 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getPersonMeetings } from "@/lib/api";
+import { setCachedUserTimeZone } from "@/lib/timezone";
 import type { PersonMeetingsRead } from "@/types";
 import { renderWithFillContract as render } from "@/test/fillMarkerContracts";
 import { PersonMeetings } from "./PersonMeetings";
 
 vi.mock("@/lib/api", () => ({ getPersonMeetings: vi.fn() }));
-vi.mock("@/lib/useUserTimeZone", () => ({ useUserTimeZone: () => "America/Los_Angeles" }));
 
 const empty: PersonMeetingsRead = {
   meetings: [], meeting_count: 0, total_talk_time_seconds: 0,
@@ -33,7 +33,11 @@ function history(): PersonMeetingsRead {
 }
 
 describe("person meeting history", () => {
-  beforeEach(() => { vi.mocked(getPersonMeetings).mockReset(); });
+  beforeEach(() => {
+    vi.mocked(getPersonMeetings).mockReset();
+    // The user's saved setting, as the settings load leaves it for every view.
+    setCachedUserTimeZone("America/Los_Angeles");
+  });
 
   it("keeps full-history figures separate from the latest 50 and converts seconds for display", async () => {
     vi.mocked(getPersonMeetings).mockResolvedValue(history());

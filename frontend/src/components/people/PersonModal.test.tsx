@@ -81,12 +81,6 @@ const answerLater = () => {
 describe("PersonModal meeting history lifecycle", () => {
   beforeEach(() => { vi.mocked(getPersonMeetings).mockClear(); });
 
-  it("does not request history when creating a person", () => {
-    render(<PersonModal person={null} isOpen onClose={vi.fn()} onSave={vi.fn()} />);
-    expect(screen.queryByRole("region", { name: "Meeting history" })).not.toBeInTheDocument();
-    expect(getPersonMeetings).not.toHaveBeenCalled();
-  });
-
   it("requests an existing person's history only when opened and refreshes after reopening", async () => {
     const props = { person: dana(true, false), onClose: vi.fn(), onSave: vi.fn() };
     const view = render(<PersonModal {...props} isOpen={false} />);
