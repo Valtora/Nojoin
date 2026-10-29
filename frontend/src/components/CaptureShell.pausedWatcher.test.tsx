@@ -453,9 +453,11 @@ describe("the recording page in a tab that is not capturing", () => {
   } as Recording;
 
   it.each([
-    { recording: live, serverPaused: false, label: "Live", minuteLater: "13:34" },
-    { recording: paused, serverPaused: true, label: "Paused", minuteLater: "12:34" },
-  ])("shows $label and the server's audio clock", async ({ recording, serverPaused, label, minuteLater }) => {
+    { recording: live, serverPaused: false, label: "Live", minuteLater: "13:34", resume: false },
+    { recording: paused, serverPaused: true, label: "Paused", minuteLater: "12:34", resume: true },
+  ])("shows $label and the server's audio clock", async ({
+    recording, serverPaused, label, minuteLater, resume,
+  }) => {
     vi.useFakeTimers();
     pathname = `/recordings/${recording.id}`;
     // Another tab of this browser is capturing it.
@@ -481,6 +483,8 @@ describe("the recording page in a tab that is not capturing", () => {
     expect(screen.queryByText("Recording")).not.toBeInTheDocument();
     expect(screen.getByText("12:34")).toBeInTheDocument();
     expect(screen.getByTitle("Stop recording")).toBeDisabled();
+    // No Resume beside "Live": there is nothing paused to resume.
+    expect(Boolean(screen.queryByTitle("Resume recording"))).toBe(resume);
 
     now += 60_000;
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });

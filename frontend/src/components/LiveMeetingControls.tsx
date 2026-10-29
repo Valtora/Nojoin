@@ -396,7 +396,8 @@ export default function LiveMeetingControls({
               but never reaches past the card: a 360px phone leaves it about
               17rem (#538). */}
           <div className="flex min-w-[min(18rem,100%)] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
-            {isRecording ? (
+            {/* Nothing to pause or resume here while another tab records it. */}
+            {capturedElsewhere && showsRecording ? null : isRecording ? (
               <ButtonBase
                 data-ui-fill="card"
                 data-ui-border="full" chrome="action"
