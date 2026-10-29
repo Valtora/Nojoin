@@ -111,6 +111,35 @@ def live_rows(
     )
 
 
+@dataclass(frozen=True)
+class Closing:
+    """A close seals the tail; pending words continue ``lead_speaker`` if no word does."""
+
+    lead_speaker: str | None = None
+
+
+def lead_speaker(
+    session: Session, recording_id: int, rows: Sequence[TranscriptUtterance]
+) -> str | None:
+    """The speaker of the newest immutable live line starting before the tail."""
+    tail = [row for row in rows if mutable_row(row)]
+    if not tail:
+        return None
+    return session.execute(
+        select(TranscriptUtterance.speaker_label)
+        .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(col(TranscriptUtterance.id).not_in([row.id for row in tail]))
+        .where(TranscriptUtterance.start_ms <= tail[0].start_ms)
+        .order_by(
+            col(TranscriptUtterance.start_ms).desc(),
+            col(TranscriptUtterance.id).desc(),
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def mutable_row(row: TranscriptUtterance) -> bool:
     """Manual results and fully locked lines are immutable machine anchors."""
     return not (
@@ -124,7 +153,7 @@ def word_decisions(
     decide: DecideSpeaker | None,
     *,
     speaker_enabled: bool,
-    closing: bool = False,
+    closing: Closing | None = None,
 ) -> list[LiveLabelDecision]:
     """Assign timed words independently; untimed atoms follow their neighbour."""
     previous = {
@@ -192,16 +221,35 @@ def word_decisions(
                     "UNKNOWN", not speaker_enabled, None, speaker_enabled
                 )
             )
-    return [
-        LiveLabelDecision(
-            "UNKNOWN" if item.diarisation_pending else item.speaker,
-            closing or item.locked,
-            item.share,
-            item.diarisation_pending and not closing,
+    return _published([item for item in decisions if item is not None], closing)
+
+
+def _published(
+    decisions: list[LiveLabelDecision], closing: Closing | None
+) -> list[LiveLabelDecision]:
+    """Show pending words as unknown; a close seals them with the nearest decision.
+
+    The final pass corrects a wrong guess. Unknown remains only with nothing before it.
+    """
+    previous = closing.lead_speaker if closing is not None else None
+    published: list[LiveLabelDecision] = []
+    for item in decisions:
+        speaker = item.speaker
+        if not item.diarisation_pending:
+            previous = speaker
+        elif closing is None or previous is None:
+            speaker = "UNKNOWN"
+        else:
+            speaker = previous
+        published.append(
+            LiveLabelDecision(
+                speaker,
+                closing is not None or item.locked,
+                item.share,
+                item.diarisation_pending and closing is None,
+            )
         )
-        for item in decisions
-        if item is not None
-    ]
+    return published
 
 
 def _stored_speaker(

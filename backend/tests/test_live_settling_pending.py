@@ -109,6 +109,70 @@ def test_pending_and_covered_unknown_have_distinct_public_lines_and_delta(
         assert [word["id"] for line in current for word in line["words"]] == ids
 
 
+def _labelled_then_pending(start: int, _end: int) -> LiveLabelDecision:
+    if start < 500:
+        return LiveLabelDecision("LIVE_PROVISIONAL_1", False, 1.0)
+    return LiveLabelDecision("UNKNOWN", False, None, True)
+
+
+def test_close_continues_the_previous_speaker_over_a_pending_tail(
+    settling_engine: Engine,
+) -> None:
+    recording_id = _seed(settling_engine)
+    with Session(settling_engine) as session:
+        _enable_speakers(session, recording_id)
+        publish_live_settling(
+            session,
+            request=_request(session, recording_id, 0),
+            words=_words(("Hello", " pending", " tail")),
+            decide_speaker=_labelled_then_pending,
+        )
+        session.commit()
+        before = serialize_canonical_utterances(session, recording_id)
+        assert [line["diarisation_pending"] for line in before] == [False, True]
+        close_live_settling(session, recording_id=recording_id)
+        session.commit()
+        closed = serialize_canonical_utterances(session, recording_id)
+        assert {line["speaker"] for line in closed} == {"LIVE_PROVISIONAL_1"}
+        assert all(
+            line["locked"] and not line["diarisation_pending"] for line in closed
+        )
+        assert [word["id"] for line in closed for word in line["words"]] == [
+            word["id"] for line in before for word in line["words"]
+        ]
+
+
+def test_close_after_resume_continues_the_sealed_speaker(
+    settling_engine: Engine,
+) -> None:
+    recording_id = _seed(settling_engine)
+    with Session(settling_engine) as session:
+        _enable_speakers(session, recording_id)
+        publish_live_settling(
+            session,
+            request=_request(session, recording_id, 0),
+            words=_words(("Hello",)),
+            decide_speaker=_labelled_then_pending,
+        )
+        close_live_settling(session, recording_id=recording_id)
+        session.commit()
+        publish_live_settling(
+            session,
+            request=_request(session, recording_id, 1, end_ms=5000),
+            words=[{"word": "Again", "start_ms": 3000, "end_ms": 3300}],
+            decide_speaker=_labelled_then_pending,
+        )
+        session.commit()
+        assert serialize_canonical_utterances(session, recording_id)[-1][
+            "diarisation_pending"
+        ]
+        close_live_settling(session, recording_id=recording_id)
+        session.commit()
+        closed = serialize_canonical_utterances(session, recording_id)
+        assert [line["speaker"] for line in closed] == ["LIVE_PROVISIONAL_1"] * 2
+        assert closed[-1]["text"] == "Again" and closed[-1]["locked"] is True
+
+
 def test_pending_survives_expiry_then_closes_unknown(
     settling_engine: Engine,
 ) -> None:

@@ -113,6 +113,28 @@ def test_live_projection_fallback_and_authoritative_empty(
     assert _live(session)["metrics"]["utterance_count"] == 0
 
 
+def test_live_pending_tail_counts_under_the_previous_speaker(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import backend.utils.canonical_pipeline.core as core
+
+    line = {"text": "one two", "speaker": "LIVE_PROVISIONAL_1", "provisional": True}
+    pending = {**line, "speaker": "UNKNOWN", "diarisation_pending": True}
+    monkeypatch.setattr(
+        core,
+        "serialize_canonical_utterances",
+        lambda *args: [
+            {**pending, "start": 0.0, "end": 1.0},
+            {**line, "start": 1.0, "end": 4.0},
+            {**pending, "start": 4.0, "end": 6.0},
+            {**pending, "start": 6.0, "end": 7.0},
+        ],
+    )
+    talk_time = _live(session)["metrics"]["talk_time"]
+    assert talk_time["label:LIVE_PROVISIONAL_1"]["speech_ms"] == 6_000
+    assert talk_time["label:UNKNOWN"]["speech_ms"] == 1_000
+
+
 @pytest.mark.parametrize(
     ("cleo_start_ms", "cleo_end_ms", "ana_share", "cleo_share"),
     [(15_000, 20_000, 0.75, 0.25), (10_000, 20_000, 0.6, 0.4)],

@@ -109,6 +109,27 @@ def _analysed_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return visible or segments
 
 
+def _continue_pending_speakers(
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """An undiarised tail counts under the speaker before it, as the transcript shows."""
+    continued: list[dict[str, Any]] = []
+    for segment in segments:
+        if (
+            continued
+            and segment.get("diarisation_pending") is True
+            and (segment.get("speaker") or "UNKNOWN") == "UNKNOWN"
+        ):
+            previous = continued[-1]
+            segment = {
+                **segment,
+                "speaker": previous.get("speaker"),
+                "recording_speaker_id": previous.get("recording_speaker_id"),
+            }
+        continued.append(segment)
+    return continued
+
+
 def _resolve_projection_speakers(
     segments: list[dict[str, Any]], directory: dict[str, dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -156,7 +177,9 @@ def compute_live_recording_analytics(
         if transcript is not None
         else []
     )
-    segments = _resolve_projection_speakers(segments, directory)
+    segments = _continue_pending_speakers(
+        _resolve_projection_speakers(segments, directory)
+    )
     rows = [
         UtteranceRow(
             _speaker_key(segment), _time_ms(segment, "start"), _time_ms(segment, "end")
