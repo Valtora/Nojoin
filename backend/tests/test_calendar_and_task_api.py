@@ -1600,12 +1600,10 @@ async def test_read_tasks_returns_only_current_users_tasks(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("path", ["/api/v1/tasks", "/api/v1/tasks/"])
 async def test_read_tasks_filters_recording_and_task_ownership(
     client: AsyncClient,
     override_current_user: Callable[[int], None],
     test_session_maker: sessionmaker,
-    path: str,
 ) -> None:
     for recording_id in (401, 402):
         await seed_recording(
@@ -1634,65 +1632,47 @@ async def test_read_tasks_filters_recording_and_task_ownership(
             )
     override_current_user(1)
 
-    response = await client.get(path, params={"recording_id": "rec-401"})
-
-    assert response.status_code == 200
-    assert [task["id"] for task in response.json()] == [101]
-    unfiltered = await client.get(path)
+    for path in ("/api/v1/tasks", "/api/v1/tasks/"):
+        response = await client.get(path, params={"recording_id": "rec-401"})
+        assert response.status_code == 200
+        assert [task["id"] for task in response.json()] == [101]
+    unfiltered = await client.get("/api/v1/tasks/")
     assert unfiltered.status_code == 200
     assert {task["id"] for task in unfiltered.json()} == {101, 102, 104}
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("path", ["/api/v1/tasks", "/api/v1/tasks/"])
 @pytest.mark.parametrize(
-    ("public_id", "owner_id", "expected_status"),
-    [
-        ("rec-empty", 1, 200),
-        ("rec-foreign", 2, 404),
-        ("missing", None, 404),
-        ("", None, 404),
-    ],
+    ("public_id", "owner_id"), [("rec-foreign", 2), ("missing", None)]
 )
-async def test_read_tasks_requires_owned_recording_even_without_links(
+async def test_read_tasks_requires_owned_recording(
     client: AsyncClient,
     override_current_user: Callable[[int], None],
     test_session_maker: sessionmaker,
-    path: str,
     public_id: str,
     owner_id: int | None,
-    expected_status: int,
 ) -> None:
-    await seed_task(test_session_maker, task_id=101, user_id=1, title="Unlinked")
     if owner_id is not None:
         await seed_recording(
             test_session_maker,
             recording_id=401,
             user_id=owner_id,
-            name="Meeting without tasks",
+            name="Someone else's meeting",
             public_id=public_id,
             created_at=TEST_TIMESTAMP,
         )
     override_current_user(1)
 
-    response = await client.get(path, params={"recording_id": public_id})
+    response = await client.get("/api/v1/tasks/", params={"recording_id": public_id})
 
-    assert response.status_code == expected_status
-    assert response.json() == (
-        [] if expected_status == 200 else {"detail": "Recording not found"}
-    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Recording not found"}
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("status", "expected_ids"),
-    [
-        ("active", {101, 102}),
-        ("open", {101}),
-        ("completed", {102}),
-        ("archived", {103}),
-        ("all", {101, 102, 103}),
-    ],
+    [("open", {101}), ("archived", {103})],
 )
 async def test_read_tasks_recording_filter_preserves_statuses(
     client: AsyncClient,

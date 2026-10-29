@@ -2,7 +2,7 @@
 
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   ChevronDown,
@@ -31,6 +31,15 @@ const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
   { tab: "tasks", label: "Tasks", icon: ListTodo },
 ];
 
+// Where the labels stop fitting: under 25rem for four tabs, under 30rem once
+// Tasks adds a fifth. Tailwind reads whole class names, so both sets are spelled out.
+const NARROW = {
+  four: { open: "@max-[25rem]:px-2", other: "@max-[25rem]:px-1.5", icon: "@max-[25rem]:block",
+    label: "@max-[25rem]:sr-only", collapse: "@max-[25rem]:w-8" },
+  five: { open: "@max-[30rem]:px-2", other: "@max-[30rem]:px-1.5", icon: "@max-[30rem]:block",
+    label: "@max-[30rem]:sr-only", collapse: "@max-[30rem]:w-8" },
+};
+
 interface RecordingSideColumnProps {
   allowChat?: boolean;
   inFlight?: boolean;
@@ -56,8 +65,8 @@ interface RecordingSideColumnProps {
  * WAI-ARIA tabs pattern), and the button that collapses it. Every panel stays
  * mounted, so switching tabs keeps a rename or an edit where it was.
  *
- * A narrow column keeps what fits. Under 30rem, where the labels and
- * the button no longer fit, the open tab shows its icon and label and the
+ * A narrow column keeps what fits. Under 25rem (30rem with Tasks), where the
+ * labels and the button no longer fit, the open tab shows its icon and label and the
  * others only their icons; under 12rem all are icons. A hidden label stays
  * for screen readers, and every tab has its label as a tooltip.
  */
@@ -83,11 +92,7 @@ function SideTabs({
   const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes, captures, "meeting-edge": meetingEdge, tasks };
   const tabs = SIDE_TABS.filter(({ tab }) => panels[tab] !== undefined);
   const sideTab = tabs.some(({ tab }) => tab === remembered) ? remembered : "speakers";
-
-  useEffect(() => {
-    tablistRef.current?.querySelector<HTMLElement>(`#side-tab-${sideTab}`)
-      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [sideTab]);
+  const narrow = tasks === undefined ? NARROW.four : NARROW.five;
 
   // Arrow keys move between the tabs and open them, wrapping; Home and End
   // jump to the first and last.
@@ -113,7 +118,7 @@ function SideTabs({
           ref={tablistRef}
           role="tablist"
           aria-label="Side panels"
-          className="flex min-w-0 overflow-x-auto"
+          className="flex min-w-0 overflow-hidden"
         >
           {tabs.map(({ tab, label, icon: Icon }) => {
             const open = sideTab === tab;
@@ -133,15 +138,15 @@ function SideTabs({
                 className={cn(
                   "flex min-w-0 items-center gap-1 border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action @max-[12rem]:px-1",
                   open
-                    ? "border-action text-action-text @max-[30rem]:px-2"
-                    : "shrink-0 border-transparent text-contrast-helper hover:text-foreground @max-[30rem]:px-1.5",
+                    ? `border-action text-action-text ${narrow.open}`
+                    : `shrink-0 border-transparent text-contrast-helper hover:text-foreground ${narrow.other}`,
                 )}
               >
-                <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[30rem]:block" />
+                <Icon aria-hidden="true" className={`hidden h-4 w-4 shrink-0 ${narrow.icon}`} />
                 <span
                   className={cn(
                     "min-w-0 truncate",
-                    open ? "@max-[12rem]:sr-only" : "@max-[30rem]:sr-only",
+                    open ? "@max-[12rem]:sr-only" : narrow.label,
                   )}
                 >
                   {label}
@@ -156,7 +161,7 @@ function SideTabs({
           aria-label="Collapse side panels"
           title="Collapse side panels"
           onClick={() => setSpeakerPanelCollapsed(true)}
-          className="@max-[30rem]:w-8"
+          className={narrow.collapse}
         />
       </SurfaceBase>
       {tabs.map(({ tab }) => (

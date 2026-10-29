@@ -9,7 +9,7 @@ import type { RecordingId, UserTask } from "@/types";
 export function useRecordingTasks(recordingId: RecordingId | undefined) {
   const [loaded, setLoaded] = useState<{ recordingId: RecordingId; tasks: UserTask[] } | null>(null);
   const [busyTaskId, setBusyTaskId] = useState<number | null>(null);
-  const { addNotification } = useNotificationStore();
+  const addNotification = useNotificationStore((state) => state.addNotification);
 
   useEffect(() => {
     if (!recordingId) return;

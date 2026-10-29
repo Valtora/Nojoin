@@ -130,20 +130,20 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
   });
 
   // jsdom has no container queries, so this reads the rules a browser applies:
-  // a label hides under 30rem to make room for the optional fifth tab, and only under 12rem on
+  // a label hides under 25rem on the other tabs, and only under 12rem on
   // the open one, where all are icons.
   it("keeps the open tab's label longest in a narrow column, the others their icons", () => {
     renderColumn();
     const label = (name: string) => tab(name).querySelector("span")!;
     const hidesBelow = (name: string) =>
-      ["12rem", "30rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
+      ["12rem", "25rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
 
     expect(hidesBelow("Speakers")).toEqual(["12rem"]);
-    expect(hidesBelow("My notes")).toEqual(["30rem"]);
-    expect(hidesBelow("Captures")).toEqual(["30rem"]);
-    expect(hidesBelow("Meeting Edge")).toEqual(["30rem"]);
+    expect(hidesBelow("My notes")).toEqual(["25rem"]);
+    expect(hidesBelow("Captures")).toEqual(["25rem"]);
+    expect(hidesBelow("Meeting Edge")).toEqual(["25rem"]);
     fireEvent.click(tab("My notes"));
-    expect(hidesBelow("Speakers")).toEqual(["30rem"]);
+    expect(hidesBelow("Speakers")).toEqual(["25rem"]);
     expect(hidesBelow("My notes")).toEqual(["12rem"]);
     for (const name of ["Speakers", "My notes", "Captures", "Meeting Edge"]) {
       expect(tab(name)).toHaveAttribute("title", name);
@@ -153,6 +153,8 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
 
   it("includes linked Tasks in keyboard navigation and falls back when they are absent", () => {
     const { rerender } = render(column(true, true));
+    // A fifth tab needs a wider column before the other labels give way to icons.
+    expect(tab("Tasks").querySelector("span")).toHaveClass("@max-[30rem]:sr-only");
     fireEvent.keyDown(tab("Speakers"), { key: "End" });
     expect(tab("Tasks")).toHaveFocus();
     expect(tab("Tasks")).toHaveAttribute("aria-selected", "true");

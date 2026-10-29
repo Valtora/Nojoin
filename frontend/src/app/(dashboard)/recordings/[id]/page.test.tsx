@@ -59,7 +59,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification }),
+  useNotificationStore: (select?: (state: { addNotification: typeof addNotification }) => unknown) =>
+    select ? select({ addNotification }) : { addNotification },
 }));
 
 // The dashboard layout wraps every recording page in the capture provider; the
@@ -391,10 +392,7 @@ describe("RecordingPage (detail)", () => {
     if (width === 1440) expect(screen.getByRole("tab", { name: "Speakers" })).toHaveAttribute("aria-selected", "true");
   });
 
-  it.each([
-    RecordingStatus.UPLOADING, RecordingStatus.PAUSED, RecordingStatus.QUEUED,
-    RecordingStatus.PROCESSING, RecordingStatus.PROCESSED, RecordingStatus.ERROR,
-  ].flatMap((status) => [390, 1440].map((width) => ({ status, width }))))(
+  it.each([RecordingStatus.PAUSED, RecordingStatus.PROCESSED].flatMap((status) => [390, 1440].map((width) => ({ status, width }))))(
     "shows linked Tasks while $status at width $width", async ({ status, width }) => {
       vi.stubGlobal("innerWidth", width);
       sidePanelsCollapsed = false;

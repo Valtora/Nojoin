@@ -271,14 +271,14 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // Meeting Edge shows while it is switched on, and afterwards wherever it left guidance.
   const showMeetingEdge = meetingEdgeEnabled === true || Boolean(recording?.transcript?.meeting_edge_payload);
 
-  // The "speakers", "my-notes", "captures" and "meeting-edge" panels exist only on mobile,
+  // The "speakers", "my-notes", "captures", "meeting-edge" and "tasks" panels exist only on mobile,
   // where they have tabs; desktop shows them in the side column. Leaving
   // mobile while one is active, or a remembered Meeting Edge panel that is not
   // shown, would blank the main content, so fall back to the transcript.
   useEffect(() => {
     if (
       (!isMobile &&
-        (activePanel === "speakers" || activePanel === "my-notes" || activePanel === "captures" || activePanel === "meeting-edge")) ||
+        ["speakers", "my-notes", "captures", "meeting-edge", "tasks"].includes(activePanel)) ||
       (meetingEdgeEnabled !== null && !showMeetingEdge && activePanel === "meeting-edge")
     ) {
       setActivePanel("transcript");

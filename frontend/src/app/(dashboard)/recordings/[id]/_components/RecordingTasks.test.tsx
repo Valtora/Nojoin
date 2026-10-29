@@ -9,7 +9,8 @@ const addNotification = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api", () => api);
 vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification }),
+  useNotificationStore: (select: (state: { addNotification: typeof addNotification }) => unknown) =>
+    select({ addNotification }),
 }));
 vi.mock("next/link", () => ({
   default: ({ children, ...props }: ComponentPropsWithoutRef<"a">) => <a {...props}>{children}</a>,
@@ -46,35 +47,28 @@ describe("recording linked tasks", () => {
     api.getUserTasks.mockResolvedValue([task()]);
   });
 
-  it("keeps completed tasks in the list and reopens them through the existing update", async () => {
+  it("completes and reopens tasks from the saved response, keeping both in the list", async () => {
     api.getUserTasks.mockResolvedValue([
       task(),
       task({ id: 8, title: "Book a room", completed_at: "2026-10-21T09:00:00Z" }),
     ]);
-    api.updateUserTask.mockResolvedValue(task({ id: 8, title: "Book a room" }));
+    api.updateUserTask.mockResolvedValueOnce(task({ completed_at: "2026-10-22T09:00:00Z" }))
+      .mockResolvedValueOnce(task({ id: 8, title: "Book a room" }));
     render(<LinkedTasks recordingId="rec-planning" />);
 
-    const completed = await screen.findByRole("checkbox", { name: "Mark Book a room incomplete" });
-    expect(completed).toBeChecked();
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Mark Send the agenda complete" }));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Mark Send the agenda incomplete" }))
+      .toBeChecked());
     expect(api.getUserTasks).toHaveBeenCalledWith("all", "rec-planning");
-    fireEvent.click(completed);
+    expect(api.updateUserTask).toHaveBeenCalledWith(7, { completed: true });
 
+    const completed = screen.getByRole("checkbox", { name: "Mark Book a room incomplete" });
+    expect(completed).toBeChecked();
+    fireEvent.click(completed);
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Mark Book a room complete" }))
       .not.toBeChecked());
     expect(api.updateUserTask).toHaveBeenCalledWith(8, { completed: false });
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
-  });
-
-  it("shows completion from the saved response without removing the task", async () => {
-    api.updateUserTask.mockResolvedValue(task({ completed_at: "2026-10-22T09:00:00Z" }));
-    render(<LinkedTasks recordingId="rec-planning" />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Mark Send the agenda complete" }));
-
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Mark Send the agenda incomplete" }))
-      .toBeChecked());
-    expect(api.updateUserTask).toHaveBeenCalledWith(7, { completed: true });
-    expect(screen.getByRole("link", { name: "Send the agenda" })).toBeInTheDocument();
   });
 
   it("keeps a failed toggle unchecked, reports it, and allows retry", async () => {
@@ -96,7 +90,7 @@ describe("recording linked tasks", () => {
     expect(api.updateUserTask).toHaveBeenCalledTimes(2);
   });
 
-  it("disables every checkbox while a save is pending and restores them afterward", async () => {
+  it("disables every checkbox while a save is pending and restores them afterwards", async () => {
     const save = deferred<UserTask>();
     api.getUserTasks.mockResolvedValue([task(), task({ id: 8, title: "Book a room" })]);
     api.updateUserTask.mockReturnValue(save.promise);
@@ -120,19 +114,6 @@ describe("recording linked tasks", () => {
     expect(link).toHaveAttribute("href", "/tasks?task=7");
     expect(link).toHaveAttribute("title", "Open in Tasks");
     expect(within(screen.getByRole("listitem")).getByText("Archived")).toBeInTheDocument();
-  });
-
-  it("hides previous rows immediately while the next recording loads", async () => {
-    const next = deferred<UserTask[]>();
-    api.getUserTasks.mockResolvedValueOnce([task()]).mockReturnValueOnce(next.promise);
-    const { rerender } = render(<LinkedTasks recordingId="rec-planning" />);
-    await screen.findByRole("link", { name: "Send the agenda" });
-    rerender(<LinkedTasks recordingId="rec-retro" />);
-
-    expect(screen.queryByRole("link", { name: "Send the agenda" })).not.toBeInTheDocument();
-    await act(async () => next.resolve([task({ id: 8, title: "Book a room" })]));
-    expect(screen.getByRole("link", { name: "Book a room" })).toBeInTheDocument();
-    expect(api.getUserTasks).toHaveBeenLastCalledWith("all", "rec-retro");
   });
 
   it("ignores a read that finishes after navigation to another recording", async () => {

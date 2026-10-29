@@ -236,8 +236,9 @@ export default function RecordingMainContent({
     ? activePanel
     : tabs[0].panel;
 
+  // A phone's remembered Tasks tab waits for the tasks, then falls back if there are none.
   useEffect(() => {
-    if (activePanel === "tasks" && (!isMobile || (!tasksLoading && !tasksContent))) setActivePanel("transcript");
+    if (isMobile && activePanel === "tasks" && !tasksLoading && !tasksContent) setActivePanel("transcript");
   }, [activePanel, isMobile, tasksContent, tasksLoading, setActivePanel]);
 
   // Arrow keys move between tabs and open them, wrapping at the ends; Home and

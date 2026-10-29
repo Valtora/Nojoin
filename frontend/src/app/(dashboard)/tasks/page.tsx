@@ -5,10 +5,6 @@ export default async function TasksPage({
 }: {
   searchParams: Promise<{ task?: string | string[] }>;
 }) {
-  const { task } = await searchParams;
-  const taskId = typeof task === "string" && /^\d+$/.test(task) ? Number(task) : undefined;
-  const initialTaskId = taskId !== undefined && Number.isSafeInteger(taskId) && taskId > 0
-    ? taskId
-    : undefined;
-  return <TasksWorkspace initialTaskId={initialTaskId} />;
+  const taskId = Number((await searchParams).task);
+  return <TasksWorkspace initialTaskId={Number.isInteger(taskId) && taskId > 0 ? taskId : undefined} />;
 }

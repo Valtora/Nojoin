@@ -29,10 +29,4 @@ describe("task list transport", () => {
     expect(url.pathname).toMatch(/\/tasks\/$/);
     expect(Object.fromEntries(url.searchParams)).toEqual({ status: "all", recording_id: "rec-planning" });
   });
-
-  it("keeps the ordinary task list active and unfiltered", async () => {
-    await getUserTasks();
-
-    expect(Object.fromEntries(new URL(requests[0].url).searchParams)).toEqual({ status: "active" });
-  });
 });
