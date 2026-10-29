@@ -1,5 +1,5 @@
 import logging
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -49,6 +49,11 @@ from backend.utils.languages import (
     validate_notes_language,
     validate_transcription_language,
 )
+from backend.utils.live_settling_settings import (
+    LIVE_SETTLING_DEFAULTS,
+    LIVE_SETTLING_KEYS,
+    normalise_live_settling_settings,
+)
 from backend.utils.notes_templates import (
     NotesTemplateError,
     validate_glossary,
@@ -93,6 +98,11 @@ class SettingsUpdate(BaseModel):
     enable_live_transcription: Optional[bool] = None
     # Install-wide, admin-only; selection is frozen when capture labels start.
     live_speaker_labels: Optional[str] = None
+    live_text_settling: Optional[Literal["off", "auto", "always"]] = None
+    live_text_settling_k: Optional[int] = Field(default=None, strict=True, ge=1, le=10)
+    live_text_settling_window_s: Optional[float] = Field(
+        default=None, strict=True, ge=2, le=30, allow_inf_nan=False
+    )
     speaker_engine: Optional[str] = None
     theme: Optional[str] = None
     gemini_model: Optional[str] = None
@@ -145,6 +155,7 @@ class SettingsUpdate(BaseModel):
     phantom_merge_threshold: Optional[float] = None
     word_flip_max_duration_s: Optional[float] = None
     word_flip_max_gap_s: Optional[float] = None
+    line_break_pause_s: Optional[float] = None
 
     @field_validator(*TUNING_KEYS, mode="before")
     @classmethod
@@ -386,7 +397,7 @@ def _apply_install_wide_ai_owner_fallback(
         return
 
     for field in INSTALL_WIDE_AI_SETTING_KEYS:
-        if field in {"speaker_engine", "live_speaker_labels"}:
+        if field in {"speaker_engine", "live_speaker_labels", *LIVE_SETTLING_KEYS}:
             continue
         current_value = merged.get(field)
         owner_value = owner_settings.get(field)
@@ -542,6 +553,14 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
         )
     _normalise_processing_tuning(merged, config_manager.get_all())
     _normalise_speaker_settings(merged)
+    merged.update(
+        normalise_live_settling_settings(
+            {
+                key: config_manager.get(key, default)
+                for key, default in LIVE_SETTLING_DEFAULTS.items()
+            }
+        )
+    )
 
     # System API keys (admin settings or .env) apply to every user.
     from backend.utils.config_manager import async_get_system_api_keys
@@ -595,7 +614,12 @@ def _build_settings_update_data(
 
     # config.json is the only place these keys live, so a null saved there would
     # replace the engine instead of falling back to the default.
-    for key in (*TRANSCRIPTION_SETTING_KEYS, "speaker_engine", "live_speaker_labels"):
+    for key in (
+        *TRANSCRIPTION_SETTING_KEYS,
+        "speaker_engine",
+        "live_speaker_labels",
+        *LIVE_SETTLING_KEYS,
+    ):
         if key in update_data and update_data[key] is None:
             del update_data[key]
 

@@ -18,6 +18,8 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from backend.utils.word_times import exceeds
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,6 +42,7 @@ PHANTOM_EMBEDDING_FLOOR_KEY = "phantom_embedding_floor"
 PHANTOM_MERGE_THRESHOLD_KEY = "phantom_merge_threshold"
 WORD_FLIP_MAX_DURATION_KEY = "word_flip_max_duration_s"
 WORD_FLIP_MAX_GAP_KEY = "word_flip_max_gap_s"
+LINE_BREAK_PAUSE_KEY = "line_break_pause_s"
 
 # Longest word (seconds) single-word flip smoothing relabels by default. The
 # onnx-asr word length cap may not exceed it.
@@ -69,6 +72,7 @@ TUNING_SPECS: dict[str, TuningSpec] = {
             WORD_FLIP_MAX_DURATION_KEY, WORD_FLIP_MAX_DURATION_DEFAULT_S, 0.0, 2.0
         ),
         TuningSpec(WORD_FLIP_MAX_GAP_KEY, 0.25, 0.0, 1.0),
+        TuningSpec(LINE_BREAK_PAUSE_KEY, 1.0, 0.5, 5.0),
     )
 }
 
@@ -145,6 +149,13 @@ def phantom_thresholds_conflict(config: Mapping[str, object] | None) -> bool:
     floor = _effective(config, PHANTOM_EMBEDDING_FLOOR_KEY)
     merge = _effective(config, PHANTOM_MERGE_THRESHOLD_KEY)
     return floor >= merge
+
+
+def line_break_pause_exceeded(
+    gap_s: float, config: Mapping[str, object] | None = None
+) -> bool:
+    """Use one pause rule for final word grouping and live settling lines."""
+    return exceeds(gap_s, resolve_tuning(config, LINE_BREAK_PAUSE_KEY))
 
 
 def validate_tuning_candidate(candidate: Mapping[str, object]) -> None:

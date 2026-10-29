@@ -114,6 +114,9 @@ def record_live_speaker_name(
     )
     session.add(row)
     session.flush()
+    from .durability import persist_name_anchors
+
+    persist_name_anchors(session, recording_id)
     return row
 
 

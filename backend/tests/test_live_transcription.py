@@ -18,6 +18,8 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.processing import live_persistence
+from backend.processing.live_state import _STATE_FILENAME
 from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
 from backend.utils.config_manager import (
     DEFAULT_SYSTEM_CONFIG,
@@ -36,7 +38,7 @@ def test_config_default_live_transcription_keys_present():
     """Live transcription is enabled and uses the shared transcription backend."""
     assert DEFAULT_SYSTEM_CONFIG["enable_live_transcription"] is True
     assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
-    assert DEFAULT_SYSTEM_CONFIG["live_max_segment_s"] == 20.0
+    assert DEFAULT_SYSTEM_CONFIG["live_max_segment_s"] == 30.0
 
 
 def test_live_transcription_keys_survive_reload(tmp_path):
@@ -137,6 +139,8 @@ CREATE TABLE recordings (
 
 TRANSCRIPTS_SCHEMA = """
 CREATE TABLE transcripts (
+    change_sequence BIGINT NOT NULL DEFAULT 0,
+    settling_state JSON,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -652,7 +656,6 @@ def test_detect_speech_segments_device_cpu(monkeypatch):
     import torch
 
     from backend.processing import vad as vad_module
-    from backend.utils.config_manager import config_manager
 
     # Configured for "cpu"
     monkeypatch.setattr(
@@ -696,7 +699,6 @@ def test_detect_speech_segments_device_cuda_fallback_to_cpu(monkeypatch):
     import torch
 
     from backend.processing import vad as vad_module
-    from backend.utils.config_manager import config_manager
 
     # Configured for "cuda" but unavailable
     monkeypatch.setattr(
@@ -743,7 +745,6 @@ def test_detect_speech_segments_device_cuda_migration_failure_fallback(
     import torch
 
     from backend.processing import vad as vad_module
-    from backend.utils.config_manager import config_manager
 
     # Configured for "cuda"
     monkeypatch.setattr(
@@ -800,22 +801,22 @@ def test_detect_speech_segments_device_cuda_migration_failure_fallback(
 
 class _FakeAudioStore:
     def __init__(self):
-        self._audio_by_path: dict[str, object] = {}
+        self._audio_by_file: dict[int, object] = {}
 
     def save_audio(self, path: str, tensor, sampling_rate: int = 16000) -> None:
 
         normalized = tensor.detach().clone()
         if normalized.ndim > 1:
             normalized = normalized.squeeze(0)
-        self._audio_by_path[str(path)] = normalized
         file_path = Path(path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"audio")
+        self._audio_by_file[file_path.stat().st_ino] = normalized
 
     def read_audio(
         self, path: str, sampling_rate: int = 16000, preserve_channels: bool = False
     ):
-        tensor = self._audio_by_path.get(str(path))
+        tensor = self._audio_by_file.get(Path(path).stat().st_ino)
         if tensor is None:
             raise FileNotFoundError(path)
         cloned = tensor.detach().clone()
@@ -985,7 +986,7 @@ def test_live_state_defaults_to_sequence_zero(tmp_path):
 
     assert lt.read_live_state(live_dir)["next_expected"] == 0
 
-    (live_dir / lt._STATE_FILENAME).write_text(
+    (live_dir / _STATE_FILENAME).write_text(
         json.dumps({"buffer_abs_start": 2.5}),
         encoding="utf-8",
     )
@@ -1003,7 +1004,7 @@ def test_live_state_corrupt_file_falls_back_to_sequence_zero(tmp_path):
 
     live_dir = tmp_path / "live"
     live_dir.mkdir()
-    (live_dir / lt._STATE_FILENAME).write_text("{not-json", encoding="utf-8")
+    (live_dir / _STATE_FILENAME).write_text("{not-json", encoding="utf-8")
 
     state = lt.read_live_state(live_dir)
 
@@ -1132,7 +1133,6 @@ def _patch_live_deps(
     """
     import silero_vad
 
-    from backend.processing import live_transcribe as lt
     from backend.processing import transcribe as transcribe_module
     from backend.processing import vad as vad_module
 
@@ -1143,7 +1143,9 @@ def _patch_live_deps(
     )
     monkeypatch.setattr(vad_module, "safe_read_audio", audio_store.read_audio)
     monkeypatch.setattr(silero_vad, "save_audio", audio_store.save_audio)
-    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: False)
+    monkeypatch.setattr(
+        live_persistence, "is_meeting_edge_enabled", lambda user_settings=None: False
+    )
 
     def fake_transcribe_audio(path, config=None):
         # A single segment spanning the whole clip: with no `words`, the
@@ -1431,8 +1433,8 @@ def test_live_forced_cut(monkeypatch, tmp_path):
 
     assert len(transcript.segments) == 2
     assert transcript.segments[0]["start"] == 0.0
-    assert transcript.segments[0]["end"] == 20.0
-    assert transcript.segments[1]["start"] == 20.0
+    assert transcript.segments[0]["end"] == 30.0
+    assert transcript.segments[1]["start"] == 30.0
     assert transcript.segments[1]["end"] == 31.0
 
 
@@ -1535,7 +1537,7 @@ def test_live_entry_guard_accepts_paused_recording_tail(monkeypatch, tmp_path):
 
 def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_path):
     """finalize() landing mid-run (UPLOADING at entry, PROCESSING at the DB
-    write) skips the provisional write but still advances the lane cleanly."""
+    write) rejects the result without advancing the obsolete lane."""
     from backend.models.recording import RecordingStatus
     from backend.processing import live_transcribe as lt
 
@@ -1573,8 +1575,8 @@ def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_pat
     _run_live_task(monkeypatch, 14, 0, session)
 
     assert transcript.segments == []
-    # The run completed normally; only the DB write was guarded.
-    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 1
+    # Rejected inference must not overwrite the accepted episode's checkpoint.
+    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 0
 
 
 def test_live_failure_path_records_recoverable_outcome(monkeypatch, tmp_path):
@@ -1677,7 +1679,7 @@ def test_live_engine_failure_loses_only_that_region(monkeypatch, tmp_path):
 
 def test_extract_region_text_drops_pure_context_segment():
     """A segment entirely within the prefix run-up is dropped."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     result = {
         "segments": [
@@ -1690,7 +1692,7 @@ def test_extract_region_text_drops_pure_context_segment():
 
 def test_extract_region_text_keeps_region_segment():
     """A segment entirely after the prefix is kept whole."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     result = {"segments": [{"start": 2.5, "end": 4.0, "text": "the region"}]}
     assert _extract_region_text(result, prefix_s=2.0) == "the region"
@@ -1698,7 +1700,7 @@ def test_extract_region_text_keeps_region_segment():
 
 def test_extract_region_text_straddle_with_words():
     """A boundary-straddling segment with words keeps only post-prefix words."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     result = {
         "segments": [
@@ -1730,7 +1732,7 @@ def test_a_capped_parakeet_context_word_stays_out_of_the_region():
         _Recognition,
         map_onnx_asr_recognition,
     )
-    from backend.processing.live_transcribe import _extract_region_segment_payloads
+    from backend.processing.live_asr_payload import _extract_region_segment_payloads
 
     clip = map_onnx_asr_recognition(
         _Recognition(
@@ -1772,7 +1774,7 @@ def _region_text(prefix_s, starts, cap_s) -> list[str]:
         _Recognition,
         map_onnx_asr_recognition,
     )
-    from backend.processing.live_transcribe import _extract_region_segment_payloads
+    from backend.processing.live_asr_payload import _extract_region_segment_payloads
 
     tokens = [f" w{index}" for index in range(len(starts))]
     clip = map_onnx_asr_recognition(
@@ -1819,7 +1821,7 @@ def test_a_tied_context_word_is_trimmed_when_its_segment_starts_with_it(steps):
 
 
 def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timestamps():
-    from backend.processing.live_transcribe import (
+    from backend.processing.live_asr_payload import (
         _build_live_confidence_payload,
         _extract_region_segment_payloads,
     )
@@ -1900,7 +1902,7 @@ def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timest
 def test_live_source_channel_analysis_detects_microphone_dominance():
     import torch
 
-    from backend.processing.live_transcribe import (
+    from backend.processing.live_audio_buffer import (
         _analyze_live_source_channels,
         _source_channel_speaker_confidence,
     )
@@ -1925,7 +1927,7 @@ def test_live_source_channel_analysis_detects_microphone_dominance():
 def test_live_source_channel_analysis_marks_unclear_overlap_low_confidence():
     import torch
 
-    from backend.processing.live_transcribe import (
+    from backend.processing.live_audio_buffer import (
         _analyze_live_source_channels,
         _source_channel_speaker_confidence,
     )
@@ -1991,11 +1993,9 @@ def test_live_source_channel_evidence_excludes_microphone_for_system_audio():
 
 
 def test_live_source_channel_evidence_overlap_reduces_authority():
-    from backend.processing.live_transcribe import (
-        LIVE_SOURCE_AUTHORITY_OVERLAP,
-        _build_live_confidence_payload,
-        _build_live_source_channel_evidence,
-    )
+    from backend.processing.browser_live_audio import LIVE_SOURCE_AUTHORITY_OVERLAP
+    from backend.processing.live_asr_payload import _build_live_confidence_payload
+    from backend.processing.live_audio_buffer import _build_live_source_channel_evidence
 
     source_activity = {
         "dominant_source": "microphone",
@@ -2171,7 +2171,7 @@ def test_microphone_only_capture_attributes_the_channel_not_the_person():
 
 def test_extract_region_text_straddle_without_words_midpoint():
     """A boundary-straddling segment without words uses the midpoint heuristic."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     # Midpoint 2.5 >= prefix 2.0 -> kept.
     kept = {"segments": [{"start": 1.0, "end": 4.0, "text": "kept"}]}
@@ -2184,7 +2184,7 @@ def test_extract_region_text_straddle_without_words_midpoint():
 
 def test_extract_region_text_prefix_zero_keeps_all():
     """With prefix_s == 0, all segments belong to the region."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     result = {
         "segments": [
@@ -2197,7 +2197,7 @@ def test_extract_region_text_prefix_zero_keeps_all():
 
 def test_extract_region_text_no_segments_falls_back_to_text():
     """Without segments, the top-level text is used only when prefix_s <= 0."""
-    from backend.processing.live_transcribe import _extract_region_text
+    from backend.processing.live_asr_payload import _extract_region_text
 
     assert _extract_region_text({"text": "plain"}, prefix_s=0.0) == "plain"
     assert _extract_region_text({"text": "plain"}, prefix_s=1.5) == ""
@@ -2208,21 +2208,21 @@ def test_extract_region_text_no_segments_falls_back_to_text():
 
 def test_strip_repetition_collapses_consecutive_words():
     """Three or more identical consecutive words collapse to one."""
-    from backend.processing.live_transcribe import _strip_repetition
+    from backend.processing.live_asr_payload import _strip_repetition
 
     assert _strip_repetition("yes yes yes please") == "yes please"
 
 
 def test_strip_repetition_collapses_repeated_phrase():
     """A short phrase repeated three or more times collapses to one."""
-    from backend.processing.live_transcribe import _strip_repetition
+    from backend.processing.live_asr_payload import _strip_repetition
 
     assert _strip_repetition("thank you thank you thank you bye") == "thank you bye"
 
 
 def test_strip_repetition_leaves_legitimate_text_untouched():
     """Ordinary text, including a single doubled word, is preserved."""
-    from backend.processing.live_transcribe import _strip_repetition
+    from backend.processing.live_asr_payload import _strip_repetition
 
     text = "the meeting starts at noon and we will review the budget"
     assert _strip_repetition(text) == text
@@ -2291,7 +2291,9 @@ def test_live_writes_context_wav_and_excludes_prefix_text(monkeypatch, tmp_path)
     import silero_vad
 
     monkeypatch.setattr(silero_vad, "save_audio", audio_store.save_audio)
-    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: False)
+    monkeypatch.setattr(
+        live_persistence, "is_meeting_edge_enabled", lambda user_settings=None: False
+    )
 
     _run_live_task(monkeypatch, 21, 0, session)
 
@@ -2886,7 +2888,6 @@ def test_mute_non_speech_segments_uses_configured_vad_parameters(tmp_path, monke
     import soundfile as sf
 
     from backend.processing import vad as vad_module
-    from backend.utils.config_manager import config_manager
 
     custom = {
         "threshold": 0.8,
@@ -3053,7 +3054,7 @@ def test_concat_live_audio_channels_appends_along_time(monkeypatch):
     """Audio-buffering seam: concat joins parts along the sample (time) axis."""
     import torch
 
-    from backend.processing.live_transcribe import _concat_live_audio_channels
+    from backend.processing.live_audio_buffer import _concat_live_audio_channels
 
     part_a = torch.zeros((1, 3))
     part_b = torch.ones((1, 2))
@@ -3068,7 +3069,7 @@ def test_concat_live_audio_channels_expands_mono_to_match_channels():
     """Audio-buffering seam: a mono part is expanded to the max channel count."""
     import torch
 
-    from backend.processing.live_transcribe import _concat_live_audio_channels
+    from backend.processing.live_audio_buffer import _concat_live_audio_channels
 
     mono = torch.zeros((1, 2))
     stereo = torch.ones((2, 2))
@@ -3147,7 +3148,9 @@ def test_live_meeting_edge_dispatch_failure_is_best_effort(monkeypatch, tmp_path
     )
     # _patch_live_deps disables Meeting Edge; re-enable dispatch for this case so
     # the best-effort failure path is actually exercised.
-    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: True)
+    monkeypatch.setattr(
+        live_persistence, "is_meeting_edge_enabled", lambda user_settings=None: True
+    )
 
     def boom_delay(*args, **kwargs):
         raise RuntimeError("broker down")
@@ -3251,6 +3254,68 @@ def test_live_failed_run_keeps_later_timestamps_correct(monkeypatch, tmp_path):
     # Run 3 got its 1 s region alone: no stale buffer, and no run-up, since the
     # failed run's audio no longer precedes it.
     assert clip_samples[1] == lt.LIVE_SAMPLE_RATE
+
+
+def test_stale_epoch_keeps_carried_audio_and_retry_timestamps(monkeypatch, tmp_path):
+    """A takeover rejects inference without moving its accepted carry or context."""
+    import torch
+
+    from backend.processing import live_transcribe as lt
+
+    sessions = []
+
+    class EpochSession(_FakeSession):
+        def __init__(self, recording):
+            super().__init__(recording)
+            recording.capture_epoch = 0
+            sessions.append(self)
+
+    transcript, temp_dir, run_chunk, _ = _three_chunk_lane(
+        monkeypatch, tmp_path, 34, session_cls=EpochSession
+    )
+    run_chunk(0)
+    live_dir = temp_dir / "live"
+    before_state = lt.read_live_state(live_dir)
+    before_buffer = lt._read_live_audio_channels(str(live_dir / "buffer.wav"))
+    before_context = lt._read_live_audio_channels(str(live_dir / "context.wav"))
+    assert before_buffer.shape[-1] == lt.LIVE_SAMPLE_RATE
+    persist = lt._persist_live_run
+    superseded = False
+
+    def resume_before_publication(**kwargs):
+        nonlocal superseded
+        if kwargs["sequence"] == 1 and not superseded:
+            sessions[0]._recording.capture_epoch += 1
+            superseded = True
+        return persist(**kwargs)
+
+    monkeypatch.setattr(lt, "_persist_live_run", resume_before_publication)
+    run_chunk(1)
+    assert len(transcript.segments) == 1
+    assert lt.read_live_state(live_dir) == before_state
+    assert torch.equal(
+        lt._read_live_audio_channels(str(live_dir / "buffer.wav")), before_buffer
+    )
+    assert torch.equal(
+        lt._read_live_audio_channels(str(live_dir / "context.wav")), before_context
+    )
+    assert not list(live_dir.glob(".carry-*"))
+
+    run_chunk(1)
+    run_chunk(2)
+    assert [(row["start"], row["text"]) for row in transcript.segments] == [
+        (0.0, "run 1"),
+        (1.0, "run 3"),
+        (2.0, "run 4"),
+    ]
+    state = lt.read_live_state(live_dir)
+    assert state["next_expected"] == 3
+    assert state["buffer_abs_start"] == 3.0
+    assert state["buffer_len_s"] == 3.0
+    assert (
+        lt._read_live_audio_channels(str(live_dir / "buffer.wav")).shape[-1]
+        == 3 * lt.LIVE_SAMPLE_RATE
+    )
 
 
 def test_live_failure_after_carry_over_keeps_the_carried_tail(monkeypatch, tmp_path):

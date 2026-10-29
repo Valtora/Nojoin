@@ -106,15 +106,20 @@ export const applyTranscriptDelta = ({
   mode = "delta",
   activeEditUtteranceId,
 }: ApplyTranscriptDeltaOptions): LocalTranscriptState => {
-  const baseState =
+  const previousState =
     currentState && currentState.recordingId === recordingId
       ? currentState
       : createLocalTranscriptState(recordingId, fallbackSegments);
+  const baseState = delta.settling_required && previousState.segments.some((segment) => !segment.settling_required)
+    ? { ...previousState, segments: previousState.segments.map((segment) => ({ ...segment, settling_required: true })) }
+    : previousState;
   if (mode === "delta" && delta.revision < baseState.revision) {
     return baseState;
   }
   const nextDeferred = { ...baseState.deferredById };
-  let utterancesToApply = delta.utterances;
+  let utterancesToApply = delta.settling_required
+    ? delta.utterances.map((utterance) => ({ ...utterance, settling_required: true }))
+    : delta.utterances;
   let tombstonesToApply = delta.tombstones;
 
   if (activeEditUtteranceId) {
@@ -139,6 +144,11 @@ export const applyTranscriptDelta = ({
     }
   }
 
+  // An explicit mutation refresh can apply a row while its editor is still
+  // open. Its new authoritative value supersedes a previously deferred one.
+  for (const utterance of utterancesToApply) delete nextDeferred[utterance.id];
+  for (const utteranceId of tombstonesToApply) delete nextDeferred[utteranceId];
+
   // A delta that applies nothing keeps the list, as a full sync does when
   // nothing changed, so a poll with no news doesn't recompute the views.
   const nextSegments =
@@ -148,7 +158,7 @@ export const applyTranscriptDelta = ({
             baseState.segments,
             sortTranscriptSegments(utterancesToApply.map(transcriptSegmentFromUtterance)),
           )
-        : sortTranscriptSegments(fallbackSegments)
+        : delta.settling_required ? [] : sortTranscriptSegments(fallbackSegments)
       : utterancesToApply.length === 0 && tombstonesToApply.length === 0
         ? baseState.segments
         : mergeTranscriptUtteranceDelta(

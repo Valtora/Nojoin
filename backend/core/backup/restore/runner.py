@@ -22,6 +22,7 @@ from backend.core.backup.format import (
     SKIP_REASON_INSERT_FAILED,
     SKIP_REASON_UNRESOLVED_OWNER,
 )
+from backend.core.backup.live_transcripts import restore_transcript_name_anchors
 from backend.core.backup.paths import _get_recording_match_keys
 from backend.core.backup.records import (
     _adapt_record,
@@ -91,6 +92,16 @@ def _prepare_row(
         item_data = _prepare_calendar_provider_config_for_restore(item_data)
     elif table_name == "calendar_connections":
         item_data = _prepare_calendar_connection_for_restore(item_data)
+    elif table_name == "transcripts":
+        from backend.utils.transcript_settling import durable_settling_state
+
+        # Runtime publication state belongs to this installation. Retain only
+        # recording-level provenance alongside the archived text and segments.
+        item_data = {
+            **item_data,
+            "change_sequence": 0,
+            "settling_state": durable_settling_state(item_data.get("settling_state")),
+        }
 
     return _adapt_record(model_cls, item_data)
 
@@ -227,6 +238,10 @@ def _resolve_and_insert_row(ctx: _RowContext) -> bool:
 
     if ctx.table_name == "recordings" and getattr(instance, "audio_path", None):
         _record_restored_recording(ctx, instance)
+    if ctx.table_name == "transcripts" and (
+        ctx.item_data.get("settling_state") or {}
+    ).get("name_anchors"):
+        state.recordings_with_name_anchors.add(instance.recording_id)
 
     return True
 
@@ -410,6 +425,11 @@ def _restore_backup_sync(request: _RestoreRequest):
 
                 _apply_deferred_speaker_merges(session, state)
                 _remap_user_notes_template_settings(session, state)
+                restore_transcript_name_anchors(
+                    session,
+                    state.recordings_with_name_anchors,
+                    state.id_map.get("global_speakers", {}),
+                )
 
                 stages._normalise_restored_recording_state(session, state)
                 stages._keep_document_files_still_named(session, state)

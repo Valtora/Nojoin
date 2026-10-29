@@ -62,6 +62,12 @@ const DEPENDENCY_MODELS: DependencyModel[] = [
     desc: "Optional speaker diarisation. Used only on CUDA workers with the automatic speaker engine.",
     target: "nemotron",
   },
+  {
+    id: "forced_aligner",
+    label: "Word timing aligner",
+    desc: "Qwen's forced aligner supplies word timings for Canary and other speech engines that need them. Runs on the CPU.",
+    target: "forced_aligner",
+  },
 ];
 
 /** The speech and speaker models on the server. Admins only. */

@@ -80,6 +80,8 @@ export interface ComposerDraft {
   mode: NoteInsertMode;
   /** Where the recording was when the first character went into the empty box. */
   typingStartMs: number | null;
+  /** `typingStartMs` is a settling line's start, set from its menu, not by typing. */
+  typingStartFromLine?: boolean;
   /**
    * The text the next note is on, chosen from a line's menu. While set, the
    * note is a selection note whatever the mode; sending or clearing it brings

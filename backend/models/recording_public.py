@@ -13,6 +13,7 @@ from backend.models.document import (
     DocumentStatus,
     parse_looks_stalled,
 )
+from backend.models.live_settling_public import public_transcript_segment
 from backend.models.recording import (
     ClientStatus,
     Recording,
@@ -120,6 +121,10 @@ class TranscriptPublicRead(PublicModel):
     created_at: datetime
     updated_at: datetime
     recording_id: str
+    change_sequence: int = 0
+    settling_required: bool = Field(
+        default=False, exclude_if=lambda value: value is False
+    )
     text: Optional[str] = None
     segments: list[dict[str, Any]] = Field(default_factory=list)
     notes: Optional[str] = None
@@ -335,6 +340,8 @@ def serialize_transcript(
     segments_override: Optional[list[dict]] = None,
     text_override: Optional[str] = None,
 ) -> TranscriptPublicRead:
+    from backend.utils.canonical_pipeline.guards import settling_required
+
     assert transcript.id is not None
     return TranscriptPublicRead(
         id=transcript.id,
@@ -342,9 +349,18 @@ def serialize_transcript(
         updated_at=transcript.updated_at,
         recording_id=recording_public_id,
         text=transcript.text if text_override is None else text_override,
-        segments=transcript.segments
-        if segments_override is None
-        else segments_override,
+        change_sequence=transcript.change_sequence,
+        settling_required=settling_required(transcript),
+        # The durable projection retains inference/protection evidence for
+        # backfill and backup; public reads expose the ordinary segment fields.
+        segments=[
+            public_transcript_segment(
+                segment, include_final_words=settling_required(transcript)
+            )
+            for segment in (
+                transcript.segments if segments_override is None else segments_override
+            )
+        ],
         notes=transcript.notes,
         meeting_edge_focus=transcript.meeting_edge_focus,
         meeting_edge_payload=transcript.meeting_edge_payload,

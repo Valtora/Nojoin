@@ -380,6 +380,43 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(screen.queryByTestId("notes-box-pending")).toBeNull();
   });
 
+  it("puts a note from a line still settling at the line's start, quoting nothing and not waiting", async () => {
+    getTranscriptUtterances.mockResolvedValue({
+      recording_id: "rec-1",
+      revision: 1,
+      settling_required: true,
+      utterances: [
+        { id: "u2", start: 60, end: 66, start_ms: 60_000, end_ms: 66_000, text: "Legal signs off Friday.",
+          speaker: "UNKNOWN", revision: 1, settling_required: true, provisional: true, locked: false },
+      ],
+      tombstones: [],
+      speakers: [],
+    });
+    createTimelineNote.mockImplementation(async (_id: string, payload: TimelineNoteCreate) =>
+      savedNote(payload),
+    );
+    renderLive();
+    await screen.findByText("Legal signs off Friday.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 01:00" }));
+    const item = screen.getByRole("menuitem", { name: "Note on this line" });
+    expect(item).toHaveAttribute("aria-disabled", "false");
+    fireEvent.click(item);
+    expect(box()).toHaveFocus();
+    expect(screen.queryByTestId("note-selection-chip")).toBeNull();
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:00.");
+    monotonicMs = 9_000; // The clock runs on while the note is typed.
+    fireEvent.change(box(), { target: { value: "Who signs?" } });
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:00.");
+    expect(screen.getByTestId("live-note-status")).not.toHaveTextContent("where you started typing");
+    fireEvent.keyDown(box(), { key: "Enter" });
+
+    await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(1));
+    const payload = createTimelineNote.mock.calls[0][1];
+    expect(payload).toMatchObject({ kind: "point", body: "Who signs?", anchor_ms: 60_000 });
+    expect(payload.quoted_text ?? null).toBeNull();
+  });
+
   it("holds the Notes box back until the recording's notes have loaded", async () => {
     renderLive(buildRecording(), null);
     await screen.findByText("We need the budget.");

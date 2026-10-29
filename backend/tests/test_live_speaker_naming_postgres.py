@@ -3,7 +3,7 @@
 The final pass reads the name events once, when it starts. A name that read
 the status before the stop committed, and committed after the final pass read
 the events, would be lost without a word. The naming route therefore checks
-the status under the recording's row lock: a name sent while the stop is
+the status under the Transcript fence: a name sent while the stop is
 being committed waits for it and is refused. SQLite has no row locks, so this
 runs against a real server.
 
@@ -101,6 +101,11 @@ async def test_a_name_sent_during_the_stop_waits_for_it_and_is_refused(sessions)
     user_id, recording_id, public_id = await _seed(sessions)
 
     async with sessions() as stop_db:
+        await stop_db.execute(
+            select(Transcript)
+            .where(Transcript.recording_id == recording_id)
+            .with_for_update()
+        )
         recording = await stop_db.get(Recording, recording_id)
         recording.status = RecordingStatus.QUEUED
         await stop_db.flush()

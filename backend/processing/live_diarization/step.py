@@ -28,6 +28,11 @@ from backend.utils.canonical_pipeline.live_labels import (
     apply_live_speaker_labels,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.transcript_settling import (
+    CapturePublicationToken,
+    load_capture_publication,
+    publication_is_current,
+)
 
 from .engine import FeedResult, LiveLabelConfig, LiveLabelEngine, ModelFn
 from .files import (
@@ -92,6 +97,7 @@ class LiveLabelRun:
     audio: Any
     audio_start_s: float
     next_text_start_s: float
+    expected_token: CapturePublicationToken | None = None
 
 
 def _load_model(device: str, config: LiveLabelConfig) -> ModelFn:
@@ -100,35 +106,35 @@ def _load_model(device: str, config: LiveLabelConfig) -> ModelFn:
     return LiveLabelModel(device, config)
 
 
-def _recording_in_flight(session, recording_id: int, *, lock: bool = False) -> bool:
-    from backend.models.recording import Recording, RecordingStatus
-
-    if lock:
-        # FOR NO KEY UPDATE: blocks a status change, not an insert that
-        # references the recording (an audio chunk, an utterance event).
-        recording = session.get(
-            Recording, recording_id, with_for_update={"key_share": True}
-        )
-    else:
-        recording = session.get(Recording, recording_id)
-    return recording is not None and recording.status in {
-        RecordingStatus.UPLOADING,
-        RecordingStatus.PAUSED,
-    }
+def _recording_in_flight(
+    session: Any,
+    recording_id: int,
+    *,
+    lock: bool = False,
+    expected_token: CapturePublicationToken | None = None,
+) -> bool:
+    transcript, recording = load_capture_publication(session, recording_id, lock=lock)
+    return publication_is_current(recording, transcript, expected_token)
 
 
-def _still_capturing(recording_id: int) -> bool:
+def _still_capturing(
+    recording_id: int, expected_token: CapturePublicationToken | None = None
+) -> bool:
     from backend.core.db import get_sync_session
 
     session = get_sync_session()
     try:
-        return _recording_in_flight(session, recording_id)
+        return _recording_in_flight(
+            session, recording_id, expected_token=expected_token
+        )
     finally:
         session.close()
 
 
 def _write_labels(
-    recording_id: int, engine: LiveLabelEngine | HybridLiveState
+    recording_id: int,
+    engine: LiveLabelEngine | HybridLiveState,
+    expected_token: CapturePublicationToken | None = None,
 ) -> LiveLabelWrite | None:
     """Write the labels, or return None once the capture has ended."""
     from backend.core.db import get_sync_session
@@ -144,9 +150,10 @@ def _write_labels(
 
     session = get_sync_session()
     try:
-        # Locked until the labels commit: finalize's status change waits, so no
-        # label lands after the capture has ended.
-        if not _recording_in_flight(session, recording_id, lock=True):
+        # Lifecycle changes share Transcript; Recording stays available to uploads.
+        if not _recording_in_flight(
+            session, recording_id, lock=True, expected_token=expected_token
+        ):
             return None
         write = apply_live_speaker_labels(
             session,
@@ -267,10 +274,10 @@ def run_live_speaker_labels(run: LiveLabelRun) -> None:
     device = live_speaker_labels_device()
     if device is None or (run.live_dir / DISABLED_FILENAME).exists():
         return
-    if not _still_capturing(run.recording_id):
+    if not _run_is_current(run):
         # Queued behind finalize: no model pass, and no lock file made; any
         # state still here goes.
-        remove_live_label_state(run.live_dir)
+        _remove_ended_run_state(run)
         return
     with _recording_lock(run.live_dir) as held:
         if held:
@@ -284,6 +291,16 @@ def run_live_speaker_labels(run: LiveLabelRun) -> None:
         status="skipped",
         log=logger,
     )
+
+
+def _run_is_current(run: LiveLabelRun) -> bool:
+    return _still_capturing(run.recording_id, run.expected_token)
+
+
+def _remove_ended_run_state(run: LiveLabelRun) -> None:
+    """Remove the state once the capture has ended, not when only this run's episode has."""
+    if run.expected_token is None or not _still_capturing(run.recording_id):
+        remove_live_label_state(run.live_dir)
 
 
 def _label_run(run: LiveLabelRun, device: str) -> None:
@@ -305,7 +322,7 @@ def _label_run(run: LiveLabelRun, device: str) -> None:
         # a line. A crash before the DB commit replays this retained evidence.
         save_hybrid(run.live_dir, engine)
         consumed_saved = True
-        write = _write_labels(run.recording_id, engine)
+        write = _write_labels(run.recording_id, engine, run.expected_token)
         ended = write is None
     except (FileNotFoundError, ValueError):
         if _still_capturing(run.recording_id):
@@ -315,7 +332,7 @@ def _label_run(run: LiveLabelRun, device: str) -> None:
         try:
             # Saved even when the write failed: the audio is consumed, and the
             # next run labels these lines from the saved engine.
-            ended = ended or not _still_capturing(run.recording_id)
+            ended = ended or not _run_is_current(run)
             if not ended and consumed_saved:
                 _save(run, engine, write)
         except (FileNotFoundError, ValueError):
@@ -329,8 +346,8 @@ def _label_run(run: LiveLabelRun, device: str) -> None:
             # finalize whose master cannot be built), removing the state, and
             # no live run comes after it. Checked after the save, so this run
             # removes what it saved; a capture ending later is finalize's.
-            ended = ended or not _still_capturing(run.recording_id)
+            ended = ended or not _run_is_current(run)
             if ended:
-                remove_live_label_state(run.live_dir)
+                _remove_ended_run_state(run)
     if write is not None and feed is not None and not ended:
         _record(run, engine, feed, write, started)

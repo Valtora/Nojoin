@@ -42,6 +42,7 @@ from backend.utils.canonical_pipeline.live_labels import (
 from backend.utils.canonical_pipeline.segmentation import (
     _speaker_state_for_utterance,
 )
+from backend.utils.recording_audio_sync import lock_recording_audio
 
 
 @pytest.mark.parametrize("lock", [True, False])
@@ -49,13 +50,13 @@ def test_finalize_waits_for_a_label_write_in_progress(
     postgres_test_url: str, lock: bool
 ) -> None:
     with postgres_engine(postgres_test_url) as engine:
-        recording_id = add_recording(
-            engine, "capture.wav", status=RecordingStatus.UPLOADING
-        )
+        recording_id = _live_lines(engine)
         with Session(engine) as labels, Session(engine) as finalize:
             assert _recording_in_flight(labels, recording_id, lock=lock)
             finalize.execute(text("SET lock_timeout = '200ms'"))
-            statement = text("UPDATE recordings SET status = 'QUEUED' WHERE id = :id")
+            statement = text(
+                "SELECT id FROM transcripts WHERE recording_id = :id FOR UPDATE"
+            )
             if lock:
                 with pytest.raises(OperationalError, match="lock timeout"):
                     finalize.execute(statement, {"id": recording_id})
@@ -389,22 +390,25 @@ def _writer(engine, recording_id: int, kind: str):
 
 
 @pytest.mark.parametrize("kind", ["rename", "text", "segments"])
-def test_a_projection_an_edit_wrote_over_settled_lines_is_rebuilt(
+def test_an_edit_and_label_publication_cannot_write_stale_projections(
     postgres_test_url: str, kind: str
 ) -> None:
-    # The edit holds pg-c and read the projection before the labels landed;
-    # the label run commits just before the edit writes that old copy back.
+    # Previously a label run could skip the edited line and commit before an
+    # older projection overwrote it. The common fence now makes it wait.
     with postgres_engine(postgres_test_url) as engine:
         recording_id = _live_lines(engine)
         write = _writer(engine, recording_id, kind)
         runs: list = []
+        threads: list[threading.Thread] = []
 
         def label_first(conn, cursor, statement, *rest):
             if runs or not statement.startswith("UPDATE transcripts "):
                 return
             thread, outcome = _in_thread(lambda: _label_run(engine, recording_id, 0))
             runs.append(outcome)
-            thread.join(10.0)
+            threads.append(thread)
+            thread.join(0.1)
+            assert thread.is_alive(), "label publication bypassed the edit's fence"
 
         event.listen(engine, "before_cursor_execute", label_first)
         try:
@@ -413,15 +417,13 @@ def test_a_projection_an_edit_wrote_over_settled_lines_is_rebuilt(
                 person.commit()
         finally:
             event.remove(engine, "before_cursor_execute", label_first)
-        first = runs[0]["value"]
-        assert _projection(engine, recording_id)["pg-a"] == "UNKNOWN"
-
-        _label_run(engine, recording_id, first.settled_ms)
+        threads[0].join(5.0)
+        assert not threads[0].is_alive()
+        assert runs[0]["value"].changed >= 2
         projection = _projection_fields(engine, recording_id)
         rows = _row_fields(engine, recording_id)
 
-    # pg-a and pg-b settled on the first run, so the second reads only pg-c.
-    assert first.settled_ms == 14000
+    assert runs[0]["value"].settled_ms >= 14000
     assert projection == rows
     assert projection["pg-a"][:2] == ("LIVE_PROVISIONAL_1", "stable")
     assert projection["pg-b"][:2] == ("LIVE_PROVISIONAL_1", "stable")
@@ -534,7 +536,9 @@ def test_finalize_waits_for_the_label_steps_write(
                 finalize.execute(text("SET lock_timeout = '200ms'"))
                 with pytest.raises(OperationalError, match="lock timeout"):
                     finalize.execute(
-                        text("UPDATE recordings SET status = 'QUEUED' WHERE id = :id"),
+                        text(
+                            "SELECT id FROM transcripts WHERE recording_id = :id FOR UPDATE"
+                        ),
                         {"id": recording_id},
                     )
                 finalize.rollback()
@@ -546,15 +550,14 @@ def test_finalize_waits_for_the_label_steps_write(
 
 
 def test_the_label_writes_lock_lets_audio_chunks_in(postgres_test_url: str) -> None:
-    # FOR NO KEY UPDATE: a row that references the recording is not held up
-    # behind a label write, while a status change still is.
+    # Publication holds Transcript, leaving the upload's audio bookkeeping and
+    # Recording activity update free to commit while lifecycle publication waits.
     with postgres_engine(postgres_test_url) as engine:
-        recording_id = add_recording(
-            engine, "capture.wav", status=RecordingStatus.UPLOADING
-        )
+        recording_id = _live_lines(engine)
         with Session(engine) as labels, Session(engine) as upload:
             assert _recording_in_flight(labels, recording_id, lock=True)
             upload.execute(text("SET lock_timeout = '200ms'"))
+            lock_recording_audio(upload, recording_id)
             upload.add(
                 RecordingAudioChunk(
                     recording_id=recording_id,
@@ -571,9 +574,19 @@ def test_the_label_writes_lock_lets_audio_chunks_in(postgres_test_url: str) -> N
             )
             upload.commit()
             upload.execute(text("SET lock_timeout = '200ms'"))
+            upload.execute(
+                text(
+                    "UPDATE recordings SET last_activity_at = CURRENT_TIMESTAMP WHERE id = :id"
+                ),
+                {"id": recording_id},
+            )
+            upload.commit()
+            upload.execute(text("SET lock_timeout = '200ms'"))
             with pytest.raises(OperationalError, match="lock timeout"):
                 upload.execute(
-                    text("UPDATE recordings SET status = 'QUEUED' WHERE id = :id"),
+                    text(
+                        "SELECT id FROM transcripts WHERE recording_id = :id FOR UPDATE"
+                    ),
                     {"id": recording_id},
                 )
             upload.rollback()
@@ -633,9 +646,7 @@ def test_two_label_writes_for_one_recording_take_turns(postgres_test_url: str) -
     # The flock serialises label steps on one host only; the row lock holds
     # wherever the second one runs.
     with postgres_engine(postgres_test_url) as engine:
-        recording_id = add_recording(
-            engine, "capture.wav", status=RecordingStatus.UPLOADING
-        )
+        recording_id = _live_lines(engine)
         with Session(engine) as first, Session(engine) as second:
             assert _recording_in_flight(first, recording_id, lock=True)
             second.execute(text("SET lock_timeout = '200ms'"))

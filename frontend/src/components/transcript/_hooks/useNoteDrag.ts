@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 
 import type { MoveTarget } from "@/lib/notes/noteMoves";
 
@@ -54,6 +54,10 @@ const barUnder = (region: HTMLElement, lineIndex: number): DropBar | null => {
 export function useNoteDrag({ regionRef, targetAfter, onDrop }: UseNoteDragOptions) {
   const [drag, setDrag] = useState<NoteDrag | null>(null);
   const stop = useRef<(() => void) | null>(null);
+  const callbacks = useRef({ targetAfter, onDrop });
+  useLayoutEffect(() => {
+    callbacks.current = { targetAfter, onDrop };
+  }, [targetAfter, onDrop]);
   useEffect(() => () => stop.current?.(), []);
 
   const start = (event: ReactPointerEvent<HTMLElement>, noteId: string, shownAfter: number) => {
@@ -83,7 +87,7 @@ export function useNoteDrag({ regionRef, targetAfter, onDrop }: UseNoteDragOptio
       const host = hit.closest<HTMLElement>("[data-order-index], [data-note-gap]");
       if (!host || !region.contains(host)) return;
       const index = Number(host.dataset.orderIndex ?? host.dataset.noteGap);
-      aim(index === shownAfter ? null : targetAfter(index));
+      aim(index === shownAfter ? null : callbacks.current.targetAfter(index));
     };
     const scroll = () => {
       frame = 0;
@@ -107,6 +111,8 @@ export function useNoteDrag({ regionRef, targetAfter, onDrop }: UseNoteDragOptio
       if (!frame) frame = requestAnimationFrame(scroll);
     };
     const end = (drop: boolean) => {
+      // Live words can update a destination while the pointer holds still.
+      if (drop) locate();
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
@@ -115,7 +121,10 @@ export function useNoteDrag({ regionRef, targetAfter, onDrop }: UseNoteDragOptio
       document.body.style.removeProperty("cursor");
       stop.current = null;
       setDrag(null);
-      if (drop && over) onDrop(noteId, over);
+      if (drop && over) {
+        const current = callbacks.current.targetAfter(over.afterIndex);
+        if (current) callbacks.current.onDrop(noteId, current);
+      }
     };
     const onUp = () => end(true);
     const onCancel = () => end(false);

@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.processing.processing_tuning import LINE_BREAK_PAUSE_KEY, resolve_tuning
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,9 @@ def combine_and_consolidate_segments(
     ASR segment is emitted pinned to the ``UNKNOWN`` speaker, preserving any
     ``id``/``words`` payload. This is the load-bearing fallback that keeps a
     transcript even without usable diarization. ``config`` (the owner's merged
-    settings) supplies the single-word flip smoothing limits.
+    settings) supplies the single-word flip smoothing limits and diarised pause
+    boundaries, including short-segment folding. Raw ASR fallback keeps the
+    default consolidation policy.
     """
     from backend.utils.transcript_utils import (
         combine_transcription_diarization,
@@ -70,8 +73,13 @@ def combine_and_consolidate_segments(
 
     combined_segments = []
     if diarization_result:
+        line_break_pause_s = resolve_tuning(config, LINE_BREAK_PAUSE_KEY)
+        combination_config = {
+            **(config or {}),
+            LINE_BREAK_PAUSE_KEY: line_break_pause_s,
+        }
         combined_segments = combine_transcription_diarization(
-            transcription_result, diarization_result, config
+            transcription_result, diarization_result, combination_config
         )
     else:
         logger.info("Diarization result missing or disabled. Skipping combination.")
@@ -80,6 +88,9 @@ def combine_and_consolidate_segments(
         f"Combined segments count: {len(combined_segments) if combined_segments else 0}"
     )
 
+    consolidation_options = (
+        {"line_break_pause_s": line_break_pause_s} if combined_segments else {}
+    )
     if not combined_segments:
         if enable_diarization and diarization_result:
             logger.warning(
@@ -101,9 +112,13 @@ def combine_and_consolidate_segments(
                 fallback_segment["id"] = seg["id"]
             if seg.get("words"):
                 fallback_segment["words"] = seg["words"]
+            if seg.get("alignment_error"):
+                fallback_segment["alignment_error"] = seg["alignment_error"]
             combined_segments.append(fallback_segment)
 
-    final_segments = consolidate_diarized_transcript(combined_segments)
+    final_segments = consolidate_diarized_transcript(
+        combined_segments, **consolidation_options
+    )
 
     # The cluster label the diariser gave each line. Speaker assignment and the
     # merge pass rewrite ``speaker`` to the survivor's label; this one is kept

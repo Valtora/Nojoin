@@ -38,6 +38,7 @@ export interface SpeakerPanelActions {
   setRenameValue: (value: string) => void;
   startRename: (entry: SpeakerPanelEntry) => void;
   submitRename: () => Promise<void>;
+  assignIdentity: (entry: SpeakerPanelEntry, name: string) => Promise<boolean>;
 
   // Merge
   mergingSpeaker: SpeakerPanelEntry | null;
@@ -46,6 +47,11 @@ export interface SpeakerPanelActions {
   setMergeTargetLabel: (label: string) => void;
   startMerge: (entry: SpeakerPanelEntry) => void;
   submitMerge: () => Promise<void>;
+  /**
+   * Moves every label of the row onto another speaker of this recording. With
+   * `targetName`, generated notes follow the move as they follow a rename.
+   */
+  mergeInto: (entry: SpeakerPanelEntry, targetLabel: string, targetName?: string) => Promise<boolean>;
 
   // Delete
   deletingSpeaker: SpeakerPanelEntry | null;
@@ -150,16 +156,15 @@ export function useSpeakerPanelActions(
     closeContextMenu();
   };
 
-  const submitRename = async () => {
-    if (!renamingSpeaker || !renameValue.trim() || isSubmitting) return;
-
+  const assignIdentity = async (entry: SpeakerPanelEntry, name: string): Promise<boolean> => {
+    if (!name.trim() || isSubmitting) return false;
     setIsSubmitting(true);
     try {
-      const oldName = renamingSpeaker.displayName;
-      const newName = renameValue.trim();
+      const oldName = entry.displayName;
+      const newName = name.trim();
 
       const renamed = [];
-      for (const speaker of renamingSpeaker.members) {
+      for (const speaker of entry.members) {
         renamed.push(
           ...(await updateSpeaker(recordingId, speaker.diarization_label, newName)),
         );
@@ -174,27 +179,37 @@ export function useSpeakerPanelActions(
       for (const message of libraryVoiceprintNotices(renamed)) {
         addNotification({ type: "info", message });
       }
+      return true;
     } catch (e: unknown) {
       console.error("Failed to rename speaker", e);
       addNotification({ type: "error", message: "Failed to rename speaker." });
+      return false;
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const submitMerge = async () => {
-    if (!mergingSpeaker || !mergeTargetLabel || isSubmitting) return;
+  const submitRename = async () => {
+    if (renamingSpeaker) await assignIdentity(renamingSpeaker, renameValue);
+  };
+
+  const mergeInto = async (
+    entry: SpeakerPanelEntry, targetLabel: string, targetName?: string,
+  ): Promise<boolean> => {
+    if (isSubmitting) return false;
 
     setIsSubmitting(true);
     try {
-      for (const label of mergingSpeaker.labels) {
-        if (label === mergeTargetLabel) {
+      for (const label of entry.labels) {
+        if (label === targetLabel) {
           continue;
         }
 
-        await mergeRecordingSpeakers(recordingId, mergeTargetLabel, label);
+        await mergeRecordingSpeakers(recordingId, targetLabel, label);
       }
-      setMergingSpeaker(null);
+      if (targetName && targetName !== entry.displayName && onSpeakerRenamed) {
+        await onSpeakerRenamed(entry.displayName, targetName);
+      }
 
       // Dispatch custom event to notify parent components of the merge
       window.dispatchEvent(
@@ -202,11 +217,19 @@ export function useSpeakerPanelActions(
       );
 
       onRefresh();
+      return true;
     } catch (e: unknown) {
       console.error("Failed to merge speakers", e);
       addNotification({ type: "error", message: "Failed to merge speakers." });
+      return false;
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const submitMerge = async () => {
+    if (mergingSpeaker && mergeTargetLabel && await mergeInto(mergingSpeaker, mergeTargetLabel)) {
+      setMergingSpeaker(null);
     }
   };
 
@@ -335,6 +358,7 @@ export function useSpeakerPanelActions(
     setRenameValue,
     startRename,
     submitRename,
+    assignIdentity,
 
     mergingSpeaker,
     setMergingSpeaker,
@@ -342,6 +366,7 @@ export function useSpeakerPanelActions(
     setMergeTargetLabel,
     startMerge,
     submitMerge,
+    mergeInto,
 
     deletingSpeaker,
     setDeletingSpeaker,

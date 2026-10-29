@@ -13,10 +13,35 @@ WORD_TIME_TOLERANCE_S of the threshold as equal to it, whichever engine produced
 the times.
 """
 
+from math import isfinite
+from typing import Any
+
 # Far above the float error of word times, which stays under 1e-10 s at
 # offsets up to 100 hours, and far below any duration that means something:
 # one sample at 16 kHz lasts 62.5e-6 s.
 WORD_TIME_TOLERANCE_S = 1e-6
+
+
+def has_word_timing(word: dict[str, Any]) -> bool:
+    """Whether a word carries usable observed seconds (native instants included)."""
+    start, end = word.get("start"), word.get("end")
+    return (
+        all(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and isfinite(value)
+            for value in (start, end)
+        )
+        and end >= start
+    )
+
+
+def has_untimed_words(segment: dict[str, Any]) -> bool:
+    """Whether forced text includes a word whose predicted span was rejected."""
+    return any(
+        word.get("source_id") and not has_word_timing(word)
+        for word in segment.get("words") or []
+    )
 
 
 def exceeds(value_s: float, limit_s: float) -> bool:

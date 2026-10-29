@@ -56,6 +56,8 @@ from backend.utils.recording_storage import (
 )
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
+from backend.utils.transcript_change import change_sequence_bump
+from backend.utils.transcript_settling import durable_settling_state
 
 from .constants import (
     ACTIVE_RECORDING_CONFLICT_MESSAGE,
@@ -680,6 +682,28 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         select(Transcript).where(Transcript.recording_id == recording_id)
     )
     existing_transcript = transcript_result.scalar_one_or_none()
+    preserve_live_work = bool(
+        existing_transcript is not None
+        and (existing_transcript.settling_state or {}).get("settled") is True
+    )
+    if preserve_live_work:
+        from backend.utils.canonical_pipeline import (
+            ensure_canonical_backfill,
+            refresh_transcript_projection_from_canonical,
+        )
+        from backend.utils.speaker_names.durability import persist_name_anchors
+
+        await db.run_sync(lambda session: persist_name_anchors(session, recording_id))
+        # Restore may have queued, but not yet run, its derived-state backfill.
+        # Rebuild archived protected lines before replacing their projection.
+        await db.run_sync(
+            lambda session: ensure_canonical_backfill(session, recording_id)
+        )
+        await db.run_sync(
+            lambda session: refresh_transcript_projection_from_canonical(
+                session, recording_id
+            )
+        )
 
     await db.execute(
         delete(ChatMessage).where(ChatMessage.recording_id == recording_id)
@@ -689,32 +713,52 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         .where(ContextChunk.recording_id == recording_id)
         .where(ContextChunk.document_id.is_(None))
     )
-    await db.execute(
-        delete(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
-    )
+    if not preserve_live_work:
+        await db.execute(
+            delete(RecordingSpeaker).where(
+                RecordingSpeaker.recording_id == recording_id
+            )
+        )
     await db.execute(
         delete(ProcessingRun).where(ProcessingRun.recording_id == recording_id)
     )
-    await db.execute(
-        delete(TranscriptUtterance).where(
-            TranscriptUtterance.recording_id == recording_id
+    if not preserve_live_work:
+        await db.execute(
+            delete(TranscriptUtterance).where(
+                TranscriptUtterance.recording_id == recording_id
+            )
         )
-    )
     await db.execute(
         delete(SpeakerCorrectionEvent).where(
             SpeakerCorrectionEvent.recording_id == recording_id
         )
     )
-    await db.execute(
-        delete(SpeakerNameEvent).where(SpeakerNameEvent.recording_id == recording_id)
-    )
+    if not preserve_live_work:
+        await db.execute(
+            delete(SpeakerNameEvent).where(
+                SpeakerNameEvent.recording_id == recording_id
+            )
+        )
     await db.execute(
         delete(DiarizationWindowResult).where(
             DiarizationWindowResult.recording_id == recording_id
         )
     )
-    if existing_transcript:
-        await db.delete(existing_transcript)
+    if existing_transcript is not None:
+        # Reset in place, so retained settled lines keep their transcript. All
+        # generated products return to the defaults a replacement row used to get.
+        defaults = Transcript(recording_id=recording_id)
+        defaults.settling_state = durable_settling_state(
+            existing_transcript.settling_state
+        )
+        retained = {"id", "recording_id", "created_at", "updated_at", "change_sequence"}
+        if preserve_live_work:
+            retained.update({"text", "segments"})
+        for field in Transcript.model_fields:
+            if field not in retained:
+                setattr(existing_transcript, field, getattr(defaults, field))
+        db.add(existing_transcript)
+        await db.execute(change_sequence_bump(recording_id))
         await db.flush()
 
 

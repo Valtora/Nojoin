@@ -4,3 +4,4 @@ from .projection import (  # noqa: F401
     build_transient_utterance_payloads_from_segments,
     serialize_canonical_delta,
 )
+from .split import SplitCommand, split_utterance

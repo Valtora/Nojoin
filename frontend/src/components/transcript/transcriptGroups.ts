@@ -23,9 +23,6 @@ export interface TranscriptGroup {
  */
 export const LINE_KEY_SEPARATOR = "\n";
 
-const areSetsEqual = (a: Set<string>, b: Set<string>): boolean =>
-  a.size === b.size && [...a].every((value) => b.has(value));
-
 /**
  * Whether two groups hold the same lines, as the same segment objects in the
  * same places. A group's span and speakers come from its lines, so they match
@@ -62,7 +59,7 @@ export function indexSegments(
 }
 
 /**
- * Group consecutive (time-overlapping or same-overlap-event) display segments
+ * Group consecutive time-overlapping display segments
  * into render groups, for {@link TranscriptView}.
  *
  * A group always ends at a line in `breakAfter` (original indexes): a note
@@ -92,13 +89,9 @@ export function buildTranscriptGroups(
       };
     } else {
       const isTimeOverlap = item.segment.start < currentGroup.end;
-      const isSameOverlapEvent =
-        involvedSet.size > 1 &&
-        currentGroup.involved.size > 1 &&
-        areSetsEqual(involvedSet, currentGroup.involved);
       const previous = currentGroup.items[currentGroup.items.length - 1];
 
-      if (!breakAfter.has(previous.index) && (isTimeOverlap || isSameOverlapEvent)) {
+      if (!breakAfter.has(previous.index) && isTimeOverlap) {
         currentGroup.items.push(item);
         currentGroup.end = Math.max(currentGroup.end, item.segment.end);
         involvedSet.forEach((spk) => currentGroup!.involved.add(spk));

@@ -55,6 +55,7 @@ def download_models_task(
     include_core: bool = True,
     *,
     nemotron_only: bool = False,
+    pinned_model: str | None = None,
 ):
     """Prepare required assets on disk without retaining models in memory."""
     from backend.preload_models import download_models
@@ -77,13 +78,21 @@ def download_models_task(
         whisper_model_size,
         include_core,
     )
+    pinned = "nemotron" if nemotron_only else pinned_model
+    if pinned not in {None, "nemotron", "forced_aligner"}:
+        raise ValueError("Unknown pinned model preparation target")
+    control = None
+    if pinned == "nemotron":
+        from backend.utils.nemotron_lock import control
+    elif pinned == "forced_aligner":
+        from backend.utils.forced_aligner_model_utils import control
     try:
-        if nemotron_only:
-            from backend.utils.nemotron_lock import model_lock, write_pending
-
-            with model_lock():
-                write_pending(self.request.id)
+        if control is not None:
+            with control.model_lock():
+                control.write_pending(self.request.id)
         kwargs = {"nemotron_only": True} if nemotron_only else {}
+        if pinned_model is not None:
+            kwargs["pinned_model"] = pinned_model
         download_models(
             progress_callback=progress_callback,
             hf_token=hf_token,
@@ -94,11 +103,13 @@ def download_models_task(
             include_core=include_core,
             **kwargs,
         )
+    except Exception:
+        if control is not None:
+            control.record_failure()
+        raise
     finally:
-        if nemotron_only:
-            from backend.utils.nemotron_lock import complete_pending
-
-            complete_pending(self.request.id)
+        if control is not None:
+            control.complete_pending(self.request.id)
     return {"status": "success", "message": "Model preparation complete."}
 
 

@@ -81,6 +81,8 @@ CREATE TABLE recordings (
 );
 
 CREATE TABLE transcripts (
+    change_sequence BIGINT NOT NULL DEFAULT 0,
+    settling_state JSON,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -327,7 +329,7 @@ def test_generate_notes_task_completes_with_saved_provider_config(
         with Session(verification_engine) as session:
             row = session.exec(
                 text(
-                    "SELECT notes, notes_status, error_message, processing_step, processing_progress FROM transcripts JOIN recordings ON transcripts.recording_id = recordings.id WHERE transcripts.id = 1"
+                    "SELECT notes, notes_status, error_message, processing_step, processing_progress, change_sequence FROM transcripts JOIN recordings ON transcripts.recording_id = recordings.id WHERE transcripts.id = 1"
                 )
             ).one()
             chunks = session.exec(
@@ -344,6 +346,8 @@ def test_generate_notes_task_completes_with_saved_provider_config(
         assert row[2] is None
         assert row[3] == "Completed"
         assert row[4] == 100
+        # Another tab's finished-page check sees the new notes.
+        assert row[5] == 1
         primary_call = captured["calls"][0]
         assert primary_call["provider"] == "anthropic"
         assert primary_call["api_key"] == "sk-ant-valid"

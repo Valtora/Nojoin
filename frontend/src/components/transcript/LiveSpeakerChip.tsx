@@ -22,9 +22,11 @@ interface LiveSpeakerChipProps {
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
 
+// The finished transcript's speaker name (`TranscriptLine`): same size and
+// weight, with italics left to mark a label that can still change.
 const TEXT_STYLE = {
-  locked: "font-semibold text-contrast-muted",
-  provisional: "italic text-contrast-helper",
+  locked: "text-base font-bold text-contrast-muted",
+  provisional: "text-base font-bold italic text-contrast-helper",
 };
 
 /**
@@ -89,7 +91,7 @@ export default function LiveSpeakerChip({
       <div
         data-testid="live-transcript-speaker"
         data-locked={locked ? "true" : "false"}
-        className={`mb-1 text-xs ${textStyle}`}
+        className={`mb-1 ${textStyle}`}
       >
         {name}
       </div>
@@ -150,7 +152,7 @@ export default function LiveSpeakerChip({
             }
             if (event.key === "Escape") cancel();
           }}
-          className={`w-full max-w-[16rem] rounded border border-status-info-border bg-surface-card px-1.5 py-0.5 text-sm font-semibold text-status-info-fg focus:outline-none focus:ring-2 focus:ring-status-info-border ${TOUCH_TARGET_HEIGHT}`}
+          className={`w-full max-w-[16rem] rounded border border-status-info-border bg-surface-card px-1.5 py-0.5 text-sm font-bold text-status-info-fg focus:outline-none focus:ring-2 focus:ring-status-info-border ${TOUCH_TARGET_HEIGHT}`}
         />
         <datalist id={listId}>
           {peopleNames.map((person) => (
@@ -177,7 +179,7 @@ export default function LiveSpeakerChip({
           cancelledRef.current = false;
           setDraft({ label, opened: name, text: name });
         }}
-        className={`group/chip inline-flex items-center gap-1 rounded text-left text-xs transition-colors hover:text-action-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-border pointer-coarse:-my-2.5 ${TOUCH_TARGET_HEIGHT} ${textStyle}`}
+        className={`group/chip inline-flex items-center gap-1 rounded text-left transition-colors hover:text-action-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-border pointer-coarse:-my-2.5 ${TOUCH_TARGET_HEIGHT} ${textStyle}`}
       >
         {name}
         <Pencil

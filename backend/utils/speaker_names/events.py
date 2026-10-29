@@ -83,6 +83,10 @@ def add_event(
     row.supersedes_event_id = newest_event_id(session, speaker.id)
     session.add(row)
     session.flush()
+    if row.source == SOURCE_USER:
+        from .durability import persist_name_anchors
+
+        persist_name_anchors(session, speaker.recording_id)
     return row
 
 

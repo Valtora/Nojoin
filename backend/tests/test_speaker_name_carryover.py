@@ -30,6 +30,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     SPEAKER_NAME_EVENTS_SCHEMA,
+    TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
 )
 from backend.utils.speaker_names.sources import link_teaches_library, name_is_pending
@@ -62,6 +63,7 @@ def session():
             PEOPLE_TAGS_SCHEMA,
             P_TAGS_SCHEMA,
             SPEAKER_NAME_EVENTS_SCHEMA,
+            TRANSCRIPTS_SCHEMA,
         ):
             connection.execute(text(schema))
         connection.execute(

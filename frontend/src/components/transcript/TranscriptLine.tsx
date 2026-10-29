@@ -34,6 +34,10 @@ import SpeakerNameReviewPopover from "./SpeakerNameReviewPopover";
 import TranscriptLineBadges from "./TranscriptLineBadges";
 import TranscriptLineMenu from "./TranscriptLineMenu";
 import TranscriptLineText from "./TranscriptLineText";
+import FinalWordingReview from "./FinalWordingReview";
+import { lineIsSettling } from "@/lib/transcript/settling";
+import OverlapIndicator from "./OverlapIndicator";
+import { useSpeakerTurnHighlight } from "../speakers/SpeakerTurnHighlight";
 
 /**
  * The line, its place among all the lines and its key, as separate props:
@@ -77,6 +81,7 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
   actions: TranscriptLineActions;
   onAddNote: ((note: OutboxDraft) => string | null) | null;
   onPlayFrom: ((startSeconds: number) => void) | null;
+  onSplitSegment: ((segment: TranscriptSegment, wordId: string) => Promise<boolean>) | null;
   /** The open editor, for a line that shows it; null on every other line. */
   editor: TranscriptOpenEditor | null;
 };
@@ -115,8 +120,10 @@ function TranscriptLine({
   actions,
   onAddNote,
   onPlayFrom,
+  onSplitSegment,
   editor,
 }: TranscriptLineProps) {
+  const highlighted = useSpeakerTurnHighlight().labels.includes(segment.speaker);
   const textDecorations = useMemo(
     () =>
       noteDecorations.length === 0
@@ -127,7 +134,8 @@ function TranscriptLine({
     [decorations, noteDecorations],
   );
   const isProvisional = segment.provisional === true;
-  const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
+  const isSegmentReadOnly = readOnly || lineIsSettling(segment) ||
+    (isProvisional && !allowProvisionalEdits && !segment.settling_required);
   const speakerName = segmentSpeakerDisplayName(speakerMap, segment.speaker);
   // A live label is no speaker of the recording yet, so it has no name to
   // change; the line can still be assigned to a speaker.
@@ -161,7 +169,8 @@ function TranscriptLine({
       data-segment-id={segmentId}
       data-order-index={index}
       data-line-actions
-      className="group/line flex flex-col mb-3 last:mb-0"
+      data-speaker-highlighted={highlighted || undefined}
+      className={`group/line flex flex-col mb-3 last:mb-0 ${highlighted ? "rounded-lg outline-2 outline-action-border outline-offset-2" : ""}`}
     >
       {/* Speaker Label */}
       <div className="flex flex-wrap items-baseline gap-2 mb-1">
@@ -251,6 +260,8 @@ function TranscriptLine({
           hasPendingRemoteUpdate={hasPendingRemoteUpdate}
         />
 
+        <OverlapIndicator segment={segment} speakerMap={speakerMap} />
+
         <TranscriptLineMenu
           segment={segment}
           segmentId={segmentId}
@@ -259,6 +270,7 @@ function TranscriptLine({
           actions={actions}
           onAddNote={onAddNote}
           onPlayFrom={onPlayFrom}
+          onSplitSegment={onSplitSegment}
           isEditingText={isEditingText}
           isChangingSpeaker={popoverAnchor !== null}
         />
@@ -292,11 +304,15 @@ function TranscriptLine({
             segmentId={segmentId}
             startMs={segmentStartMs(segment)}
             endMs={segmentEndMs(segment)}
+            settlingRequired={segment.settling_required}
+            settling={lineIsSettling(segment)}
+            words={segment.words}
             decorations={textDecorations}
             className="leading-relaxed whitespace-pre-wrap text-contrast-muted"
           />
         )}
       </div>
+      <FinalWordingReview segment={segment} />
     </div>
   );
 }

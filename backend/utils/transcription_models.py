@@ -13,6 +13,18 @@ logger = logging.getLogger(__name__)
 PARAKEET_MODEL_IDS = {"parakeet-tdt-0.6b-v3": "nemo-parakeet-tdt-0.6b-v3"}
 CANARY_MODEL_IDS = {"nemo-canary-1b-v2": "nemo-canary-1b-v2"}
 
+# Shared with engine declarations without importing worker inference libraries.
+_NATIVE_WORD_TIMESTAMPS = {"whisper": True, "parakeet": True, "canary": False}
+
+
+def engine_has_native_word_timestamps(engine: str) -> bool:
+    """Return an engine's declared timing capability, refusing unknown engines."""
+    try:
+        return _NATIVE_WORD_TIMESTAMPS[engine]
+    except KeyError as exc:
+        raise ValueError(f"Unknown transcription backend: {engine}") from exc
+
+
 # The values a recording's engine override may hold, by key. A reprocess picks
 # from these and nothing else.
 ENGINE_OVERRIDE_CHOICES: dict[str, tuple[str, ...]] = {

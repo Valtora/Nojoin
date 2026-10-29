@@ -4,6 +4,7 @@ import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import {
   useCallback,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -20,16 +21,21 @@ import {
   segmentEndMs,
   segmentStartMs,
 } from "@/lib/notes/placement";
-import { liveSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
+import { getRecordingSpeakerDisplayName, liveSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
-import { CaptureSourceChannel, TranscriptSegment } from "@/types";
+import { CaptureSourceChannel, RecordingSpeaker, TranscriptSegment } from "@/types";
 
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import LiveLineMenu from "./transcript/LiveLineMenu";
+import type { LiveLineHandlers } from "./transcript/LiveLineEditor";
+import FinalWordingReview from "./transcript/FinalWordingReview";
+import { lineIsSettling, LINE_SETTLING_REASON } from "@/lib/transcript/settling";
 import LiveSpeakerChip from "./transcript/LiveSpeakerChip";
 import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptLineText from "./transcript/TranscriptLineText";
+import OverlapIndicator, { indexOverlaps, NO_OVERLAPS } from "./transcript/OverlapIndicator";
+import { useNoteMoves, type MoveNoteHandler } from "./transcript/_hooks/useNoteMoves";
 
 /**
  * How close to the bottom counts as "following the conversation".
@@ -80,9 +86,15 @@ const sourceChannelOf = (
 const liveLabelOf = (segment: TranscriptSegment): string | null =>
   liveSpeakerDisplayName(segment.speaker) === null ? null : segment.speaker;
 
+const speakerLabelOf = (segment: TranscriptSegment): string | null =>
+  liveLabelOf(segment) ??
+  (segment.settling_required && segment.speaker !== "UNKNOWN" ? segment.speaker : null);
+
 const NO_NAMES: Readonly<Record<string, string>> = {};
 
 interface LiveTranscriptPanelProps {
+  lineHandlers?: LiveLineHandlers;
+  speakers?: readonly RecordingSpeaker[];
   segments: TranscriptSegment[];
   hasLoaded: boolean;
   isPaused?: boolean;
@@ -90,6 +102,8 @@ interface LiveTranscriptPanelProps {
   notes?: readonly InlineNote[];
   onRetryNote?: (key: string) => void;
   onDiscardNote?: (key: string) => void;
+  /** Moves saved timeline notes while a marked capture is still in progress. */
+  onMoveNote?: MoveNoteHandler;
   /** Rendered under the transcript window: the note box. */
   footer?: ReactNode;
   /**
@@ -97,6 +111,8 @@ interface LiveTranscriptPanelProps {
    * lines have no menu and a selection no toolbar.
    */
   onNoteOnLine?: (selection: NoteSelection) => void;
+  /** Puts the note box's next note at a line's start: the note from a line still settling. */
+  onNoteAtTime?: (atMs: number) => void;
   /** Live label -> the name the user gave it; others read "Speaker <n>". */
   liveSpeakerNames?: Readonly<Record<string, string>>;
   /** Names a live speaker from its label chip; without it the chip is text. */
@@ -112,14 +128,14 @@ const noteTimeMs = (note: InlineNote) =>
   note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0);
 
 /**
- * Read-only live transcript for the in-flight recording view.
+ * Live transcript for the in-flight recording view.
  *
  * Renders provisional utterances as they finalize during capture, and the
  * user's notes among them, each on its own line after the line it follows
  * (`placeTimelineNotes`, the rule every view and prompt shares). Not a second
- * transcript editor: there is nothing to edit and no playback, because neither
- * is meaningful before the recording exists as a file. A line's ⋯ menu only
- * puts the note box's next note on that line. When live speaker labels are
+ * playback surface. Unmarked recordings keep the note-only line menu;
+ * marked lines offer corrections, speaker assignment and word splits once
+ * locked. Typed notes remain available throughout. When live speaker labels are
  * on, a line may carry a provisional label ("Speaker 3") from the live lane's
  * clustering. It is italic and muted until the label locks, so the cue does not
  * rest on colour alone. Its chip renames the live speaker; the name stands in
@@ -133,25 +149,35 @@ export default function LiveTranscriptPanel({
   notes = NO_NOTES,
   onRetryNote,
   onDiscardNote,
+  onMoveNote,
   footer,
   onNoteOnLine,
+  onNoteAtTime,
   liveSpeakerNames = NO_NAMES,
   onRenameLiveSpeaker,
   loadPeopleNames,
+  lineHandlers,
+  speakers,
 }: LiveTranscriptPanelProps) {
+  const settlingDescriptionId = useId();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
+  const overlaps = useMemo(() => indexOverlaps(segments), [segments]);
+  const speakerMap = useMemo(() => ({
+    ...Object.fromEntries((speakers ?? []).map((speaker) => [
+      speaker.diarization_label, getRecordingSpeakerDisplayName(speaker, new Map()),
+    ])), ...liveSpeakerNames,
+  }), [speakers, liveSpeakerNames]);
 
-  // Show the source and speaker labels only where they change, so a run of
-  // consecutive lines from one channel or voice reads as one block and a
-  // switch becomes a visible event rather than repetition on every line.
+  // Every labelled line names its speaker, as the finished transcript does.
+  // The source label shows only where it changes, so a run of lines from one
+  // channel reads as one block and a switch becomes a visible event.
   const lines = useMemo(
     () =>
       segments.map((segment, index) => {
         const sourceChannel = sourceChannelOf(segment);
         const previous = index > 0 ? segments[index - 1] : undefined;
         const previousChannel = previous ? sourceChannelOf(previous) : undefined;
-        const speakerLabel = liveLabelOf(segment);
 
         return {
           segment,
@@ -159,26 +185,20 @@ export default function LiveTranscriptPanel({
           sourceChannel,
           showSourceLabel:
             sourceChannel !== null && sourceChannel !== previousChannel,
-          speakerLabel:
-            speakerLabel !== null &&
-            (previous === undefined || speakerLabel !== liveLabelOf(previous))
-              ? speakerLabel
-              : null,
-          speakerLocked: segment.speaker_state === "stable",
+          speakerLabel: speakerLabelOf(segment),
+          speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
         };
       }),
     [segments],
   );
+  const settlingRequired = segments.some((segment) => segment.settling_required);
 
   // Placed on the lines as listed, which is also the order they render in.
-  const notesAmongLines = useMemo(
-    () =>
-      bodyNotesAmongLines(
-        placeTimelineNotes(segments, notes),
-        segments.map((_, index) => index),
-      ),
-    [segments, notes],
-  );
+  const visibleIndexes = useMemo(() => segments.map((_, index) => index), [segments]);
+  const placements = useMemo(() => placeTimelineNotes(segments, notes), [segments, notes]);
+  const notesAmongLines = useMemo(() => bodyNotesAmongLines(placements, visibleIndexes), [placements, visibleIndexes]);
+  const moves = useNoteMoves({ segments, visibleIndexes, placements, regionRef: scrollContainerRef,
+    onMoveNote: settlingRequired ? onMoveNote : undefined });
 
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -225,7 +245,7 @@ export default function LiveTranscriptPanel({
   const isEmpty = lines.length === 0 && notes.length === 0;
 
   const renderNote = (note: InlineNote) => (
-    <li key={note.key} data-testid="live-transcript-note">
+    <li key={note.key} data-testid="live-transcript-note" data-note-gap={moves.gapOf(note.id)}>
       <TimelineNoteLine
         noteId={note.id}
         body={note.body}
@@ -236,6 +256,7 @@ export default function LiveTranscriptPanel({
         onRetry={onRetryNote ? () => onRetryNote(note.key) : undefined}
         onDiscard={onDiscardNote ? () => onDiscardNote(note.key) : undefined}
         attachment={note.attachment}
+        move={moves.controlsFor(note, isSavedNote(note) && note.revision !== undefined)}
       />
     </li>
   );
@@ -254,10 +275,15 @@ export default function LiveTranscriptPanel({
         </div>
         {!isEmpty ? (
           <span className="text-xs text-contrast-helper">
-            Provisional. Corrected when the recording is processed.
+            {settlingRequired
+              ? "Lines settle as the conversation continues. Your corrections are kept."
+              : "Provisional. Corrected when the recording is processed."}
           </span>
         ) : null}
       </div>
+      {segments.some(lineIsSettling) ? (
+        <p id={settlingDescriptionId} hidden>{LINE_SETTLING_REASON}</p>
+      ) : null}
 
       {/* The window fills the card, and the card fills what the column has
           left, with no ceiling: a capped module in an items-stretch grid only
@@ -297,6 +323,11 @@ export default function LiveTranscriptPanel({
             // the notes card, so `min-h-0` lets the window take the card exactly.
             className="relative min-h-[14rem] flex-1 overflow-y-auto outline-none @min-[54rem]:min-h-0"
           >
+            {moves.drag?.bar ? (
+              <div aria-hidden="true" data-testid="note-drop-bar"
+                className="pointer-events-none absolute h-0.5 rounded-pill bg-action"
+                style={{ top: moves.drag.bar.top, left: moves.drag.bar.left, width: moves.drag.bar.width }} />
+            ) : null}
             <div className="flex min-h-full flex-col py-4 pl-4 pr-8">
               {isEmpty ? (
                 <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
@@ -317,22 +348,21 @@ export default function LiveTranscriptPanel({
                       key={key}
                       data-testid="live-transcript-line"
                       data-line-index={index}
+                      data-order-index={index}
                       data-line-actions
+                      aria-describedby={lineIsSettling(segment) ? settlingDescriptionId : undefined}
                       className="group/line"
                     >
                       {speakerLabel ? (
                         <LiveSpeakerChip
                           label={speakerLabel}
-                          name={
-                            liveSpeakerNames[speakerLabel] ??
-                            liveSpeakerDisplayName(speakerLabel) ??
-                            speakerLabel
-                          }
+                          name={speakerMap[speakerLabel] ?? liveSpeakerDisplayName(speakerLabel) ?? speakerLabel}
                           locked={speakerLocked}
-                          onRename={onRenameLiveSpeaker}
+                          onRename={liveLabelOf(segment) ? onRenameLiveSpeaker : undefined}
                           loadPeopleNames={loadPeopleNames}
                         />
                       ) : null}
+                      <OverlapIndicator segment={segment} overlaps={overlaps.get(segment) ?? NO_OVERLAPS} speakerMap={speakerMap} />
                       {showSourceLabel && sourceChannel ? (
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
                           {SOURCE_CHANNEL_LABELS[sourceChannel]}
@@ -347,21 +377,29 @@ export default function LiveTranscriptPanel({
                           segmentId={getTranscriptSegmentKey(segment, index)}
                           startMs={segmentStartMs(segment)}
                           endMs={segmentEndMs(segment)}
-                          className="min-w-0 flex-1 text-sm italic leading-6 text-contrast-helper"
+                          settlingRequired={segment.settling_required}
+                          settling={lineIsSettling(segment)}
+                          words={segment.words}
+                          className={`min-w-0 flex-1 text-sm leading-6 ${segment.settling_required
+                            ? "text-contrast-muted" : "italic text-contrast-helper"}`}
                         />
                         {onNoteOnLine ? (
                           <LiveLineMenu
                             segment={segment}
                             onNoteOnLine={onNoteOnLine}
+                            onNoteAtTime={onNoteAtTime}
+                            handlers={lineHandlers}
+                            speakers={speakers}
                           />
                         ) : null}
                       </div>
+                      <FinalWordingReview segment={segment} />
                     </li>,
                     <CollapsedLineNotes
                       key={`${key}-notes`}
                       as="li"
                       notes={notesAmongLines.afterLine.get(index) ?? NO_NOTES}
-                      isSaved={isSavedNote}
+                      isSaved={(note) => isSavedNote(note) && !moves.wasMoved(note.id)}
                       renderNote={renderNote}
                       lineTime={() => formatElapsed(segment.start)}
                     />,
@@ -389,7 +427,8 @@ export default function LiveTranscriptPanel({
 
         {footer}
       </div>
-      <TranscriptSelectionNotes root={scrollContainerRef} onNoteOnText={onNoteOnLine} />
+      <p role="status" className="sr-only">{moves.announcement}</p>
+      <TranscriptSelectionNotes root={scrollContainerRef} onNoteOnText={onNoteOnLine} segments={segments} />
     </SurfaceBase>
   );
 }

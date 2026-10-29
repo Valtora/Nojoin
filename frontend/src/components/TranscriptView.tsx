@@ -37,6 +37,7 @@ import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
+import { indexOverlaps, OverlapContext } from "./transcript/OverlapIndicator";
 
 interface TranscriptViewProps {
   recordingId: RecordingId;
@@ -68,6 +69,7 @@ interface TranscriptViewProps {
     segment: TranscriptSegment,
     text: string,
   ) => void | Promise<void>;
+  onSplitSegment?: (segment: TranscriptSegment, wordId: string) => Promise<boolean>;
   onFindAndReplace: (
     find: string,
     replace: string,
@@ -130,6 +132,7 @@ export default function TranscriptView({
   onUpdateSegmentSpeaker,
   onReviewSpeakerName,
   onUpdateSegmentText,
+  onSplitSegment,
   onFindAndReplace,
   speakerColors: speakerColorsProp,
   onUndo,
@@ -168,6 +171,7 @@ export default function TranscriptView({
     () => new Set(pendingRemoteUtteranceIds),
     [pendingRemoteUtteranceIds],
   );
+  const overlapBySegment = useMemo(() => indexOverlaps(segments), [segments]);
 
   // Memoised on the lines, so a playback tick hands every line the same item
   // and the same group, and an unchanged line does not redraw.
@@ -348,6 +352,9 @@ export default function TranscriptView({
   const playFrom = useStableCallback((startSeconds: number) => onPlaySegment(startSeconds));
   const canAddNote = onAddNote !== undefined;
   const addNote = useStableCallback((note: OutboxDraft) => onAddNote?.(note) ?? null);
+  const canSplit = onSplitSegment !== undefined;
+  const splitSegment = useStableCallback(async (segment: TranscriptSegment, wordId: string) =>
+    await onSplitSegment?.(segment, wordId) ?? false);
   const lineShared = useMemo<TranscriptLineShared>(
     () => ({
       readOnly,
@@ -362,6 +369,7 @@ export default function TranscriptView({
       actions: editing.lineActions,
       onAddNote: canAddNote ? addNote : null,
       onPlayFrom: disableSegmentPlayback ? null : playFrom,
+      onSplitSegment: canSplit ? splitSegment : null,
     }),
     [
       readOnly,
@@ -379,6 +387,8 @@ export default function TranscriptView({
       addNote,
       disableSegmentPlayback,
       playFrom,
+      canSplit,
+      splitSegment,
     ],
   );
   const lineKeys = (
@@ -396,6 +406,7 @@ export default function TranscriptView({
     );
 
   return (
+    <OverlapContext.Provider value={overlapBySegment}>
     <div id="transcript-view" className="flex flex-col h-full relative min-h-0">
       <TranscriptToolbar
         onUndo={onUndo}
@@ -497,7 +508,7 @@ export default function TranscriptView({
       <p role="status" className="sr-only">
         {moves.announcement}
       </p>
-      <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} />
+      <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} segments={segments} />
       {onEditNote ? (
         <TranscriptNoteEditor
           editing={shownEditor}
@@ -508,5 +519,6 @@ export default function TranscriptView({
         />
       ) : null}
     </div>
+    </OverlapContext.Provider>
   );
 }

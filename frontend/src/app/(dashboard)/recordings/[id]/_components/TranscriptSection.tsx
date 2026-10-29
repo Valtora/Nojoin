@@ -10,6 +10,8 @@ import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import { useSpeakerNameReview } from "@/lib/useSpeakerNameReview";
+import { useNotificationStore } from "@/lib/notificationStore";
+import { transcriptLineActions } from "@/components/recordings/_hooks/transcriptLineActions";
 import {
   RecordingStatus,
   type GlobalSpeaker,
@@ -94,6 +96,13 @@ export default function TranscriptSection({
   onExport,
   onActiveEditUtteranceChange,
 }: TranscriptSectionProps) {
+  const { addNotification } = useNotificationStore();
+  const splitLine = async (segment: TranscriptSegment, wordId: string) => {
+    const actions = transcriptLineActions((message) => addNotification({ type: "error", message }));
+    const saved = await actions.splitTranscriptLine(recording.id, segment, wordId);
+    if (saved) onRefresh();
+    return saved;
+  };
   const nameReview = useSpeakerNameReview({ recordingId: recording.id, onRefresh });
   const reviewSpeakerName = (label: string, name: string, decision: SpeakerNameDecision) =>
     nameReview.review({ labels: [label], name }, decision);
@@ -208,6 +217,7 @@ export default function TranscriptSection({
             onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}
             onReviewSpeakerName={reviewSpeakerName}
             onUpdateSegmentText={onUpdateSegmentText}
+            onSplitSegment={splitLine}
             onFindAndReplace={onFindAndReplace}
             speakerColors={speakerColors}
             onUndo={onUndo}

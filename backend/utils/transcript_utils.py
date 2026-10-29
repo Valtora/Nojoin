@@ -3,11 +3,18 @@ import logging
 import os
 import re
 
+from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
 from backend.processing.processing_tuning import (
+    LINE_BREAK_PAUSE_KEY,
     TUNING_SPECS,
     WORD_FLIP_MAX_DURATION_KEY,
     WORD_FLIP_MAX_GAP_KEY,
+    line_break_pause_exceeded,
     resolve_tuning,
+)
+from backend.utils.partial_word_segments import (
+    normalise_partial_word_segments,
+    timed_word_groups,
 )
 from backend.utils.word_text import reconstruct_text_from_words
 
@@ -80,7 +87,12 @@ from backend.utils.short_segment_fold import (
     CONTIGUOUS_GAP_TOLERANCE_S,
     fold_short_segments,
 )
-from backend.utils.word_times import exceeds, falls_short
+from backend.utils.word_times import (
+    exceeds,
+    falls_short,
+    has_untimed_words,
+    has_word_timing,
+)
 
 if TYPE_CHECKING:
     pass
@@ -112,7 +124,7 @@ def combine_transcription_diarization(
         return None
 
     try:
-        segments = transcription["segments"]
+        segments = normalise_partial_word_segments(transcription["segments"])
         speaker_turns = diarization
 
         word_segment_count = sum(1 for seg in segments if seg.get("words"))
@@ -123,7 +135,10 @@ def combine_transcription_diarization(
             len(segments),
         )
         combined: list[dict] = []
-        for has_words, run in groupby(segments, key=lambda seg: bool(seg.get("words"))):
+        for has_words, run in groupby(
+            segments,
+            key=lambda seg: bool(seg.get("words")),
+        ):
             if has_words:
                 combined.extend(_combine_word_level(list(run), speaker_turns, config))
             else:
@@ -191,6 +206,10 @@ def _combine_segment_level(segments, speaker_turns):
             "overlapping_speakers": overlapping_speakers,
             "text": text,
         }
+        if seg.get("alignment_error"):
+            final_segment["alignment_error"] = seg["alignment_error"]
+        if has_untimed_words(seg):
+            final_segment["words"] = seg["words"]
         # Only a string id (a live utterance's public id) carries over. An
         # engine's own index, such as openai-whisper's integer segment "id",
         # is not an utterance id; finalize would mint over it anyway.
@@ -205,10 +224,14 @@ def _combine_word_level(segments, speaker_turns, config=None):
     """High-precision logic: Align individual words to speakers."""
     from pyannote.core import Segment
 
-    all_words = []
-    for seg in segments:
-        if "words" in seg:
-            all_words.extend(seg["words"])
+    groups = [
+        group for seg in segments for group in timed_word_groups(seg.get("words", []))
+    ]
+    all_words = [anchor for anchor, _ in groups]
+    if not all_words:
+        return _combine_segment_level(
+            normalise_partial_word_segments(segments), speaker_turns
+        )
 
     logger.debug(f"_combine_word_level: Processing {len(all_words)} words")
 
@@ -273,9 +296,11 @@ def _combine_word_level(segments, speaker_turns, config=None):
         max_duration_s=resolve_tuning(config, WORD_FLIP_MAX_DURATION_KEY),
         max_gap_s=resolve_tuning(config, WORD_FLIP_MAX_GAP_KEY),
     )
+    line_config = {LINE_BREAK_PAUSE_KEY: resolve_tuning(config, LINE_BREAK_PAUSE_KEY)}
 
     for i, assignment in enumerate(word_assignments):
         word_data = assignment["word"]
+        grouped_words = groups[i][1]
         w_start = word_data["start"]
         w_end = word_data["end"]
         w_text = word_data["word"]
@@ -287,12 +312,14 @@ def _combine_word_level(segments, speaker_turns, config=None):
             current_segment["overlapping_speakers"] = []
             current_segment["text"] = w_text.lstrip()
             current_segment["end"] = w_end
-            current_segment["words"].append(word_data)
+            current_segment["words"].extend(grouped_words)
             continue
 
         gap = w_start - current_segment["end"]
 
-        if speaker != current_segment["speaker"] or exceeds(gap, 1.0):
+        if speaker != current_segment["speaker"] or line_break_pause_exceeded(
+            gap, line_config
+        ):
             final_segments.append(_with_word_source_public_ids(current_segment))
             current_segment = {
                 "start": w_start,
@@ -300,16 +327,16 @@ def _combine_word_level(segments, speaker_turns, config=None):
                 "speaker": speaker,
                 "overlapping_speakers": [],
                 "text": w_text.lstrip(),
-                "words": [word_data],
+                "words": list(grouped_words),
             }
         else:
-            # Whisper word tokens include leading space (e.g., " hello")
+            # Native tokens retain the incremental joining used by the engines.
             if w_text.startswith(" "):
                 current_segment["text"] += w_text
             else:
                 current_segment["text"] += " " + w_text
             current_segment["end"] = w_end
-            current_segment["words"].append(word_data)
+            current_segment["words"].extend(grouped_words)
 
     final_segments.append(_with_word_source_public_ids(current_segment))
 
@@ -450,6 +477,8 @@ def _gap_word_speaker(word: dict, turns: list, shared: str | None) -> str:
 
 def _with_word_source_public_ids(segment: dict) -> dict:
     next_segment = dict(segment)
+    if any(word.get("source_id") for word in segment.get("words", [])):
+        next_segment["text"] = reconstruct_text_from_words(segment["words"])
     source_ids = sorted(
         {
             str(word.get("source_public_id") or "").strip()
@@ -474,6 +503,12 @@ def _merge_consolidation_metadata(source_segments: list[dict]) -> dict:
     metadata: dict = {}
     if not source_segments:
         return metadata
+
+    alignment_errors = _ordered_metadata_values(
+        segment.get("alignment_error") for segment in source_segments
+    )
+    if alignment_errors:
+        metadata["alignment_error"] = "; ".join(alignment_errors)
 
     for key in ("speaker_manually_edited", "text_manually_edited"):
         if any(segment.get(key) is True for segment in source_segments):
@@ -599,18 +634,24 @@ def _smooth_isolated_word_speaker_flips(
 
 
 def consolidate_diarized_transcript(
-    segments, min_duration_s: float = 0.1, max_duration_s: float = 10.0
+    segments,
+    min_duration_s: float = 0.1,
+    max_duration_s: float = DEFAULT_MAX_SEGMENT_S,
+    *,
+    line_break_pause_s: float = TUNING_SPECS[LINE_BREAK_PAUSE_KEY].default,
 ):
     """
     Consolidate diarized transcript segments by speaker, merging consecutive segments by the same speaker,
     and handling overlapping speakers. Returns a list of dicts with start, end, speaker, and text.
     Folds a consolidated segment shorter than min_duration_s into a neighbour
     rather than keeping it on its own (see short_segment_fold.fold_short_segments).
+    A fold cannot bridge a gap exceeding the resolved line_break_pause_s.
     Forces a split if the segment duration exceeds max_duration_s.
     """
     if not segments:
         return []
 
+    segments = normalise_partial_word_segments(segments)
     consolidated = []
     sources: list[list[dict]] = []
     short_indices: set[int] = set()
@@ -618,6 +659,12 @@ def consolidate_diarized_transcript(
     n = len(segments)
     while i < n:
         curr = segments[i]
+        if curr.get("alignment_error"):
+            # A whole-window failure has no observed boundary for splitting.
+            consolidated.append(dict(curr))
+            sources.append([curr])
+            i += 1
+            continue
         curr_start = curr["start"]
         curr_end = curr["end"]
         curr_speaker = curr["speaker"]
@@ -628,12 +675,11 @@ def consolidate_diarized_transcript(
         # Split a segment longer than max_duration_s; Whisper can return 30s blocks.
         if exceeds(curr_end - curr_start, max_duration_s):
             if curr_words:
-                # Split within an 8-12s window centred on a 10s target: prefer the
-                # sentence break (.!?) nearest the target, otherwise the nearest word
-                # boundary in the window, otherwise the first word ending past 10s.
-                soft_min = curr_start + 8.0
-                soft_max = curr_start + 12.0
-                hard_target = curr_start + 10.0
+                # Scale the existing sentence-preference window with the cap:
+                # 24-36 s around the default 30 s target, never fixed 8/10/12 s.
+                soft_min = curr_start + max_duration_s * 0.8
+                soft_max = curr_start + max_duration_s * 1.2
+                hard_target = curr_start + max_duration_s
 
                 # Track best sentence break vs best word break separately
                 best_sentence_idx = -1
@@ -643,6 +689,8 @@ def consolidate_diarized_transcript(
                 min_word_dist = float("inf")
 
                 for idx, w in enumerate(curr_words):
+                    if not has_word_timing(w):
+                        continue
                     w_end_time = w["end"]
 
                     if falls_short(w_end_time, soft_min):
@@ -668,16 +716,25 @@ def consolidate_diarized_transcript(
                 elif best_word_idx != -1:
                     split_idx = best_word_idx
                 else:
-                    # No candidate in the 8-12s window: split at the first word
-                    # ending past 10s.
+                    # Sparse timings: keep the last boundary below the cap.
+                    # One indivisible word may itself exceed the cap.
                     split_idx = -1
                     for idx, w in enumerate(curr_words):
-                        if w["end"] >= hard_target:
-                            split_idx = idx + 1
+                        if not has_word_timing(w):
+                            continue
+                        if exceeds(w["end"], hard_target):
+                            if split_idx == -1:
+                                split_idx = idx + 1
                             break
+                        split_idx = idx + 1
                     if split_idx == -1:
                         split_idx = len(curr_words)
 
+                # Unknown words stay with the preceding timed word at a split.
+                while split_idx < len(curr_words) and not has_word_timing(
+                    curr_words[split_idx]
+                ):
+                    split_idx += 1
                 first_chunk_words = curr_words[:split_idx]
                 remainder_words = curr_words[split_idx:]
 
@@ -689,7 +746,11 @@ def consolidate_diarized_transcript(
                 chunk_text = reconstruct_text_from_words(first_chunk_words)
                 remainder_text = reconstruct_text_from_words(remainder_words)
 
-                split_end_time = first_chunk_words[-1]["end"]
+                split_end_time = next(
+                    word["end"]
+                    for word in reversed(first_chunk_words)
+                    if has_word_timing(word)
+                )
 
                 split_segment = {
                     "start": curr_start,
@@ -703,7 +764,9 @@ def consolidate_diarized_transcript(
                 sources.append([curr])
 
                 remainder_segment = {
-                    "start": split_end_time,
+                    "start": remainder_words[0]["start"]
+                    if remainder_words
+                    else split_end_time,
                     "end": curr_end,
                     "speaker": curr_speaker,
                     "overlapping_speakers": sorted(curr_overlapping),
@@ -771,6 +834,8 @@ def consolidate_diarized_transcript(
 
         while j < n:
             next_seg = segments[j]
+            if next_seg.get("alignment_error"):
+                break
             next_words = next_seg.get("words", [])
             next_speaker = next_seg["speaker"]
             next_overlapping = set(next_seg.get("overlapping_speakers", []))
@@ -780,9 +845,9 @@ def consolidate_diarized_transcript(
             if exceeds(potential_end - curr_start, max_duration_s):
                 break
 
+            if next_speaker != curr_speaker:
+                break  # Crosstalk retains its own credited words and line actions.
             if next_seg["start"] < curr_end:
-                if next_speaker != curr_speaker:
-                    curr_overlapping.add(next_speaker)
                 curr_overlapping.update(next_overlapping)
                 curr_end = potential_end
                 curr_text += " " + next_seg["text"]
@@ -835,6 +900,7 @@ def consolidate_diarized_transcript(
         short_indices,
         max_duration_s,
         _merge_consolidation_metadata,
+        max_gap_s=line_break_pause_s,
     )
 
     speaker_counts = {}

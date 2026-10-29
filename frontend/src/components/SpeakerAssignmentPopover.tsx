@@ -41,6 +41,8 @@ interface SpeakerAssignmentPopoverProps {
   /** A plain voiceprint name that can be rejected without confirming it. */
   dismissibleName?: string;
   onDismissName?: () => Promise<void>;
+  /** Panel choices always name the entire speaker, never one utterance. */
+  fixedScope?: "speaker_everywhere_in_recording";
 }
 
 const POPOVER_MARGIN = 8;
@@ -70,6 +72,7 @@ export default function SpeakerAssignmentPopover({
   targetElement,
   dismissibleName,
   onDismissName,
+  fixedScope,
 }: SpeakerAssignmentPopoverProps) {
   const [search, setSearch] = useState("");
   const [dismissingName, setDismissingName] = useState(false);
@@ -81,6 +84,7 @@ export default function SpeakerAssignmentPopover({
   });
   const [selectedScope, setSelectedScope] =
     useState<SpeakerCorrectionScope>("utterance_only");
+  const scope = fixedScope ?? selectedScope;
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -242,7 +246,7 @@ export default function SpeakerAssignmentPopover({
     if (e.key === "Enter") {
       e.preventDefault();
       if (search.trim()) {
-        onSelect({ name: search.trim(), scope: selectedScope });
+        onSelect({ name: search.trim(), scope });
       }
     } else if (e.key === "Escape") {
       onClose();
@@ -324,7 +328,7 @@ export default function SpeakerAssignmentPopover({
       {/* Below 21rem the popover has been clamped to a narrow viewport and
           "Whole transcript" no longer fits beside its twin, so the scope
           buttons stack rather than truncate. */}
-      <div className="grid gap-1 @min-[21rem]:grid-cols-2 border-b border-surface-divider bg-surface-inset p-2">
+      {fixedScope ? <p className="border-b border-surface-divider p-2 text-xs text-contrast-helper">Whole speaker in this recording</p> : <div className="grid gap-1 @min-[21rem]:grid-cols-2 border-b border-surface-divider bg-surface-inset p-2">
         {scopeOptions.map(({ value, label, Icon }) => {
           const isSelected = selectedScope === value;
 
@@ -345,7 +349,7 @@ export default function SpeakerAssignmentPopover({
             </ButtonBase>
           );
         })}
-      </div>
+      </div>}
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {/* Current Recording Speakers */}
@@ -370,7 +374,7 @@ export default function SpeakerAssignmentPopover({
                     onSelect({
                       name: option.displayName,
                       diarizationLabel: representativeLabel,
-                      scope: selectedScope,
+                      scope,
                     })
                   }
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-contrast-muted hover:bg-surface-inset"
@@ -404,7 +408,7 @@ export default function SpeakerAssignmentPopover({
                   onSelect({
                     name: s.name,
                     globalSpeakerId: s.id,
-                    scope: selectedScope,
+                    scope,
                   })
                 }
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-contrast-muted hover:bg-surface-inset"
@@ -430,7 +434,7 @@ export default function SpeakerAssignmentPopover({
                 onClick={() =>
                   onSelect({
                     name: search.trim(),
-                    scope: selectedScope,
+                    scope,
                   })
                 }
                 className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-action-tint text-action-text flex items-center gap-2"

@@ -44,7 +44,11 @@ def _frames_where(build, check) -> list[int]:
         (offset_s, frame)
         for offset_s in OFFSETS_S
         for frame in FRAMES
-        if not check(consolidate_diarized_transcript(build(frame, offset_s)))
+        # Preserve the original 8/10/12 s floating-point boundary regressions
+        # with an explicit custom cap; default 30 s coverage lives separately.
+        if not check(
+            consolidate_diarized_transcript(build(frame, offset_s), max_duration_s=10.0)
+        )
     ]
 
 

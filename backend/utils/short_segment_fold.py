@@ -8,15 +8,13 @@ segment, and neighbours whose pieces tiled one turn are rejoined afterwards.
 import logging
 from typing import Callable, Optional
 
-from backend.utils.word_times import exceeds, falls_short
+from backend.processing.processing_tuning import LINE_BREAK_PAUSE_KEY, TUNING_SPECS
+from backend.utils.word_times import exceeds, falls_short, has_untimed_words
 
 logger = logging.getLogger(__name__)
 
-# A short segment folds only into a neighbour within this gap, so one fold
-# never bridges more than 1.0 s of silence; consecutive folds into the same
-# segment can each add up to that. 1.0 s is the gap at which the word-level
-# merge starts a new segment.
-SHORT_SEGMENT_FOLD_MAX_GAP_S = 1.0
+# The default follows word grouping; a recording may supply its own pause.
+SHORT_SEGMENT_FOLD_MAX_GAP_S = TUNING_SPECS[LINE_BREAK_PAUSE_KEY].default
 # Consolidation's tolerance for "no gap" between back-to-back segments.
 CONTIGUOUS_GAP_TOLERANCE_S = 0.01
 
@@ -32,12 +30,13 @@ def fold_short_segments(
     short_indices: set[int],
     max_duration_s: float,
     merge_metadata: Callable[[list[dict]], dict],
+    max_gap_s: float = SHORT_SEGMENT_FOLD_MAX_GAP_S,
 ) -> list[dict]:
     """Fold each entry in ``short_indices`` into a neighbour so its text stays.
 
     A short segment goes to the adjacent segment by the same speaker, and
     otherwise to the nearer one (the earlier on a tie), among neighbours within
-    SHORT_SEGMENT_FOLD_MAX_GAP_S that would not grow past ``max_duration_s``.
+    ``max_gap_s`` that would not grow past ``max_duration_s``.
     With no such neighbour it stays as its own segment. The neighbour keeps its
     speaker and overlapping speakers; ids and edit flags merge as in
     consolidation. Consecutive short segments keep their order: once one stays
@@ -72,7 +71,9 @@ def fold_short_segments(
             following = None if entry is None else entry[0]
             choice = max(
                 choice,
-                _short_segment_fold(short[0], previous, following, max_duration_s),
+                _short_segment_fold(
+                    short[0], previous, following, max_duration_s, max_gap_s
+                ),
             )
             if choice == _FOLD_PREVIOUS and previous_at is not None:
                 result[previous_at] = _absorb_entries(
@@ -139,10 +140,15 @@ def _short_segment_fold(
     previous: Optional[dict],
     following: Optional[dict],
     max_duration_s: float,
+    max_gap_s: float,
 ) -> int:
     candidates: list[tuple[int, dict, float]] = []
     for kind, neighbour in ((_FOLD_PREVIOUS, previous), (_FOLD_NEXT, following)):
-        if neighbour is None:
+        if (
+            neighbour is None
+            or neighbour.get("alignment_error")
+            or has_untimed_words(neighbour)
+        ):
             continue
         if kind == _FOLD_PREVIOUS:
             gap = short["start"] - neighbour["end"]
@@ -151,9 +157,7 @@ def _short_segment_fold(
         span = max(neighbour["end"], short["end"]) - min(
             neighbour["start"], short["start"]
         )
-        if not exceeds(gap, SHORT_SEGMENT_FOLD_MAX_GAP_S) and not exceeds(
-            span, max_duration_s
-        ):
+        if not exceeds(gap, max_gap_s) and not exceeds(span, max_duration_s):
             candidates.append((kind, neighbour, max(gap, 0.0)))
     if not candidates:
         return _FOLD_NONE
@@ -173,7 +177,11 @@ def _same_turn_within(previous: dict, following: dict, max_duration_s: float) ->
         previous["start"], following["start"]
     )
     return (
-        following["speaker"] == previous["speaker"]
+        not any(
+            segment.get("alignment_error") or has_untimed_words(segment)
+            for segment in (previous, following)
+        )
+        and following["speaker"] == previous["speaker"]
         and set(following["overlapping_speakers"])
         == set(previous["overlapping_speakers"])
         and not exceeds(span, max_duration_s)

@@ -102,7 +102,7 @@ def test_consolidate_splits_long_segments():
         {"start": 8.0, "end": 12.0, "speaker": "SPEAKER_00", "text": "Part 2"},
     ]
 
-    result = consolidate_diarized_transcript(segments)
+    result = consolidate_diarized_transcript(segments, max_duration_s=10.0)
 
     # Needs 2 segments because 12s > 10s
     assert len(result) == 2
@@ -132,7 +132,7 @@ def test_consolidate_splits_at_segment_boundary():
         {"start": 12.0, "end": 15.0, "speaker": "A", "text": "4"},
     ]
 
-    result = consolidate_diarized_transcript(segments)
+    result = consolidate_diarized_transcript(segments, max_duration_s=10.0)
 
     # Expected:
     # Seg 1: 0-8 (1+2) -> 8s duration. Adding 3 (end=12) would make 12s > 10s. So split.
@@ -160,7 +160,7 @@ def test_regression_orphan_drop():
     ]
 
     # Use defaults (min=0.5, max=10.0)
-    result = consolidate_diarized_transcript(segments)
+    result = consolidate_diarized_transcript(segments, max_duration_s=10.0)
 
     # Should have 2 segments:
     # 1. 0.0 - 9.5 "Long speech part 1"
@@ -186,7 +186,7 @@ def test_regression_giant_segment_split():
     ]
 
     # Should be split into 10s chunks: 0-10, 10-20, 20-30, 30-35
-    result = consolidate_diarized_transcript(segments)
+    result = consolidate_diarized_transcript(segments, max_duration_s=10.0)
 
     assert len(result) >= 4
 
@@ -225,7 +225,7 @@ def test_long_word_split_reconstructs_spaces_without_leading_space_tokens():
         }
     ]
 
-    result = consolidate_diarized_transcript(segments)
+    result = consolidate_diarized_transcript(segments, max_duration_s=10.0)
 
     assert len(result) == 2
     assert result[0]["text"] == "one two three four five six seven eight nine ten"
@@ -1014,7 +1014,10 @@ def test_word_with_float_noise_duration_is_looked_up_as_an_instant():
 def test_consolidate_never_folds_a_segment_past_the_maximum_duration(segments):
     expected = _spans(segments)
 
-    result = consolidate_diarized_transcript([dict(seg) for seg in segments])
+    # Keep the original folding-boundary regression at its explicit 10 s cap.
+    result = consolidate_diarized_transcript(
+        [dict(seg) for seg in segments], max_duration_s=10.0
+    )
 
     assert _spans(result) == expected
 
@@ -1117,7 +1120,10 @@ def _with_overlap(segment, overlapping):
     ],
 )
 def test_consolidate_keeps_neighbours_apart_unless_the_fold_tiles_one_turn(segments):
-    result = consolidate_diarized_transcript([dict(seg) for seg in segments])
+    # This case includes the old 10 s rejoin ceiling; keep testing that ceiling.
+    result = consolidate_diarized_transcript(
+        [dict(seg) for seg in segments], max_duration_s=10.0
+    )
 
     assert len(result) == 2
     assert result[-1]["text"] == "b"

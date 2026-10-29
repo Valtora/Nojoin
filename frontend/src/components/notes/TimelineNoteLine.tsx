@@ -13,7 +13,7 @@ import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 import { NoteFile } from "./NoteFiles";
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
-/** Moving a saved point note in the finished view. */
+/** Moving a saved point note between transcript lines. */
 export interface NoteLineMove {
   /** A step to the gap above or below; null where there is none. */
   onUp: (() => void) | null;

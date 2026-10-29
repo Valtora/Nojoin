@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { LiveTranscriptWord } from "@/types";
+import { wordRanges, type WordRange } from "@/lib/transcript/wordRanges";
 
 import {
   buildTextRuns,
@@ -16,6 +18,9 @@ interface TranscriptLineTextProps {
   /** The line's span on the audio timeline, in ms. */
   startMs: number;
   endMs: number;
+  settlingRequired?: boolean;
+  settling?: boolean;
+  words?: readonly LiveTranscriptWord[];
   decorations?: readonly TextDecoration[];
   className: string;
 }
@@ -122,6 +127,40 @@ const renderRun = (text: string, run: TextRun, index: number): ReactNode => {
   );
 };
 
+const decoratedText = (text: string, decorations: readonly TextDecoration[]): ReactNode => {
+  const runs = decorations.length === 0 ? [] : joinRuns(buildTextRuns(text, decorations));
+  return runs.every((run) => run.decorations.length === 0)
+    ? text : runs.map((run, index) => renderRun(text, run, index));
+};
+
+/** Keep each word's identity around its decorated text, for exact selections. */
+const settledText = (
+  text: string, ranges: readonly WordRange[], decorations: readonly TextDecoration[],
+): ReactNode => {
+  const slice = (from: number, to: number) => decoratedText(text.slice(from, to), decorations
+    .filter((decoration) => decoration.from === decoration.to
+      ? decoration.from >= from && (decoration.from < to || (to === text.length && decoration.from === to))
+      : decoration.from < to && decoration.to > from)
+    .map((decoration) => ({ ...decoration,
+      from: Math.max(0, decoration.from - from), to: Math.min(to - from, decoration.to - from) })));
+  let cursor = 0;
+  const nodes: ReactNode[] = [];
+  for (const { word, from, to } of ranges) {
+    if (from > cursor) nodes.push(<span key={`gap-${word.id}`}>{slice(cursor, from)}</span>);
+    nodes.push(
+      <span key={word.id} data-word-id={word.id} data-word-from={from} data-word-to={to}
+        data-word-start-ms={word.start_ms ?? undefined} data-word-end-ms={word.end_ms ?? undefined}
+        data-word-locked={String(word.locked)}
+        className={word.locked ? "not-italic" : "italic text-contrast-helper"}>
+        {slice(from, to)}
+      </span>,
+    );
+    cursor = to;
+  }
+  if (cursor < text.length) nodes.push(<span key="trailing">{slice(cursor, text.length)}</span>);
+  return nodes;
+};
+
 /**
  * A transcript line's text, shared by the live and the finished view.
  *
@@ -136,20 +175,23 @@ export default function TranscriptLineText({
   segmentId,
   startMs,
   endMs,
+  settlingRequired,
+  settling,
+  words,
   decorations = NO_DECORATIONS,
   className,
 }: TranscriptLineTextProps) {
-  const runs = decorations.length === 0 ? [] : joinRuns(buildTextRuns(text, decorations));
-  const isPlain = runs.every((run) => run.decorations.length === 0);
+  const ranges = settlingRequired && words ? wordRanges(text, words) : [];
 
   return (
     <p
       data-segment-id={segmentId}
       data-start-ms={startMs}
       data-end-ms={endMs}
+      data-settling={settlingRequired ? String(!!settling) : undefined}
       className={className}
     >
-      {isPlain ? text : runs.map((run, index) => renderRun(text, run, index))}
+      {ranges.length ? settledText(text, ranges, decorations) : decoratedText(text, decorations)}
     </p>
   );
 }

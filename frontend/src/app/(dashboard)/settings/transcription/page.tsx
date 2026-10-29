@@ -3,6 +3,7 @@
 import AiLanguageSection from "@/components/settings/AiLanguageSection";
 import AiTranscriptionSection from "@/components/settings/AiTranscriptionSection";
 import GlossarySection from "@/components/settings/GlossarySection";
+import LineBreakPauseSettings from "@/components/settings/LineBreakPauseSettings";
 import SettingsAdvancedSection from "@/components/settings/SettingsAdvancedSection";
 import SettingsCategoryLayout from "@/components/settings/SettingsCategoryLayout";
 import { useSettingsContext } from "@/components/settings/SettingsProvider";
@@ -25,6 +26,8 @@ export default function TranscriptionSettingsPage() {
         onUpdate={updateSetting}
         isAdmin={isAdmin}
       />
+
+      <LineBreakPauseSettings settings={settings} onUpdate={updateSetting} />
 
       {isAdmin && (
         <SettingsAdvancedSection categoryId="transcription">

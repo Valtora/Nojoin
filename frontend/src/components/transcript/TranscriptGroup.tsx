@@ -1,10 +1,8 @@
 "use client";
 
-import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { memo } from "react";
 import { Pause, Play } from "lucide-react";
 
-import { getColorByKey } from "@/lib/constants";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
@@ -55,6 +53,7 @@ export interface TranscriptLineShared {
   onAddNote: ((note: OutboxDraft) => string | null) | null;
   /** Plays on from a line's start, in seconds; null where playback is off. */
   onPlayFrom: ((startSeconds: number) => void) | null;
+  onSplitSegment: ((segment: TranscriptSegment, wordId: string) => Promise<boolean>) | null;
 }
 
 /** "Alex", "Alex and Blair", "Alex, Blair, and Sam". */
@@ -91,7 +90,7 @@ interface TranscriptGroupProps {
 
 /**
  * A run of lines that overlap in time, under one timestamp and play button.
- * When more than one speaker is involved, each gets a lane.
+ * Every credited line stays in reading order, with its own overlap disclosure.
  *
  * Memoised, like its lines: the view hands it values and lists of keys that
  * change only when something in this group does, so a playback tick redraws
@@ -122,7 +121,6 @@ function TranscriptGroup({
   const { speakerMap, speakerColors } = lineShared;
   const activeKeys = activeLineKeys.split(LINE_KEY_SEPARATOR);
   const recentKeys = recentLineKeys.split(LINE_KEY_SEPARATOR);
-  const groupHasRecentRevision = recentLineKeys !== "";
 
   const renderLine = (item: IndexedTranscriptSegment) => {
     const { segment, segmentId } = item;
@@ -157,6 +155,7 @@ function TranscriptGroup({
         actions={lineShared.actions}
         onAddNote={lineShared.onAddNote}
         onPlayFrom={lineShared.onPlayFrom}
+        onSplitSegment={lineShared.onSplitSegment}
         editor={isEditingSpeaker || isEditingText ? editor : null}
       />
     );
@@ -222,52 +221,7 @@ function TranscriptGroup({
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        {involvedSpeakers.length > 1 ? (
-          <div className="grid gap-3 md:gap-4 w-full border border-surface-border bg-surface-inset p-3 md:p-4 rounded-xl  md:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
-            {involvedSpeakers.map((speaker) => {
-              const speakerItems = group.items.filter(
-                (item) => item.segment.speaker === speaker,
-              );
-              const laneColor = getColorByKey(speakerColors[speaker] || "gray");
-              const laneMinHeightRem = groupHasRecentRevision
-                ? Math.max(7, speakerItems.length * 4.5)
-                : undefined;
-              return (
-                <SurfaceBase
-                  data-ui-fill="card"
-                  data-ui-border="full" kind="card"
-                  key={speaker}
-                  data-testid={`overlap-lane-${speaker}`}
-                  className={`min-w-0 flex flex-col rounded-xl border ${laneColor.border} bg-surface-card`}
-                >
-                  <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${laneColor.text} border-b border-surface-divider`}>
-                    {segmentSpeakerDisplayName(speakerMap, speaker)}
-                  </div>
-                  <div
-                    data-testid={`overlap-lane-body-${speaker}`}
-                    className="p-3 flex-1 min-w-0"
-                    style={laneMinHeightRem ? { minHeight: `${laneMinHeightRem}rem` } : undefined}
-                  >
-                    {speakerItems.length > 0 ? (
-                      speakerItems.map(renderLine)
-                    ) : (
-                      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border rounded-xl bg-surface-card">
-                        <div className="flex flex-col items-center gap-0.5 opacity-60">
-                          <div className="font-semibold text-contrast-helper text-sm">{segmentSpeakerDisplayName(speakerMap, speaker)}</div>
-                          <div className="text-[11px] uppercase tracking-wider">(overlapping speech)</div>
-                        </div>
-                      </SurfaceBase>
-                    )}
-                  </div>
-                </SurfaceBase>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="flex flex-col w-full">
-            {group.items.map(renderLine)}
-          </div>
-        )}
+        <div className="flex flex-col w-full">{group.items.map(renderLine)}</div>
       </div>
     </div>
   );

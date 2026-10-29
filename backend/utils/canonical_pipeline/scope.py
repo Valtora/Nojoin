@@ -6,7 +6,7 @@ from sqlmodel import col, select
 
 from backend.models.pipeline import SpeakerCorrectionScope, TranscriptUtterance
 
-from .constants import ACTIVE_UTTERANCE_STATES, _get_utterance
+from .constants import ACTIVE_UTTERANCE_STATES, _get_utterance, _load_transcript
 
 _KEYED_SCOPES = {
     SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
@@ -43,6 +43,7 @@ def _lock_anchor(
     order, its own among them. Locking its own line before them would let two
     such corrections on different lines each hold a line the other waits for.
     """
+    _load_transcript(session, recording_id, lock=True)
     if scope in _KEYED_SCOPES:
         _lock_active_lines(session, recording_id)
     return _get_utterance(session, recording_id, utterance_public_id, lock=True)

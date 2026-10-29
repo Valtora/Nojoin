@@ -7,8 +7,8 @@ from collections import defaultdict
 from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
-from sqlalchemy import func, or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy import func, inspect, or_
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
@@ -219,15 +219,60 @@ def _get_utterance(
 
 
 def _load_transcript(
-    session, recording_id: int, *, lock: bool = False
+    session: Session, recording_id: int, *, lock: bool = False
 ) -> Transcript | None:
-    """The transcript; ``lock`` reads it ``FOR UPDATE``, current as of the lock."""
+    """Load the publication fence, retaining changes already made under it.
+
+    A first acquisition refreshes clean fields after waiting for the row lock.
+    Dirty fields belong to this transaction and must survive nested writers.
+    The transaction token includes savepoints, whose rollback releases locks.
+    """
     statement = select(Transcript).where(Transcript.recording_id == recording_id)
-    if lock:
-        statement = statement.with_for_update().execution_options(
-            populate_existing=True
+    if not lock:
+        return session.execute(statement).scalar_one_or_none()
+
+    with session.no_autoflush:
+        transaction = session.get_nested_transaction() or session.get_transaction()
+        previous, held = session.info.get("canonical_transcript_fences", (None, {}))
+        if previous is not transaction:
+            held = {}
+        if recording_id in held:
+            return session.get(Transcript, held[recording_id])
+
+        # Lock scalar identity first: selecting the ORM row then refreshing it
+        # would transfer the entire growing projection twice on every run.
+        identity = select(Transcript.id).where(Transcript.recording_id == recording_id)
+        transcript_id = session.execute(identity.with_for_update()).scalar_one_or_none()
+        if transcript_id is None:
+            pending = next(
+                (
+                    row
+                    for row in session.new
+                    if isinstance(row, Transcript) and row.recording_id == recording_id
+                ),
+                None,
+            )
+            if pending is None:
+                return None
+            session.flush()
+            transcript_id = session.execute(identity.with_for_update()).scalar_one()
+        cached = session.identity_map.get(
+            session.identity_key(Transcript, transcript_id)
         )
-    return session.execute(statement).scalar_one_or_none()
+        transcript = cached or session.get(Transcript, transcript_id)
+        if cached is not None:
+            state = inspect(transcript)
+            clean = [
+                column.key
+                for column in state.mapper.column_attrs
+                if not state.attrs[column.key].history.has_changes()
+            ]
+            if clean:
+                session.refresh(transcript, attribute_names=clean)
+        held[recording_id] = transcript_id
+        transaction = session.get_nested_transaction() or session.get_transaction()
+        session.info["canonical_transcript_fences"] = (transaction, held)
+        return transcript
 
 
 def _load_recording_speakers(session, recording_id: int) -> list[RecordingSpeaker]:

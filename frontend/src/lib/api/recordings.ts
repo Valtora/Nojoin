@@ -55,6 +55,22 @@ export const getRecording = async (id: RecordingId): Promise<Recording> => {
   return response.data;
 };
 
+/**
+ * The recording and its ETag, or null when the server answers 304: neither its
+ * status nor its transcript has changed since `etag` was read.
+ */
+export const getRecordingIfChanged = async (
+  id: RecordingId,
+  etag: string | null,
+): Promise<{ recording: Recording; etag: string | null } | null> => {
+  const response = await api.get<Recording>(`/recordings/${id}`, {
+    headers: etag ? { "If-None-Match": etag } : undefined,
+    validateStatus: (status) => (status >= 200 && status < 300) || status === 304,
+  });
+  if (response.status === 304) return null;
+  return { recording: response.data, etag: response.headers.etag ?? null };
+};
+
 export const initRecording = async (name?: string): Promise<RecordingInitResponse> => {
   const params = new URLSearchParams();
 

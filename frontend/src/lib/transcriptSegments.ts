@@ -171,6 +171,11 @@ export const transcriptSegmentFromUtterance = (
 ): TranscriptSegment => {
   return {
     id: utterance.id,
+    ...(utterance.settling_required ? { settling_required: true } : {}),
+    ...(utterance.words !== undefined ? { words: utterance.words } : {}),
+    ...(utterance.text_locked !== undefined ? { text_locked: utterance.text_locked } : {}),
+    ...(utterance.locked !== undefined ? { locked: utterance.locked } : {}),
+    ...(utterance.final_review !== undefined ? { final_review: utterance.final_review } : {}),
     start: utterance.start,
     end: utterance.end,
     text: utterance.text,
@@ -189,6 +194,7 @@ export const transcriptSegmentFromUtterance = (
     speaker_confidence: utterance.speaker_confidence,
     source_channel: utterance.source_channel,
     text_confidence: utterance.text_confidence,
+    alignment_error: utterance.alignment_error,
     speaker_assignment_source: utterance.speaker_assignment_source,
     speaker_assignment_authority: utterance.speaker_assignment_authority,
     updated_at: utterance.updated_at,

@@ -59,7 +59,10 @@ def mark_transcript_failed(session, recording_id: int, message: str) -> None:
     segments) is kept: it is the only transcript the user has until a retry.
     """
     transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording_id)
+        select(Transcript)
+        .where(Transcript.recording_id == recording_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).first()
     if transcript is None:
         transcript = Transcript(recording_id=recording_id, text="", segments=[])

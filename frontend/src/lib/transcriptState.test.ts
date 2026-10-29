@@ -12,6 +12,34 @@ import {
 } from "./transcriptState";
 
 describe("transcriptState", () => {
+  it.each(["full", "delta"] as const)(
+    "preserves alignment failures in %s state and deferred edits",
+    (mode) => {
+      const utterance: TranscriptUtterance = {
+        id: "failed", start: 0, end: 30, text: "Unplaced",
+        speaker: "UNKNOWN", revision: 1, alignment_error: "No usable timings",
+      };
+      const options = {
+        currentState: createLocalTranscriptState("rec-1", []),
+        recordingId: "rec-1", fallbackSegments: [], mode,
+        delta: {
+          recording_id: "rec-1", revision: 1,
+          utterances: [utterance], tombstones: [], speakers: [],
+        },
+      };
+      expect(applyTranscriptDelta(options).segments[0].alignment_error).toBe(
+        utterance.alignment_error,
+      );
+      const deferred = applyTranscriptDelta({
+        ...options, activeEditUtteranceId: "failed",
+      });
+      expect(deferred.deferredById.failed?.alignment_error).toBe(utterance.alignment_error);
+      expect(flushDeferredTranscriptState(deferred).segments[0].alignment_error).toBe(
+        utterance.alignment_error,
+      );
+    },
+  );
+
   it("applies canonical utterance deltas to the local transcript state", () => {
     const nextState = applyTranscriptDelta({
       currentState: createLocalTranscriptState("rec-1", [
