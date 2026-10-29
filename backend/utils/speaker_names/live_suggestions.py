@@ -48,32 +48,9 @@ def suggest_live_speaker_names(
 ) -> int:
     """Review current evidence for unnamed labels, under the capture fence."""
     suggestions = load_transcript_speaker_suggestions(transcript)
-    handled = {
-        item["diarization_label"]
-        for item in suggestions
-        if item.get("origin") == LIVE_SUGGESTION_ORIGIN
-        and item.get("status") == SPEAKER_SUGGESTION_STATUS_REJECTED
-    }
-    labels = {
-        str(segment.get("speaker", ""))
-        for segment in segments
-        if live_speaker_display_name(segment.get("speaker")) is not None
-    }
-    named = live_speaker_names(session, transcript.recording_id, labels=labels)
-    eligible = sorted(labels - handled - named.keys())
-    candidates = {
-        item.diarization_label: item
-        for item in detect_rule_based_speaker_suggestions(
-            segments, eligible, meeting_context
-        ).suggestions
-    }
+    candidates = _live_candidates(session, transcript, segments, meeting_context)
     changed = _retire_stale_proposals(transcript, suggestions, candidates)
-    pending = {
-        item["diarization_label"]
-        for item in load_transcript_speaker_suggestions(transcript)
-        if item.get("origin") == LIVE_SUGGESTION_ORIGIN
-        and item.get("status") == SPEAKER_SUGGESTION_STATUS_PENDING
-    }
+    pending = _pending_live_proposals(transcript)
     additions = [
         build_persisted_speaker_suggestion(item, origin=LIVE_SUGGESTION_ORIGIN)
         for label, item in candidates.items()
@@ -86,6 +63,43 @@ def suggest_live_speaker_names(
     if changed or additions:
         session.add(transcript)
     return len(additions)
+
+
+def _live_candidates(
+    session: Any,
+    transcript: Transcript,
+    segments: Sequence[dict[str, Any]],
+    meeting_context: MeetingEventContext | None,
+) -> dict[str, SpeakerInferenceSuggestion]:
+    """The rule's hits on live labels the user has neither named nor dismissed."""
+    dismissed = {
+        item["diarization_label"]
+        for item in load_transcript_speaker_suggestions(transcript)
+        if item.get("origin") == LIVE_SUGGESTION_ORIGIN
+        and item.get("status") == SPEAKER_SUGGESTION_STATUS_REJECTED
+    }
+    labels = {
+        str(segment.get("speaker", ""))
+        for segment in segments
+        if live_speaker_display_name(segment.get("speaker")) is not None
+    }
+    named = live_speaker_names(session, transcript.recording_id, labels=labels)
+    eligible = sorted(labels - dismissed - named.keys())
+    return {
+        item.diarization_label: item
+        for item in detect_rule_based_speaker_suggestions(
+            segments, eligible, meeting_context
+        ).suggestions
+    }
+
+
+def _pending_live_proposals(transcript: Transcript) -> dict[str, str]:
+    return {
+        item["diarization_label"]: item["suggested_name"]
+        for item in load_transcript_speaker_suggestions(transcript)
+        if item.get("origin") == LIVE_SUGGESTION_ORIGIN
+        and item.get("status") == SPEAKER_SUGGESTION_STATUS_PENDING
+    }
 
 
 def _retire_stale_proposals(
@@ -117,41 +131,52 @@ def _retire_stale_proposals(
 def refresh_live_speaker_suggestions(session: Any, recording_id: int) -> None:
     """Evaluate current live lines before Meeting Edge's AI-only guards.
 
-    The fence reloads both review state and capture eligibility after waiting
-    for a rename, dismissal or Stop. Commit even a no-op to release the fence
+    Most triggers change nothing, so the rule first runs on an unlocked read
+    and the capture fence is taken only when its hits differ from the stored
+    proposals. Under the fence everything is read again, after waiting for a
+    rename, dismissal or Stop. Commit even a no-op to end the transaction
     before the potentially slow AI refresh starts.
     """
-    transcript, recording = load_capture_publication(session, recording_id)
-    if transcript is not None and publication_is_current(recording, transcript, None):
-        segments = build_transcript_segments_for_read(
-            session, recording_id, transcript=transcript
-        )
-        event = (
-            session.get(CalendarEvent, recording.calendar_event_id)
-            if recording.calendar_event_id is not None
-            else None
-        )
-        suggest_live_speaker_names(
-            session,
-            transcript,
-            segments,
-            meeting_event_context_from_calendar_event(event),
-        )
+    evidence = _live_evidence(session, recording_id, lock=False)
+    if evidence is not None:
+        hits = _live_candidates(session, *evidence)
+        if {label: item.suggested_name for label, item in hits.items()} != (
+            _pending_live_proposals(evidence[0])
+        ):
+            evidence = _live_evidence(session, recording_id, lock=True)
+            if evidence is not None:
+                suggest_live_speaker_names(session, *evidence)
     session.commit()
+
+
+def _live_evidence(
+    session: Any, recording_id: int, *, lock: bool
+) -> tuple[Transcript, list[dict[str, Any]], MeetingEventContext | None] | None:
+    transcript, recording = load_capture_publication(session, recording_id, lock=lock)
+    if transcript is None or not publication_is_current(recording, transcript, None):
+        return None
+    segments = build_transcript_segments_for_read(
+        session, recording_id, transcript=transcript
+    )
+    event = (
+        session.get(CalendarEvent, recording.calendar_event_id)
+        if recording.calendar_event_id is not None
+        else None
+    )
+    return transcript, segments, meeting_event_context_from_calendar_event(event)
 
 
 def live_speaker_suggestions(
     session: Any, recording: Recording, transcript: Transcript
 ) -> dict[str, str]:
-    """Whole pending map for current unnamed labels, including on empty deltas."""
+    """Whole pending map for labels a current line carries, on every read.
+
+    Naming a label resolves its proposal in the same commit, so a named label
+    has none pending.
+    """
     if not publication_is_current(recording, transcript, None):
         return {}
-    pending = {
-        item["diarization_label"]: item["suggested_name"]
-        for item in load_transcript_speaker_suggestions(transcript)
-        if item.get("origin") == LIVE_SUGGESTION_ORIGIN
-        and item.get("status") == SPEAKER_SUGGESTION_STATUS_PENDING
-    }
+    pending = _pending_live_proposals(transcript)
     if not pending:
         return {}
     heard = set(
@@ -162,7 +187,4 @@ def live_speaker_suggestions(
             .where(col(TranscriptUtterance.speaker_label).in_(pending))
         ).scalars()
     )
-    named = live_speaker_names(session, recording.id, labels=heard)
-    return {
-        label: name for label, name in pending.items() if label in heard - named.keys()
-    }
+    return {label: name for label, name in pending.items() if label in heard}

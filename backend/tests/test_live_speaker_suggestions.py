@@ -6,11 +6,14 @@ from typing import Any
 
 import pytest
 from sqlalchemy import text
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.tests.live_naming_fixtures import ONE, TWO
+from backend.tests.test_canonical_publication_fence import (
+    publication_database as publication_database,
+)
 from backend.tests.test_live_speaker_naming_carryover import (
     _finalise,
     _name_live,
@@ -19,6 +22,7 @@ from backend.tests.test_live_speaker_naming_carryover import (
 from backend.tests.test_live_speaker_naming_carryover import (
     session as session,
 )
+from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.meeting_notes import MeetingEventContext
 from backend.utils.speaker_name_suggestions import load_transcript_speaker_suggestions
 from backend.utils.speaker_names.live_suggestions import (
@@ -45,10 +49,23 @@ def _suggestions(session: Session) -> list[dict[str, Any]]:
     return load_transcript_speaker_suggestions(session.get(Transcript, 1))
 
 
-def _pending(session: Session) -> dict[str, str]:
+def _pending(session: Session, recording_id: int = 1) -> dict[str, str]:
+    transcript = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording_id)
+    ).one()
     return live_speaker_suggestions(
-        session, session.get(Recording, 1), session.get(Transcript, 1)
+        session, session.get(Recording, recording_id), transcript
     )
+
+
+def _run_edge_task(session: Session) -> None:
+    task = meeting_edge_stage.refresh_meeting_edge_task
+    original_session = task._session
+    task._session = session
+    try:
+        task.run(1)
+    finally:
+        task._session = original_session
 
 
 def test_a_short_intro_is_only_one_persisted_proposal(session: Session) -> None:
@@ -209,16 +226,62 @@ def test_cadence_names_before_edge_guards_without_an_ai_call(
         )
 
     monkeypatch.setattr(meeting_edge_stage, "resolve_llm_config", refuse_ai)
-    task = meeting_edge_stage.refresh_meeting_edge_task
-    original_session = task._session
-    task._session = session
-    try:
-        task.run(1)
-    finally:
-        task._session = original_session
+    _run_edge_task(session)
 
     assert _pending(session) == {ONE: "Alex"}
     assert config_calls == []
+
+
+def test_a_failing_suggestion_pass_does_not_stop_meeting_edge(
+    session: Session, monkeypatch: pytest.MonkeyPatch, fake_single_flight: Any
+) -> None:
+    def broken_pass(db: Session, recording_id: int) -> None:
+        db.execute(text("SELECT * FROM missing_review_state"))
+
+    monkeypatch.setattr(
+        meeting_edge_stage, "refresh_live_speaker_suggestions", broken_pass
+    )
+    # With Edge off the refresh's only work is to clear a stale status.
+    monkeypatch.setattr(meeting_edge_stage, "is_meeting_edge_enabled", lambda _: False)
+    session.execute(
+        text(
+            "UPDATE transcripts SET meeting_edge_status = 'error', "
+            "meeting_edge_error_message = 'stale'"
+        )
+    )
+    session.commit()
+
+    _run_edge_task(session)
+
+    session.expire_all()
+    transcript = session.get(Transcript, 1)
+    assert transcript.meeting_edge_status == "idle"
+    assert transcript.meeting_edge_error_message is None
+
+
+def test_an_unchanged_trigger_does_not_wait_for_the_capture_fence(
+    publication_database: Any,
+) -> None:
+    engine, recording_id, _ = publication_database
+    with Session(engine) as session:
+        session.execute(
+            text(
+                "UPDATE transcript_utterances SET speaker_label = :label, "
+                "text = 'I''m Alex.' WHERE public_id = 'fence-b'"
+            ),
+            {"label": ONE},
+        )
+        session.commit()
+        refresh_live_speaker_suggestions(session, recording_id)
+        assert _pending(session, recording_id) == {ONE: "Alex"}
+
+    # A rename, dismissal or Stop holds the fence while this trigger runs.
+    with Session(engine) as holder, Session(engine) as trigger:
+        _load_transcript(holder, recording_id, lock=True)
+        trigger.execute(text("SET lock_timeout = '1s'"))
+        refresh_live_speaker_suggestions(trigger, recording_id)
+        holder.rollback()
+        assert _pending(trigger, recording_id) == {ONE: "Alex"}
 
 
 @pytest.mark.parametrize("superseded", [False, True])

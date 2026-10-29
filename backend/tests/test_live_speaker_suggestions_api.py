@@ -10,6 +10,12 @@ from sqlalchemy import text
 
 from backend.models.transcript import Transcript
 from backend.tests.live_naming_fixtures import ONE, TWO
+from backend.tests.sqlite_schemas import (
+    DOCUMENTS_SCHEMA,
+    RECORDING_AUDIO_CHUNKS_SCHEMA,
+    RECORDING_TAGS_SCHEMA,
+    TAGS_SCHEMA,
+)
 from backend.tests.test_live_speaker_naming_api import (
     REC,
     _count,
@@ -190,3 +196,29 @@ async def test_stopping_capture_closes_dismissal_and_hides_the_pending_map(
     assert read["live_speaker_suggestions"] == {}
     assert await _review(session_maker) == before
     assert await _events(session_maker) == []
+
+
+async def test_after_stop_the_transcript_read_drops_pending_live_proposals(
+    client: AsyncClient, session_maker: Any
+) -> None:
+    await _seed_proposals(session_maker)
+    assert (await _dismiss(client)).status_code == 200
+    async with session_maker() as db:
+        # The further tables the recording detail read joins.
+        for schema in (
+            DOCUMENTS_SCHEMA,
+            RECORDING_AUDIO_CHUNKS_SCHEMA,
+            TAGS_SCHEMA,
+            RECORDING_TAGS_SCHEMA,
+        ):
+            await db.execute(text(schema))
+        await db.execute(text("UPDATE recordings SET status = 'PROCESSED'"))
+        await db.commit()
+
+    response = await client.get(f"/api/v1/recordings/{REC}")
+
+    assert response.status_code == 200, response.text
+    assert [
+        (item["diarization_label"], item["status"])
+        for item in response.json()["transcript"]["speaker_name_suggestions"]
+    ] == [(ONE, "rejected")]

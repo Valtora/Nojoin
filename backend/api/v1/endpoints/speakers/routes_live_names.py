@@ -156,8 +156,6 @@ async def name_live_speaker(
         await db.rollback()
         raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)
     metric, names = recorded
-    # The event is already visible to this transaction, so read the proposal
-    # directly: the public pending map correctly hides named labels.
     suggestion = resolve_pending_transcript_speaker_suggestion(
         transcript,
         diarization_label=label,

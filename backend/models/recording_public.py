@@ -350,6 +350,10 @@ def serialize_transcript(
     text_override: Optional[str] = None,
 ) -> TranscriptPublicRead:
     from backend.utils.canonical_pipeline.guards import settling_required
+    from backend.utils.speaker_name_suggestions import (
+        SPEAKER_SUGGESTION_STATUS_PENDING,
+    )
+    from backend.utils.speaker_names.live_suggestions import LIVE_SUGGESTION_ORIGIN
 
     assert transcript.id is not None
     return TranscriptPublicRead(
@@ -375,10 +379,16 @@ def serialize_transcript(
         meeting_edge_payload=transcript.meeting_edge_payload,
         meeting_edge_status=transcript.meeting_edge_status,
         meeting_edge_error_message=transcript.meeting_edge_error_message,
+        # A pending live proposal names a live label, shown only by the live
+        # read while capture runs; after Stop that label no longer exists.
         speaker_name_suggestions=[
             SpeakerNameSuggestionRead.model_validate(item)
             for item in (transcript.speaker_name_suggestions or [])
             if isinstance(item, dict)
+            and not (
+                item.get("origin") == LIVE_SUGGESTION_ORIGIN
+                and item.get("status") == SPEAKER_SUGGESTION_STATUS_PENDING
+            )
         ],
         notes_status=transcript.notes_status,
         notes_stale_documents=bool(getattr(transcript, "notes_stale_documents", False)),
