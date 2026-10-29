@@ -15,6 +15,8 @@ export interface LiveTranscriptPresentation {
   /** Puts the note box's next note at a line's start: the note from a line still settling. */
   onNoteAtTime?: (atMs: number) => void;
   onRenameLiveSpeaker?: (label: string, name: string) => Promise<boolean>;
+  liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  onDismissLiveSpeakerSuggestion?: (label: string) => Promise<boolean>;
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
 

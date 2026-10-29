@@ -53,6 +53,8 @@ export interface LiveTranscript {
   liveSpeakerNames: Readonly<Record<string, string>>;
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
+  liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  applyLiveSpeakerSuggestions?: (suggestions: Record<string, string>) => void;
 }
 
 const NO_NAMES: Readonly<Record<string, string>> = {};
@@ -104,6 +106,8 @@ export function useLiveTranscript(
   const [hasLoaded, setHasLoaded] = useState(false);
   const [liveSpeakerNames, setLiveSpeakerNames] =
     useState<Readonly<Record<string, string>>>(NO_NAMES);
+  const [liveSpeakerSuggestions, setLiveSpeakerSuggestions] =
+    useState<Readonly<Record<string, string>>>(NO_NAMES);
   const stateRef = useRef<LocalTranscriptState | null>(null);
 
   // A feed that starts, or restarts for another recording, shows nothing until
@@ -113,6 +117,7 @@ export function useLiveTranscript(
       setSegments([]);
       setHasLoaded(false);
       setLiveSpeakerNames(NO_NAMES);
+      setLiveSpeakerSuggestions(NO_NAMES);
       setSpeakers([]);
     }
   });
@@ -169,6 +174,9 @@ export function useLiveTranscript(
       setLiveSpeakerNames((previous) =>
         sameOrNext(previous, delta.live_speaker_names),
       );
+      setLiveSpeakerSuggestions((previous) =>
+        sameOrNext(previous, delta.live_speaker_suggestions),
+      );
       setHasLoaded(true);
     };
 
@@ -216,11 +224,20 @@ export function useLiveTranscript(
   }, [recordingId, enabled]);
 
   const applyLiveSpeakerNames = useCallback(
-    (names: Record<string, string>) =>
-      setLiveSpeakerNames((previous) => sameOrNext(previous, names)),
+    (names: Record<string, string>) => {
+      setLiveSpeakerNames((previous) => sameOrNext(previous, names));
+      setLiveSpeakerSuggestions((previous) => sameOrNext(previous,
+        Object.fromEntries(Object.entries(previous).filter(([label]) => !names[label]))));
+    },
+    [],
+  );
+  const applyLiveSpeakerSuggestions = useCallback(
+    (suggestions: Record<string, string>) =>
+      setLiveSpeakerSuggestions((previous) => sameOrNext(previous, suggestions)),
     [],
   );
 
   const refresh = useCallback(() => refreshRef.current?.(), []);
-  return { segments, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames, refresh };
+  return { segments, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames, refresh,
+    liveSpeakerSuggestions, applyLiveSpeakerSuggestions };
 }

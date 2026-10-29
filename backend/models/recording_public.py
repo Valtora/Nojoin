@@ -41,6 +41,13 @@ class PublicModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LiveSpeakerSuggestionsRead(BaseModel):
+    """Live names and proposals after dismissing a live suggestion."""
+
+    live_speaker_names: dict[str, str]
+    live_speaker_suggestions: dict[str, str]
+
+
 class LibraryVoiceprintRead(PublicModel):
     """What linking a recording speaker did to the person's library voiceprint."""
 

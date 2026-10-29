@@ -170,6 +170,12 @@ SPEAKERS_ROUTE_CONTRACT = [
         "LiveSpeakerNamesRead",
     ),
     (
+        "/recordings/{recording_id}/live/{label}/suggestions/reject",
+        ("POST",),
+        "dismiss_live_speaker_suggestion",
+        "LiveSpeakerSuggestionsRead",
+    ),
+    (
         "/recordings/{recording_id}/merge",
         ("POST",),
         "merge_recording_speakers",

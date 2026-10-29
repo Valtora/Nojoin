@@ -14,6 +14,9 @@ from backend.services.timeline_note_service import (
 )
 from backend.utils.meeting_edge import normalize_meeting_edge_items
 from backend.utils.speaker_names.live import with_live_speaker_names
+from backend.utils.speaker_names.live_suggestions import (
+    refresh_live_speaker_suggestions,
+)
 from backend.utils.timeline_notes import (
     iter_timeline,
     render_note_line,
@@ -298,6 +301,14 @@ def refresh_meeting_edge_task(self, recording_id: int):
     is seconds away and will carry fresher transcript than the one skipped, so
     waiting would spend an LLM call to produce a staler answer.
     """
+    try:
+        refresh_live_speaker_suggestions(self.session, recording_id)
+    except Exception:
+        self.session.rollback()
+        logger.exception(
+            "Live speaker suggestions failed for recording %s", recording_id
+        )
+
     with single_flight(
         f"meeting-edge:{recording_id}",
         ttl_seconds=MEETING_EDGE_SINGLE_FLIGHT_TTL_SECONDS,

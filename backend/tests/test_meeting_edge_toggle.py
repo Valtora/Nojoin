@@ -10,6 +10,19 @@ from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.meeting_edge import MeetingEdgeRequest, build_meeting_edge_prompt
 
 
+@pytest.fixture(autouse=True)
+def isolate_edge_guards_from_live_naming(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These legacy session doubles test Edge guards, not capture-fenced naming.
+
+    Live suggestion persistence and cadence run against real database sessions
+    in test_live_speaker_suggestions.py.
+    """
+    monkeypatch.setattr(
+        "backend.worker.tasks.meeting_edge_stage.refresh_live_speaker_suggestions",
+        lambda session, recording_id: None,
+    )
+
+
 class _ExecResult:
     def __init__(self, first_value=None, all_values=None):
         self._first_value = first_value

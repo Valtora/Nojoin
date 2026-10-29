@@ -425,4 +425,34 @@ describe("useLiveTranscript", () => {
     expect(result.current.liveSpeakerNames).toEqual({});
     expect(result.current.liveSpeakerNames).toBe(empty);
   });
+
+  it("reads suggestions on unchanged deltas, preserves their identity, and clears them on empty reads", async () => {
+    const suggestion = { LIVE_PROVISIONAL_1: "Alex" };
+    getTranscriptUtterances
+      .mockResolvedValueOnce({ ...buildDelta(4, []), live_speaker_suggestions: suggestion })
+      .mockResolvedValueOnce({ ...buildDelta(4, []), live_speaker_suggestions: { ...suggestion } })
+      .mockResolvedValueOnce({ ...buildDelta(4, []), live_speaker_suggestions: {} });
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    const pending = result.current.liveSpeakerSuggestions;
+    expect(pending).toEqual(suggestion);
+    expect(result.current.liveSpeakerNames).toEqual({});
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerSuggestions).toBe(pending);
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerSuggestions).toEqual({});
+  });
+
+  it("hides an accepted label immediately and resets suggestions when switching recordings", async () => {
+    getTranscriptUtterances.mockResolvedValue({ ...buildDelta(4, []),
+      live_speaker_suggestions: { LIVE_PROVISIONAL_1: "Alex", LIVE_PROVISIONAL_2: "Blair" } });
+    const { result, rerender } = renderHook(({ recording }) => useLiveTranscript(recording),
+      { initialProps: { recording: buildRecording() } });
+    await flushPendingRequests();
+    act(() => result.current.applyLiveSpeakerNames({ LIVE_PROVISIONAL_1: "Alex" }));
+    expect(result.current.liveSpeakerSuggestions).toEqual({ LIVE_PROVISIONAL_2: "Blair" });
+    getTranscriptUtterances.mockReturnValue(new Promise(() => {}));
+    rerender({ recording: buildRecording({ id: "rec-2" }) });
+    expect(result.current.liveSpeakerSuggestions).toEqual({});
+  });
 });

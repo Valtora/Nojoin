@@ -203,6 +203,7 @@ class TranscriptUtteranceListRead(BaseModel):
     # Live label -> the name the user gave it during capture. Sent whole on every
     # read, delta or not: naming a live speaker changes no utterance.
     live_speaker_names: dict[str, str] = {}
+    live_speaker_suggestions: dict[str, str] = {}
 
 
 class TranscriptUtteranceSplit(BaseModel):

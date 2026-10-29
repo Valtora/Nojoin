@@ -24,10 +24,17 @@ from sqlmodel import select
 
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
+from backend.models.recording_public import LiveSpeakerSuggestionsRead
 from backend.models.speaker import GlobalSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.user import User
 from backend.utils.live_speaker_labels import live_speaker_display_name
+from backend.utils.speaker_name_suggestions import (
+    SPEAKER_SUGGESTION_STATUS_ACCEPTED,
+    SPEAKER_SUGGESTION_STATUS_REJECTED,
+    SPEAKER_SUGGESTION_STATUS_SUPERSEDED,
+    resolve_pending_transcript_speaker_suggestion,
+)
 from backend.utils.speaker_names.durability import persist_name_anchors
 from backend.utils.speaker_names.events import UserNameAct
 from backend.utils.speaker_names.live import (
@@ -35,6 +42,7 @@ from backend.utils.speaker_names.live import (
     live_speaker_names,
     record_live_speaker_name,
 )
+from backend.utils.speaker_names.live_suggestions import live_speaker_suggestions
 from backend.utils.transcript_settling import (
     load_capture_publication,
     publication_is_current,
@@ -148,6 +156,20 @@ async def name_live_speaker(
         await db.rollback()
         raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)
     metric, names = recorded
+    # The event is already visible to this transaction, so read the proposal
+    # directly: the public pending map correctly hides named labels.
+    suggestion = resolve_pending_transcript_speaker_suggestion(
+        transcript,
+        diarization_label=label,
+        resolution=SPEAKER_SUGGESTION_STATUS_ACCEPTED,
+        actor_user_id=current_user.id,
+        reason="user_accepted",
+    )
+    if suggestion is not None:
+        if suggestion["suggested_name"] != name:
+            suggestion["status"] = SPEAKER_SUGGESTION_STATUS_SUPERSEDED
+            suggestion["resolution_reason"] = "user_renamed"
+        db.add(transcript)
     recording_db_id = recording.id
     await db.commit()
     speakers_module.record_pipeline_metric(
@@ -157,3 +179,41 @@ async def name_live_speaker(
         log=logger,
     )
     return LiveSpeakerNamesRead(live_speaker_names=names)
+
+
+@router.post(
+    "/recordings/{recording_id}/live/{label}/suggestions/reject",
+    response_model=LiveSpeakerSuggestionsRead,
+)
+async def dismiss_live_speaker_suggestion(
+    recording_id: str,
+    label: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LiveSpeakerSuggestionsRead:
+    """Hide a label's proposal for the rest of this live recording."""
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript, recording = await db.run_sync(
+        lambda session: load_capture_publication(session, recording.id)
+    )
+    if not publication_is_current(recording, transcript, None):
+        raise HTTPException(status_code=409, detail=NAMING_CLOSED_DETAIL)
+    pending = await db.run_sync(
+        lambda session: live_speaker_suggestions(session, recording, transcript)
+    )
+    if label not in pending:
+        raise HTTPException(status_code=404, detail="Live speaker suggestion not found")
+    resolve_pending_transcript_speaker_suggestion(
+        transcript,
+        diarization_label=label,
+        resolution=SPEAKER_SUGGESTION_STATUS_REJECTED,
+        actor_user_id=current_user.id,
+        reason="user_rejected",
+    )
+    db.add(transcript)
+    names = await db.run_sync(lambda session: live_speaker_names(session, recording.id))
+    pending.pop(label)
+    await db.commit()
+    return LiveSpeakerSuggestionsRead(
+        live_speaker_names=names, live_speaker_suggestions=pending
+    )

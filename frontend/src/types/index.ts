@@ -337,11 +337,17 @@ export interface TranscriptUtteranceList {
    * capture. Whole on every read, delta or not: naming changes no utterance.
    */
   live_speaker_names?: Record<string, string>;
+  /** Pending names heard in this meeting, kept separate from accepted names. Whole on every read. */
+  live_speaker_suggestions?: Record<string, string>;
 }
 
 /** The answer to naming a live speaker: every live name, as the live read gives it. */
 export interface LiveSpeakerNames {
   live_speaker_names: Record<string, string>;
+}
+
+export interface LiveSpeakerSuggestionReview extends LiveSpeakerNames {
+  live_speaker_suggestions: Record<string, string>;
 }
 
 export interface TranscriptSegment extends LiveTranscriptSettling {

@@ -35,6 +35,7 @@ from backend.utils.canonical_pipeline.guards import settling_required
 from backend.utils.canonical_pipeline.live_settling import settling_enabled
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.speaker_names.live import live_speaker_names
+from backend.utils.speaker_names.live_suggestions import live_speaker_suggestions
 
 from .helpers import (
     TranscriptSegmentSpeakerUpdate,
@@ -151,6 +152,9 @@ async def get_transcript_utterances(
             for speaker in speakers
         ],
         live_speaker_names=live_names,
+        live_speaker_suggestions=await db.run_sync(
+            lambda session: live_speaker_suggestions(session, recording, transcript)
+        ),
     )
     # Backfill can write, under the fence it takes itself; commit what it wrote.
     await db.commit()

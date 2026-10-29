@@ -2,6 +2,7 @@ import type {
   GlobalSpeaker,
   GlobalSpeakerUpdate,
   LiveSpeakerNames,
+  LiveSpeakerSuggestionReview,
   MergedRecordingSpeaker,
   RecalibrateResult,
   Recording,
@@ -123,6 +124,17 @@ export const nameLiveSpeaker = async (
     { name, ...(createPerson ? { create_person: true } : {}) },
   );
   return response.data.live_speaker_names;
+};
+
+/** Dismisses a name heard during capture without naming or linking its speaker. */
+export const dismissLiveSpeakerSuggestion = async (
+  recordingId: RecordingId,
+  label: string,
+): Promise<LiveSpeakerSuggestionReview> => {
+  const response = await api.post<LiveSpeakerSuggestionReview>(
+    `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}/suggestions/reject`,
+  );
+  return response.data;
 };
 
 export const updateSpeakerColor = async (
