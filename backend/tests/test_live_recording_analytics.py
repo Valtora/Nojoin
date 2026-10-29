@@ -53,7 +53,7 @@ def test_live_canonical_names_and_read_only_estimates(session: Session) -> None:
         "Alex",
         "Speaker 2",
         "Speaker 3",
-        "Unidentified speaker",
+        "Unattributed",
     }
     assert result["metrics"]["utterance_count"] > 0
     assert set(result["metrics"]) == {"utterance_count", "talk_time", "turn_structure"}

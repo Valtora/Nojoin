@@ -222,7 +222,7 @@ def test_ai_analytics_attributes_an_unidentified_line_through_its_prompt_name(
         "decisions": [],
         "sentiment": [
             {
-                "speaker": "Unidentified speaker",
+                "speaker": "Unattributed",
                 "tone": "neutral",
                 "summary": "Spoke once.",
                 "citations": [
@@ -234,9 +234,9 @@ def test_ai_analytics_attributes_an_unidentified_line_through_its_prompt_name(
     backend = analysis.FakeBackend(json.dumps(response))
     analysis._run(engine, monkeypatch, config=analysis._configured(), backend=backend)
 
-    assert "Unidentified speaker" in backend.last_request.allowlist.names
+    assert "Unattributed" in backend.last_request.allowlist.names
     assert backend.last_request.transcript.endswith(
-        "[00:18 - 00:24] Unidentified speaker: Nobody claimed this line."
+        "[00:18 - 00:24] Unattributed: Nobody claimed this line."
     )
     block = analysis._payload(analysis._row(engine)[2])["ai"]
     # The model's answer, given the prompt name, maps back to the stored label.
