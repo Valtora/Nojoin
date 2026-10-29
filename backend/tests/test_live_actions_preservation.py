@@ -606,3 +606,80 @@ def test_final_speech_beside_a_text_correction_stays_ordinary_transcript(
         stored = _load_transcript(session, recording_id)
         assert stored is not None and stored.text is not None
         assert "w0" in stored.text and "w29" in stored.text
+
+
+def test_a_word_straddling_a_protected_line_spreads_its_speaker_to_neither_side(
+    publication_engine: Engine,
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {"start": start, "end": end, "text": f"live {start}", "speaker": "L0"}
+                for start, end in ((0, 10), (10, 12), (12, 20))
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        protected_id = serialize_canonical_utterances(session, recording_id)[1]["id"]
+        update_utterance_text(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=protected_id,
+            text="Corrected words",
+        )
+        _, speaker = update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=protected_id,
+            new_speaker_name="Chosen person",
+        )
+        speaker_id = speaker.id
+        session.commit()
+        # The words either side of the corrected 10-12 s line overlap it by
+        # 0.4 s, but their midpoints lie outside it.
+        words = [
+            *({"word": f" w{i}", "start": i, "end": i + 1} for i in range(9)),
+            {"word": " before", "start": 9.0, "end": 10.4},
+            {"word": " inside", "start": 10.4, "end": 11.6},
+            {"word": " after", "start": 11.6, "end": 13.0},
+            *({"word": f" w{i}", "start": i, "end": i + 1} for i in range(13, 20)),
+        ]
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": 0,
+                    "end": 20,
+                    "text": "".join(word["word"] for word in words).strip(),
+                    "speaker": "SPEAKER_00",
+                    "words": words,
+                }
+            ],
+        )
+        lines = _lines(session, recording_id)
+        assert len(lines) == 3
+        assert lines[1]["recording_speaker_id"] == speaker_id
+        # Neither neighbour takes the corrected line's speaker or its lock.
+        for line in (lines[0], lines[2]):
+            assert line["recording_speaker_id"] != speaker_id
+            assert not line["speaker_manually_edited"]
+        assert lines[1]["final_review"]["text"] == "inside"
+        assert [line["text"] for line in lines] == [
+            " ".join([*(f"w{i}" for i in range(9)), "before"]),
+            "Corrected words",
+            " ".join(["after", *(f"w{i}" for i in range(13, 20))]),
+        ]
+        assert [(line["start"], line["end"]) for line in lines] == [
+            (0, 10),
+            (10, 12),
+            (12, 20),
+        ]

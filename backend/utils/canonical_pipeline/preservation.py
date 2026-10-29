@@ -77,6 +77,32 @@ def _with_final_review(
     return passed
 
 
+def _middle_ms(word: dict[str, Any]) -> float:
+    return (float(word["start"]) + float(word["end"])) * 500
+
+
+def _part_bounds(
+    words: list[dict[str, Any]],
+    found: list[int],
+    line_bounds: dict[int, tuple[int, int]],
+) -> tuple[float, float]:
+    """A part's span stops at the edges of the protected lines beside it.
+
+    A word straddling a line's edge keeps its own timing, but the part no
+    longer overlaps the line. Otherwise a part before the line, finalised
+    before the line is matched, would inherit the line's manual speaker.
+    """
+    start, end = float(words[0]["start"]), float(words[-1]["end"])
+    first, last = _middle_ms(words[0]), _middle_ms(words[-1])
+    for index in found:
+        line_start, line_end = line_bounds[index]
+        if line_start > last:
+            end = min(end, line_start / 1000)
+        elif line_end <= first:
+            start = max(start, line_end / 1000)
+    return start, end
+
+
 def _consume_overlap(
     segment: dict[str, Any],
     found: list[int],
@@ -86,8 +112,9 @@ def _consume_overlap(
     """Review only the words over protected lines; return the rest as segments.
 
     A timed word belongs to the protected line holding its midpoint. Runs of
-    words outside every protected line stay ordinary final segments. A segment
-    without timings for all its words is reviewed whole on the first line.
+    words outside every protected line stay ordinary final segments, bounded
+    by the protected lines beside them. A segment without timings for all its
+    words is reviewed whole on the first line.
     """
     words = segment.get("words") or []
     if not words or not all(has_word_timing(word) for word in words):
@@ -97,7 +124,7 @@ def _consume_overlap(
         return []
 
     def owner(word: dict[str, Any]) -> int | None:
-        middle = (float(word["start"]) + float(word["end"])) * 500
+        middle = _middle_ms(word)
         return next(
             (i for i in found if line_bounds[i][0] <= middle < line_bounds[i][1]),
             None,
@@ -111,7 +138,7 @@ def _consume_overlap(
             if text:
                 reviews[index].append(text)
             continue
-        start, end = kept[0]["start"], kept[-1]["end"]
+        start, end = _part_bounds(kept, found, line_bounds)
         parts.append(
             {**segment, "words": kept, "text": text, "start": start, "end": end}
         )
