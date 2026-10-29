@@ -318,6 +318,16 @@ describe("a capture whose tab is reloaded while it records", () => {
     expect(errors()).toEqual([]);
   });
 
+  it("is offered as paused, not as stalled, since its audio stopped only at the reload", async () => {
+    await recordThenReload();
+    render(<CaptureProvider><CaptureShell><LiveMeetingControls size="bar" /></CaptureShell></CaptureProvider>);
+
+    const dialog = await screen.findByRole("dialog");
+
+    expect(dialog).toHaveTextContent("Recording paused");
+    expect(dialog).not.toHaveTextContent(/interrupted|two minutes/i);
+  });
+
   it("is not offered while another tab of this browser holds it", async () => {
     // A duplicate of the reloaded tab carries the same per-tab storage, so
     // only the lock tells it the other copy has already taken the capture.

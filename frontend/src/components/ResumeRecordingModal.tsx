@@ -35,9 +35,10 @@ export default function ResumeRecordingModal({
     return null;
   }
 
-  // Offered while still marked as uploading only once the server judged it
-  // stalled: its tab closed without the pause arriving (issue #519).
-  const interrupted = recording.status === RecordingStatus.UPLOADING;
+  // Still marked as uploading once the server judged it stalled: its tab
+  // closed without the pause arriving (issue #519). A reloaded tab is offered
+  // its own capture before that (issue #778), and reads as paused.
+  const interrupted = recording.status === RecordingStatus.UPLOADING && Boolean(recording.capture_stalled);
   const StatusIcon = interrupted ? AlertTriangle : PauseCircle;
 
   return (
