@@ -52,8 +52,6 @@ BEFORE = "7ff0bbdadad8"
 # of them. Each column a later revision adds is listed with the DDL that adds
 # it, so the old archive can be made, and is dropped again before the upgrade.
 COLUMNS_ADDED_AFTER_BEFORE = {
-    ("recording_audio_chunks", "pcm_data_offset"): "BIGINT",
-    ("recording_audio_chunks", "pcm_byte_size"): "BIGINT",
     ("transcripts", "change_sequence"): "BIGINT NOT NULL DEFAULT 0",
     ("transcripts", "settling_state"): "JSONB",
     ("recordings", "capture_epoch"): "INTEGER NOT NULL DEFAULT 0",

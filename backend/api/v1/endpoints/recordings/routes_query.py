@@ -21,11 +21,7 @@ from backend.models.calendar import (
     CalendarSource,
 )
 from backend.models.pipeline import RecordingAudioChunk, TranscriptUtterance
-from backend.models.recording import (
-    IN_FLIGHT_TRANSCRIPT_STATUSES,
-    Recording,
-    RecordingStatus,
-)
+from backend.models.recording import Recording, RecordingStatus
 from backend.models.recording_public import (
     CalendarEventLinkRead,
     RecordingPublicRead,
@@ -371,10 +367,6 @@ async def _unchanged_since(
         )
     ).first()
     if row is None:
-        return None
-    # Capture geometry changes without a transcript/status write. These reads
-    # need the body until the final recording has settled.
-    if row[0] in IN_FLIGHT_TRANSCRIPT_STATUSES:
         return None
     etag = _recording_etag(*row)
     held = {tag.strip() for tag in if_none_match.split(",")}

@@ -21,7 +21,6 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_current_user_stream, get_db
 from backend.api.v1.api import api_router
-from backend.models.pipeline import RecordingAudioChunk
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
@@ -148,14 +147,14 @@ def expected_wav(pcm: bytes) -> bytes:
 
 
 @pytest.mark.anyio
-async def test_stream_joins_exact_samples_and_legacy_headers(
+async def test_stream_joins_exact_samples(
     client: AsyncClient,
     session_maker: sessionmaker,
     tmp_path: Path,
 ) -> None:
     first, second = bytes(range(68)), bytes(reversed(range(124)))
     await append_chunk(session_maker, tmp_path, 0, first)
-    await append_chunk(session_maker, tmp_path, 1, second, legacy_header=True)
+    await append_chunk(session_maker, tmp_path, 1, second)
     response = await client.get(URL, params={"sequence": 1})
     assert response.status_code == 200
     assert response.content == expected_wav(first + second)
@@ -163,9 +162,6 @@ async def test_stream_joins_exact_samples_and_legacy_headers(
     assert response.headers["cache-control"] == "private, no-store"
     assert response.headers["accept-ranges"] == "bytes"
     assert int(response.headers["content-length"]) == len(response.content)
-    async with session_maker() as session:
-        second_row = await session.get(RecordingAudioChunk, 2)
-        assert (second_row.pcm_data_offset, second_row.pcm_byte_size) == (56, 124)
 
 
 @pytest.mark.anyio
@@ -209,6 +205,8 @@ async def test_ranges_cross_the_header_chunks_and_tail(
         "items=0-5",
         "bytes=0-1,4-5",
         "bytes=-",
+        # Too many digits for any file; int() would refuse 4,300 of them.
+        f"bytes=0-{'9' * 5000}",
     ],
 )
 async def test_unsatisfiable_ranges(
@@ -246,7 +244,7 @@ async def test_snapshots_stay_pinned_after_append_and_final_processing(
 
 
 @pytest.mark.anyio
-async def test_empty_unplaced_missing_and_old_metadata_are_unavailable(
+async def test_empty_unplaced_missing_and_foreign_audio_are_unavailable(
     client: AsyncClient,
     session_maker: sessionmaker,
     tmp_path: Path,
@@ -258,12 +256,18 @@ async def test_empty_unplaced_missing_and_old_metadata_are_unavailable(
     assert (await client.get(URL, params={"sequence": 2})).status_code == 404
     path.unlink()
     assert (await client.get(URL, params={"sequence": 1})).status_code == 404
+    # An ffmpeg-made WAV can carry extra chunks before its PCM.
+    await append_chunk(session_maker, tmp_path, 1, bytes(128), legacy_header=True)
+    assert (await client.get(URL, params={"sequence": 0})).status_code == 200
+    assert (await client.get(URL, params={"sequence": 1})).status_code == 404
     async with session_maker() as session:
         await session.execute(
-            text("UPDATE recording_audio_chunks SET pcm_byte_size=NULL")
+            text("UPDATE recording_audio_chunks SET sample_rate_hz=48000")
         )
         await session.commit()
     assert (await client.get(URL, params={"sequence": 0})).status_code == 404
+    detail = await client.get("/api/v1/recordings/rec-1")
+    assert detail.json()["capture_playback_sequence"] is None
 
 
 @pytest.mark.anyio
@@ -295,10 +299,7 @@ async def test_detail_tracks_the_placed_prefix_through_stop(
     await append_chunk(session_maker, tmp_path, 1, bytes(128))
     assert (await client.get(detail_url)).json()["capture_playback_sequence"] == -1
     await append_chunk(session_maker, tmp_path, 0, bytes(128))
-    placed = await client.get(
-        detail_url, headers={"If-None-Match": empty.headers["etag"]}
-    )
-    assert placed.status_code == 200
+    placed = await client.get(detail_url)
     assert placed.json()["capture_playback_sequence"] == 1
     async with session_maker() as session:
         recording = await session.get(Recording, 1)

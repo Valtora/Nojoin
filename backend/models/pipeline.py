@@ -133,10 +133,6 @@ class RecordingAudioChunk(BaseDBModel, table=True):
     sample_rate_hz: int = Field(sa_column=Column(BigInteger, nullable=False))
     channel_count: int = Field(sa_column=Column(BigInteger, nullable=False))
     byte_size: int = Field(sa_column=Column(BigInteger, nullable=False))
-    # Exact PCM payload geometry, recorded while the WAV header is already open.
-    # Older chunks and audio outside the browser's PCM format leave these NULL.
-    pcm_data_offset: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
-    pcm_byte_size: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
     sha256: str = Field(sa_column=Column(String(128), nullable=False))
     storage_path: str = Field(sa_column=Column(Text, nullable=False))
     upload_status: str = Field(default="received")

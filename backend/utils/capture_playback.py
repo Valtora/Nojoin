@@ -1,33 +1,42 @@
 """Fixed WAV snapshots over the PCM payloads already held for live capture.
 
-Only stored metadata is inspected to plan a response. Audio files are opened
-for the intersecting spans alone; neither a meeting-sized buffer nor a new
-transcode sits on this read path.
+Every browser chunk is the canonical WAV that ``decode_browser_flac_segment``
+writes: a 44-byte header, then 16 kHz two-channel 16-bit PCM, so its payload is
+``byte_size - 44`` bytes. Stored metadata plans a response; audio files are
+opened for the intersecting spans alone, and each one's header is checked
+before its bytes are served. Neither a meeting-sized buffer nor a transcode
+sits on this read path.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import struct
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from pathlib import Path
 
 import aiofiles
 from fastapi import HTTPException
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioChunkCursor
 from backend.models.recording import ClientStatus, Recording
+from backend.processing.browser_live_audio import (
+    BROWSER_LIVE_CHANNEL_COUNT,
+    BROWSER_LIVE_SAMPLE_RATE_HZ,
+)
 from backend.utils.stored_paths import confined_recording_path
 
 READ_SIZE = 64 * 1024
 RANGE_LIMIT = 2500 * 1024
 WAV_HEADER_SIZE = 44
-PCM_BYTES_PER_SECOND = 16_000 * 2 * 2
-_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+FRAME_BYTES = BROWSER_LIVE_CHANNEL_COUNT * 2
+PCM_BYTES_PER_SECOND = BROWSER_LIVE_SAMPLE_RATE_HZ * FRAME_BYTES
+# 18 digits keep int() far from its 4,300-digit limit and exceed any file size.
+_RANGE = re.compile(r"bytes=(\d{0,18})-(\d{0,18})")
 UNAVAILABLE = "This capture's audio snapshot is not available."
 
 
@@ -36,6 +45,26 @@ class PcmPart:
     path: str
     offset: int
     size: int
+
+
+def wav_header(pcm_size: int) -> bytes:
+    """The canonical header for ``pcm_size`` bytes of browser-format PCM."""
+    return struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        pcm_size + 36,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        BROWSER_LIVE_CHANNEL_COUNT,
+        BROWSER_LIVE_SAMPLE_RATE_HZ,
+        PCM_BYTES_PER_SECOND,
+        FRAME_BYTES,
+        16,
+        b"data",
+        pcm_size,
+    )
 
 
 @dataclass(frozen=True)
@@ -48,22 +77,18 @@ class CaptureSnapshot:
         return WAV_HEADER_SIZE + self.pcm_size
 
     def header(self) -> bytes:
-        return struct.pack(
-            "<4sI4s4sIHHIIHH4sI",
-            b"RIFF",
-            self.pcm_size + 36,
-            b"WAVE",
-            b"fmt ",
-            16,
-            1,
-            2,
-            16_000,
-            PCM_BYTES_PER_SECOND,
-            4,
-            16,
-            b"data",
-            self.pcm_size,
-        )
+        return wav_header(self.pcm_size)
+
+
+def _unplayable() -> ColumnElement[bool]:
+    """A chunk row whose stored geometry is not a canonical browser WAV."""
+    return or_(
+        col(RecordingAudioChunk.sample_rate_hz) != BROWSER_LIVE_SAMPLE_RATE_HZ,
+        col(RecordingAudioChunk.channel_count) != BROWSER_LIVE_CHANNEL_COUNT,
+        col(RecordingAudioChunk.byte_size) <= WAV_HEADER_SIZE,
+        (col(RecordingAudioChunk.byte_size) - WAV_HEADER_SIZE) % FRAME_BYTES != 0,
+        col(RecordingAudioChunk.upload_status).in_(["cleaned", "failed"]),
+    )
 
 
 async def _through_sequence(db: AsyncSession, recording_id: int) -> int | None:
@@ -79,7 +104,7 @@ async def _through_sequence(db: AsyncSession, recording_id: int) -> int | None:
 async def capture_playback_sequence(
     db: AsyncSession, recording: Recording
 ) -> int | None:
-    """Advertise only a placed prefix whose exact PCM geometry is known."""
+    """Advertise only a placed prefix made of canonical browser WAV chunks."""
     assert recording.id is not None
     through = await _through_sequence(db, recording.id)
     if through is None:
@@ -90,13 +115,8 @@ async def capture_playback_sequence(
         )
     if through < 0:
         return -1
-    invalid = or_(
-        col(RecordingAudioChunk.pcm_data_offset).is_(None),
-        col(RecordingAudioChunk.pcm_byte_size).is_(None),
-        col(RecordingAudioChunk.upload_status).in_(["cleaned", "failed"]),
-    )
     result = await db.execute(
-        select(func.count(), func.sum(case((invalid, 1), else_=0))).where(
+        select(func.count(), func.sum(case((_unplayable(), 1), else_=0))).where(
             col(RecordingAudioChunk.recording_id) == recording.id,
             col(RecordingAudioChunk.source_kind) == "browser",
             col(RecordingAudioChunk.sequence_no) <= through,
@@ -117,9 +137,8 @@ async def load_capture_snapshot(
         select(
             col(RecordingAudioChunk.sequence_no),
             col(RecordingAudioChunk.storage_path),
-            col(RecordingAudioChunk.pcm_data_offset),
-            col(RecordingAudioChunk.pcm_byte_size),
-            col(RecordingAudioChunk.upload_status),
+            col(RecordingAudioChunk.byte_size),
+            _unplayable().label("unplayable"),
         )
         .where(
             col(RecordingAudioChunk.recording_id) == recording_id,
@@ -131,22 +150,16 @@ async def load_capture_snapshot(
     rows = result.all()
     if not rows or rows[-1].sequence_no != sequence:
         raise HTTPException(404, UNAVAILABLE)
-    parts: list[PcmPart] = []
-    for row in rows:
-        if (
-            row.pcm_data_offset is None
-            or row.pcm_byte_size is None
-            or row.pcm_data_offset < 0
-            or row.pcm_byte_size <= 0
-            or row.pcm_byte_size % 4
-            or row.upload_status in {"cleaned", "failed"}
-        ):
-            raise HTTPException(404, UNAVAILABLE)
-        parts.append(PcmPart(row.storage_path, row.pcm_data_offset, row.pcm_byte_size))
+    if any(row.unplayable for row in rows):
+        raise HTTPException(404, UNAVAILABLE)
+    parts = tuple(
+        PcmPart(row.storage_path, WAV_HEADER_SIZE, row.byte_size - WAV_HEADER_SIZE)
+        for row in rows
+    )
     size = sum(part.size for part in parts)
     if size > 0xFFFFFFFF - 36:
         raise HTTPException(404, "This capture exceeds the WAV playback size limit.")
-    return CaptureSnapshot(tuple(parts), size)
+    return CaptureSnapshot(parts, size)
 
 
 def snapshot_range(range_header: str | None, size: int) -> tuple[int, int]:
@@ -178,23 +191,34 @@ def _unsatisfiable(size: int) -> HTTPException:
     )
 
 
+def _verified_path(part: PcmPart) -> str:
+    """The chunk's file, provided it still starts with its canonical header."""
+    path = confined_recording_path(part.path)
+    if path is None:
+        raise HTTPException(404, UNAVAILABLE)
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(WAV_HEADER_SIZE)
+            file_size = os.fstat(handle.fileno()).st_size
+    except OSError as exc:
+        raise HTTPException(404, UNAVAILABLE) from exc
+    if header != wav_header(part.size) or file_size < part.offset + part.size:
+        raise HTTPException(404, UNAVAILABLE)
+    return path
+
+
 def snapshot_spans(snapshot: CaptureSnapshot, start: int, end: int) -> list[PcmPart]:
-    """Map virtual WAV offsets to the selected files, before headers are sent."""
+    """Map virtual WAV offsets to the selected files, before headers are sent.
+
+    Blocking file reads: callers run this in a worker thread.
+    """
     spans: list[PcmPart] = []
     position = WAV_HEADER_SIZE
     for part in snapshot.parts:
         first, last = max(start, position), min(end + 1, position + part.size)
         if first < last:
-            path = confined_recording_path(part.path)
-            if path is None:
-                raise HTTPException(404, UNAVAILABLE)
-            offset = part.offset + first - position
-            try:
-                if Path(path).stat().st_size < offset + last - first:
-                    raise HTTPException(404, UNAVAILABLE)
-            except OSError as exc:
-                raise HTTPException(404, UNAVAILABLE) from exc
-            spans.append(PcmPart(path, offset, last - first))
+            path = _verified_path(part)
+            spans.append(PcmPart(path, part.offset + first - position, last - first))
         position += part.size
         if position > end:
             break

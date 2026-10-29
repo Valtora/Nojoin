@@ -110,32 +110,19 @@ def _sha256_for_path(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _read_wav_chunk_metadata(
-    path: Path,
-) -> tuple[int, int, int, int | None, int | None]:
+def _read_wav_chunk_metadata(path: Path) -> tuple[int, int, int]:
     try:
-        with path.open("rb") as handle, wave.open(handle, "rb") as wav_file:
+        with wave.open(str(path), "rb") as wav_file:
             sample_rate_hz = int(wav_file.getframerate() or 0)
             channel_count = int(wav_file.getnchannels() or 0)
             frame_count = int(wav_file.getnframes() or 0)
-            sample_width = wav_file.getsampwidth()
-            # wave has parsed through the data chunk's header, including any
-            # intervening LIST/JUNK chunks. No fixed 44-byte assumption is made.
-            data_offset = handle.tell()
-            data_size = frame_count * channel_count * sample_width
     except (EOFError, OSError, wave.Error):
-        return 0, 0, 0, None, None
+        return 0, 0, 0
 
     if sample_rate_hz <= 0:
-        return 0, channel_count, 0, None, None
+        return 0, channel_count, 0
     duration_ms = int((frame_count / sample_rate_hz) * 1000)
-    if (
-        (sample_rate_hz, channel_count, sample_width) == (16_000, 2, 2)
-        and data_size > 0
-        and data_offset + data_size <= path.stat().st_size
-    ):
-        return sample_rate_hz, channel_count, duration_ms, data_offset, data_size
-    return sample_rate_hz, channel_count, duration_ms, None, None
+    return sample_rate_hz, channel_count, duration_ms
 
 
 def build_recording_audio_chunk_fields(
@@ -147,16 +134,10 @@ def build_recording_audio_chunk_fields(
     sample_rate_hz = 0
     channel_count = 0
     duration_ms = 0
-    pcm_data_offset = None
-    pcm_byte_size = None
     if storage_path.suffix.lower() == ".wav":
-        (
-            sample_rate_hz,
-            channel_count,
-            duration_ms,
-            pcm_data_offset,
-            pcm_byte_size,
-        ) = _read_wav_chunk_metadata(storage_path)
+        sample_rate_hz, channel_count, duration_ms = _read_wav_chunk_metadata(
+            storage_path
+        )
     if duration_ms <= 0 and source_kind != IMPORT_PART_SOURCE_KIND:
         try:
             duration_ms = int(
@@ -176,8 +157,6 @@ def build_recording_audio_chunk_fields(
         "sample_rate_hz": sample_rate_hz,
         "channel_count": channel_count,
         "byte_size": byte_size,
-        "pcm_data_offset": pcm_data_offset,
-        "pcm_byte_size": pcm_byte_size,
         "sha256": sha256,
         "storage_path": str(storage_path),
         "upload_status": "received",

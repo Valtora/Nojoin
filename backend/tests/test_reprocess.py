@@ -158,8 +158,6 @@ CREATE TABLE recording_audio_chunks (
     sample_rate_hz INTEGER NOT NULL,
     channel_count INTEGER NOT NULL,
     byte_size INTEGER NOT NULL,
-    pcm_data_offset INTEGER,
-    pcm_byte_size INTEGER,
     sha256 VARCHAR(128) NOT NULL,
     storage_path TEXT NOT NULL,
     upload_status VARCHAR(32),

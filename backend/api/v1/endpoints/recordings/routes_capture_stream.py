@@ -1,5 +1,7 @@
 """Owner-checked playback of a fixed prefix of uploaded browser audio."""
 
+import asyncio
+
 from fastapi import Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +37,7 @@ async def stream_capture(
     await db.rollback()
     range_header = request.headers.get("range")
     start, end = snapshot_range(range_header, snapshot.size)
-    spans = snapshot_spans(snapshot, start, end)
+    spans = await asyncio.to_thread(snapshot_spans, snapshot, start, end)
     headers = {
         "Accept-Ranges": "bytes",
         "Content-Length": str(end - start + 1),
