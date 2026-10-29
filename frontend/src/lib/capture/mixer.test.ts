@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   computeAutomaticGainTarget,
@@ -22,6 +22,7 @@ class FakeAudioNode {
 
   disconnect() {
     this.disconnected = true;
+    this.connections = [];
   }
 }
 
@@ -98,8 +99,12 @@ class FakeAudioContext {
 
   closed = false;
 
+  sources: FakeMediaStreamSourceNode[] = [];
+
   createMediaStreamSource(stream: MediaStream) {
-    return new FakeMediaStreamSourceNode(stream);
+    const source = new FakeMediaStreamSourceNode(stream);
+    this.sources.push(source);
+    return source;
   }
 
   createAnalyser() {
@@ -147,6 +152,117 @@ const createCaptureMixer = (options: CreateCaptureMixerOptions) =>
   });
 
 describe("capture mixer", () => {
+  it("replaces only the microphone source while preserving its gain and the shared graph", async () => {
+    const context = new FakeAudioContext();
+    const display = { getAudioTracks: () => [{}] } as unknown as MediaStream;
+    const mixer = await createCaptureMixer({
+      displayStream: display,
+      microphoneStream: {} as MediaStream,
+      microphoneGain: 1.7,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+    const [systemSource, oldMic] = context.sources;
+    const microphoneConnections = [...oldMic.connections];
+    const systemConnections = [...systemSource.connections];
+    const pcmSource = mixer.pcmSource;
+    const analyser = mixer.microphoneAnalyser;
+    const tap = context.tapNodes[0];
+
+    mixer.detachMicrophone();
+    mixer.detachMicrophone();
+    expect(oldMic.connections).toEqual([]);
+    expect(systemSource.connections).toEqual(systemConnections);
+
+    const replacement = {} as MediaStream;
+    mixer.replaceMicrophone(replacement);
+
+    expect(context.sources[2].stream).toBe(replacement);
+    expect(context.sources[2].connections).toEqual(microphoneConnections);
+    expect(mixer.microphoneAnalyser).toBe(analyser);
+    expect(mixer.pcmSource).toBe(pcmSource);
+    expect(context.tapNodes).toEqual([tap]);
+    expect(mixer.getMicrophoneGain()).toBe(1.7);
+    expect(systemSource.disconnected).toBe(false);
+    expect(context.closed).toBe(false);
+    await mixer.dispose();
+    expect(context.sources[2].disconnected).toBe(true);
+  });
+
+  it("restarts a context the browser suspended", async () => {
+    const context = new FakeAudioContext();
+    const mixer = await createCaptureMixer({
+      microphoneStream: {} as MediaStream,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+    context.state = "suspended";
+    context.resumed = false;
+
+    await expect(mixer.resumeContext(2_000)).resolves.toBe(true);
+
+    expect(context.resumed).toBe(true);
+  });
+
+  it("gives up on a context that stays interrupted after the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const context = new FakeAudioContext();
+      const mixer = await createCaptureMixer({
+        microphoneStream: {} as MediaStream,
+        audioContextFactory: () => context as unknown as AudioContext,
+      });
+      // WebKit's non-standard "interrupted" state, whose resume() can stay pending.
+      context.state = "interrupted" as AudioContextState;
+      context.resume = () => new Promise<void>(() => {});
+
+      let settled = false;
+      const resuming = mixer.resumeContext(2_000).finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(resuming).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for a context that starts rendering again after a moment", async () => {
+    vi.useFakeTimers();
+    try {
+      const context = new FakeAudioContext();
+      const mixer = await createCaptureMixer({
+        microphoneStream: {} as MediaStream,
+        audioContextFactory: () => context as unknown as AudioContext,
+      });
+      context.state = "suspended";
+      context.resume = () => new Promise<void>((resolve) => {
+        setTimeout(() => { context.state = "running"; resolve(); }, 100);
+      });
+
+      let settled = false;
+      const resuming = mixer.resumeContext(2_000).finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(99);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(resuming).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("can dispose a mixer after its microphone was detached", async () => {
+    const context = new FakeAudioContext();
+    const mixer = await createCaptureMixer({
+      microphoneStream: {} as MediaStream,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+    mixer.detachMicrophone();
+    await mixer.dispose();
+    expect(context.closed).toBe(true);
+    expect(context.tapNodes[0].port.sent).toContainEqual({ type: "stop" });
+  });
+
   it("taps the two-channel mix between the merger and the mixed analyser", async () => {
     const context = new FakeAudioContext();
     const mixer = await createCaptureMixer({
