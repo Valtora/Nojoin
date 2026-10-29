@@ -53,6 +53,7 @@ export interface BaseDBModel {
 }
 
 export type RecordingId = string;
+export type ConsentNoticeOutcome = "agreed" | "not_agreed" | "no_answer" | "not_shown";
 
 export interface PeopleTag {
   id: number;
@@ -597,6 +598,7 @@ export interface LanguageNotice {
 }
 
 export interface Recording extends Omit<BaseDBModel, "id"> {
+  consent_notice_outcome?: ConsentNoticeOutcome | null;
   id: RecordingId;
   name: string;
   meeting_uid: string;
@@ -674,6 +676,7 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
 }
 
 export interface RecordingInitResponse {
+  consent_notice_outcome?: ConsentNoticeOutcome | null;
   id: RecordingId;
   name: string;
   upload_token?: string | null;
@@ -710,6 +713,7 @@ export interface ActiveRecordingConflictDetail {
 export type LiveTextSettlingMode = "off" | "auto" | "always";
 
 export interface Settings {
+  hide_recording_consent_notice?: boolean;
   whisper_model_size?: string;
   transcription_backend?: string;
   parakeet_model?: string;

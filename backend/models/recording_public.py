@@ -16,6 +16,7 @@ from backend.models.document import (
 from backend.models.live_settling_public import public_transcript_segment
 from backend.models.recording import (
     ClientStatus,
+    ConsentNoticeOutcome,
     Recording,
     RecordingStatus,
     capture_looks_stalled,
@@ -226,6 +227,7 @@ class RecordingPublicRead(PublicModel):
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
     client_status: Optional[ClientStatus] = None
+    consent_notice_outcome: Optional[ConsentNoticeOutcome] = None
     upload_progress: int = 0
     processing_progress: int = 0
     previous_publication_available: bool = False
@@ -498,6 +500,7 @@ def serialize_recording(
         file_size_bytes=recording.file_size_bytes,
         status=recording.status,
         client_status=recording.client_status,
+        consent_notice_outcome=recording.consent_notice_outcome,
         upload_progress=recording.upload_progress,
         processing_progress=recording.processing_progress,
         previous_publication_available=reprocess_publication_pending(

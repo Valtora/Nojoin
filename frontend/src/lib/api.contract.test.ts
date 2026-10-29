@@ -191,6 +191,7 @@ describe("api public surface", () => {
         "scanMatches",
         "seedDemoData",
         "setNoteFileUseInNotes",
+        "setRecordingConsentNoticeOutcome",
         "setRecordingTranscriptionLanguage",
         "setupSystem",
         "softDeleteRecording",

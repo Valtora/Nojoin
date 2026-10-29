@@ -17,6 +17,7 @@ import {
   renameRecording,
   reprocessRecording,
   setRecordingTranscriptionLanguage,
+  setRecordingConsentNoticeOutcome,
   type BatchRecordingResult,
 } from "@/lib/api";
 import { useCapture } from "@/lib/capture/CaptureProvider";
@@ -24,7 +25,7 @@ import { getErrorDetail, getErrorStatus } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
-import { LanguageNotice, RecordingId } from "@/types";
+import { ConsentNoticeOutcome, LanguageNotice, RecordingId } from "@/types";
 
 import {
   NOTHING_TO_UNDO,
@@ -64,6 +65,7 @@ import {
 
 /** Stable identifiers for the recording actions exposed by this hook. */
 export const RECORDING_ACTION_IDS = [
+  "answerConsentNotice",
   "rename",
   "inferSpeakers",
   "discard",
@@ -108,6 +110,7 @@ export interface MoveToBinCallbacks extends RecordingListActionCallbacks {
 }
 
 export interface RecordingActions extends TranscriptRecordingActions {
+  answerConsentNotice: (id: RecordingId, outcome: ConsentNoticeOutcome) => Promise<boolean>;
   rename: (
     id: RecordingId,
     name: string,
@@ -273,6 +276,16 @@ export function useRecordingActions(): RecordingActions {
     };
 
     return {
+      answerConsentNotice: async (id, outcome) => {
+        try {
+          await setRecordingConsentNoticeOutcome(id, outcome);
+          window.dispatchEvent(new Event("recording-updated"));
+          return true;
+        } catch {
+          addNotification({ type: "error", message: "Could not save the recording notice answer. Please try again." });
+          return false;
+        }
+      },
       ...transcriptLineActions((message) => addNotification({ type: "error", message })),
       rename: async (id, name, callbacks) => {
         try {

@@ -104,6 +104,7 @@ export interface SettingsRegistryEntry {
  * a key arriving here should be a decision, not an oversight.
  *
  *  - theme is written by ThemeProvider into local storage, not through settings;
+ *  - hide_recording_consent_notice is changed in the recording notice itself;
  *  - processing_tuning_install is read-only context the API supplies (the
  *    installation's tuning values) for validation, not a value anyone sets;
  *  - live_speaker_labels and speaker_engine are install-wide settings managed
@@ -111,6 +112,7 @@ export interface SettingsRegistryEntry {
  *  - the rest are read by the backend and have never had a frontend control.
  */
 export const UNSURFACED_SETTINGS_KEYS = [
+  "hide_recording_consent_notice",
   "theme",
   "enable_auto_voiceprints",
   "enable_live_transcription",

@@ -58,7 +58,7 @@ from backend.utils.meeting_notes import (
     build_user_notes_prompt_section,
     strip_leading_title_heading,
 )
-from backend.utils.prompt_blocks import render_prompt_blocks
+from backend.utils.prompt_blocks import RECORDING_NOTICE_PROCEDURE, render_prompt_blocks
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
     parse_speaker_inference_response,
@@ -582,6 +582,7 @@ class LLMBackend:
         body = render_prompt_blocks(
             [
                 (None, LLMBackend.NOTES_INTRO),
+                (None, RECORDING_NOTICE_PROCEDURE),
                 (
                     "# Speaker Mapping",
                     LLMBackend.mapping_to_markdown_table(speaker_mapping),
@@ -670,6 +671,7 @@ class LLMBackend:
         body = render_prompt_blocks(
             [
                 (None, intro),
+                (None, RECORDING_NOTICE_PROCEDURE),
                 (
                     None,
                     build_output_language_prompt_section(output_language_instruction),

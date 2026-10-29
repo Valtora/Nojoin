@@ -387,6 +387,7 @@ export default function RecordingMainContent({
         />
 
         <AnalyticsSection
+          consentNoticeOutcome={recording.consent_notice_outcome}
           inFlight={inFlight}
           active={activePanel === "analytics"}
           recordingId={recording.id}

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, renderWithProviders, screen, waitFor } from "@/test/renderWithProviders";
-import type { LiveRecordingAnalytics, RecordingAnalytics } from "@/types";
+import type { ConsentNoticeOutcome, LiveRecordingAnalytics, RecordingAnalytics } from "@/types";
 
 const getRecordingAnalytics = vi.fn<(...args: unknown[]) => Promise<RecordingAnalytics>>();
 const getLiveRecordingAnalytics = vi.fn();
@@ -49,6 +49,23 @@ describe("AnalyticsSection live lifecycle", () => {
     getLiveRecordingAnalytics.mockResolvedValue(live());
   });
   afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ["agreed", "Everyone agreed"],
+    ["not_agreed", "Not everyone agreed"],
+    ["no_answer", "No answer recorded"],
+    ["not_shown", "Not shown (your preference)"],
+  ] as [ConsentNoticeOutcome, string][])("shows %s before analytics finish loading", (outcome, label) => {
+    renderWithProviders(<AnalyticsSection active recordingId="rec-1" speakerColors={{}}
+      consentNoticeOutcome={outcome} />);
+    expect(screen.getByText(`Recording notice: ${label}`)).toBeVisible();
+  });
+
+  it("shows no notice line for a recording without an outcome", () => {
+    renderWithProviders(<AnalyticsSection active recordingId="rec-1" speakerColors={{}}
+      consentNoticeOutcome={null} />);
+    expect(screen.queryByText(/Recording notice:/)).not.toBeInTheDocument();
+  });
 
   it("retains estimates after completion until the delayed final response succeeds", async () => {
     let resolveFinal!: (value: RecordingAnalytics) => void;

@@ -4,7 +4,14 @@ import { lazy, Suspense } from "react";
 
 import LiveAnalyticsView from "@/components/analytics/LiveAnalyticsView";
 import { useLiveAnalytics } from "@/components/analytics/useLiveAnalytics";
-import type { RecordingId } from "@/types";
+import type { ConsentNoticeOutcome, RecordingId } from "@/types";
+
+const CONSENT_LABELS: Record<ConsentNoticeOutcome, string> = {
+  agreed: "Everyone agreed",
+  not_agreed: "Not everyone agreed",
+  no_answer: "No answer recorded",
+  not_shown: "Not shown (your preference)",
+};
 
 // Recharts is the largest dependency the app carries, and the recording route
 // is opened far more often than this tab. Loading it only when the tab is
@@ -15,6 +22,7 @@ interface AnalyticsSectionProps {
   active: boolean;
   inFlight?: boolean;
   recordingId: RecordingId;
+  consentNoticeOutcome?: ConsentNoticeOutcome | null;
   /**
    * The meeting's speaker colours, so a person is the same colour here as in
    * the transcript and the speaker panel. They are derived client-side from
@@ -29,6 +37,7 @@ export default function AnalyticsSection({
   active,
   inFlight = false,
   recordingId,
+  consentNoticeOutcome,
   speakerColors,
   onPlaySegment,
   onReviewSpeakers,
@@ -47,6 +56,9 @@ export default function AnalyticsSection({
       aria-labelledby="tab-analytics"
       className={`absolute inset-0 flex flex-col ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
+      {consentNoticeOutcome && <p className="px-4 py-2 text-sm text-foreground">
+        Recording notice: {CONSENT_LABELS[consentNoticeOutcome]}
+      </p>}
       {/* The final view and its chart chunk are mounted only while the tab is open. */}
       {active && (
         <Suspense

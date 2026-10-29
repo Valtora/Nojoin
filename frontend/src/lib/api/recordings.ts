@@ -1,5 +1,6 @@
 import type {
   CalendarEventLink,
+  ConsentNoticeOutcome,
   Recording,
   RecordingId,
   RecordingInfo,
@@ -114,6 +115,16 @@ export const renameRecording = async (
   name: string,
 ): Promise<Recording> => {
   const response = await api.patch<Recording>(`/recordings/${id}`, { name });
+  return response.data;
+};
+
+export const setRecordingConsentNoticeOutcome = async (
+  id: RecordingId,
+  outcome: ConsentNoticeOutcome,
+): Promise<Recording> => {
+  const response = await api.patch<Recording>(`/recordings/${id}`, {
+    consent_notice_outcome: outcome,
+  });
   return response.data;
 };
 

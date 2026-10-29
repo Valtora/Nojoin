@@ -594,6 +594,8 @@ All three carry the user's `token_version` and are checked against the `revoked_
 
 ## Storage and Persistence
 
+Browser capture initialisation saves `recordings.consent_notice_outcome` as `no_answer`, or `not_shown` when the initiating account's `hide_recording_consent_notice` preference is true. An explicit notice answer updates it to `agreed` or `not_agreed` through the owned-recording update route. The nullable column leaves pre-existing recordings and imports without a value; notice outcomes never trigger capture actions. Dismissal and timeout only close the prompt. Stop is an explicit choice through the normal capture stop path. The shared `RECORDING_NOTICE_PROCEDURE` prompt block excludes the notice exchange from generated titles, summaries and minutes unless discussed further, including long-meeting drafts and merges and Meeting Edge.
+
 - **PostgreSQL** with pgvector holds metadata, transcripts, speakers, embeddings and settings. Migrations are Alembic, in `backend/alembic/`.
 - **Redis** is the Celery broker and result backend and holds short-lived guards and send markers.
 - **`./data`**, mounted at `/app/data`, holds `config.json` (install-wide settings), `recordings/`, `documents/`, logs and the install id.

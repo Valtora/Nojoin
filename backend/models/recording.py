@@ -39,6 +39,13 @@ class ClientStatus(str, Enum):
     IDLE = "IDLE"
 
 
+class ConsentNoticeOutcome(str, Enum):
+    AGREED = "agreed"
+    NOT_AGREED = "not_agreed"
+    NO_ANSWER = "no_answer"
+    NOT_SHOWN = "not_shown"
+
+
 class RecordingPipelineGeneration(str, Enum):
     UNIFIED = "unified"
     LEGACY_BACKFILLED = "legacy_backfilled"
@@ -99,6 +106,9 @@ class Recording(BaseDBModel, table=True):
     file_size_bytes: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
     status: RecordingStatus = Field(default=RecordingStatus.RECORDED)
     client_status: Optional[ClientStatus] = Field(default=None)
+    consent_notice_outcome: Optional[ConsentNoticeOutcome] = Field(
+        default=None, sa_column=Column(String(16), nullable=True)
+    )
     upload_progress: int = Field(default=0)
     processing_progress: int = Field(default=0)
     processing_step: Optional[str] = Field(default=None)
@@ -299,6 +309,7 @@ class RecordingRead(BaseDBModel):
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
     client_status: Optional[ClientStatus] = None
+    consent_notice_outcome: Optional[ConsentNoticeOutcome] = None
     upload_progress: int = 0
     processing_progress: int = 0
     processing_step: Optional[str] = None
@@ -315,6 +326,7 @@ class RecordingRead(BaseDBModel):
 
 class RecordingUpdate(SQLModel):
     name: Optional[str] = None
+    consent_notice_outcome: Optional[ConsentNoticeOutcome] = None
     # Three states, told apart by model_fields_set: absent leaves the
     # recording's language alone, null returns it to the owner's setting, and
     # "auto" or a listed code sets it.
@@ -331,6 +343,7 @@ class RecordingInitResponse(SQLModel):
     name: str
     upload_token: Optional[str] = None
     capture_epoch: int = 0
+    consent_notice_outcome: Optional[ConsentNoticeOutcome] = None
 
 
 class RecordingCaptureLifecycleResponse(SQLModel):

@@ -56,6 +56,7 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("transcripts", "settling_state"): "JSONB",
     ("recordings", "capture_epoch"): "INTEGER NOT NULL DEFAULT 0",
     ("recordings", "transcription_language"): "VARCHAR(16)",
+    ("recordings", "consent_notice_outcome"): "VARCHAR(16)",
     ("transcripts", "language_detection"): "JSONB",
     ("recording_speakers", "name_source"): "VARCHAR(16)",
     ("documents", "note_id"): "BIGINT",

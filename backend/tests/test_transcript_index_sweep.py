@@ -31,6 +31,7 @@ CREATE TABLE recordings (
     client_status VARCHAR(32), upload_progress INTEGER NOT NULL, processing_progress INTEGER NOT NULL,
     processing_step VARCHAR(255), processing_started_at TIMESTAMP, processing_completed_at TIMESTAMP,
     pipeline_generation VARCHAR(32) DEFAULT 'unified', is_archived BOOLEAN NOT NULL,
+    consent_notice_outcome VARCHAR(16),
     is_deleted BOOLEAN NOT NULL, last_activity_at TIMESTAMP, capture_epoch INTEGER NOT NULL DEFAULT 0, transcription_language VARCHAR(16), user_id INTEGER, calendar_event_id INTEGER
 );
 CREATE TABLE transcripts (

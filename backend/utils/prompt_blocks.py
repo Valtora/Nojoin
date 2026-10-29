@@ -23,6 +23,11 @@ from typing import Iterable, Optional, Sequence, Tuple
 # preamble text and already-headed fragments are carried.
 PromptBlock = Tuple[Optional[str], Optional[str]]
 
+RECORDING_NOTICE_PROCEDURE = (
+    "Treat a recording consent notice and its answer as procedure, and leave them "
+    "out of titles, summaries and minutes unless the meeting discusses them further."
+)
+
 
 def render_prompt_blocks(blocks: Iterable[PromptBlock]) -> str:
     """Join blocks into a prompt, skipping any whose body is empty.

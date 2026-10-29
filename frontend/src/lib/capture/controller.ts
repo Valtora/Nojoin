@@ -726,6 +726,7 @@ export class CaptureController {
       return {
         recordingId: initResponse.id,
         name: initResponse.name,
+        consentNoticeOutcome: initResponse.consent_notice_outcome,
         resumed: false,
       };
 

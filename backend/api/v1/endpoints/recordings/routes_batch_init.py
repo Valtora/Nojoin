@@ -11,6 +11,7 @@ import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
 from backend.models.recording import (
     ClientStatus,
+    ConsentNoticeOutcome,
     Recording,
     RecordingInitResponse,
     RecordingStatus,
@@ -232,6 +233,12 @@ async def init_upload(
         # so without this the UI has to infer "recording" from the absence of a
         # value, which an import satisfies just as well.
         client_status=ClientStatus.RECORDING,
+        consent_notice_outcome=(
+            ConsentNoticeOutcome.NOT_SHOWN
+            if (current_user.settings or {}).get("hide_recording_consent_notice")
+            is True
+            else ConsentNoticeOutcome.NO_ANSWER
+        ),
         user_id=current_user.id,
         last_activity_at=utc_now(),
     )
@@ -260,4 +267,5 @@ async def init_upload(
         id=recording.public_id,
         name=recording.name,
         capture_epoch=recording.capture_epoch,
+        consent_notice_outcome=recording.consent_notice_outcome,
     )

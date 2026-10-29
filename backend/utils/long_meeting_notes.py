@@ -52,7 +52,11 @@ from backend.utils.meeting_notes import (
     is_placeholder_speaker_name,
     strip_leading_title_heading,
 )
-from backend.utils.prompt_blocks import PromptBlock, render_prompt_blocks
+from backend.utils.prompt_blocks import (
+    RECORDING_NOTICE_PROCEDURE,
+    PromptBlock,
+    render_prompt_blocks,
+)
 from backend.utils.speaker_name_suggestions import detect_rule_based_speaker_suggestions
 from backend.utils.transcript_parts import (
     TIMESTAMP_PATTERN,
@@ -228,6 +232,7 @@ def _shared_blocks(
     context: LongMeetingContext, *, documents: bool
 ) -> list[PromptBlock]:
     blocks: list[PromptBlock] = [
+        (None, RECORDING_NOTICE_PROCEDURE),
         ("# Recording Metadata", context.metadata),
         ("# Glossary", context.glossary),
         ("# User Notes Context", context.user_notes),

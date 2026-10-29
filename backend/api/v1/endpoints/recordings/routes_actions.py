@@ -94,6 +94,8 @@ async def update_recording(
 
     if recording_update.name is not None:
         recording.name = recording_update.name
+    if recording_update.consent_notice_outcome is not None:
+        recording.consent_notice_outcome = recording_update.consent_notice_outcome
     if "transcription_language" in recording_update.model_fields_set:
         recording.transcription_language = recording_update.transcription_language
 

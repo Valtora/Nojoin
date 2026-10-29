@@ -72,6 +72,7 @@ INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset(INSTALL_WIDE_AI_SETTING_KEYS)
 
 
 class SettingsUpdate(BaseModel):
+    hide_recording_consent_notice: Optional[bool] = None
     llm_provider: Optional[str] = None
     usage_model: Optional[str] = None
     # Which connected subscription cli_oauth resolves to ("claude_code" | "codex").

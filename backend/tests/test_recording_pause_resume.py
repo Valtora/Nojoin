@@ -21,6 +21,7 @@ from backend.api.v1.api import api_router
 from backend.tests.sqlite_schemas import (
     RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
 )
 
 TRUSTED_ORIGIN = "https://nojoin.example.com"
@@ -52,6 +53,7 @@ CREATE TABLE recordings (
     is_deleted BOOLEAN NOT NULL,
     last_activity_at DATETIME,
     capture_epoch INTEGER NOT NULL DEFAULT 0,
+    consent_notice_outcome VARCHAR(16),
     transcription_language VARCHAR(16),
     user_id INTEGER,
     calendar_event_id INTEGER
@@ -364,6 +366,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(DOCUMENTS_SCHEMA))
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
         await connection.execute(text(TIMELINE_NOTES_SCHEMA))
+        await connection.execute(text(TRANSCRIPT_UTTERANCES_SCHEMA))
 
     try:
         yield session_maker
@@ -1600,3 +1603,85 @@ async def test_a_tab_on_an_older_build_sends_no_epoch_and_is_not_checked(
     assert segment.status_code == 200
     assert pause.status_code == 200
     assert pause.json()["capture_epoch"] == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["agreed", "not_agreed", "no_answer", "not_shown"])
+async def test_consent_notice_answer_is_durable_and_does_not_stop_capture(
+    client: AsyncClient, test_session_maker: sessionmaker, outcome: str
+) -> None:
+    set_session_cookie(client)
+    initial = await client.post(
+        "/api/v1/recordings/init", headers={"Origin": TRUSTED_ORIGIN}
+    )
+    assert initial.status_code == 200
+    assert initial.json()["consent_notice_outcome"] == "no_answer"
+    recording_id = initial.json()["id"]
+    response = await client.patch(
+        f"/api/v1/recordings/{recording_id}",
+        json={"consent_notice_outcome": outcome},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert response.status_code == 200
+    assert response.json()["consent_notice_outcome"] == outcome
+    async with test_session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT consent_notice_outcome, status, client_status FROM recordings WHERE public_id = :id"
+                ),
+                {"id": recording_id},
+            )
+        ).one()
+    assert tuple(row) == (outcome, "UPLOADING", "RECORDING")
+    read = await client.get(f"/api/v1/recordings/{recording_id}")
+    assert read.status_code == 200
+    assert read.json()["consent_notice_outcome"] == outcome
+
+
+@pytest.mark.anyio
+async def test_consent_notice_suppression_applies_only_to_the_initiating_user(
+    client: AsyncClient, api_app: FastAPI, test_session_maker: sessionmaker
+) -> None:
+    user = build_test_user()
+    user.settings = {"hide_recording_consent_notice": True}
+    api_app.dependency_overrides[deps.get_current_recording_client_user] = lambda: user
+    first = await client.post("/api/v1/recordings/init")
+    assert first.status_code == 200
+    assert first.json()["consent_notice_outcome"] == "not_shown"
+    user.id = 2
+    user.settings = {}
+    second = await client.post("/api/v1/recordings/init")
+    assert second.status_code == 200
+    assert second.json()["consent_notice_outcome"] == "no_answer"
+    async with test_session_maker() as session:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT user_id, consent_notice_outcome FROM recordings ORDER BY user_id"
+                )
+            )
+        ).all()
+    assert [tuple(row) for row in rows] == [(1, "not_shown"), (2, "no_answer")]
+
+
+@pytest.mark.anyio
+async def test_consent_notice_rejects_invalid_answers_and_other_users(
+    client: AsyncClient, api_app: FastAPI
+) -> None:
+    set_session_cookie(client)
+    initial = await client.post(
+        "/api/v1/recordings/init", headers={"Origin": TRUSTED_ORIGIN}
+    )
+    url = f"/api/v1/recordings/{initial.json()['id']}"
+    invalid = await client.patch(
+        url,
+        json={"consent_notice_outcome": "assumed"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert invalid.status_code == 422
+    other_user = build_test_user()
+    other_user.id = 2
+    api_app.dependency_overrides[deps.get_current_user] = lambda: other_user
+    denied = await client.patch(url, json={"consent_notice_outcome": "agreed"})
+    assert denied.status_code == 404

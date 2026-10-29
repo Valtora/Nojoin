@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -16,10 +17,12 @@ import {
 } from "./controller";
 import type { CaptureState } from "./shared";
 import { useNotificationStore } from "@/lib/notificationStore";
+import RecordingConsentNotice from "@/components/RecordingConsentNotice";
 
 interface CaptureContextValue {
   controller: CaptureController;
   state: CaptureState;
+  start: CaptureController["start"];
 }
 
 interface CaptureProviderProps {
@@ -31,6 +34,15 @@ const CaptureContext = createContext<CaptureContextValue | null>(null);
 export function CaptureProvider({ children }: CaptureProviderProps) {
   const [controller] = useState<CaptureController>(() => createCaptureController());
   const [state, setState] = useState(() => controller.getState());
+  const [noticeRecordingId, setNoticeRecordingId] = useState<string | null>(null);
+  const closeNotice = useCallback(() => setNoticeRecordingId(null), []);
+  const start = useCallback<CaptureController["start"]>(async (name) => {
+    const result = await controller.start(name);
+    if (result && !result.resumed && result.consentNoticeOutcome === "no_answer") {
+      setNoticeRecordingId(result.recordingId);
+    }
+    return result;
+  }, [controller]);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const routeSignature = `${pathname || ""}?${searchParams.toString()}`;
@@ -64,11 +76,17 @@ export function CaptureProvider({ children }: CaptureProviderProps) {
   }, [controller, state.error]);
 
   const value = useMemo(
-    () => ({ controller, state }),
-    [controller, state],
+    () => ({ controller, state, start }),
+    [controller, state, start],
   );
 
-  return <CaptureContext.Provider value={value}>{children}</CaptureContext.Provider>;
+  return <CaptureContext.Provider value={value}>
+    {children}
+    {noticeRecordingId && noticeRecordingId === state.recordingId && state.runtimeActive && (
+      <RecordingConsentNotice key={noticeRecordingId} recordingId={noticeRecordingId}
+        onClose={closeNotice} />
+    )}
+  </CaptureContext.Provider>;
 }
 
 export function useCapture() {
@@ -77,11 +95,11 @@ export function useCapture() {
     throw new Error("useCapture must be used within a CaptureProvider.");
   }
 
-  const { controller, state } = context;
+  const { controller, state, start } = context;
 
   return {
     controller,
-    start: controller.start,
+    start,
     pause: controller.pause,
     resume: controller.resume,
     stop: controller.stop,

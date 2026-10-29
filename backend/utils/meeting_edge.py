@@ -14,7 +14,7 @@ from backend.utils.meeting_notes import (
     build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
 )
-from backend.utils.prompt_blocks import render_prompt_blocks
+from backend.utils.prompt_blocks import RECORDING_NOTICE_PROCEDURE, render_prompt_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +218,7 @@ def build_meeting_edge_prompt_parts(
     prefix = render_prompt_blocks(
         [
             (None, MEETING_EDGE_INTRO),
+            (None, RECORDING_NOTICE_PROCEDURE),
             ("# Critical Rules", MEETING_EDGE_CRITICAL_RULES),
             (
                 "# Technical Context Policy",

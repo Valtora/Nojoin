@@ -21,7 +21,7 @@ from backend.utils.meeting_notes import (
     resolve_recording_speaker_name,
     strip_leading_title_heading,
 )
-from backend.utils.prompt_blocks import render_prompt_blocks
+from backend.utils.prompt_blocks import RECORDING_NOTICE_PROCEDURE, render_prompt_blocks
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
@@ -281,6 +281,7 @@ def build_automatic_meeting_intelligence_prompt(
     body = render_prompt_blocks(
         [
             (None, AUTOMATIC_MEETING_INTELLIGENCE_INTRO),
+            (None, RECORDING_NOTICE_PROCEDURE),
             ("# Critical Rules", AUTOMATIC_MEETING_INTELLIGENCE_CRITICAL_RULES),
             (
                 "# Title Style",

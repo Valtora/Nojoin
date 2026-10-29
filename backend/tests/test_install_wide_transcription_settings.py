@@ -79,6 +79,22 @@ def test_a_user_row_cannot_override_the_install_engine() -> None:
     assert resolved.merged_config["prefer_short_titles"] is False
 
 
+@pytest.mark.parametrize("role", ["owner", "admin", "user"])
+def test_consent_notice_suppression_is_saved_on_the_user_only(
+    install_config: ConfigManager, role: str
+) -> None:
+    status, body, row = asyncio.run(
+        _call_settings(role, {}, "POST", {"hide_recording_consent_notice": True})
+    )
+    assert status == 200
+    assert body["hide_recording_consent_notice"] is True
+    assert row["hide_recording_consent_notice"] is True
+    assert "hide_recording_consent_notice" not in _config_file(install_config)
+    status, body, _ = asyncio.run(_call_settings("user", {}, "GET"))
+    assert status == 200
+    assert body.get("hide_recording_consent_notice", False) is False
+
+
 class _SettingsRequestOptions(TypedDict, total=False):
     is_superuser: bool
     path: str

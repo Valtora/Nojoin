@@ -1,4 +1,4 @@
-import type { Recording, RecordingId } from "@/types";
+import type { ConsentNoticeOutcome, Recording, RecordingId } from "@/types";
 
 export type CaptureUnsupportedReason =
   | "firefox"
@@ -133,6 +133,7 @@ export interface UploadQueueSize {
 }
 
 export interface StartCaptureResult {
+  consentNoticeOutcome?: ConsentNoticeOutcome | null;
   recordingId: RecordingId;
   name?: string;
   resumed: boolean;
