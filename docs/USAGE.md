@@ -385,7 +385,7 @@ Meeting notes are generated once, at the end of processing, from every document 
 
 ### Meeting Titles and Summaries
 
-Final processing gives each meeting a title and a one- or two-sentence summary. Under **Settings > Notes and live assistance**, **Live title and summary** can also generate both during a live meeting: after the chosen number of minutes, the meeting gets a title and a short summary so far. Both are regenerated when the meeting ends. It is **Off** by default, and needs live transcription and a configured AI provider. Paused time does not count towards the minutes.
+Final processing gives each meeting a title and a one- or two-sentence summary. Under **Settings > Notes and live assistance**, **Live title and summary** can also generate both during a live meeting: after the chosen number of minutes, the meeting gets a title and a short summary so far. Both are regenerated when the meeting ends. It is on by default, after 5 minutes; choose **Off** to wait for final processing. It needs live transcription and a configured AI provider. Paused time does not count towards the minutes.
 
 Renaming a meeting keeps your title from later generation, while its summary still updates. A meeting you have not renamed gets a new title when it is reprocessed.
 

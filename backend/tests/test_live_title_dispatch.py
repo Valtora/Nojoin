@@ -47,6 +47,7 @@ class _LiveCapture:
         recording = _FakeRecording(RecordingStatus.UPLOADING, self.transcript)
         recording.user = SimpleNamespace(settings={"live_title_delay_minutes": 1})
         recording.gist = gist
+        self.recording = recording
         self.session = _FakeSession(recording)
         self.calls: list[int] = []
         self.monkeypatch = monkeypatch
@@ -74,6 +75,16 @@ def test_live_title_waits_for_the_delay_in_capture_audio(
     capture.publish(0)
     assert capture.calls == ([24] if dispatched else [])
     assert len(capture.transcript.segments) == 1
+
+
+@pytest.mark.parametrize("start_s, dispatched", [(297.9, False), (298.0, True)])
+def test_live_title_is_on_after_five_minutes_for_an_owner_who_never_chose(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, start_s: float, dispatched: bool
+) -> None:
+    capture = _LiveCapture(tmp_path, monkeypatch, start_s=start_s)
+    capture.recording.user.settings = {}
+    capture.publish(0)
+    assert capture.calls == ([24] if dispatched else [])
 
 
 @pytest.mark.parametrize("existing_gist", [None, "Already generated."])

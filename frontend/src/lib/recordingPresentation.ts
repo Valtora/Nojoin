@@ -1,3 +1,6 @@
+/** Minutes of a live meeting before its title and summary are generated; 0 is off. */
+export const DEFAULT_LIVE_TITLE_DELAY_MINUTES = 5;
+
 interface RecordingGist {
   gist?: string | null;
   /** The gist was written during capture, from the transcript so far. */

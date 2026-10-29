@@ -13,9 +13,10 @@ from backend.utils.config_manager import get_default_user_settings
 from backend.utils.meeting_brief import get_live_title_delay_minutes
 
 
-def test_live_title_default_preserves_final_only_generation() -> None:
-    assert get_default_user_settings()["live_title_delay_minutes"] == 0
-    assert get_live_title_delay_minutes({}) == 0
+def test_live_title_is_on_after_five_minutes_by_default() -> None:
+    assert get_default_user_settings()["live_title_delay_minutes"] == 5
+    assert get_live_title_delay_minutes({}) == 5
+    assert get_live_title_delay_minutes(None) == 5
 
 
 @pytest.mark.parametrize("value", [0, 1, 5, 120])
@@ -40,15 +41,15 @@ def test_delay_saves_for_a_member_and_does_not_change_another_members_default(
     responses, row = asyncio.run(
         _exchange(
             [
-                ("POST", {"live_title_delay_minutes": 5}),
+                ("POST", {"live_title_delay_minutes": 10}),
                 ("GET", None),
             ]
         )
     )
     assert all(response.status_code == 200 for response in responses)
-    assert row["live_title_delay_minutes"] == 5
-    assert responses[-1].json()["live_title_delay_minutes"] == 5
+    assert row["live_title_delay_minutes"] == 10
+    assert responses[-1].json()["live_title_delay_minutes"] == 10
     (other,), other_row = asyncio.run(_exchange([("GET", None)]))
     assert other.status_code == 200
-    assert other.json()["live_title_delay_minutes"] == 0
+    assert other.json()["live_title_delay_minutes"] == 5
     assert "live_title_delay_minutes" not in other_row

@@ -1,6 +1,7 @@
 import { Settings } from "@/types";
 import { Switch } from "@/components/ui/Switch";
 import { SelectBase } from "@/components/ui/nativeBases";
+import { DEFAULT_LIVE_TITLE_DELAY_MINUTES } from "@/lib/recordingPresentation";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import { SETTINGS_CONTROL_END, SETTINGS_SELECT_CLASS } from "./settingsControls";
@@ -16,7 +17,7 @@ export default function AiAutomaticEnhancementSection({
   settings,
   onPersist,
 }: AiAutomaticEnhancementSectionProps) {
-  const titleDelay = settings.live_title_delay_minutes ?? 0;
+  const titleDelay = settings.live_title_delay_minutes ?? DEFAULT_LIVE_TITLE_DELAY_MINUTES;
   const titleDelays = [...new Set([0, 1, 2, 5, 10, 15, 30, 60, 120, titleDelay])].sort((a, b) => a - b);
 
   return (

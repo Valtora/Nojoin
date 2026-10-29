@@ -97,14 +97,20 @@ def test_live_title_and_gist_come_from_the_stored_transcript(
         assert recording.client_status == client_status
 
 
-def test_default_zero_delay_skips_the_live_llm(
-    live_brief: Any, fake_single_flight: Any
+@pytest.mark.parametrize(
+    "settings, called",
+    [("{}", True), ('{"live_title_delay_minutes": 0}', False)],
+)
+def test_live_llm_runs_by_default_and_not_once_turned_off(
+    live_brief: Any, fake_single_flight: Any, settings: str, called: bool
 ) -> None:
     engine, session, calls = live_brief
     with engine.begin() as connection:
-        connection.execute(text("UPDATE users SET settings = '{}'"))
+        connection.execute(
+            text("UPDATE users SET settings = :settings"), {"settings": settings}
+        )
     live_title.generate_live_title_task.run(1)
-    assert calls == []
+    assert len(calls) == (1 if called else 0)
 
 
 def test_duplicate_task_skips_the_model_when_a_call_is_in_flight(

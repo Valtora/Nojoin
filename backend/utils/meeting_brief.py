@@ -3,6 +3,7 @@
 import re
 from typing import Any
 
+from backend.utils.config_manager import DEFAULT_USER_SETTINGS
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_intelligence import (
     MeetingIntelligenceContractError,
@@ -14,8 +15,10 @@ from backend.utils.prompt_blocks import render_prompt_blocks
 
 
 def get_live_title_delay_minutes(settings: dict[str, Any] | None) -> int:
-    """Return a valid opt-in delay; absent or malformed persisted values disable it."""
-    value = (settings or {}).get("live_title_delay_minutes", 0)
+    """Return the delay, the default when unset; a malformed persisted value disables it."""
+    value = (settings or {}).get(
+        "live_title_delay_minutes", DEFAULT_USER_SETTINGS["live_title_delay_minutes"]
+    )
     return value if type(value) is int and 0 <= value <= 120 else 0
 
 

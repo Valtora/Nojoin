@@ -1,6 +1,7 @@
 import { getSecondaryProviderGap } from "@/lib/aiAvailability";
 import { DEFAULT_MEETING_EDGE_CONTEXT_LEVEL } from "@/lib/meetingEdgeContext";
 import { DEFAULT_CAPTURE_SETTINGS } from "@/lib/capture/shared";
+import { DEFAULT_LIVE_TITLE_DELAY_MINUTES } from "@/lib/recordingPresentation";
 import { getMatchScore } from "@/lib/searchUtils";
 
 import type { Settings } from "@/types";
@@ -611,7 +612,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     category: "notes",
     access: "all",
     settingsKeys: ["live_title_delay_minutes"],
-    defaultValue: 0,
+    defaultValue: DEFAULT_LIVE_TITLE_DELAY_MINUTES,
     keywords: ["live", "title", "naming", "delay", "automatic", "minutes", "gist", "summary"],
   },
   {
