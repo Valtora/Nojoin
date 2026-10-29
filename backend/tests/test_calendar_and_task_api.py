@@ -1693,6 +1693,65 @@ async def test_task_tag_filter_keeps_owner_and_status_scope(
 
 
 @pytest.mark.anyio
+async def test_task_list_returns_each_tasks_full_tags_for_dashboard_and_tasks_page(
+    client: AsyncClient,
+    override_current_user: Callable[..., None],
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_tag(test_session_maker, tag_id=301, name="Planning", color="orange")
+    await seed_tag(test_session_maker, tag_id=302, name="Budget")
+    await seed_task(test_session_maker, task_id=101, user_id=1, title="Open")
+    await seed_task(
+        test_session_maker,
+        task_id=102,
+        user_id=1,
+        title="Completed",
+        completed_at=TEST_TIMESTAMP,
+    )
+    await seed_task(
+        test_session_maker,
+        task_id=103,
+        user_id=1,
+        title="Archived",
+        archived_at=TEST_TIMESTAMP,
+    )
+    await seed_task(test_session_maker, task_id=104, user_id=1, title="Untagged")
+    for row_id, (task_id, tag_id) in enumerate(
+        [(101, 301), (101, 302), (102, 302), (103, 301)], start=401
+    ):
+        await seed_user_task_tag(
+            test_session_maker, row_id=row_id, task_id=task_id, tag_id=tag_id
+        )
+    override_current_user(1)
+    planning = (301, "Planning", "orange")
+    budget = (302, "Budget", None)
+    all_tags = {
+        101: [planning, budget],
+        102: [budget],
+        103: [planning],
+        104: [],
+    }
+
+    # The dashboard asks for "active"; the Tasks page asks for "all", with and
+    # without the navigation's tag selection. A filtered list still carries
+    # every tag of each matching task, not only the selected one.
+    for params, expected_ids in (
+        ([("status", "active")], [101, 102, 104]),
+        ([("status", "all")], [101, 102, 103, 104]),
+        ([("status", "all"), ("tag_ids", 301)], [101, 103]),
+    ):
+        response = await client.get("/api/v1/tasks/", params=params)
+        assert response.status_code == 200
+        returned = {
+            task["id"]: sorted(
+                (tag["id"], tag["name"], tag["color"]) for tag in task["tags"]
+            )
+            for task in response.json()
+        }
+        assert returned == {task_id: all_tags[task_id] for task_id in expected_ids}
+
+
+@pytest.mark.anyio
 async def test_recordings_list_includes_tags_once_per_recording(
     client: AsyncClient,
     override_current_user: Callable[..., None],
@@ -1718,9 +1777,9 @@ async def test_recordings_list_includes_tags_once_per_recording(
         assert response.status_code == 200
         payload = response.json()
         assert [recording["id"] for recording in payload] == ["rec-planning"]
-        assert sorted(tag["name"] for tag in payload[0]["tags"]) == [
-            "Budget",
-            "Planning",
+        assert sorted((tag["id"], tag["name"]) for tag in payload[0]["tags"]) == [
+            (301, "Planning"),
+            (302, "Budget"),
         ]
 
 

@@ -98,6 +98,13 @@ describe("Tasks tag filters", () => {
 
     expect(await screen.findByRole("heading", { name: "Untagged follow-up" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Plan release" })).toBeInTheDocument();
+
+    // The next fetch applies the server's filter, which leaves the untagged task out.
+    act(() => { window.dispatchEvent(new Event("tags-updated")); });
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Untagged follow-up" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("heading", { name: "Plan release" })).toBeInTheDocument();
   });
 
   it("refreshes results after a selected tag is deleted and can clear the filter", async () => {
