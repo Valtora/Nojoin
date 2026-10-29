@@ -46,12 +46,16 @@ export default function DashboardLayout({
             hides its overflow: an overflow-hidden box is still scrolled by
             scrollIntoView and focus, which moved every column but the sticky
             nav off screen. Only <main> and the panes inside it scroll. */}
+        {/* The capture bar takes a row of its own while it shows, and sets
+            the height the nav rail and the recording header's phone menu
+            leave for it. */}
         <div
-          className="flex flex-col h-dvh w-full overflow-clip"
+          className="flex flex-col h-dvh w-full overflow-clip has-[>[data-capture-bar]]:[--capture-bar-h:calc(44px+env(safe-area-inset-top))]"
           style={DEMO_BANNER_STYLE}
         >
           <TourGuide />
           <DemoBanner />
+          <RecordingFloatingBadge />
           <TopBar />
           <div className="flex flex-1 min-h-0 w-full overflow-clip">
             <MainNav />
@@ -68,7 +72,6 @@ export default function DashboardLayout({
             </main>
           </div>
         </div>
-        <RecordingFloatingBadge />
         <ImportAudioHost />
         <UnfinishedImportNotice />
       </CaptureShell>

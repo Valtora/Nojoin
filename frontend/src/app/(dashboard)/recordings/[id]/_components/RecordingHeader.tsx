@@ -149,7 +149,7 @@ export default function RecordingHeader({
           </div>
 
           {isMobileHeaderActionsOpen && (
-            <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float" className="fixed right-4 top-[calc(env(safe-area-inset-top)+4rem)] z-[var(--z-dropdown)] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-surface-float-border bg-surface-float p-2.5 shadow-float">
+            <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float" className="fixed right-4 top-[calc(env(safe-area-inset-top)+4rem+var(--capture-bar-h,0px))] z-[var(--z-dropdown)] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-surface-float-border bg-surface-float p-2.5 shadow-float">
               {renderMobileHeaderActions()}
             </SurfaceBase>
           )}
