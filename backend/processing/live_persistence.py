@@ -198,6 +198,29 @@ def _persist_live_run(
     return LivePublicationResult(False)
 
 
+def live_naming_wanted_after_labels(recording_id: int) -> bool:
+    """Whether a label write that changed lines leaves a label open to a name.
+
+    A first introduction is usually published before its line has a label, so
+    its publication finds nothing to name; the label write that follows is the
+    first point a naming check can act on it.
+    """
+    from backend.core.db import get_sync_session
+
+    session = get_sync_session()
+    try:
+        transcript, recording = load_capture_publication(
+            session, recording_id, lock=False
+        )
+        return (
+            transcript is not None
+            and publication_is_current(recording, transcript, None)
+            and has_unnamed_live_labels(session, transcript)
+        )
+    finally:
+        session.close()
+
+
 def _mark_pending_speakers(segments: list[dict], config: dict) -> None:
     """Mark whole-line CUDA text before its independent label step can cover it."""
     from backend.processing.live_diarization.setting import (

@@ -2,7 +2,9 @@
 
 A publication that adds or changes lines queues a check while a live label is
 still unnamed (``LivePublicationResult.queue_live_naming``), whatever Meeting
-Edge is doing. At most one check waits per recording: the dispatcher claims
+Edge is doing; so does a label write that changes lines, since a line is
+usually published before its label exists. At most one check waits per
+recording: the dispatcher claims
 the slot before queueing and the check frees it as it starts, so lines
 published during a check queue the next one.
 
