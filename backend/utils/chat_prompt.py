@@ -26,10 +26,10 @@ NO_EXCERPTS_PREAMBLE = """This meeting is too long to include its full transcrip
 # so a model left to guess offers to monitor the meeting or send reminders.
 # Only a request that passes the notes tool may say it can change the notes.
 CAPABILITIES_WITH_NOTES_TOOL = """# WHAT YOU CAN DO
-Answer from what is provided here: the meeting notes, the transcript and any related context. Your only action is updating the meeting notes with your tool, when the user asks you to change them. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the meeting is still being recorded, suggest asking again later instead."""
+Answer from what is provided here: the meeting notes, the transcript and any related context. Your only action is updating the meeting notes with your tool, when the user asks you to change them. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the question is about a part of the meeting not recorded yet, suggest asking again later."""
 
 CAPABILITIES_WITHOUT_TOOLS = """# WHAT YOU CAN DO
-Answer from what is provided here: the meeting notes, the transcript and any related context. You cannot change the meeting notes. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the meeting is still being recorded, suggest asking again later instead."""
+Answer from what is provided here: the meeting notes, the transcript and any related context. You cannot change the meeting notes. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the question is about a part of the meeting not recorded yet, suggest asking again later."""
 
 
 @dataclass(frozen=True)
