@@ -54,6 +54,17 @@ DISALLOWED_NAME_TOKENS = {
     "team",
     "thanks",
 }
+# A model asked to name a speaker sometimes answers with what they do
+# ("Industrial Designer", "the project lead"). With DISALLOWED_NAME_TOKENS these
+# mark an answer as a role, which `is_personal_name` refuses.
+ROLE_WORDS = frozenset(
+    """
+    analyst assistant chair chairman chairperson consultant coordinator designer
+    developer director expert facilitator guest head host interviewer lead leader
+    marketing member moderator officer owner participant presenter product
+    representative sales secretary specialist user
+    """.split()
+)
 NAME_STOPWORDS = {"at", "for", "from", "in", "on", "with"}
 # Words that follow "I'm", "my name is", "this is", or precede "here"/"speaking",
 # without being a name. They are capitalised in title-case or all-caps
@@ -746,6 +757,21 @@ def _clean_candidate_name(candidate: str) -> str | None:
         return None
 
     return " ".join(part.capitalize() for part in cleaned.split())
+
+
+def is_personal_name(name: str) -> bool:
+    """Whether a suggested name reads as a person's, by the rule's own checks.
+
+    The whole answer must survive the self-introduction rule's cleaning, and a
+    role ("industrial designer", "the manager") is not a name.
+    """
+    cleaned = _clean_candidate_name(name)
+    if cleaned is None or is_placeholder_speaker_name(cleaned):
+        return False
+    tokens = _normalize_name(name).split()
+    return _normalize_name(cleaned).split() == tokens and not ROLE_WORDS.intersection(
+        tokens
+    )
 
 
 def _normalize_name(value: str) -> str:

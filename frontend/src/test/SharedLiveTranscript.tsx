@@ -5,7 +5,7 @@ import type { LiveLineHandlers } from "@/components/transcript/LiveLineEditor";
 import type { MoveNoteHandler } from "@/components/transcript/_hooks/useNoteMoves";
 import type { InlineNote, NoteSelection } from "@/lib/notes/noteOutbox";
 import { buildMeetingSpeakerColors, getRecordingSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
-import type { RecordingSpeaker, TimelineNote, TranscriptSegment } from "@/types";
+import type { RecordingSpeaker, SpeakerNameSource, TimelineNote, TranscriptSegment } from "@/types";
 
 interface SharedLiveTranscriptProps {
   lineHandlers?: LiveLineHandlers;
@@ -22,6 +22,7 @@ interface SharedLiveTranscriptProps {
   onNoteAtTime?: (atMs: number) => void;
   liveSpeakerNames?: Readonly<Record<string, string>>;
   liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
   onDismissLiveSpeakerSuggestion?: (label: string) => Promise<boolean>;
   onRenameLiveSpeaker?: (label: string, name: string) => Promise<boolean>;
   loadPeopleNames?: () => Promise<readonly string[]>;
@@ -34,6 +35,7 @@ export default function SharedLiveTranscript({
   segments, hasLoaded, isPaused, lineHandlers, speakers = [], notes, onRetryNote,
   onDiscardNote, onMoveNote, footer, onNoteOnLine, onNoteAtTime, liveSpeakerNames = {},
   onRenameLiveSpeaker, loadPeopleNames, liveSpeakerSuggestions, onDismissLiveSpeakerSuggestion,
+  liveSpeakerSuggestionSources,
 }: SharedLiveTranscriptProps) {
   const speakerMap = {
     ...Object.fromEntries(speakers.map((speaker) => [
@@ -51,7 +53,7 @@ export default function SharedLiveTranscript({
       disableSegmentPlayback disableExport timelineNotes={notes} onRetryNote={onRetryNote}
       onDiscardNote={onDiscardNote} onMoveNote={onMoveNote}
       live={{ hasLoaded, isPaused, lineHandlers, onNoteOnLine, onNoteAtTime, onRenameLiveSpeaker, loadPeopleNames,
-        liveSpeakerSuggestions, onDismissLiveSpeakerSuggestion }} />
+        liveSpeakerSuggestions, liveSpeakerSuggestionSources, onDismissLiveSpeakerSuggestion }} />
     {footer}
   </>;
 }

@@ -204,6 +204,9 @@ class TranscriptUtteranceListRead(BaseModel):
     # read, delta or not: naming a live speaker changes no utterance.
     live_speaker_names: dict[str, str] = {}
     live_speaker_suggestions: dict[str, str] = {}
+    # Label -> where its proposal came from: "heuristic" (a self-introduction)
+    # or "llm" (the AI provider), as a speaker's name_source says it.
+    live_speaker_suggestion_sources: dict[str, str] = {}
 
 
 class TranscriptUtteranceSplit(BaseModel):

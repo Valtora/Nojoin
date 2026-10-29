@@ -9,7 +9,7 @@ import {
   applyTranscriptDelta,
   LocalTranscriptState,
 } from "@/lib/transcriptState";
-import { Recording, RecordingSpeaker, TranscriptSegment } from "@/types";
+import { Recording, RecordingSpeaker, SpeakerNameSource, TranscriptSegment } from "@/types";
 
 /**
  * Poll interval while a capture is running.
@@ -54,25 +54,26 @@ export interface LiveTranscript {
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
   liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
   applyLiveSpeakerSuggestions?: (suggestions: Record<string, string>) => void;
 }
 
-const NO_NAMES: Readonly<Record<string, string>> = {};
+const NO_NAMES: Readonly<Record<string, never>> = {};
 
 /**
  * `next`, or `previous` when it holds the same names: every poll answers with
  * a new object, and a new one would re-render the panel each time.
  */
-function sameOrNext(
-  previous: Readonly<Record<string, string>>,
-  next: Readonly<Record<string, string>> | undefined,
-): Readonly<Record<string, string>> {
+function sameOrNext<T extends string>(
+  previous: Readonly<Record<string, T>>,
+  next: Readonly<Record<string, T>> | undefined,
+): Readonly<Record<string, T>> {
   const entries = Object.entries(next ?? {});
   if (entries.length === 0) return NO_NAMES;
   const unchanged =
     entries.length === Object.keys(previous).length &&
     entries.every(([label, name]) => previous[label] === name);
-  return unchanged ? previous : (next as Readonly<Record<string, string>>);
+  return unchanged ? previous : (next as Readonly<Record<string, T>>);
 }
 
 /**
@@ -108,6 +109,8 @@ export function useLiveTranscript(
     useState<Readonly<Record<string, string>>>(NO_NAMES);
   const [liveSpeakerSuggestions, setLiveSpeakerSuggestions] =
     useState<Readonly<Record<string, string>>>(NO_NAMES);
+  const [liveSpeakerSuggestionSources, setLiveSpeakerSuggestionSources] =
+    useState<Readonly<Record<string, SpeakerNameSource>>>(NO_NAMES);
   const stateRef = useRef<LocalTranscriptState | null>(null);
 
   // A feed that starts, or restarts for another recording, shows nothing until
@@ -118,6 +121,7 @@ export function useLiveTranscript(
       setHasLoaded(false);
       setLiveSpeakerNames(NO_NAMES);
       setLiveSpeakerSuggestions(NO_NAMES);
+      setLiveSpeakerSuggestionSources(NO_NAMES);
       setSpeakers([]);
     }
   });
@@ -176,6 +180,9 @@ export function useLiveTranscript(
       );
       setLiveSpeakerSuggestions((previous) =>
         sameOrNext(previous, delta.live_speaker_suggestions),
+      );
+      setLiveSpeakerSuggestionSources((previous) =>
+        sameOrNext(previous, delta.live_speaker_suggestion_sources),
       );
       setHasLoaded(true);
     };
@@ -239,5 +246,5 @@ export function useLiveTranscript(
 
   const refresh = useCallback(() => refreshRef.current?.(), []);
   return { segments, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames, refresh,
-    liveSpeakerSuggestions, applyLiveSpeakerSuggestions };
+    liveSpeakerSuggestions, liveSpeakerSuggestionSources, applyLiveSpeakerSuggestions };
 }

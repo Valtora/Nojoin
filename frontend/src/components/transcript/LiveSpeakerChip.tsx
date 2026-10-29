@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
+import type { SpeakerNameSource } from "@/types";
 import LiveSpeakerSuggestion from "./LiveSpeakerSuggestion";
 
 interface LiveSpeakerChipProps {
@@ -22,6 +23,7 @@ interface LiveSpeakerChipProps {
   /** The People names offered while typing, read when the rename opens. */
   loadPeopleNames?: () => Promise<readonly string[]>;
   suggestion?: string;
+  suggestionSource?: SpeakerNameSource;
   onDismissSuggestion?: (label: string) => Promise<boolean>;
 }
 
@@ -49,6 +51,7 @@ export default function LiveSpeakerChip({
   onRename,
   loadPeopleNames,
   suggestion,
+  suggestionSource,
   onDismissSuggestion,
 }: LiveSpeakerChipProps) {
   // The label is kept from when the box opened: a provisional line can move
@@ -195,7 +198,7 @@ export default function LiveSpeakerChip({
         />
       </ButtonBase>
       {suggestion && onDismissSuggestion && <LiveSpeakerSuggestion label={label} name={suggestion}
-        onAccept={onRename} onDismiss={onDismissSuggestion} focusAfterDecision={() => buttonRef.current?.focus()} />}
+        source={suggestionSource} onAccept={onRename} onDismiss={onDismissSuggestion} focusAfterDecision={() => buttonRef.current?.focus()} />}
     </div>
   );
 }

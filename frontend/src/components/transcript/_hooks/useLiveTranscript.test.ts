@@ -443,6 +443,18 @@ describe("useLiveTranscript", () => {
     expect(result.current.liveSpeakerSuggestions).toEqual({});
   });
 
+  it("reads where each suggestion came from on every read", async () => {
+    getTranscriptUtterances
+      .mockResolvedValueOnce({ ...buildDelta(4, []), live_speaker_suggestions: { LIVE_PROVISIONAL_1: "Priya" },
+        live_speaker_suggestion_sources: { LIVE_PROVISIONAL_1: "llm" } })
+      .mockResolvedValueOnce({ ...buildDelta(4, []), live_speaker_suggestions: {} });
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    expect(result.current.liveSpeakerSuggestionSources).toEqual({ LIVE_PROVISIONAL_1: "llm" });
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerSuggestionSources).toEqual({});
+  });
+
   it("hides an accepted label immediately and resets suggestions when switching recordings", async () => {
     getTranscriptUtterances.mockResolvedValue({ ...buildDelta(4, []),
       live_speaker_suggestions: { LIVE_PROVISIONAL_1: "Alex", LIVE_PROVISIONAL_2: "Blair" } });

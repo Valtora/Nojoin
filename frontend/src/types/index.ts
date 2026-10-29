@@ -339,6 +339,8 @@ export interface TranscriptUtteranceList {
   live_speaker_names?: Record<string, string>;
   /** Pending names heard in this meeting, kept separate from accepted names. Whole on every read. */
   live_speaker_suggestions?: Record<string, string>;
+  /** Where each pending name came from: "heuristic" (a self-introduction) or "llm". */
+  live_speaker_suggestion_sources?: Record<string, SpeakerNameSource>;
 }
 
 /** The answer to naming a live speaker: every live name, as the live read gives it. */

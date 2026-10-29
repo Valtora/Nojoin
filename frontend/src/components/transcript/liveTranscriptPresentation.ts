@@ -1,7 +1,7 @@
 import { liveSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import type { NoteSelection } from "@/lib/notes/noteOutbox";
-import type { TranscriptSegment } from "@/types";
+import type { SpeakerNameSource, TranscriptSegment } from "@/types";
 import type { LiveLineHandlers } from "./LiveLineEditor";
 
 export const liveRenderIdentity = (segment: TranscriptSegment, index: number) =>
@@ -16,6 +16,7 @@ export interface LiveTranscriptPresentation {
   onNoteAtTime?: (atMs: number) => void;
   onRenameLiveSpeaker?: (label: string, name: string) => Promise<boolean>;
   liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
   onDismissLiveSpeakerSuggestion?: (label: string) => Promise<boolean>;
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
