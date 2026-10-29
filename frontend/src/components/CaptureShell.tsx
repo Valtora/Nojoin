@@ -18,7 +18,9 @@ interface CaptureShellProps {
 export default function CaptureShell({ children }: CaptureShellProps) {
   const router = useRouter();
   const { pausedRecording, hasPausedRecording } = usePausedRecordingGuard();
-  const { cancel, controller, resume, runtimeActive, stop, support } = useCapture();
+  const {
+    cancel, controller, dismissRecoveryOffer, resume, runtimeActive, stop, support,
+  } = useCapture();
   const [busyAction, setBusyAction] = useState<
     "resume" | "cancel" | "stop" | null
   >(null);
@@ -114,6 +116,7 @@ export default function CaptureShell({ children }: CaptureShellProps) {
         onResume={handleResume}
         onCancel={handleCancel}
         onStop={handleStop}
+        onDismiss={dismissRecoveryOffer}
       />
       <SessionSignInDialog />
     </>

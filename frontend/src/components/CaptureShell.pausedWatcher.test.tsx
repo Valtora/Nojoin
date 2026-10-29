@@ -16,6 +16,7 @@ import CaptureShell from "./CaptureShell";
 import MeetingControls from "./MeetingControls";
 import LiveMeetingControls from "./LiveMeetingControls";
 import ImportAudioButton from "./importAudio/ImportAudioButton";
+import RecordingAttentionBadge from "./RecordingAttentionBadge";
 import Sidebar from "./Sidebar";
 
 const api = vi.hoisted(() => ({
@@ -205,6 +206,29 @@ describe("recovery when entering a recording page", () => {
     pathname = `/recordings/${recording.id}`;
     rerender(watcherPage());
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it.each([paused, interrupted])("closes on Not now and leaves $status untouched and badged", async (recording) => {
+    pathname = `/recordings/${recording.id}`;
+    api.getUnfinishedCaptures.mockResolvedValue([recording]);
+    render(<CaptureProvider><CaptureShell>
+      <WatcherState /><RecordingAttentionBadge recordingId={recording.id} />
+    </CaptureShell></CaptureProvider>);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByText(/needs attention/)).toBeVisible();
+    // A later check keeps it closed, and nothing was sent about the recording.
+    const checks = api.getUnfinishedCaptures.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Check unfinished captures" }));
+    await waitFor(() => expect(api.getUnfinishedCaptures).toHaveBeenCalledTimes(checks + 1));
+    await act(async () => {});
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
+    expect(api.finalizeRecordingCapture).not.toHaveBeenCalled();
+    expect(api.resumeRecordingCapture).not.toHaveBeenCalled();
   });
 
   it("does not reopen recovery when the holder releases its lock while this page stays open", async () => {

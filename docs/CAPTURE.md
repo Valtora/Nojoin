@@ -109,6 +109,7 @@ While a recording is offered, the **Start Meeting** button reads **Paused record
 - **Resume recording** continues the same recording. The browser asks you to share again.
 - **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.
 - **Discard recording** deletes the partial recording.
+- **Not now** closes the dialog and leaves the recording as it is, still badged. Opening it again, or **Start Meeting** or **Import Audio**, offers it again.
 
 Nojoin keeps a paused or interrupted recording until you choose. It never pauses, cleans up or finalizes one for you. If the tab recording an interrupted capture was only cut off and starts uploading again, the dialog closes by itself within 30 seconds, and Nojoin refuses to resume that recording anywhere else while it is receiving audio.
 

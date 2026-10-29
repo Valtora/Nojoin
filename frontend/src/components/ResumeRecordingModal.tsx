@@ -17,6 +17,8 @@ interface ResumeRecordingModalProps {
   onResume: () => void;
   onCancel: () => void;
   onStop: () => void;
+  /** Closes the dialog and leaves the recording as it is. */
+  onDismiss: () => void;
 }
 
 export default function ResumeRecordingModal({
@@ -27,6 +29,7 @@ export default function ResumeRecordingModal({
   onResume,
   onCancel,
   onStop,
+  onDismiss,
 }: ResumeRecordingModalProps) {
   if (!recording) {
     return null;
@@ -40,14 +43,18 @@ export default function ResumeRecordingModal({
   return (
     <Modal
       open={isOpen}
-      // The paused recording holds the capture lock, so there is no neutral way
-      // out: the modal has to be resolved by one of its three actions.
-      onClose={() => {}}
+      // Leaving it changes nothing: the recording keeps its badge, and opening
+      // it or starting a meeting offers this dialog again. Only Not now closes
+      // it, so a stray click outside cannot.
+      onClose={onDismiss}
       dismissible={false}
       hideCloseButton
       size="lg"
       footer={
         <>
+          <Button variant="ghost" onClick={onDismiss} disabled={busyAction !== null}>
+            Not now
+          </Button>
           <Button
             variant="danger"
             onClick={onCancel}

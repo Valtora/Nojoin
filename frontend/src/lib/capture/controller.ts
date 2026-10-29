@@ -534,6 +534,15 @@ export class CaptureController {
   };
 
   /**
+   * Withdraws the recovery dialog's offer, leaving the recording untouched and
+   * its badge in place. Only a later navigation to it, or a Start, offers it
+   * again, since passive checks keep an offer but never make one.
+   */
+  dismissRecoveryOffer = () => {
+    this.setState({ pausedRecording: null });
+  };
+
+  /**
    * The shared tab, window or screen's video track while this tab captures
    * `recordingId`, for taking a still of it (Captures, #653). Null for a
    * microphone-only capture, another recording, or once media is released.
