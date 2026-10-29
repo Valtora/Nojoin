@@ -507,6 +507,7 @@ describe("capture controller", () => {
       settings: {
         startMode: "shared_audio",
         microphoneDeviceId: null,
+        releaseMicrophoneOnPause: false,
         microphoneGain: 1,
         systemGain: 1,
         echoCancellation: true,
