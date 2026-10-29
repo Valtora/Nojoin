@@ -12,6 +12,7 @@ import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
 import FitText from "@/components/ui/FitText";
 import { Recording, RecordingStatus } from "@/types";
+import { recordingTitleHint } from "@/lib/recordingPresentation";
 
 interface RecordingHeaderProps {
   recording: Recording;
@@ -137,7 +138,7 @@ export default function RecordingHeader({
                 <h1
                   className="mt-1 flex cursor-pointer items-start gap-2 font-bold leading-[1.2] text-foreground hover:text-action-text group"
                   onClick={() => setIsEditingTitle(true)}
-                  title="Click to rename"
+                  title={recordingTitleHint(recording, "Click to rename")}
                 >
                   <FitText maxRem={1.125} minRem={1} className="flex-1">
                     {recording?.name ?? ""}
@@ -176,7 +177,7 @@ export default function RecordingHeader({
               <h1
                 className="group mb-2 flex cursor-pointer items-start gap-2 font-bold leading-[1.15] text-foreground hover:text-action-text"
                 onClick={() => setIsEditingTitle(true)}
-                title="Click to rename"
+                title={recordingTitleHint(recording, "Click to rename")}
               >
                 <FitText maxRem={1.5} minRem={1.0625} className="flex-1">
                   {recording?.name ?? ""}

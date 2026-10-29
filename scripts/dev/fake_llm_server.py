@@ -51,6 +51,7 @@ NOTES = (
     "- Check the notes appear in the meeting view."
 )
 TITLE = "Fake LLM Meeting"
+GIST = "Canned meeting summary from the fake LLM server."
 CHAT_ANSWER = (
     "This answer comes from the fake LLM server. It has not read the meeting, "
     "so it cannot say what was discussed."
@@ -65,6 +66,7 @@ TASK_MARKERS = (
         "meeting_intelligence",
         "Your task is to produce one valid JSON object that combines",
     ),
+    ("meeting_brief", "Describe the main topic of this meeting so far."),
     ("meeting_edge", "You are Meeting Edge, a live meeting assistant."),
     ("meeting_analysis", "You are analysing a meeting transcript to describe how"),
     ("speaker_suggestions", "return only evidence-backed speaker name suggestions"),
@@ -82,8 +84,9 @@ TASK_MARKERS = (
 
 ANSWERS: dict[str, str] = {
     "meeting_intelligence": json.dumps(
-        {"speaker_mapping": {}, "title": TITLE, "notes_markdown": NOTES}
+        {"speaker_mapping": {}, "title": TITLE, "gist": GIST, "notes_markdown": NOTES}
     ),
+    "meeting_brief": json.dumps({"title": TITLE, "gist": GIST}),
     "meeting_edge": json.dumps(
         {
             "summary": "The fake LLM server is standing in for a model.",
@@ -116,7 +119,7 @@ ANSWERS: dict[str, str] = {
         }
     ),
     "notes_part": NOTES,
-    "notes_merge_title": f"<title>{TITLE}</title>\n\n{NOTES}",
+    "notes_merge_title": f"<title>{TITLE}</title>\n<gist>{GIST}</gist>\n\n{NOTES}",
     "notes_merge": NOTES,
     "notes": NOTES,
     "title": TITLE,

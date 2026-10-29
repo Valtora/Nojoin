@@ -117,6 +117,11 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         source_context.async_session_maker,
         recording_meeting_uid="meeting-uid-round-trip",
     )
+    async with source_context.async_session_maker() as session:
+        recording = await session.get(TestRecording, 40)
+        recording.gist = "The team agreed the quarterly budget."
+        recording.title_user_edited = True
+        await session.commit()
 
     zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
@@ -145,6 +150,8 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
     assert microsoft_provider["client_secret"] == "microsoft-client-secret"
 
     assert recordings[0]["meeting_uid"] == "meeting-uid-round-trip"
+    assert recordings[0]["gist"] == "The team agreed the quarterly budget."
+    assert recordings[0]["title_user_edited"] is True
     # A metadata-only archive keeps the source extension: the row then points at where
     # the audio actually lives, rather than at a .opus file that was never written.
     assert recordings[0]["audio_path"] == "recordings/quarterly-planning.wav"
@@ -228,6 +235,8 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         == "google-refresh-token"
     )
     assert restored_recording.meeting_uid == "meeting-uid-round-trip"
+    assert restored_recording.gist == "The team agreed the quarterly budget."
+    assert restored_recording.title_user_edited is True
     assert restored_recording.audio_path.endswith("quarterly-planning.wav")
     assert restored_source.user_colour == "emerald"
     assert restored_source.is_selected is True
@@ -1967,6 +1976,8 @@ async def test_legacy_format_archive_still_restores_completely(
 
     assert user.username == "legacy-alice"
     assert recording.meeting_uid == "legacy-meeting-uid"
+    assert recording.gist is None
+    assert recording.title_user_edited is True
     # The durable identifier is preserved, so recording URLs and later backups from the
     # same source keep lining up.
     assert recording.public_id == "legacy-public-id"

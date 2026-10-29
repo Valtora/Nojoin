@@ -412,8 +412,12 @@ def test_task_drops_backlog_comparisons_and_feeds_labels_after_asr_failure(
 
 @pytest.mark.parametrize("public_changed", [False, True])
 @pytest.mark.parametrize("owner_enabled", [False, True])
-def test_manifest_checkpoint_refreshes_meeting_edge_only_for_public_rolling_changes(
-    monkeypatch: pytest.MonkeyPatch, public_changed: bool, owner_enabled: bool
+@pytest.mark.parametrize("existing_gist", [None, "The team reviewed the launch."])
+def test_manifest_checkpoint_dispatches_intelligence_for_public_rolling_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    public_changed: bool,
+    owner_enabled: bool,
+    existing_gist: str | None,
 ) -> None:
     from backend.core import db
     from backend.models.recording import RecordingStatus
@@ -421,7 +425,13 @@ def test_manifest_checkpoint_refreshes_meeting_edge_only_for_public_rolling_chan
     from backend.tests.test_live_transcription import _FakeRecording, _FakeSession
 
     recording = _FakeRecording(RecordingStatus.UPLOADING, SimpleNamespace(segments=[]))
-    recording.user = SimpleNamespace(settings={"enable_meeting_edge": owner_enabled})
+    recording.user = SimpleNamespace(
+        settings={
+            "enable_meeting_edge": owner_enabled,
+            "live_title_delay_minutes": 1,
+        }
+    )
+    recording.gist = existing_gist
     session = _FakeSession(recording)
     monkeypatch.setattr(db, "get_sync_session", lambda: session)
     result = live_persistence._persist_live_run(
@@ -435,7 +445,9 @@ def test_manifest_checkpoint_refreshes_meeting_edge_only_for_public_rolling_chan
         live_model_name="model",
     )
     assert result.accepted
+    assert session.committed
     assert result.dispatch_meeting_edge is (public_changed and owner_enabled)
+    assert result.dispatch_live_title is (public_changed and existing_gist is None)
 
 
 def test_redecoded_words_keep_their_own_audio_source_when_the_window_changes_source(

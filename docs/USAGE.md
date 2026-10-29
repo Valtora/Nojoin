@@ -33,6 +33,8 @@ The dashboard holds:
 
 [CALENDAR.md](CALENDAR.md) covers connecting a calendar.
 
+Meeting cards and pills, the recording title and **Recent Meetings** show a short AI-generated summary when you hover over them. The agenda also shows it beside the meeting details. While a meeting records or finalises, it is labelled **Summary of transcript so far**.
+
 ### Task List
 
 Create, rename, complete, reopen, archive and delete tasks, and give them deadlines. A task with a deadline shows a live time-remaining badge. Archiving a task removes it from the dashboard, whether or not it was completed.
@@ -380,6 +382,12 @@ Meeting notes are generated once, at the end of processing, from every document 
 - If the model fails on some pages, those pages keep the text Nojoin read without it, and the document card says how many. It also counts pictures the model failed on, and pictures Nojoin left out because it cannot open them, such as EMF or WMF drawings.
 - Without visual analysis, Nojoin uses OCR on your own server, which sends nothing anywhere and keeps scanned pages searchable but cannot describe a chart. Failing that, the document is parsed from its text layer. The document card says what was skipped; once a suitable model is configured, use **Parse again with visual analysis** on the card.
 - PowerPoint, Word and Excel files are also read structurally, which recovers speaker notes, table cells and the values behind native charts. For a deck built mostly from SmartArt or drawn diagrams, export it to PDF first.
+
+### Meeting Titles and Summaries
+
+Under **Settings > Notes and live assistance**, **Live title delay** chooses how many minutes of transcribed meeting audio to wait before generating a title and a one- or two-sentence summary. The default, **After the meeting**, keeps title generation until final processing. A live delay needs live transcription and a configured AI provider; generation starts when the live transcript reaches the chosen delay, so it can arrive a little later. Pausing does not count towards the delay.
+
+The first live title and summary stay as they are until final processing generates them again from the complete transcript. Renaming a meeting protects your title from later generation, while its summary still updates. Titles already present when upgrading are also kept, because older recordings do not record whether a title was edited. New recordings receive automatic titles until you rename them.
 
 ### Choosing How Notes Are Structured
 

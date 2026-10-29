@@ -41,6 +41,8 @@ def _note(kind: str, body: str, **anchor: int) -> TimelineNote:
 
 BASE_SCHEMA = """
 CREATE TABLE recordings (
+    gist TEXT,
+    title_user_edited BOOLEAN NOT NULL DEFAULT 0,
     max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
@@ -416,6 +418,7 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
                 title="Launch Readiness Review",
                 # A user-notes section the model wrote itself is replaced.
                 notes_markdown="# Meeting Notes\n\n## Summary\nGenerated notes.\n\n## User Notes\n- [User] Invented",
+                gist="The team confirmed the rollout date.",
             )
 
     monkeypatch.setattr(
@@ -480,6 +483,7 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
         assert suggestions[0]["resolution_reason"] is None
         assert suggestions[0]["origin"] == "automatic_meeting_intelligence"
         assert recording.name == "Launch Readiness Review"
+        assert recording.gist == "The team confirmed the rollout date."
         assert recording.status == "PROCESSED"
         assert recording.processing_step == "Generating meeting notes... (CPU)"
         assert recording.processing_progress == 97

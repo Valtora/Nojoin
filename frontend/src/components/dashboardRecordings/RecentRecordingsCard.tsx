@@ -7,6 +7,7 @@ import { Mic } from "lucide-react";
 import { StatusBadge } from "@/components/ui/Badge";
 import { formatTimeZoneDate } from "@/lib/timezone";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { recordingGistLabel } from "@/lib/recordingPresentation";
 import { Recording, RecordingStatus } from "@/types";
 
 interface RecentRecordingsCardProps {
@@ -48,6 +49,7 @@ export default function RecentRecordingsCard({
             <li key={recording.id}>
               <Link
                 href={`/recordings/${recording.id}`}
+                title={recordingGistLabel(recording)}
                 className="density-surface-panel flex items-center gap-3 bg-surface-inset px-3 py-2.5 transition-colors hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
                 <span className="min-w-0 flex-1">

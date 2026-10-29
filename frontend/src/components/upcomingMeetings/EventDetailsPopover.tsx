@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, ExternalLink, MapPin, Video } from "lucide-react";
 
 import { CalendarDashboardEvent } from "@/types";
+import { recordingGistLabel } from "@/lib/recordingPresentation";
 
 import {
   DayTimelineStatus,
@@ -104,10 +105,16 @@ export function EventDetailsPopoverContent({
               <Link
                 key={recording.id}
                 href={`/recordings/${recording.id}`}
+                title={recordingGistLabel(recording)}
                 className="flex items-center gap-1.5 text-xs font-medium text-contrast-muted transition-colors hover:text-action-text"
               >
                 <ArrowRight className="h-3 w-3 shrink-0" />
-                <span className="min-w-0 truncate">{recording.name}</span>
+                <span className="min-w-0">
+                  <span className="block truncate">{recording.name}</span>
+                  {recordingGistLabel(recording) && (
+                    <span className="mt-1 block text-xs font-normal text-contrast-helper">{recordingGistLabel(recording)}</span>
+                  )}
+                </span>
               </Link>
             ))}
           </div>

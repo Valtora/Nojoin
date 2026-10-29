@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { setCachedUserTimeZone } from "@/lib/timezone";
 import { withProcessTimeZone } from "@/test/processTimeZone";
-import type { UserTask } from "@/types";
+import { RecordingStatus, type UserTask } from "@/types";
 
 const api = vi.hoisted(() => ({
   getUserTasks: vi.fn(),
@@ -153,5 +153,36 @@ describe("Tasks page deadline picker in New York with the setting in Tokyo", () 
     });
 
     expect(title).toHaveTextContent("Thursday, 29 October at 11:30 AM");
+  });
+
+  it("refreshes linked recording titles and gists without replacing an unsaved task draft", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+    const linked = {
+      id: "rec-1", name: "Untitled meeting", gist: null,
+      status: RecordingStatus.UPLOADING, created_at: SAVED,
+      is_archived: false, is_deleted: false,
+    };
+    api.getUserTasks.mockResolvedValue([task({ linked_recordings: [linked] })]);
+    api.getRecordings.mockResolvedValue([linked]);
+    const { unmount } = render(<TasksWorkspace />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(screen.getByRole("link", { name: "Untitled meeting" })).not.toHaveAttribute("title");
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    fireEvent.change(screen.getByPlaceholderText("Task title"), { target: { value: "My unsaved task" } });
+    api.getRecordings.mockResolvedValue([{
+      ...linked, name: "Launch review", gist: "Agreeing the launch date.", status: RecordingStatus.PROCESSED,
+    }]);
+    await act(() => vi.advanceTimersByTimeAsync(15000));
+    expect(screen.getByRole("link", { name: "Launch review" })).toHaveAttribute("title", "Agreeing the launch date.");
+    expect(screen.getByPlaceholderText("Task title")).toHaveValue("My unsaved task");
+    expect(api.getUserTasks).toHaveBeenCalledTimes(1);
+    api.getRecordings.mockRejectedValue(new Error("offline"));
+    await act(() => vi.advanceTimersByTimeAsync(15000));
+    expect(screen.getByRole("link", { name: "Launch review" })).toHaveAttribute("title", "Agreeing the launch date.");
+    unmount();
+    const reads = api.getRecordings.mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(15000));
+    expect(api.getRecordings).toHaveBeenCalledTimes(reads);
   });
 });

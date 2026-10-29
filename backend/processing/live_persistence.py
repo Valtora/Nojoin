@@ -18,6 +18,7 @@ from backend.utils.audio_windows import (
 )
 from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
+from backend.utils.meeting_brief import get_live_title_delay_minutes
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     load_capture_publication,
@@ -34,6 +35,7 @@ class LivePublicationResult:
 
     accepted: bool
     dispatch_meeting_edge: bool = False
+    dispatch_live_title: bool = False
 
 
 def _load_recording_audio_window_manifests(
@@ -91,6 +93,7 @@ def _persist_live_run(
     from backend.core.db import get_sync_session
 
     should_dispatch_meeting_edge = False
+    should_dispatch_live_title = False
     session = get_sync_session()
     try:
         transcript, recording = load_capture_publication(session, recording_id)
@@ -148,6 +151,10 @@ def _persist_live_run(
                     user_settings = getattr(user, "settings", None) if user else None
 
                 should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
+                should_dispatch_live_title = (
+                    get_live_title_delay_minutes(user_settings) > 0
+                    and recording.gist is None
+                )
 
             manifest_rows = _load_recording_audio_window_manifests(
                 session, recording_id
@@ -181,7 +188,9 @@ def _persist_live_run(
                     },
                     log=logger,
                 )
-            return LivePublicationResult(True, should_dispatch_meeting_edge)
+            return LivePublicationResult(
+                True, should_dispatch_meeting_edge, should_dispatch_live_title
+            )
     finally:
         session.close()
     return LivePublicationResult(False)

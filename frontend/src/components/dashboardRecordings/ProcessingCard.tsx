@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/Badge";
 import { Recording } from "@/types";
+import { recordingGistLabel } from "@/lib/recordingPresentation";
 
 interface ProcessingCardProps {
   recordings: Recording[];
@@ -42,6 +43,7 @@ export default function ProcessingCard({ recordings }: ProcessingCardProps) {
             <li key={recording.id}>
               <Link
                 href={`/recordings/${recording.id}`}
+                title={recordingGistLabel(recording)}
                 className="density-surface-panel block bg-surface-inset px-3 py-2.5 transition-colors hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
                 <span className="flex items-center gap-3">

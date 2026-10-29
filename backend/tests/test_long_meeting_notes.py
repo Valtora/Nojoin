@@ -342,7 +342,10 @@ class _TaggedModel(_Model):
             return f"{answer}\n\n{_names(mapping)}"
         if "# Title Rules" in prompt:
             notes = "## Summary\nSPEAKER_01 and SPEAKER_02 agreed."
-            return f"{self.title}\n{notes}\n\n{_names(self.settle)}"
+            return (
+                f"{self.title}\n<gist>The team reviewed the budget.</gist>\n"
+                f"{notes}\n\n{_names(self.settle)}"
+            )
         return answer
 
 
@@ -359,6 +362,7 @@ def test_the_automatic_pipeline_gets_agreed_names_a_title_and_notes():
     )
 
     assert result.title == "Budget Review"
+    assert result.gist == "The team reviewed the budget."
     assert result.speaker_mapping == {"SPEAKER_01": "Ana Lima"}
     # Names go in after combining; the disputed label stays generic.
     assert result.notes_markdown.startswith(

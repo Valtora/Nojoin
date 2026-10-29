@@ -79,6 +79,13 @@ describe("polling a recording with no audio and no proxy", () => {
 });
 
 describe("noticing a change to the notes in a poll", () => {
+  it("refreshes a title or gist produced without a status or transcript change", () => {
+    const before = recordingWith({ gist: null });
+    expect(hasPolledRecordingChanged(before, { ...before, name: "Launch planning" })).toBe(true);
+    expect(hasPolledRecordingChanged(before, { ...before, gist: "Planning the launch." })).toBe(true);
+    expect(hasPolledRecordingChanged({ ...before, gist: "Old summary" }, before)).toBe(true);
+  });
+
   it("sees a new notes list signature, which the page then fetches the list for", () => {
     const before = recordingWith({ timeline_notes_list_signature: "1:aaaa" });
     expect(

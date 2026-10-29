@@ -56,6 +56,10 @@ export default function AgendaCard({
   } = calendar;
 
   const dayInFocus = agendaMode === "day" ? selectedDay : null;
+  const dayRecordings = [...new Map(
+    [...selectedDayRecordings, ...selectedDayEvents.flatMap((event) => event.linked_recordings)]
+      .map((recording) => [recording.id, recording]),
+  ).values()];
   const scopeLabel = dayInFocus ? selectedDayLabel : viewedMonthLabel;
   const visibleAgendaItems = agendaShowsPastItems
     ? [...agendaPastItems, ...agendaUpcomingItems]
@@ -253,13 +257,13 @@ export default function AgendaCard({
                 </p>
               ) : null}
 
-              {selectedDayRecordings.length ? (
+              {dayRecordings.length ? (
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.16em] text-action-text">
                     Recorded meetings
                   </div>
                   <div className="mt-3 space-y-3">
-                    {selectedDayRecordings.map((recording) => (
+                    {dayRecordings.map((recording) => (
                       <DashboardRecordingCard
                         key={recording.id}
                         recording={recording}

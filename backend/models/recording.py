@@ -4,7 +4,18 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import field_validator
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, or_
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    false,
+    or_,
+)
 from sqlmodel import Field, Relationship, SQLModel, col
 
 from backend.utils.languages import validate_transcription_language
@@ -72,6 +83,13 @@ class Recording(BaseDBModel, table=True):
     __tablename__ = "recordings"  # pyright: ignore[reportAssignmentType]
 
     name: str
+    gist: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    title_user_edited: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean, nullable=False, server_default=false(), default=False
+        ),
+    )
     public_id: str = Field(
         default_factory=generate_public_id,
         sa_column=Column(
@@ -292,6 +310,7 @@ class TagRead(BaseDBModel):
 
 class RecordingRead(BaseDBModel):
     name: str
+    gist: Optional[str] = None
     meeting_uid: str
     audio_path: str
     has_proxy: bool = False

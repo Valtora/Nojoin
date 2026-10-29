@@ -23,6 +23,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { recordingGistLabel, recordingTitleHint } from "@/lib/recordingPresentation";
 import IconButton from "./ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "./ui/touchTarget";
 import ImportAudioButton from "./importAudio/ImportAudioButton";
@@ -1198,6 +1199,7 @@ export default function Sidebar() {
                         data-ui-surface="card"
                         data-recording-link={recording.id}
                         href={`/recordings/${recording.id}`}
+                        title={recordingGistLabel(recording)}
                         id={
                           recording.name === "Welcome to Nojoin"
                             ? "demo-recording-card"
@@ -1226,7 +1228,7 @@ export default function Sidebar() {
                         <div className="flex justify-between items-start mb-1">
                           <h3
                             className={`min-w-0 text-sm font-semibold line-clamp-2 ${isActive && !selection.isSelecting ? "text-action-text" : "text-foreground"}`}
-                            title="Double-click to rename"
+                            title={recordingTitleHint(recording, "Double-click to rename")}
                             onDoubleClick={(e) => {
                               if (selection.isSelecting) return;
                               e.preventDefault();

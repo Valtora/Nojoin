@@ -145,7 +145,8 @@ MERGE_INTRO = """You are an expert meeting-notes assistant. A long meeting was s
 MERGE_INTRO_TITLE = """You are an expert meeting-notes assistant. A long meeting was split into consecutive parts, and notes were written for each part. From the notes of the parts below, write a title for the meeting and one set of notes for the whole meeting."""
 
 MERGE_TITLE_RULES = """- Start the answer with the title on its own line between <title> tags, as in <title>Quarterly Budget Review</title>, then the notes in Markdown.
-- The title and the notes must reflect the same meeting interpretation."""
+- After the title, give a plain-text gist of one or two short sentences, at most 400 characters, between <gist> tags, then the notes in Markdown.
+- The title, gist and notes must reflect the same meeting interpretation and use the requested output language."""
 
 MERGE_LABELS_KEPT = """Leave every diarization label, such as SPEAKER_03, exactly as the notes of the parts write it. Names are put in afterwards."""
 
@@ -157,9 +158,9 @@ SPEAKER_00: One of the names listed for SPEAKER_00
 
 MERGE_CLOSING = """Return only the combined notes, starting directly with the first section and with no preamble or closing commentary."""
 
-MERGE_CLOSING_TITLE = """Return only the <title> line and then the notes, starting with their first section, with no preamble or closing commentary."""
+MERGE_CLOSING_TITLE = """Return only the <title> line, the <gist> line and then the notes, starting with their first section, with no preamble or closing commentary."""
 
-MERGE_CLOSING_TITLE_SPEAKERS = """Return only the <title> line, then the notes starting with their first section, then the <speaker_names> block, with no preamble or closing commentary."""
+MERGE_CLOSING_TITLE_SPEAKERS = """Return only the <title> line, the <gist> line, then the notes starting with their first section, then the <speaker_names> block, with no preamble or closing commentary."""
 
 
 @dataclass(frozen=True)
@@ -481,9 +482,16 @@ def _read_draft(answer: str) -> tuple[dict[str, str], str]:
 
 def _title_and_notes_reader(
     request: AutomaticMeetingIntelligenceRequest,
-) -> Callable[[str], tuple[str, str, dict[str, str]]]:
-    def read(answer: str) -> tuple[str, str, dict[str, str]]:
+) -> Callable[[str], tuple[str, str, dict[str, str], str]]:
+    def read(answer: str) -> tuple[str, str, dict[str, str], str]:
         text, names = _split_tagged(answer)
+        gist_match = re.search(
+            r"<gist>\s*(.*?)\s*</gist>", text, re.IGNORECASE | re.DOTALL
+        )
+        if gist_match is None:
+            raise MeetingIntelligenceContractError("the answer gave no gist")
+        gist = gist_match.group(1)
+        text = text[: gist_match.start()] + text[gist_match.end() :]
         match = _TAGGED_TITLE.search(text)
         if match:
             title = match.group(1)
@@ -501,8 +509,9 @@ def _title_and_notes_reader(
             title=title,
             notes_markdown=_clean_notes(text),
             require_section_heading=not request.uses_custom_notes_sections,
+            gist=gist,
         )
-        return checked.title, checked.notes_markdown, names
+        return checked.title, checked.notes_markdown, names, checked.gist or ""
 
     return read
 
@@ -890,12 +899,13 @@ def generate_meeting_intelligence_in_parts(
         )
     )
     run.disputed = names.disputed
-    title, notes, chosen = run.combine(drafts, _title_and_notes_reader(request))
+    title, notes, chosen, gist = run.combine(drafts, _title_and_notes_reader(request))
     result = AutomaticMeetingIntelligenceResult(
         speaker_mapping=names.settle(chosen),
         title=title,
         notes_markdown=notes,
         require_section_heading=not request.uses_custom_notes_sections,
+        gist=gist,
     )
     result.validate_for_request(request)
     return finalise_automatic_meeting_intelligence_result(result)

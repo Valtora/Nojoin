@@ -28,6 +28,8 @@ BASE_URL = TRUSTED_ORIGIN
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
+    gist TEXT,
+    title_user_edited BOOLEAN NOT NULL DEFAULT 0,
     max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,

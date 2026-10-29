@@ -67,7 +67,9 @@ class _Ollama:
         if self.mapping is None or "# Title Rules" not in prompt:
             return _answer(FITS, "## Summary\nAll of it.")
         return _answer(
-            FITS, "<title>Budget Review</title>\n## Summary\nSPEAKER_01 spoke."
+            FITS,
+            "<title>Budget Review</title>\n<gist>The budget was reviewed.</gist>\n"
+            "## Summary\nSPEAKER_01 spoke.",
         )
 
     def drafts(self) -> list[dict]:

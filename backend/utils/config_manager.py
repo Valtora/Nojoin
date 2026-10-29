@@ -294,6 +294,7 @@ DEFAULT_USER_SETTINGS = {
     "confirm_suggested_names": False,  # Take suggested speaker names as given, unasked
     "voiceprint_learning": "confirmed",  # Or "automatic": unconfirmed matches teach too
     "prefer_short_titles": True,  # Prefer short (3-5 words) meeting titles
+    "live_title_delay_minutes": 0,  # 0 generates title/gist only after finalization
     "transcription_language": AUTO_TRANSCRIPTION_LANGUAGE,
     "notes_language": DEFAULT_NOTES_LANGUAGE,
     "notes_language_custom_instruction": "",

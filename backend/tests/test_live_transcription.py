@@ -107,6 +107,8 @@ def test_validate_config_value_live_max_segment_s():
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
+    gist TEXT,
+    title_user_edited BOOLEAN NOT NULL DEFAULT 0,
     max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
@@ -1170,6 +1172,7 @@ class _FakeRecording:
     def __init__(self, status, transcript):
         self.status = status
         self.transcript = transcript
+        self.gist = None
 
 
 class _FakeSession:

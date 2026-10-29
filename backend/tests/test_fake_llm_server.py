@@ -24,6 +24,10 @@ from backend.utils.meeting_analysis import (
     build_quote_index,
     build_speaker_allowlist,
 )
+from backend.utils.meeting_brief import (
+    build_meeting_brief_prompt,
+    parse_meeting_brief_response,
+)
 from backend.utils.meeting_edge import MeetingEdgeRequest, build_meeting_edge_prompt
 from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceRequest
 from backend.utils.notes_structure_generator import (
@@ -116,8 +120,16 @@ def test_automatic_meeting_intelligence_completes(make_backend):
     result = make_backend().generate_meeting_intelligence(request)
 
     assert result.title == fake.TITLE
+    assert result.gist == fake.GIST
     assert result.notes_markdown.startswith("## Summary")
     assert result.speaker_mapping == {}
+
+
+def test_live_meeting_brief_completes(make_backend):
+    response = make_backend().generate_text(build_meeting_brief_prompt(TRANSCRIPT))
+    title, gist = parse_meeting_brief_response(response)
+    assert title == fake.TITLE
+    assert gist == fake.GIST
 
 
 def test_regenerated_notes_title_and_speaker_suggestions_complete(make_backend):
@@ -206,6 +218,7 @@ def test_a_meeting_longer_than_the_window_is_written_in_parts(make_backend):
         request, overflow=refused.value
     )
     assert result.title == fake.TITLE
+    assert result.gist == fake.GIST
     assert result.notes_markdown.startswith("## Summary")
 
     with pytest.raises(ContextWindowExceededError) as notes_refused:

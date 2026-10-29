@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Recording, RecordingStatus } from "@/types";
@@ -124,5 +124,29 @@ describe("useDashboardRecordings", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.recent).toEqual([]);
     expect(result.current.processing).toEqual([]);
+  });
+
+  it("picks up a worker's gist and title without a browser update event, then stops polling on unmount", async () => {
+    const before = recording({ id: "1", created_at: "2026-07-01T10:00:00Z", gist: null });
+    getRecordings.mockResolvedValue([before]);
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => useDashboardRecordings());
+    try {
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(result.current.loading).toBe(false);
+      getRecordings.mockResolvedValue([{ ...before, name: "Launch planning", gist: "Picking a date." }]);
+      await act(() => vi.advanceTimersByTimeAsync(15000));
+      expect(result.current.recent[0]).toMatchObject({ name: "Launch planning", gist: "Picking a date." });
+      getRecordings.mockRejectedValue(new Error("offline"));
+      await act(() => vi.advanceTimersByTimeAsync(15000));
+      expect(result.current.recent[0]).toMatchObject({ name: "Launch planning", gist: "Picking a date." });
+      unmount();
+      const reads = getRecordings.mock.calls.length;
+      await act(() => vi.advanceTimersByTimeAsync(15000));
+      expect(getRecordings).toHaveBeenCalledTimes(reads);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
   });
 });

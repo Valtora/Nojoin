@@ -35,13 +35,15 @@ AUTOMATIC_MEETING_INTELLIGENCE_INTRO = """You are an expert meeting-notes assist
 Your task is to produce one valid JSON object that combines:
 1. speaker suggestions for unresolved diarization labels only
 2. a meeting title
-3. final meeting notes in Markdown"""
+3. final meeting notes in Markdown
+4. a plain-text gist of one or two short sentences, at most 400 characters, describing the meeting's main topic"""
 
 AUTOMATIC_MEETING_INTELLIGENCE_CRITICAL_RULES = """- Treat any non-generic speaker names already present in the transcript as trusted.
 - Only use `speaker_mapping` for the unresolved labels listed below.
 - If you are not confident about a label, omit it from `speaker_mapping` and keep the generic label in `notes_markdown`.
 - The names or roles used in `notes_markdown` for unresolved labels must match the returned `speaker_mapping` entries exactly.
 - The `title` and `notes_markdown` must reflect the same meeting interpretation.
+- Write `gist` in the same requested output language as the title and notes.
 - Return valid JSON only. Do not include prose before or after the JSON object.
 - Escape newlines inside `notes_markdown` according to JSON rules."""
 
@@ -52,6 +54,7 @@ AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA = """{
         "SPEAKER_00": "Person name or role"
     },
     "title": "Meeting title",
+    "gist": "One or two short sentences describing the meeting's main topic",
     "notes_markdown": "## Localized summary heading\\n\\n...\\n\\n## Localized section heading\\n..."
 }"""
 
@@ -159,6 +162,7 @@ class AutomaticMeetingIntelligenceResult:
     # a structure the user wrote. Runs on a custom template set this False; every
     # other check still applies.
     require_section_heading: bool = True
+    gist: str | None = None
 
     def __post_init__(self) -> None:
         normalized_mapping = {
@@ -189,6 +193,13 @@ class AutomaticMeetingIntelligenceResult:
         object.__setattr__(self, "speaker_mapping", normalized_mapping)
         object.__setattr__(self, "title", title)
         object.__setattr__(self, "notes_markdown", notes_markdown)
+        if self.gist is not None:
+            gist = re.sub(r"\s+", " ", self.gist.strip())
+            if not gist or len(gist) > 400:
+                raise MeetingIntelligenceContractError(
+                    "gist must contain 1-400 characters"
+                )
+            object.__setattr__(self, "gist", gist)
 
     def validate_for_request(
         self,
@@ -363,6 +374,7 @@ def finalise_automatic_meeting_intelligence_result(
             result.notes_markdown, result.speaker_mapping
         ),
         require_section_heading=result.require_section_heading,
+        gist=result.gist,
     )
 
 
@@ -396,6 +408,7 @@ def parse_automatic_meeting_intelligence_response(
         speaker_mapping=_read_speaker_mapping(payload),
         title=_read_required_string(payload, "title"),
         notes_markdown=_read_required_string(payload, "notes_markdown"),
+        gist=_read_required_string(payload, "gist"),
         require_section_heading=not (
             request is not None and request.uses_custom_notes_sections
         ),

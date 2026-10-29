@@ -180,6 +180,12 @@ A recording moves through `UPLOADING` (capturing) and `PAUSED`, then `QUEUED`, `
 
 A recording can be discarded while uploading, paused, queued or processing. Discard revokes the running task with `terminate=True` and removes the recording's row, so a requeued task finds nothing to process. Once that delete has committed it removes the recording's files: its audio, its segments and its documents. Finished recordings go through the normal delete.
 
+### Meeting Titles and Gists
+
+`Recording.gist` stores the short transcript summary shown with meeting titles. Final automatic meeting intelligence produces it alongside the title and notes in one model response, including the combining call for long meetings. `Recording.title_user_edited` protects explicit renames from both live and final title generation; the summary can still change. The migration protects existing titles, whose edit provenance is unknown, while new recordings default to automatic naming.
+
+The per-user `live_title_delay_minutes` setting defaults to `0` (final processing only). A positive value enables a narrow title-and-gist call on the IO lane after live transcription reaches that many minutes of audio. It does not generate notes or speaker suggestions. A stored gist suppresses further live generation; final processing replaces it. The worker checks eligibility again when publishing, so a late live response cannot replace a final result. Generated title publication reads the current edit flag after the model call, preserving a rename made while generation was running. Title and gist writes advance the transcript change counter used by recording polling.
+
 ### Chunk Registration
 
 Each segment becomes a `recording_audio_chunks` row with an offset on the recording timeline, and each 20 s window (5 s hop) a `recording_audio_window_manifests` row on which the live lane tracks ASR progress. `backend/utils/recording_audio_registration.py` registers a segment in constant time:

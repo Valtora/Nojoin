@@ -133,6 +133,9 @@ class SettingsUpdate(BaseModel):
     confirm_suggested_names: Optional[bool] = None
     voiceprint_learning: Optional[str] = None
     prefer_short_titles: Optional[bool] = None
+    live_title_delay_minutes: Optional[int] = Field(
+        default=None, strict=True, ge=0, le=120
+    )
     # Notes structure and vocabulary (issue #137). The install_* keys are
     # admin-only and are dropped for everyone else by _build_settings_update_data.
     notes_template_id: Optional[int] = None

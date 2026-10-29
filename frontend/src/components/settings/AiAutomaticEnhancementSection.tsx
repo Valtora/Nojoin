@@ -1,8 +1,9 @@
 import { Settings } from "@/types";
 import { Switch } from "@/components/ui/Switch";
+import { SelectBase } from "@/components/ui/nativeBases";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
-import { SETTINGS_CONTROL_END } from "./settingsControls";
+import { SETTINGS_CONTROL_END, SETTINGS_SELECT_CLASS } from "./settingsControls";
 
 interface AiAutomaticEnhancementSectionProps {
   settings: Settings;
@@ -10,17 +11,44 @@ interface AiAutomaticEnhancementSectionProps {
   onPersist: (newSettings: Settings) => void;
 }
 
-/** What the AI does once a meeting has been processed (per user). */
+/** Automatic meeting naming and analysis (per user). */
 export default function AiAutomaticEnhancementSection({
   settings,
   onPersist,
 }: AiAutomaticEnhancementSectionProps) {
+  const titleDelay = settings.live_title_delay_minutes ?? 0;
+  const titleDelays = [...new Set([0, 1, 2, 5, 10, 15, 30, 60, 120, titleDelay])].sort((a, b) => a - b);
+
   return (
     <SettingsCard
       id="notes-after-meeting"
-      title="After the meeting"
-      description="What the AI does once a meeting has been processed."
+      title="Automatic enhancement"
+      description="When the AI names your meetings and analyses them."
     >
+      <SettingsRow
+        id="notes-live-title-delay"
+        label="Live title delay"
+        controlId="notes-live-title-delay-select"
+        description="Name a meeting after processing, or once this much live transcript is available. Renaming it yourself keeps your chosen title."
+      >
+        <SelectBase
+          data-ui-fill="control"
+          data-ui-disabled-fill="control-disabled"
+          data-ui-border="full"
+          id="notes-live-title-delay-select"
+          aria-describedby="notes-live-title-delay-select-help"
+          value={titleDelay}
+          className={SETTINGS_SELECT_CLASS}
+          onChange={(event) => onPersist({ ...settings, live_title_delay_minutes: Number(event.target.value) })}
+        >
+          {titleDelays.map((minutes) => (
+            <option key={minutes} value={minutes}>
+              {minutes === 0 ? "After the meeting" : `After ${minutes} ${minutes === 1 ? "minute" : "minutes"}`}
+            </option>
+          ))}
+        </SelectBase>
+      </SettingsRow>
+
       <SettingsRow
         id="notes-short-titles"
         label="Short titles"

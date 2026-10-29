@@ -4,6 +4,7 @@ import logging
 import os
 from typing import Any
 
+from kombu.exceptions import OperationalError
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.celery_app import celery_app
@@ -474,6 +475,16 @@ def _transcribe_live_regions(
     return new_segments
 
 
+def _dispatch_live_title_best_effort(recording_id: int) -> None:
+    """Keep optional live intelligence dispatch independent of audio publication."""
+    try:
+        from backend.worker.tasks import generate_live_title_task
+
+        generate_live_title_task.delay(recording_id)
+    except (OperationalError, ConnectionError, OSError, RuntimeError):
+        logger.exception("Failed to dispatch live title for recording %s", recording_id)
+
+
 def _dispatch_meeting_edge_refresh_best_effort(recording_id: int) -> None:
     """Enqueue a Meeting Edge refresh, swallowing dispatch failures.
 
@@ -872,6 +883,8 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         # --- Diarisation dispatch (best-effort Meeting Edge refresh) ---
         if publication.dispatch_meeting_edge:
             _dispatch_meeting_edge_refresh_best_effort(recording_id)
+        if publication.dispatch_live_title:
+            _dispatch_live_title_best_effort(recording_id)
 
         for consumed_sequence in run:
             _record_live_sequence_outcome(

@@ -417,6 +417,7 @@ class CalendarDashboardTagRead(SQLModel):
 class CalendarDashboardRecordingRead(SQLModel):
     id: str
     name: str
+    gist: Optional[str] = None
     starts_at: datetime
     ends_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None

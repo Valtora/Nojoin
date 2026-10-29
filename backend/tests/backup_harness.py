@@ -168,6 +168,8 @@ class TestRecording(TestBase, table=True):
     __tablename__ = "backup_test_recordings"
 
     name: str
+    gist: Optional[str] = None
+    title_user_edited: bool = False
     meeting_uid: Optional[str] = Field(
         default=None, sa_column=Column(Text, unique=True, nullable=True)
     )

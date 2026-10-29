@@ -88,6 +88,14 @@ def _apply_automatic_meeting_intelligence_result(
 ) -> None:
     from backend.processing.embedding import cosine_similarity
 
+    # A rename may arrive during inference. Lock in the publication order and
+    # reload ownership immediately before writing the generated title.
+    session.exec(
+        select(Transcript.id)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+    ).first()
+    session.refresh(recording, with_for_update=True)
     segments = [
         dict(segment)
         for segment in (transcript.segments or [])
@@ -137,7 +145,10 @@ def _apply_automatic_meeting_intelligence_result(
         reason="automatic_meeting_intelligence_omitted_by_llm",
     )
 
-    recording.name = result.title
+    if not recording.title_user_edited:
+        recording.name = result.title
+    if result.gist is not None:
+        recording.gist = result.gist
     transcript.notes = result.notes_markdown
     transcript.notes_status = "completed"
     # Freshly generated notes reflect every READY document by definition.

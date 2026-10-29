@@ -15,6 +15,7 @@ import {
 
 import { getColorByKey } from "@/lib/constants";
 import { formatTimeZoneDate } from "@/lib/timezone";
+import { recordingGistLabel } from "@/lib/recordingPresentation";
 import {
   CalendarDashboardEvent,
   CalendarDashboardRecording,
@@ -40,6 +41,18 @@ import {
 } from "./calendarUtils";
 import { EventDetailsPopoverContent } from "./EventDetailsPopover";
 
+function LinkedRecordingGists({ recordings }: { recordings: CalendarDashboardRecording[] }) {
+  return recordings.map((recording) => {
+    const gist = recordingGistLabel(recording);
+    return gist ? (
+      <p key={recording.id} className="mt-2 text-sm text-contrast-helper">
+        {recordings.length > 1 && <span className="font-medium">{recording.name}: </span>}
+        {gist}
+      </p>
+    ) : null;
+  });
+}
+
 export function LinkedRecordingsMeta({
   recordings,
 }: {
@@ -52,19 +65,23 @@ export function LinkedRecordingsMeta({
   const singleRecording = recordings.length === 1 ? recordings[0] : null;
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-contrast-helper">
-      <span className="inline-flex items-center rounded-pill border border-surface-border bg-surface-inset px-2.5 py-1 font-medium text-contrast-muted">
-        {recordings.length === 1 ? "Recording linked" : `${recordings.length} recordings linked`}
-      </span>
-      {singleRecording ? (
-        <Link
-          href={`/recordings/${singleRecording.id}`}
-          className="inline-flex items-center gap-1 text-xs font-semibold text-contrast-muted transition-colors hover:text-foreground"
-        >
-          Open recording
-          <ArrowRight className="h-3 w-3" />
-        </Link>
-      ) : null}
+    <div className="mt-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-contrast-helper">
+        <span className="inline-flex items-center rounded-pill border border-surface-border bg-surface-inset px-2.5 py-1 font-medium text-contrast-muted">
+          {recordings.length === 1 ? "Recording linked" : `${recordings.length} recordings linked`}
+        </span>
+        {singleRecording ? (
+          <Link
+            href={`/recordings/${singleRecording.id}`}
+            title={recordingGistLabel(singleRecording)}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-contrast-muted transition-colors hover:text-foreground"
+          >
+            Open recording
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        ) : null}
+      </div>
+      <LinkedRecordingGists recordings={recordings} />
     </div>
   );
 }
@@ -86,6 +103,7 @@ export function DashboardRecordingCard({
   return (
     <Link
       href={`/recordings/${recording.id}`}
+      title={recordingGistLabel(recording)}
       className="density-surface-panel group block bg-surface-inset px-4 py-4 transition-colors hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
     >
       <div className="flex items-start justify-between gap-4">
@@ -114,6 +132,10 @@ export function DashboardRecordingCard({
               </div>
             ) : null}
           </div>
+
+          {recording.gist?.trim() ? (
+            <p className="mt-2 text-sm text-contrast-helper">{recordingGistLabel(recording)}</p>
+          ) : null}
 
           {hasSpeakers ? (
             <div className="mt-3 inline-flex max-w-full items-start gap-2 text-sm text-contrast-helper">
@@ -343,6 +365,7 @@ export function DayTimelineEventCard({
       <PopoverButton
         className={cardClasses}
         aria-label={`View details for ${event.title}`}
+        title={event.linked_recordings.map(recordingGistLabel).filter(Boolean).join("\n\n") || undefined}
       >
         {cardContent}
       </PopoverButton>

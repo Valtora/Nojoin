@@ -142,6 +142,8 @@ export const notFoundMeans = async (
 };
 
 export const hasPolledRecordingChanged = (current: Recording, polled: Recording) =>
+  polled.name !== current.name ||
+  polled.gist !== current.gist ||
   polled.status !== current.status ||
   !!polled.previous_publication_available !== !!current.previous_publication_available ||
   !!polled.reprocess_publication_complete !== !!current.reprocess_publication_complete ||

@@ -257,6 +257,21 @@ describe("calendar dashboard modules", () => {
     expect(within(card!).getByText("Alice, Bob")).toBeInTheDocument();
   });
 
+  it.each([false, true])("shows linked recordings below the day timeline once, also in unlinked list=%s", async (duplicate) => {
+    const linked = makeRecording({ name: "Linked launch", gist: "Choosing the launch date." });
+    getCalendarDashboardSummary.mockResolvedValue(makeSummary({
+      agenda_items: [makeEvent({ linked_recordings: [linked] })],
+      recording_items: duplicate ? [linked] : [],
+    }));
+    renderWithProviders(<CalendarModules />);
+    await vi.waitFor(() => expect(screen.getByText("Recorded meetings")).toBeInTheDocument());
+    const cards = screen.getAllByRole("link", { name: /Linked launch/ });
+    expect(cards).toHaveLength(1);
+    expect(within(cards[0]).getByText("Choosing the launch date.")).toBeInTheDocument();
+    expect(within(cards[0]).getByText("Alice, Bob")).toBeInTheDocument();
+    expect(cards[0]).toHaveAttribute("href", "/recordings/100");
+  });
+
   it("renders a compact join label instead of the raw meeting URL in the agenda", async () => {
     getCalendarDashboardSummary.mockResolvedValue(
       makeSummary({

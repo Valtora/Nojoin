@@ -595,6 +595,16 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["language", "notes language", "british english", "american english", "localisation", "translation", "style"],
   },
   {
+    id: "notes-live-title-delay",
+    label: "Live title delay",
+    description: "Name meetings after processing, or after a chosen number of minutes of live transcript.",
+    category: "notes",
+    access: "all",
+    settingsKeys: ["live_title_delay_minutes"],
+    defaultValue: 0,
+    keywords: ["live", "title", "naming", "delay", "automatic", "minutes", "gist", "summary"],
+  },
+  {
     id: "notes-short-titles",
     label: "Short titles",
     description: "Prefer concise generated titles over descriptive ones.",

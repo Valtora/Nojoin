@@ -224,6 +224,7 @@ TASK_ROUTES = {
     "backend.worker.tasks.compute_meeting_analysis_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_notes_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_meeting_intelligence_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.generate_live_title_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.infer_speakers_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.meeting_chat_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_notes_structure_task": {"queue": IO_QUEUE},
