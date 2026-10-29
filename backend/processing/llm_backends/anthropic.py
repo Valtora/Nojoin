@@ -541,7 +541,9 @@ class AnthropicLLMBackend(LLMBackend):
         # Put the stable meeting context in the cached system prompt (render order
         # is tools -> system -> messages), so it is reused across turns while the
         # messages array carries only the volatile history and question.
-        context = build_chat_context(meeting_notes, diarized_transcript)
+        context = build_chat_context(
+            meeting_notes, diarized_transcript, notes_tool=True
+        )
         messages = build_chat_messages(user_question, conversation_history)
 
         tool_definition = {

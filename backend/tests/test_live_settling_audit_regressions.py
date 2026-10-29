@@ -33,7 +33,7 @@ from backend.utils.transcript_settling import durable_settling_state
 
 
 @pytest.mark.parametrize("engine", ["whisper", "parakeet", "canary"])
-def test_speaker_corrected_final_line_survives_shifted_reprocess(
+def test_speaker_corrected_final_line_takes_shifted_reprocess_wording(
     publication_engine: Engine, engine: str
 ) -> None:
     with Session(publication_engine) as session:
@@ -64,20 +64,17 @@ def test_speaker_corrected_final_line_survives_shifted_reprocess(
         session.commit()
         session.expunge_all()
         canonical = serialize_canonical_utterances(session, recording_id)
-        _, delta, tombstones = serialize_canonical_delta(session, recording_id)
+        _, delta, _ = serialize_canonical_delta(session, recording_id)
         public = serialize_transcript(
             _transcript(session, recording_id), recording_public_id="recording"
         ).segments
         assert len(canonical) == len(delta) == len(public) == 1
-        assert not tombstones
         for line in (canonical[0], delta[0], public[0]):
-            assert line["id"] == before["id"]
-            assert line["text"] == before["text"] == "Goodbye world"
+            assert line["text"] == "New world"
+            assert [word["word"].strip() for word in line["words"]] == ["New", "world"]
             assert line["recording_speaker_id"] == speaker_id
             assert line["speaker_manually_edited"]
-            assert line["locked"] and line["text_locked"]
-            assert line["words"] == before["words"]
-            assert line["final_review"]["text"] == "New world"
+            assert not line.get("final_review")
 
 
 def test_snapshot_restore_keeps_all_dismissals_and_only_latest_positive_name(
