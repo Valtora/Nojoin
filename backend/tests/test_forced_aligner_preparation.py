@@ -183,6 +183,40 @@ def test_settings_progress_shows_the_queued_aligner_after_canary_is_ready(
     assert shown["in_progress"] is True
 
 
+def test_engine_preparation_keeps_an_already_queued_aligner_shown_as_queued(
+    routed: list[tuple[dict[str, Any] | None, str]],
+    download_progress_in_memory: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from backend.api.deps import get_current_user
+    from backend.processing import forced_aligner_model
+    from backend.utils.forced_aligner_manifest import ForcedAlignerError
+
+    # First use queues the aligner while startup's Canary preparation runs.
+    with pytest.raises(ForcedAlignerError, match="not prepared"):
+        forced_aligner_model._prepared_path()
+    assert len(routed) == 1
+    _stub_engine_downloads(monkeypatch)
+    preload_models.download_models(transcription_backend="canary", include_core=True)
+    assert len(routed) == 1
+    assert assets.control.pending_task() is not None
+    app = FastAPI()
+    app.include_router(system.router, prefix="/system")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1)
+    with TestClient(app) as client:
+        response = client.get("/system/download-progress")
+    assert response.status_code == 200, response.text
+    shown = response.json()
+    assert (shown["stage"], shown["status"], shown["in_progress"]) == (
+        "forced_aligner",
+        "downloading",
+        True,
+    )
+
+
 def test_startup_on_a_canary_install_prepares_the_aligner_on_the_cpu_lane(
     model_cache_env: Path,
     progress: dict[str, Any],

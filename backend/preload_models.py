@@ -13,6 +13,7 @@ from backend.services.model_preparation import request_pinned_preparation
 from backend.utils.config_manager import config_manager
 from backend.utils.download_progress import (
     clear_download_progress,
+    get_download_progress,
     set_download_progress,
 )
 from backend.utils.forced_aligner_model_utils import (
@@ -421,6 +422,28 @@ def preparation_failure_message(stage: str | None) -> str:
     )
 
 
+def _hand_off_aligner() -> bool:
+    """Queue the aligner on the CPU lane; whether it is now queued or running.
+
+    The aligner only downloads and hashes, so it goes to the CPU lane rather
+    than holding live ASR's GPU queue behind 1.8 GB. One already pending, from
+    first use say, is shown as queued instead of this run's completion, unless
+    its own task is already reporting.
+    """
+    if request_pinned_preparation("forced_aligner", recording_id=None):
+        return True
+    if aligner_control.pending_task() is None:
+        return False
+    if (get_download_progress() or {}).get("stage") != "forced_aligner":
+        set_download_progress(
+            0,
+            "Model preparation queued...",
+            status="downloading",
+            stage="forced_aligner",
+        )
+    return True
+
+
 def download_models(
     progress_callback=None,
     hf_token=None,
@@ -527,11 +550,12 @@ def download_models(
             )
             _prepare_onnx_asr_model(onnx_model_id)
 
-        report("Model preparation complete.", 100, stage="complete", status="complete")
-        if not engine_has_native_word_timestamps(transcription_backend):
-            # The aligner only downloads and hashes, so it goes to the CPU
-            # lane rather than holding live ASR's GPU queue behind 1.8 GB.
-            request_pinned_preparation("forced_aligner", recording_id=None)
+        if engine_has_native_word_timestamps(transcription_backend) or not (
+            _hand_off_aligner()
+        ):
+            report(
+                "Model preparation complete.", 100, stage="complete", status="complete"
+            )
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
         set_download_progress(
