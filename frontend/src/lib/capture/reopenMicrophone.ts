@@ -1,4 +1,5 @@
 import type { CaptureSettings } from "./shared";
+import { isTrustedMicrophoneListing } from "./sourceReport";
 
 interface ReopenMicrophoneOptions {
   microphoneDeviceId: string | null;
@@ -41,19 +42,18 @@ const describeMicrophoneFailure = (error: unknown): Error => {
 };
 
 /**
- * A listing with usable ids can show the selected microphone is gone. Before any
- * capture is active a browser may list blank ids (Media Capture and Streams,
- * section 9.2.1: empty strings for deviceId, label and groupId), which proves
- * nothing, so `trusted` is false and the exact request decides instead. A
- * listing with no microphones at all is trusted.
+ * Only a trusted listing (`isTrustedMicrophoneListing`) can show the selected
+ * microphone is gone. Otherwise `trusted` is false and the exact request decides.
  */
 const resolveMicrophoneDevice = async (mediaDevices: MediaDevices, requested: string | null) => {
   let trusted = false;
   if (requested && mediaDevices.enumerateDevices) {
     try {
-      const inputs = (await mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
-      trusted = inputs.length === 0 || inputs.some((device) => device.deviceId !== "");
-      if (trusted && !inputs.some((device) => device.deviceId === requested)) {
+      const inputIds = (await mediaDevices.enumerateDevices())
+        .filter((device) => device.kind === "audioinput")
+        .map((device) => device.deviceId);
+      trusted = isTrustedMicrophoneListing(inputIds);
+      if (trusted && !inputIds.includes(requested)) {
         return { deviceId: null, usedDefault: true, trusted };
       }
     } catch {
