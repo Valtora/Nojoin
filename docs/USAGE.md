@@ -396,7 +396,7 @@ Meeting notes are generated once, at the end of processing, from every document 
 
 On a processed recording, open **Notes > Generate another set** beside **Regenerate Notes**, then choose a structure. The new set appears in a sub-tab named after that structure; a recording with only its original notes has no sub-tab row. **Regenerate Notes** reruns only the selected set, using its saved structure. Each extra set can be edited, exported as text with **Export Notes** (the file name includes the set's name), or removed with **Delete set** after confirmation. Find and replace and speaker renames apply to every set. Deleting the last extra set returns to the single notes view.
 
-The first set, labelled **Meeting notes** when sub-tabs are visible, remains the meeting's notes for chat, search, Meeting Edge, sharing and the recording's usual export. Extra sets are included only when exported from their own tab. Changing or deleting a template later does not change a set's saved structure; generate another set to use an updated template.
+The first set, labelled **Meeting notes** when sub-tabs are visible, remains the meeting's notes for chat, search, Meeting Edge, sharing and the recording's usual export. Extra sets are included only when exported from their own tab. **Generate another set** adds only a structure the meeting does not have yet: the Nojoin default is not offered, and a structure already used by a set or by the meeting's notes (the shared default, when the notes recorded none) shows **Already in this meeting**; use **Regenerate Notes** on that set instead. Changing or deleting a template later does not change a set's saved structure; to use an updated template, delete the set made from it and generate it again.
 
 ### Glossary
 
