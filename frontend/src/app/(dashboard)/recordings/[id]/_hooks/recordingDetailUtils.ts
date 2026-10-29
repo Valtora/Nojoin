@@ -146,6 +146,7 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   !!polled.previous_publication_available !== !!current.previous_publication_available ||
   !!polled.reprocess_publication_complete !== !!current.reprocess_publication_complete ||
   polled.client_status !== current.client_status ||
+  polled.consent_notice_outcome !== current.consent_notice_outcome ||
   polled.processing_step !== current.processing_step ||
   polled.upload_progress !== current.upload_progress ||
   polled.processing_progress !== current.processing_progress ||

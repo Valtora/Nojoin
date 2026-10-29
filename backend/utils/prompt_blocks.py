@@ -25,7 +25,8 @@ PromptBlock = Tuple[Optional[str], Optional[str]]
 
 RECORDING_NOTICE_PROCEDURE = (
     "Treat a recording consent notice and its answer as procedure, and leave them "
-    "out of titles, summaries and minutes unless the meeting discusses them further."
+    "out of titles, summaries, minutes, topics, questions and decisions unless the "
+    "meeting discusses them further."
 )
 
 

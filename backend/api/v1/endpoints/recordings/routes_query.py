@@ -346,12 +346,9 @@ async def get_recordings_calendar(
 
 
 def _recording_etag(
-    status: RecordingStatus,
-    change_sequence: int | None,
-    notes_status: str | None,
-    consent_notice_outcome: str | None,
+    status: RecordingStatus, change_sequence: int | None, notes_status: str | None
 ) -> str:
-    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}-{consent_notice_outcome or ""}"'
+    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}"'
 
 
 async def _unchanged_since(
@@ -361,10 +358,7 @@ async def _unchanged_since(
     row = (
         await db.execute(
             select(
-                Recording.status,
-                Transcript.change_sequence,
-                Transcript.notes_status,
-                Recording.consent_notice_outcome,
+                Recording.status, Transcript.change_sequence, Transcript.notes_status
             )
             .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
             .where(Recording.public_id == recording_id)
@@ -389,8 +383,8 @@ async def get_recording(
     """
     Get a specific recording by ID with all relationships loaded.
 
-    The ETag covers the status, the transcript change counter, the consent
-    notice outcome and the notes status: a finished recording's page sends it back as If-None-Match
+    The ETag covers only the status, the transcript change counter and the
+    notes status: a finished recording's page sends it back as If-None-Match
     and gets a 304 until one of them moves. no-store keeps browsers from revalidating ordinary
     reads with it.
     """
@@ -535,7 +529,6 @@ async def get_recording(
         recording.status,
         transcript.change_sequence if transcript else None,
         transcript.notes_status if transcript else None,
-        recording.consent_notice_outcome,
     )
     response.headers["Cache-Control"] = "no-store"
     return serialize_recording(

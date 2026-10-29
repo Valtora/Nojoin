@@ -104,7 +104,6 @@ export interface SettingsRegistryEntry {
  * a key arriving here should be a decision, not an oversight.
  *
  *  - theme is written by ThemeProvider into local storage, not through settings;
- *  - hide_recording_consent_notice is changed in the recording notice itself;
  *  - processing_tuning_install is read-only context the API supplies (the
  *    installation's tuning values) for validation, not a value anyone sets;
  *  - live_speaker_labels and speaker_engine are install-wide settings managed
@@ -112,7 +111,6 @@ export interface SettingsRegistryEntry {
  *  - the rest are read by the backend and have never had a frontend control.
  */
 export const UNSURFACED_SETTINGS_KEYS = [
-  "hide_recording_consent_notice",
   "theme",
   "enable_auto_voiceprints",
   "enable_live_transcription",
@@ -362,6 +360,17 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     scope: "browser",
     advanced: "safe-default",
     keywords: ["quiet audio warnings", "quiet-audio reminders", "quiet", "silence", "warning", "warnings", "reminder", "dismiss", "reset warnings"],
+  },
+  {
+    id: "recording-consent-notice",
+    label: "Recording consent notice",
+    description: "The reminder to ask the meeting's agreement, shown when you start a recording.",
+    category: "recording",
+    access: "all",
+    advanced: "safe-default",
+    settingsKeys: ["hide_recording_consent_notice"],
+    defaultValue: false,
+    keywords: ["consent", "recording notice", "agreement", "permission", "don't show this again", "reminder"],
   },
   {
     id: "recording-vad",

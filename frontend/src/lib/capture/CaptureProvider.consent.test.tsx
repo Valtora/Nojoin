@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import RecordingConsentNotice from "@/components/RecordingConsentNotice";
+
 import { CaptureProvider, useCapture } from "./CaptureProvider";
 import type { CaptureState } from "./shared";
 
@@ -50,7 +52,7 @@ async function begin(outcome = "no_answer") {
     mocks.listener?.(mocks.state);
     return { recordingId: "rec-1", resumed: false, consentNoticeOutcome: outcome };
   });
-  render(<CaptureProvider><StartButton /></CaptureProvider>);
+  render(<CaptureProvider><StartButton /><RecordingConsentNotice /></CaptureProvider>);
   await act(async () => { fireEvent.click(screen.getByText("Start")); });
 }
 
@@ -70,9 +72,14 @@ describe("recording consent", () => {
   afterEach(() => { vi.useRealTimers(); });
 
   it("saves agreement and dismisses without stopping", async () => {
+    const updated = vi.fn();
+    window.addEventListener("recording-updated", updated);
     await begin();
     await click("Everyone agreed");
+    window.removeEventListener("recording-updated", updated);
     expect(mocks.save).toHaveBeenCalledWith("rec-1", "agreed");
+    // The recording's page refreshes only for an update that names it.
+    expect((updated.mock.calls[0][0] as CustomEvent).detail).toEqual({ id: "rec-1" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(mocks.stop).not.toHaveBeenCalled();
   });
@@ -90,9 +97,15 @@ describe("recording consent", () => {
     await begin();
     await click("Not everyone agreed");
     expect(mocks.stop).not.toHaveBeenCalled();
+    const updated = vi.fn();
+    window.addEventListener("recording-updated", updated);
     await click("Stop the recording");
+    act(() => vi.advanceTimersByTime(300));
+    window.removeEventListener("recording-updated", updated);
     expect(mocks.stop).toHaveBeenCalledTimes(1);
     expect(mocks.save).toHaveBeenCalledWith("rec-1", "not_agreed");
+    // As the meeting controls' Stop: the lists and the page hear the meeting ended.
+    expect(updated).toHaveBeenCalledTimes(1);
   });
 
   it("dismisses an unanswered notice without changing its initial outcome", async () => {
@@ -143,7 +156,7 @@ describe("recording consent", () => {
 
   it("does not show the notice in a watching tab with a live recording", () => {
     mocks.state = { ...mocks.state, status: "recording", recordingId: "rec-1" };
-    render(<CaptureProvider><StartButton /></CaptureProvider>);
+    render(<CaptureProvider><StartButton /><RecordingConsentNotice /></CaptureProvider>);
     act(() => mocks.listener?.({ ...mocks.state }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(mocks.start).not.toHaveBeenCalled();

@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import CalendarEvent
-from backend.models.recording import RecordingStatus, RecordingUpdate
+from backend.models.recording import (
+    ConsentNoticeOutcome,
+    RecordingStatus,
+    RecordingUpdate,
+    is_live_capture,
+)
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.user import User
 from backend.processing.speaker_cap import (
@@ -38,6 +43,9 @@ from .helpers import (
 from .router import router
 
 logger = logging.getLogger(__name__)
+
+# The other outcomes are set by the server when capture starts.
+_CONSENT_NOTICE_ANSWERS = {ConsentNoticeOutcome.AGREED, ConsentNoticeOutcome.NOT_AGREED}
 
 
 class CalendarEventLink(BaseModel):
@@ -90,12 +98,23 @@ async def update_recording(
     """
     Update a recording.
     """
+    answer = recording_update.consent_notice_outcome
+    if answer is not None and answer not in _CONSENT_NOTICE_ANSWERS:
+        raise HTTPException(
+            status_code=422,
+            detail="The recording notice answer must be agreed or not_agreed.",
+        )
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    if answer is not None and not is_live_capture(recording):
+        raise HTTPException(
+            status_code=409,
+            detail="The recording notice can only be answered while recording.",
+        )
 
     if recording_update.name is not None:
         recording.name = recording_update.name
-    if recording_update.consent_notice_outcome is not None:
-        recording.consent_notice_outcome = recording_update.consent_notice_outcome
+    if answer is not None:
+        recording.consent_notice_outcome = answer
     if "transcription_language" in recording_update.model_fields_set:
         recording.transcription_language = recording_update.transcription_language
 

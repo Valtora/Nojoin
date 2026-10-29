@@ -16,7 +16,25 @@ interface Props {
   onClose: () => void;
 }
 
-export default function RecordingConsentNotice({ recordingId, onClose }: Props) {
+/**
+ * Shown only in the tab that started the recording, and only while its capture
+ * runs. Nothing here stops or discards a recording unless Stop is pressed.
+ */
+export default function RecordingConsentNotice() {
+  const { consentNoticeRecordingId, closeConsentNotice, recordingId, runtimeActive } = useCapture();
+  if (!consentNoticeRecordingId || consentNoticeRecordingId !== recordingId || !runtimeActive) {
+    return null;
+  }
+  return (
+    <ConsentNoticeDialog
+      key={consentNoticeRecordingId}
+      recordingId={consentNoticeRecordingId}
+      onClose={closeConsentNotice}
+    />
+  );
+}
+
+function ConsentNoticeDialog({ recordingId, onClose }: Props) {
   const [stage, setStage] = useState<"notice" | "decision">("notice");
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -51,6 +69,8 @@ export default function RecordingConsentNotice({ recordingId, onClose }: Props) 
     }
   };
 
+  // As the Stop button in the meeting controls: stop, then tell the lists and
+  // the recording's page that the meeting has ended.
   const stopRecording = async () => {
     onClose();
     try {
@@ -59,34 +79,56 @@ export default function RecordingConsentNotice({ recordingId, onClose }: Props) 
       if (!controller.getState().error) {
         addNotification({ type: "error", message: "Could not stop the recording. Use the recording controls to try again." });
       }
+      return;
     }
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: recordingId } }));
+    }, 300);
   };
 
+  const footer = stage === "notice" ? (
+    <>
+      <Button disabled={saving} onClick={() => void answer("agreed")}>Everyone agreed</Button>
+      <Button disabled={saving} onClick={() => void answer("not_agreed")}>Not everyone agreed</Button>
+    </>
+  ) : (
+    <>
+      <Button variant="danger" onClick={() => void stopRecording()}>Stop the recording</Button>
+      <Button onClick={onClose}>Continue</Button>
+    </>
+  );
+
   return (
-    <Modal open onClose={onClose} title={stage === "notice" ? "Recording consent" : "Keep recording?"}
-      footer={stage === "notice" ? <>
-        <Button disabled={saving} onClick={() => void answer("not_agreed")}>Not everyone agreed</Button>
-        <Button disabled={saving} onClick={() => void answer("agreed")}>Everyone agreed</Button>
-      </> : <>
-        <Button variant="danger" onClick={() => void stopRecording()}>Stop the recording</Button>
-        <Button onClick={onClose}>Continue</Button>
-      </>}>
-      {stage === "notice" ? <div className="space-y-4 text-sm text-foreground">
-        <p>Some places require everyone&apos;s consent to record a conversation. This reminder is not legal advice.</p>
-        <p>You could ask the meeting:</p>
-        <blockquote className="border-l-2 border-control-border pl-3">
-          &ldquo;I&apos;m recording this meeting to help prepare notes. Does everyone agree to being recorded?&rdquo;
-        </blockquote>
-        <p>Recording has started. Closing this notice or leaving it unanswered keeps recording.</p>
-        <label className="flex items-center gap-2">
-          <InputBase type="checkbox" checked={hidden} disabled={savingPreference}
-            onChange={(event) => void savePreference(event.target.checked)} />
-          Don&apos;t show this again
-        </label>
-      </div> : <p className="text-sm text-foreground">
-        Your answer has been saved as &ldquo;Not everyone agreed&rdquo;. Choose whether to stop or continue.
-        Closing this prompt or leaving it unanswered keeps recording.
-      </p>}
+    <Modal
+      open
+      onClose={onClose}
+      title={stage === "notice" ? "Recording consent" : "Keep recording?"}
+      footer={footer}
+    >
+      {stage === "notice" ? (
+        <div className="space-y-4 text-sm text-foreground">
+          <p>Some places require everyone&apos;s consent to record a conversation. This reminder is not legal advice.</p>
+          <p>You could ask the meeting:</p>
+          <blockquote className="border-l-2 border-control-border pl-3">
+            &ldquo;I&apos;m recording this meeting to help prepare notes. Does everyone agree to being recorded?&rdquo;
+          </blockquote>
+          <p>Recording has started. Closing this notice or leaving it unanswered keeps recording.</p>
+          <label className="flex items-center gap-2">
+            <InputBase
+              type="checkbox"
+              checked={hidden}
+              disabled={savingPreference}
+              onChange={(event) => void savePreference(event.target.checked)}
+            />
+            Don&apos;t show this again
+          </label>
+        </div>
+      ) : (
+        <p className="text-sm text-foreground">
+          Your answer has been saved as &ldquo;Not everyone agreed&rdquo;. Choose whether to stop or continue.
+          Closing this prompt or leaving it unanswered keeps recording.
+        </p>
+      )}
     </Modal>
   );
 }

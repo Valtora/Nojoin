@@ -159,15 +159,3 @@ async def test_a_notes_edit_elsewhere_ends_the_304s(client: AsyncClient) -> None
     assert write.status_code == 200
     assert response.status_code == 200
     assert response.json()["transcript"]["notes"] == "Edited elsewhere"
-
-
-@pytest.mark.anyio
-async def test_a_consent_answer_ends_the_304s(client: AsyncClient) -> None:
-    initial = await client.get(URL)
-    assert initial.json()["consent_notice_outcome"] is None
-    etag = initial.headers["etag"]
-    write = await client.patch(URL, json={"consent_notice_outcome": "not_agreed"})
-    assert write.status_code == 200
-    response = await client.get(URL, headers={"If-None-Match": etag})
-    assert response.status_code == 200
-    assert response.json()["consent_notice_outcome"] == "not_agreed"

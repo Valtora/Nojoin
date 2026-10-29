@@ -7,6 +7,7 @@ from backend.utils.long_meeting_notes import (
     build_part_prompt,
     context_for_notes,
 )
+from backend.utils.meeting_analysis.prompt import build_meeting_analysis_prompt_parts
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     build_meeting_edge_prompt_parts,
@@ -26,6 +27,9 @@ def test_procedure_rule_is_composed_once_in_each_generation_path() -> None:
     edge_prefix, edge_suffix = build_meeting_edge_prompt_parts(
         MeetingEdgeRequest(recent_transcript=transcript)
     )
+    analysis_prefix, analysis_suffix = build_meeting_analysis_prompt_parts(
+        transcript=transcript, speaker_names=["Alex", "Sam"]
+    )
     prompts = [
         LLMBackend.build_notes_prompt(None, transcript, {}),
         LLMBackend.build_title_prompt(None, transcript),
@@ -37,8 +41,10 @@ def test_procedure_rule_is_composed_once_in_each_generation_path() -> None:
         build_part_prompt(context, 1, 1, part),
         build_merge_prompt(context, [_Notes("Notes", 1, 1, None, None)], 1, final=True),
         edge_prefix + edge_suffix,
+        analysis_prefix + analysis_suffix,
     ]
     for prompt in prompts:
         assert prompt.count(RECORDING_NOTICE_PROCEDURE) == 1
     assert RECORDING_NOTICE_PROCEDURE in edge_prefix
+    assert RECORDING_NOTICE_PROCEDURE in analysis_prefix
     assert transcript in edge_suffix

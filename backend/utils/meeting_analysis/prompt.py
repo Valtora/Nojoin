@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from backend.utils.languages import build_output_language_prompt_section
-from backend.utils.prompt_blocks import render_prompt_blocks
+from backend.utils.prompt_blocks import RECORDING_NOTICE_PROCEDURE, render_prompt_blocks
 
 # The value ``led_by`` takes when no single speaker drove a topic. Resolved
 # after the speaker allowlist, so a speaker genuinely called "contested" still
@@ -157,6 +157,7 @@ def build_meeting_analysis_prompt_parts(
     prefix = render_prompt_blocks(
         [
             (None, MEETING_ANALYSIS_INTRO),
+            (None, RECORDING_NOTICE_PROCEDURE),
             ("# Critical Rules", MEETING_ANALYSIS_CRITICAL_RULES),
             ("# Topics", MEETING_ANALYSIS_TOPIC_RULES),
             ("# Sentiment", MEETING_ANALYSIS_SENTIMENT_RULES),

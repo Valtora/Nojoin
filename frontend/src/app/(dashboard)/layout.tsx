@@ -12,6 +12,7 @@ import TourGuide from "@/components/TourGuide";
 import CaptureShell from "@/components/CaptureShell";
 import DemoBanner, { DEMO_BANNER_STYLE } from "@/components/DemoBanner";
 import RecordingFloatingBadge from "@/components/RecordingFloatingBadge";
+import RecordingConsentNotice from "@/components/RecordingConsentNotice";
 import ImportAudioHost from "@/components/importAudio/ImportAudioHost";
 import UnfinishedImportNotice from "@/components/importAudio/UnfinishedImportNotice";
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
@@ -69,6 +70,7 @@ export default function DashboardLayout({
           </div>
         </div>
         <RecordingFloatingBadge />
+        <RecordingConsentNotice />
         <ImportAudioHost />
         <UnfinishedImportNotice />
       </CaptureShell>

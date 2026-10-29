@@ -1606,7 +1606,7 @@ async def test_a_tab_on_an_older_build_sends_no_epoch_and_is_not_checked(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("outcome", ["agreed", "not_agreed", "no_answer", "not_shown"])
+@pytest.mark.parametrize("outcome", ["agreed", "not_agreed"])
 async def test_consent_notice_answer_is_durable_and_does_not_stop_capture(
     client: AsyncClient, test_session_maker: sessionmaker, outcome: str
 ) -> None:
@@ -1666,8 +1666,9 @@ async def test_consent_notice_suppression_applies_only_to_the_initiating_user(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["assumed", "no_answer", "not_shown"])
 async def test_consent_notice_rejects_invalid_answers_and_other_users(
-    client: AsyncClient, api_app: FastAPI
+    client: AsyncClient, api_app: FastAPI, outcome: str
 ) -> None:
     set_session_cookie(client)
     initial = await client.post(
@@ -1676,7 +1677,7 @@ async def test_consent_notice_rejects_invalid_answers_and_other_users(
     url = f"/api/v1/recordings/{initial.json()['id']}"
     invalid = await client.patch(
         url,
-        json={"consent_notice_outcome": "assumed"},
+        json={"consent_notice_outcome": outcome},
         headers={"Origin": TRUSTED_ORIGIN},
     )
     assert invalid.status_code == 422
@@ -1685,3 +1686,31 @@ async def test_consent_notice_rejects_invalid_answers_and_other_users(
     api_app.dependency_overrides[deps.get_current_user] = lambda: other_user
     denied = await client.patch(url, json={"consent_notice_outcome": "agreed"})
     assert denied.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_consent_notice_cannot_be_answered_once_capture_has_ended(
+    client: AsyncClient, test_session_maker: sessionmaker
+) -> None:
+    set_session_cookie(client)
+    initial = await client.post(
+        "/api/v1/recordings/init", headers={"Origin": TRUSTED_ORIGIN}
+    )
+    recording_id = initial.json()["id"]
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recordings SET status = 'PROCESSED', client_status = 'IDLE' "
+                "WHERE public_id = :id"
+            ),
+            {"id": recording_id},
+        )
+        await session.commit()
+    response = await client.patch(
+        f"/api/v1/recordings/{recording_id}",
+        json={"consent_notice_outcome": "agreed"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert response.status_code == 409
+    read = await client.get(f"/api/v1/recordings/{recording_id}")
+    assert read.json()["consent_notice_outcome"] == "no_answer"

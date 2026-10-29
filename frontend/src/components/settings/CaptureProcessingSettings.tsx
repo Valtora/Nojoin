@@ -7,11 +7,13 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { Switch } from "@/components/ui/Switch";
 
 import SettingsCard from "./SettingsCard";
+import { useSettingsContext } from "./SettingsProvider";
 import SettingsRow from "./SettingsRow";
 import { SETTINGS_BUTTON_SECONDARY, SETTINGS_CONTROL_END } from "./settingsControls";
 
 /**
- * The browser-side audio processing toggles and the quiet-audio reminder reset.
+ * The browser-side audio processing toggles, the quiet-audio reminder reset and
+ * the recording consent notice, which can be turned off from the notice itself.
  *
  * Separate from CaptureSettings because these sit behind the Advanced gate while
  * device selection and levels do not: the defaults suit most recordings, and
@@ -24,7 +26,7 @@ export default function CaptureProcessingSettings() {
     (state) => state.suppressQuietAudioWarnings,
   );
   const resetWarnings = useAudioWarningStore((state) => state.resetWarnings);
-
+  const { settings: accountSettings, updateSetting } = useSettingsContext();
 
   return (
     <>
@@ -125,6 +127,29 @@ export default function CaptureProcessingSettings() {
               Turn back on
             </ButtonBase>
           )}
+        </SettingsRow>
+      </SettingsCard>
+
+      <SettingsCard
+        id="recording-consent-notice"
+        title="Recording consent notice"
+        description="A reminder, shown when you start a recording, with a suggested statement asking the meeting's agreement."
+      >
+        <SettingsRow
+          labelId="recording-consent-notice-label"
+          descriptionId="recording-consent-notice-help"
+          label="Show the notice"
+          description="Applies to recordings you start on this account. Closing the notice never stops a recording."
+          controlClassName={SETTINGS_CONTROL_END}
+        >
+          <Switch
+            aria-labelledby="recording-consent-notice-label"
+            aria-describedby="recording-consent-notice-help"
+            checked={accountSettings.hide_recording_consent_notice !== true}
+            onCheckedChange={(checked) =>
+              updateSetting({ ...accountSettings, hide_recording_consent_notice: !checked })
+            }
+          />
         </SettingsRow>
       </SettingsCard>
     </>

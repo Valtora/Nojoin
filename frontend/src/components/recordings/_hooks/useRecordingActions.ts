@@ -279,7 +279,7 @@ export function useRecordingActions(): RecordingActions {
       answerConsentNotice: async (id, outcome) => {
         try {
           await setRecordingConsentNoticeOutcome(id, outcome);
-          window.dispatchEvent(new Event("recording-updated"));
+          window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id } }));
           return true;
         } catch {
           addNotification({ type: "error", message: "Could not save the recording notice answer. Please try again." });

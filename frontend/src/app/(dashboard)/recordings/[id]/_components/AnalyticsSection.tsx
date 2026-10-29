@@ -56,9 +56,11 @@ export default function AnalyticsSection({
       aria-labelledby="tab-analytics"
       className={`absolute inset-0 flex flex-col ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
-      {consentNoticeOutcome && <p className="px-4 py-2 text-sm text-foreground">
-        Recording notice: {CONSENT_LABELS[consentNoticeOutcome]}
-      </p>}
+      {consentNoticeOutcome && (
+        <p className="px-4 py-2 text-sm text-foreground">
+          Recording notice: {CONSENT_LABELS[consentNoticeOutcome]}
+        </p>
+      )}
       {/* The final view and its chart chunk are mounted only while the tab is open. */}
       {active && (
         <Suspense
