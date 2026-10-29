@@ -1180,6 +1180,10 @@ class _FakeSession:
     def get(self, model, recording_id):
         return self._recording
 
+    def get_bind(self):
+        # No database, so lock_recording_audio takes no lock, as on SQLite.
+        return None
+
     def add(self, obj):
         pass
 

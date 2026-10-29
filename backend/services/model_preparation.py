@@ -111,10 +111,21 @@ def request_pinned_preparation(
             ):
                 return None
             control.write_pending(task_id)
+            # Published first, so the task's own progress is never overwritten
+            # and Settings shows the transfer as queued rather than complete.
+            set_download_progress(
+                0, "Model preparation queued...", status="downloading", stage=target
+            )
             try:
                 _publish_pinned_preparation(target, task_id)
             except (OSError, KombuError, ValueError):
                 control.clear_pending(task_id)
+                set_download_progress(
+                    0,
+                    "Could not queue model preparation.",
+                    status="error",
+                    stage=target,
+                )
                 raise
         return task_id
     except (OSError, KombuError, ValueError, NemotronModelError, ForcedAlignerError):

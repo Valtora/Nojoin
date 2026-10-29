@@ -145,6 +145,7 @@ def test_actual_cpu_fallback_closes_last_successful_words_before_legacy_lane(
         assert transcript.segments[0]["text"] == "hello"
 
 
+@pytest.mark.usefixtures("download_progress_in_memory")
 def test_unprepared_aligner_still_locks_canary_lines_and_queues_it_once(
     worker_db: Any,
     settling_engine: Engine,

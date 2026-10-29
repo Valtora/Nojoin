@@ -3,6 +3,7 @@
 from collections import Counter, defaultdict
 from copy import deepcopy
 from itertools import groupby
+from operator import itemgetter
 from typing import Any, Sequence
 
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
@@ -77,6 +78,32 @@ def _with_final_review(
     return passed
 
 
+def _middle_ms(word: dict[str, Any]) -> float:
+    return (float(word["start"]) + float(word["end"])) * 500
+
+
+def _part_bounds(
+    words: list[dict[str, Any]],
+    found: list[int],
+    line_bounds: dict[int, tuple[int, int]],
+) -> tuple[float, float]:
+    """A part's span stops at the edges of the protected lines beside it.
+
+    A word straddling a line's edge keeps its own timing, but the part no
+    longer overlaps the line. Otherwise a part before the line, finalised
+    before the line is matched, would inherit the line's manual speaker.
+    """
+    start, end = float(words[0]["start"]), float(words[-1]["end"])
+    first, last = _middle_ms(words[0]), _middle_ms(words[-1])
+    for index in found:
+        line_start, line_end = line_bounds[index]
+        if line_start > last:
+            end = min(end, line_start / 1000)
+        elif line_end <= first:
+            start = max(start, line_end / 1000)
+    return start, end
+
+
 def _consume_overlap(
     segment: dict[str, Any],
     found: list[int],
@@ -85,33 +112,47 @@ def _consume_overlap(
 ) -> list[dict[str, Any]]:
     """Review only the words over protected lines; return the rest as segments.
 
-    A timed word belongs to the protected line holding its midpoint. Runs of
-    words outside every protected line stay ordinary final segments. A segment
-    without timings for all its words is reviewed whole on the first line.
+    A timed word belongs to the protected line holding its midpoint, and an
+    untimed word goes with the timed word before it, or the first timed word
+    when none precedes it. Runs of words outside every protected line stay
+    ordinary final segments, split wherever a protected line lies between
+    them, even one holding no word's midpoint, and bounded by their timed
+    words and the protected lines beside them. Only a segment with no timed
+    word is reviewed whole on the first line.
     """
     words = segment.get("words") or []
-    if not words or not all(has_word_timing(word) for word in words):
+    if not any(has_word_timing(word) for word in words):
         text = str(segment.get("text") or "").strip()
         if text:
             reviews[found[0]].append(text)
         return []
 
-    def owner(word: dict[str, Any]) -> int | None:
-        middle = (float(word["start"]) + float(word["end"])) * 500
-        return next(
+    def owner(word: dict[str, Any]) -> tuple[int | None, int]:
+        """The protected line holding the midpoint, and how many lines end before it."""
+        middle = _middle_ms(word)
+        line = next(
             (i for i in found if line_bounds[i][0] <= middle < line_bounds[i][1]),
             None,
         )
+        return line, sum(line_bounds[i][1] <= middle for i in found)
+
+    current = next(owner(word) for word in words if has_word_timing(word))
+    owners: list[tuple[int | None, int]] = []
+    for word in words:
+        if has_word_timing(word):
+            current = owner(word)
+        owners.append(current)
 
     parts: list[dict[str, Any]] = []
-    for index, run in groupby(words, key=owner):
-        kept = list(run)
+    for (index, _gap), run in groupby(zip(words, owners), key=itemgetter(1)):
+        kept = [word for word, _ in run]
         text = reconstruct_text_from_words(kept)
         if index is not None:
             if text:
                 reviews[index].append(text)
             continue
-        start, end = kept[0]["start"], kept[-1]["end"]
+        timed = [word for word in kept if has_word_timing(word)]
+        start, end = _part_bounds(timed, found, line_bounds)
         parts.append(
             {**segment, "words": kept, "text": text, "start": start, "end": end}
         )
