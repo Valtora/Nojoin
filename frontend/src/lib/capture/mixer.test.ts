@@ -214,10 +214,38 @@ describe("capture mixer", () => {
       context.state = "interrupted" as AudioContextState;
       context.resume = () => new Promise<void>(() => {});
 
-      const resuming = mixer.resumeContext(2_000);
-      await vi.advanceTimersByTimeAsync(2_000);
+      let settled = false;
+      const resuming = mixer.resumeContext(2_000).finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
 
       await expect(resuming).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for a context that starts rendering again after a moment", async () => {
+    vi.useFakeTimers();
+    try {
+      const context = new FakeAudioContext();
+      const mixer = await createCaptureMixer({
+        microphoneStream: {} as MediaStream,
+        audioContextFactory: () => context as unknown as AudioContext,
+      });
+      context.state = "suspended";
+      context.resume = () => new Promise<void>((resolve) => {
+        setTimeout(() => { context.state = "running"; resolve(); }, 100);
+      });
+
+      let settled = false;
+      const resuming = mixer.resumeContext(2_000).finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(99);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(resuming).resolves.toBe(true);
     } finally {
       vi.useRealTimers();
     }
