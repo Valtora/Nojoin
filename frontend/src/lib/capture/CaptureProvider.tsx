@@ -52,13 +52,6 @@ export function CaptureProvider({ children }: CaptureProviderProps) {
   }, [controller, routeSignature]);
 
   useEffect(() => {
-    const match = pathname?.match(/^\/recordings\/([^/]+)\/?$/);
-    // Recording IDs are route segments; Next has already parsed the pathname.
-    void controller.openRecording(match ? match[1] : null).catch(() => {});
-    return () => { void controller.openRecording(null); };
-  }, [controller, pathname]);
-
-  useEffect(() => {
     if (!state.error) {
       return;
     }
@@ -105,8 +98,6 @@ export function useCapture() {
     elapsedSeconds: state.elapsedSeconds,
     recordingId: state.recordingId,
     pausedRecording: state.pausedRecording,
-    attentionRecordings: state.attentionRecordings,
-    ownedRecordingId: controller.getOwnedRecordingId(),
     runtimeActive: state.runtimeActive,
     support: state.support,
     settings: state.settings,

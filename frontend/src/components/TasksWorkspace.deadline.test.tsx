@@ -5,13 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { setCachedUserTimeZone } from "@/lib/timezone";
 import { withProcessTimeZone } from "@/test/processTimeZone";
-import { RecordingStatus, type Recording, type UserTask } from "@/types";
-
-let attentionRecordings: Recording[] = [];
-
-vi.mock("@/lib/capture/CaptureProvider", () => ({
-  useCapture: () => ({ attentionRecordings }),
-}));
+import type { UserTask } from "@/types";
 
 const api = vi.hoisted(() => ({
   getUserTasks: vi.fn(),
@@ -72,7 +66,6 @@ describe("Tasks page deadline picker in New York with the setting in Tokyo", () 
 
   beforeEach(() => {
     vi.clearAllMocks();
-    attentionRecordings = [];
     // 16:00 UTC on the 27th is 01:00 on the 28th in Tokyo, so "today" and
     // "tomorrow" differ between Tokyo, UTC and New York.
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -99,30 +92,6 @@ describe("Tasks page deadline picker in New York with the setting in Tokyo", () 
     fireEvent.click(screen.getByRole("button", { name: /^Edit deadline, / }));
     return screen.getByRole("dialog");
   };
-
-  it("marks task recording links from capture state rather than a stale task status", async () => {
-    const linked = {
-      id: "paused", name: "Paused meeting", created_at: SAVED,
-      status: RecordingStatus.UPLOADING, is_archived: false, is_deleted: false,
-    };
-    api.getUserTasks.mockResolvedValue([task({
-      linked_recordings: [linked, { ...linked, id: "held", name: "Held meeting" }],
-    })]);
-    attentionRecordings = [{ ...linked, status: RecordingStatus.PAUSED } as Recording];
-    const { rerender } = render(<TasksWorkspace />);
-    const link = await screen.findByRole("link", { name: /Paused meeting/ });
-    expect(link).toHaveAttribute("href", "/recordings/paused");
-    expect(within(link).getByText("Paused, needs attention")).toBeVisible();
-    expect(within(screen.getByRole("link", { name: /Held meeting/ }))
-      .queryByText(/needs attention/)).not.toBeInTheDocument();
-
-    attentionRecordings = [{ ...linked, status: RecordingStatus.UPLOADING } as Recording];
-    rerender(<TasksWorkspace />);
-    expect(within(link).getByText("Interrupted, needs attention")).toBeVisible();
-    attentionRecordings = [];
-    rerender(<TasksWorkspace />);
-    expect(within(link).queryByText(/needs attention/)).not.toBeInTheDocument();
-  });
 
   it("shows the saved deadline at the setting's wall clock and names the zone", async () => {
     const dialog = await openEditPicker();

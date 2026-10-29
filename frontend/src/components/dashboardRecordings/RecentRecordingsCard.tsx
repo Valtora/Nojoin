@@ -8,7 +8,6 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { formatTimeZoneDate } from "@/lib/timezone";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { Recording, RecordingStatus } from "@/types";
-import RecordingAttentionBadge from "../RecordingAttentionBadge";
 
 interface RecentRecordingsCardProps {
   recordings: Recording[];
@@ -49,9 +48,9 @@ export default function RecentRecordingsCard({
             <li key={recording.id}>
               <Link
                 href={`/recordings/${recording.id}`}
-                className="density-surface-panel flex flex-wrap items-center gap-3 bg-surface-inset px-3 py-2.5 transition-colors hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                className="density-surface-panel flex items-center gap-3 bg-surface-inset px-3 py-2.5 transition-colors hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
-                <span className="min-w-0 grow basis-40">
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-foreground">
                     {recording.name}
                   </span>
@@ -66,11 +65,9 @@ export default function RecentRecordingsCard({
                 </span>
                 {/* A processed recording carries no badge: ready is the normal
                     state, so a badge here means something went wrong. */}
-                <RecordingAttentionBadge
-                  recordingId={recording.id}
-                  fallback={recording.status !== RecordingStatus.PROCESSED
-                    ? <StatusBadge status={recording.status} size="sm" /> : null}
-                />
+                {recording.status !== RecordingStatus.PROCESSED && (
+                  <StatusBadge status={recording.status} size="sm" />
+                )}
               </Link>
             </li>
           );

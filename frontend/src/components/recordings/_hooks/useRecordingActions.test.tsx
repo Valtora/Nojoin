@@ -53,14 +53,14 @@ vi.mock("@/lib/api", () => ({
 
 const captureState: {
   cancel: ReturnType<typeof vi.fn>;
-  ownedRecordingId: string | null;
+  recordingId: string | null;
   pausedRecording: { id: string } | null;
-  attentionRecordings: { id: string }[];
+  runtimeActive: boolean;
 } = {
   cancel: vi.fn(),
-  ownedRecordingId: null,
+  recordingId: null,
   pausedRecording: null,
-  attentionRecordings: [],
+  runtimeActive: false,
 };
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -76,9 +76,9 @@ describe("useRecordingActions", () => {
     addNotification.mockReset();
     Object.values(api).forEach((fn) => fn.mockReset().mockResolvedValue(undefined));
     captureState.cancel.mockReset().mockResolvedValue(undefined);
-    captureState.ownedRecordingId = null;
+    captureState.recordingId = null;
     captureState.pausedRecording = null;
-    captureState.attentionRecordings = [];
+    captureState.runtimeActive = false;
   });
 
   it("exposes exactly the shared recording action set", () => {
@@ -138,8 +138,9 @@ describe("useRecordingActions", () => {
     });
   });
 
-  it("routes discard through the capture controller when this tab holds the capture, live or after a failed stop", async () => {
-    captureState.ownedRecordingId = "rec-live";
+  it("routes discard through the capture controller when this browser owns the live capture", async () => {
+    captureState.runtimeActive = true;
+    captureState.recordingId = "rec-live";
     const { result } = renderHook(() => useRecordingActions());
 
     await act(async () => {
@@ -168,23 +169,12 @@ describe("useRecordingActions", () => {
     expect(api.discardRecordingCapture).not.toHaveBeenCalled();
   });
 
-  it("routes discard through the capture controller for a badged recording that is not offered", async () => {
-    captureState.attentionRecordings = [{ id: "rec-attention" }];
-    const { result } = renderHook(() => useRecordingActions());
-
-    await act(async () => {
-      await result.current.discard("rec-attention");
-    });
-
-    expect(captureState.cancel).toHaveBeenCalledWith("rec-attention");
-    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
-  });
-
   it("uses a plain backend discard for a recording owned by another capture session", async () => {
     // An active capture exists for a different recording (e.g. recording A is
     // live in this tab while the user discards queued recording B). Discarding B
     // must not tear down A's runtime.
-    captureState.ownedRecordingId = "rec-A";
+    captureState.runtimeActive = true;
+    captureState.recordingId = "rec-A";
     const { result } = renderHook(() => useRecordingActions());
 
     await act(async () => {

@@ -28,8 +28,7 @@ import {
 } from "@/lib/session";
 import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 
-import { holdCaptureLock } from "./captureLock";
-import { findAttentionRecordings, selectRecoveryOffer, type RecoveryRequest } from "./recovery";
+import { holdCaptureLock, isCaptureHeldInThisBrowser } from "./captureLock";
 import { detectCaptureSupport } from "./featureDetect";
 import {
   createLeftOutAudioStore,
@@ -463,8 +462,6 @@ export class CaptureController {
    */
   private captureActionTicket = 0;
 
-  private navigationTicket = 0;
-
   private unconfirmedPause: UnconfirmedPause | null = null;
 
   /** The attempt to send the unconfirmed pause under way, so only one runs. */
@@ -489,7 +486,6 @@ export class CaptureController {
       elapsedSeconds: sequenceToElapsedSeconds(pausedContext?.lastSequence ?? -1),
       recordingId: pausedContext?.recordingId ?? null,
       pausedRecording: null,
-      attentionRecordings: [],
       runtimeActive: false,
       settings: readCaptureSettings(),
       finalizeRetry: null,
@@ -508,22 +504,6 @@ export class CaptureController {
   }
 
   getState = () => this.state;
-
-  /** Includes a failed stop's retained runtime, even after its media is released. */
-  getOwnedRecordingId = () => this.runtime?.recordingId ?? null;
-
-  /** Exactly one recovery check per recording-page entry, never on later polls. */
-  openRecording = async (recordingId: RecordingId | null) => {
-    const ticket = ++this.navigationTicket;
-    // No offer over this tab's own capture action (notably a permission prompt
-    // during Resume); that action looks again itself when it ends.
-    if (!recordingId || this.runtime || this.state.status === "starting" ||
-      this.state.status === "finalizing") return;
-    await this.refreshPausedRecording({
-      recordingId,
-      isCurrent: () => ticket === this.navigationTicket,
-    });
-  };
 
   /**
    * The shared tab, window or screen's video track while this tab captures
@@ -557,8 +537,6 @@ export class CaptureController {
   };
 
   destroy = async () => {
-    this.captureActionTicket += 1;
-    this.navigationTicket += 1;
     this.lifecycle.detach();
     this.stopCaptureRecheck();
     await this.disposeRuntime();
@@ -567,41 +545,51 @@ export class CaptureController {
   /**
    * Finds the capture the user must decide about before starting anything new.
    *
-   * Discovery updates badges without opening a dialog. Navigation and explicit
-   * actions can offer a capture unless another tab of this browser holds it.
-   * A capture still marked as uploading counts once the server judges it
-   * stalled: its tab closed without the pause arriving, because it was signed
-   * out or offline at the time (issue #519). One this tab runs, or any tab of
-   * this browser holds, is live however quiet it looks, since that tab may only
-   * be waiting for a sign-in or a connection.
+   * A paused capture always counts. A capture still marked as uploading counts
+   * once the server judges it stalled: its tab closed without the pause
+   * arriving, because it was signed out or offline at the time (issue #519).
+   * One this tab runs, or any tab of this browser holds, is live however quiet
+   * it looks, since that tab may only be waiting for a sign-in or a connection.
    */
-  refreshPausedRecording = async (options: RecoveryRequest = {}) => {
-    const explicit = Boolean(options.onDemand || options.recordingId);
-    if (!explicit && (this.state.status === "starting" || this.state.status === "finalizing")) {
-      return this.state.pausedRecording;
-    }
+  refreshPausedRecording = async () => {
     const ticket = this.captureActionTicket;
     const unfinished = await getUnfinishedCaptures();
     const captures = unfinished.filter(isLiveCaptureInProgress);
-    const attentionRecordings = await findAttentionRecordings(captures, this.getOwnedRecordingId());
-    if (ticket !== this.captureActionTicket || options.isCurrent?.() === false) {
+    const decision = await this.selectCaptureNeedingDecision(captures);
+    if (ticket !== this.captureActionTicket) {
       // An action began meanwhile and will look again itself when it ends.
-      return this.state.pausedRecording;
+      return decision;
     }
-    const ownedPause = captures.find((recording) =>
-      recording.id === this.getOwnedRecordingId() && recording.status === RecordingStatus.PAUSED);
-    // Read the current offer at completion, so a passive check that finishes
-    // after an explicit one keeps what it offered.
-    const decision = ownedPause ??
-      selectRecoveryOffer(attentionRecordings, this.state.pausedRecording?.id ?? null, options);
     void this.settleAudioKeptForFinishedCaptures(unfinished);
-    this.setState({ pausedRecording: decision, attentionRecordings });
+    this.setState({ pausedRecording: decision });
     if (this.runtime || captures.length === 0) {
       this.stopCaptureRecheck();
     } else {
       this.startCaptureRecheck();
     }
     return decision;
+  };
+
+  private selectCaptureNeedingDecision = async (
+    captures: Recording[],
+  ): Promise<Recording | null> => {
+    const paused = captures.find(
+      (recording) => recording.status === RecordingStatus.PAUSED,
+    );
+    if (paused) {
+      return paused;
+    }
+
+    for (const recording of captures) {
+      if (!recording.capture_stalled || this.runtime?.recordingId === recording.id) {
+        continue;
+      }
+      if (await isCaptureHeldInThisBrowser(recording.id)) {
+        continue;
+      }
+      return recording;
+    }
+    return null;
   };
 
   private startCaptureRecheck() {
@@ -663,24 +651,6 @@ export class CaptureController {
   };
 
   start = async (name?: string): Promise<StartCaptureResponse> => {
-    // The recovery check awaits, so Start holds "starting" before it: a second
-    // click meanwhile must not start another capture.
-    if (this.runtime || this.state.status === "starting" || this.state.status === "finalizing") return null;
-    const previousStatus = this.state.status;
-    this.setState({ status: "starting", error: null });
-    try {
-      if (await this.refreshPausedRecording({ onDemand: true })) {
-        this.setState({ status: previousStatus });
-        return null;
-      }
-      return await this.startCapture(name);
-    } catch (error) {
-      if (this.getState().status === "starting") this.setState({ status: previousStatus });
-      throw error;
-    }
-  };
-
-  private startCapture = async (name: string | undefined): Promise<StartCaptureResponse> => {
     this.captureActionTicket += 1;
     const support = detectCaptureSupport();
     this.setState({ support });
@@ -701,9 +671,11 @@ export class CaptureController {
         error instanceof AxiosError ? error.response?.data?.detail : null;
 
       if (isActiveRecordingConflictDetail(detail)) {
-        await this.refreshPausedRecording({ onDemand: true }).catch(() => {});
+        await this.refreshPausedRecording().catch(() => {});
         this.setState({
-          status: this.state.pausedRecording ? "paused" : "idle",
+          status: "paused",
+          recordingId: detail.recording_id,
+          elapsedSeconds: sequenceToElapsedSeconds(this.state.lastSequence),
           error: detail.message,
         });
       } else {
@@ -1087,7 +1059,6 @@ export class CaptureController {
     if (!targetRecordingId) {
       throw new Error("No active recording is available to finalize.");
     }
-    this.assertCaptureControlAllowed(targetRecordingId);
     this.captureActionTicket += 1;
 
     const hadRuntime = Boolean(this.runtime);
@@ -1244,7 +1215,6 @@ export class CaptureController {
     if (!targetRecordingId) {
       return;
     }
-    this.assertCaptureControlAllowed(targetRecordingId);
     this.captureActionTicket += 1;
 
     // A tab whose capture continued elsewhere must not delete it from under
@@ -1253,24 +1223,21 @@ export class CaptureController {
     const ownCapture = this.runtime?.recordingId === targetRecordingId ? this.runtime : null;
     const epoch = ownCapture?.epoch;
     const ownerId = ownCapture ? ownCapture.ownerId : signedInAccountId();
+    if (this.runtime) {
+      await this.runtime.recorder.stop({ emitTail: false }).catch(() => {});
+      await this.disposeRuntime();
+    }
+
     try {
-      if (ownCapture) {
-        this.setState({ status: "finalizing", error: null, stopStage: null });
-        await ownCapture.recorder.stop({ emitTail: false }).catch(() => {});
-        await this.releaseRuntimeMedia();
-      }
       await this.forCapture(targetRecordingId, ownerId, () =>
         discardRecordingCapture(targetRecordingId, undefined, { epoch }),
       );
     } catch (error: unknown) {
       // Discarded elsewhere already, which is what was asked for.
       if (!(error instanceof CaptureDiscardedError)) {
-        if (isEndedForThisTab(error)) throw await this.ifEndedElsewhere(error, ownCapture);
-        if (ownCapture) await this.settleAfterFailedStop(targetRecordingId, true, formatCaptureError(error));
-        throw error;
+        throw await this.ifEndedElsewhere(error, null);
       }
     }
-    await this.disposeRuntime();
     // A check that began while the discard was in flight may still list it.
     this.captureActionTicket += 1;
     await this.segmentStore.clear(targetRecordingId).catch(() => {});
@@ -1291,20 +1258,6 @@ export class CaptureController {
     this.lifecycle.updateRecordingId(null);
     dispatchRecordingRemoved(targetRecordingId);
     await this.refreshPausedRecording().catch(() => {});
-  };
-
-  /** Stored conflict IDs are not ownership; remote controls require a current offer. */
-  private assertCaptureControlAllowed = (recordingId: RecordingId) => {
-    if (this.runtime) {
-      if (this.runtime.recordingId === recordingId) return;
-      throw new Error("Use the controls for the recording captured in this tab.");
-    }
-    // Discovery already left out captures another tab of this browser holds.
-    const offered = this.state.pausedRecording?.id === recordingId ||
-      this.state.attentionRecordings.some((recording) => recording.id === recordingId);
-    if (!offered) {
-      throw new Error("Open the recording to recover it, or use the tab that is capturing it.");
-    }
   };
 
   /**
@@ -1333,14 +1286,12 @@ export class CaptureController {
    * still goes to the modal.
    */
   discardEmptyInterruptedRecording = async (): Promise<boolean> => {
-    const context = readPausedCaptureContext();
-    const paused = this.state.pausedRecording ?? this.state.attentionRecordings.find(
-      (recording) => recording.id === context?.recordingId,
-    );
+    const paused = this.state.pausedRecording;
     if (!paused || this.runtime) {
       return false;
     }
 
+    const context = readPausedCaptureContext();
     if (
       !context ||
       context.recordingId !== paused.id ||

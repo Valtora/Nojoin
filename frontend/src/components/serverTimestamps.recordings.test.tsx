@@ -16,10 +16,6 @@ const api = vi.hoisted(() => ({
   getRecordingCalendarEventCandidates: vi.fn(),
 }));
 
-vi.mock("@/lib/capture/CaptureProvider", () => ({
-  useCapture: () => ({ attentionRecordings: [] }),
-}));
-
 vi.mock("@/lib/api", () => ({
   ...api,
   linkRecordingCalendarEvent: vi.fn(),

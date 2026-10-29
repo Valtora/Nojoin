@@ -108,8 +108,6 @@ export interface CaptureState {
   elapsedSeconds: number;
   recordingId: RecordingId | null;
   pausedRecording: Recording | null;
-  /** Lock-free captures needing a decision, independently of an open dialog. */
-  attentionRecordings: Recording[];
   runtimeActive: boolean;
   settings: CaptureSettings;
   finalizeRetry: FinalizeRetryProgress | null;

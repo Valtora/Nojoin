@@ -20,10 +20,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
-  useCapture: () => ({
-    pausedRecording: null, runtimeActive: false,
-    refreshPausedRecording: async () => null,
-  }),
+  useCapture: () => ({ pausedRecording: null, runtimeActive: false }),
 }));
 
 import ImportAudioButton from "./ImportAudioButton";

@@ -99,8 +99,7 @@ export default function ResumeRecordingModal({
         </p>
       ) : (
         <p className="mt-4 text-sm leading-6 text-contrast-helper">
-          Nojoin found a paused recording for your account. It may still be open
-          on another device; if so, finish it there. Otherwise resume it to keep
+          Nojoin found a paused recording for your account. Resume it to keep
           recording, stop it to process the audio captured so far, or discard it
           to clear the capture lock.
         </p>

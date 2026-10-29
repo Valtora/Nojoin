@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowRight, ExternalLink, MapPin, Video } from "lucide-react";
 
 import { CalendarDashboardEvent } from "@/types";
-import RecordingAttentionBadge from "../RecordingAttentionBadge";
 
 import {
   DayTimelineStatus,
@@ -105,11 +104,10 @@ export function EventDetailsPopoverContent({
               <Link
                 key={recording.id}
                 href={`/recordings/${recording.id}`}
-                className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-contrast-muted transition-colors hover:text-action-text"
+                className="flex items-center gap-1.5 text-xs font-medium text-contrast-muted transition-colors hover:text-action-text"
               >
                 <ArrowRight className="h-3 w-3 shrink-0" />
                 <span className="min-w-0 truncate">{recording.name}</span>
-                <RecordingAttentionBadge recordingId={recording.id} />
               </Link>
             ))}
           </div>

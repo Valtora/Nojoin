@@ -7,10 +7,6 @@ import { Recording, RecordingStatus } from "@/types";
 
 const useDashboardRecordings = vi.fn();
 
-vi.mock("@/lib/capture/CaptureProvider", () => ({
-  useCapture: () => ({ attentionRecordings: [] }),
-}));
-
 // The modules themselves are covered by their own tests. What is under test
 // here is the dashboard's arrangement: which modules render, and in what order
 // they come out on a phone.
