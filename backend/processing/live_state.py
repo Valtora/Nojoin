@@ -185,10 +185,18 @@ def live_lane_lag_ms(session: Any, recording_id: int) -> int:
     """Uploaded audio in the chunks the live lane has not consumed yet.
 
     ``next_expected`` only moves forward, past silent and failed runs alike,
-    unlike window processing marks, which a growing window resets.
+    unlike window processing marks, which a growing window resets. No state
+    file means the lane has not run yet; one that will not parse is caught
+    mid-write, so the lag is unknown and reads as none.
     """
-    live_dir = recording_upload_temp_dir(recording_id) / "live"
-    next_expected = read_live_state(live_dir)["next_expected"]
+    state_path = recording_upload_temp_dir(recording_id) / "live" / _STATE_FILENAME
+    try:
+        raw_state = json.loads(state_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raw_state = None
+    except (OSError, ValueError):
+        return 0
+    next_expected = _normalize_live_state(raw_state)["next_expected"]
     unread_ms = session.execute(
         select(func.sum(RecordingAudioChunk.duration_ms)).where(
             RecordingAudioChunk.recording_id == recording_id,

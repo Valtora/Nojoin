@@ -117,6 +117,22 @@ async def test_a_quiet_lane_keeping_up_is_never_reported_across_pause_and_resume
         _lane_ran(sequence)
 
 
+async def test_a_state_file_caught_mid_write_is_not_read_as_no_progress(
+    client: Any, session_maker: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _config(monkeypatch, live=True, canonical=True)
+    await _seed(session_maker)
+    await _upload(session_maker, range(25))
+    # Before the lane's first run there is no state: all 50 s are unread.
+    assert await _behind(client) is True
+
+    _lane_ran(24)
+    state_path = recording_upload_temp_dir(1) / "live" / "state.json"
+    state_path.write_text('{"next_exp', encoding="utf-8")
+
+    assert await _behind(client) is False
+
+
 @pytest.mark.parametrize(
     ("status", "live"),
     [("PAUSED", True), ("PROCESSING", True), ("UPLOADING", False)],
