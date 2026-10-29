@@ -150,7 +150,12 @@ _CONTRACTS = (
 _REQUIRED_LITERALS = {
     "notes.default_sections": ("##",),
     "notes.intelligence_rules": ("speaker_mapping", "notes_markdown", "title"),
-    "notes.intelligence_schema": ('"speaker_mapping"', '"title"', '"notes_markdown"'),
+    "notes.intelligence_schema": (
+        '"speaker_mapping"',
+        '"title"',
+        '"notes_markdown"',
+        "##",
+    ),
     "speakers.no_unresolved": ("speaker_mapping",),
     "speakers.unresolved_intro": ("speaker_mapping",),
     "speakers.suggestion_rules": ("confidence", "0.0", "1.0"),
@@ -234,11 +239,12 @@ _REQUIRED_LITERALS = {
         '"stated"',
     ),
     "analytics.transcript_fence_instruction": ("<meeting_transcript>",),
-    "structure.instructions": ('"name"', '"description"', '"sections"'),
+    "structure.instructions": ('"name"', '"description"', '"sections"', "#"),
     "long_meeting.part_speaker_rules": (
         "<speaker_names>",
         "</speaker_names>",
         "Person name or role",
+        ":",
     ),
     "long_meeting.part_closing_speakers": ("<speaker_names>",),
     "long_meeting.merge_title_rules": (
@@ -249,6 +255,7 @@ _REQUIRED_LITERALS = {
         "<speaker_names>",
         "</speaker_names>",
         "One of the names listed for SPEAKER_00",
+        ":",
     ),
     "long_meeting.merge_closing_title": ("<title>",),
     "long_meeting.merge_closing_title_speakers": ("<title>", "<speaker_names>"),

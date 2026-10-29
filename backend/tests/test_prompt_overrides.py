@@ -204,6 +204,7 @@ async def test_save_is_durable_and_changes_the_next_render_then_reset_restores_d
         '"speaker_mapping"',
         '"title"',
         '"notes_markdown"',
+        "##",
     ]
     prompt_api.manager.save_values(
         {"prompt_overrides": {"future.prompt": {"text": "keep"}}}
@@ -271,6 +272,45 @@ async def test_invalid_edits_are_rejected_without_changing_config(
     if detail is not None:
         assert prompt_id in response.json()["detail"]
         assert detail in response.json()["detail"]
+    assert prompt_api.manager.read_file() == before
+
+
+@pytest.mark.anyio
+async def test_intelligence_schema_cannot_drop_section_heading_protocol(
+    prompt_api: PromptAPI,
+) -> None:
+    prompt_id = "notes.intelligence_schema"
+    edited = load_registry()[prompt_id].template.replace("##", "")
+    before = prompt_api.manager.read_file()
+    response = await prompt_api.call(
+        "PUT", f"/settings/prompts/{prompt_id}", payload={"text": edited}
+    )
+    assert response.status_code == 422
+    assert "missing required literal '##'" in response.json()["detail"]
+    assert prompt_api.manager.read_file() == before
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "prompt_id,literal",
+    [
+        ("structure.instructions", "#"),
+        ("long_meeting.part_speaker_rules", ":"),
+        ("long_meeting.settle_speakers", ":"),
+    ],
+)
+async def test_generated_structure_and_speaker_protocols_cannot_be_removed(
+    prompt_api: PromptAPI,
+    prompt_id: str,
+    literal: str,
+) -> None:
+    edited = load_registry()[prompt_id].template.replace(literal, "")
+    before = prompt_api.manager.read_file()
+    response = await prompt_api.call(
+        "PUT", f"/settings/prompts/{prompt_id}", payload={"text": edited}
+    )
+    assert response.status_code == 422
+    assert f"missing required literal {literal!r}" in response.json()["detail"]
     assert prompt_api.manager.read_file() == before
 
 
