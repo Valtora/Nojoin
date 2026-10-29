@@ -30,13 +30,13 @@ While you record, the recording view shows a live waveform in the header and the
 
 Nojoin keeps none of the shared video. While you record, it reads one still from it only when you ask for a [capture](USAGE.md#captures), with the camera button beside the note box or Alt+Shift+C (Option+Shift+C on a Mac), and saves it on a note.
 
-Microphone-only recording has no shared picture: the camera button is hidden, the shortcut does nothing, and a hint explains that screen captures need a shared tab, window or screen. You can still attach files to notes.
+Microphone-only recording has no shared picture: the camera button is hidden and the shortcut does nothing. On desktop, a hint explains that screen captures need a shared tab, window or screen. You can still attach files to notes.
 
 A segment the server cannot decode is set aside and leaves a two-second gap instead of stopping the meeting. The API logs it as a `segment_corrupt_skipped` pipeline metric.
 
 ## Starting A Recording
 
-1. On desktop, open **Recording source** beside **Start Meeting** on the dashboard's **Meet Now** card, in the recordings list or below its collapsed rail's microphone button. Choose **Microphone only** or **Microphone and a tab or screen**, then select **Start Meeting**.
+1. On desktop, open **Recording source** below **Start Meeting** on the dashboard's **Meet Now** card, beside it in the recordings list, or below the collapsed rail's microphone button. Choose **Microphone only** or **Microphone and a tab or screen**, then select **Start Meeting**.
 2. For **Microphone and a tab or screen**, choose the meeting tab, window or entire screen in the browser's share picker, turn on its audio option if it offers one, and select **Share**. **Microphone only** skips this picker.
 3. Allow microphone access if asked.
 4. Keep the Nojoin tab open and the device awake until you stop.
@@ -56,7 +56,7 @@ Brave may need its shields or site settings relaxed before it shows capture prom
 ## Pause, Resume, Stop, And Discard
 
 - **Pause** stops capturing and keeps everything recorded so far. The controls read **Paused** as soon as capture stops. If Nojoin cannot reach the server, it says so, keeps the recording paused in this tab, and tells the server once the connection returns. If the server refuses the pause, this tab stays paused and shows the server's reason.
-- **Resume** continues the same recording. After a pause in the live controls it carries on with the same shared tab and microphone. After the tab was closed or reloaded, the browser asks you to share again.
+- **Resume** continues the same recording. After a pause in the live controls it carries on with the same microphone and any shared tab. After the tab was closed or reloaded, it uses the source chosen beside **Start Meeting** in this browser: with **Microphone and a tab or screen**, the browser asks you to share again.
 - **Stop** releases the microphone and shared tab, uploads any audio still queued, and queues the recording for processing. While queued audio uploads, the controls read **Uploading** and show how much is left, and the meeting button names the current stage. Stop also works on a paused recording, including one whose tab was closed.
 - **Discard** permanently deletes an unfinished recording, whether it is recording, paused, queued or processing: its audio, any attached documents, any processing under way and the meeting itself. Nojoin asks you to confirm first. Discard is in the live controls, the floating recording badge, the resume-or-discard dialog and the recordings list's context menu (**Discard Recording**).
 
@@ -122,7 +122,7 @@ The **Speakers** tab also shows live labels, with **Change identity** and **Add 
 
 Each user can run one browser capture at a time. While this tab is capturing, the microphone button in the collapsed recordings list reads **Meeting in progress**, and **Start Meeting** reads the same if the recorder fails while this tab still holds the capture. Pause or stop from the recording's page. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
 
-- **Resume recording** continues the same recording. The browser asks you to share again.
+- **Resume recording** continues the same recording with the source chosen beside **Start Meeting**. With **Microphone and a tab or screen**, the browser asks you to share again.
 - **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.
 - **Discard recording** deletes the partial recording.
 

@@ -6,6 +6,7 @@ const capture = {
   runtimeActive: true,
   recordingId: "rec-1",
   displayVideoTrack: vi.fn((): MediaStreamTrack | null => track),
+  support: { supported: true, mode: "shared_audio" },
 };
 vi.mock("@/lib/capture/CaptureProvider", () => ({ useCapture: () => capture }));
 
@@ -30,6 +31,7 @@ describe("taking captures during a recording", () => {
     grabDisplayFrame.mockClear();
     capture.runtimeActive = true;
     capture.recordingId = "rec-1";
+    capture.support = { supported: true, mode: "shared_audio" };
     capture.displayVideoTrack.mockImplementation(() => track);
   });
 
@@ -74,11 +76,15 @@ describe("taking captures during a recording", () => {
     expect(add).not.toHaveBeenCalled();
   });
 
-  it("does not show a missing-share hint for another recording or after capture ends", () => {
+  it("does not show a missing-share hint for another recording, on a phone or after capture ends", () => {
     capture.displayVideoTrack.mockReturnValue(null);
     const { result, rerender } = renderHook(() => useCaptureActions("rec-2", readAudioNow, add));
     expect(result.current.screenCaptureHint).toBeNull();
     capture.recordingId = "rec-2";
+    capture.support = { supported: true, mode: "microphone_only" };
+    rerender();
+    expect(result.current.screenCaptureHint).toBeNull();
+    capture.support = { supported: true, mode: "shared_audio" };
     capture.runtimeActive = false;
     rerender();
     expect(result.current.screenCaptureHint).toBeNull();

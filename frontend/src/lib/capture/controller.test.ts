@@ -1371,6 +1371,21 @@ describe("audio a closed tab recorded but never uploaded", () => {
     await vi.waitFor(async () => expect(await storedSequences(controller)).toEqual([5, 6]));
   });
 
+  it.each(["microphone_only", "shared_audio"])(
+    "resumes after a reload on desktop with the %s source chosen at Start",
+    async (startMode) => {
+      window.localStorage.setItem("nojoin.capture.settings", JSON.stringify({ startMode, version: 2 }));
+      featureDetectMocks.detectCaptureSupport.mockReturnValue({ supported: true, mode: "shared_audio" });
+      const controller = await controllerWithStored([]);
+
+      await controller.resume("rec-1");
+
+      expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: startMode }),
+      );
+    },
+  );
+
   it("uploads it before finalizing a stop with no live capture", async () => {
     const controller = await controllerWithStored([5, 6]);
     const order: string[] = [];

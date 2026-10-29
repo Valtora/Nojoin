@@ -65,6 +65,7 @@ import {
   DEFAULT_CAPTURE_LEVELS,
   type CaptureCoverageCause,
   type CaptureCoverageWarning,
+  type CaptureMode,
   type CaptureSettings,
   type CaptureState,
   type CaptureStopStage,
@@ -386,8 +387,12 @@ const formatUnsupportedMessage = (reason: CaptureState["support"]["reason"]) => 
   }
 };
 
-const resolveCaptureMode = (support: CaptureState["support"]) =>
-  support.mode ?? "shared_audio";
+// A phone can only record its microphone; desktop uses the source chosen at Start.
+const resolveCaptureMode = (
+  support: CaptureState["support"],
+  settings: CaptureSettings,
+): CaptureMode =>
+  support.mode === "microphone_only" ? "microphone_only" : settings.startMode;
 
 export class CaptureController {
   private state: CaptureState;
@@ -651,9 +656,7 @@ export class CaptureController {
       throw new Error(message);
     }
 
-    const mode = support.mode === "microphone_only"
-      ? "microphone_only"
-      : this.state.settings.startMode;
+    const mode = resolveCaptureMode(support, this.state.settings);
     this.setState({ status: "starting", error: null });
 
     let initResponse;
@@ -909,7 +912,7 @@ export class CaptureController {
 
     try {
       sources = await pickCaptureSource({
-        mode: resolveCaptureMode(support),
+        mode: resolveCaptureMode(support, this.state.settings),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });

@@ -14,6 +14,7 @@ const capture = {
   runtimeActive: true,
   recordingId: "capture-integration",
   displayVideoTrack: vi.fn((): MediaStreamTrack | null => track),
+  support: { supported: true, mode: "shared_audio" },
 };
 const grabDisplayFrame = vi.fn(async () => new Blob(["frame"], { type: "image/png" }));
 const createTimelineNote = vi.fn(() => new Promise<never>(() => {}));

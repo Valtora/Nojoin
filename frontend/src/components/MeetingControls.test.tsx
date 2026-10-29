@@ -189,7 +189,7 @@ describe("MeetingControls", () => {
 
     const button = screen.getByRole("button", { name: "Meeting in progress" });
     expect(button).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "Recording source" })).toBeDisabled();
+    expect(screen.queryByRole("combobox", { name: "Recording source" })).not.toBeInTheDocument();
     expect(button).toHaveAttribute(
       "title",
       "A meeting recording is already running. Use the recording controls to pause or stop it.",

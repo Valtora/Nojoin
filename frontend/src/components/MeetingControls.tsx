@@ -213,7 +213,7 @@ export default function MeetingControls({
           aria-label={meetingSurfaceState.buttonLabel}
           className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
         />
-        {modeSelect}
+        {hasLiveRecording ? null : modeSelect}
       </div>
     );
   }
@@ -248,7 +248,7 @@ export default function MeetingControls({
             // resolves against the button rather than against the dashboard
             // grid, and the icon is sized in `em` so it tracks the label
             // instead of needing its own scale.
-            <div className="@container flex items-center gap-2">
+            <div className="@container">
               <ButtonBase
                 data-ui-fill="action"
                 data-ui-hover="action-hover"
@@ -263,7 +263,11 @@ export default function MeetingControls({
                 <Mic className="h-[1.15em] w-[1.15em] shrink-0" />
                 {meetingSurfaceState.buttonLabel}
               </ButtonBase>
-              {modeSelect}
+              {canChooseMode ? (
+                <div className="mt-3">
+                  <MeetingCaptureModeSelect labelled disabled={meetingSurfaceState.buttonDisabled} />
+                </div>
+              ) : null}
             </div>
           ) : (
             <LiveMeetingControls size="full" onMeetingEnd={onMeetingEnd} />

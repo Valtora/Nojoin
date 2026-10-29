@@ -256,7 +256,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "recording-input",
     label: "Input",
-    description: "The microphone added to shared audio, and the levels it is mixed at.",
+    description: "The microphone used for recording, on its own or alongside shared audio, and its levels.",
     category: "recording",
     access: "all",
     scope: "browser",
@@ -265,7 +265,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "recording-microphone",
     label: "Microphone",
-    description: "The input mixed with shared tab or system audio during capture.",
+    description: "Recorded on its own or with shared tab or system audio, as chosen at Start.",
     category: "recording",
     access: "all",
     scope: "browser",
