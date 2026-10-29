@@ -482,10 +482,7 @@ async def test_an_unknown_name_lists_the_valid_ones_and_changes_nothing(
     [
         "/help",
         "/personas pirate",
-        "/persona talk like a pirate",
-        "/eastereggs maybe",
-        "/eastereggs chat sometimes",
-        "/eastereggs on please",
+        "/eastereggsy on",
         "Please /persona pirate",
     ],
 )
@@ -500,6 +497,44 @@ async def test_other_slash_text_goes_to_the_model(
     assert len(prompts) == 1
     assert await _stored(session_maker) == {}
     assert [role for role, _ in await _history(session_maker)] == ["user", "assistant"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "/eastereggs maybe",
+        "/EASTEREGGS chat maybe",
+        "/eastereggs sometimes on",
+        "/eastereggs on please",
+        "/eastereggs chat on now",
+        "/persona talk like a pirate",
+        "/Persona off please",
+    ],
+)
+async def test_a_malformed_command_gets_the_usage_and_state_not_the_model(
+    client: AsyncClient,
+    session_maker: sessionmaker,
+    prompts: list[str],
+    message: str,
+) -> None:
+    await _send(client, "/persona hobbit")
+
+    body = await _send(client, message)
+
+    assert _reply(body) == (
+        "That command was not understood. Dated personas: off. Surfaces: "
+        "Chat on, Meeting Edge on, notes off. This meeting: hobbit. Usage: "
+        "/persona <name>, /persona off, /eastereggs on|off, "
+        "/eastereggs chat|edge|notes on|off."
+    )
+    assert "event: persona_update" not in body
+    assert prompts == []
+    assert (await _stored(session_maker))["meetings"] == {"1": "hobbit"}
+    assert (await _history(session_maker))[-2:] == [
+        ("user", message),
+        ("assistant", _reply(body)),
+    ]
 
 
 # --- which persona applies -------------------------------------------------------

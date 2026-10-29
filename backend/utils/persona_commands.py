@@ -1,9 +1,10 @@
 """The two Meeting Chat commands that steer holiday personas.
 
 ``/persona`` picks this meeting's persona; ``/eastereggs`` turns dated
-personas on or off and chooses the surfaces. A message is a command only when,
-trimmed, it is exactly one of the forms in ``USAGE`` (any case); everything
-else, including other text starting with "/", goes to the model.
+personas on or off and chooses the surfaces. A message whose first word is
+either command (any case) never goes to the model: one of the forms in
+``USAGE`` is carried out, and anything else is answered with the usage line and
+the current state. Other text starting with "/" goes to the model.
 """
 
 from __future__ import annotations
@@ -121,12 +122,12 @@ def run_persona_command(
     current = dict(settings or {})
     preferences = read_preferences(current)
     recording_key = str(recording_id)
+    status = _status(preferences, recording_key)
     if not arguments:
-        return CommandResult(_status(preferences, recording_key))
-    if command == "/persona":
-        if len(arguments) != 1:
-            return None
-        return _set_persona(current, preferences, recording_key, arguments[0])
-    if len(arguments) > 2:
-        return None
-    return _set_eastereggs(current, preferences, arguments)
+        return CommandResult(status)
+    result = None
+    if command == "/persona" and len(arguments) == 1:
+        result = _set_persona(current, preferences, recording_key, arguments[0])
+    elif command == "/eastereggs" and len(arguments) <= 2:
+        result = _set_eastereggs(current, preferences, arguments)
+    return result or CommandResult(f"That command was not understood. {status}")
