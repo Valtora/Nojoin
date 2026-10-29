@@ -729,8 +729,9 @@ def process_recording_task(
                     recording_id,
                     rollback_exc,
                 )
-        if not interrupted:
-            restore_retained_publication(session, recording_id)
+        # An interrupted pass included: nothing retries it, and a Retry
+        # retains the completed transcript again.
+        restore_retained_publication(session, recording_id)
         recording = session.get(Recording, recording_id)
         if recording:
             recording.status = RecordingStatus.ERROR

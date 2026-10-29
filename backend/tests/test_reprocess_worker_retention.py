@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterator
+from concurrent.futures import CancelledError
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from billiard.exceptions import Terminated
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import Engine, create_engine
 from sqlmodel import Session, select
 
@@ -33,7 +36,10 @@ from backend.tests.postgres_setup import fresh_schema
 from backend.tests.test_pipeline_stages import _install_happy_path_modules, _run_task
 from backend.utils.canonical_pipeline import finalize_utterances_from_segments
 from backend.utils.config_manager import config_manager
-from backend.utils.reprocess_publication import mark_reprocess_pending
+from backend.utils.reprocess_publication import (
+    mark_reprocess_pending,
+    reprocess_replacement_running,
+)
 from backend.utils.status_manager import update_recording_status
 from backend.worker import tasks
 from backend.worker.tasks import followups, pipeline, speaker_assignment
@@ -370,6 +376,48 @@ def test_failure_boundary_and_retry(
     with Session(engine) as session:
         update_recording_status(session, recording_id)
     assert _view(engine, recording_id)["status"] == RecordingStatus.PROCESSED
+
+
+@pytest.mark.parametrize(
+    "failure_type", [SoftTimeLimitExceeded, Terminated, CancelledError]
+)
+@pytest.mark.parametrize("failure", ["speakers", "notes"])
+def test_an_interrupted_pass_hands_the_retained_publication_back(
+    worker_database: tuple[Engine, int],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    failure_type: type[BaseException],
+) -> None:
+    """A time limit or a stop leaves nothing running, so nothing waits on it."""
+    engine, recording_id = worker_database
+    _configure(monkeypatch, True)
+    before = _view(engine, recording_id)
+    stop = failure_type("worker interrupted")
+
+    def interrupt(*args: Any, **kwargs: Any) -> None:
+        raise stop
+
+    target, attribute = {
+        "speakers": (pipeline, "assign_and_identify_speakers"),
+        "notes": (tasks, "_run_automatic_meeting_intelligence_stage"),
+    }[failure]
+    with monkeypatch.context() as patch:
+        patch.setattr(target, attribute, interrupt)
+        with Session(engine) as session, pytest.raises(failure_type):
+            _run_task(patch, session, recording_id=recording_id)
+    after = _view(engine, recording_id)
+    assert after.pop("status") == RecordingStatus.ERROR
+    assert (after.pop("pending"), after.pop("published")) == (False, False)
+    assert after.pop("transcript_status") == "completed"
+    # Notes generation and speaker inference no longer answer "being reprocessed".
+    with Session(engine) as session:
+        assert not reprocess_replacement_running(session.exec(select(Transcript)).one())
+    if failure == "notes":
+        assert after["text"] == "Replacement words Changed cluster"
+        return
+    for key in ("status", "pending", "published", "transcript_status"):
+        before.pop(key)
+    assert after == before
 
 
 @pytest.mark.parametrize("canonical", [False, True])
