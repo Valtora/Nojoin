@@ -27,6 +27,14 @@
   padding-bottom: calc(var(--spacing) * --value(integer, number) + var(--floating-action-clearance, 0px));
 }
 
+/* Right padding for a region that sits level with the floating button rather
+   than scrolling under it, such as the note box below the transcript:
+   pr-clear-floating-2 is pr-2 plus --floating-action-inline-clearance, which
+   the same mobile container sets and which also defaults to zero. */
+@utility pr-clear-floating-* {
+  padding-right: calc(var(--spacing) * --value(integer, number) + var(--floating-action-inline-clearance, 0px));
+}
+
 /* Tailwind v4 has no config file, so this block is where a raw value above
    becomes a utility. Everything is referenced through var() rather than
    copied, which is what makes bg-action, text-status-info-fg and the rest

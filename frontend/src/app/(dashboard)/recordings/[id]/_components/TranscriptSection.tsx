@@ -347,7 +347,12 @@ export default function TranscriptSection({
           )}
         </div>
       )}
-      {inFlightContent ? <div className="max-h-[50%] shrink-0 overflow-y-auto">{inFlightContent}</div> : null}
+      {/* Inset like the transcript above it, so the box's focus rings are not
+          clipped, and clear of the phone's floating chat button. */}
+      {inFlightContent ? <div data-testid="note-box-region"
+        className="max-h-[50%] shrink-0 overflow-y-auto pb-2 pl-2 pr-clear-floating-2 md:pl-4 md:pr-clear-floating-4">
+        {inFlightContent}
+      </div> : null}
     </div>
   );
 }
