@@ -233,7 +233,7 @@ The meeting button names the stage while stopping. If stopping fails, the record
 
 ### Browser recording unavailable
 
-The meeting button reads **Unsupported browser**. Open Nojoin in a browser from [Supported Environments](#supported-environments).
+The meeting button reads **Unsupported browser**. Open Nojoin in a browser from [Supported Environments](#supported-environments). The recovery dialog there offers **Stop and process** and **Discard recording** but not **Resume recording**, which needs capture.
 
 If the browser is already supported, check the address. Browsers allow capture only on a secure origin, so a supported browser reaching Nojoin over plain HTTP on any address other than `localhost` reports as unsupported. See [HTTPS Is Required for Live Capture](DEPLOYMENT.md#https-is-required-for-live-capture).
 

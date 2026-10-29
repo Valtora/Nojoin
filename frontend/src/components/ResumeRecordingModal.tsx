@@ -2,7 +2,9 @@
 
 import { AlertTriangle, PauseCircle, Square } from "lucide-react";
 
+import type { CaptureSupport } from "@/lib/capture/shared";
 import { RecordingStatus, type Recording } from "@/types";
+import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
 
@@ -10,6 +12,8 @@ interface ResumeRecordingModalProps {
   isOpen: boolean;
   recording: Recording | null;
   busyAction?: "resume" | "cancel" | "stop" | null;
+  /** This browser's capture support: Resume needs it, Stop and Discard do not. */
+  support: CaptureSupport;
   onResume: () => void;
   onCancel: () => void;
   onStop: () => void;
@@ -19,6 +23,7 @@ export default function ResumeRecordingModal({
   isOpen,
   recording,
   busyAction = null,
+  support,
   onResume,
   onCancel,
   onStop,
@@ -68,7 +73,7 @@ export default function ResumeRecordingModal({
           <Button
             variant="primary"
             onClick={onResume}
-            disabled={busyAction !== null}
+            disabled={busyAction !== null || !support.supported}
             loading={busyAction === "resume"}
           >
             Resume recording
@@ -110,6 +115,12 @@ export default function ResumeRecordingModal({
         <p className="font-medium">{recording.name}</p>
         <p className="mt-1 opacity-80">Recording ID: {recording.id}</p>
       </div>
+
+      {support.supported ? null : (
+        <div className="mt-4">
+          <CaptureUnsupportedNotice reason={support.reason} compact />
+        </div>
+      )}
     </Modal>
   );
 }

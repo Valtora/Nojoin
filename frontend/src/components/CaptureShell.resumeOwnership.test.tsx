@@ -194,7 +194,7 @@ const errors = () =>
   useNotificationStore.getState().activeNotifications.filter(({ type }) => type === "error");
 
 describe("the recovery dialog in a browser that cannot capture", () => {
-  it("reports a refused Resume once", async () => {
+  it("offers Stop and Discard but not Resume, and says why once", async () => {
     browser.realDetection = true;
     vi.stubGlobal("navigator", {
       userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
@@ -203,11 +203,17 @@ describe("the recovery dialog in a browser that cannot capture", () => {
     });
     render(<CaptureProvider><CaptureShell><div /></CaptureShell></CaptureProvider>);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Resume recording" }));
+    const resume = await screen.findByRole("button", { name: "Resume recording" });
+    expect(resume).toBeDisabled();
+    expect(screen.getAllByText(/not available in Firefox/)).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Discard recording" })).toBeEnabled();
+    fireEvent.click(resume);
+    fireEvent.click(screen.getByRole("button", { name: "Stop and process" }));
 
-    await waitFor(() => expect(errors()).not.toEqual([]));
-    await act(async () => {});
-    expect(errors()).toEqual([expect.objectContaining({ message: expect.stringMatching(/Firefox/) })]);
+    await waitFor(() => expect(api.finalizeRecordingCapture).toHaveBeenCalledOnce());
+    expect(api.finalizeRecordingCapture.mock.calls[0][0]).toBe(paused.id);
+    expect(api.resumeRecordingCapture).not.toHaveBeenCalled();
+    expect(errors()).toEqual([]);
   });
 });
 
