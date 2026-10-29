@@ -461,8 +461,45 @@ describe("Sidebar", () => {
       expect(screen.getByTestId("import-modal")).toBeInTheDocument();
     });
 
+    it("pairs compact Start and Import below lg, starts a meeting and refreshes the list", async () => {
+      start.mockResolvedValue({ recordingId: "rec-new" });
+      renderList();
+      await screen.findByRole("heading", { name: "Latest meeting" });
+      const callsAfterMount = getRecordings.mock.calls.length;
+
+      const actionGroup = phoneImport()!.parentElement!;
+      const button = within(actionGroup).getByRole("button", { name: "Start Meeting" });
+      expect(button).toHaveTextContent(/^Start$/);
+      expect(actionGroup).toHaveClass("flex", "shrink-0");
+      expect(actionGroup.parentElement).toHaveClass("lg:hidden");
+      expect(desktopImport().closest(".hidden")).toHaveClass("lg:block");
+      expect(within(actionGroup).getAllByRole("button")).toEqual([button, phoneImport()]);
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(routerPush).toHaveBeenCalledWith("/recordings/rec-new");
+        expect(getRecordings.mock.calls.length).toBeGreaterThan(callsAfterMount);
+      });
+      expect(start).toHaveBeenCalledExactlyOnceWith("");
+    });
+
+    it.each(["recording", "paused", "error"])("blocks compact Start during live %s", async (status) => {
+      captureState.runtimeActive = true;
+      captureState.status = status;
+      renderList();
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      const actionGroup = phoneImport()!.parentElement!;
+      const button = within(actionGroup).getByRole("button", { name: "Meeting in progress" });
+      expect(button).toBeDisabled();
+      expect(within(actionGroup).queryByTestId("live-controls")).not.toBeInTheDocument();
+      fireEvent.click(button);
+      expect(start).not.toHaveBeenCalled();
+      expect(routerPush).not.toHaveBeenCalled();
+    });
+
     it.each<ViewType>(["archived", "deleted"])(
-      "has no import entry in the %s view",
+      "has no start or import entry in the %s view",
       async (view) => {
         currentView = view;
         getRecordings.mockResolvedValue([]);
@@ -472,6 +509,7 @@ describe("Sidebar", () => {
           view === "archived" ? "No archived recordings." : "The bin is empty.",
         );
         expect(importButtons()).toHaveLength(0);
+        expect(screen.queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
       },
     );
 
