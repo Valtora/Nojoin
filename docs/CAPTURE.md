@@ -191,7 +191,7 @@ Open the **Meeting Edge** tab in the desktop side column or the phone's main tab
 
 ### The Transcript tab stays empty
 
-Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. Imported files have no browser capture feed; wait for upload and transcription to finish.
+Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. Live transcription can fall behind, for example while the server processes another recording; once about 20 seconds of uploaded audio is waiting, the tab says so. Nothing is lost: the full transcript is made after the meeting ends. Imported files have no browser capture feed; wait for upload and transcription to finish.
 
 ### Linux screen audio does not work
 

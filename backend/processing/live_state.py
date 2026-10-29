@@ -4,6 +4,12 @@ import json
 import os
 from typing import Any
 
+from sqlalchemy import func
+from sqlmodel import col, select
+
+from backend.models.pipeline import RecordingAudioChunk
+from backend.utils.recording_storage import recording_upload_temp_dir
+
 LIVE_INITIAL_SEQUENCE = 0
 _STATE_FILENAME = "state.json"
 _STATE_SOURCE_CHANNEL_LABELS_KEY = "source_channel_labels"
@@ -168,6 +174,36 @@ def write_live_state(live_dir, state: dict) -> None:
         ]
     with open(state_path, "w", encoding="utf-8") as f:
         json.dump(state_payload, f)
+
+
+# Uploaded audio the live lane has not read that counts as behind (issue #780).
+# A lane keeping up has at most a few uploads queued.
+LIVE_BEHIND_LAG_MS = 20_000
+
+
+def live_lane_lag_ms(session: Any, recording_id: int) -> int:
+    """Uploaded audio in the chunks the live lane has not consumed yet.
+
+    ``next_expected`` only moves forward, past silent and failed runs alike,
+    unlike window processing marks, which a growing window resets. No state
+    file means the lane has not run yet; one that will not parse is caught
+    mid-write, so the lag is unknown and reads as none.
+    """
+    state_path = recording_upload_temp_dir(recording_id) / "live" / _STATE_FILENAME
+    try:
+        raw_state = json.loads(state_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raw_state = None
+    except (OSError, ValueError):
+        return 0
+    next_expected = _normalize_live_state(raw_state)["next_expected"]
+    unread_ms = session.execute(
+        select(func.sum(RecordingAudioChunk.duration_ms)).where(
+            RecordingAudioChunk.recording_id == recording_id,
+            col(RecordingAudioChunk.sequence_no) >= next_expected,
+        )
+    ).scalar()
+    return int(unread_ms or 0)
 
 
 def _live_lane_has_consumed(state: dict) -> bool:

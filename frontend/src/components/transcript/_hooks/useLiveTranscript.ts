@@ -53,6 +53,8 @@ export interface LiveTranscript {
   liveSpeakerNames: Readonly<Record<string, string>>;
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
+  /** The last read said live transcription is behind the uploads. */
+  liveBehind?: boolean;
 }
 
 const NO_NAMES: Readonly<Record<string, string>> = {};
@@ -102,6 +104,7 @@ export function useLiveTranscript(
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [speakers, setSpeakers] = useState<RecordingSpeaker[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [liveBehind, setLiveBehind] = useState(false);
   const [liveSpeakerNames, setLiveSpeakerNames] =
     useState<Readonly<Record<string, string>>>(NO_NAMES);
   const stateRef = useRef<LocalTranscriptState | null>(null);
@@ -112,6 +115,7 @@ export function useLiveTranscript(
     if (!recordingId || enabled) {
       setSegments([]);
       setHasLoaded(false);
+      setLiveBehind(false);
       setLiveSpeakerNames(NO_NAMES);
       setSpeakers([]);
     }
@@ -169,6 +173,7 @@ export function useLiveTranscript(
       setLiveSpeakerNames((previous) =>
         sameOrNext(previous, delta.live_speaker_names),
       );
+      setLiveBehind(delta.live_behind === true);
       setHasLoaded(true);
     };
 
@@ -222,5 +227,5 @@ export function useLiveTranscript(
   );
 
   const refresh = useCallback(() => refreshRef.current?.(), []);
-  return { segments, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames, refresh };
+  return { segments, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames, refresh, liveBehind };
 }
