@@ -9,6 +9,7 @@ const addNotification = vi.fn();
 const pause = vi.fn();
 const resume = vi.fn();
 const stop = vi.fn();
+const cancel = vi.fn();
 const updateRecordingMaxSpeakers = vi.fn();
 
 const captureState = {
@@ -19,9 +20,12 @@ const captureState = {
   pause: (...args: unknown[]) => pause(...args),
   resume: (...args: unknown[]) => resume(...args),
   runtimeActive: true,
+  ownedRecordingId: "rec-1" as string | null,
+  pausedRecording: null as { id: string } | null,
   status: "recording",
   recordingId: "rec-1" as string | null,
   stop: (...args: unknown[]) => stop(...args),
+  cancel: (...args: unknown[]) => cancel(...args),
   coverageWarning: null as {
     capturedSeconds: number;
     elapsedSeconds: number;
@@ -53,9 +57,13 @@ describe("LiveMeetingControls", () => {
     pause.mockReset();
     resume.mockReset();
     stop.mockReset();
+    cancel.mockReset();
     captureState.controller.getState = () => ({ error: null });
     captureState.elapsedSeconds = 12;
     captureState.runtimeActive = true;
+    captureState.ownedRecordingId = "rec-1";
+    captureState.pausedRecording = null;
+    captureState.recordingId = "rec-1";
     captureState.status = "recording";
     captureState.coverageWarning = null;
     captureState.stopStage = null;
@@ -98,6 +106,19 @@ describe("LiveMeetingControls", () => {
 
     const transport = screen.getByTitle("Stop recording").parentElement;
     expect(transport?.className).toContain("min-w-[min(18rem,100%)]");
+  });
+
+  // The page's copy of the recording catches up with a pause on its next poll;
+  // the capturing tab must not follow it meanwhile.
+  it("keeps the capturing tab's own state and clock ahead of the server", () => {
+    captureState.status = "paused";
+
+    render(<LiveMeetingControls size="bar" serverPaused={false} />);
+
+    expect(screen.getByText("Paused")).toBeInTheDocument();
+    expect(screen.queryByText("Recording")).not.toBeInTheDocument();
+    expect(screen.getByText("00:12")).toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
   });
 
   it("says a stop is finishing once nothing is left to send", () => {
@@ -196,6 +217,51 @@ describe("LiveMeetingControls", () => {
     });
     expect(addNotification).toHaveBeenCalledOnce();
   });
+
+  it.each(["compact", "full", "bar"] as const)(
+    "%s never allows a stored watcher ID to enable Stop or Discard", (size) => {
+      captureState.runtimeActive = false;
+      captureState.ownedRecordingId = null;
+      captureState.status = "paused";
+      // A recovery offer for a different recording is not permission for this ID.
+      captureState.pausedRecording = { id: "rec-other" };
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+      render(<LiveMeetingControls size={size} />);
+
+      const stopButton = screen.getByTitle("Stop recording");
+      const discardButton = screen.getByTitle("Discard recording");
+      expect(stopButton).toBeDisabled();
+      expect(discardButton).toBeDisabled();
+      fireEvent.click(stopButton);
+      fireEvent.click(discardButton);
+      expect(stop).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+      confirm.mockRestore();
+    },
+  );
+
+  it.each(["owner after a failed stop", "authorised recovery"])(
+    "keeps Stop and Discard usable for %s without live tracks", async (kind) => {
+      captureState.runtimeActive = false;
+      captureState.status = "paused";
+      captureState.ownedRecordingId = kind === "owner after a failed stop" ? "rec-1" : null;
+      captureState.pausedRecording = kind === "authorised recovery" ? { id: "rec-1" } : null;
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+      stop.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+      cancel.mockResolvedValue(undefined);
+      render(<LiveMeetingControls size="bar" />);
+
+      expect(screen.getByTitle("Resume recording")).toBeDisabled();
+      expect(screen.getByTitle("Stop recording")).toBeEnabled();
+      expect(screen.getByTitle("Discard recording")).toBeEnabled();
+      fireEvent.click(screen.getByTitle("Stop recording"));
+      await waitFor(() => expect(stop).toHaveBeenCalledOnce());
+      fireEvent.click(screen.getByTitle("Discard recording"));
+      await waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+      confirm.mockRestore();
+    },
+  );
 });
 
 describe("LiveMeetingControls speaker cap", () => {
@@ -204,6 +270,8 @@ describe("LiveMeetingControls speaker cap", () => {
     updateRecordingMaxSpeakers.mockReset();
     captureState.controller.getState = () => ({ error: null });
     captureState.runtimeActive = true;
+    captureState.ownedRecordingId = "rec-1";
+    captureState.pausedRecording = null;
     captureState.status = "recording";
     captureState.recordingId = "rec-1";
   });

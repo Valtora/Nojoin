@@ -237,6 +237,16 @@ async def resume_upload(
             "the capture over and is issued the next epoch."
         ),
     ),
+    reclaim_epoch: Optional[int] = Query(
+        None,
+        ge=0,
+        description=(
+            "With no epoch: the capture epoch the tab held before its page "
+            "reloaded. A capture still uploading under that epoch is taken over "
+            "at once, without waiting for it to stall. Any other value changes "
+            "nothing."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -253,6 +263,10 @@ async def resume_upload(
     that held it cannot overwrite what the new one records (issue #570). The
     tab holding the current epoch resumes without taking over, whether the
     server holds its capture paused or still uploading.
+
+    A reloaded tab sends the epoch it held as ``reclaim_epoch`` and takes its
+    capture over straight away, so its old page's late requests are refused
+    (issue #778).
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
@@ -267,7 +281,9 @@ async def resume_upload(
         if (getattr(transcript, "settling_state", None) or {}).get("phase") != "live":
             await close_live_words(db, transcript, recording.id)
     else:
-        resumed_after_stall = _ensure_capture_can_be_taken_over(recording)
+        resumed_after_stall = _ensure_capture_can_be_taken_over(
+            recording, reclaim_epoch
+        )
         await close_live_words(db, transcript, recording.id)
         recording.capture_epoch += 1
 
@@ -316,18 +332,28 @@ async def resume_upload(
     )
 
 
-def _ensure_capture_can_be_taken_over(recording: Recording) -> bool:
+def _ensure_capture_can_be_taken_over(
+    recording: Recording, reclaim_epoch: int | None
+) -> bool:
     """Refuse to take over a capture that is still uploading.
+
+    Unless the caller held the current epoch before its page reloaded: the
+    page that was uploading it is gone.
 
     Returns whether the capture is taken over because it stalled rather than
     because it was paused.
     """
     resumed_after_stall = capture_looks_stalled(recording)
-    if recording.status != RecordingStatus.PAUSED and not resumed_after_stall:
-        still_capturing = (
-            recording.status == RecordingStatus.UPLOADING
-            and recording.client_status == ClientStatus.RECORDING
-        )
+    still_capturing = (
+        recording.status == RecordingStatus.UPLOADING
+        and recording.client_status == ClientStatus.RECORDING
+    )
+    reclaimed = still_capturing and reclaim_epoch == recording.capture_epoch
+    if (
+        recording.status != RecordingStatus.PAUSED
+        and not resumed_after_stall
+        and not reclaimed
+    ):
         raise HTTPException(
             status_code=409,
             detail=(

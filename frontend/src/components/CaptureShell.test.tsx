@@ -28,6 +28,7 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     resume,
     runtimeActive: false,
     stop,
+    support: { supported: true, mode: "shared_audio" },
   }),
 }));
 

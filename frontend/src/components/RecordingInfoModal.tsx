@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { FileAudio, Server, Monitor } from "lucide-react";
 import { getRecordingInfo } from "@/lib/api";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingInfo } from "@/types";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { formatTimeZoneLocale } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
+import { liveCaptureLabel } from "./ui/Badge";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
 
@@ -25,6 +27,7 @@ export default function RecordingInfoModal({
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const { addNotification } = useNotificationStore();
+  const { ownedRecordingId } = useCapture();
   const timeZone = useUserTimeZone();
   const createdAt = parseServerTimestamp(recording.created_at);
 
@@ -104,7 +107,13 @@ export default function RecordingInfoModal({
             </div>
             <div>
               <span className="block text-xs text-contrast-helper">Status</span>
-              <span className="capitalize text-contrast-muted">{recording.status}</span>
+              <span className="capitalize text-contrast-muted">
+                {liveCaptureLabel(
+                  recording.status,
+                  recording.client_status,
+                  recording.id === ownedRecordingId,
+                ) ?? recording.status}
+              </span>
             </div>
           </div>
         </div>
