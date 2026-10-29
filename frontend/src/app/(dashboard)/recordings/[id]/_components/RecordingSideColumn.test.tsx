@@ -10,13 +10,14 @@ vi.mock("@/components/ChatPanel", () => ({
   default: () => <div data-testid="chat-panel" />,
 }));
 
-const column = (allowChat = true) =>
+const column = (allowChat = true, showTasks = false) =>
     <RecordingSideColumn
       allowChat={allowChat}
       speakers={<div data-testid="speaker-panel" />}
       myNotes={<div data-testid="my-notes-list" />}
       captures={<div data-testid="captures-list" />}
       meetingEdge={<div data-testid="meeting-edge" />}
+      tasks={showTasks ? <div data-testid="linked-tasks" /> : undefined}
       chatPanelHeight={40}
       onChatPanelHeightChange={vi.fn()}
       onNotesUpdate={vi.fn()}
@@ -129,25 +130,40 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
   });
 
   // jsdom has no container queries, so this reads the rules a browser applies:
-  // a label hides under 25rem on the other tabs, and only under 12rem on
+  // a label hides under 30rem to make room for the optional fifth tab, and only under 12rem on
   // the open one, where all are icons.
   it("keeps the open tab's label longest in a narrow column, the others their icons", () => {
     renderColumn();
     const label = (name: string) => tab(name).querySelector("span")!;
     const hidesBelow = (name: string) =>
-      ["12rem", "25rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
+      ["12rem", "30rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
 
     expect(hidesBelow("Speakers")).toEqual(["12rem"]);
-    expect(hidesBelow("My notes")).toEqual(["25rem"]);
-    expect(hidesBelow("Captures")).toEqual(["25rem"]);
-    expect(hidesBelow("Meeting Edge")).toEqual(["25rem"]);
+    expect(hidesBelow("My notes")).toEqual(["30rem"]);
+    expect(hidesBelow("Captures")).toEqual(["30rem"]);
+    expect(hidesBelow("Meeting Edge")).toEqual(["30rem"]);
     fireEvent.click(tab("My notes"));
-    expect(hidesBelow("Speakers")).toEqual(["25rem"]);
+    expect(hidesBelow("Speakers")).toEqual(["30rem"]);
     expect(hidesBelow("My notes")).toEqual(["12rem"]);
     for (const name of ["Speakers", "My notes", "Captures", "Meeting Edge"]) {
       expect(tab(name)).toHaveAttribute("title", name);
       expect(tab(name).querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     }
+  });
+
+  it("includes linked Tasks in keyboard navigation and falls back when they are absent", () => {
+    const { rerender } = render(column(true, true));
+    fireEvent.keyDown(tab("Speakers"), { key: "End" });
+    expect(tab("Tasks")).toHaveFocus();
+    expect(tab("Tasks")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("linked-tasks")).toBeVisible();
+    fireEvent.keyDown(tab("Tasks"), { key: "ArrowRight" });
+    expect(tab("Speakers")).toHaveFocus();
+    fireEvent.click(tab("Tasks"));
+
+    rerender(column(true, false));
+    expect(screen.queryByRole("tab", { name: "Tasks" })).not.toBeInTheDocument();
+    expect(tab("Speakers")).toHaveAttribute("aria-selected", "true");
   });
 
   it("collapses both tabs together, and the bar left brings them back", () => {

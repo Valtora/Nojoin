@@ -3,7 +3,7 @@
 import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -247,7 +247,7 @@ function DeadlinePickerButton({
   );
 }
 
-export default function TasksWorkspace() {
+export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: number }) {
   const timeZone = useUserTimeZone();
   const [tasks, setTasks] = useState<UserTask[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -264,9 +264,12 @@ export default function TasksWorkspace() {
     null,
   );
   const addNotification = useNotificationStore((state) => state.addNotification);
+  const pendingFocusTaskId = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    pendingFocusTaskId.current = null;
 
     const load = async () => {
       try {
@@ -276,9 +279,12 @@ export default function TasksWorkspace() {
           getRecordings({ include_archived: true }),
         ]);
         if (!cancelled) {
+          const target = taskData.find((task) => task.id === initialTaskId);
           setTasks(sortTasks(taskData));
           setTags(tagData);
           setRecordings(recordingData.filter((recording) => !recording.is_deleted));
+          setView(target?.archived_at ? "archived" : target?.completed_at ? "completed" : "open");
+          pendingFocusTaskId.current = target?.id ?? null;
         }
       } catch (error: unknown) {
         if (!cancelled) {
@@ -299,7 +305,15 @@ export default function TasksWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [addNotification]);
+  }, [addNotification, initialTaskId]);
+
+  useEffect(() => {
+    if (loading || pendingFocusTaskId.current === null) return;
+    const target = document.getElementById(`task-${pendingFocusTaskId.current}`);
+    target?.scrollIntoView?.({ block: "center" });
+    target?.focus({ preventScroll: true });
+    pendingFocusTaskId.current = null;
+  }, [loading]);
 
   useEffect(() => {
     const handleTagsUpdated = () => {
@@ -631,6 +645,8 @@ export default function TasksWorkspace() {
                 data-ui-fill="card"
                 data-ui-border="full" as="article" kind="card"
                 key={task.id}
+                id={`task-${task.id}`}
+                tabIndex={-1}
                 className="density-surface-subtle border border-surface-border bg-surface-card p-5 shadow-card"
               >
                 {isEditing ? (

@@ -17,7 +17,10 @@ from backend.models.task import (
     UserTaskUpdate,
 )
 from backend.models.user import User
-from backend.services.recording_identity_service import get_recordings_by_public_ids
+from backend.services.recording_identity_service import (
+    get_recording_by_public_id,
+    get_recordings_by_public_ids,
+)
 from backend.utils.time import utc_now
 from backend.utils.timezones import (
     convert_datetime_to_utc_naive,
@@ -177,15 +180,22 @@ async def _replace_task_recordings(
 @router.get("", response_model=List[UserTaskRead])
 async def read_tasks_root(
     status: TaskStatusFilter = "active",
+    recording_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await read_tasks(status=status, db=db, current_user=current_user)
+    return await read_tasks(
+        status=status,
+        recording_id=recording_id,
+        db=db,
+        current_user=current_user,
+    )
 
 
 @router.get("/", response_model=List[UserTaskRead])
 async def read_tasks(
     status: TaskStatusFilter = "active",
+    recording_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -199,6 +209,16 @@ async def read_tasks(
             ),
         )
     )
+
+    if recording_id is not None:
+        recording = await get_recording_by_public_id(
+            db, recording_id, user_id=current_user.id
+        )
+        if recording is None:
+            raise HTTPException(status_code=404, detail="Recording not found")
+        statement = statement.where(
+            UserTask.recording_links.any(UserTaskRecording.recording_id == recording.id)
+        )
 
     if status == "active":
         statement = statement.where(UserTask.archived_at.is_(None))

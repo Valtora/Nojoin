@@ -41,6 +41,8 @@ Create, rename, complete, reopen, archive and delete tasks, and give them deadli
 
 The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Create Task** button. A task has a title, a body, a deadline, linked recordings and tags, using the same tags as recordings. **Archive** hides a task and **Restore** brings it back. **Delete** is permanent.
 
+When creating or editing a task, select its linked recordings and save it. Open any of those meetings and choose **Tasks** to see the linked tasks, including completed and archived tasks. Tick a checkbox to complete a task, or untick it to reopen it; the change also appears in **Tasks** and every other linked meeting when opened. Select a task's title to open it in the Tasks workspace, in its **Open**, **Completed** or **Archived** view.
+
 ## Recordings List
 
 **Recordings** in the navigation lists your meetings, with **Archived** and **Deleted** views beside it.
@@ -176,6 +178,8 @@ If transcription fails, the recording is marked **Error**, a notification says s
 ## Transcript And Playback
 
 A meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs in every recording state. On desktop a resizable column beside them holds **Speakers**, **My notes**, **Captures** and **Meeting Edge** (where it is shown) as tabs, above **Chat** in every state. On a phone the same four panels join the main tab row: **My notes** and **Captures** follow **Notes**, and **Speakers** and **Meeting Edge** follow **Analytics**, with **Chat** after them. Tabs remember your selection. Left and Right arrows move between tabs; Home and End select the first and last. The side column collapses to a rail whose buttons reopen each panel. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
+
+A **Tasks** tab appears in the desktop side column, or the phone's main tab row, whenever the meeting has linked tasks. It is available in every recording state. Each task has a completion checkbox and a title that opens it in **Tasks**; an **Archived** label distinguishes archived tasks.
 
 During capture and processing, **Transcript** keeps the shared line cards and the composer below them, and the header shows recording controls or progress in place of the audio player. Timestamp play buttons stay visible but disabled, the line menu omits **Play from here**, and export is disabled separately. Speaker previews, notes and their files cannot play either. Search remains available; **Undo**, **Redo** and **Find & Replace** wait for the finished transcript. Locked lines on recordings using word settling retain their individual correction actions. Live speaker rows offer naming and identity actions while capture is open; finished speaker operations and generated notes retain their processing gates. Analytics estimates and Chat remain available. Processed recordings and those in error retain their existing playback and export behaviour, including the explanation when audio is missing or its playable copy is still being prepared.
 

@@ -16,6 +16,7 @@ import {
   type Recording,
   type TranscriptSegment,
   type TranscriptUtteranceList,
+  type UserTask,
 } from "@/types";
 
 const routerPush = vi.fn();
@@ -37,6 +38,8 @@ const listTimelineNotes = vi.fn();
 const updateTimelineNote = vi.fn();
 const getCurrentUser = vi.fn();
 const getUserMe = vi.fn();
+const getUserTasks = vi.fn();
+const updateUserTask = vi.fn();
 
 let activePanel = "transcript";
 // Both side panels collapsed unless a test opens them, so desktop shows the rail.
@@ -95,6 +98,8 @@ vi.mock("@/lib/store", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  getUserTasks: (...args: unknown[]) => getUserTasks(...args),
+  updateUserTask: (...args: unknown[]) => updateUserTask(...args),
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
   getUserMe: (...args: unknown[]) => getUserMe(...args),
   getRecording: (...args: unknown[]) => getRecording(...args),
@@ -124,6 +129,11 @@ vi.mock("@/lib/api", () => ({
   downloadDocument: vi.fn(),
   documentPreviewUrl: (id: number) => `/api/v1/documents/${id}/preview`,
   documentFileUrl: (id: number) => `/api/v1/documents/${id}/download`,
+}));
+
+// The live feed imports the resource client directly rather than the barrel.
+vi.mock("@/lib/api/transcript", () => ({
+  getTranscriptUtterances: (...args: unknown[]) => getTranscriptUtterances(...args),
 }));
 
 // Heavy child components are stubbed so the tests pin the page's own
@@ -313,6 +323,14 @@ const buildUtteranceList = (
 const renderPage = () =>
   renderWithProviders(<RecordingPage params={Promise.resolve({ id: "rec-1" })} />);
 
+const linkedTask: UserTask = {
+  id: 7,
+  title: "Send the meeting follow-up",
+  created_at: "2026-10-29T09:00:00Z",
+  updated_at: "2026-10-29T09:00:00Z",
+  completed_at: null,
+};
+
 describe("RecordingPage (detail)", () => {
   beforeEach(() => {
     activePanel = "transcript";
@@ -331,6 +349,8 @@ describe("RecordingPage (detail)", () => {
     exportAudio.mockReset();
     exportContent.mockReset().mockResolvedValue(undefined);
     getRecording.mockReset();
+    getUserTasks.mockReset().mockResolvedValue([]);
+    updateUserTask.mockReset();
     getSettings.mockReset();
     getGlobalSpeakers.mockReset();
     getTranscriptUtterances.mockReset();
@@ -356,6 +376,89 @@ describe("RecordingPage (detail)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it.each([390, 1440])("hides Tasks with no linked tasks at width %s", async (width) => {
+    vi.stubGlobal("innerWidth", width);
+    sidePanelsCollapsed = false;
+    sideTab = "tasks";
+    renderPage();
+
+    await screen.findByRole("heading", { name: /Quarterly sync/ });
+    await waitFor(() => expect(getUserTasks).toHaveBeenCalledWith("all", "rec-1"));
+    expect(screen.queryByRole("tab", { name: "Tasks" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show tasks" })).not.toBeInTheDocument();
+    if (width === 1440) expect(screen.getByRole("tab", { name: "Speakers" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it.each([
+    RecordingStatus.UPLOADING, RecordingStatus.PAUSED, RecordingStatus.QUEUED,
+    RecordingStatus.PROCESSING, RecordingStatus.PROCESSED, RecordingStatus.ERROR,
+  ].flatMap((status) => [390, 1440].map((width) => ({ status, width }))))(
+    "shows linked Tasks while $status at width $width", async ({ status, width }) => {
+      vi.stubGlobal("innerWidth", width);
+      sidePanelsCollapsed = false;
+      sideTab = "tasks";
+      activePanel = width === 390 ? "tasks" : "transcript";
+      getRecording.mockResolvedValue(buildRecording({ status }));
+      getUserTasks.mockResolvedValue([linkedTask]);
+      renderPage();
+
+      expect(await screen.findByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("checkbox", { name: "Mark Send the meeting follow-up complete" })).toBeVisible();
+      expect(screen.getByRole("link", { name: linkedTask.title })).toHaveAttribute("href", "/tasks?task=7");
+    },
+  );
+
+  it("completes a task through the shared update path and keeps it visible", async () => {
+    sidePanelsCollapsed = false;
+    sideTab = "tasks";
+    getUserTasks.mockResolvedValue([linkedTask]);
+    updateUserTask.mockResolvedValue({ ...linkedTask, completed_at: "2026-10-29T12:00:00Z" });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Mark Send the meeting follow-up complete/ }));
+
+    expect(await screen.findByRole("checkbox", { name: /Mark Send the meeting follow-up incomplete/ })).toBeChecked();
+    expect(updateUserTask).toHaveBeenCalledWith(7, { completed: true });
+    expect(screen.getByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("link", { name: linkedTask.title })).toBeVisible();
+  });
+
+  it.each([true, false])("waits for linked tasks before restoring the phone's remembered tab (linked=%s)", async (linked) => {
+    vi.stubGlobal("innerWidth", 390);
+    activePanel = "tasks";
+    setActivePanel.mockImplementation((panel: string) => { activePanel = panel; });
+    let resolveTasks!: (tasks: UserTask[]) => void;
+    getUserTasks.mockReturnValue(new Promise<UserTask[]>((resolve) => { resolveTasks = resolve; }));
+    const params = Promise.resolve({ id: "rec-1" });
+    const page = renderWithProviders(<RecordingPage params={params} />);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading linked tasks...");
+    expect(setActivePanel).not.toHaveBeenCalledWith("transcript");
+    await act(async () => resolveTasks(linked ? [linkedTask] : []));
+    page.rerender(<RecordingPage params={params} />);
+
+    if (linked) {
+      expect(screen.getByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("checkbox", { name: /meeting follow-up complete/ })).toBeVisible();
+      expect(setActivePanel).not.toHaveBeenCalledWith("transcript");
+      expect(scrollIntoView.mock.contexts).toContain(screen.getByRole("tab", { name: "Tasks" }));
+    } else {
+      expect(screen.queryByRole("tab", { name: "Tasks" })).not.toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Transcript" })).toHaveAttribute("aria-selected", "true");
+    }
+  });
+
+  it("offers linked Tasks from the collapsed side rail", async () => {
+    getUserTasks.mockResolvedValue([linkedTask]);
+    const page = renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Show tasks" }));
+    expect(setSideTab).toHaveBeenCalledWith("tasks");
+    expect(setSpeakerPanelCollapsed).toHaveBeenCalledWith(false);
+    page.rerender(<RecordingPage params={Promise.resolve({ id: "rec-1" })} />);
+    expect(await screen.findByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("link", { name: linkedTask.title })).toBeVisible();
   });
 
   // Restored only once the block is done: a render still settling as a test

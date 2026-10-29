@@ -26,6 +26,8 @@ import { useRecordingDetail } from "./_hooks/useRecordingDetail";
 import { getAutoSpeakerReplacementName } from "./_hooks/recordingDetailUtils";
 import RecordingMainContent from "./_components/RecordingMainContent";
 import RecordingSideColumn, { RecordingSideRail } from "./_components/RecordingSideColumn";
+import RecordingTasks from "./_components/RecordingTasks";
+import { useRecordingTasks } from "./_hooks/useRecordingTasks";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +39,7 @@ export default function RecordingPage({ params }: PageProps) {
   const liveNoteBoxRef = useRef<HTMLTextAreaElement>(null);
   const capture = useCapture();
   const detail = useRecordingDetail({ params, capture });
+  const { tasks, loading: tasksLoading, busyTaskId, toggleTask } = useRecordingTasks(detail.recording?.id);
   const isSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.isSpeakerPanelCollapsed,
   );
@@ -131,6 +134,8 @@ export default function RecordingPage({ params }: PageProps) {
   }
 
   const showCaptureSlot = isInFlightRecording || localCaptureActive;
+  const tasksContent = tasks.length > 0
+    ? <RecordingTasks tasks={tasks} busyTaskId={busyTaskId} onToggle={toggleTask} /> : undefined;
   // Chat answers from the transcript so far only while it is still being
   // produced, not while a finished one's notes or speakers are regenerated.
   const transcriptInProgress = showCaptureSlot && recording.transcript?.transcript_status !== "completed";
@@ -209,6 +214,8 @@ export default function RecordingPage({ params }: PageProps) {
       speakersContent={speakersContent}
       myNotesContent={myNotesContent}
       meetingEdgeContent={meetingEdgeContent}
+      tasksContent={tasksContent}
+      tasksLoading={tasksLoading}
       playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording} onDiscarded={navigateToRecordings} /> : undefined}
       inFlightContent={<RecordingNoteComposer recording={recording} segments={transcriptSegments}
         audioClock={audioClock} boxRef={liveNoteBoxRef} />}
@@ -362,6 +369,7 @@ export default function RecordingPage({ params }: PageProps) {
                         myNotesContent
                       }
                       meetingEdge={meetingEdgeContent}
+                      tasks={tasksContent}
                       captures={
                         <CapturesGallery
                           recordingId={recording.id}
@@ -382,7 +390,7 @@ export default function RecordingPage({ params }: PageProps) {
               )}
             </PanelGroup>
 
-            {sideColumnCollapsed && <RecordingSideRail showMeetingEdge={showMeetingEdge} />}
+            {sideColumnCollapsed && <RecordingSideRail showMeetingEdge={showMeetingEdge} showTasks={tasks.length > 0} />}
           </div>
         )}
       </div>

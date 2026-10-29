@@ -4,6 +4,7 @@ import importlib
 import json
 import logging
 import pkgutil
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import httpx
@@ -1596,6 +1597,184 @@ async def test_read_tasks_returns_only_current_users_tasks(
 
     assert response.status_code == 200
     assert [task["id"] for task in response.json()] == [101]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/api/v1/tasks", "/api/v1/tasks/"])
+async def test_read_tasks_filters_recording_and_task_ownership(
+    client: AsyncClient,
+    override_current_user: Callable[[int], None],
+    test_session_maker: sessionmaker,
+    path: str,
+) -> None:
+    for recording_id in (401, 402):
+        await seed_recording(
+            test_session_maker,
+            recording_id=recording_id,
+            user_id=1,
+            name=f"Meeting {recording_id}",
+            public_id=f"rec-{recording_id}",
+            created_at=TEST_TIMESTAMP,
+        )
+    for task_id, user_id, recording_id in (
+        (101, 1, 401),
+        (102, 1, 402),
+        (103, 2, 401),
+        (104, 1, None),
+    ):
+        await seed_task(
+            test_session_maker, task_id=task_id, user_id=user_id, title="Follow up"
+        )
+        if recording_id is not None:
+            await seed_user_task_recording(
+                test_session_maker,
+                row_id=task_id,
+                task_id=task_id,
+                recording_id=recording_id,
+            )
+    override_current_user(1)
+
+    response = await client.get(path, params={"recording_id": "rec-401"})
+
+    assert response.status_code == 200
+    assert [task["id"] for task in response.json()] == [101]
+    unfiltered = await client.get(path)
+    assert unfiltered.status_code == 200
+    assert {task["id"] for task in unfiltered.json()} == {101, 102, 104}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/api/v1/tasks", "/api/v1/tasks/"])
+@pytest.mark.parametrize(
+    ("public_id", "owner_id", "expected_status"),
+    [
+        ("rec-empty", 1, 200),
+        ("rec-foreign", 2, 404),
+        ("missing", None, 404),
+        ("", None, 404),
+    ],
+)
+async def test_read_tasks_requires_owned_recording_even_without_links(
+    client: AsyncClient,
+    override_current_user: Callable[[int], None],
+    test_session_maker: sessionmaker,
+    path: str,
+    public_id: str,
+    owner_id: int | None,
+    expected_status: int,
+) -> None:
+    await seed_task(test_session_maker, task_id=101, user_id=1, title="Unlinked")
+    if owner_id is not None:
+        await seed_recording(
+            test_session_maker,
+            recording_id=401,
+            user_id=owner_id,
+            name="Meeting without tasks",
+            public_id=public_id,
+            created_at=TEST_TIMESTAMP,
+        )
+    override_current_user(1)
+
+    response = await client.get(path, params={"recording_id": public_id})
+
+    assert response.status_code == expected_status
+    assert response.json() == (
+        [] if expected_status == 200 else {"detail": "Recording not found"}
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "expected_ids"),
+    [
+        ("active", {101, 102}),
+        ("open", {101}),
+        ("completed", {102}),
+        ("archived", {103}),
+        ("all", {101, 102, 103}),
+    ],
+)
+async def test_read_tasks_recording_filter_preserves_statuses(
+    client: AsyncClient,
+    override_current_user: Callable[[int], None],
+    test_session_maker: sessionmaker,
+    status: str,
+    expected_ids: set[int],
+) -> None:
+    await seed_recording(
+        test_session_maker,
+        recording_id=401,
+        user_id=1,
+        name="Meeting",
+        public_id="rec-meeting",
+        created_at=TEST_TIMESTAMP,
+    )
+    for task_id in (101, 102, 103, 104):
+        await seed_task(
+            test_session_maker,
+            task_id=task_id,
+            user_id=1,
+            title="Follow up",
+            completed_at=TEST_TIMESTAMP if task_id == 102 else None,
+            archived_at=TEST_TIMESTAMP if task_id == 103 else None,
+        )
+        if task_id != 104:
+            await seed_user_task_recording(
+                test_session_maker,
+                row_id=task_id,
+                task_id=task_id,
+                recording_id=401,
+            )
+    override_current_user(1)
+
+    response = await client.get(
+        "/api/v1/tasks/", params={"recording_id": "rec-meeting", "status": status}
+    )
+
+    assert response.status_code == 200
+    assert {task["id"] for task in response.json()} == expected_ids
+
+
+@pytest.mark.anyio
+async def test_recording_tasks_preserve_multiple_links_through_completion_and_reopening(
+    client: AsyncClient,
+    override_current_user: Callable[[int], None],
+    test_session_maker: sessionmaker,
+) -> None:
+    for recording_id in (401, 402):
+        await seed_recording(
+            test_session_maker,
+            recording_id=recording_id,
+            user_id=1,
+            name=f"Meeting {recording_id}",
+            public_id=f"rec-{recording_id}",
+            created_at=TEST_TIMESTAMP,
+        )
+    override_current_user(1)
+    created = await client.post(
+        "/api/v1/tasks/",
+        json={"title": "Shared follow-up", "recording_ids": ["rec-401", "rec-402"]},
+    )
+    assert created.status_code == 200
+    task_id = created.json()["id"]
+
+    for completed in (True, False):
+        updated = await client.patch(
+            f"/api/v1/tasks/{task_id}", json={"completed": completed}
+        )
+        assert updated.status_code == 200
+        for public_id in ("rec-401", "rec-402"):
+            listed = await client.get(
+                "/api/v1/tasks/", params={"recording_id": public_id}
+            )
+            assert listed.status_code == 200
+            assert [task["id"] for task in listed.json()] == [task_id]
+            task = listed.json()[0]
+            assert (task["completed_at"] is not None) is completed
+            assert {link["id"] for link in task["linked_recordings"]} == {
+                "rec-401",
+                "rec-402",
+            }
 
 
 @pytest.mark.anyio

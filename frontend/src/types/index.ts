@@ -551,6 +551,11 @@ export interface Tag extends BaseDBModel {
   children?: Tag[];
 }
 
+export interface UserTaskListParams {
+  status?: "active" | "open" | "completed" | "archived" | "all";
+  recording_id?: RecordingId;
+}
+
 export interface UserTask extends BaseDBModel {
   title: string;
   body?: string | null;

@@ -1,18 +1,16 @@
-import type { UserTask } from "@/types";
+import type { RecordingId, UserTask, UserTaskListParams } from "@/types";
 import api from "./client";
 
-export type UserTaskStatusFilter =
-  | "active"
-  | "open"
-  | "completed"
-  | "archived"
-  | "all";
+export type UserTaskStatusFilter = NonNullable<UserTaskListParams["status"]>;
 
 export const getUserTasks = async (
   status: UserTaskStatusFilter = "active",
+  recordingId?: RecordingId,
 ): Promise<UserTask[]> => {
+  const params: UserTaskListParams = { status };
+  if (recordingId !== undefined) params.recording_id = recordingId;
   const response = await api.get<UserTask[]>("/tasks/", {
-    params: { status },
+    params,
   });
   return response.data;
 };
