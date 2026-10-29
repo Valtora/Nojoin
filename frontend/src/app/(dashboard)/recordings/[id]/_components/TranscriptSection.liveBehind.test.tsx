@@ -16,7 +16,7 @@ vi.mock("@/lib/api/transcript", async (importOriginal) => ({
   getTranscriptUtterances: (...args: unknown[]) => getTranscriptUtterances(...args),
 }));
 
-const NOTICE = "Live transcript is behind the recording. Nothing is lost: the full transcript is made when the meeting ends.";
+const NOTICE = "Live transcript is behind the recording. Nothing is lost: the full transcript is made after the meeting ends.";
 const noop = () => {};
 
 const recording = (overrides: Partial<Recording> = {}): Recording => ({
