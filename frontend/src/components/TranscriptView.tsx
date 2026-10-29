@@ -572,9 +572,16 @@ export default function TranscriptView({
         ]}</LineList>}
       </div>
       {live && !isFollowingLatest ? <div className="pointer-events-none absolute bottom-4 left-0 right-0 flex justify-center">
-        <ButtonBase chrome="action" onClick={jumpToLatest}
-          className="pointer-events-auto inline-flex items-center gap-2 rounded-pill px-3 py-2 text-sm">
-          <ArrowDown aria-hidden className="h-4 w-4" /> Jump to latest
+        <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="action-tint"
+          data-ui-border="full"
+          chrome="action"
+          type="button"
+          onClick={jumpToLatest}
+          className="pointer-events-auto inline-flex items-center gap-1.5 rounded-pill border border-action-border bg-surface-card px-3 py-1.5 text-xs font-semibold text-action-text shadow-float transition-colors hover:bg-action-tint"
+        >
+          <ArrowDown aria-hidden className="h-3.5 w-3.5" /> Jump to latest
         </ButtonBase>
       </div> : null}
       <p role="status" className="sr-only">
