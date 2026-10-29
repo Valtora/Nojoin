@@ -13,6 +13,8 @@ import {
   Video,
 } from "lucide-react";
 
+import { liveCaptureLabel } from "@/components/ui/Badge";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getColorByKey } from "@/lib/constants";
 import { formatTimeZoneDate } from "@/lib/timezone";
 import {
@@ -39,6 +41,7 @@ import {
   getUrlHost,
 } from "./calendarUtils";
 import { EventDetailsPopoverContent } from "./EventDetailsPopover";
+import RecordingAttentionBadge from "../RecordingAttentionBadge";
 
 export function LinkedRecordingsMeta({
   recordings,
@@ -59,10 +62,11 @@ export function LinkedRecordingsMeta({
       {singleRecording ? (
         <Link
           href={`/recordings/${singleRecording.id}`}
-          className="inline-flex items-center gap-1 text-xs font-semibold text-contrast-muted transition-colors hover:text-foreground"
+          className="inline-flex flex-wrap items-center gap-1 text-xs font-semibold text-contrast-muted transition-colors hover:text-foreground"
         >
           Open recording
           <ArrowRight className="h-3 w-3" />
+          <RecordingAttentionBadge recordingId={singleRecording.id} />
         </Link>
       ) : null}
     </div>
@@ -80,6 +84,12 @@ export function DashboardRecordingCard({
 }) {
   const startedAt = getRecordingStart(recording);
   const showStatus = recording.status !== RecordingStatus.PROCESSED;
+  const { ownedRecordingId } = useCapture();
+  const statusLabel = liveCaptureLabel(
+    recording.status,
+    recording.client_status,
+    recording.id === ownedRecordingId,
+  ) ?? recording.status;
   const hasTags = recording.tags.length > 0;
   const hasSpeakers = recording.speaker_names.length > 0;
 
@@ -134,11 +144,14 @@ export function DashboardRecordingCard({
               {formatRecordingTime(recording, timeZone)}
             </span>
             <span>{formatRecordingDuration(recording.duration_seconds)}</span>
-            {showStatus ? (
-              <span className={`inline-flex rounded-pill border px-2.5 py-1 text-xs font-semibold ${getRecordingStatusClasses(recording.status)}`}>
-                {recording.status}
-              </span>
-            ) : null}
+            <RecordingAttentionBadge
+              recordingId={recording.id}
+              fallback={showStatus ? (
+                <span className={`inline-flex rounded-pill border px-2.5 py-1 text-xs font-semibold ${getRecordingStatusClasses(recording.status)}`}>
+                  {statusLabel}
+                </span>
+              ) : null}
+            />
           </div>
         </div>
 

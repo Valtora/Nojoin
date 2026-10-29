@@ -3,7 +3,7 @@
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Mic, Pause, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, Upload } from "lucide-react";
 
 import {
   CAPTURE_NOTE_BODY,
@@ -139,6 +139,10 @@ export default function RecordingStatusDisplay({
     () => outboxEntries.filter((entry) => entry.kind === "head" || entry.kind === "tail"),
     [outboxEntries],
   );
+  const readLiveAudioMs = useCallback(
+    () => audioClock?.audioNow(recording.id) ?? null,
+    [audioClock, recording.id],
+  );
   const liveSegments = liveTranscript.segments;
   // Before the first read of the clock, "now" is past every line heard so
   // far, which is where the clock would place the note anyway.
@@ -228,16 +232,13 @@ export default function RecordingStatusDisplay({
     /generating meeting notes/i.test(recording.processing_step || "");
 
   // One short state word, not a headline: vertical space is what this view is
-  // shortest of.
-  const stateLabel = isActiveRecording
-    ? isPaused
-      ? "Paused"
-      : "Recording"
-    : recording.status === RecordingStatus.QUEUED
-      ? "Queued"
-      : isFinalisingUpload
-        ? "Uploading"
-        : "Processing";
+  // shortest of. While capture is open the live controls carry the state, for
+  // every tab, so the pill shows only once it is over.
+  const stateLabel = recording.status === RecordingStatus.QUEUED
+    ? "Queued"
+    : isFinalisingUpload
+      ? "Uploading"
+      : "Processing";
 
   const pipelineStep = isActiveRecording
     ? null
@@ -336,18 +337,12 @@ export default function RecordingStatusDisplay({
             and the guidance, both dense text. */}
         <SurfaceBase data-ui-fill="card" data-ui-border="full" as="section" kind="card" className="density-surface flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-            <span className="inline-flex shrink-0 items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
-              {isActiveRecording ? (
-                isPaused ? (
-                  <Pause className="h-3.5 w-3.5" />
-                ) : (
-                  <Mic className="h-3.5 w-3.5" />
-                )
-              ) : (
+            {isActiveRecording ? null : (
+              <span className="inline-flex shrink-0 items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              )}
-              {stateLabel}
-            </span>
+                {stateLabel}
+              </span>
+            )}
 
             {isActiveRecording ? (
               <>
@@ -412,6 +407,8 @@ export default function RecordingStatusDisplay({
                 }}
                 onMeetingDiscard={onDiscarded}
                 barTrailing={uploadButton}
+                serverPaused={isPaused}
+                audioNow={readLiveAudioMs}
               />
             </div>
           ) : null}
