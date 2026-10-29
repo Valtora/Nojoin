@@ -60,7 +60,7 @@ Selecting the browser's own **Stop sharing** button, or closing its sharing indi
 
 Switching tabs or windows, using another application or moving between Nojoin pages does not pause recording. On every page except the recording itself, a floating badge at the top of the screen shows the status and elapsed time, with pause, resume, stop and discard controls, and opens the recording when clicked.
 
-The release setting also works on Chrome for Android and iOS, which record the microphone only. **Stop** and **Discard** work while the microphone is released and do not need microphone permission.
+The release setting has been tested in desktop browsers and in Chrome for Android, which records the microphone only. It has not been tested on iOS yet. **Stop** and **Discard** work while the microphone is released and do not need microphone permission.
 
 ### Closing Or Reloading The Tab
 
