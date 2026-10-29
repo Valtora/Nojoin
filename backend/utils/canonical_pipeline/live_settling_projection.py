@@ -135,7 +135,9 @@ def lead_speaker(
     def speaker_from(channel: str | None) -> str | None:
         if not tail:
             return None
-        lines = session.execute(
+        # Streamed newest first: the line just before the tail usually matches,
+        # so a long meeting's older lines are never read.
+        with session.execute(
             select(
                 TranscriptUtterance.speaker_label,
                 TranscriptUtterance.confidence_payload,
@@ -149,15 +151,16 @@ def lead_speaker(
                 col(TranscriptUtterance.start_ms).desc(),
                 col(TranscriptUtterance.id).desc(),
             )
-        )
-        return next(
-            (
-                speaker
-                for speaker, payload in lines
-                if source_channel_from_confidence_payload(payload) == channel
-            ),
-            None,
-        )
+            .execution_options(yield_per=8)
+        ) as lines:
+            return next(
+                (
+                    speaker
+                    for speaker, payload in lines
+                    if source_channel_from_confidence_payload(payload) == channel
+                ),
+                None,
+            )
 
     return speaker_from
 
