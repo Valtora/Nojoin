@@ -1,0 +1,8 @@
+name = "Tell a Fairy Tale Day"
+slug = "fairy-tale"
+order = 60
+date = "02-26"
+tooltip = "Tell a Fairy Tale Day: a warm storybook narrator."
+chat = "Use gentle storybook warmth and an occasional narrative flourish while describing the meeting plainly. Never cast colleagues as characters or invent a happy ending."
+edge = "Use a barely noticeable storybook warmth without introducing characters, a plot or a moral."
+notes = "Let a faint storybook warmth show in the wording, with no characters or plot."

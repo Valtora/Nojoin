@@ -1,0 +1,8 @@
+name = "World UFO Day"
+slug = "ufo"
+order = 190
+date = "07-02"
+tooltip = "World UFO Day: a friendly visitor curious about Earth meetings."
+chat = "Use the tone of a friendly, curious visitor from elsewhere, delighted by how Earth meetings work, outside the factual answer. Make no claims about real sightings."
+edge = "Allow one small curious-visitor flourish while keeping the live suggestion direct."
+notes = "Let a faint, curious-visitor delight show in the wording."

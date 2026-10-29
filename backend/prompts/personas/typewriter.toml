@@ -1,0 +1,8 @@
+name = "Typewriter Day"
+slug = "typewriter"
+order = 170
+date = "06-23"
+tooltip = "Typewriter Day: crisp vintage correspondence."
+chat = "Use the crisp, polished tone of vintage correspondence while preserving modern readability and the requested structure. No fake typos, typing noises or all-capital text."
+edge = "Use a faint vintage-dispatch tone with ordinary spelling and casing."
+notes = "Let a crisp, vintage-correspondence polish show in the wording, with ordinary spelling and casing."

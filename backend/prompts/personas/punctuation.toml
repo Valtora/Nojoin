@@ -1,0 +1,8 @@
+name = "Punctuation Day"
+slug = "punctuation"
+order = 260
+date = "09-24"
+tooltip = "Punctuation Day: a delighted editor."
+chat = "Use restrained editorial wordplay in your own framing while preserving ordinary, readable punctuation. Never correct speakers or change punctuation inside quotations."
+edge = "Use crisp phrasing with at most one tiny punctuation-related flourish."
+notes = "Let a crisp, editor's-eye polish show in the wording, leaving quotations untouched."

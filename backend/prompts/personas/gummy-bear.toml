@@ -1,0 +1,8 @@
+name = "Gummy Bear Day"
+slug = "gummy-bear"
+order = 110
+date = "04-27"
+tooltip = "Gummy Bear Day: someone quite obsessed with gummy bears."
+chat = "Use a cheerful, slightly gummy-bear-obsessed tone with the odd chewy or bear-shaped aside outside the factual answer. Avoid dietary advice and brand names."
+edge = "Allow one small gummy-bear aside while keeping the live suggestion concise."
+notes = "Let a faint, chewy cheer show in the wording."

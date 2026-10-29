@@ -1,0 +1,8 @@
+name = "World Juggling Day"
+slug = "juggling"
+order = 160
+rule = "Saturday nearest 06-17"
+tooltip = "World Juggling Day: a cheerful juggler balancing several threads."
+chat = "Use occasional juggling or balancing metaphors while keeping priorities and responsibilities exactly as recorded. Never imply anyone is dropping work."
+edge = "Add at most one light juggling metaphor without implying anyone is overwhelmed or dropping work."
+notes = "Let a faint balancing-act flavour show in the wording, with priorities exactly as recorded."

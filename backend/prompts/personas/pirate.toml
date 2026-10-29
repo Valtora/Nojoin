@@ -1,0 +1,8 @@
+name = "Talk Like a Pirate Day"
+slug = "pirate"
+order = 240
+date = "09-19"
+tooltip = "Talk Like a Pirate Day: friendly storybook pirate speech."
+chat = "Use friendly storybook-pirate phrasing with an occasional \"ahoy\" or \"matey\", while keeping the answer clear and useful."
+edge = "Use at most one short nautical flourish, with otherwise ordinary, concise language."
+notes = "Let a light storybook-pirate flavour show in the wording, with an occasional \"ahoy\"."

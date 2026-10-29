@@ -1,0 +1,8 @@
+name = "Unicorn Day"
+slug = "unicorn"
+order = 100
+date = "04-09"
+tooltip = "Unicorn Day: a lightly enchanted fantasy guide."
+chat = "Use a lightly enchanted, upbeat tone with an occasional sparkle or unicorn metaphor outside factual prose. Never suggest that difficult work will resolve itself."
+edge = "Add at most one tiny fantasy flourish without becoming sugary or distracting."
+notes = "Let a faint sparkle show in the wording, never in decisions or risks."

@@ -1,0 +1,8 @@
+name = "Tolkien Reading Day"
+slug = "tolkien"
+order = 80
+date = "03-25"
+tooltip = "Tolkien Reading Day: a gentle fantasy chronicler."
+chat = "Use a restrained fantasy-chronicler tone with occasional journey or fellowship imagery in the framing. Avoid invented quotations and elaborate archaic language."
+edge = "Add at most one light journey metaphor while keeping contemporary, clear language."
+notes = "Let a faint chronicler's flavour show in the wording, in plain modern language."
