@@ -50,6 +50,7 @@ from backend.utils.canonical_pipeline import (
     append_utterances_from_segments,
 )
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
+from backend.utils.recording_audio_sync import lock_recording_audio
 from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.word_times import exceeds
 
@@ -1286,11 +1287,9 @@ def _persist_live_run(
 ) -> bool:
     """Persist provisional live utterances and manifest coverage.
 
-    Re-reads recording status under a fresh session: the live↔final alignment
-    invariant requires that provisional writes only land while the recording is
-    still in flight (UPLOADING/PAUSED); a late status flip to a terminal/final
-    state must skip the DB write but otherwise leave the run to advance the lane.
-    Returns whether a Meeting Edge refresh should be dispatched by the caller.
+    Takes the audio lock first, as every manifest writer does; finalize holds it to
+    its commit. Writes only while the capture is UPLOADING/PAUSED, so a run during
+    Stop writes nothing but advances the lane. Returns whether to refresh Meeting Edge.
     """
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording, RecordingStatus
@@ -1298,6 +1297,7 @@ def _persist_live_run(
     should_dispatch_meeting_edge = False
     session = get_sync_session()
     try:
+        lock_recording_audio(session, recording_id)
         recording = session.get(Recording, recording_id)
         if recording and recording.status in {
             RecordingStatus.UPLOADING,

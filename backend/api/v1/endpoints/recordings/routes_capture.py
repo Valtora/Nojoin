@@ -792,6 +792,9 @@ async def discard_upload(
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
+    # The audio lock first, in the order finalize and the live lane take
+    # theirs, so a discard during Stop waits for it instead of deadlocking.
+    await recordings_module._lock_capture(db, recording)
     # Locked, so a worker cannot repoint audio_path between this read and the
     # delete (keep_imported_audio_task) and leave its new file behind.
     await db.refresh(recording, with_for_update=True)
