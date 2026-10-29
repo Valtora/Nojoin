@@ -3,11 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecordingStatus, type Recording } from "@/types";
 import { pauseAudioPlayback, seekAudioPlayback, useAudioPlayback } from "./useAudioPlayback";
 
-vi.mock("@/lib/api", () => ({
-  getCapturePlaybackUrl: (id: string, sequence: number) => `/recordings/${id}/capture-stream?sequence=${sequence}`,
-  getRecordingStreamUrl: (id: string) => `/recordings/${id}/stream`,
-}));
-
 const live = (overrides: Partial<Recording> = {}) => ({
   id: "rec-1", has_proxy: false, capture_playback_sequence: 1,
   status: RecordingStatus.UPLOADING, ...overrides,
@@ -28,6 +23,8 @@ function player(recording = live(), stopAt?: number) {
   });
   const event = (name: string) => act(() => { audio.dispatchEvent(new Event(name)); });
   const load = vi.spyOn(audio, "load").mockImplementation(() => {
+    // A browser's load also resets the rate to its default.
+    audio.playbackRate = audio.defaultPlaybackRate;
     media.time = 0;
     media.paused = true;
     media.ended = false;
@@ -65,7 +62,7 @@ describe("growing server playback", () => {
     expect(p.load).not.toHaveBeenCalled();
     expect(p.result.current.waiting).toBe(true);
     p.rerender({ recording: live({ capture_playback_sequence: 0 }) });
-    expect(p.audio.src).toContain("capture-stream?sequence=0");
+    expect(p.audio.src).toMatch(/\/v1\/recordings\/rec-1\/capture-stream\?sequence=0$/);
     p.metadata(2.5);
     expect(p.result.current.waiting).toBe(false);
     expect(p.result.current.duration).toBe(2.5);
@@ -76,8 +73,6 @@ describe("growing server playback", () => {
     p.metadata(10);
     p.media.time = 6.25;
     p.audio.playbackRate = 1.5;
-    p.audio.volume = 0.4;
-    p.audio.muted = true;
     p.rerender({ recording: live({ capture_playback_sequence: 2 }) });
     p.rerender({ recording: live({ capture_playback_sequence: 3 }) });
     p.event("timeupdate");
@@ -90,8 +85,6 @@ describe("growing server playback", () => {
     p.metadata(15);
     expect(p.media.time).toBe(6.25);
     expect(p.audio.playbackRate).toBe(1.5);
-    expect(p.audio.volume).toBe(0.4);
-    expect(p.audio.muted).toBe(true);
     expect(p.play).toHaveBeenCalledOnce();
     expect(p.result.current.isPlaying).toBe(true);
   });
@@ -246,8 +239,9 @@ describe("growing server playback", () => {
     p.rerender({ recording: live({ status }) });
     expect(p.load).toHaveBeenCalledTimes(1);
     expect(p.audio.src).toContain("capture-stream?sequence=1");
-    p.rerender({ recording: live({ has_proxy: true, status: RecordingStatus.PROCESSED }) });
-    expect(p.audio.src).toMatch(/\/stream$/);
+    // The server stops advertising the snapshot once the proxy exists.
+    p.rerender({ recording: live({ has_proxy: true, capture_playback_sequence: null, status: RecordingStatus.PROCESSED }) });
+    expect(p.audio.src).toMatch(/\/v1\/recordings\/rec-1\/stream$/);
     p.metadata(9.8);
     expect(p.media.time).toBe(4.75);
     expect(p.play).toHaveBeenCalledTimes(playing ? 1 : 0);

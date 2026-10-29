@@ -128,7 +128,10 @@ describe("recording detail current metadata and capabilities", () => {
   );
 
   it("notices newly playable chunks without another metadata change", async () => {
-    const before = recording({ status: RecordingStatus.UPLOADING, capture_playback_sequence: -1 });
+    const before = recording({
+      status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
+      has_proxy: false, capture_playback_sequence: -1,
+    });
     mocks.getRecording.mockResolvedValue(before);
     const { result } = renderHook(() => useRecordingDetail({ params }));
     await advance();

@@ -572,7 +572,10 @@ describe("RecordingPage (detail)", () => {
     fireEvent.click(screen.getByTestId("recording-tag-editor"));
     await waitFor(() => expect(screen.queryByTestId("recording-capture-slot")).not.toBeInTheDocument());
     expect(screen.getByTestId("audio-player")).toBe(player);
-    getRecording.mockResolvedValue({ ...snapshot, status: RecordingStatus.PROCESSED, has_proxy: true });
+    // The server stops advertising the snapshot once the proxy exists.
+    getRecording.mockResolvedValue({
+      ...snapshot, status: RecordingStatus.PROCESSED, has_proxy: true, capture_playback_sequence: null,
+    });
     fireEvent.click(screen.getByTestId("recording-tag-editor"));
     await waitFor(() => expect(getRecording).toHaveBeenCalledTimes(4));
     expect(screen.getByTestId("audio-player")).toBe(player);

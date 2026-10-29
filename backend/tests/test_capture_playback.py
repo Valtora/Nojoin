@@ -328,8 +328,14 @@ async def test_detail_keeps_capture_playback_until_the_proxy_exists(
     pending = await client.get("/api/v1/recordings/rec-1")
     assert pending.json()["capture_playback_sequence"] == 0
     assert pending.json()["has_proxy"] is False
+    # A settled page polls with If-None-Match, so the proxy arriving on its own
+    # must end the 304s, or the page keeps playing the capture snapshot.
+    held = {"If-None-Match": pending.headers["etag"]}
+    unchanged = await client.get("/api/v1/recordings/rec-1", headers=held)
+    assert unchanged.status_code == 304
     proxy.write_bytes(b"mp3")
-    ready = await client.get("/api/v1/recordings/rec-1")
+    ready = await client.get("/api/v1/recordings/rec-1", headers=held)
+    assert ready.status_code == 200
     assert ready.json()["capture_playback_sequence"] is None
     assert ready.json()["has_proxy"] is True
 

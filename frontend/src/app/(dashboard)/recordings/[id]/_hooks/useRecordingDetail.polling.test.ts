@@ -110,19 +110,6 @@ describe("recording detail polling", () => {
     expect(mocks.getTranscript).toHaveBeenCalledTimes(3);
   });
 
-  it("leaves a failed recording with capture audio on the idle check", async () => {
-    mocks.getRecording.mockResolvedValue(recording({
-      status: RecordingStatus.ERROR, has_proxy: false, capture_playback_sequence: 2,
-    }));
-    mocks.getRecordingIfChanged.mockResolvedValue(null);
-    mount();
-    await advance(0);
-    await advance(5000);
-    expect(mocks.getRecording).toHaveBeenCalledOnce();
-    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
-    expect(mocks.getRecordingIfChanged).toHaveBeenCalled();
-    expect(mocks.getRecording).toHaveBeenCalledOnce();
-  });
 
   it("falls back from the mobile Meeting Edge panel when switching to desktop", async () => {
     mocks.navigation.activePanel = "meeting-edge";

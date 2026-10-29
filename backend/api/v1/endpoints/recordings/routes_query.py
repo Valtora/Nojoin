@@ -347,9 +347,13 @@ async def get_recordings_calendar(
 
 
 def _recording_etag(
-    status: RecordingStatus, change_sequence: int | None, notes_status: str | None
+    status: RecordingStatus,
+    change_sequence: int | None,
+    notes_status: str | None,
+    has_proxy: bool,
 ) -> str:
-    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}"'
+    proxy = "p" if has_proxy else ""
+    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}-{proxy}"'
 
 
 async def _unchanged_since(
@@ -359,7 +363,10 @@ async def _unchanged_since(
     row = (
         await db.execute(
             select(
-                Recording.status, Transcript.change_sequence, Transcript.notes_status
+                Recording.status,
+                Transcript.change_sequence,
+                Transcript.notes_status,
+                Recording.proxy_path,
             )
             .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
             .where(Recording.public_id == recording_id)
@@ -368,7 +375,14 @@ async def _unchanged_since(
     ).first()
     if row is None:
         return None
-    etag = _recording_etag(*row)
+    status, change_sequence, notes_status, proxy_path = row
+    proxy = confined_recording_path(proxy_path)
+    etag = _recording_etag(
+        status,
+        change_sequence,
+        notes_status,
+        bool(proxy and os.path.exists(proxy)),
+    )
     held = {tag.strip() for tag in if_none_match.split(",")}
     return etag if etag in held else None
 
@@ -384,10 +398,10 @@ async def get_recording(
     """
     Get a specific recording by ID with all relationships loaded.
 
-    The ETag covers only the status, the transcript change counter and the
-    notes status: a finished recording's page sends it back as If-None-Match
-    and gets a 304 until one of them moves. no-store keeps browsers from revalidating ordinary
-    reads with it.
+    The ETag covers only the status, the transcript change counter, the
+    notes status and whether the playback proxy exists: a finished recording's
+    page sends it back as If-None-Match and gets a 304 until one of them moves.
+    no-store keeps browsers from revalidating ordinary reads with it.
     """
     if if_none_match is not None:
         etag = await _unchanged_since(db, recording_id, current_user.id, if_none_match)
@@ -526,13 +540,14 @@ async def get_recording(
             transcript_text_override = ""
 
     transcript = recording.transcript
+    has_proxy = _recording_has_proxy(recording)
     response.headers["ETag"] = _recording_etag(
         recording.status,
         transcript.change_sequence if transcript else None,
         transcript.notes_status if transcript else None,
+        has_proxy,
     )
     response.headers["Cache-Control"] = "no-store"
-    has_proxy = _recording_has_proxy(recording)
     return serialize_recording(
         recording,
         has_proxy=has_proxy,

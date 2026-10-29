@@ -4,11 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 import { RecordingStatus, type Recording } from "@/types";
 
-vi.mock("@/lib/api", () => ({
-  getRecordingStreamUrl: (id: string) => `/api/v1/recordings/${id}/stream`,
-  getCapturePlaybackUrl: (id: string, sequence: number) => `/api/v1/recordings/${id}/capture-stream?sequence=${sequence}`,
-}));
-
 import AudioPlayer from "./AudioPlayer";
 
 beforeEach(() => { vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {}); });
@@ -91,11 +86,16 @@ it("keeps the audio element through empty capture, growth, an error and final ha
   const audio = ref.current!;
   view.rerender(component({ ...snapshot, capture_playback_sequence: 0 }));
   expect(ref.current).toBe(audio);
+  expect(audio.src).toMatch(/\/v1\/recordings\/rec-1\/capture-stream\?sequence=0$/);
   fireEvent.loadedMetadata(audio);
   fireEvent.error(audio);
   expect(ref.current).toBe(audio);
-  view.rerender(component({ ...snapshot, has_proxy: true, status: RecordingStatus.PROCESSED }));
+  // The server stops advertising the snapshot once the proxy exists.
+  view.rerender(component({
+    ...snapshot, has_proxy: true, capture_playback_sequence: null, status: RecordingStatus.PROCESSED,
+  }));
   fireEvent.loadedMetadata(audio);
   expect(ref.current).toBe(audio);
+  expect(audio.src).toMatch(/\/v1\/recordings\/rec-1\/stream$/);
   expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
 });
