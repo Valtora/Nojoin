@@ -26,7 +26,10 @@ describe("MeetingEdgePanel", () => {
     const { rerender } = render(<MeetingEdgePanel {...props} />);
     fireEvent.change(screen.getByDisplayValue("Original focus"), { target: { value: "Pending focus" } });
     rerender(<MeetingEdgePanel {...props} readOnly />);
-    expect(screen.getByDisplayValue("Pending focus")).toHaveAttribute("readonly");
+    // The cancelled draft was never saved, so it does not stay beside "Read-only".
+    expect(screen.queryByDisplayValue("Pending focus")).toBeNull();
+    expect(screen.getByDisplayValue("Original focus")).toHaveAttribute("readonly");
+    expect(screen.getByText("Read-only")).toBeVisible();
     expect(screen.getByText("Retained summary")).toBeVisible();
     expect(screen.getByText("Who owns delivery?")).toBeVisible();
     expect(screen.getByText("Check the launch date.")).toBeVisible();
@@ -35,7 +38,7 @@ describe("MeetingEdgePanel", () => {
     rerender(<MeetingEdgePanel {...props} />);
     await act(async () => vi.advanceTimersByTime(1200));
     expect(onSaveFocus).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByDisplayValue("Pending focus"), { target: { value: "Deliberate new focus" } });
+    fireEvent.change(screen.getByDisplayValue("Original focus"), { target: { value: "Deliberate new focus" } });
     await act(async () => vi.advanceTimersByTime(1200));
     expect(onSaveFocus).toHaveBeenCalledExactlyOnceWith("Deliberate new focus");
     expect(screen.getByText("Saved")).toBeVisible();
@@ -53,6 +56,22 @@ describe("MeetingEdgePanel", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Pending focus" } });
     await act(async () => rerender(<Transition readOnly />));
     expect(onSaveFocus).not.toHaveBeenCalled();
+  });
+
+  it("shows the focus saved before the read-only transition, not a draft dropped by it", async () => {
+    vi.useFakeTimers();
+    const onSaveFocus = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(<MeetingEdgePanel onSaveFocus={onSaveFocus} focusText="Original focus" />);
+    const box = screen.getByRole("textbox");
+    fireEvent.change(box, { target: { value: "Saved focus" } });
+    await act(async () => vi.advanceTimersByTime(1200));
+    expect(onSaveFocus).toHaveBeenCalledExactlyOnceWith("Saved focus");
+    // Typed within the debounce before Stop: never sent.
+    fireEvent.change(box, { target: { value: "Saved focus and more" } });
+    rerender(<MeetingEdgePanel onSaveFocus={onSaveFocus} focusText="Original focus" readOnly />);
+    expect(screen.getByRole("textbox")).toHaveValue("Saved focus");
+    await act(async () => vi.advanceTimersByTime(1200));
+    expect(onSaveFocus).toHaveBeenCalledOnce();
   });
 
   it("ignores a failed focus save from before the read-only transition", async () => {

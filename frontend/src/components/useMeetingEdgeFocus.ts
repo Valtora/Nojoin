@@ -19,13 +19,18 @@ export function useMeetingEdgeFocus(
     focusSaveState: "idle" as SaveState,
   });
   if (state.observedProp !== normalisedFocus || state.readOnly !== readOnly) {
-    const acceptProp = state.observedProp !== normalisedFocus && state.draftFocus === state.lastSaved;
+    const propChanged = state.observedProp !== normalisedFocus;
+    // Read-only cancels the pending save, so a draft typed in the last moments
+    // is never sent: show what is saved rather than leave it on screen.
+    const saved = propChanged ? normalisedFocus : state.lastSaved;
+    const drop = readOnly && !state.readOnly;
+    const acceptProp = propChanged && state.draftFocus === state.lastSaved;
     setState({
       ...state,
       observedProp: normalisedFocus,
       readOnly,
-      draftFocus: acceptProp ? normalisedFocus : state.draftFocus,
-      lastSaved: acceptProp ? normalisedFocus : state.lastSaved,
+      draftFocus: drop ? saved : acceptProp ? normalisedFocus : state.draftFocus,
+      lastSaved: drop ? saved : acceptProp ? normalisedFocus : state.lastSaved,
       focusSaveState: state.readOnly !== readOnly ? "idle" : state.focusSaveState,
     });
   }
