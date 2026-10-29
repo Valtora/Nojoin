@@ -3,8 +3,8 @@
 Every import route stores the upload as it arrived and queues the task; the
 task keeps the audio and queues processing. The routes and the task share a
 SQLite file here, so a test follows an upload from the route through the task.
-The tests of concurrent copies of the task, and of a delete racing it, also
-run on PostgreSQL when ``NOJOIN_TEST_POSTGRES_URL`` names one. Celery
+The tests of concurrent copies of the task, and of a delete or discard racing
+it, also run on PostgreSQL when ``NOJOIN_TEST_POSTGRES_URL`` names one. Celery
 dispatches are recorded (``stub_celery_dispatch``); the ffmpeg cases skip
 without ffmpeg.
 """
@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import types
 import uuid
 from dataclasses import dataclass
@@ -28,8 +29,8 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import Engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Engine, event, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, create_engine
@@ -1146,6 +1147,123 @@ async def test_a_delete_racing_the_task_leaves_no_file(
     await asyncio.to_thread(task.join, 30)
     response = await delete
 
+    assert response.status_code == 200, response.text
+    with env.engine.connect() as connection:
+        count = connection.execute(text("SELECT COUNT(*) FROM recordings"))
+        assert count.scalar_one() == 0
+    assert _files(env.recordings) == []
+
+
+@pytest.mark.anyio
+async def test_storing_the_kept_audio_takes_the_audio_lock_before_the_row(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Discard takes the recording's audio lock, then its row. The task wrote
+    the row first and took the lock only to rebuild the import's window, so
+    the two could deadlock (#787). SQLite has neither lock, so this records
+    the order the task asks for them in."""
+    from backend.utils import recording_audio_sync
+
+    _fixed_chunk_duration(monkeypatch)
+    source = env.tmp / "screen.mkv"
+    source.write_bytes(b"video")
+    recording_id = await _import(env, "import", source)
+    monkeypatch.setattr(imported_audio, "keep_imported_audio", _fake_keep([]))
+    taken: list[str] = []
+    real_lock = recording_audio_sync.lock_recording_audio
+
+    def lock(session, locked_id: int) -> None:
+        taken.append("audio lock")
+        real_lock(session, locked_id)
+
+    for module in (imported_audio, recording_audio_sync):
+        monkeypatch.setattr(module, "lock_recording_audio", lock)
+
+    def row_write(conn, cursor, statement: str, *args) -> None:
+        if statement.startswith("UPDATE recordings "):
+            taken.append("recording row")
+
+    event.listen(env.engine, "before_cursor_execute", row_write)
+    try:
+        _run_task(env, recording_id)
+    finally:
+        event.remove(env.engine, "before_cursor_execute", row_write)
+
+    assert taken[:2] == ["audio lock", "recording row"], taken
+    # The window was rebuilt, under the lock already held.
+    assert "audio lock" in taken[2:], taken
+    assert _recording(env)["processing_step"] is None
+
+
+def _wait_for_a_lock_wait(engine: Engine) -> None:
+    """Return once another backend waits on a lock; fail after 10 s."""
+    deadline = time.monotonic() + 10
+    with engine.connect() as watcher:
+        while time.monotonic() < deadline:
+            waiting = watcher.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity"
+                    " WHERE datname = current_database()"
+                    " AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()"
+                )
+            ).scalar_one()
+            watcher.rollback()
+            if waiting:
+                return
+            time.sleep(0.01)
+    raise AssertionError("the discard never waited on a lock")
+
+
+@pytest.mark.anyio
+async def test_a_discard_while_the_task_stores_the_audio_waits_for_it(
+    pg_env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The task is held in the window rebuild, its row write made, while a
+    discard arrives. With the row taken before the audio lock, the discard
+    held the lock and waited for the row while the task waited for the lock,
+    and PostgreSQL aborted one of them (#787). Now the discard waits for the
+    task's commit, then removes the recording and the audio it kept."""
+    env = pg_env
+    _fixed_chunk_duration(monkeypatch)
+    source = env.tmp / "screen.mkv"
+    source.write_bytes(b"video")
+    imported = await _post(env, "import", source)
+    assert imported.status_code == 200, imported.text
+    recording_id = _recording(env)["id"]
+    monkeypatch.setattr(imported_audio, "keep_imported_audio", _fake_keep([]))
+    monkeypatch.setattr(celery_app.control, "revoke", lambda task_id, **options: None)
+    reached, release = threading.Event(), threading.Event()
+    rebuild = imported_audio._rebuild_import_window
+
+    def paused(*args, **kwargs):
+        reached.set()
+        assert release.wait(30)
+        return rebuild(*args, **kwargs)
+
+    monkeypatch.setattr(imported_audio, "_rebuild_import_window", paused)
+    errors: list[OperationalError] = []
+
+    def run() -> None:
+        try:
+            _run_task(env, recording_id)
+        except OperationalError as exc:
+            errors.append(exc)
+
+    task = threading.Thread(target=run, daemon=True)
+    task.start()
+    assert await asyncio.to_thread(reached.wait, 30)
+
+    discard = asyncio.create_task(
+        env.client.post(f"/api/v1/recordings/{imported.json()['id']}/discard")
+    )
+    await asyncio.to_thread(_wait_for_a_lock_wait, env.engine)
+    release.set()
+    await asyncio.to_thread(task.join, 30)
+    response = await discard
+
+    assert not task.is_alive()
+    assert errors == []
+    assert _dispatched_names(env)[:2] == [KEEP_TASK, PROCESS_TASK]
     assert response.status_code == 200, response.text
     with env.engine.connect() as connection:
         count = connection.execute(text("SELECT COUNT(*) FROM recordings"))
