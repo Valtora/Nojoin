@@ -14,6 +14,8 @@ Some actions also need superuser rights, which only the account created at first
 
 An installation always keeps at least one active Owner, since only an Owner can make another. Nojoin refuses to change the role of, deactivate or delete the last one and says why, so make another account an Owner first. The same goes for superuser rights: Nojoin refuses to deactivate or delete the last active account that has them, or to take them away from it. No account can deactivate itself, so the setup account cannot sign itself out for good. Each rule holds when two accounts change each other at the same moment: one change goes through and the other is refused.
 
+Administrators can view host and worker activity in **Settings > System and logs > Resources**; see [Resources](USAGE.md#resources) for the measurements and estimate limits. Logs still require the setup account.
+
 ## Users and Invitations
 
 Registration is by invitation only. **Settings > Users and access** has three parts:

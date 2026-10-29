@@ -3,6 +3,7 @@ import type {
   AsyncTaskStatus,
   RecordingId,
   TelemetryStatus,
+  SystemResources,
 } from "@/types";
 import api from "./client";
 
@@ -58,6 +59,11 @@ export const getTaskStatus = async (taskId: string): Promise<AsyncTaskStatus> =>
 
 export const getAdminHealth = async (): Promise<AdminHealthStatus> => {
   const response = await api.get<AdminHealthStatus>("/system/admin-health");
+  return response.data;
+};
+
+export const getSystemResources = async (): Promise<SystemResources> => {
+  const response = await api.get<SystemResources>("/system/resources");
   return response.data;
 };
 

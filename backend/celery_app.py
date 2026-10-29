@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+from typing import Any
 
 import redis
 from celery import Celery, bootsteps
@@ -439,23 +440,45 @@ def apply_api_dispatch_limits() -> None:
 
 # Heartbeat implementation to keep worker "active" during heavy tasks
 class HeartbeatThread(threading.Thread):
-    def __init__(self, redis_url, interval=5.0, expire=15):
+    def __init__(
+        self,
+        redis_url: str,
+        interval: float = 5.0,
+        expire: int = 15,
+        worker: Any = None,
+    ) -> None:
         super().__init__()
         self.redis_url = redis_url
         self.interval = interval
         self.expire = expire
         self.daemon = True
         self.stop_event = threading.Event()
+        self.worker = worker
+
+    def publish(self, client: redis.Redis) -> None:
+        from backend.utils.resource_worker import (
+            WORKER_RESOURCE_PREFIX,
+            collect_worker_resources,
+        )
+
+        client.set("nojoin:worker:heartbeat", "1", ex=self.expire)
+        if self.worker is not None:
+            report = collect_worker_resources(self.worker)
+            client.set(
+                WORKER_RESOURCE_PREFIX + report.identity,
+                report.model_dump_json(),
+                ex=self.expire,
+            )
 
     def run(self):
         try:
             r = redis.from_url(self.redis_url)
             while not self.stop_event.is_set():
                 try:
-                    r.set("nojoin:worker:heartbeat", "1", ex=self.expire)
+                    self.publish(r)
                 except Exception as e:  # noqa: BLE001 -- boundary: the heartbeat loop must survive a Redis outage and retry
                     logger.warning(f"Heartbeat error: {e}")
-                time.sleep(self.interval)
+                self.stop_event.wait(self.interval)
         except Exception as e:  # noqa: BLE001 -- boundary: a failed heartbeat thread is logged; the worker keeps serving
             logger.error(f"Heartbeat thread failed to start: {e}")
 
@@ -465,7 +488,7 @@ class HeartbeatThread(threading.Thread):
 
 class HeartbeatStep(bootsteps.StartStopStep):
     def start(self, worker):
-        self.t = HeartbeatThread(REDIS_URL)
+        self.t = HeartbeatThread(REDIS_URL, worker=worker)
         self.t.start()
 
     def stop(self, worker):

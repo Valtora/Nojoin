@@ -10,6 +10,7 @@ vi.mock("@/lib/api", () => ({
   API_BASE_URL: "/api/v1",
   // Never settles: these tests are about the logs, not the health checks.
   getAdminHealth: () => new Promise(() => {}),
+  getSystemResources: () => new Promise(() => {}),
 }));
 
 const context = { isSuperuser: false };
@@ -28,6 +29,10 @@ describe("SystemTab", () => {
   beforeEach(() => {
     openSocket.mockClear();
     vi.stubGlobal("WebSocket", openSocket);
+    vi.stubGlobal("IntersectionObserver", class {
+      observe() {}
+      disconnect() {}
+    });
   });
 
   afterEach(() => {
