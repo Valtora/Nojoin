@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { transcriptLineActions } from "./transcriptLineActions";
+import { LINE_CHANGED_MESSAGE, transcriptLineActions } from "./transcriptLineActions";
 import type { TranscriptSegment } from "@/types";
 
 const text = vi.fn();
@@ -26,10 +26,21 @@ describe("shared recording line actions", () => {
     expect(split).toHaveBeenCalledWith("r1", "u1", "w2", 7);
   });
 
-  it("reports a conflict and tells the editor to keep its text", async () => {
+  it("reports another refusal and tells the editor to keep its text", async () => {
     text.mockRejectedValueOnce({ response: { status: 409, data: { detail: "This line has changed. Select it again." } } });
     const notify = vi.fn();
     expect(await transcriptLineActions(notify).editTranscriptLine("r1", line, "Keep my correction")).toBe(false);
     expect(notify).toHaveBeenCalledWith("This line has changed. Select it again.");
+  });
+
+  it("ends the edit with a plain notice when the line's revision moved on", async () => {
+    const conflict = (detail: string) => ({ response: { status: 409, data: { detail } } });
+    text.mockRejectedValueOnce(conflict("Utterance revision conflict"));
+    split.mockRejectedValueOnce(conflict("This line changed. Reload it and try again."));
+    const notify = vi.fn();
+    const actions = transcriptLineActions(notify);
+    expect(await actions.editTranscriptLine("r1", line, "Stale correction")).toBe(true);
+    expect(await actions.splitTranscriptLine("r1", line, "w2")).toBe(true);
+    expect(notify.mock.calls).toEqual([[LINE_CHANGED_MESSAGE], [LINE_CHANGED_MESSAGE]]);
   });
 });
