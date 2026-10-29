@@ -20,6 +20,7 @@ const handlers = (): LiveLineHandlers => ({
   split: vi.fn().mockResolvedValue(true),
 });
 const open = () => fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
+const WAITING = "Corrections open when this line locks, usually within half a minute.";
 
 describe("settling line actions", () => {
   it("keeps typed notes available beneath an unlocked active line", () => {
@@ -39,14 +40,16 @@ describe("settling line actions", () => {
     });
     const initial = applyTranscriptDelta({ currentState: null, recordingId: "r1", fallbackSegments: [], delta: delta(false), mode: "full" });
     const view = render(<LiveTranscriptPanel segments={initial.segments} hasLoaded onNoteOnLine={vi.fn()} lineHandlers={actions} />);
-    expect(screen.getByTestId("live-transcript-line")).toHaveAccessibleDescription("This line is still settling.");
+    expect(screen.getByTestId("live-transcript-line")).toHaveAccessibleDescription(WAITING);
     expect(screen.queryByText("Settling…")).not.toBeInTheDocument();
     open();
     const items = screen.getAllByRole("menuitem");
-    expect(items.map((item) => item.textContent?.replace("This line is still settling.", ""))).toEqual([
-      "Edit text", "Change speaker", "Split line",
-    ]);
+    // Named by their labels alone, with the reason said once for the menu.
+    expect(items.map((item) => item.textContent)).toEqual(["Edit text", "Change speaker", "Split line"]);
+    expect(within(screen.getByRole("menu").parentElement!).getAllByText(WAITING)).toHaveLength(1);
     for (const item of items) {
+      expect(item).toHaveAccessibleName(item.textContent!);
+      expect(item).toHaveAccessibleDescription(WAITING);
       expect(item).toHaveAttribute("aria-disabled", "true");
       fireEvent.click(item);
     }
