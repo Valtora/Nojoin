@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 from typing import Any, Optional
 
@@ -154,13 +155,21 @@ def resolve_tls_fingerprint() -> str | None:
         return None
 
 
-client: DockerClient | None = None
-client_init_error: str | None = None
-try:
-    client = docker.from_env()
-except DockerException as e:
-    logger.error(f"Failed to initialize Docker client: {e}")
-    client_init_error = str(e)
+@functools.cache
+def get_docker_client() -> DockerClient:
+    """The Docker client the log endpoints read through, opened on first use.
+
+    Opening it asks the daemon (the socket proxy, under Compose) for its API
+    version, so it is done on the first log request rather than at import. A
+    failure raises DockerException and is not cached: the next request tries
+    again, so a proxy that was down when the API started stops mattering once
+    it answers.
+    """
+    try:
+        return docker.from_env()
+    except DockerException as e:
+        logger.error(f"Failed to initialize Docker client: {e}")
+        raise
 
 
 ALLOWED_CONTAINERS = {
@@ -233,8 +242,9 @@ def download_logs(
     if container != LOG_ALL and container not in ALLOWED_CONTAINERS:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    docker_client = client
-    if docker_client is None:
+    try:
+        docker_client = get_docker_client()
+    except DockerException:
         raise HTTPException(status_code=503, detail="Docker client unavailable")
 
     if container == LOG_ALL:
@@ -269,11 +279,13 @@ async def websocket_logs(
 
     await websocket.accept()
 
-    docker_client = client
-    if docker_client is None:
+    try:
+        # Opening the client is a blocking call to the daemon.
+        docker_client = await asyncio.to_thread(get_docker_client)
+    except DockerException as e:
         error_msg = (
-            f"Error: Docker client unavailable. {client_init_error}"
-            if client_init_error
+            f"Error: Docker client unavailable. {e}"
+            if str(e)
             else "Error: Docker client unavailable"
         )
         await websocket.send_text(error_msg)
