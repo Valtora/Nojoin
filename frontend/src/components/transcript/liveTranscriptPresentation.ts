@@ -18,11 +18,13 @@ export interface LiveTranscriptPresentation {
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
 
-/** Live headers follow adjacent speaker runs, independently of playback groups. */
+/**
+ * Every labelled live line names its speaker, as a finished line does; the
+ * source label shows only where the audio source changes.
+ */
 export interface LiveLinePresentation {
   sourceLabel: string | null;
   speakerLabel: string | null;
-  sameSpeakerContinuation: boolean;
   speakerLocked: boolean;
 }
 
@@ -42,17 +44,10 @@ export function buildLiveTranscriptPresentation(
   return new Map(segments.map((segment, index) => {
     const previous = index > 0 ? segments[index - 1] : undefined;
     const channel = sourceChannelOf(segment);
-    const label = speakerLabelOf(segment);
-    const previousLabel = previous
-      ? segment.settling_required ? speakerLabelOf(previous) : liveLabelOf(previous)
-      : null;
-    const showSpeaker = label !== null && (!previous || label !== previousLabel);
     return [getTranscriptSegmentKey(segment, index), {
       sourceLabel: channel !== null && channel !== (previous ? sourceChannelOf(previous) : null)
         ? channel === "microphone" ? "Microphone" : "Shared audio" : null,
-      speakerLabel: showSpeaker ? label : null,
-      sameSpeakerContinuation: segment.settling_required === true &&
-        previous !== undefined && segment.speaker === previous.speaker,
+      speakerLabel: speakerLabelOf(segment),
       speakerLocked: segment.settling_required ? segment.locked === true : segment.speaker_state === "stable",
     }];
   }));

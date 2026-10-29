@@ -192,7 +192,7 @@ function TranscriptLine({
       data-speaker-highlighted={highlighted || undefined}
       aria-describedby={live && lineIsSettling(segment) ? settlingDescriptionId : undefined}
       className={live
-        ? `group/line${liveLine?.sameSpeakerContinuation ? " pt-2" : ""}${highlighted ? " rounded-lg outline-2 outline-action-border outline-offset-2" : ""}`
+        ? `group/line${highlighted ? " rounded-lg outline-2 outline-action-border outline-offset-2" : ""}`
         : `group/line flex flex-col mb-3 last:mb-0 ${highlighted ? "rounded-lg outline-2 outline-action-border outline-offset-2" : ""}`}
     >
       {live && lineIsSettling(segment) ? <p id={settlingDescriptionId} hidden>{LINE_SETTLING_REASON}</p> : null}
