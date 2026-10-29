@@ -1,13 +1,14 @@
 """When the live task queues a naming check, run through the real live lane.
 
-In the lane, only the label step is replaced: the stand-in writes its answer
-through the real label projection and reports whether lines changed, which the
-last test shows the real step does. Celery dispatch and Redis are stubbed.
+The lane runs the real label step; only the label device, the speaker model
+(which hears every audible sample as one voice), Celery dispatch and Redis are
+replaced.
 """
 
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 from sqlmodel import Session
 
@@ -29,28 +30,25 @@ from backend.tests.test_live_speaker_labels_db import (
     _database,
     _patch_step,
 )
-from backend.utils.canonical_pipeline.live_labels import (
-    LiveLabelDecision,
-    apply_live_speaker_labels,
-)
 from backend.worker.tasks.live_naming_stage import LIVE_NAMING_TASK
+
+# Captured before the lane fixture swaps the step out for its own recorder.
+REAL_LABEL_STEP = labels_worker.run_live_speaker_labels
+
+
+class _OneVoice(SpeakerTrackModel):
+    """The speaker model: every audible sample in a window is one speaker."""
+
+    def __call__(self, windows: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return super().__call__((np.abs(windows) > 0.01).astype(np.float32))
 
 
 def _label_every_line(lane: ResumeLane, monkeypatch: pytest.MonkeyPatch) -> None:
-    def label(run: Any) -> bool:
-        with Session(lane.engine) as session:
-            write = apply_live_speaker_labels(
-                session,
-                recording_id=run.recording_id,
-                settled_ms=0,
-                decide=lambda _start, _end: LiveLabelDecision(
-                    "LIVE_PROVISIONAL_1", False, 1.0
-                ),
-            )
-            session.commit()
-        return write.changed > 0
-
-    monkeypatch.setattr(labels_worker, "run_live_speaker_labels", label)
+    """Run the real label step, with only the device and model replaced."""
+    model = _OneVoice()
+    monkeypatch.setattr(labels_worker, "run_live_speaker_labels", REAL_LABEL_STEP)
+    monkeypatch.setattr(labels_worker, "live_speaker_labels_device", lambda: "cpu")
+    monkeypatch.setattr(labels_worker, "_load_model", lambda device, config: model)
 
 
 def _naming_checks(dispatched: list[Any]) -> int:
