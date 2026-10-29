@@ -56,6 +56,7 @@ from . import (
     routes_actions,
     routes_batch_init,
     routes_capture,
+    routes_capture_stream,
     routes_import_upload,
     routes_query,
 )

@@ -203,6 +203,7 @@ export default function RecordingPage({ params }: PageProps) {
       recording={recording}
       inFlight={showCaptureSlot}
       canPlayback={canPlayback}
+      hidePlayer={localCaptureActive}
       canExport={canExport}
       transcriptIsAuthoritative={transcriptIsAuthoritative}
       hasRetainedPublication={hasRetainedPublication}

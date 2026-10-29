@@ -16,6 +16,7 @@ import { Recording, RecordingStatus } from "@/types";
 interface RecordingHeaderProps {
   recording: Recording;
   playerSlot?: ReactNode;
+  hidePlayer?: boolean;
   isMobile: boolean;
   isEditingTitle: boolean;
   titleValue: string;
@@ -38,6 +39,7 @@ interface RecordingHeaderProps {
 export default function RecordingHeader({
   recording,
   playerSlot,
+  hidePlayer = false,
   isMobile,
   isEditingTitle,
   titleValue,
@@ -203,11 +205,12 @@ export default function RecordingHeader({
       )}
 
       {/* Audio Player in Header */}
-      {playerSlot ?? (recording &&
+      {playerSlot}
+      {!hidePlayer && (recording.capture_playback_sequence != null || (
         recording.status !== RecordingStatus.PAUSED &&
        recording.status !== RecordingStatus.UPLOADING &&
        recording.status !== RecordingStatus.PROCESSING &&
-       recording.status !== RecordingStatus.QUEUED && (
+       recording.status !== RecordingStatus.QUEUED)) && (
           <AudioPlayer
             recording={recording}
             audioRef={audioRef}
@@ -217,7 +220,7 @@ export default function RecordingHeader({
             onPause={onPause}
             compact={isMobile}
           />
-        ))}
+        )}
     </header>
   );
 }

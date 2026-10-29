@@ -15,7 +15,8 @@ export const isRecordingInFlight = (recording: Recording | null | undefined) =>
 
 // Processed, with audio a proxy can be made from, and no proxy yet.
 const isWaitingForProxy = (recording: Recording) =>
-  recording.status === RecordingStatus.PROCESSED &&
+  (recording.status === RecordingStatus.PROCESSED ||
+    (recording.status === RecordingStatus.ERROR && (recording.capture_playback_sequence ?? -1) >= 0)) &&
   recording.has_proxy === false &&
   recording.has_audio !== false &&
   !isDemoRecording(recording);
@@ -153,6 +154,7 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.processing_eta_learning !== current.processing_eta_learning ||
   polled.processing_eta_sample_size !== current.processing_eta_sample_size ||
   polled.has_proxy !== current.has_proxy ||
+  polled.capture_playback_sequence !== current.capture_playback_sequence ||
   polled.has_audio !== current.has_audio ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||

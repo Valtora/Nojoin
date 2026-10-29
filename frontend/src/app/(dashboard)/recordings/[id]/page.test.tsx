@@ -543,6 +543,41 @@ describe("RecordingPage (detail)", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
+  it.each(["recording", "paused", "finalizing", "idle"])(
+    "shows uploaded audio only outside the owning capture tab (%s)", async (captureStatus) => {
+      localCaptureId = captureStatus === "idle" ? null : "rec-1";
+      localCaptureStatus = captureStatus;
+      getRecording.mockResolvedValue(buildRecording({
+        status: RecordingStatus.UPLOADING, has_proxy: false, capture_playback_sequence: 2,
+      }));
+      renderPage();
+      await screen.findByTestId("recording-capture-slot");
+      expect(!!screen.queryByTestId("audio-player")).toBe(captureStatus === "idle");
+      expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
+    },
+  );
+
+  it("retains the watching player through processing and final proxy publication", async () => {
+    const snapshot = buildRecording({
+      status: RecordingStatus.UPLOADING, has_proxy: false, capture_playback_sequence: 2,
+    });
+    getRecording.mockResolvedValue(snapshot);
+    renderPage();
+    const player = await screen.findByTestId("audio-player");
+    getRecording.mockResolvedValue({ ...snapshot, status: RecordingStatus.PROCESSING });
+    fireEvent.click(screen.getByTestId("recording-tag-editor"));
+    await waitFor(() => expect(getRecording).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("audio-player")).toBe(player);
+    getRecording.mockResolvedValue({ ...snapshot, status: RecordingStatus.PROCESSED });
+    fireEvent.click(screen.getByTestId("recording-tag-editor"));
+    await waitFor(() => expect(screen.queryByTestId("recording-capture-slot")).not.toBeInTheDocument());
+    expect(screen.getByTestId("audio-player")).toBe(player);
+    getRecording.mockResolvedValue({ ...snapshot, status: RecordingStatus.PROCESSED, has_proxy: true });
+    fireEvent.click(screen.getByTestId("recording-tag-editor"));
+    await waitFor(() => expect(getRecording).toHaveBeenCalledTimes(4));
+    expect(screen.getByTestId("audio-player")).toBe(player);
+  });
+
   it.each([
     ["recording", RecordingStatus.UPLOADING, ClientStatus.RECORDING],
     ["paused", RecordingStatus.PAUSED, ClientStatus.PAUSED],

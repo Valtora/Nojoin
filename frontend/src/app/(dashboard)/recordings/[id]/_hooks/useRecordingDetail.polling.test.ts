@@ -110,6 +110,23 @@ describe("recording detail polling", () => {
     expect(mocks.getTranscript).toHaveBeenCalledTimes(3);
   });
 
+  it.each([RecordingStatus.PROCESSED, RecordingStatus.ERROR])(
+    "checks missing final proxy unconditionally after %s until it arrives", async (status) => {
+      const snapshot = recording({ status, has_proxy: false, capture_playback_sequence: 2 });
+      mocks.getRecording.mockResolvedValue(snapshot);
+      const { result } = mount();
+      await advance(0);
+      await advance(1000);
+      expect(mocks.getRecording).toHaveBeenCalledTimes(2);
+      expect(mocks.getRecordingIfChanged).not.toHaveBeenCalled();
+      mocks.getRecording.mockResolvedValue({ ...snapshot, has_proxy: true, capture_playback_sequence: null });
+      await advance(1000);
+      expect(result.current.detail.recording?.has_proxy).toBe(true);
+      await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+      expect(mocks.getRecordingIfChanged).toHaveBeenCalledOnce();
+    },
+  );
+
 
   it("falls back from the mobile Meeting Edge panel when switching to desktop", async () => {
     mocks.navigation.activePanel = "meeting-edge";

@@ -59,6 +59,8 @@ TABLES = [
         sample_rate_hz BIGINT NOT NULL,
         channel_count BIGINT NOT NULL,
         byte_size BIGINT NOT NULL,
+        pcm_data_offset BIGINT,
+        pcm_byte_size BIGINT,
         sha256 VARCHAR(128) NOT NULL,
         storage_path TEXT NOT NULL,
         upload_status VARCHAR NOT NULL,

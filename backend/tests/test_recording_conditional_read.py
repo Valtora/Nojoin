@@ -23,6 +23,7 @@ from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
+    RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
 )
@@ -54,6 +55,7 @@ async def session_maker() -> AsyncIterator[sessionmaker]:
             TAGS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
             DOCUMENTS_SCHEMA,
+            RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA,
             TRANSCRIPT_UTTERANCES_SCHEMA,
         ):
             await connection.execute(text(schema))

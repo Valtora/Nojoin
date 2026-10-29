@@ -103,6 +103,7 @@ describe("api public surface", () => {
         "getCalendarDashboardSummary",
         "getCalendarOverview",
         "getCalendarProviderStatuses",
+        "getCapturePlaybackUrl",
         "getChatHistory",
         "getConnectedApps",
         "getCurrentUser",

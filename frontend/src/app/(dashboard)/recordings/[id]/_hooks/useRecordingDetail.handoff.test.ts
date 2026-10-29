@@ -116,4 +116,26 @@ describe("recording detail current metadata and capabilities", () => {
     await result.current.handleExport({ kind: "audio" });
     expect(mocks.exportAudio).toHaveBeenCalledWith("rec-1", "Meeting");
   });
+
+  it.each([RecordingStatus.UPLOADING, RecordingStatus.PAUSED, RecordingStatus.PROCESSING])(
+    "enables watching playback while %s without enabling export", async (status) => {
+      mocks.getRecording.mockResolvedValue(recording({ status, has_proxy: false, capture_playback_sequence: 0 }));
+      const { result } = renderHook(() => useRecordingDetail({ params }));
+      await advance();
+      expect(result.current.canPlayback).toBe(true);
+      expect(result.current.canExport).toBe(false);
+    },
+  );
+
+  it("notices newly playable chunks without another metadata change", async () => {
+    const before = recording({ status: RecordingStatus.UPLOADING, capture_playback_sequence: -1 });
+    mocks.getRecording.mockResolvedValue(before);
+    const { result } = renderHook(() => useRecordingDetail({ params }));
+    await advance();
+    expect(result.current.canPlayback).toBe(false);
+    mocks.getRecording.mockResolvedValue({ ...before, capture_playback_sequence: 0 });
+    await advance(1_000);
+    expect(result.current.recording?.capture_playback_sequence).toBe(0);
+    expect(result.current.canPlayback).toBe(true);
+  });
 });

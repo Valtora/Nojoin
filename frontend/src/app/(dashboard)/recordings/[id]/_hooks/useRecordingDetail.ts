@@ -57,6 +57,7 @@ import { useNoteEdits } from "@/lib/notes/useNoteEdits";
 import { useRecordingNotes } from "@/lib/notes/useNoteOutbox";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
 import { useRecordingActions } from "@/components/recordings/_hooks/useRecordingActions";
+import { pauseAudioPlayback } from "@/components/useAudioPlayback";
 
 import {
   cloneTranscriptSegments,
@@ -166,8 +167,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const isInFlightRecording = isRecordingInFlight(recording);
   const localCaptureActive = !!recording && capture?.recordingId === recording.id &&
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
-  const canPlayback = !!recording && !isInFlightRecording && !localCaptureActive;
-  const canExport = canPlayback;
+  const canPlayback = !!recording && !localCaptureActive &&
+    (!isInFlightRecording || (recording.capture_playback_sequence ?? -1) >= 0);
+  const canExport = !!recording && !isInFlightRecording && !localCaptureActive;
   const {
     transcriptStateRef, setTranscriptState, transcriptSegments, deferredTranscriptUtteranceIds,
     transcriptSpeakerNames, transcriptSpeakers, liveTranscript, usesInFlightTranscript, transcriptIsAuthoritative,
@@ -471,7 +473,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       setCurrentTime(current);
 
       if (stopTime !== null && current >= stopTime) {
-        audioRef.current.pause();
+        pauseAudioPlayback(audioRef.current);
         setStopTime(null);
       }
     }
@@ -484,7 +486,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         setCurrentTime(start);
 
         // Pause first to interrupt any pending play requests
-        audioRef.current.pause();
+        pauseAudioPlayback(audioRef.current);
 
         audioRef.current.currentTime = start;
         if (end) setStopTime(end);
@@ -503,7 +505,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
 
   const handlePause = () => {
     if (audioRef.current) {
-      audioRef.current.pause();
+      pauseAudioPlayback(audioRef.current);
     }
   };
 

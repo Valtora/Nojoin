@@ -37,6 +37,7 @@ interface RecordingMainContentProps {
   liveNoteBoxRef?: RefObject<HTMLTextAreaElement | null>;
   recording: Recording;
   playerSlot?: ReactNode;
+  hidePlayer?: boolean;
   inFlightContent?: ReactNode;
   speakersContent?: ReactNode;
   myNotesContent?: ReactNode;
@@ -160,6 +161,7 @@ export default function RecordingMainContent({
   liveNoteBoxRef,
   recording,
   playerSlot,
+  hidePlayer,
   inFlightContent,
   speakersContent,
   myNotesContent,
@@ -272,6 +274,7 @@ export default function RecordingMainContent({
         setIsMobileHeaderActionsOpen={setIsMobileHeaderActionsOpen}
         recording={recording}
         playerSlot={playerSlot}
+        hidePlayer={hidePlayer}
         isMobile={isMobile}
         isEditingTitle={isEditingTitle}
         titleValue={titleValue}

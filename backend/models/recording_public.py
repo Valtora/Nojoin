@@ -252,6 +252,9 @@ class RecordingPublicRead(PublicModel):
     # where summing per row would be a query per recording for a figure no list
     # view shows.
     captured_audio_seconds: Optional[float] = None
+    # The placed browser PCM prefix available for a fixed capture-stream URL.
+    # -1 means waiting for the first playable chunk; None is not advertised.
+    capture_playback_sequence: Optional[int] = None
     # Where on the audio timeline capture is now, in ms: the clock timeline
     # notes are anchored on. The end of the last transcoded segment, plus the
     # time since it arrived, or since the last resume if later, while recording
@@ -440,6 +443,7 @@ def serialize_recording(
     transcript_text_override: Optional[str] = None,
     speakers_override: Optional[list[RecordingSpeaker]] = None,
     captured_audio_seconds: Optional[float] = None,
+    capture_playback_sequence: Optional[int] = None,
     live_audio_ms: Optional[int] = None,
     timeline_notes_list_signature: Optional[str] = None,
 ) -> RecordingPublicRead:
@@ -513,6 +517,7 @@ def serialize_recording(
         max_speakers=getattr(recording, "max_speakers", None),
         transcription_language=getattr(recording, "transcription_language", None),
         captured_audio_seconds=captured_audio_seconds,
+        capture_playback_sequence=capture_playback_sequence,
         live_audio_ms=live_audio_ms,
         timeline_notes_list_signature=timeline_notes_list_signature,
         is_archived=recording.is_archived,

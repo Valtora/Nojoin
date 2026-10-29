@@ -143,6 +143,9 @@ export const getRecordingStreamUrl = (id: RecordingId): string => {
   return `${API_BASE_URL}/recordings/${id}/stream`;
 };
 
+export const getCapturePlaybackUrl = (id: RecordingId, sequence: number): string =>
+  `${API_BASE_URL}/recordings/${id}/capture-stream?sequence=${sequence}`;
+
 export const archiveRecording = async (id: RecordingId): Promise<Recording> => {
   const response = await api.post<Recording>(`/recordings/${id}/archive`);
   return response.data;

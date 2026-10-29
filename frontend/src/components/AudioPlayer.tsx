@@ -3,7 +3,7 @@
 import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Recording, RecordingStatus } from "@/types";
-import { getRecordingStreamUrl } from "@/lib/api";
+import { useAudioPlayback } from "./useAudioPlayback";
 import {
   Play,
   Pause,
@@ -11,7 +11,7 @@ import {
   VolumeX,
   Loader2,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface AudioPlayerProps {
   recording: Recording;
@@ -41,64 +41,12 @@ export default function AudioPlayer({
   onPause,
   compact = false,
 }: AudioPlayerProps) {
-  const [hasError, setHasError] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(recording.duration_seconds || 0);
+  const { hasError, isPlaying, duration, togglePlay, waiting } = useAudioPlayback(recording, audioRef, {
+    onTimeUpdate, onEnded, onPlay, onPause,
+  });
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-
-  // Sync local playing state with audio element events
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const handlePlay = () => {
-      setIsPlaying(true);
-      onPlay?.();
-    };
-    const handlePause = () => {
-      setIsPlaying(false);
-      onPause?.();
-    };
-    const handleLoadedMetadata = () => {
-      if (audio.duration && !isNaN(audio.duration)) {
-        setDuration(audio.duration);
-      }
-      setHasError(false);
-    };
-    const handleError = () => {
-      console.warn("Audio file failed to load:", audio.src);
-      setHasError(true);
-      setIsPlaying(false);
-    };
-
-    audio.addEventListener("play", handlePlay);
-    audio.addEventListener("pause", handlePause);
-    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
-    audio.addEventListener("error", handleError);
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    if (onEnded) audio.addEventListener("ended", onEnded);
-
-    return () => {
-      audio.removeEventListener("play", handlePlay);
-      audio.removeEventListener("pause", handlePause);
-      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
-      audio.removeEventListener("error", handleError);
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      if (onEnded) audio.removeEventListener("ended", onEnded);
-    };
-  }, [audioRef, onTimeUpdate, onEnded, onPlay, onPause]);
-
-  const togglePlay = () => {
-    if (audioRef.current && !hasError) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-    }
-  };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
@@ -149,10 +97,10 @@ export default function AudioPlayer({
     recording.status === RecordingStatus.PAUSED ||
     recording.status === RecordingStatus.PROCESSING ||
     recording.status === RecordingStatus.QUEUED;
-  const audioMissing = recording.has_audio === false && !inFlight && !isDemo;
+  const audioMissing = recording.has_audio === false && !inFlight && !isDemo &&
+    (recording.capture_playback_sequence ?? -1) < 0;
   const proxyUnavailable =
-    recording.has_proxy === false &&
-    recording.status !== RecordingStatus.UPLOADING &&
+    waiting &&
     !isDemo &&
     !audioMissing;
   const shellClassName = compact
@@ -186,10 +134,12 @@ export default function AudioPlayer({
         id="audio-player"
         className={`${shellClassName} relative overflow-hidden`}
       >
+        <audio ref={audioRef} preload="metadata" />
         <SurfaceBase data-ui-fill="card" kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 font-medium text-status-info-fg ${compact ? "text-xs" : "text-sm"}`}>
             <Loader2 className="w-4 h-4 animate-spin" />
-            Audio is being processed, please wait...
+            {recording.capture_playback_sequence === -1
+              ? "Waiting for uploaded audio..." : "Audio is being processed, please wait..."}
           </span>
         </SurfaceBase>
 
@@ -222,6 +172,7 @@ export default function AudioPlayer({
         id="audio-player"
         className={`${shellClassName} relative overflow-hidden`}
       >
+        {!isDemo && !audioMissing && <audio ref={audioRef} preload="metadata" />}
         {/* Blurred background visual effect */}
         <SurfaceBase data-ui-fill="card" kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 font-medium text-action-tint-fg ${compact ? "text-xs" : "text-sm"}`}>
@@ -253,14 +204,6 @@ export default function AudioPlayer({
         </div>
         )}
 
-        {!isDemo && !audioMissing && (
-          <audio
-            ref={audioRef}
-            src={getRecordingStreamUrl(recording.id)}
-            preload="auto"
-            className="hidden"
-          />
-        )}
       </SurfaceBase>
     );
   }
@@ -274,8 +217,7 @@ export default function AudioPlayer({
     >
       <audio
         ref={audioRef}
-        src={getRecordingStreamUrl(recording.id)}
-        preload="auto"
+        preload="metadata"
       />
 
       {compact ? (
@@ -285,6 +227,7 @@ export default function AudioPlayer({
               data-ui-fill="action"
               data-ui-hover="action-hover" chrome="action"
               onClick={togglePlay}
+              aria-label={isPlaying ? "Pause" : "Play"}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-action text-action-on shadow-card transition-colors hover:bg-action-hover"
             >
               {isPlaying ? (
@@ -336,6 +279,7 @@ export default function AudioPlayer({
             data-ui-fill="action"
             data-ui-hover="action-hover" chrome="action"
             onClick={togglePlay}
+            aria-label={isPlaying ? "Pause" : "Play"}
             className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-action text-action-on hover:bg-action-hover transition-colors shadow-card shrink-0 order-1"
           >
             {isPlaying ? (

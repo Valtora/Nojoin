@@ -602,6 +602,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   meeting_uid: string;
   audio_path: string;
   has_proxy?: boolean;
+  /** Last playable browser chunk; -1 while empty, null when no snapshot is advertised. */
+  capture_playback_sequence?: number | null;
   /**
    * False when neither the audio nor its proxy exists, so none is coming.
    * Null when the endpoint did not check; only list and detail reads do.

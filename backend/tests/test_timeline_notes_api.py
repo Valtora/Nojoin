@@ -30,6 +30,7 @@ from backend.services.timeline_note_service import load_recording_timeline_notes
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
     GLOBAL_SPEAKERS_SCHEMA,
+    RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA,
     RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
@@ -444,6 +445,7 @@ async def _add_detail_tables(session_maker) -> None:
     async with session_maker() as session:
         for schema in (
             RECORDING_AUDIO_CHUNKS_SCHEMA,
+            RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             TAGS_SCHEMA,

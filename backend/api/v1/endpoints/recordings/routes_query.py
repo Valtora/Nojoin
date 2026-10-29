@@ -21,7 +21,11 @@ from backend.models.calendar import (
     CalendarSource,
 )
 from backend.models.pipeline import RecordingAudioChunk, TranscriptUtterance
-from backend.models.recording import Recording, RecordingStatus
+from backend.models.recording import (
+    IN_FLIGHT_TRANSCRIPT_STATUSES,
+    Recording,
+    RecordingStatus,
+)
 from backend.models.recording_public import (
     CalendarEventLinkRead,
     RecordingPublicRead,
@@ -44,6 +48,7 @@ from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
 )
+from backend.utils.capture_playback import capture_playback_sequence
 from backend.utils.live_audio_clock import (
     capture_is_advancing,
     estimate_live_audio_ms,
@@ -367,6 +372,10 @@ async def _unchanged_since(
     ).first()
     if row is None:
         return None
+    # Capture geometry changes without a transcript/status write. These reads
+    # need the body until the final recording has settled.
+    if row[0] in IN_FLIGHT_TRANSCRIPT_STATUSES:
+        return None
     etag = _recording_etag(*row)
     held = {tag.strip() for tag in if_none_match.split(",")}
     return etag if etag in held else None
@@ -531,10 +540,14 @@ async def get_recording(
         transcript.notes_status if transcript else None,
     )
     response.headers["Cache-Control"] = "no-store"
+    has_proxy = _recording_has_proxy(recording)
     return serialize_recording(
         recording,
-        has_proxy=_recording_has_proxy(recording),
+        has_proxy=has_proxy,
         has_audio=_recording_has_audio(recording),
+        capture_playback_sequence=(
+            await capture_playback_sequence(db, recording) if not has_proxy else None
+        ),
         processing_eta_seconds=processing_eta_seconds,
         processing_eta_learning=processing_eta_learning,
         processing_eta_sample_size=processing_eta_sample_size,
