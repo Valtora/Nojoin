@@ -132,6 +132,7 @@ class TranscriptPublicRead(PublicModel):
     text: Optional[str] = None
     segments: list[dict[str, Any]] = Field(default_factory=list)
     notes: Optional[str] = None
+    notes_generation_metadata: dict[str, Any] | None = None
     meeting_edge_focus: Optional[str] = None
     meeting_edge_payload: Optional[dict[str, Any]] = None
     meeting_edge_status: str = "idle"
@@ -364,6 +365,7 @@ def serialize_transcript(
             )
         ],
         notes=transcript.notes,
+        notes_generation_metadata=transcript.notes_generation_metadata,
         meeting_edge_focus=transcript.meeting_edge_focus,
         meeting_edge_payload=transcript.meeting_edge_payload,
         meeting_edge_status=transcript.meeting_edge_status,

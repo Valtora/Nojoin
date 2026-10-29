@@ -41,6 +41,12 @@ class Transcript(BaseDBModel, table=True):
         default=None, sa_column=Column(JSONB)
     )
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+    notes_generation_metadata: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(
+            JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+        ),
+    )
     meeting_edge_focus: Optional[str] = Field(default=None, sa_column=Column(Text))
     meeting_edge_payload: Optional[Dict[str, Any]] = Field(
         default=None, sa_column=Column(JSONB)

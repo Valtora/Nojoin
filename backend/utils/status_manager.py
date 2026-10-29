@@ -17,18 +17,18 @@ def _retire_run_state(transcript: Transcript, new_status: RecordingStatus) -> No
         transcript.clear_meeting_edge_error()
 
 
-def update_recording_status(session: Session, recording_id: int):
+def update_recording_status(session: Session, recording_id: int) -> None:
     """
-    Updates the parent Recording status based on the status of its components (Transcript, Notes).
+    Update final processing status from transcription, independently of outputs.
 
-    Logic:
-    - If any component is processing/generating -> PROCESSING
-    - If transcript is error -> ERROR
-    - If transcript is completed -> PROCESSED (unless notes are processing)
+    Capture owns UPLOADING and PAUSED until Stop explicitly queues the recording.
+    Notes and other derived outputs keep their own generating and error states.
     """
     recording = session.get(Recording, recording_id)
     if not recording:
         logger.error(f"Recording {recording_id} not found during status update.")
+        return
+    if recording.status in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         return
 
     transcript = session.exec(
@@ -40,15 +40,11 @@ def update_recording_status(session: Session, recording_id: int):
         return
 
     t_status = transcript.transcript_status
-    n_status = transcript.notes_status
-
-    logger.info(
-        f"Updating status for Recording {recording_id}. Transcript: {t_status}, Notes: {n_status}"
-    )
+    logger.info(f"Updating status for Recording {recording_id}. Transcript: {t_status}")
 
     new_status = recording.status
 
-    if t_status == "processing" or n_status == "generating":
+    if t_status == "processing":
         new_status = RecordingStatus.PROCESSING
 
     # A transcript error marks the recording failed.
@@ -56,8 +52,7 @@ def update_recording_status(session: Session, recording_id: int):
         new_status = RecordingStatus.ERROR
 
     elif t_status == "completed":
-        # Nothing is processing and the transcript is done, so the recording is
-        # viewable whatever state its notes are in.
+        # The transcript is viewable whatever state its derived outputs are in.
         new_status = RecordingStatus.PROCESSED
 
     elif t_status == "pending":

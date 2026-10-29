@@ -519,6 +519,12 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
   note: TimelineNote;
 }
 
+export interface NotesGenerationMetadata {
+  event_watermark?: number;
+  generated_through_ms?: number;
+  request_id?: string;
+}
+
 export interface NotesOutput extends BaseDBModel {
   /** "notes" for a set generated from a notes template. */
   kind: string;
@@ -527,6 +533,7 @@ export interface NotesOutput extends BaseDBModel {
   notes_template_id: number | null;
   notes_template_sections: string | null;
   notes_status: string;
+  notes_generation_metadata?: NotesGenerationMetadata | null;
   error_message: string | null;
 }
 
@@ -545,6 +552,7 @@ export interface Transcript extends BaseDBModel {
   meeting_edge_error_message?: string | null;
   speaker_name_suggestions?: SpeakerNameSuggestion[];
   notes_status?: string; // pending, generating, completed, error
+  notes_generation_metadata?: NotesGenerationMetadata | null;
   /**
    * A document finished parsing after these notes were generated, so they no
    * longer reflect everything attached to the meeting. Prompts a regenerate;
@@ -1506,6 +1514,12 @@ export interface LiveRecordingAnalytics {
     excluded_short: number;
     excluded_overlapping: number;
   }>;
+}
+
+export interface RecordingAiAnalytics extends Pick<RecordingAnalytics,
+  "recording_id" | "transcript_revision" | "ai" | "ai_status" | "ai_error_message" | "ai_stale" | "ai_budget"
+> {
+  ai_generation: NotesGenerationMetadata;
 }
 
 export interface RecordingAnalytics {

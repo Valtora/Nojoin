@@ -5,7 +5,7 @@ import { useState } from "react";
 import { FileText, RefreshCw, X } from "lucide-react";
 
 import NotesOutputsView from "@/components/NotesOutputsView";
-import RichTextEditor from "@/components/RichTextEditor";
+import { notesErrorDetail } from "@/lib/transcriptErrors";
 import type { Recording } from "@/types";
 
 interface NotesSectionProps {
@@ -34,7 +34,6 @@ export default function NotesSection({
   recording,
   canExport = true,
   inFlight = false,
-  hasRetainedPublication = false,
   isGenerating,
   canUndo,
   canRedo,
@@ -91,12 +90,15 @@ export default function NotesSection({
           </ButtonBase>
         </div>
       )}
-      {inFlight && hasRetainedPublication && recording.transcript?.notes ? (
-        <RichTextEditor content={recording.transcript.notes} editable={false} onChange={() => undefined} />
-      ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the live transcript.</p> : <NotesOutputsView
+      <NotesOutputsView
         onPrimarySelected={setPrimarySelected}
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
+        primaryError={recording.transcript?.notes_status === "error"
+          ? notesErrorDetail(recording.transcript) || "Meeting notes could not be generated. Try again."
+          : null}
+        generationMetadata={recording.transcript?.notes_generation_metadata}
+        allowCreateOutput={inFlight}
         onNotesChange={onNotesChange}
         onGenerateNotes={onGenerateNotes}
         onFindAndReplace={onFindAndReplace}
@@ -107,7 +109,7 @@ export default function NotesSection({
         isGenerating={isGenerating}
         onExport={onExport}
         disableExport={!canExport}
-      />}
+      />
     </div>
   );
 }

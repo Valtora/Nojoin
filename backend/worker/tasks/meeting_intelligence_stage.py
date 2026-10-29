@@ -9,15 +9,69 @@ the ``backend.worker.tasks`` package namespace with no call-site changes.
 import dataclasses
 import logging
 
+from sqlalchemy.orm import Session
+
 from backend.services.timeline_note_service import RecordingTimelineNotes
+from backend.utils.canonical_pipeline import get_canonical_transcript_revision
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.meeting_notes import append_user_notes_section
+from backend.utils.notes_generation import (
+    claim_notes_generation,
+    complete_notes_metadata,
+    fail_notes_generation,
+    owns_notes_generation,
+)
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.utils.transcript_change import change_sequence_bump
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
 
 logger = logging.getLogger(__name__)
+
+
+def _request_is_current(
+    session: Session, transcript: Transcript, request_id: str | None
+) -> bool:
+    current = request_id is None or owns_notes_generation(
+        session, transcript, request_id
+    )
+    session.commit()
+    return current
+
+
+def _fail_deferred_request(
+    session: Session, transcript: Transcript, request_id: str | None, message: str
+) -> None:
+    if request_id is not None:
+        fail_notes_generation(session, transcript, request_id, message)
+
+
+def _report_intelligence_progress(task: Task | None, enabled: bool) -> None:
+    if enabled and task is not None:
+        task.update_state(
+            state="PROCESSING",
+            meta={
+                "progress": AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS,
+                "stage": AUTOMATIC_MEETING_INTELLIGENCE_STAGE,
+            },
+        )
+
+
+def _automatic_notes_metadata(
+    session: Session, transcript: Transcript
+) -> dict[str, int]:
+    return {
+        "event_watermark": get_canonical_transcript_revision(
+            session, transcript.recording_id
+        ),
+        "generated_through_ms": max(
+            (
+                int(segment.get("end_ms") or float(segment.get("end") or 0) * 1000)
+                for segment in (transcript.segments or [])
+            ),
+            default=0,
+        ),
+    }
 
 
 def _format_recording_timestamp(seconds: float) -> str:
@@ -165,7 +219,6 @@ def _apply_automatic_meeting_intelligence_result(
         },
         log=logger,
     )
-    update_recording_status(session, recording.id)
 
 
 def _run_automatic_meeting_intelligence_stage_impl(
@@ -183,11 +236,13 @@ def _run_automatic_meeting_intelligence_stage_impl(
     timeline_notes: RecordingTimelineNotes,
     detected_transcription_language: str | None = None,
     update_processing_status: bool = True,
+    request_id: str | None = None,
 ) -> AutomaticMeetingIntelligenceResult | None:
-    # update_processing_status is False when this runs as a deferred IO task: the
-    # recording has already been marked Completed by the GPU pipeline, so we must
-    # not reset its processing_step/progress back to the "Generating Notes" stage.
+    # Only task progress is reported here. Recording progress belongs to the
+    # extraction pipeline, including when notes run inline.
     cleaned_transcript = transcript_text.strip()
+    if not _request_is_current(session, transcript, request_id):
+        return None
     meeting_context = _resolve_meeting_event_context(session, recording)
     deterministic_result = detect_rule_based_speaker_suggestions(
         [
@@ -199,6 +254,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
         meeting_context,
     )
     if not cleaned_transcript:
+        _fail_deferred_request(session, transcript, request_id, "Transcript is empty")
         suggestion_count = _persist_generated_speaker_name_suggestions(
             session,
             recording=recording,
@@ -231,6 +287,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
 
     missing_llm_config = llm_config.missing_configuration_message()
     if missing_llm_config:
+        _fail_deferred_request(session, transcript, request_id, missing_llm_config)
         logger.warning(
             "Skipping automatic meeting intelligence for recording %s: %s",
             recording.id,
@@ -287,26 +344,10 @@ def _run_automatic_meeting_intelligence_stage_impl(
         documents=notes_context.documents,
     )
 
-    if update_processing_status:
-        if task is not None:
-            task.update_state(
-                state="PROCESSING",
-                meta={
-                    "progress": AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS,
-                    "stage": AUTOMATIC_MEETING_INTELLIGENCE_STAGE,
-                },
-            )
-        recording.processing_step = (
-            f"{AUTOMATIC_MEETING_INTELLIGENCE_STEP}{device_suffix}"
-        )
-        recording.processing_progress = AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS
-        session.add(recording)
-
-    transcript.notes_status = "generating"
-    transcript.set_notes_error_message(None)
-    session.add(transcript)
-    session.commit()
-    update_recording_status(session, recording.id)
+    _report_intelligence_progress(task, update_processing_status)
+    if request_id is None:
+        request_id = claim_notes_generation(session, transcript)
+    source_metadata = _automatic_notes_metadata(session, transcript)
 
     try:
         llm = _llm_backend_from_config(llm_config)
@@ -335,6 +376,10 @@ def _run_automatic_meeting_intelligence_stage_impl(
                 result.notes_markdown, timeline_notes.appendix_lines()
             ),
         )
+        if not owns_notes_generation(session, transcript, request_id):
+            session.rollback()
+            return None
+        complete_notes_metadata(transcript, source_metadata)
         _apply_automatic_meeting_intelligence_result(
             session,
             recording,
@@ -351,12 +396,17 @@ def _run_automatic_meeting_intelligence_stage_impl(
         )
         return result
     except Exception as exc:  # noqa: BLE001 -- boundary: any failure is recorded on the transcript as a notes error; the recording still completes
+        from .intelligence import _format_notes_generation_error
+
         logger.error(
             "Failed to generate automatic meeting intelligence for recording %s: %s",
             recording.id,
             exc,
         )
-        _mark_notes_generation_error(session, recording, transcript, exc)
+        session.rollback()
+        fail_notes_generation(
+            session, transcript, request_id, _format_notes_generation_error(exc)
+        )
         return None
 
 

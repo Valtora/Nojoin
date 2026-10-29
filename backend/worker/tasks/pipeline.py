@@ -6,6 +6,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
+from backend.utils.notes_generation import claim_notes_generation
 from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
 
@@ -22,6 +23,7 @@ from .final_publication import (
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
+from .notes_outputs import dispatch_automatic_notes
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
 from .vad_stage import (
@@ -388,14 +390,9 @@ def _finalize_transcript_and_notes(
         # the IO image. Free the GPU lane by generating notes on the IO worker.
         # The recording is otherwise finished; only notes remain pending, exactly
         # as in manual regeneration, so the GPU task still marks it Completed.
-        transcript.notes_status = "generating"
-        transcript.set_notes_error_message(None)
-        session.add(transcript)
-        session.commit()
-        celery_app.send_task(
-            "backend.worker.tasks.generate_meeting_intelligence_task",
-            args=[recording.id],
-        )
+        request_id = claim_notes_generation(session, transcript)
+        if not dispatch_automatic_notes(session, transcript, request_id):
+            return
         logger.info(
             "Deferred meeting intelligence for recording %s to the IO lane "
             "(provider=%s)",

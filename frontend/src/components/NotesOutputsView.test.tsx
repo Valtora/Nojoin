@@ -151,4 +151,61 @@ describe("notes outputs", () => {
     expect(await screen.findByText("Extra jobs")).toBeInTheDocument();
     expect(primary.onFindAndReplace).toHaveBeenCalledWith("tasks", "jobs", undefined);
   });
+
+  it("allows another output to be edited, regenerated and deleted while primary notes generate", async () => {
+    api.listNotesOutputs.mockResolvedValue([extra]);
+    render(<NotesOutputsView {...props()} isGenerating />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Task list" }));
+    expect(screen.getByRole("button", { name: "Regenerate Notes" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete set" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Generate another set" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Edit notes" }));
+    await screen.findByText("Edited extra");
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate Notes" }));
+    await waitFor(() => expect(api.generateNotes).toHaveBeenCalledWith("rec-1", null, { output_id: 11 }));
+  });
+
+  it("scopes a pending request and its failure to the requested output", async () => {
+    api.listNotesOutputs.mockResolvedValue([extra, { ...extra, id: 12, name: "Minutes", notes: "Other notes" }]);
+    let reject!: (cause: unknown) => void;
+    api.generateNotes.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    render(<NotesOutputsView {...props()} primaryError="Primary failed" />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Primary failed");
+    fireEvent.click(await screen.findByRole("tab", { name: "Task list" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate Notes" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Minutes" }));
+    expect(screen.getByRole("button", { name: "Regenerate Notes" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete set" })).toBeEnabled();
+    await act(async () => reject({ response: { data: { detail: "Extra failed" } } }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Task list" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Extra failed");
+    expect(screen.getByText("Extra tasks")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Regenerate Notes" })).toBeEnabled();
+  });
+
+  it("can create a live extra before the first primary notes finish", async () => {
+    render(<NotesOutputsView {...props()} notes={null} isGenerating allowCreateOutput />);
+    fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Task list" }));
+    expect(await screen.findByRole("tab", { name: "Task list", selected: true })).toBeInTheDocument();
+    expect(screen.getByText("Extra tasks")).toBeInTheDocument();
+  });
+
+  it("polls failed outputs independently and discloses the selected snapshot coverage", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listNotesOutputs.mockResolvedValueOnce([{ ...extra, notes_status: "generating" }])
+      .mockResolvedValue([{ ...extra, notes_status: "error", error_message: "Model failed",
+        notes_generation_metadata: { generated_through_ms: 123000 } }]);
+    render(<NotesOutputsView {...props()} />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Task list" }));
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(screen.getByRole("alert")).toHaveTextContent("Model failed");
+    expect(screen.getByText("Extra tasks")).toBeInTheDocument();
+    expect(screen.getByText(/transcript through 2:03/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Regenerate Notes" })).toBeEnabled();
+    await act(() => vi.advanceTimersByTimeAsync(6000));
+    expect(api.listNotesOutputs).toHaveBeenCalledTimes(2);
+  });
 });

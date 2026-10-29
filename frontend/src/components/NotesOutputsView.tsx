@@ -10,6 +10,14 @@ import { deleteNotesOutput, exportContent, generateNotes, listNotesOutputs, upda
 import { DEMO_MODE } from "@/lib/demo";
 import { getErrorMessage } from "@/lib/errors";
 import type { NotesOutput } from "@/types";
+import GenerationCoverage from "./GenerationCoverage";
+
+interface NotesOutputsViewProps extends NotesViewProps {
+  onPrimarySelected?: (primary: boolean) => void;
+  primaryError?: string | null;
+  generationMetadata?: NotesOutput["notes_generation_metadata"];
+  allowCreateOutput?: boolean;
+}
 
 /** Tab labels, numbering a repeated name ("Minutes", "Minutes 2"). */
 function outputLabels(outputs: NotesOutput[]): Map<number, string> {
@@ -22,15 +30,18 @@ function outputLabels(outputs: NotesOutput[]): Map<number, string> {
 }
 
 /** Extra sets never enter the primary notes editor's history or save path. */
-export default function NotesOutputsView(props: NotesViewProps & { onPrimarySelected?: (primary: boolean) => void }) {
+export default function NotesOutputsView(props: NotesOutputsViewProps) {
   const [outputs, setOutputs] = useState<NotesOutput[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const selected = outputs.find((output) => output.id === selectedId);
   const extraGenerating = outputs.some((output) => output.notes_status === "generating");
-  const generating = props.isGenerating || busy || extraGenerating;
+  const selectedBusy = selected ? busy[selected.id] || selected.notes_status === "generating" : props.isGenerating;
+  const selectedError = selected
+    ? errors[selected.id] || (selected.notes_status === "error" ? selected.error_message : null)
+    : props.primaryError;
   const labels = outputLabels(outputs);
   const primarySelected = !selected;
   const { onPrimarySelected, recordingId, notes: primaryNotes } = props;
@@ -63,21 +74,23 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
     return () => clearInterval(timer);
   }, [extraGenerating, load]);
 
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true);
-    setError(null);
+  const run = async (target: number | "create", action: () => Promise<void>) => {
+    setBusy((previous) => ({ ...previous, [target]: true }));
+    setErrors((previous) => ({ ...previous, [target]: null }));
     try { await action(); }
-    catch (cause) { setError(getErrorMessage(cause, "Could not update notes output.")); }
-    finally { setBusy(false); }
+    catch (cause) {
+      setErrors((previous) => ({ ...previous, [target]: getErrorMessage(cause, "Could not update notes output.") }));
+    }
+    finally { setBusy((previous) => ({ ...previous, [target]: false })); }
   };
 
-  const generate = (templateId: number | null, create: boolean) => run(async () => {
+  const generate = (templateId: number | null, create: boolean) => run(create ? "create" : selected!.id, async () => {
     const response = await generateNotes(recordingId, templateId,
       create ? { create_output: true } : { output_id: selected?.id });
     if (response.output) {
       const output = response.output;
       setOutputs((previous) => [...previous.filter((item) => item.id !== output.id), output].sort((a, b) => a.id - b.id));
-      setSelectedId(output.id);
+      if (create) setSelectedId(output.id);
     }
   });
 
@@ -85,10 +98,13 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
     try {
       const output = await updateNotesOutput(recordingId, outputId, notes);
       setOutputs((previous) => previous.map((item) => item.id === output.id ? output : item));
-    } catch (cause) { setError(getErrorMessage(cause, "Could not save notes output.")); }
+      setErrors((previous) => ({ ...previous, [outputId]: null }));
+    } catch (cause) {
+      setErrors((previous) => ({ ...previous, [outputId]: getErrorMessage(cause, "Could not save notes output.") }));
+    }
   };
 
-  const remove = () => run(async () => {
+  const remove = () => selected && run(selected.id, async () => {
     if (!selected) return;
     await deleteNotesOutput(recordingId, selected.id);
     setOutputs((previous) => previous.filter((item) => item.id !== selected.id));
@@ -96,9 +112,9 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
   });
 
   const toolbarActions = <>
-    {props.notes && <NotesTemplatePicker label="Generate another set" disabled={generating}
+    {(props.notes || props.allowCreateOutput) && <NotesTemplatePicker label="Generate another set" disabled={busy.create}
       onSelect={(templateId) => void generate(templateId, true)} />}
-    {selected && <Button size="sm" variant="ghost" disabled={generating}
+    {selected && <Button size="sm" variant="ghost" disabled={selectedBusy}
       onClick={() => setConfirmDelete(true)}>Delete set</Button>}
   </>;
 
@@ -123,11 +139,13 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
         tabIndex={selected?.id === output.id ? 0 : -1}
         onClick={() => setSelectedId(output.id)} className="rounded px-3 py-2 text-sm text-foreground aria-selected:bg-surface-inset">{labels.get(output.id)}</ButtonBase>)}
     </div>}
-    {(error || selected?.error_message) && <p role="alert" className="p-3 text-sm text-status-danger-fg">{error || selected?.error_message}</p>}
+    {errors.create && <p role="alert" className="p-3 text-sm text-status-danger-fg">{errors.create}</p>}
+    {selectedError && <p role="alert" className="p-3 text-sm text-status-danger-fg">{selectedError}</p>}
+    <GenerationCoverage metadata={selected ? selected.notes_generation_metadata : props.generationMetadata} />
     <div className="min-h-0 flex-1" role={outputs.length ? "tabpanel" : undefined}
       id="notes-output-panel" aria-labelledby={outputs.length ? selected ? `notes-output-${selected.id}` : "notes-output-primary" : undefined}>
       {selected ? <NotesView {...props} key={selected.id} notes={selected.notes} localHistory fixedTemplate
-        activeTemplateId={selected.notes_template_id} isGenerating={busy || props.isGenerating || selected.notes_status === "generating"}
+        activeTemplateId={selected.notes_template_id} isGenerating={Boolean(selectedBusy)}
         onNotesChange={(notes) => void save(selected.id, notes)}
         onGenerateNotes={() => generate(null, false)}
         // The same replace as the first notes' (transcript and every set), then
@@ -136,9 +154,9 @@ export default function NotesOutputsView(props: NotesViewProps & { onPrimarySele
           await props.onFindAndReplace(find, replacement, options);
           await load(false);
         }}
-        onExport={() => void run(() => exportContent(recordingId, ["notes"], "txt", {}, true, selected.id))}
+        onExport={() => void run(selected.id, () => exportContent(recordingId, ["notes"], "txt", {}, true, selected.id))}
         toolbarActions={toolbarActions} />
-        : <NotesView {...props} key="primary" toolbarActions={toolbarActions} isGenerating={busy || props.isGenerating} />}
+        : <NotesView {...props} key="primary" toolbarActions={toolbarActions} />}
     </div>
     <ConfirmationModal isOpen={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => void remove()}
       title="Delete notes set?" message={`Delete “${selected ? labels.get(selected.id) : "this set"}”? The meeting's first notes will be kept.`}

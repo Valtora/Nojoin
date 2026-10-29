@@ -1,6 +1,9 @@
 """Additional notes; Transcript.notes remains the meeting's primary output."""
 
-from sqlalchemy import BigInteger, Column, ForeignKey, String, Text
+from typing import Any
+
+from sqlalchemy import JSON, BigInteger, Column, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field
 
 from .base import BaseDBModel
@@ -29,6 +32,12 @@ class NotesOutput(BaseDBModel, table=True):
     )
     name: str
     notes: str | None = Field(default=None, sa_column=Column(Text))
+    notes_generation_metadata: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(
+            JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+        ),
+    )
     notes_template_id: int | None = Field(
         default=None,
         sa_column=Column(
@@ -51,6 +60,7 @@ class NotesOutputRead(BaseDBModel):
     kind: str
     name: str
     notes: str | None = None
+    notes_generation_metadata: dict[str, Any] | None = None
     notes_template_id: int | None = None
     notes_template_sections: str | None = None
     notes_status: str

@@ -181,9 +181,12 @@ async def test_notes_dispatch_with_live_canonical_speech_and_empty_snapshot(
 
     assert response.status_code == 200, response.text
     assert response.json()["notes_status"] == "generating"
-    assert stub_celery_dispatch == [
-        ("backend.worker.tasks.generate_notes_task", [recording_id, None], None)
-    ]
+    assert len(stub_celery_dispatch) == 1
+    name, args, kwargs = stub_celery_dispatch[0]
+    assert (name, args) == (
+        "backend.worker.tasks.generate_notes_task",
+        [recording_id, None],
+    )
     async with reader_sessions() as session:
         transcript = (
             await session.execute(
@@ -192,6 +195,9 @@ async def test_notes_dispatch_with_live_canonical_speech_and_empty_snapshot(
         ).scalar_one()
         assert transcript.segments == []
         assert transcript.text == ""
+        assert kwargs == {
+            "request_id": transcript.notes_generation_metadata["request_id"]
+        }
 
 
 @pytest.mark.parametrize("stale_snapshot", [False, True])

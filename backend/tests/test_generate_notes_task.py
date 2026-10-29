@@ -13,6 +13,7 @@ import backend.worker.tasks as tasks_module
 from backend.tests.sqlite_schemas import (
     SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
+    TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
 )
 from backend.utils.context_window import ContextWindowExceededError
 
@@ -81,6 +82,7 @@ CREATE TABLE recordings (
 );
 
 CREATE TABLE transcripts (
+    notes_generation_metadata JSON,
     change_sequence BIGINT NOT NULL DEFAULT 0,
     settling_state JSON,
     id INTEGER PRIMARY KEY,
@@ -156,7 +158,11 @@ CREATE TABLE context_chunks (
 
 """ + ";\n\n".join(
     schema.strip().rstrip(";")
-    for schema in (TIMELINE_NOTES_SCHEMA, SPEAKER_NAME_EVENTS_SCHEMA)
+    for schema in (
+        TIMELINE_NOTES_SCHEMA,
+        SPEAKER_NAME_EVENTS_SCHEMA,
+        TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
+    )
 )
 
 
@@ -573,8 +579,7 @@ def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(
-        tasks_module,
-        "build_transcript_segments_for_read",
+        "backend.utils.output_snapshot.build_transcript_segments_for_read",
         lambda *args, **kwargs: [dict(segment) for segment in canonical_segments],
     )
     monkeypatch.setattr(

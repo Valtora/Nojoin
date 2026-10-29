@@ -123,6 +123,7 @@ CREATE TABLE document_pages (
 
 TRANSCRIPTS_SCHEMA = """
 CREATE TABLE transcripts (
+    notes_generation_metadata JSON,
     change_sequence BIGINT NOT NULL DEFAULT 0,
     settling_state JSON,
     id INTEGER PRIMARY KEY,
@@ -186,6 +187,7 @@ CREATE TABLE timeline_note_tombstones (
 
 NOTES_OUTPUTS_SCHEMA = """
 CREATE TABLE notes_outputs (
+    notes_generation_metadata JSON,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,

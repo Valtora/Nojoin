@@ -2,6 +2,7 @@
 
 from concurrent.futures import CancelledError
 from copy import deepcopy
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +20,7 @@ from backend.tests.test_live_settling_finalisation import _closed_line, _final_s
 from backend.tests.test_pipeline_stages import _install_happy_path_modules, _run_task
 from backend.utils.canonical_pipeline import serialize_canonical_utterances
 from backend.utils.config_manager import config_manager
+from backend.utils.notes_generation import claim_notes_generation
 from backend.utils.status_manager import update_recording_status
 from backend.worker import tasks
 from backend.worker.tasks import followups, pipeline
@@ -52,6 +54,7 @@ def _configure_pipeline(
     canonical_enabled: bool,
 ) -> None:
     _install_happy_path_modules(monkeypatch, segments=[_final_segment("whisper")])
+    monkeypatch.setattr(pipeline, "claim_notes_generation", claim_notes_generation)
     monkeypatch.setattr(
         pipeline,
         "_run_final_asr_stage",
@@ -73,6 +76,13 @@ def _configure_pipeline(
     monkeypatch.setattr(
         followups, "dispatch_meeting_analysis_if_opted_in", lambda _: False
     )
+
+
+def _pipeline_outcome(result: Any, recording_id: int) -> str | None:
+    if result is None:
+        return None
+    assert result == {"status": "success", "recording_id": recording_id}
+    return result["status"]
 
 
 def _exercise_failure(
@@ -148,7 +158,16 @@ def _exercise_failure(
                 lambda _: scenario == "enqueue",
             )
             if scenario == "enqueue":
-                monkeypatch.setattr(tasks.celery_app, "send_task", fail)
+
+                def dispatch(name: str, *args: Any, **kwargs: Any) -> Any:
+                    if (
+                        name
+                        == "backend.worker.tasks.generate_meeting_intelligence_task"
+                    ):
+                        fail(*args, **kwargs)
+                    return SimpleNamespace(id="followup-task")
+
+                monkeypatch.setattr(tasks.celery_app, "send_task", dispatch)
             else:
                 monkeypatch.setattr(
                     tasks, "_run_automatic_meeting_intelligence_stage", fail
@@ -166,7 +185,7 @@ def _exercise_failure(
             "failure_views": failure_views,
             "recomputations": recomputations,
             "propagated": propagated,
-            "result": result,
+            "result": _pipeline_outcome(result, recording_id),
             "canonical_text": [
                 row["text"]
                 for row in serialize_canonical_utterances(session, recording_id)
@@ -210,24 +229,24 @@ def test_post_publication_notes_failure_matches_unmarked(
     assert final["text"] == "Goodbye world"
     assert final["segments"] == ["Goodbye world"]
     assert final["transcript_status"] == "completed"
-    assert final["notes_status"] == (
-        "generating" if scenario == "enqueue" else "pending"
+    assert final["notes_status"] == ("error" if scenario == "enqueue" else "pending")
+    assert final["error_message"] == (
+        "notes queue unavailable" if scenario == "enqueue" else None
     )
-    assert final["error_message"] is None
     assert final["notes"] == "Previous notes"
-    assert final["completed"] is False
+    assert final["completed"] is (scenario == "enqueue")
+    if scenario == "enqueue":
+        assert final["step"] == "Completed"
+        assert final["progress"] == 100
     interrupted = scenario in {"timeout", "cancel"}
+    # An unavailable notes queue cannot keep a published transcript processing.
     assert final["status"] == (
-        RecordingStatus.ERROR
-        if interrupted
-        else RecordingStatus.PROCESSING
-        if scenario == "enqueue"
-        else RecordingStatus.PROCESSED
+        RecordingStatus.ERROR if interrupted else RecordingStatus.PROCESSED
     )
     assert len(actual["failure_views"]) == 1
     assert actual["failure_views"][0]["text"] == "Goodbye world"
     assert len(actual["recomputations"]) == (0 if interrupted else 1)
-    assert actual["result"] is None
+    assert actual["result"] == ("success" if scenario == "enqueue" else None)
     assert actual["propagated"] == (
         "SoftTimeLimitExceeded"
         if scenario == "timeout"

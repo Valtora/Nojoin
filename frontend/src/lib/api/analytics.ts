@@ -1,5 +1,19 @@
-import type { LiveRecordingAnalytics, RecordingAnalytics, RecordingId } from "@/types";
+import type {
+  LiveRecordingAnalytics, NotesGenerationMetadata, RecordingAiAnalytics, RecordingAnalytics, RecordingId,
+} from "@/types";
 import api from "./client";
+
+export type { RecordingAiAnalytics } from "@/types";
+
+export const getRecordingAiAnalytics = async (
+  recordingId: RecordingId,
+  signal?: AbortSignal,
+): Promise<RecordingAiAnalytics> => {
+  const response = await api.get<RecordingAiAnalytics>(
+    `/transcripts/${recordingId}/analytics/ai`, { signal },
+  );
+  return response.data;
+};
 
 export const getLiveRecordingAnalytics = async (
   recordingId: RecordingId,
@@ -33,10 +47,11 @@ export const generateRecordingAnalytics = async (
 /** Run the AI analysis pass. Spends the user's AI quota, so it is on request. */
 export const generateRecordingAiAnalytics = async (
   recordingId: RecordingId,
-): Promise<{ recording_id: string; ai_status: string }> => {
+): Promise<{ recording_id: string; ai_status: string; ai_generation?: NotesGenerationMetadata }> => {
   const response = await api.post<{
     recording_id: string;
     ai_status: string;
+    ai_generation?: NotesGenerationMetadata;
   }>(`/transcripts/${recordingId}/analytics/ai/generate`);
   return response.data;
 };

@@ -285,7 +285,8 @@ def test_no_ai_provider_is_unavailable_rather_than_an_error(
     status, message, payload, _ = _row(engine)
     assert status == "unavailable"
     assert message
-    assert payload is None
+    assert _payload(payload).get("ai") is None
+    assert _payload(payload)["ai_generation"]["request_id"]
     # Nothing was spent finding this out.
     assert backend.calls == 0
 
@@ -373,7 +374,8 @@ def test_a_failure_mid_run_does_not_leave_the_transcript_generating(
     status, message, payload, _ = _row(engine)
     assert status == "error"
     assert message
-    assert payload is None
+    assert _payload(payload).get("ai") is None
+    assert _payload(payload)["ai_generation"]["request_id"]
 
 
 def test_an_unparseable_response_is_an_error_not_an_empty_analysis(

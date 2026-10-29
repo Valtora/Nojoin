@@ -251,6 +251,12 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
 
     monkeypatch.setattr(tasks_module.config_manager, "get", _config_get)
     monkeypatch.setattr(tasks_module.pipeline, "_release_pipeline_vram", lambda: None)
+
+    def claim_notes(session, transcript):
+        transcript.notes_status = "generating"
+        return "request-id"
+
+    monkeypatch.setattr(tasks_module.pipeline, "claim_notes_generation", claim_notes)
     monkeypatch.setattr(tasks_module, "auto_link_recording", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "update_recording_status", lambda *a, **k: None)
     monkeypatch.setattr(

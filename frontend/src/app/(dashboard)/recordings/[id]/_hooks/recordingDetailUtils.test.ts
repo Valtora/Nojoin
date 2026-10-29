@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { RecordingStatus, type Recording, type TimelineNote } from "@/types";
+import { RecordingStatus, type Recording, type TimelineNote, type Transcript } from "@/types";
 
 import {
   AUDIO_RECHECK_INTERVAL_MS,
@@ -79,6 +79,22 @@ describe("polling a recording with no audio and no proxy", () => {
 });
 
 describe("noticing a change to the notes in a poll", () => {
+  it("accepts updated snapshot coverage even when generated text stays the same", () => {
+    const transcript = { notes: "Same summary", notes_status: "completed",
+      notes_generation_metadata: { event_watermark: 4, generated_through_ms: 12000 } } as Transcript;
+    const before = recordingWith({ transcript });
+    expect(hasPolledRecordingChanged(before, { ...before, transcript: { ...transcript,
+      notes_generation_metadata: { event_watermark: 8, generated_through_ms: 24000 } } })).toBe(true);
+    expect(hasPolledRecordingChanged(before, { ...before, transcript: { ...transcript } })).toBe(false);
+  });
+
+  it("accepts a changed error reason while the notes remain in error", () => {
+    const transcript = { notes: "Previous summary", notes_status: "error", error_message: "Timed out" } as Transcript;
+    const before = recordingWith({ transcript });
+    expect(hasPolledRecordingChanged(before, { ...before,
+      transcript: { ...transcript, error_message: "Provider unavailable" } })).toBe(true);
+  });
+
   it("sees a new notes list signature, which the page then fetches the list for", () => {
     const before = recordingWith({ timeline_notes_list_signature: "1:aaaa" });
     expect(

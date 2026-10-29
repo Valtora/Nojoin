@@ -71,6 +71,7 @@ SCHEMA_STATEMENTS = [
     """,
     """
     CREATE TABLE transcripts (
+    notes_generation_metadata JSON,
         change_sequence BIGINT NOT NULL DEFAULT 0,
         settling_state JSON,
         id INTEGER PRIMARY KEY,

@@ -186,16 +186,9 @@ def test_publication_and_status_follow_the_recording_contract(
     assert observed["transcript_status"] == (
         "error" if asr_failed else "processing" if previous_view else "completed"
     )
-    if scenario == "vad_empty":
-        expected_status = RecordingStatus.PROCESSED
-    elif (
-        interrupted
-        or (failed and marked)
-        or (asr_failed and notes_status != "generating")
-    ):
+    # Notes activity cannot hide ASR failure or keep a final transcript processing.
+    if interrupted or (failed and marked) or asr_failed:
         expected_status = RecordingStatus.ERROR
-    elif notes_status == "generating":
-        expected_status = RecordingStatus.PROCESSING
     else:
         expected_status = RecordingStatus.PROCESSED
     assert observed["status"] == expected_status

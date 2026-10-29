@@ -54,6 +54,7 @@ BEFORE = "7ff0bbdadad8"
 COLUMNS_ADDED_AFTER_BEFORE = {
     ("transcripts", "change_sequence"): "BIGINT NOT NULL DEFAULT 0",
     ("transcripts", "settling_state"): "JSONB",
+    ("transcripts", "notes_generation_metadata"): "JSONB",
     ("recordings", "capture_epoch"): "INTEGER NOT NULL DEFAULT 0",
     ("recordings", "transcription_language"): "VARCHAR(16)",
     ("transcripts", "language_detection"): "JSONB",

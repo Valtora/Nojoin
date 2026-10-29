@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
-from backend.core.task_dispatch import dispatch_task
+from backend.core.task_dispatch import dispatch_task_best_effort
 from backend.models.notes_output import NotesOutput, NotesOutputRead
 from backend.models.recording import Recording, is_live_capture
 from backend.models.speaker import RecordingSpeaker
@@ -17,14 +17,15 @@ from backend.models.user import User
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
+from backend.utils.notes_generation import (
+    claim_notes_generation,
+    fail_notes_generation,
+    lock_notes_target,
+)
 from backend.utils.notes_templates import (
     ResolvedNotesTemplate,
     builtin_notes_template,
     resolve_notes_template_async,
-)
-from backend.utils.reprocess_publication import (
-    REPROCESS_RUNNING_MESSAGE,
-    reprocess_replacement_running,
 )
 from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (
@@ -91,13 +92,9 @@ async def _generation_output(
             detail="An existing set reruns its own structure; "
             "choose a structure only for a new set.",
         )
-    if transcript.transcript_status != "completed" or not transcript.notes:
-        raise HTTPException(
-            status_code=409,
-            detail="Generate the meeting's first notes before adding another set.",
-        )
     if request.output_id is not None:
         output = await _get_notes_output(db, transcript.recording_id, request.output_id)
+        output = await db.run_sync(lambda session: lock_notes_target(session, output))
         if output.notes_status == "generating":
             raise HTTPException(
                 status_code=409, detail="Meeting notes are already generating."
@@ -291,9 +288,6 @@ async def generate_notes(
 
     if transcript and transcript.transcription_failed():
         raise HTTPException(status_code=409, detail=TRANSCRIPTION_FAILED_NOTES_MESSAGE)
-    # The retained transcript is readable, but the pass replacing it owns notes.
-    if reprocess_replacement_running(transcript):
-        raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
 
     segments = (
         await db.run_sync(
@@ -307,13 +301,16 @@ async def generate_notes(
     if not segments:
         raise HTTPException(status_code=404, detail="Transcript not found or empty")
 
-    if transcript.notes_status == "generating":
+    request = request or GenerateNotesRequest()
+    output = await _generation_output(db, transcript, request, current_user)
+    if output is None:
+        transcript = await db.run_sync(
+            lambda session: lock_notes_target(session, transcript)
+        )
+    if output is None and transcript.notes_status == "generating":
         raise HTTPException(
             status_code=409, detail="Meeting notes are already generating."
         )
-
-    request = request or GenerateNotesRequest()
-    output = await _generation_output(db, transcript, request, current_user)
 
     llm_config = await resolve_llm_config_async(
         db, current_user.settings or {}, user_id=current_user.id
@@ -331,20 +328,29 @@ async def generate_notes(
         )
 
     target = output if output is not None else transcript
-    target.notes_status = "generating"
-    target.set_notes_error_message(None)
-    db.add(target)
-    await db.commit()
-    await db.refresh(target)
+    if output is not None and output.id is None:
+        db.add(output)
+        await db.flush()
+    request_id = await db.run_sync(
+        lambda session: claim_notes_generation(session, target)
+    )
 
-    task = await dispatch_task(
+    task = await dispatch_task_best_effort(
         "backend.worker.tasks.generate_notes_task",
         args=(
             [recording.id, None, output.id]
             if output is not None
             else [recording.id, request.notes_template_id]
         ),
+        kwargs={"request_id": request_id},
+        context="meeting notes",
     )
+    if task is None:
+        message = "Notes could not be queued because the task broker is unreachable"
+        await db.run_sync(
+            lambda session: fail_notes_generation(session, target, request_id, message)
+        )
+        raise HTTPException(status_code=503, detail=message)
     from backend.models.task import register_task_ownership
 
     await register_task_ownership(db, task.id, current_user.id)

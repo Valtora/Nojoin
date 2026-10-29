@@ -129,15 +129,20 @@ def api(monkeypatch):
         ),
     )
 
-    async def dispatch(name, *, args, context):
+    async def dispatch(name, *, args, context, kwargs=None):
         if not state.broker_up:
             return None
         state.dispatched.append((name, tuple(args)))
         return SimpleNamespace(id=f"task-{len(state.dispatched)}")
 
     monkeypatch.setattr(routes_analytics, "dispatch_task_best_effort", dispatch)
+    monkeypatch.setattr(
+        routes_analytics, "get_canonical_transcript_revision", lambda *_: 7
+    )
 
-    async def setup(*, install_limit, user_limit=None):
+    async def setup(
+        *, install_limit, user_limit=None, status="PROCESSED", payload=None
+    ):
         monkeypatch.setattr(
             budget.config_manager,
             "get",
@@ -160,7 +165,7 @@ def api(monkeypatch):
                 id=7,
                 name="Standup",
                 audio_path="/tmp/standup.wav",
-                status="PROCESSED",
+                status=status,
                 user_id=1,
                 upload_progress=100,
                 processing_progress=100,
@@ -171,7 +176,7 @@ def api(monkeypatch):
                     recording_id=7,
                     transcript_status="completed",
                     notes_status="pending",
-                    analytics_payload={},
+                    analytics_payload=payload or {},
                 )
             )
             await session.commit()
@@ -198,7 +203,29 @@ def api(monkeypatch):
         async with maker() as session:
             return list((await session.execute(select(AiAnalysisRun))).scalars())
 
-    yield SimpleNamespace(setup=setup, post=post, get=get, runs=runs, state=state)
+    async def get_ai(recording):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://t"
+        ) as client:
+            return await client.get(f"/transcripts/{recording.public_id}/analytics/ai")
+
+    async def complete():
+        # Budget tests request successive completed generations, rather than
+        # queueing duplicate requests while the first one still owns the row.
+        async with maker() as session:
+            transcript = (await session.execute(select(Transcript))).scalar_one()
+            transcript.analytics_ai_status = "completed"
+            await session.commit()
+
+    yield SimpleNamespace(
+        setup=setup,
+        post=post,
+        get=get,
+        get_ai=get_ai,
+        runs=runs,
+        complete=complete,
+        state=state,
+    )
     app.dependency_overrides.clear()
 
 
@@ -213,7 +240,10 @@ def _db_override(maker):
 def test_runs_are_refused_once_the_cap_is_reached(api):
     async def run():
         recording = await api.setup(install_limit=2)
-        statuses = [(await api.post(recording)).status_code for _ in range(2)]
+        statuses = []
+        for _ in range(2):
+            statuses.append((await api.post(recording)).status_code)
+            await api.complete()
         third = await api.post(recording)
         body = await api.get(recording)
         return statuses, third, body, await api.runs()
@@ -233,7 +263,10 @@ def test_runs_are_refused_once_the_cap_is_reached(api):
 def test_no_cap_means_no_refusal_and_no_limit_in_the_read(api):
     async def run():
         recording = await api.setup(install_limit=None)
-        statuses = [(await api.post(recording)).status_code for _ in range(3)]
+        statuses = []
+        for _ in range(3):
+            statuses.append((await api.post(recording)).status_code)
+            await api.complete()
         return statuses, await api.get(recording)
 
     statuses, body = asyncio.run(run())
@@ -251,6 +284,7 @@ def test_a_per_user_override_wins_over_the_install_cap(api):
     async def run():
         recording = await api.setup(install_limit=5, user_limit=1)
         first = (await api.post(recording)).status_code
+        await api.complete()
         second = (await api.post(recording)).status_code
         return first, second
 
@@ -271,6 +305,51 @@ def test_a_dispatch_that_fails_spends_nothing(api):
     assert failed == 503
     assert retried == 200
     assert len(runs) == 1
+
+
+@pytest.mark.parametrize("status", ["UPLOADING", "PAUSED", "QUEUED", "PROCESSING"])
+def test_live_discussion_claim_is_independent_and_read_preserves_old_content(
+    api, status
+):
+    previous = {"topics": [{"title": "Previous"}], "event_watermark": 3}
+
+    async def run():
+        recording = await api.setup(
+            install_limit=5, status=status, payload={"ai": previous}
+        )
+        first = await api.post(recording)
+        second = await api.post(recording)
+        read = await api.get_ai(recording)
+        return first, second, read, await api.runs()
+
+    first, second, read, runs = asyncio.run(run())
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert len(runs) == 1
+    assert read.status_code == 200
+    body = read.json()
+    assert body["ai_status"] == "generating"
+    assert body["ai"] == previous
+    assert body["ai_stale"] is True
+    assert body["ai_generation"] == first.json()["ai_generation"]
+
+
+def test_discussion_read_never_runs_audio_backfill_or_dispatch(api, monkeypatch):
+    async def run():
+        recording = await api.setup(install_limit=1, status="PAUSED")
+
+        def forbidden(*args, **kwargs):
+            pytest.fail("Discussion read entered final analytics")
+
+        for name in ("_backfill_and_compute", "dispatch_task_best_effort", "claim_run"):
+            monkeypatch.setattr(routes_analytics, name, forbidden)
+        response = await api.get_ai(recording)
+        return response, await api.runs()
+
+    response, runs = asyncio.run(run())
+    assert response.status_code == 200
+    assert response.json()["ai_status"] == "pending"
+    assert runs == []
 
 
 # --- the post-processing follow-up ---

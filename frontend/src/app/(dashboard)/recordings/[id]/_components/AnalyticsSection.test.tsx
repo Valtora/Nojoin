@@ -4,9 +4,11 @@ import type { LiveRecordingAnalytics, RecordingAnalytics } from "@/types";
 
 const getRecordingAnalytics = vi.fn<(...args: unknown[]) => Promise<RecordingAnalytics>>();
 const getLiveRecordingAnalytics = vi.fn();
+const getRecordingAiAnalytics = vi.fn();
 vi.mock("@/lib/api", () => ({
   getRecordingAnalytics: (...args: unknown[]) => getRecordingAnalytics(...args),
   getLiveRecordingAnalytics: (...args: unknown[]) => getLiveRecordingAnalytics(...args),
+  getRecordingAiAnalytics: (...args: unknown[]) => getRecordingAiAnalytics(...args),
   generateRecordingAnalytics: vi.fn(),
   generateRecordingAiAnalytics: vi.fn(),
 }));
@@ -47,6 +49,7 @@ describe("AnalyticsSection live lifecycle", () => {
     getLiveRecordingAnalytics.mockReset();
     getRecordingAnalytics.mockImplementation(() => new Promise(() => {}));
     getLiveRecordingAnalytics.mockResolvedValue(live());
+    getRecordingAiAnalytics.mockResolvedValue({ ...finished(), ai_generation: null });
   });
   afterEach(() => vi.useRealTimers());
 
@@ -63,8 +66,8 @@ describe("AnalyticsSection live lifecycle", () => {
     expect(screen.getByText(/transcript estimates/i)).toBeInTheDocument();
     expect(screen.getByText("180")).toBeInTheDocument();
     expect(screen.getByText("20s")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Play|Generate|Analyse/i })).not.toBeInTheDocument();
-    expect(screen.getAllByText("After processing").length).toBeGreaterThanOrEqual(4);
+    expect(await screen.findByRole("button", { name: "Analyse meeting" })).toBeInTheDocument();
+    expect(screen.getAllByText("After processing")).toHaveLength(3);
     view.rerender(<AnalyticsSection active recordingId="rec-1" speakerColors={{}} />);
     // The final view is lazy: its chunk must retain the same snapshot too.
     expect(screen.getByRole("cell", { name: "Alex" })).toBeVisible();

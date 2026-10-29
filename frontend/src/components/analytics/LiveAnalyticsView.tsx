@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import type { LiveRecordingAnalytics } from "@/types";
+import type { LiveRecordingAnalytics, RecordingId } from "@/types";
+import LiveDiscussionAnalysis from "./LiveDiscussionAnalysis";
 
 import { Band, Note, Section, StatTile } from "./Section";
 import { formatDuration, formatShare, formatTimestamp } from "./formatDuration";
@@ -11,10 +12,14 @@ export default function LiveAnalyticsView({
   analytics,
   error,
   speakerColors,
+  recordingId,
+  onPlaySegment,
 }: {
   analytics: LiveRecordingAnalytics | null;
   error: string | null;
   speakerColors: Record<string, string>;
+  recordingId?: RecordingId;
+  onPlaySegment?: (startMs: number) => void;
 }) {
   const colors = useMemo(() => buildSpeakerColors(analytics?.speakers ?? [], speakerColors),
     [analytics?.speakers, speakerColors]);
@@ -79,10 +84,12 @@ export default function LiveAnalyticsView({
         </Section>
       )}
       <Band className="grid-cols-2 gap-3 @lg/tab:grid-cols-4">
-        {['Silence', 'Talked over', 'Audio delivery and pitch', 'AI analysis'].map((label) => (
+        {['Silence', 'Talked over', 'Audio delivery and pitch'].map((label) => (
           <StatTile key={label} label={label} value="After processing" />
         ))}
       </Band>
+      {recordingId && <LiveDiscussionAnalysis key={recordingId} recordingId={recordingId}
+        speakers={analytics?.speakers ?? []} speakerColors={speakerColors} onPlaySegment={onPlaySegment} />}
     </div>
   );
 }

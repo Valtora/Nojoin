@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -223,12 +224,18 @@ def test_first_processing_keeps_draft_content_hidden(
 
 
 @pytest.mark.parametrize("route", ["notes", "speakers"])
-def test_notes_and_speaker_inference_wait_for_a_running_reprocess(
-    publication_database: Database, route: str
+@pytest.mark.usefixtures("stub_celery_dispatch")
+def test_notes_are_independent_while_speaker_inference_waits_for_reprocess(
+    publication_database: Database, route: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     engine, recording_id, _ = publication_database
     _seed_previous(engine, recording_id)
     asyncio.run(_reset(engine, recording_id))
+
+    async def configured(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(missing_configuration_message=lambda: None)
+
+    monkeypatch.setattr(routes_notes, "resolve_llm_config_async", configured)
 
     async def start() -> int:
         async_engine = create_async_engine(
@@ -241,27 +248,30 @@ def test_notes_and_speaker_inference_wait_for_a_running_reprocess(
                 owner = User(
                     id=recording.user_id, username="fence-owner", hashed_password="x"
                 )
+                if route == "notes":
+                    # MCP's regenerate_notes calls this same route.
+                    result = await routes_notes.generate_notes(
+                        recording.public_id, None, db=session, current_user=owner
+                    )
+                    assert result["notes_status"] == "generating"
+                    return 200
                 with pytest.raises(HTTPException) as refused:
-                    if route == "notes":
-                        # MCP's regenerate_notes calls this same route.
-                        await routes_notes.generate_notes(
-                            recording.public_id, None, db=session, current_user=owner
-                        )
-                    else:
-                        await routes_actions.infer_speakers_for_recording(
-                            recording.public_id, db=session, current_user=owner
-                        )
+                    await routes_actions.infer_speakers_for_recording(
+                        recording.public_id, db=session, current_user=owner
+                    )
                 return refused.value.status_code
         finally:
             await async_engine.dispose()
 
-    # The retained transcript has lines, which alone would let either start.
-    assert asyncio.run(start()) == 409
+    assert asyncio.run(start()) == (200 if route == "notes" else 409)
     with Session(engine) as session:
         recording = session.get(Recording, recording_id)
         transcript = _load_transcript(session, recording_id)
         assert recording.status == RecordingStatus.QUEUED
-        assert transcript.notes_status == "completed"
+        assert transcript.notes_status == (
+            "generating" if route == "notes" else "completed"
+        )
+        assert transcript.notes == "Previous generated notes"
 
 
 def test_the_polled_read_leaves_a_retained_transcript_to_the_utterances_read(

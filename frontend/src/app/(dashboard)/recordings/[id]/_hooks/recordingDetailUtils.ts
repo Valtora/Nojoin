@@ -156,6 +156,9 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.has_audio !== current.has_audio ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||
+  polled.transcript?.error_message !== current.transcript?.error_message ||
+  JSON.stringify(polled.transcript?.notes_generation_metadata) !==
+    JSON.stringify(current.transcript?.notes_generation_metadata) ||
   // Changes with the notes list, which the page then fetches.
   polled.timeline_notes_list_signature !== current.timeline_notes_list_signature ||
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||

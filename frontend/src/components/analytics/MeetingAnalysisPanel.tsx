@@ -29,6 +29,10 @@ interface MeetingAnalysisPanelProps {
   onPlaySegment?: (startMs: number) => void;
   /** The user's daily budget for this tier; absent on older servers. */
   budget?: AnalyticsAiBudget | null;
+  /** Keep the preceding snapshot readable during a live rerun or its failure. */
+  preserveContent?: boolean;
+  /** Live snapshots may be rerun even before another utterance arrives. */
+  allowRegenerate?: boolean;
 }
 
 /** "14:00 UTC" from the budget's reset timestamp. */
@@ -85,14 +89,18 @@ export default function MeetingAnalysisPanel({
   generating,
   onPlaySegment,
   budget,
+  preserveContent = false,
+  allowRegenerate = false,
 }: MeetingAnalysisPanelProps) {
   const exhausted = Boolean(
     budget && budget.limit !== null && budget.remaining !== null && budget.remaining <= 0,
   );
   const remainingLine = budgetRemainingMessage(budget);
+  const working = status === "generating" || generating;
+  const retaining = preserveContent && Boolean(ai);
 
   const body = () => {
-    if (status === "generating" || generating) {
+    if (working && !retaining) {
       // This run takes minutes and the request that starts it returns in
       // milliseconds, so without a visible working state the interface looks
       // as though nothing happened and invites a second click that would spend
@@ -111,7 +119,7 @@ export default function MeetingAnalysisPanel({
       );
     }
 
-    if (status === "error") {
+    if (status === "error" && !retaining) {
       return (
         <Prompt
           message={errorMessage || "This meeting could not be analysed."}
@@ -122,7 +130,7 @@ export default function MeetingAnalysisPanel({
       );
     }
 
-    if (!ai || status !== "completed") {
+    if (!ai || (!retaining && status !== "completed")) {
       if (exhausted && budget) {
         // The server would refuse the request with this same sentence; saying
         // it here spares the click and says when the button comes back.
@@ -152,12 +160,15 @@ export default function MeetingAnalysisPanel({
             {budgetExhaustedMessage(budget)}
           </p>
         )}
-        {stale && !exhausted && (
+        {stale && !exhausted && !working && (
           <StaleBanner
             message="The transcript has changed since this was written."
             actionLabel="Analyse again"
             onAction={onGenerate}
           />
+        )}
+        {allowRegenerate && !stale && !exhausted && !working && status !== "error" && (
+          <Prompt message="Analyse the transcript so far again." actionLabel="Analyse again" onAction={onGenerate} />
         )}
 
         {ai.transcript_truncated && (
@@ -241,6 +252,13 @@ export default function MeetingAnalysisPanel({
         Read from the transcript by AI, with quotes you can check. Everything
         above is measured; this is not.
       </p>
+      {retaining && working && <div className="mt-3">
+        <Working message="Analysing the latest transcript snapshot. Your previous analysis remains below." />
+      </div>}
+      {retaining && status === "error" && !working && <div className="mt-3">
+        <Prompt message={errorMessage || "This meeting could not be analysed. Your previous analysis remains below."}
+          actionLabel="Try again" onAction={onGenerate} />
+      </div>}
       <div className="mt-3">{body()}</div>
     </div>
   );

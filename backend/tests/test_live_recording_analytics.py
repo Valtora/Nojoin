@@ -445,7 +445,6 @@ def test_live_route_never_runs_final_work(
     [
         "get_recording_analytics",
         "generate_recording_analytics",
-        "generate_recording_ai_analytics",
     ],
 )
 def test_final_routes_refuse_in_flight_before_work(

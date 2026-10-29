@@ -2,6 +2,13 @@ from backend.models.notes_output import NotesOutput
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.notes_generation import (
+    claim_notes_generation,
+    complete_notes_metadata,
+    fail_notes_generation,
+    owns_notes_generation,
+)
+from backend.utils.output_snapshot import capture_output_snapshot
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 from backend.utils.transcript_change import change_sequence_bump
@@ -12,7 +19,6 @@ from .notes_outputs import (
     finish_output_generation,
     load_output_for_generation,
     output_notes_context,
-    start_output_generation,
 )
 from .speaker_name_apply import apply_inferred_names
 
@@ -25,6 +31,7 @@ def generate_notes_task(
     recording_id: int,
     notes_template_id: int | None = None,
     output_id: int | None = None,
+    request_id: str | None = None,
 ):
     """
     Generate meeting notes for a recording.
@@ -55,6 +62,12 @@ def generate_notes_task(
             output = load_output_for_generation(session, transcript, output_id)
             if output is None:
                 return
+        target = output if output is not None else transcript
+        if request_id is not None and not owns_notes_generation(
+            session, target, request_id
+        ):
+            session.rollback()
+            return
         if transcript.transcription_failed():
             # The API refuses this; a task queued before the failure lands here.
             logger.warning(
@@ -62,24 +75,23 @@ def generate_notes_task(
                 recording_id,
                 TRANSCRIPTION_FAILED_NOTES_MESSAGE,
             )
-            if transcript.notes_status == "generating":
+            if output is not None:
+                request_id = request_id or claim_notes_generation(session, output)
+                fail_notes_generation(
+                    session, output, request_id, TRANSCRIPTION_FAILED_NOTES_MESSAGE
+                )
+            elif transcript.notes_status == "generating":
                 transcript.notes_status = "pending"
                 session.add(transcript)
                 session.commit()
             return
 
-        if output is not None:
-            start_output_generation(session, output)
-        else:
-            transcript.notes_status = "generating"
-            transcript.set_notes_error_message(None)
-            recording.processing_step = "Generating meeting notes..."
-            recording.processing_progress = 97
-            session.add(transcript)
-            session.add(recording)
-            session.commit()
-            update_recording_status(session, recording.id)
-        target = output if output is not None else transcript
+        if request_id is None:
+            request_id = claim_notes_generation(session, target)
+        if not owns_notes_generation(session, target, request_id):
+            session.rollback()
+            return
+        session.commit()
 
         user_settings = {}
         if recording.user_id:
@@ -93,18 +105,13 @@ def generate_notes_task(
         missing_llm_config = llm_config.missing_configuration_message()
         if missing_llm_config:
             logger.warning("Cannot generate notes: %s", missing_llm_config)
-            _mark_notes_generation_error(session, recording, target, missing_llm_config)
+            fail_notes_generation(session, target, request_id, missing_llm_config)
             return
 
-        segments = build_transcript_segments_for_read(
-            session,
-            recording_id,
-            transcript=transcript,
-        )
+        snapshot = capture_output_snapshot(session, recording_id, transcript=transcript)
+        segments = snapshot.segments
         if not segments:
-            _mark_notes_generation_error(
-                session, recording, target, "Transcript is empty"
-            )
+            fail_notes_generation(session, target, request_id, "Transcript is empty")
             return
 
         speakers = session.exec(
@@ -112,9 +119,7 @@ def generate_notes_task(
                 RecordingSpeaker.recording_id == recording_id
             )
         ).all()
-        speaker_map = with_live_speaker_names(
-            session, recording_id, build_recording_speaker_map(speakers)
-        )
+        speaker_map = snapshot.speaker_map
         timeline_notes = load_recording_timeline_notes(session, recording_id)
         transcript_text = render_timeline_for_llm(
             segments,
@@ -167,6 +172,16 @@ def generate_notes_task(
                 **notes_arguments,
             )
 
+        if not owns_notes_generation(session, target, request_id):
+            session.rollback()
+            return
+        complete_notes_metadata(
+            target,
+            {
+                "event_watermark": snapshot.event_watermark,
+                "generated_through_ms": snapshot.generated_through_ms,
+            },
+        )
         if output is not None:
             finish_output_generation(
                 session,
@@ -185,15 +200,11 @@ def generate_notes_task(
         # time, so a later edit or deletion cannot rewrite the record.
         transcript.notes_template_id = resolved_template.template_id
         transcript.notes_template_sections = resolved_template.sections
-        recording.processing_step = "Completed"
-        recording.processing_progress = 100
         session.add(transcript)
-        session.add(recording)
         # A regeneration can finish between two of another tab's checks, with
         # its notes status back where that tab last saw it.
         session.execute(change_sequence_bump(recording.id))
         session.commit()
-        update_recording_status(session, recording.id)
         logger.info(f"Generated meeting notes for recording {recording_id}")
 
         # --- Index Notes for RAG ---
@@ -248,9 +259,11 @@ def generate_notes_task(
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == recording_id)
             ).first()
-        _mark_notes_generation_error(
-            session, recording, output if output is not None else transcript, e
-        )
+        target = output if output is not None else transcript
+        if target is not None and request_id is not None:
+            fail_notes_generation(
+                session, target, request_id, _format_notes_generation_error(e)
+            )
 
 
 @celery_app.task(
@@ -571,14 +584,7 @@ def _mark_notes_generation_error_impl(
     transcript.set_notes_error_message(_format_notes_generation_error(error))
     session.add(transcript)
 
-    if recording:
-        recording.processing_step = "Error generating notes"
-        session.add(recording)
-
     session.commit()
-
-    if recording:
-        update_recording_status(session, recording.id)
 
 
 def _complete_speaker_inference_task(
@@ -764,7 +770,9 @@ def _supersede_pending_speaker_name_suggestions_for_labels_impl(
     base=DatabaseTask,
     bind=True,
 )
-def generate_meeting_intelligence_task(self, recording_id: int):
+def generate_meeting_intelligence_task(
+    self, recording_id: int, request_id: str | None = None
+):
     """Generate unified meeting intelligence (notes, title, speaker suggestions)
     on the IO lane.
 
@@ -788,6 +796,13 @@ def generate_meeting_intelligence_task(self, recording_id: int):
         if not transcript:
             logger.error("Transcript for recording %s not found.", recording_id)
             return
+
+        if request_id is None:
+            request_id = claim_notes_generation(session, transcript)
+        if not owns_notes_generation(session, transcript, request_id):
+            session.rollback()
+            return
+        session.commit()
 
         user_settings = {}
         if recording.user_id:
@@ -831,6 +846,7 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             timeline_notes=timeline_notes,
             detected_transcription_language=None,
             update_processing_status=False,
+            request_id=request_id,
         )
         logger.info(
             "Generated meeting intelligence on the IO lane for recording %s",
@@ -848,7 +864,12 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == recording_id)
             ).first()
-        _mark_notes_generation_error(session, recording, transcript, exc)
+        if transcript is not None and request_id is not None:
+            fail_notes_generation(
+                session, transcript, request_id, _format_notes_generation_error(exc)
+            )
+        else:
+            _mark_notes_generation_error(session, recording, transcript, exc)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

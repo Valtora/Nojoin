@@ -196,7 +196,7 @@ async def test_extra_lifecycle_preserves_primary_and_other_output(
     ] == "## Minutes\nPrimary decision."
 
 
-@pytest.mark.parametrize("state", ["reprocess", "failed", "primary_busy", "extra_busy"])
+@pytest.mark.parametrize("state", ["failed", "extra_busy"])
 async def test_generation_conflicts(
     reader_client: AsyncClient,
     reader_sessions: async_sessionmaker[AsyncSession],
@@ -207,13 +207,8 @@ async def test_generation_conflicts(
     output_id = await create_extra(reader_client, meeting[1])
     async with reader_sessions() as db:
         transcript = (await db.execute(select(Transcript))).scalar_one()
-        if state == "reprocess":
-            transcript.transcript_status = "pending"
-            transcript.settling_state = {"reprocess_pending": True}
-        elif state == "failed":
+        if state == "failed":
             transcript.fail_transcription("ASR failed")
-        elif state == "primary_busy":
-            transcript.notes_status = "generating"
         await db.commit()
     stub_celery_dispatch.clear()
     response = await reader_client.post(

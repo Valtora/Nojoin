@@ -111,6 +111,13 @@ vi.mock("@/lib/api", () => ({
   findAndReplace: vi.fn(),
   updateSpeakerColor: vi.fn(),
   generateNotes: (...args: unknown[]) => generateNotes(...args),
+  listNotesOutputs: vi.fn(async () => []),
+  getLiveRecordingAnalytics: vi.fn(async () => ({ recording_id: "rec-1", provisional: true, change_sequence: 1,
+    speakers: [], metrics: { utterance_count: 0, talk_time: {}, turn_structure: {} }, transcript_wpm: {} })),
+  getRecordingAiAnalytics: vi.fn(async () => ({ recording_id: "rec-1", transcript_revision: 1,
+    ai: null, ai_status: "pending", ai_error_message: null, ai_stale: false,
+    ai_budget: { limit: null, used: 0, remaining: null, resets_at: "2026-10-30T00:00:00Z" } })),
+  generateRecordingAiAnalytics: vi.fn(),
   updateNotes: vi.fn(),
   updateMeetingEdgeFocus: vi.fn(),
   exportContent: (...args: unknown[]) => exportContent(...args),
@@ -523,7 +530,7 @@ describe("RecordingPage (detail)", () => {
       expect(screen.getByTestId("recording-capture-slot")).toBeInTheDocument();
       expect(screen.getByTestId("live-note-composer")).toBeInTheDocument();
       expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("notes-view")).not.toBeInTheDocument();
+      expect(screen.getByTestId("notes-view")).toHaveTextContent("Generated notes body");
       expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
     } else {
       expect(screen.getByTestId("audio-player")).toBeInTheDocument();
@@ -624,7 +631,7 @@ describe("RecordingPage (detail)", () => {
     expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
     expect(screen.getByTestId("transcript-tour")).toHaveAttribute("data-eligible", "false");
     expect(screen.queryByTestId("export-modal")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("notes-view")).not.toBeInTheDocument();
+    expect(screen.getByTestId("notes-view")).toHaveTextContent("Generated notes body");
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
   });
 

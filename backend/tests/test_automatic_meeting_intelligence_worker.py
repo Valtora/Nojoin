@@ -18,6 +18,7 @@ from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     SPEAKER_NAME_EVENTS_SCHEMA,
+    TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
     USERS_SCHEMA,
 )
@@ -71,6 +72,7 @@ CREATE TABLE recordings (
 );
 
 CREATE TABLE transcripts (
+    notes_generation_metadata JSON,
     change_sequence BIGINT NOT NULL DEFAULT 0,
     settling_state JSON,
     id INTEGER PRIMARY KEY,
@@ -198,6 +200,7 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
         for schema in (
             USERS_SCHEMA,
             TRANSCRIPT_UTTERANCES_SCHEMA,
+            TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
             SPEAKER_NAME_EVENTS_SCHEMA,
         ):
             connection.execute(text(schema))
@@ -480,9 +483,9 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
         assert suggestions[0]["resolution_reason"] is None
         assert suggestions[0]["origin"] == "automatic_meeting_intelligence"
         assert recording.name == "Launch Readiness Review"
-        assert recording.status == "PROCESSED"
-        assert recording.processing_step == "Generating meeting notes... (CPU)"
-        assert recording.processing_progress == 97
+        assert recording.status == "PROCESSING"
+        assert recording.processing_step == "Saving transcript..."
+        assert recording.processing_progress == 85
         assert transcript.notes_status == "completed"
         assert transcript.error_message is None
         # Every note, in timeline order, the anchored one with its time.
@@ -681,9 +684,9 @@ def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
             ).first()
 
         assert result is None
-        assert recording.status == "PROCESSED"
-        assert recording.processing_step == "Error generating notes"
-        assert recording.processing_progress == 97
+        assert recording.status == "PROCESSING"
+        assert recording.processing_step == "Saving transcript..."
+        assert recording.processing_progress == 85
         assert transcript.notes_status == "error"
         assert transcript.error_message == "Unified AI contract failed"
     finally:

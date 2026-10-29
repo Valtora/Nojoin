@@ -31,6 +31,7 @@ from backend.utils.recording_audio_sync import (
     sync_recording_audio_chunks_from_directory,
     sync_recording_audio_window_manifests,
 )
+from backend.utils.status_manager import update_recording_status
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     capture_publication_token,
@@ -109,6 +110,41 @@ async def _request(harness: CaptureHarness, route: Route, tab: str) -> Any:
 
 def _stop(harness: CaptureHarness) -> Any:
     return asyncio.run(_request(harness, _stop_route, "first-tab"))
+
+
+@pytest.mark.parametrize(
+    "capture_status", [RecordingStatus.UPLOADING, RecordingStatus.PAUSED]
+)
+@pytest.mark.parametrize("transcript_status", ["processing", "completed"])
+def test_notes_generation_does_not_close_the_capture_before_stop(
+    capture_harness: CaptureHarness,
+    capture_status: RecordingStatus,
+    transcript_status: str,
+    stub_celery_dispatch: list[tuple[str, object, object]],
+) -> None:
+    engine, recording_id, _, _, _ = capture_harness
+    with Session(engine) as session:
+        recording = session.get(Recording, recording_id)
+        recording.status = capture_status
+        recording.processing_step = "Capturing audio"
+        recording.processing_progress = 12
+        transcript = session.exec(select(Transcript)).one()
+        transcript.transcript_status = transcript_status
+        transcript.notes_status = "generating"
+        session.add(recording)
+        session.add(transcript)
+        session.commit()
+        update_recording_status(session, recording_id)
+
+    response = _stop(capture_harness)
+
+    assert response.status == RecordingStatus.QUEUED
+    assert response.processing_step == "Capturing audio"
+    assert response.processing_progress == 12
+    names = [name for name, _, _ in stub_celery_dispatch]
+    assert names.count("backend.worker.tasks.process_recording_task") == 1
+    with Session(engine) as reader:
+        assert reader.exec(select(Transcript)).one().notes_status == "generating"
 
 
 def _capture_token(

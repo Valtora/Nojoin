@@ -57,7 +57,7 @@ export default function AnalyticsSection({
           )}
         >
           {inFlight ? <LiveAnalyticsView analytics={analytics} error={error}
-            speakerColors={speakerColors} /> : <AnalyticsView
+            speakerColors={speakerColors} recordingId={recordingId} onPlaySegment={onPlaySegment} /> : <AnalyticsView
             key={recordingId}
             recordingId={recordingId}
             speakerColors={speakerColors}

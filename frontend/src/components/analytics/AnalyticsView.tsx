@@ -10,6 +10,7 @@ import {
   getRecordingAnalytics,
 } from "@/lib/api";
 import type { RecordingAnalytics, RecordingId } from "@/types";
+import { getErrorMessage } from "@/lib/errors";
 
 import AttributionWarning from "./AttributionWarning";
 import DeliveryPanel from "./DeliveryPanel";
@@ -52,6 +53,8 @@ export default function AnalyticsView({
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [analysing, setAnalysing] = useState(false);
+  const [deliveryActionError, setDeliveryActionError] = useState<string | null>(null);
+  const [aiActionError, setAiActionError] = useState<string | null>(null);
   const loadGeneration = useRef(0);
 
   const load = useCallback(async () => {
@@ -100,23 +103,31 @@ export default function AnalyticsView({
 
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
+    setDeliveryActionError(null);
+    let started = false;
     try {
       await generateRecordingAnalytics(recordingId);
+      started = true;
       setAnalytics(await getRecordingAnalytics(recordingId));
-    } catch {
-      setError("Delivery analysis could not be started.");
-      setGenerating(false);
+    } catch (cause) {
+      setDeliveryActionError(started ? "Delivery analysis started, but its status could not be refreshed. Retrying shortly."
+        : getErrorMessage(cause, "Delivery analysis could not be started."));
+      if (!started) setGenerating(false);
     }
   }, [recordingId]);
 
   const handleAnalyse = useCallback(async () => {
     setAnalysing(true);
+    setAiActionError(null);
+    let started = false;
     try {
       await generateRecordingAiAnalytics(recordingId);
+      started = true;
       setAnalytics(await getRecordingAnalytics(recordingId));
-    } catch {
-      setError("The meeting analysis could not be started.");
-      setAnalysing(false);
+    } catch (cause) {
+      setAiActionError(started ? "Meeting analysis started, but its status could not be refreshed. Retrying shortly."
+        : getErrorMessage(cause, "The meeting analysis could not be started."));
+      if (!started) setAnalysing(false);
     }
   }, [recordingId]);
 
@@ -288,6 +299,9 @@ export default function AnalyticsView({
           title="How people spoke"
           hint="Measured from the audio. This describes how someone spoke, not how they felt."
         >
+          {deliveryActionError && <p role="alert" className="mb-3 text-sm text-status-danger-fg">
+            {deliveryActionError}
+          </p>}
           <DeliveryPanel
             delivery={analytics.delivery}
             status={analytics.delivery_status}
@@ -303,6 +317,8 @@ export default function AnalyticsView({
         </Section>
       </Band>
 
+      <div className="space-y-3">
+      {aiActionError && <p role="alert" className="text-sm text-status-danger-fg">{aiActionError}</p>}
       <MeetingAnalysisPanel
         ai={analytics.ai}
         status={analytics.ai_status}
@@ -315,6 +331,7 @@ export default function AnalyticsView({
         generating={aiBusy}
         onPlaySegment={onPlaySegment}
       />
+      </div>
     </div>
   );
 }

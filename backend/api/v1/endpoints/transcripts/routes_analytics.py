@@ -1,14 +1,17 @@
 import logging
+from uuid import uuid4
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task_best_effort
 from backend.models.ai_analysis import RUN_SOURCE_USER
 from backend.models.analytics_public import LiveRecordingAnalyticsRead
 from backend.models.recording import IN_FLIGHT_TRANSCRIPT_STATUSES, Recording
+from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.services.ai_analysis_budget import (
     AiAnalysisBudgetExhausted,
@@ -17,6 +20,7 @@ from backend.services.ai_analysis_budget import (
 )
 from backend.services.meeting_analytics import compute_recording_analytics
 from backend.services.meeting_analytics.live import compute_live_recording_analytics
+from backend.utils.analytics_payload import merge_analytics_payload
 from backend.utils.analytics_preferences import is_auto_remeasure_delivery_enabled
 from backend.utils.canonical_pipeline import (
     ensure_canonical_backfill,
@@ -83,6 +87,18 @@ class AnalyticsGenerateResponse(BaseModel):
 class AnalyticsAiGenerateResponse(BaseModel):
     recording_id: str
     ai_status: str
+    ai_generation: dict = {}
+
+
+class RecordingAiAnalyticsRead(BaseModel):
+    recording_id: str
+    transcript_revision: int
+    ai: dict | None = None
+    ai_status: str = "pending"
+    ai_error_message: str | None = None
+    ai_stale: bool = False
+    ai_budget: dict = {}
+    ai_generation: dict = {}
 
 
 # How long one read's re-measure claim holds off the next. Long enough to
@@ -333,8 +349,13 @@ async def generate_recording_ai_analytics(
     read. A meeting that has never been analysed simply reports so.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_final_analytics(recording)
-    transcript = await _get_recording_transcript(db, recording.id)
+    result = await db.execute(
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    transcript = result.scalar_one_or_none()
 
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
@@ -352,12 +373,21 @@ async def generate_recording_ai_analytics(
     except AiAnalysisBudgetExhausted as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
 
-    # As with delivery, the worker owns the status from here. Setting it in the
-    # handler would strand the transcript in "generating" when a dispatch never
-    # reaches the broker, and could overwrite a run that finished first.
+    # Keep the row locked until dispatch commits. The worker locks it before
+    # checking ownership, so even a fast worker sees the accepted request.
+    request_id = str(uuid4())
+    generation = {"request_id": request_id}
+    transcript.analytics_payload = merge_analytics_payload(
+        transcript.analytics_payload, {"ai_generation": generation}
+    )
+    transcript.analytics_ai_status = "generating"
+    transcript.analytics_ai_error_message = None
+    db.add(transcript)
+    await db.flush()
     dispatched = await dispatch_task_best_effort(
         "backend.worker.tasks.compute_meeting_analysis_task",
         args=[recording.id],
+        kwargs={"request_id": request_id},
         context="meeting analysis",
     )
     if dispatched is None:
@@ -369,5 +399,35 @@ async def generate_recording_ai_analytics(
     await db.commit()
 
     return AnalyticsAiGenerateResponse(
-        recording_id=recording.public_id, ai_status="generating"
+        recording_id=recording.public_id,
+        ai_status="generating",
+        ai_generation=generation,
+    )
+
+
+@router.get("/{recording_id}/analytics/ai", response_model=RecordingAiAnalyticsRead)
+async def get_recording_ai_analytics(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RecordingAiAnalyticsRead:
+    """Read discussion analysis without final audio work or canonical backfill."""
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript = await _get_recording_transcript(db, recording.id)
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+    revision = await db.run_sync(
+        lambda session: get_canonical_transcript_revision(session, recording.id)
+    )
+    payload = transcript.analytics_payload or {}
+    ai = payload.get("ai")
+    return RecordingAiAnalyticsRead(
+        recording_id=recording.public_id,
+        transcript_revision=revision,
+        ai=ai,
+        ai_status=transcript.analytics_ai_status,
+        ai_error_message=transcript.analytics_ai_error_message,
+        ai_stale=_is_stale(ai, (ai or {}).get("event_watermark"), revision),
+        ai_budget=(await get_budget(db, current_user)).as_dict(),
+        ai_generation=payload.get("ai_generation") or {},
     )
