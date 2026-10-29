@@ -2,7 +2,8 @@
 
 The pass deletes the retained lines, speakers and edit history when it
 publishes, so an edit accepted while it runs would answer 200 and then vanish.
-Each surface (the REST routes, which the MCP tools call too) answers 409.
+Each transcript and per-recording speaker route, which the MCP tools call
+too, answers 409 instead.
 """
 
 from __future__ import annotations
@@ -17,6 +18,19 @@ from sqlalchemy import Engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlmodel import Session, select
 
+from backend.api.v1.endpoints.speakers import (
+    routes_name_review,
+    routes_recording,
+    routes_voiceprint,
+)
+from backend.api.v1.endpoints.speakers.helpers import (
+    MergeRequestLabels,
+    SegmentSelection,
+    SpeakerColorUpdate,
+    SpeakerSplitRequest,
+    SpeakerUpdate,
+    VoiceprintAction,
+)
 from backend.api.v1.endpoints.transcripts import (
     routes_line_split,
     routes_segments,
@@ -46,6 +60,7 @@ from backend.utils.reprocess_publication import REPROCESS_RUNNING_MESSAGE
 Edit = Callable[[str, AsyncSession, User], Awaitable[Any]]
 
 LINE = "fence-a"
+SPEAKER = "SPEAKER_00"
 
 EDITS: dict[str, Edit] = {
     # MCP's correct_utterance_text and correct_utterance_speaker share these.
@@ -95,6 +110,64 @@ EDITS: dict[str, Edit] = {
     ),
     "bulk segments": lambda rid, db, user: routes_segments.update_transcript_segments(
         rid, TranscriptSegmentsUpdate(segments=[]), db, user
+    ),
+    # Every per-recording speaker route shares one guard. MCP's
+    # set_speaker_name calls the first.
+    "speaker name": lambda rid, db, user: (
+        routes_recording.apply_recording_speaker_update(
+            rid,
+            SpeakerUpdate(
+                diarization_label=SPEAKER, global_speaker_name="Alice Example"
+            ),
+            db=db,
+            current_user=user,
+        )
+    ),
+    "add to People": lambda rid, db, user: routes_recording.promote_speaker_to_global(
+        rid, SPEAKER, db, user
+    ),
+    "speaker merge": lambda rid, db, user: routes_recording.merge_recording_speakers(
+        rid,
+        MergeRequestLabels(target_speaker_label=SPEAKER, source_speaker_label="X"),
+        db,
+        user,
+    ),
+    "speaker unmerge": lambda rid, db, user: (
+        routes_recording.unmerge_merged_recording_speaker(rid, SPEAKER, db, user)
+    ),
+    "speaker delete": lambda rid, db, user: routes_recording.delete_recording_speaker(
+        rid, SPEAKER, db, user
+    ),
+    "speaker colour": lambda rid, db, user: routes_recording.update_speaker_color(
+        rid, SPEAKER, SpeakerColorUpdate(color="blue"), db, user
+    ),
+    "speaker split": lambda rid, db, user: routes_recording.split_local_speaker(
+        rid,
+        SPEAKER,
+        SpeakerSplitRequest(
+            new_speaker_name="Alice Example",
+            segments=[SegmentSelection(recording_id=rid, start=0, end=1)],
+        ),
+        db,
+        user,
+    ),
+    "name confirm": lambda rid, db, user: routes_name_review.confirm_speaker_name(
+        rid, SPEAKER, db, user
+    ),
+    "name dismiss": lambda rid, db, user: routes_name_review.dismiss_speaker_name(
+        rid, SPEAKER, db, user
+    ),
+    "voiceprint extract": lambda rid, db, user: routes_voiceprint.extract_voiceprint(
+        rid, SPEAKER, db, user
+    ),
+    "voiceprint apply": lambda rid, db, user: routes_voiceprint.apply_voiceprint_action(
+        rid, SPEAKER, VoiceprintAction(action="local_only"), db, user
+    ),
+    "voiceprint delete": lambda rid, db, user: routes_voiceprint.delete_voiceprint(
+        rid, SPEAKER, db, user
+    ),
+    "voiceprints extract all": lambda rid, db, user: (
+        routes_voiceprint.extract_all_voiceprints(rid, db, user)
     ),
 }
 
