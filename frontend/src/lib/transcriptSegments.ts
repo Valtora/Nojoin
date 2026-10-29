@@ -171,6 +171,7 @@ export const transcriptSegmentFromUtterance = (
 ): TranscriptSegment => {
   return {
     id: utterance.id,
+    ...(utterance.capture_interval !== undefined ? { capture_interval: utterance.capture_interval } : {}),
     ...(utterance.settling_required ? { settling_required: true } : {}),
     ...(utterance.diarisation_pending !== undefined ? { diarisation_pending: utterance.diarisation_pending } : {}),
     ...(utterance.words !== undefined ? { words: utterance.words } : {}),

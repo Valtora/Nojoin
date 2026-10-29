@@ -2174,13 +2174,16 @@ async def test_search_context_resolves_speakers_and_provenance(
 
     transcript_chunk = ContextChunk(
         recording_id=1,
-        content="SPEAKER_00: we agreed to ship the context layer in Q3.",
+        content=(
+            "SPEAKER_00: we agreed to ship the context layer in Q3.\n"
+            "UNKNOWN: The literal UNKNOWN: stays in the spoken text."
+        ),
         meta={"source": "transcript", "start": 61.0, "end": 74.5},
     )
     document_chunk = ContextChunk(
         recording_id=1,
         document_id=5,
-        content="Q3 roadmap: context layer, evaluation harness.",
+        content="UNKNOWN: Q3 roadmap: context layer, evaluation harness.",
         meta={"document_title": "Roadmap", "page_number": 2, "page_title": "Q3"},
     )
     notes_chunk = ContextChunk(
@@ -2205,10 +2208,17 @@ async def test_search_context_resolves_speakers_and_provenance(
     first, second, third = result["results"]
     assert first["source"] == "transcript"
     assert first["content"].startswith("Dana: we agreed")
+    assert (
+        "\nUnidentified speaker: The literal UNKNOWN: stays in the spoken text."
+        in first["content"]
+    )
     assert first["start"] == 61.0
     assert first["recording_id"] == "11111111-2222-3333-4444-555555555555"
     assert first["distance"] == 0.12
     assert second["source"] == "document"
+    assert (
+        second["content"] == "UNKNOWN: Q3 roadmap: context layer, evaluation harness."
+    )
     assert second["document_title"] == "Roadmap"
     assert second["page_number"] == 2
     # Notes chunks are labelled honestly, never passed off as transcript

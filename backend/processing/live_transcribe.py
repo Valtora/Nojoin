@@ -67,6 +67,7 @@ from backend.processing.processing_tuning import (
 )
 from backend.utils.asr_config import build_asr_config_hash, get_transcription_model_name
 from backend.utils.audio_windows import infer_resume_state_from_manifests
+from backend.utils.capture_resume import load_resume_boundaries, split_resume_regions
 from backend.utils.config_manager import config_manager
 from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.transcript_settling import capture_publication_token
@@ -593,6 +594,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             settling_state.get("eligible")
             and settling_state.get("policy", {}).get("enabled") is not False
         )
+        resume_boundaries = load_resume_boundaries(session, recording.transcript)
     finally:
         session.close()
 
@@ -810,6 +812,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             forced_max_s=float(live_config["forced_max_s"]),
             max_segment_s=float(live_config["max_segment_s"]),
         )
+        complete = split_resume_regions(complete, combined_abs_start, resume_boundaries)
         record_pipeline_metric(
             stage="live_vad_classified",
             recording_id=recording_id,

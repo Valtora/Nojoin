@@ -47,6 +47,7 @@ from backend.processing import transcribe as real_transcribe
 from backend.processing.engines.base import VAD_MUTED_INPUT
 from backend.services import model_preparation
 from backend.utils import nemotron_lock, nemotron_model_utils
+from backend.utils import transcript_utils as real_transcript_utils
 from backend.utils.status_manager import update_recording_status
 from backend.worker import tasks as tasks_module
 from backend.worker.tasks import vad_stage
@@ -1211,6 +1212,39 @@ def test_combine_stage_receives_the_owners_merged_settings(monkeypatch):
     _run_task(monkeypatch, session, recording_id=721, llm_config=llm_config)
 
     assert seen["config"]["word_flip_max_duration_s"] == 0
+
+
+def test_the_merge_breaks_the_line_at_the_transcripts_resume_cut(monkeypatch):
+    """A resume cut stored on the transcript reaches the final line building."""
+    recording = _FakeRecording(739)
+    transcript = _FakeTranscript(739)
+    transcript.settling_state = {"resume_boundaries_ms": [1000]}
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    words = [
+        {"start": 0.2, "end": 0.8, "word": " Before"},
+        {"start": 1.2, "end": 1.8, "word": " after"},
+    ]
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=lambda *a, **k: {
+            "text": " Before after",
+            "language": "en",
+            "segments": [
+                {"start": 0.2, "end": 1.8, "text": " Before after", "words": words}
+            ],
+        },
+        release_model_cache=lambda: None,
+    )
+    # The real combiner and consolidator: they are what must not rejoin the line.
+    monkeypatch.setitem(
+        sys.modules, "backend.utils.transcript_utils", real_transcript_utils
+    )
+
+    _run_task(monkeypatch, session, recording_id=739)
+
+    assert [segment["text"] for segment in transcript.segments] == ["Before", "after"]
 
 
 @pytest.mark.parametrize("enable_vad", [True, False])
