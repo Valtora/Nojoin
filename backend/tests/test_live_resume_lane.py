@@ -27,6 +27,11 @@ from backend.tests.test_live_settling_publication import _active, _seed
 from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
 )
+from backend.utils.canonical_pipeline.constants import LIVE_SPEAKER_LABEL_PAYLOAD_KEY
+from backend.utils.canonical_pipeline.live_labels import (
+    LiveLabelDecision,
+    apply_live_speaker_labels,
+)
 from backend.utils.canonical_pipeline.live_settling import close_live_settling
 from backend.utils.config_manager import config_manager
 from backend.utils.transcript_settling import (
@@ -308,6 +313,44 @@ def test_tail_drained_after_pause_is_decoded_and_locked_while_paused(
         )
     lane.transition(resume=True)
     _assert_newer_task_recovers(lane, tail_consumed=True)
+
+
+@pytest.mark.parametrize("resume_lane", [("on", True)], indirect=True)
+def test_paused_tail_locks_with_the_speaker_its_labels_decide(
+    resume_lane: ResumeLane, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The tail's speaker evidence arrives in its own task, after the decode."""
+    lane = resume_lane
+    monkeypatch.setattr(labels_worker, "live_speaker_labels_device", lambda: "cuda")
+
+    def label(run: Any) -> None:
+        # The real projection, given the diariser's answer for the tail.
+        with Session(lane.engine) as session:
+            apply_live_speaker_labels(
+                session,
+                recording_id=run.recording_id,
+                settled_ms=0,
+                decide=lambda _start, _end: LiveLabelDecision(
+                    "LIVE_PROVISIONAL_1", False, 1.0
+                ),
+            )
+            session.commit()
+
+    monkeypatch.setattr(labels_worker, "run_live_speaker_labels", label)
+    lane.upload(1)
+    lane.upload(2, 0.4)
+    lane.boundary, lane.hook = "snapshot", lambda: lane.transition(resume=False)
+    lane.run(1)
+    with Session(lane.engine) as session:
+        tail = [
+            row for row in _active(session, lane.recording_id) if row.start_ms >= 3800
+        ]
+        assert [(row.text, row.speaker_label) for row in tail] == [
+            ("speech", "LIVE_PROVISIONAL_1")
+        ]
+        payload = tail[0].confidence_payload
+        assert payload[LIVE_SPEAKER_LABEL_PAYLOAD_KEY]["locked"]
+        assert payload["live_text_settling"]["line_locked"]
 
 
 @pytest.mark.parametrize(

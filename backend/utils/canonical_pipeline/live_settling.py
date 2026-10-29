@@ -291,7 +291,7 @@ def _fresh(
             )
         )
         and publication_is_current(recording, transcript, request.expected_token)
-        # The tail uploaded before a pause still publishes; the worker locks it.
+        # The tail uploaded before a pause still publishes; its task locks it.
         and state.get("phase") in {"live", "paused"}
         and request.step_index > state.get("last_step_index", -1)
     )
