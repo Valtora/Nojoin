@@ -1,5 +1,6 @@
 import type { ComponentPropsWithoutRef } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { AxiosError } from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
@@ -263,11 +264,15 @@ describe("a capture whose tab is reloaded while it records", () => {
   // The server never heard the old page's pause, and the capture is not stalled.
   const stillUploading = {
     ...paused, status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING, capture_stalled: false,
+    capture_epoch: 3,
   } as Recording;
   const lockQuery = vi.fn(async () => ({ held: [] as LockInfo[], pending: [] as LockInfo[] }));
 
-  /** Starts a capture at epoch 3, then reloads the page while it records. */
-  const recordThenReload = async () => {
+  /**
+   * Starts a capture at epoch 3, then reloads the page while it records. With
+   * `uploaded: false` the tab was offline, so nothing reached the server.
+   */
+  const recordThenReload = async ({ uploaded = true } = {}) => {
     vi.stubGlobal("navigator", {
       locks: { query: lockQuery, request: (_name: string, _options: unknown, hold: () => Promise<void>) => hold() },
       // The beacon is queued as the page unloads but never reaches the server.
@@ -282,7 +287,7 @@ describe("a capture whose tab is reloaded while it records", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
     await screen.findByTitle("Pause recording");
     // The server has the first segment, so there is a meeting to go back to.
-    act(() => vi.mocked(createSegmentUploader).mock.calls.at(-1)?.[0].onUploaded?.(0));
+    if (uploaded) act(() => vi.mocked(createSegmentUploader).mock.calls.at(-1)?.[0].onUploaded?.(0));
     await act(async () => { window.dispatchEvent(new Event("pagehide")); });
     oldPage.unmount();
 
@@ -323,6 +328,41 @@ describe("a capture whose tab is reloaded while it records", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(api.resumeRecordingCapture).not.toHaveBeenCalled();
+  });
+
+  it("is neither offered nor discarded once another device has taken it over", async () => {
+    // Reloaded offline before the first upload, then resumed and recording on
+    // another device, which has no lock in this browser.
+    await recordThenReload({ uploaded: false });
+    api.getUnfinishedCaptures.mockResolvedValue([{ ...stillUploading, capture_epoch: 4 }]);
+    render(<CaptureProvider><CaptureShell><LiveMeetingControls size="bar" /></CaptureShell></CaptureProvider>);
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
+  });
+
+  it("is not deleted by this tab once another device has taken it over and paused it", async () => {
+    await recordThenReload({ uploaded: false });
+    api.getUnfinishedCaptures.mockResolvedValue([{ ...paused, capture_epoch: 4 }]);
+    // The server refuses a discard sent with an epoch it has moved past.
+    let deleted = false;
+    api.discardRecordingCapture.mockImplementation(
+      async (_id: string, _reason: unknown, options: { epoch?: number } = {}) => {
+        if (options.epoch !== undefined && options.epoch !== 4) {
+          throw Object.assign(new AxiosError("Request failed with status code 409"), {
+            response: { status: 409, data: { detail: { code: "capture_superseded", message: "Continued elsewhere." } } },
+          });
+        }
+        deleted = true;
+      },
+    );
+    render(<CaptureProvider><CaptureShell><LiveMeetingControls size="bar" /></CaptureShell></CaptureProvider>);
+
+    await waitFor(() => expect(api.discardRecordingCapture).toHaveBeenCalled());
+    await act(async () => {});
+    expect(deleted).toBe(false);
   });
 });
 

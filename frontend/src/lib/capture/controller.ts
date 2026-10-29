@@ -31,7 +31,7 @@ import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 import { holdCaptureLock, isCaptureHeldInThisBrowser } from "./captureLock";
 import {
   findAttentionRecordings,
-  reclaimableRecordingId,
+  reclaimableCapture,
   selectRecoveryOffer,
   type RecoveryRequest,
 } from "./recovery";
@@ -606,7 +606,7 @@ export class CaptureController {
     const unfinished = await getUnfinishedCaptures();
     const captures = unfinished.filter(isLiveCaptureInProgress);
     const attentionRecordings = await findAttentionRecordings(
-      captures, this.getOwnedRecordingId(), reclaimableRecordingId());
+      captures, this.getOwnedRecordingId(), reclaimableCapture());
     if (ticket !== this.captureActionTicket || options.isCurrent?.() === false) {
       // An action began meanwhile and will look again itself when it ends.
       return this.state.pausedRecording;
@@ -1275,7 +1275,11 @@ export class CaptureController {
     this.setState({ stopStage: stage });
   };
 
-  cancel = async (recordingId?: RecordingId) => {
+  /**
+   * `fenceEpoch`, the epoch this tab held before a reload, has the server
+   * refuse the discard once the capture has been taken over elsewhere.
+   */
+  cancel = async (recordingId?: RecordingId, fenceEpoch?: number) => {
     const targetRecordingId =
       recordingId ?? this.state.pausedRecording?.id ?? this.state.recordingId;
     if (!targetRecordingId) {
@@ -1288,7 +1292,7 @@ export class CaptureController {
     // the tab now running it, nor delete one stopped elsewhere and now being
     // processed. A discard from a dialog or the list sends none.
     const ownCapture = this.runtime?.recordingId === targetRecordingId ? this.runtime : null;
-    const epoch = ownCapture?.epoch;
+    const epoch = ownCapture ? ownCapture.epoch : fenceEpoch;
     const ownerId = ownCapture ? ownCapture.ownerId : signedInAccountId();
     try {
       if (ownCapture) {
@@ -1392,7 +1396,9 @@ export class CaptureController {
       return false;
     }
 
-    await this.cancel(paused.id);
+    // Fenced with the epoch this tab held: a capture taken over elsewhere since
+    // belongs to that tab or device, and the server refuses to delete it.
+    await this.cancel(paused.id, context.epoch);
     useNotificationStore.getState().addNotification({
       type: "warning",
       message:

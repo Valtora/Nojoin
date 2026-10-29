@@ -621,6 +621,11 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    */
   capture_stalled?: boolean;
   /**
+   * The capture's current epoch. A reloaded tab offers its capture at once only
+   * while this is still the epoch it held (issue #778).
+   */
+  capture_epoch?: number;
+  /**
    * A file import that has received no part for 15 minutes, so the page
    * sending it went away. Judged by the server. It cannot be resumed, only
    * imported again or discarded.

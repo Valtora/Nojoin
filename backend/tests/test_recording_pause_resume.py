@@ -1631,3 +1631,38 @@ async def test_a_reclaim_reopens_neither_a_closed_recording_nor_an_import(
         (await _recording_row(test_session_maker, public_id)).status
         for public_id in ("queued", "slow-import")
     ] == ["QUEUED", "UPLOADING"]
+
+
+@pytest.mark.anyio
+async def test_a_tab_reloaded_before_its_first_upload_cannot_delete_a_takeover(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """The old tab learns the epoch moved, and its fenced cleanup is refused."""
+    set_session_cookie(client)
+    init = await _post(client, "init", params={"name": "Weekly sync"})
+    recording_id = init.json()["id"]
+    # The tab reloaded offline, so nothing arrived. Once it stalled, another
+    # device took the capture over and records there.
+    await _set_last_heard(
+        test_session_maker, recording_id, quiet_for=QUIET_PAST_THRESHOLD, capture=True
+    )
+    assert (await _post(client, f"{recording_id}/resume")).status_code == 200
+    assert (
+        await _upload(client, recording_id, 0, make_wav_bytes(), epoch=1)
+    ).status_code == 200
+
+    listing = await client.get(
+        "/api/v1/recordings", params={"status": "UPLOADING", "user": "me"}
+    )
+    stale_cleanup = await _post(client, f"{recording_id}/discard", params={"epoch": 0})
+
+    assert [row["capture_epoch"] for row in listing.json()] == [1]
+    assert stale_cleanup.status_code == 409
+    assert stale_cleanup.json()["detail"] == SUPERSEDED
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.client_status, row.capture_epoch) == (
+        "UPLOADING",
+        "RECORDING",
+        1,
+    )
