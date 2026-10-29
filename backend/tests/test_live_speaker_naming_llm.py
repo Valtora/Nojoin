@@ -419,3 +419,32 @@ async def test_an_answer_to_an_older_ask_leaves_a_newer_introduction_due(
     llm.ran = len(llm.dispatched)
     await _refresh(session_maker, llm)
     assert llm.asks == [[ONE]]
+
+
+@pytest.mark.parametrize("answer", ["Accountant", "Software Architect"])
+async def test_a_job_title_is_no_ai_name(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM, answer: str
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _talk_until(session_maker, 64_000)
+    llm.names = {ONE: answer}
+
+    await _refresh(session_maker, llm)
+
+    assert llm.asks == [[ONE]]
+    assert (await _read(client))["live_speaker_suggestions"] == {}
+
+
+@pytest.mark.parametrize("answer", ["李明", "محمد", "Ana Maria de Souza"])
+async def test_a_name_in_any_script_or_length_is_an_ai_name(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM, answer: str
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _talk_until(session_maker, 64_000)
+    llm.names = {ONE: answer}
+
+    await _refresh(session_maker, llm)
+
+    read = await _read(client)
+    assert read["live_speaker_suggestions"] == {ONE: answer}
+    assert read["live_speaker_suggestion_sources"] == {ONE: "llm"}

@@ -492,6 +492,7 @@ class LLMBackend:
 - Omit a label entirely if the transcript evidence is weak or ambiguous.
 - Each suggestion must include at least one direct evidence span quoted from the transcript.
 - Prefer names already present in the transcript or linked meeting attendees. Do not invent names.
+- `suggested_name` must be the person's name. Never a role, job title or description such as "Accountant" or "the project lead"; if only a role is known, omit the label.
 - Be conservative. If you are unsure, omit the suggestion instead of guessing.
 - `confidence` must be between 0.0 and 1.0."""
 

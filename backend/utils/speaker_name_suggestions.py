@@ -55,14 +55,18 @@ DISALLOWED_NAME_TOKENS = {
     "thanks",
 }
 # A model asked to name a speaker sometimes answers with what they do
-# ("Industrial Designer", "the project lead"). With DISALLOWED_NAME_TOKENS these
-# mark an answer as a role, which `is_personal_name` refuses.
+# ("Industrial Designer", "the project lead"), though the prompt forbids it.
+# With DISALLOWED_NAME_TOKENS these mark an answer as a role, which
+# `is_personal_name` refuses. A backstop for common roles, not a list of them all.
 ROLE_WORDS = frozenset(
     """
-    analyst assistant chair chairman chairperson consultant coordinator designer
-    developer director expert facilitator guest head host interviewer lead leader
-    marketing member moderator officer owner participant presenter product
-    representative sales secretary specialist user
+    accountant administrator adviser advisor analyst architect assistant
+    attorney auditor chair chairman chairperson clerk consultant coordinator
+    designer developer director editor executive expert facilitator founder
+    guest head host intern interviewer lawyer lead leader marketing member
+    moderator officer owner participant planner presenter product programmer
+    recruiter representative researcher sales scientist secretary specialist
+    student supervisor teacher technician user
     """.split()
 )
 NAME_STOPWORDS = {"at", "for", "from", "in", "on", "with"}
@@ -759,19 +763,20 @@ def _clean_candidate_name(candidate: str) -> str | None:
     return " ".join(part.capitalize() for part in cleaned.split())
 
 
-def is_personal_name(name: str) -> bool:
-    """Whether a suggested name reads as a person's, by the rule's own checks.
+_NOT_IN_A_NAME = DISALLOWED_NAME_TOKENS | ROLE_WORDS | NAME_STOPWORDS | NON_NAME_WORDS
 
-    The whole answer must survive the self-introduction rule's cleaning, and a
-    role ("industrial designer", "the manager") is not a name.
+
+def is_personal_name(name: str) -> bool:
+    """Whether a model's suggested name reads as a person's.
+
+    Any script and any length ("李明", "Ana Maria de Souza"): the rule's own
+    cleaning only fits English introductions. A placeholder ("Speaker 2"), a
+    role ("industrial designer", "the manager") or a phrase is not a name.
     """
-    cleaned = _clean_candidate_name(name)
-    if cleaned is None or is_placeholder_speaker_name(cleaned):
+    if is_placeholder_speaker_name(name):
         return False
-    tokens = _normalize_name(name).split()
-    return _normalize_name(cleaned).split() == tokens and not ROLE_WORDS.intersection(
-        tokens
-    )
+    words = re.findall(r"\w+", name.casefold())
+    return bool(words) and not _NOT_IN_A_NAME.intersection(words)
 
 
 def _normalize_name(value: str) -> str:
