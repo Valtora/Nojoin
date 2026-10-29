@@ -330,4 +330,3 @@ export function useDetailTranscript(
     setActiveTranscriptEditId, handleUndo, handleRedo,
   };
 }
-
