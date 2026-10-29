@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 import {
+  ClientStatus,
   RecordingStatus,
   type CalendarDashboardSummary,
   type Recording,
@@ -11,6 +12,7 @@ import {
 
 import { useCalendarDashboard } from "../upcomingMeetings/useCalendarDashboard";
 import ProcessingCard from "./ProcessingCard";
+import RecentRecordingsCard from "./RecentRecordingsCard";
 import { useDashboardRecordings } from "./useDashboardRecordings";
 
 const api = vi.hoisted(() => ({
@@ -103,5 +105,35 @@ describe("the dashboard while a meeting processes on the server", () => {
     // One poll and the one refresh it caused: nothing loops.
     expect(api.getCalendarDashboardSummary).toHaveBeenCalledTimes(2);
     expect(api.getRecordings).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** The dashboard's calendar poll beside its recent meetings card. */
+function RecentDashboard() {
+  useCalendarDashboard();
+  const { recent } = useDashboardRecordings();
+  return <RecentRecordingsCard recordings={recent} timeZone="UTC" />;
+}
+
+describe("the dashboard while a meeting starts in another tab or browser", () => {
+  it("lists it in Recent Meetings once the calendar poll sees it appear", async () => {
+    api.getRecordings.mockResolvedValue([]);
+    api.getCalendarDashboardSummary.mockResolvedValue({
+      ...summary(RecordingStatus.UPLOADING), recording_items: [],
+    });
+    render(<CaptureProvider><RecentDashboard /></CaptureProvider>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.queryByText("Weekly sync")).not.toBeInTheDocument();
+
+    api.getRecordings.mockResolvedValue([
+      { ...recording(RecordingStatus.UPLOADING), client_status: ClientStatus.RECORDING },
+    ]);
+    const started = summary(RecordingStatus.UPLOADING);
+    started.recording_items[0].client_status = ClientStatus.RECORDING;
+    api.getCalendarDashboardSummary.mockResolvedValue(started);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+
+    expect(screen.getByText("Weekly sync")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
   });
 });

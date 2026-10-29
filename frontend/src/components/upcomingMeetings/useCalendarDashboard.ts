@@ -33,17 +33,18 @@ import {
   splitMonthAgendaItems,
 } from "./calendarUtils";
 
-const recordingState = ({ status, client_status }: CalendarDashboardSummary["recording_items"][number]) =>
-  `${status}/${client_status ?? ""}`;
+const recordingStates = (summary: CalendarDashboardSummary) =>
+  summary.recording_items
+    .map(({ id, status, client_status }) => `${id}:${status}/${client_status ?? ""}`)
+    .sort()
+    .join("|");
 
-/** Whether a recording in both reads changed state, as when processing finishes. */
-const recordingStateChanged = (before: CalendarDashboardSummary, after: CalendarDashboardSummary) => {
-  const previous = new Map(before.recording_items.map((item) => [item.id, recordingState(item)]));
-  return after.recording_items.some((item) => {
-    const was = previous.get(item.id);
-    return was !== undefined && was !== recordingState(item);
-  });
-};
+/**
+ * Whether a recording appeared, disappeared or changed state between two
+ * reads, as when a meeting starts elsewhere or processing finishes.
+ */
+const recordingStateChanged = (before: CalendarDashboardSummary, after: CalendarDashboardSummary) =>
+  recordingStates(before) !== recordingStates(after);
 
 /**
  * The calendar dashboard's entire state, fetch included.
@@ -163,7 +164,7 @@ export function useCalendarDashboard() {
         }
         // Processing finishes on the server. This poll is the dashboard's only
         // one, so it tells the other modules (recent meetings, processing)
-        // when a recording's state moves on; none of them polls itself, and
+        // when a recording appears, goes or moves on; none of them polls itself, and
         // nothing that listens triggers this read, so it cannot loop.
         if (lastRead && recordingStateChanged(lastRead, response)) {
           window.dispatchEvent(new CustomEvent("recording-updated", { detail: {} }));
