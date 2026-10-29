@@ -110,6 +110,46 @@ def test_superseded_worker_cannot_replace_newer_result_or_status(
     assert _payload(payload) == newer
 
 
+@pytest.mark.parametrize("fails", [False, True])
+def test_a_run_superseded_while_the_newer_one_still_generates_is_discarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fails: bool
+) -> None:
+    """Request A is with the provider when request B is accepted. A finishing
+    while B is still generating must leave B's claim and the old result alone."""
+    engine = _make_engine(tmp_path, "superseded-generating")
+    previous = {"topics": [{"title": "Previous discussion"}], "event_watermark": 1}
+    with engine.begin() as connection:
+        _seed(connection, analytics_payload=json.dumps({"ai": previous}))
+
+    class SupersededBackend(FakeBackend):
+        def generate_meeting_analysis(self, request: Any, **kwargs: Any) -> Any:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE transcripts SET analytics_payload=:payload, "
+                        "analytics_ai_status='generating'"
+                    ),
+                    {
+                        "payload": json.dumps(
+                            {"ai": previous, "ai_generation": {"request_id": "B"}}
+                        )
+                    },
+                )
+            if fails:
+                raise RuntimeError("old request failed")
+            return super().generate_meeting_analysis(request, **kwargs)
+
+    _run(
+        engine,
+        monkeypatch,
+        config=_configured(),
+        backend=SupersededBackend(MODEL_RESPONSE),
+    )
+    status, message, payload, _ = _row(engine)
+    assert (status, message) == ("generating", None)
+    assert _payload(payload) == {"ai": previous, "ai_generation": {"request_id": "B"}}
+
+
 def test_stale_queued_token_does_not_call_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

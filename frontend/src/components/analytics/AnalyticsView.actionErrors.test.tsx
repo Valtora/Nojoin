@@ -70,12 +70,26 @@ describe("analytics output action failures", () => {
     fireEvent.click(screen.getByRole("button", { name: "Analyse again" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Meeting analysis started");
     expect(screen.getByRole("heading", { name: "Who spoke" })).toBeInTheDocument();
-    expect(screen.getByText(/Analysing the meeting/)).toBeInTheDocument();
+    expect(screen.getByText(/Your previous analysis remains below/)).toBeInTheDocument();
+    expect(screen.getByText("Previous discussion")).toBeInTheDocument();
     const completed = analytics();
     completed.ai!.topics[0].title = "Updated discussion";
     api.getRecordingAnalytics.mockResolvedValue(completed);
     await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(screen.getByText("Updated discussion")).toBeInTheDocument();
     expect(api.getRecordingAnalytics).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps a finished meeting's previous analysis readable after a failed rerun", async () => {
+    const failed = analytics();
+    failed.ai_status = "error";
+    failed.ai_error_message = "The provider timed out.";
+    api.getRecordingAnalytics.mockResolvedValue(failed);
+    api.generateRecordingAiAnalytics.mockResolvedValue({ ai_status: "generating" });
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+    expect(await screen.findByText("The provider timed out.")).toBeInTheDocument();
+    expect(screen.getByText("Previous discussion")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(api.generateRecordingAiAnalytics).toHaveBeenCalledWith("rec-1");
   });
 });

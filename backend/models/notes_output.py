@@ -2,9 +2,16 @@
 
 from typing import Any
 
+from pydantic import model_validator
 from sqlalchemy import JSON, BigInteger, Column, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field
+
+from backend.utils.generation_claim import (
+    LOST_GENERATION_MESSAGE,
+    public_generation_metadata,
+    reported_generation_status,
+)
 
 from .base import BaseDBModel
 
@@ -65,3 +72,13 @@ class NotesOutputRead(BaseDBModel):
     notes_template_sections: str | None = None
     notes_status: str
     error_message: str | None = None
+
+    @model_validator(mode="after")
+    def _public_generation_state(self) -> "NotesOutputRead":
+        self.notes_generation_metadata = public_generation_metadata(
+            self.notes_generation_metadata
+        )
+        if reported_generation_status(self.notes_status, self.updated_at) == "error":
+            self.notes_status = "error"
+            self.error_message = self.error_message or LOST_GENERATION_MESSAGE
+        return self

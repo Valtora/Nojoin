@@ -16,8 +16,12 @@ from backend.celery_app import celery_app
 from backend.models.notes_output import NotesOutput
 from backend.models.transcript import Transcript
 from backend.utils.meeting_notes import DEFAULT_NOTES_SECTIONS, NotesPromptContext
-from backend.utils.notes_generation import fail_notes_generation
+from backend.utils.notes_generation import (
+    claim_notes_generation,
+    fail_notes_generation,
+)
 from backend.utils.notes_templates import ResolvedNotesTemplate
+from backend.utils.reprocess_publication import reprocess_replacement_running
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +52,18 @@ def dispatch_automatic_notes(
 
 
 def load_output_for_generation(
-    session: Any, transcript: Transcript, output_id: int
+    session: Any, transcript: Transcript, output_id: int, request_id: str | None
 ) -> NotesOutput | None:
     """The set to generate, or None when the run must not go ahead."""
     output = session.get(NotesOutput, output_id)
     if output is None or output.recording_id != transcript.recording_id:
+        return None
+    # The API refuses both; a task queued before either lands here.
+    if transcript.transcription_failed() or reprocess_replacement_running(transcript):
+        request_id = request_id or claim_notes_generation(session, output)
+        fail_notes_generation(
+            session, output, request_id, "Transcript is being replaced or has failed."
+        )
         return None
     return output
 
@@ -80,12 +91,5 @@ def finish_output_generation(session: Any, output: NotesOutput, notes: str) -> N
     output.notes = notes
     output.notes_status = "completed"
     output.set_notes_error_message(None)
-    session.add(output)
-    session.commit()
-
-
-def fail_output_generation(session: Any, output: NotesOutput, message: str) -> None:
-    output.notes_status = "error"
-    output.set_notes_error_message(message)
     session.add(output)
     session.commit()

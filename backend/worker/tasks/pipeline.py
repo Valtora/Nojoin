@@ -401,6 +401,12 @@ def _finalize_transcript_and_notes(
         )
         return
 
+    # The inline notes call can take minutes on a local model. The pipeline
+    # owns recording progress, so it reports the step rather than the stage.
+    recording.processing_step = f"{AUTOMATIC_MEETING_INTELLIGENCE_STEP}{device_suffix}"
+    recording.processing_progress = AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS
+    session.add(recording)
+    session.commit()
     _run_automatic_meeting_intelligence_stage(
         session=session,
         task=ctx.task,
@@ -411,7 +417,6 @@ def _finalize_transcript_and_notes(
         unresolved_speakers=unresolved_speakers,
         llm_config=llm_config,
         prefer_short_titles=merged_config.get("prefer_short_titles", True),
-        device_suffix=device_suffix,
         timeline_notes=timeline_notes,
         detected_transcription_language=transcription_result.get("language"),
     )

@@ -16,6 +16,7 @@ from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transc
 from backend.models.user import User
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
+from backend.utils.generation_claim import generation_active
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_generation import (
     claim_notes_generation,
@@ -26,6 +27,10 @@ from backend.utils.notes_templates import (
     ResolvedNotesTemplate,
     builtin_notes_template,
     resolve_notes_template_async,
+)
+from backend.utils.reprocess_publication import (
+    REPROCESS_RUNNING_MESSAGE,
+    reprocess_replacement_running,
 )
 from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (
@@ -95,7 +100,7 @@ async def _generation_output(
     if request.output_id is not None:
         output = await _get_notes_output(db, transcript.recording_id, request.output_id)
         output = await db.run_sync(lambda session: lock_notes_target(session, output))
-        if output.notes_status == "generating":
+        if generation_active(output.notes_status, output.updated_at):
             raise HTTPException(
                 status_code=409, detail="Meeting notes are already generating."
             )
@@ -136,7 +141,7 @@ async def update_notes_output(
 ) -> NotesOutput:
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     output = await _get_notes_output(db, recording.id, output_id)
-    if output.notes_status == "generating":
+    if generation_active(output.notes_status, output.updated_at):
         raise HTTPException(
             status_code=409, detail="Meeting notes are already generating."
         )
@@ -156,7 +161,7 @@ async def delete_notes_output(
 ) -> None:
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     output = await _get_notes_output(db, recording.id, output_id)
-    if output.notes_status == "generating":
+    if generation_active(output.notes_status, output.updated_at):
         raise HTTPException(
             status_code=409, detail="Meeting notes are already generating."
         )
@@ -288,6 +293,9 @@ async def generate_notes(
 
     if transcript and transcript.transcription_failed():
         raise HTTPException(status_code=409, detail=TRANSCRIPTION_FAILED_NOTES_MESSAGE)
+    # The retained transcript is readable, but the pass replacing it owns notes.
+    if reprocess_replacement_running(transcript):
+        raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
 
     segments = (
         await db.run_sync(
@@ -307,7 +315,9 @@ async def generate_notes(
         transcript = await db.run_sync(
             lambda session: lock_notes_target(session, transcript)
         )
-    if output is None and transcript.notes_status == "generating":
+    if output is None and generation_active(
+        transcript.notes_status, transcript.updated_at
+    ):
         raise HTTPException(
             status_code=409, detail="Meeting notes are already generating."
         )

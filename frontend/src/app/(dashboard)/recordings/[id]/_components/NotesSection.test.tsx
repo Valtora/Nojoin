@@ -16,7 +16,7 @@ vi.mock("@/components/NotesOutputsView", () => ({ default: (props: {
 </div> }));
 
 describe("generated notes eligibility", () => {
-  it("keeps the output editor mounted for a retained publication during processing", async () => {
+  it("keeps retained generated notes readable without editing or regeneration during processing", async () => {
     const onNotesChange = vi.fn();
     const onGenerateNotes = vi.fn().mockResolvedValue(undefined);
     const recording = { id: "rec-1", status: RecordingStatus.PROCESSING,
@@ -25,9 +25,9 @@ describe("generated notes eligibility", () => {
       isGenerating={false} canUndo={false} canRedo={false} onNotesChange={onNotesChange}
       onGenerateNotes={onGenerateNotes} onFindAndReplace={vi.fn()} onUndo={vi.fn()} onRedo={vi.fn()} onExport={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Old generated notes")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Edit notes" }));
-    expect(onNotesChange).toHaveBeenCalledWith("Edited notes");
+    expect(screen.getByText("Old generated notes").closest("[contenteditable]")).toHaveAttribute("contenteditable", "false");
     expect(screen.queryByRole("button", { name: /Regenerate/ })).not.toBeInTheDocument();
+    expect(onNotesChange).not.toHaveBeenCalled();
     expect(onGenerateNotes).not.toHaveBeenCalled();
   });
 

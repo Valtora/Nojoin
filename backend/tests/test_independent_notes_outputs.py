@@ -1,10 +1,12 @@
 """Live and finished notes own their state, content and request ordering."""
 
+from datetime import timedelta
 from itertools import product
 from typing import Any
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import Session, select
 
@@ -31,6 +33,7 @@ from backend.tests.test_notes_outputs import (
     worker as worker,
 )
 from backend.utils.notes_generation import claim_notes_generation
+from backend.utils.time import utc_now
 
 pytestmark = [
     pytest.mark.anyio,
@@ -172,6 +175,125 @@ async def test_older_notes_completion_cannot_replace_a_newer_result(
         assert target.notes == "Newer result"
         assert target.notes_status == "completed"
         assert target.error_message is None
+
+
+@pytest.mark.parametrize("case", list(product([False, True], repeat=2)))
+async def test_a_run_superseded_while_the_newer_one_still_generates_is_discarded(
+    reader_client: AsyncClient,
+    reader_sessions: async_sessionmaker[AsyncSession],
+    meeting: tuple[int, int],
+    worker: Any,
+    case: tuple[bool, bool],
+) -> None:
+    """Stop mid-generation: finalisation claims request B while live run A is
+    still with the provider. A must not write while B is generating."""
+    extra, fail = case
+    response = await reader_client.post(
+        f"{PATH}/generate", json={"create_output": extra}
+    )
+    assert response.status_code == 200, response.text
+    output_id = response.json()["output"]["id"] if extra else None
+    newer: list[str] = []
+
+    class SupersededLLM:
+        def generate_meeting_notes(self, *args: Any, **kwargs: Any) -> str:
+            from backend.worker import tasks
+
+            with Session(tasks.generate_notes_task.session.get_bind()) as db:
+                target = (
+                    db.get(NotesOutput, output_id)
+                    if extra
+                    else db.exec(select(Transcript)).one()
+                )
+                newer.append(claim_notes_generation(db, target))
+            if fail:
+                raise RuntimeError("Old provider failed")
+            return "Old result"
+
+    worker(SupersededLLM())
+    async with reader_sessions() as db:
+        target = (
+            await db.get(NotesOutput, output_id)
+            if extra
+            else (await db.execute(select(Transcript))).scalar_one()
+        )
+        assert target.notes_status == "generating"
+        assert target.notes_generation_metadata["request_id"] == newer[0]
+        assert target.notes == (None if extra else "## Minutes\nPrimary decision.")
+        assert target.error_message is None
+
+
+class _NotesLLM:
+    def generate_meeting_notes(self, *args: Any, **kwargs: Any) -> str:
+        return "## Summary\nSnapshot notes."
+
+
+async def test_coverage_reaches_clients_without_the_request_id(
+    reader_client: AsyncClient,
+    meeting: tuple[int, int],
+    worker: Any,
+) -> None:
+    # No canonical events yet, so the covered revision is 0; the one segment ends at 1 s.
+    coverage = {"event_watermark": 0, "generated_through_ms": 1000}
+    response = await reader_client.post(f"{PATH}/generate", json={})
+    assert response.status_code == 200, response.text
+    worker(_NotesLLM())
+    recording = (await reader_client.get("/api/v1/recordings/meeting")).json()
+    assert recording["transcript"]["notes_generation_metadata"] == coverage
+
+    created = await reader_client.post(f"{PATH}/generate", json={"create_output": True})
+    assert created.json()["output"]["notes_generation_metadata"] == {}
+    worker(_NotesLLM())
+    (listed,) = (await reader_client.get(f"{PATH}/outputs")).json()
+    assert listed["notes_generation_metadata"] == coverage
+    rerun = await reader_client.post(
+        f"{PATH}/generate", json={"output_id": listed["id"]}
+    )
+    # The previous run's coverage stays until the new one replaces it.
+    assert rerun.json()["output"]["notes_generation_metadata"] == coverage
+
+
+@pytest.mark.parametrize("extra", [False, True])
+async def test_a_claim_whose_worker_was_lost_can_be_generated_again(
+    reader_client: AsyncClient,
+    reader_sessions: async_sessionmaker[AsyncSession],
+    meeting: tuple[int, int],
+    stub_celery_dispatch: list[tuple[str, object, object]],
+    extra: bool,
+) -> None:
+    response = await reader_client.post(
+        f"{PATH}/generate", json={"create_output": extra}
+    )
+    assert response.status_code == 200, response.text
+    again = {"output_id": response.json()["output"]["id"]} if extra else {}
+    assert (await reader_client.post(f"{PATH}/generate", json=again)).status_code == 409
+    held = (await reader_client.get("/api/v1/recordings/meeting")).headers["ETag"]
+
+    table = "notes_outputs" if extra else "transcripts"
+    async with reader_sessions() as db:
+        await db.execute(
+            text(f"UPDATE {table} SET updated_at = :at"),
+            {"at": utc_now() - timedelta(minutes=16)},
+        )
+        await db.commit()
+
+    if extra:
+        (output,) = (await reader_client.get(f"{PATH}/outputs")).json()
+        assert (output["notes_status"], output["error_message"]) == (
+            "error",
+            "Generation did not finish. Try again.",
+        )
+    else:
+        # A page polling with its held ETag sees the claim expire.
+        polled = await reader_client.get(
+            "/api/v1/recordings/meeting", headers={"If-None-Match": held}
+        )
+        assert polled.status_code == 200
+        assert polled.json()["transcript"]["notes_status"] == "error"
+    dispatched = len(stub_celery_dispatch)
+    retried = await reader_client.post(f"{PATH}/generate", json=again)
+    assert retried.status_code == 200, retried.text
+    assert len(stub_celery_dispatch) == dispatched + 1
 
 
 async def test_failed_dispatch_keeps_notes_and_allows_retry(

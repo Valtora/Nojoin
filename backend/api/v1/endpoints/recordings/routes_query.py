@@ -44,6 +44,7 @@ from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
 )
+from backend.utils.generation_claim import reported_generation_status
 from backend.utils.live_audio_clock import (
     capture_is_advancing,
     estimate_live_audio_ms,
@@ -346,9 +347,18 @@ async def get_recordings_calendar(
 
 
 def _recording_etag(
-    status: RecordingStatus, change_sequence: int | None, notes_status: str | None
+    status: RecordingStatus,
+    change_sequence: int | None,
+    notes_status: str | None,
+    notes_updated_at: datetime | None,
 ) -> str:
-    return f'W/"{status.value}-{change_sequence or 0}-{notes_status or ""}"'
+    # Carries the reported notes status, so a lost claim's expiry reaches pollers.
+    notes = (
+        reported_generation_status(notes_status, notes_updated_at)
+        if notes_status
+        else ""
+    )
+    return f'W/"{status.value}-{change_sequence or 0}-{notes}"'
 
 
 async def _unchanged_since(
@@ -358,7 +368,10 @@ async def _unchanged_since(
     row = (
         await db.execute(
             select(
-                Recording.status, Transcript.change_sequence, Transcript.notes_status
+                Recording.status,
+                Transcript.change_sequence,
+                Transcript.notes_status,
+                Transcript.updated_at,
             )
             .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
             .where(Recording.public_id == recording_id)
@@ -529,6 +542,7 @@ async def get_recording(
         recording.status,
         transcript.change_sequence if transcript else None,
         transcript.notes_status if transcript else None,
+        transcript.updated_at if transcript else None,
     )
     response.headers["Cache-Control"] = "no-store"
     return serialize_recording(

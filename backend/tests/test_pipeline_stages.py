@@ -1074,10 +1074,14 @@ def _arm_intelligence_routing_probes(monkeypatch):
         lambda *a, **k: "[00:00 - 00:01] SPEAKER_00: hi",
     )
     inline_calls: list = []
+
+    def _inline(*args, **kwargs):
+        recording = kwargs["recording"]
+        progress = (recording.processing_step, recording.processing_progress)
+        inline_calls.append({**kwargs, "progress_seen": progress})
+
     monkeypatch.setattr(
-        tasks_module,
-        "_run_automatic_meeting_intelligence_stage",
-        lambda *a, **k: inline_calls.append(k),
+        tasks_module, "_run_automatic_meeting_intelligence_stage", _inline
     )
     dispatched: list = []
     monkeypatch.setattr(
@@ -1132,6 +1136,9 @@ def test_local_provider_runs_intelligence_inline(monkeypatch):
         def missing_configuration_message(self):
             return None
 
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     result = _run_task(
         monkeypatch, session, recording_id=711, llm_config=_OllamaConfig()
     )
@@ -1139,6 +1146,11 @@ def test_local_provider_runs_intelligence_inline(monkeypatch):
     assert result == {"status": "success", "recording_id": 711}
     assert dispatched == []  # not deferred
     assert len(inline_calls) == 1  # ran inline on the GPU worker
+    # The bar shows the notes step for the length of the inline LLM call.
+    assert inline_calls[0]["progress_seen"] == (
+        "Generating meeting notes... (CPU, may take a while)",
+        97,
+    )
 
 
 # --- user processing tuning reaches the stages -------------------------------

@@ -46,14 +46,34 @@ def owns_notes_generation(
     )
 
 
+def start_notes_request(
+    session: Session, target: NotesTarget, request_id: str | None
+) -> str | None:
+    """The run's request, claimed if it has none; None when a newer one owns it."""
+    if request_id is None:
+        request_id = claim_notes_generation(session, target)
+    if not owns_notes_generation(session, target, request_id):
+        session.rollback()
+        return None
+    session.commit()
+    return request_id
+
+
+def format_notes_generation_error(error: Exception | str) -> str:
+    message = str(error).strip() or "Meeting notes could not be generated."
+    if len(message) > 500:
+        message = f"{message[:497]}..."
+    return message
+
+
 def fail_notes_generation(
-    session: Session, target: NotesTarget, request_id: str, message: str
+    session: Session, target: NotesTarget, request_id: str, error: Exception | str
 ) -> None:
     if not owns_notes_generation(session, target, request_id):
         session.rollback()
         return
     target.notes_status = "error"
-    target.set_notes_error_message(message)
+    target.set_notes_error_message(format_notes_generation_error(error))
     session.add(target)
     session.commit()
 

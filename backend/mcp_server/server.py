@@ -46,6 +46,7 @@ from backend.utils.config_manager import (
     get_trusted_web_origin,
     is_mcp_anonymous_discovery_enabled,
 )
+from backend.utils.generation_claim import reported_generation_status
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +277,11 @@ def _compact_recording(
         if hasattr(recording.status, "value")
         else str(recording.status),
         "transcript_status": transcript.transcript_status if transcript else None,
-        "notes_status": transcript.notes_status if transcript else None,
+        "notes_status": reported_generation_status(
+            transcript.notes_status, transcript.updated_at
+        )
+        if transcript
+        else None,
         "transcript_revision": transcript_revision,
         "tags": tags,
         "speakers": speakers,

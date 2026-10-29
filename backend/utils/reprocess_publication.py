@@ -76,8 +76,10 @@ def clear_reprocess_published(transcript: Transcript) -> None:
 def restore_retained_publication(session: Session, recording_id: int) -> None:
     """Hand a failed replacement's recording back the publication it retained.
 
-    Requeue set the retained transcript to pending. Left so, notes regenerated
-    on the failed recording would move it to QUEUED with no task to finish it.
+    Requeue set the retained transcript to pending. Left so, the failed
+    recording would still read as a running reprocess: notes generation would
+    stay refused, and the next status update would move it to QUEUED with no
+    task to finish it.
     Requeue only retains a completed transcript, so that is what it goes back to.
     A failed transcription keeps its error and the marker: the recording reports
     the failure over the retained transcript, and a later Retry retains it again.

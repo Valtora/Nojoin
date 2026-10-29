@@ -70,7 +70,6 @@ def _run_stage(
         unresolved_speakers=("SPEAKER_00",),
         llm_config=config,
         prefer_short_titles=True,
-        device_suffix="",
         timeline_notes=RecordingTimelineNotes(),
         update_processing_status=False,
         request_id=request_id,

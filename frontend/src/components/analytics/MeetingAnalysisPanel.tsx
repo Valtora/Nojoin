@@ -29,8 +29,6 @@ interface MeetingAnalysisPanelProps {
   onPlaySegment?: (startMs: number) => void;
   /** The user's daily budget for this tier; absent on older servers. */
   budget?: AnalyticsAiBudget | null;
-  /** Keep the preceding snapshot readable during a live rerun or its failure. */
-  preserveContent?: boolean;
   /** Live snapshots may be rerun even before another utterance arrives. */
   allowRegenerate?: boolean;
 }
@@ -89,7 +87,6 @@ export default function MeetingAnalysisPanel({
   generating,
   onPlaySegment,
   budget,
-  preserveContent = false,
   allowRegenerate = false,
 }: MeetingAnalysisPanelProps) {
   const exhausted = Boolean(
@@ -97,7 +94,8 @@ export default function MeetingAnalysisPanel({
   );
   const remainingLine = budgetRemainingMessage(budget);
   const working = status === "generating" || generating;
-  const retaining = preserveContent && Boolean(ai);
+  // A rerun or its failure leaves the previous analysis readable below it.
+  const retaining = Boolean(ai);
 
   const body = () => {
     if (working && !retaining) {

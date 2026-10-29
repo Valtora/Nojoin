@@ -22,10 +22,11 @@ from sqlmodel import Session, select
 
 from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
-from backend.models.recording import Recording
+from backend.models.recording import IN_FLIGHT_TRANSCRIPT_STATUSES, Recording
 from backend.models.transcript import Transcript
 from backend.processing.pipeline_metrics import pipeline_metric_timer
 from backend.utils.analytics_payload import AI_KEY, merge_analytics_payload
+from backend.utils.generation_claim import generation_active
 from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.meeting_analysis import (
     MEETING_ANALYSIS_METHOD_VERSION,
@@ -67,48 +68,99 @@ def _format_line(start_ms: int, end_ms: int, name: str, text: str) -> str:
     )
 
 
-def _build_analysis_inputs(session: Session, recording: Recording) -> dict[str, Any]:
-    """Derive names, evidence, and revision from one live-compatible snapshot."""
+# (start_ms, end_ms, speaker name, text) per line, names by speaker key, revision.
+_AnalysisSource = tuple[list[tuple[int, int, str, str]], dict[str, str], int]
+
+
+def _canonical_lines(session: Session, recording: Recording) -> _AnalysisSource:
+    """A finished meeting's canonical utterances, named by the analytics directory.
+
+    The names the model is shown resolve through exactly the same directory the
+    analytics keys use. A name the model can see but the parser cannot resolve
+    would silently discard every item attributed to it.
+    """
+    from backend.services.meeting_analytics import (
+        compute_recording_analytics,
+        speaker_key,
+        split_analysed_utterances,
+    )
+    from backend.utils.canonical_pipeline import (
+        get_canonical_transcript_revision,
+        list_active_utterances,
+    )
+
+    analytics = compute_recording_analytics(session, recording)
+    names = {
+        speaker["speaker_key"]: speaker["name"] for speaker in analytics["speakers"]
+    }
+    utterances, _ = split_analysed_utterances(
+        list_active_utterances(session, recording.id)
+    )
+    lines = [
+        (
+            utterance.start_ms or 0,
+            utterance.end_ms or 0,
+            names.get(speaker_key(utterance), speaker_key(utterance)),
+            utterance.text or "",
+        )
+        for utterance in utterances
+    ]
+    return lines, names, get_canonical_transcript_revision(session, recording.id)
+
+
+def _live_lines(session: Session, recording: Recording) -> _AnalysisSource:
+    """The live transcript so far, from one consistent snapshot of it and its names."""
     snapshot = capture_output_snapshot(session, recording.id)
-    segments = snapshot.segments
-    visible = [
+    segments = [
         segment
-        for segment in segments
+        for segment in snapshot.segments
         if segment.get("speaker") not in (None, "UNKNOWN")
         or segment.get("provisional") is True
-    ]
-    segments = visible or segments
+    ] or list(snapshot.segments)
     names: dict[str, str] = {}
+    lines = []
+    for segment in segments:
+        speaker_id = segment.get("recording_speaker_id")
+        label = str(segment.get("speaker") or "UNKNOWN")
+        key = f"rs:{speaker_id}" if speaker_id is not None else f"label:{label}"
+        names[key] = snapshot.speaker_map.get(key) or speaker_display_name(
+            label, snapshot.speaker_map
+        )
+        lines.append(
+            (
+                int(float(segment.get("start") or 0) * 1000),
+                int(float(segment.get("end") or 0) * 1000),
+                names[key],
+                str(segment.get("text") or ""),
+            )
+        )
+    return lines, names, snapshot.event_watermark
+
+
+def _build_analysis_inputs(session: Session, recording: Recording) -> dict[str, Any]:
+    """Render the transcript and the evidence index the model is checked against."""
+    live = recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
+    source, names, watermark = (_live_lines if live else _canonical_lines)(
+        session, recording
+    )
     lines: list[str] = []
     texts: list[str] = []
     used_chars = 0
     truncated = False
     covered_ms = 0
 
-    for segment in segments:
-        text = str(segment.get("text") or "").strip()
+    for start_ms, end_ms, name, raw_text in source:
+        text = raw_text.strip()
         if not text:
             continue
-        speaker_id = segment.get("recording_speaker_id")
-        label = str(segment.get("speaker") or "UNKNOWN")
-        key = f"rs:{speaker_id}" if speaker_id is not None else f"label:{label}"
-        name = snapshot.speaker_map.get(key) or speaker_display_name(
-            label, snapshot.speaker_map
-        )
-        line = _format_line(
-            int(float(segment.get("start") or 0) * 1000),
-            int(float(segment.get("end") or 0) * 1000),
-            name,
-            text,
-        )
+        line = _format_line(start_ms, end_ms, name, text)
         if used_chars + len(line) + 1 > MEETING_ANALYSIS_MAX_TRANSCRIPT_CHARS and lines:
             truncated = True
             break
         lines.append(line)
-        names[key] = name
         texts.append(text)
         used_chars += len(line) + 1
-        covered_ms = max(covered_ms, int(float(segment.get("end") or 0) * 1000))
+        covered_ms = max(covered_ms, int(end_ms))
 
     duration_seconds = max(float(recording.duration_seconds or 0), covered_ms / 1000)
     return {
@@ -122,7 +174,7 @@ def _build_analysis_inputs(session: Session, recording: Recording) -> dict[str, 
         "truncated": truncated,
         "covered_ms": covered_ms,
         "speaker_count": len(names),
-        "event_watermark": snapshot.event_watermark,
+        "event_watermark": watermark,
     }
 
 
@@ -149,7 +201,7 @@ def _claim_ai_generation(
         )
         session.commit()
         return request_id if claimed else None
-    if transcript.analytics_ai_status == "generating":
+    if generation_active(transcript.analytics_ai_status, transcript.updated_at):
         session.commit()
         return None
     request_id = str(uuid4())

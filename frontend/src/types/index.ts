@@ -519,10 +519,10 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
   note: TimelineNote;
 }
 
+/** The transcript snapshot an output was generated from. */
 export interface NotesGenerationMetadata {
   event_watermark?: number;
   generated_through_ms?: number;
-  request_id?: string;
 }
 
 export interface NotesOutput extends BaseDBModel {
@@ -1516,11 +1516,9 @@ export interface LiveRecordingAnalytics {
   }>;
 }
 
-export interface RecordingAiAnalytics extends Pick<RecordingAnalytics,
+export type RecordingAiAnalytics = Pick<RecordingAnalytics,
   "recording_id" | "transcript_revision" | "ai" | "ai_status" | "ai_error_message" | "ai_stale" | "ai_budget"
-> {
-  ai_generation: NotesGenerationMetadata;
-}
+>;
 
 export interface RecordingAnalytics {
   recording_id: RecordingId;

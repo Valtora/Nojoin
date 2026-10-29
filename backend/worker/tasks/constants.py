@@ -547,24 +547,6 @@ def _paths_point_to_same_media(*args, **kwargs):
     raise RuntimeError("_paths_point_to_same_media_impl not found in tasks module")
 
 
-def _mark_notes_generation_error(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(tasks, "_mark_notes_generation_error", None)
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _mark_notes_generation_error.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(tasks, "_mark_notes_generation_error_impl", None)
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError("_mark_notes_generation_error_impl not found in tasks module")
-
-
 def _persist_generated_speaker_name_suggestions(*args, **kwargs):
     import sys
 

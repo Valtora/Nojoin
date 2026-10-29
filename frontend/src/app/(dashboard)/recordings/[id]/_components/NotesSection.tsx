@@ -5,6 +5,7 @@ import { useState } from "react";
 import { FileText, RefreshCw, X } from "lucide-react";
 
 import NotesOutputsView from "@/components/NotesOutputsView";
+import RichTextEditor from "@/components/RichTextEditor";
 import { notesErrorDetail } from "@/lib/transcriptErrors";
 import type { Recording } from "@/types";
 
@@ -34,6 +35,7 @@ export default function NotesSection({
   recording,
   canExport = true,
   inFlight = false,
+  hasRetainedPublication = false,
   isGenerating,
   canUndo,
   canRedo,
@@ -90,7 +92,10 @@ export default function NotesSection({
           </ButtonBase>
         </div>
       )}
-      <NotesOutputsView
+      {/* The reprocess replacing a retained publication owns its notes. */}
+      {inFlight && hasRetainedPublication && recording.transcript?.notes ? (
+        <RichTextEditor content={recording.transcript.notes} editable={false} onChange={() => undefined} />
+      ) : <NotesOutputsView
         onPrimarySelected={setPrimarySelected}
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
@@ -109,7 +114,7 @@ export default function NotesSection({
         isGenerating={isGenerating}
         onExport={onExport}
         disableExport={!canExport}
-      />
+      />}
     </div>
   );
 }

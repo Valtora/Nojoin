@@ -26,7 +26,7 @@ export default function LiveDiscussionAnalysis({ recordingId, speakers, speakerC
       <MeetingAnalysisPanel ai={analysis.ai} status={analysis.ai_status}
         errorMessage={analysis.ai_error_message} stale={analysis.ai_stale} budget={analysis.ai_budget}
         speakers={speakers} colors={colors} onGenerate={() => void generate()}
-        generating={Boolean(generating)} preserveContent allowRegenerate onPlaySegment={onPlaySegment} />
+        generating={generating} allowRegenerate onPlaySegment={onPlaySegment} />
     </>}
   </div>;
 }

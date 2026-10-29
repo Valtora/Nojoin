@@ -29,6 +29,10 @@ from backend.processing.embedding import (
     LibraryVoiceprintUpdate,
     VoiceprintStatus,
 )
+from backend.utils.generation_claim import (
+    public_generation_metadata,
+    reported_generation_status,
+)
 from backend.utils.language_notice import language_notice
 from backend.utils.reprocess_publication import (
     reprocess_publication_complete,
@@ -365,7 +369,9 @@ def serialize_transcript(
             )
         ],
         notes=transcript.notes,
-        notes_generation_metadata=transcript.notes_generation_metadata,
+        notes_generation_metadata=public_generation_metadata(
+            transcript.notes_generation_metadata
+        ),
         meeting_edge_focus=transcript.meeting_edge_focus,
         meeting_edge_payload=transcript.meeting_edge_payload,
         meeting_edge_status=transcript.meeting_edge_status,
@@ -375,7 +381,9 @@ def serialize_transcript(
             for item in (transcript.speaker_name_suggestions or [])
             if isinstance(item, dict)
         ],
-        notes_status=transcript.notes_status,
+        notes_status=reported_generation_status(
+            transcript.notes_status, transcript.updated_at
+        ),
         notes_stale_documents=bool(getattr(transcript, "notes_stale_documents", False)),
         transcript_status=transcript.transcript_status,
         error_message=transcript.error_message,

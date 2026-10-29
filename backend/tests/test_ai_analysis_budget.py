@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -225,6 +225,7 @@ def api(monkeypatch):
         runs=runs,
         complete=complete,
         state=state,
+        maker=maker,
     )
     app.dependency_overrides.clear()
 
@@ -331,7 +332,31 @@ def test_live_discussion_claim_is_independent_and_read_preserves_old_content(
     assert body["ai_status"] == "generating"
     assert body["ai"] == previous
     assert body["ai_stale"] is True
-    assert body["ai_generation"] == first.json()["ai_generation"]
+    # The request ID fences workers only; clients never see it.
+    assert "ai_generation" not in body
+    assert "ai_generation" not in first.json()
+
+
+def test_a_claim_whose_worker_was_lost_can_be_analysed_again(api):
+    previous = {"topics": [{"title": "Previous"}], "event_watermark": 3}
+
+    async def run():
+        recording = await api.setup(install_limit=5, payload={"ai": previous})
+        assert (await api.post(recording)).status_code == 200
+        async with api.maker() as session:
+            await session.execute(
+                text("UPDATE transcripts SET updated_at = :at"),
+                {"at": datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=16)},
+            )
+            await session.commit()
+        tab, ai = await api.get(recording), (await api.get_ai(recording)).json()
+        return tab, ai, await api.post(recording)
+
+    tab, ai, retried = asyncio.run(run())
+    assert tab["ai_status"] == ai["ai_status"] == "error"
+    assert tab["ai"] == ai["ai"] == previous
+    assert retried.status_code == 200
+    assert len(api.state.dispatched) == 2
 
 
 def test_discussion_read_never_runs_audio_backfill_or_dispatch(api, monkeypatch):

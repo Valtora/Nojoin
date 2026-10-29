@@ -232,7 +232,6 @@ def _run_automatic_meeting_intelligence_stage_impl(
     unresolved_speakers: Sequence[str],
     llm_config: ResolvedLLMConfig,
     prefer_short_titles: bool,
-    device_suffix: str,
     timeline_notes: RecordingTimelineNotes,
     detected_transcription_language: str | None = None,
     update_processing_status: bool = True,
@@ -396,17 +395,13 @@ def _run_automatic_meeting_intelligence_stage_impl(
         )
         return result
     except Exception as exc:  # noqa: BLE001 -- boundary: any failure is recorded on the transcript as a notes error; the recording still completes
-        from .intelligence import _format_notes_generation_error
-
         logger.error(
             "Failed to generate automatic meeting intelligence for recording %s: %s",
             recording.id,
             exc,
         )
         session.rollback()
-        fail_notes_generation(
-            session, transcript, request_id, _format_notes_generation_error(exc)
-        )
+        fail_notes_generation(session, transcript, request_id, exc)
         return None
 
 

@@ -334,6 +334,43 @@ def test_the_model_is_given_only_the_meetings_own_speakers(
     )
 
 
+def test_a_merged_speakers_lines_are_shown_and_resolved_as_the_survivor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a merge, the retired speaker's name must not be offered to the model,
+    or every item attributed to it would land on a speaker the meeting no longer has."""
+    engine = _make_engine(tmp_path, "merged")
+    with engine.begin() as connection:
+        _seed(connection)
+        connection.execute(
+            text(
+                "UPDATE recording_speakers SET merged_into_id = 1, "
+                "speaker_status = 'merged' WHERE id = 2"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE transcript_utterances SET recording_speaker_id = 1, "
+                "speaker_label = 'SPEAKER_00' WHERE recording_speaker_id = 2"
+            )
+        )
+
+    backend = FakeBackend(MODEL_RESPONSE)
+    _run(engine, monkeypatch, config=_configured(), backend=backend)
+
+    request = backend.last_request
+    assert set(request.allowlist.names) == {"Priya Patel"}
+    assert request.allowlist.resolve("Alex Johnson") is None
+    assert (
+        "Priya Patel: Who owns the data migration once we cut over?"
+        in request.transcript
+    )
+    block = _payload(_row(engine)[2])["ai"]
+    # The retired speaker's sentiment is discarded, not stored against rs:2.
+    assert block["sentiment"] == []
+    assert block["topics"][0]["led_by"] == "rs:1"
+
+
 def test_writing_the_ai_tier_preserves_the_measured_delivery_tier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

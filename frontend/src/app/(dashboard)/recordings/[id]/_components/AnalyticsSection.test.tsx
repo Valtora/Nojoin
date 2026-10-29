@@ -49,7 +49,7 @@ describe("AnalyticsSection live lifecycle", () => {
     getLiveRecordingAnalytics.mockReset();
     getRecordingAnalytics.mockImplementation(() => new Promise(() => {}));
     getLiveRecordingAnalytics.mockResolvedValue(live());
-    getRecordingAiAnalytics.mockResolvedValue({ ...finished(), ai_generation: null });
+    getRecordingAiAnalytics.mockResolvedValue(finished());
   });
   afterEach(() => vi.useRealTimers());
 

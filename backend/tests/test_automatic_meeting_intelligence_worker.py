@@ -446,7 +446,6 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
                 unresolved_speakers=("SPEAKER_00",),
                 llm_config=_sample_llm_config(),
                 prefer_short_titles=False,
-                device_suffix=" (CPU)",
                 timeline_notes=RecordingTimelineNotes(
                     notes=[
                         _note("head", "Confirm the rollout date"),
@@ -551,7 +550,6 @@ def test_run_automatic_meeting_intelligence_stage_skips_when_llm_config_missing(
                 unresolved_speakers=("SPEAKER_00",),
                 llm_config=_sample_llm_config(model=None),
                 prefer_short_titles=True,
-                device_suffix=" (CPU)",
                 timeline_notes=NO_NOTES,
             )
 
@@ -618,7 +616,6 @@ def test_no_llm_final_processing_applies_only_real_self_introductions(
                 unresolved_speakers=("SPEAKER_00",),
                 llm_config=_sample_llm_config(model=None),
                 prefer_short_titles=True,
-                device_suffix=" (CPU)",
                 timeline_notes=NO_NOTES,
             )
 
@@ -673,7 +670,6 @@ def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
                 unresolved_speakers=("SPEAKER_00",),
                 llm_config=_sample_llm_config(),
                 prefer_short_titles=True,
-                device_suffix=" (CPU)",
                 timeline_notes=NO_NOTES,
             )
 
@@ -738,7 +734,6 @@ def test_a_meeting_too_long_for_one_call_gets_its_notes_in_parts(
                 unresolved_speakers=("SPEAKER_00",),
                 llm_config=_sample_llm_config(),
                 prefer_short_titles=True,
-                device_suffix=" (CPU)",
                 timeline_notes=NO_NOTES,
             )
 
@@ -824,7 +819,6 @@ def test_an_exact_people_name_links_only_when_names_are_confirmed_at_the_end(
                 unresolved_speakers=("SPEAKER_00",),
                 llm_config=_sample_llm_config(),
                 prefer_short_titles=True,
-                device_suffix=" (CPU)",
                 timeline_notes=NO_NOTES,
             )
 
@@ -901,7 +895,6 @@ def test_the_stage_writes_notes_in_the_recordings_language(
                 unresolved_speakers=(),
                 llm_config=config,
                 prefer_short_titles=False,
-                device_suffix="",
                 timeline_notes=RecordingTimelineNotes(notes=[]),
                 detected_transcription_language="de",
             )
