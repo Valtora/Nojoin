@@ -144,6 +144,16 @@ class Transcript(BaseDBModel, table=True):
         if not self.transcription_failed():
             self.error_message = message
 
+    def clear_meeting_edge_error(self) -> None:
+        """Retire a Meeting Edge failure when the recording finalises.
+
+        Guidance stops once a recording is processed, so its last run's error
+        no longer describes anything; stored guidance and focus stay.
+        """
+        if self.meeting_edge_status == "error" or self.meeting_edge_error_message:
+            self.meeting_edge_status = "ready" if self.meeting_edge_payload else "idle"
+            self.meeting_edge_error_message = None
+
 
 # Why notes cannot be generated for a recording whose transcription failed.
 TRANSCRIPTION_FAILED_NOTES_MESSAGE = (

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import LiveTranscriptPanel from "@/components/LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import TranscriptView from "@/components/TranscriptView";
 import type { TranscriptSegment } from "@/types";
 

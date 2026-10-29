@@ -12,10 +12,11 @@ export type ActivePanel =
   // column's tabs (`SideTab`).
   | "my-notes"
   | "captures"
+  | "meeting-edge"
   | "speakers";
 
 /** The tab open in the top of the recording page's desktop side column. */
-export type SideTab = "speakers" | "my-notes" | "captures";
+export type SideTab = "speakers" | "my-notes" | "captures" | "meeting-edge";
 
 interface NavigationState {
   // View State

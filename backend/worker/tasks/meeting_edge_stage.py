@@ -23,6 +23,15 @@ from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task s
 
 logger = logging.getLogger(__name__)
 
+_MEETING_EDGE_RUN_STATUSES = frozenset(
+    {
+        RecordingStatus.UPLOADING,
+        RecordingStatus.PAUSED,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }
+)
+
 
 def _count_meeting_edge_words(segments: Sequence[dict]) -> int:
     total = 0
@@ -235,6 +244,42 @@ def _set_meeting_edge_state(
     session.commit()
 
 
+def _meeting_edge_run_key(recording: Recording | None) -> tuple[bool, int] | None:
+    """Whether a run started during capture, and which tab held the capture."""
+    if recording is None or recording.status not in _MEETING_EDGE_RUN_STATUSES:
+        return None
+    live = recording.status in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}
+    return live, recording.capture_epoch
+
+
+def _finish_meeting_edge_run(
+    session,
+    transcript: Transcript,
+    run_key: tuple[bool, int] | None,
+    **state,
+) -> bool:
+    """Store a run's outcome unless Stop or a capture takeover came first.
+
+    The model call runs for up to a minute outside the transcript lock. An
+    outcome that arrives after the capture it described has ended only retires
+    the run's "updating" state, so the finished recording keeps its last guidance.
+    """
+    recording = session.get(Recording, transcript.recording_id)
+    if run_key is not None and _meeting_edge_run_key(recording) == run_key:
+        _set_meeting_edge_state(session, transcript, **state)
+        return True
+    _set_meeting_edge_state(
+        session,
+        transcript,
+        status=(
+            MEETING_EDGE_STATUS_READY
+            if transcript.meeting_edge_payload
+            else MEETING_EDGE_STATUS_IDLE
+        ),
+    )
+    return False
+
+
 @celery_app.task(
     name="backend.worker.tasks.refresh_meeting_edge_task", base=DatabaseTask, bind=True
 )
@@ -271,6 +316,7 @@ def refresh_meeting_edge_task(self, recording_id: int):
 
 def _refresh_meeting_edge(self, recording_id: int):
     session = self.session
+    run_key = None
 
     try:
         recording = session.get(Recording, recording_id)
@@ -283,6 +329,7 @@ def _refresh_meeting_edge(self, recording_id: int):
             RecordingStatus.PROCESSING,
         }:
             return None
+        run_key = _meeting_edge_run_key(recording)
 
         transcript = session.exec(
             select(Transcript)
@@ -480,14 +527,16 @@ def _refresh_meeting_edge(self, recording_id: int):
             reset_history=previous_context_level is not None
             and previous_context_level > context_level,
         )
-        _set_meeting_edge_state(
+        if not _finish_meeting_edge_run(
             session,
             transcript,
+            run_key,
             status=MEETING_EDGE_STATUS_READY,
             error_message=None,
             source_signature=source_signature,
             payload=payload,
-        )
+        ):
+            return None
         return payload
     except Exception as exc:
         logger.error(
@@ -501,9 +550,10 @@ def _refresh_meeting_edge(self, recording_id: int):
             select(Transcript).where(Transcript.recording_id == recording_id)
         ).first()
         if transcript is not None:
-            _set_meeting_edge_state(
+            _finish_meeting_edge_run(
                 session,
                 transcript,
+                run_key,
                 status=MEETING_EDGE_STATUS_ERROR,
                 error_message=str(exc).strip()[:500]
                 or "Meeting Edge could not be updated.",

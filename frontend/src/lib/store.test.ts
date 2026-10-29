@@ -53,4 +53,16 @@ describe("useNavigationStore collapse state", () => {
     expect(persisted).toHaveProperty("isSpeakerPanelCollapsed");
     expect(persisted).toHaveProperty("isChatPanelCollapsed");
   });
+
+  it("restores the selected Meeting Edge desktop and mobile tabs after storage hydration", async () => {
+    useNavigationStore.getState().setSideTab("meeting-edge");
+    useNavigationStore.getState().setActivePanel("meeting-edge");
+    const saved = localStorage.getItem("navigation-storage");
+    expect(saved).not.toBeNull();
+    expect(JSON.parse(saved!).state).toMatchObject({ sideTab: "meeting-edge", activePanel: "meeting-edge" });
+    useNavigationStore.setState({ sideTab: "speakers", activePanel: "transcript" });
+    localStorage.setItem("navigation-storage", saved!);
+    await useNavigationStore.persist.rehydrate();
+    expect(useNavigationStore.getState()).toMatchObject({ sideTab: "meeting-edge", activePanel: "meeting-edge" });
+  });
 });

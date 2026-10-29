@@ -115,6 +115,7 @@ describe("api public surface", () => {
         "getInvitations",
         "getLanguageOptions",
         "getLatestBackup",
+        "getLiveRecordingAnalytics",
         "getMergedRecordingSpeakers",
         "getModelsStatus",
         "getNotes",

@@ -3,7 +3,7 @@
 import { InputBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { ArrowLeft, Edit2, MoreHorizontal } from "lucide-react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import IconButton from "@/components/ui/IconButton";
 
@@ -11,18 +11,18 @@ import AudioPlayer from "@/components/AudioPlayer";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
 import FitText from "@/components/ui/FitText";
-import { getRecording } from "@/lib/api";
 import { Recording, RecordingStatus } from "@/types";
 
 interface RecordingHeaderProps {
   recording: Recording;
+  playerSlot?: ReactNode;
   isMobile: boolean;
   isEditingTitle: boolean;
   titleValue: string;
   isMobileHeaderActionsOpen: boolean;
   currentTime: number;
   audioRef: RefObject<HTMLAudioElement | null>;
-  setRecording: (recording: Recording) => void;
+  onRefresh: () => void;
   setTitleValue: (value: string) => void;
   setIsEditingTitle: (editing: boolean) => void;
   setIsMobileHeaderActionsOpen: (
@@ -37,13 +37,14 @@ interface RecordingHeaderProps {
 
 export default function RecordingHeader({
   recording,
+  playerSlot,
   isMobile,
   isEditingTitle,
   titleValue,
   isMobileHeaderActionsOpen,
   currentTime,
   audioRef,
-  setRecording,
+  onRefresh,
   setTitleValue,
   setIsEditingTitle,
   setIsMobileHeaderActionsOpen,
@@ -59,21 +60,13 @@ export default function RecordingHeader({
         recordingId={recording.id}
         tags={recording.tags || []}
         compact
-        onTagsUpdated={() => {
-          getRecording(recording.id)
-            .then(setRecording)
-            .catch(console.error);
-        }}
+        onTagsUpdated={onRefresh}
       />
       <LinkedEventPanel
         recordingId={recording.id}
         linkedEvent={recording.calendar_event}
         compact
-        onLinkChanged={() => {
-          getRecording(recording.id)
-            .then(setRecording)
-            .catch(console.error);
-        }}
+        onLinkChanged={onRefresh}
       />
     </div>
   );
@@ -93,6 +86,7 @@ export default function RecordingHeader({
                 icon={<ArrowLeft />}
                 aria-label="Back to Recordings"
                 title="Back to Recordings"
+                data-leaves-page
                 onClick={onBack}
               />
               <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-icon-muted">
@@ -197,27 +191,19 @@ export default function RecordingHeader({
             <RecordingTagEditor
               recordingId={recording.id}
               tags={recording.tags || []}
-              onTagsUpdated={() => {
-                getRecording(recording.id)
-                  .then(setRecording)
-                  .catch(console.error);
-              }}
+              onTagsUpdated={onRefresh}
             />
             <LinkedEventPanel
               recordingId={recording.id}
               linkedEvent={recording.calendar_event}
-              onLinkChanged={() => {
-                getRecording(recording.id)
-                  .then(setRecording)
-                  .catch(console.error);
-              }}
+              onLinkChanged={onRefresh}
             />
           </div>
         </div>
       )}
 
       {/* Audio Player in Header */}
-      {recording &&
+      {playerSlot ?? (recording &&
         recording.status !== RecordingStatus.PAUSED &&
        recording.status !== RecordingStatus.UPLOADING &&
        recording.status !== RecordingStatus.PROCESSING &&
@@ -231,7 +217,7 @@ export default function RecordingHeader({
             onPause={onPause}
             compact={isMobile}
           />
-        )}
+        ))}
     </header>
   );
 }

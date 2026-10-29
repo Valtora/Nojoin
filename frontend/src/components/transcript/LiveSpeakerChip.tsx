@@ -17,7 +17,7 @@ interface LiveSpeakerChipProps {
    * Names the live speaker. Without it the chip is plain text, as it is for a
    * capture that cannot be named any more.
    */
-  onRename?: (label: string, name: string) => Promise<void>;
+  onRename?: (label: string, name: string) => Promise<void | boolean>;
   /** The People names offered while typing, read when the rename opens. */
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
@@ -117,10 +117,12 @@ export default function LiveSpeakerChip({
     }
     savingRef.current = true;
     try {
-      await onRename(draft.label, next);
+      // A refused name stays in the box to retry.
+      if (await onRename(draft.label, next) !== false) close();
+    } catch (error) {
+      console.error("Failed to rename the live speaker", error);
     } finally {
       savingRef.current = false;
-      close();
     }
   };
 

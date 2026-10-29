@@ -279,4 +279,28 @@ describe("transcript saves", () => {
     expect(text.save).toHaveBeenCalledTimes(1);
     expect(textEditor()).toBeNull();
   });
+
+  it("keeps a refused text and sends it again on the next Enter", async () => {
+    const onUpdateSegmentText = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    renderView({ onUpdateSegmentText });
+    await openText("u0");
+    await submit(textEditor(), "Typed while read-only");
+
+    expect(textEditor()).toHaveValue("Typed while read-only");
+    await submit(textEditor(), "Typed while read-only");
+
+    expect(onUpdateSegmentText).toHaveBeenCalledTimes(2);
+    expect(textEditor()).toBeNull();
+  });
+
+  it("lets Export go once a new result replaces the line being edited", async () => {
+    const rerender = renderView({});
+    await openText("u0");
+    expect(screen.getByRole("button", { name: "Export transcript disabled" })).toBeDisabled();
+
+    await rerender({ segments: [{ ...SEGMENTS[0], id: "n0" }, ...SEGMENTS.slice(1)] });
+
+    expect(textEditor()).toBeNull();
+    expect(screen.getByRole("button", { name: "Export transcript" })).toBeEnabled();
+  });
 });

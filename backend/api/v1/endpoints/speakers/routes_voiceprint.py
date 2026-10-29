@@ -102,7 +102,7 @@ async def extract_voiceprint(
     Extract a voiceprint (embedding) for a specific speaker in a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
@@ -238,7 +238,7 @@ async def apply_voiceprint_action(
     Apply a voiceprint action after extraction.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
@@ -358,7 +358,7 @@ async def delete_voiceprint(
     Delete the voiceprint (embedding) from a RecordingSpeaker.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
@@ -388,7 +388,7 @@ async def extract_all_voiceprints(
     Extract voiceprints for all speakers in a recording that don't have one.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id

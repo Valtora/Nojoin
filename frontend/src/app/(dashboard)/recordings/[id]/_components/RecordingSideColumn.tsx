@@ -3,6 +3,7 @@
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import {
   ChevronDown,
   ChevronsRight,
@@ -11,6 +12,7 @@ import {
   MessageSquare,
   StickyNote,
   Users,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
@@ -24,15 +26,20 @@ const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
   { tab: "speakers", label: "Speakers", icon: Users },
   { tab: "my-notes", label: "My notes", icon: StickyNote },
   { tab: "captures", label: "Captures", icon: Images },
+  { tab: "meeting-edge", label: "Meeting Edge", icon: Sparkles },
 ];
 
 interface RecordingSideColumnProps {
+  allowChat?: boolean;
+  inFlight?: boolean;
   /** The speaker panel, as the page builds it. */
   speakers: ReactNode;
   /** The My notes list, as the page builds it. */
   myNotes: ReactNode;
   /** The Captures list, as the page builds it. */
   captures: ReactNode;
+  /** The Meeting Edge panel, left out where Meeting Edge is not shown. */
+  meetingEdge?: ReactNode;
   /** Chat's percentage of the column's height. */
   chatPanelHeight: number;
   onChatPanelHeightChange: (height: number) => void;
@@ -41,11 +48,11 @@ interface RecordingSideColumnProps {
 }
 
 /**
- * The top of the side column: Speakers, My notes and Captures as tabs (the
+ * The top of the side column: Speakers, My notes, Captures and Meeting Edge as tabs (the
  * WAI-ARIA tabs pattern), and the button that collapses it. Every panel stays
  * mounted, so switching tabs keeps a rename or an edit where it was.
  *
- * A narrow column keeps what fits. Under 18.5rem, where the three labels and
+ * A narrow column keeps what fits. Under 25rem, where the four labels and
  * the button no longer fit, the open tab shows its icon and label and the
  * others only their icons; under 12rem all are icons. A hidden label stays
  * for screen readers, and every tab has its label as a tooltip.
@@ -54,32 +61,36 @@ function SideTabs({
   speakers,
   myNotes,
   captures,
+  meetingEdge,
 }: {
   speakers: ReactNode;
   myNotes: ReactNode;
   captures: ReactNode;
+  meetingEdge?: ReactNode;
 }) {
-  const sideTab = useNavigationStore((state) => state.sideTab);
+  const remembered = useNavigationStore((state) => state.sideTab);
   const setSideTab = useNavigationStore((state) => state.setSideTab);
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
   );
   const tablistRef = useRef<HTMLDivElement>(null);
-  const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes, captures };
+  const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes, captures, "meeting-edge": meetingEdge };
+  const tabs = SIDE_TABS.filter(({ tab }) => panels[tab] !== undefined);
+  const sideTab = tabs.some(({ tab }) => tab === remembered) ? remembered : "speakers";
 
   // Arrow keys move between the tabs and open them, wrapping; Home and End
   // jump to the first and last.
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    const index = SIDE_TABS.findIndex(({ tab }) => tab === sideTab);
+    const index = tabs.findIndex(({ tab }) => tab === sideTab);
     const targets: Record<string, number> = {
       ArrowLeft: index - 1,
       ArrowRight: index + 1,
       Home: 0,
-      End: SIDE_TABS.length - 1,
+      End: tabs.length - 1,
     };
     if (!(event.key in targets)) return;
     event.preventDefault();
-    const { tab } = SIDE_TABS[(targets[event.key] + SIDE_TABS.length) % SIDE_TABS.length];
+    const { tab } = tabs[(targets[event.key] + tabs.length) % tabs.length];
     setSideTab(tab);
     tablistRef.current?.querySelector<HTMLElement>(`#side-tab-${tab}`)?.focus();
   };
@@ -93,7 +104,7 @@ function SideTabs({
           aria-label="Side panels"
           className="flex min-w-0 overflow-hidden"
         >
-          {SIDE_TABS.map(({ tab, label, icon: Icon }) => {
+          {tabs.map(({ tab, label, icon: Icon }) => {
             const open = sideTab === tab;
             return (
               <ButtonBase
@@ -111,15 +122,15 @@ function SideTabs({
                 className={cn(
                   "flex min-w-0 items-center gap-1 border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action @max-[12rem]:px-1",
                   open
-                    ? "border-action text-action-text @max-[18.5rem]:px-2"
-                    : "shrink-0 border-transparent text-contrast-helper hover:text-foreground @max-[18.5rem]:px-1.5",
+                    ? "border-action text-action-text @max-[25rem]:px-2"
+                    : "shrink-0 border-transparent text-contrast-helper hover:text-foreground @max-[25rem]:px-1.5",
                 )}
               >
-                <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[18.5rem]:block" />
+                <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[25rem]:block" />
                 <span
                   className={cn(
                     "min-w-0 truncate",
-                    open ? "@max-[12rem]:sr-only" : "@max-[18.5rem]:sr-only",
+                    open ? "@max-[12rem]:sr-only" : "@max-[25rem]:sr-only",
                   )}
                 >
                   {label}
@@ -131,13 +142,13 @@ function SideTabs({
         <IconButton
           size="sm"
           icon={<ChevronsRight />}
-          aria-label="Collapse speakers and notes panel"
-          title="Collapse speakers and notes panel"
+          aria-label="Collapse side panels"
+          title="Collapse side panels"
           onClick={() => setSpeakerPanelCollapsed(true)}
-          className="@max-[18.5rem]:w-8"
+          className="@max-[25rem]:w-8"
         />
       </SurfaceBase>
-      {SIDE_TABS.map(({ tab }) => (
+      {tabs.map(({ tab }) => (
         <div
           key={tab}
           role="tabpanel"
@@ -154,14 +165,17 @@ function SideTabs({
 }
 
 /**
- * The desktop side column beside a processed meeting: Speakers, My notes and
- * Captures as tabs on top, and Chat below, each part collapsible, with a handle
+ * The recording's desktop side column: Speakers, My notes, Captures and
+ * Meeting Edge as tabs on top, and Chat below, each part collapsible, with a handle
  * between them while both are open.
  */
 export default function RecordingSideColumn({
+  allowChat = true,
+  inFlight = false,
   speakers,
   myNotes,
   captures,
+  meetingEdge,
   chatPanelHeight,
   onChatPanelHeightChange,
   onNotesUpdate,
@@ -191,24 +205,31 @@ export default function RecordingSideColumn({
           aria-controls="side-tabs"
         >
           <Users className="h-3.5 w-3.5" />
-          Speakers, My notes and Captures
+          {meetingEdge === undefined
+            ? "Speakers, My notes and Captures"
+            : "Speakers, My notes, Captures and Meeting Edge"}
           <ChevronDown className="ml-auto h-3.5 w-3.5" />
         </ButtonBase>
-        <div className="min-h-0 flex-1">
+        {allowChat && <div className="min-h-0 flex-1">
           <ChatPanel
+            inFlight={inFlight}
             onNotesUpdate={onNotesUpdate}
             onCollapse={() => setChatPanelCollapsed(true)}
           />
-        </div>
+        </div>}
       </div>
     );
+  }
+
+  if (!allowChat) {
+    return <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} />;
   }
 
   if (isChatPanelCollapsed) {
     return (
       <div className="flex h-full flex-col">
         <div className="min-h-0 flex-1">
-          <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} />
+          <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} />
         </div>
         <ButtonBase
           data-ui-fill="card"
@@ -241,7 +262,7 @@ export default function RecordingSideColumn({
         defaultSize={100 - chatPanelHeight}
         minSize={20}
       >
-        <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} />
+        <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} />
       </Panel>
 
       <PanelResizeHandle
@@ -259,6 +280,7 @@ export default function RecordingSideColumn({
         minSize={18}
       >
         <ChatPanel
+          inFlight={inFlight}
           onNotesUpdate={onNotesUpdate}
           onCollapse={() => setChatPanelCollapsed(true)}
         />
@@ -268,7 +290,13 @@ export default function RecordingSideColumn({
 }
 
 /** The rail left when both parts of the side column are collapsed. */
-export function RecordingSideRail() {
+export function RecordingSideRail({
+  allowChat = true,
+  showMeetingEdge,
+}: {
+  allowChat?: boolean;
+  showMeetingEdge: boolean;
+}) {
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
   );
@@ -277,8 +305,13 @@ export function RecordingSideRail() {
   );
   const setSideTab = useNavigationStore((state) => state.setSideTab);
   const show = (tab: SideTab) => {
-    setSideTab(tab);
-    setSpeakerPanelCollapsed(false);
+    // Expansion removes this focused opener. Commit the tabs before handing
+    // focus to the selected one, including when the page replaces the rail.
+    flushSync(() => {
+      setSideTab(tab);
+      setSpeakerPanelCollapsed(false);
+    });
+    document.getElementById(`side-tab-${tab}`)?.focus();
   };
   return (
     <div className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-l border-surface-border bg-surface-inset py-2">
@@ -303,13 +336,20 @@ export function RecordingSideRail() {
         title="Show captures"
         onClick={() => show("captures")}
       />
-      <IconButton
+      {showMeetingEdge && <IconButton
+        size="sm"
+        icon={<Sparkles />}
+        aria-label="Show Meeting Edge"
+        title="Show Meeting Edge"
+        onClick={() => show("meeting-edge")}
+      />}
+      {allowChat && <IconButton
         size="sm"
         icon={<MessageSquare />}
         aria-label="Show meeting chat panel"
         title="Show meeting chat panel"
         onClick={() => setChatPanelCollapsed(false)}
-      />
+      />}
     </div>
   );
 }

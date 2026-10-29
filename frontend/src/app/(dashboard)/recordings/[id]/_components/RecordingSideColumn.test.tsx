@@ -10,23 +10,31 @@ vi.mock("@/components/ChatPanel", () => ({
   default: () => <div data-testid="chat-panel" />,
 }));
 
-const renderColumn = () =>
-  render(
+const column = (allowChat = true) =>
     <RecordingSideColumn
+      allowChat={allowChat}
       speakers={<div data-testid="speaker-panel" />}
       myNotes={<div data-testid="my-notes-list" />}
       captures={<div data-testid="captures-list" />}
+      meetingEdge={<div data-testid="meeting-edge" />}
       chatPanelHeight={40}
       onChatPanelHeightChange={vi.fn()}
       onNotesUpdate={vi.fn()}
       onResizeDragging={vi.fn()}
-    />,
-  );
+    />;
+
+const renderColumn = (allowChat = true) => render(column(allowChat));
+
+// Match the page's conditional rail/column mounting, driven by the real store.
+function ResponsiveSideColumn({ allowChat }: { allowChat: boolean }) {
+  const collapsed = useNavigationStore((state) => state.isSpeakerPanelCollapsed);
+  return collapsed ? <RecordingSideRail allowChat={allowChat} showMeetingEdge /> : column(allowChat);
+}
 
 const tablist = () => screen.getByRole("tablist", { name: "Side panels" });
 const tab = (name: string) => within(tablist()).getByRole("tab", { name });
 
-describe("the side column's Speakers, My notes and Captures tabs", () => {
+describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs", () => {
   beforeEach(() => {
     useNavigationStore.setState({
       sideTab: "speakers",
@@ -65,6 +73,7 @@ describe("the side column's Speakers, My notes and Captures tabs", () => {
       "Speakers",
       "My notes",
       "Captures",
+      "Meeting Edge",
     ]);
     expect(tab("Speakers")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("speaker-panel")).toBeVisible();
@@ -101,11 +110,12 @@ describe("the side column's Speakers, My notes and Captures tabs", () => {
 
   it.each([
     ["speakers", "ArrowRight", "My notes"],
-    ["speakers", "ArrowLeft", "Captures"],
+    ["speakers", "ArrowLeft", "Meeting Edge"],
     ["my-notes", "ArrowRight", "Captures"],
-    ["captures", "ArrowRight", "Speakers"],
+    ["captures", "ArrowRight", "Meeting Edge"],
+    ["meeting-edge", "ArrowRight", "Speakers"],
     ["my-notes", "Home", "Speakers"],
-    ["speakers", "End", "Captures"],
+    ["speakers", "End", "Meeting Edge"],
   ] as const)("from %s, %s opens %s and focuses its tab", (from, key, to) => {
     useNavigationStore.setState({ sideTab: from });
     renderColumn();
@@ -119,21 +129,22 @@ describe("the side column's Speakers, My notes and Captures tabs", () => {
   });
 
   // jsdom has no container queries, so this reads the rules a browser applies:
-  // a label hides under 18.5rem on the other tabs, and only under 12rem on
+  // a label hides under 25rem on the other tabs, and only under 12rem on
   // the open one, where all are icons.
   it("keeps the open tab's label longest in a narrow column, the others their icons", () => {
     renderColumn();
     const label = (name: string) => tab(name).querySelector("span")!;
     const hidesBelow = (name: string) =>
-      ["12rem", "18.5rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
+      ["12rem", "25rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
 
     expect(hidesBelow("Speakers")).toEqual(["12rem"]);
-    expect(hidesBelow("My notes")).toEqual(["18.5rem"]);
-    expect(hidesBelow("Captures")).toEqual(["18.5rem"]);
+    expect(hidesBelow("My notes")).toEqual(["25rem"]);
+    expect(hidesBelow("Captures")).toEqual(["25rem"]);
+    expect(hidesBelow("Meeting Edge")).toEqual(["25rem"]);
     fireEvent.click(tab("My notes"));
-    expect(hidesBelow("Speakers")).toEqual(["18.5rem"]);
+    expect(hidesBelow("Speakers")).toEqual(["25rem"]);
     expect(hidesBelow("My notes")).toEqual(["12rem"]);
-    for (const name of ["Speakers", "My notes", "Captures"]) {
+    for (const name of ["Speakers", "My notes", "Captures", "Meeting Edge"]) {
       expect(tab(name)).toHaveAttribute("title", name);
       expect(tab(name).querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     }
@@ -142,9 +153,9 @@ describe("the side column's Speakers, My notes and Captures tabs", () => {
   it("collapses both tabs together, and the bar left brings them back", () => {
     renderColumn();
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse speakers and notes panel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse side panels" }));
     expect(screen.queryByRole("tablist")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes and Captures" }));
+    fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes, Captures and Meeting Edge" }));
 
     expect(tab("Speakers")).toHaveAttribute("aria-selected", "true");
   });
@@ -161,16 +172,46 @@ describe("the side column's Speakers, My notes and Captures tabs", () => {
     ["Show speakers panel", "speakers"],
     ["Show my notes", "my-notes"],
     ["Show captures", "captures"],
+    ["Show Meeting Edge", "meeting-edge"],
   ] as const)("opens the tab the rail's %s button names", (name, sideTab) => {
     useNavigationStore.setState({
       isSpeakerPanelCollapsed: true,
       isChatPanelCollapsed: true,
       sideTab: sideTab === "speakers" ? "my-notes" : "speakers",
     });
-    render(<RecordingSideRail />);
+    render(<RecordingSideRail showMeetingEdge />);
 
     fireEvent.click(screen.getByRole("button", { name }));
 
     expect(useNavigationStore.getState()).toMatchObject({ sideTab, isSpeakerPanelCollapsed: false });
+  });
+
+  it("keeps Meeting Edge selected through collapse and reopening when Chat is unavailable", () => {
+    useNavigationStore.setState({ sideTab: "meeting-edge" });
+    renderColumn(false);
+    expect(screen.getByTestId("meeting-edge")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse side panels" }));
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.queryByTestId("chat-panel")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes, Captures and Meeting Edge" }));
+    expect(tab("Meeting Edge")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("meeting-edge")).toBeVisible();
+  });
+
+  it.each([false, true])("focuses Meeting Edge after its rail opener is removed (Chat available=%s)", (allowChat) => {
+    useNavigationStore.setState({ isSpeakerPanelCollapsed: true, isChatPanelCollapsed: true });
+    render(<ResponsiveSideColumn allowChat={allowChat} />);
+    const opener = screen.getByRole("button", { name: "Show Meeting Edge" });
+    opener.focus();
+    expect(opener).toHaveFocus();
+    fireEvent.click(opener);
+
+    expect(opener).not.toBeInTheDocument();
+    expect(tab("Meeting Edge")).toHaveAttribute("aria-selected", "true");
+    expect(tab("Meeting Edge")).toHaveFocus();
+    expect(screen.getByTestId("meeting-edge")).toBeVisible();
+    fireEvent.keyDown(tab("Meeting Edge"), { key: "ArrowLeft" });
+    expect(tab("Captures")).toHaveFocus();
+    expect(tab("Captures")).toHaveAttribute("aria-selected", "true");
   });
 });

@@ -6,6 +6,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
+from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
 
 from .constants import *
@@ -15,6 +16,8 @@ from .final_asr import (
 )
 from .final_publication import (
     canonical_finalization_required,
+    finish_reprocess_projection,
+    prepare_reprocess_speakers,
     staged_publication_required,
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
@@ -28,14 +31,7 @@ from .vad_stage import (
 )
 
 # ---------------------------------------------------------------------------
-# process_recording_task orchestration stages
-#
-# The canonical finalize pipeline is decomposed into explicit stages with typed
-# inputs and outputs. The stages run inside the task's try/except/finally, so
-# Celery retry and ack handling, temp-file cleanup and VRAM release all stay in
-# one place. Heavy ML imports (whisper, pyannote, torch, embeddings) must stay
-# INSIDE the stage functions so the API process never pays for them at import
-# time.
+# Orchestration stages keep heavy ML imports inside their stage functions.
 # ---------------------------------------------------------------------------
 
 
@@ -63,6 +59,7 @@ class _PipelineRunContext:
     # the union file transcription reads keeps them muted (#678).
     non_speech_turns: tuple = ()
     final_transcript_published: bool = False
+    speaker_voiceprints: dict | None = None
 
 
 @dataclass
@@ -143,6 +140,7 @@ def _resolve_input_audio(
             temp_files.append(repaired_path)
         else:
             logger.error("Audio repair failed for %s", audio_path)
+            restore_retained_publication(session, recording.id)
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"Invalid audio (Repair failed): {str(e)}"
             session.add(recording)
@@ -368,8 +366,9 @@ def _finalize_transcript_and_notes(
             session,
             recording.id,
         )
-        # Make the finalized utterances and their projection durable before the
-        # notes and title stages: a failure there rolls the session back.
+    if staged or canonical_finalization_required(transcript):
+        finish_reprocess_projection(transcript, updated_segments, transcription_result)
+        # Notes failures cannot roll back a successful transcript publication.
         session.commit()
         ctx.final_transcript_published = True
 
@@ -640,6 +639,7 @@ def process_recording_task(
             )
 
         # --- Stage: speaker assignment / identification ---
+        prepare_reprocess_speakers(ctx, recording, transcript, diarization_result)
         assign_and_identify_speakers(ctx, recording, final_segments, diarization_result)
 
         # --- Stage: finalize transcript + notes/title ---
@@ -698,6 +698,7 @@ def process_recording_task(
                     recording_id,
                     rollback_exc,
                 )
+        restore_retained_publication(session, recording_id)
         recording = session.get(Recording, recording_id)
         if recording:
             recording.status = RecordingStatus.ERROR
@@ -728,6 +729,9 @@ def process_recording_task(
                     recording_id,
                     rollback_exc,
                 )
+        # An interrupted pass included: nothing retries it, and a Retry
+        # retains the completed transcript again.
+        restore_retained_publication(session, recording_id)
         recording = session.get(Recording, recording_id)
         if recording:
             recording.status = RecordingStatus.ERROR

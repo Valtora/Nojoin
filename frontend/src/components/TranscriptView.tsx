@@ -9,7 +9,10 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 import { Fragment, useMemo, useState, type MouseEvent } from "react";
-import { Radio } from "lucide-react";
+import { ArrowDown, Radio } from "lucide-react";
+import { ButtonBase } from "./ui/nativeBases";
+import { buildLiveTranscriptPresentation, liveRenderIdentity,
+  type LiveTranscriptPresentation } from "./transcript/liveTranscriptPresentation";
 import { useTranscriptSearch } from "./transcript/_hooks/useTranscriptSearch";
 import { useTranscriptScroll } from "./transcript/_hooks/useTranscriptScroll";
 import { useTranscriptEditing } from "./transcript/_hooks/useTranscriptEditing";
@@ -32,14 +35,18 @@ import TranscriptNoteEditor, {
 } from "./transcript/TranscriptNoteEditor";
 import { isSavedNote, useNoteHighlights } from "./transcript/_hooks/useNoteHighlights";
 import { useNoteMoves, type MoveNoteHandler } from "./transcript/_hooks/useNoteMoves";
+import { useLineNoteExpansion } from "./transcript/_hooks/useLineNoteExpansion";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import { indexOverlaps, OverlapContext } from "./transcript/OverlapIndicator";
+import { appendPendingTranscriptGroups, isDiarisationPending } from "./transcript/pendingTranscriptGroups";
 
 interface TranscriptViewProps {
+  /** The selected in-flight reader, with its source-specific actions. */
+  live?: LiveTranscriptPresentation;
   recordingId: RecordingId;
   segments: TranscriptSegment[];
   currentTime: number;
@@ -51,11 +58,11 @@ interface TranscriptViewProps {
   speakerMap: Record<string, string>;
   speakers: readonly RecordingSpeaker[];
   globalSpeakers: GlobalSpeaker[];
-  onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
+  onRenameSpeaker: (label: string, newName: string) => void | boolean | Promise<void | boolean>;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   /**
    * Confirms or dismisses a speaker's suggested name; without it, lines show
    * no "?" for one.
@@ -68,7 +75,7 @@ interface TranscriptViewProps {
   onUpdateSegmentText: (
     segment: TranscriptSegment,
     text: string,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onSplitSegment?: (segment: TranscriptSegment, wordId: string) => Promise<boolean>;
   onFindAndReplace: (
     find: string,
@@ -84,6 +91,8 @@ interface TranscriptViewProps {
   readOnly?: boolean;
   allowProvisionalEdits?: boolean;
   disableSegmentPlayback?: boolean;
+  /** Playback and export have separate availability from transcript editing. */
+  disableExport?: boolean;
   emptyStateTitle?: string;
   emptyStateDescription?: string;
   onActiveEditUtteranceChange?: (utteranceId: string | null) => void;
@@ -113,12 +122,13 @@ const NOTE_TIME_COLUMN =
   "min-w-16 md:min-w-[60px] shrink-0 pt-1 text-right font-mono text-sm text-contrast-icon-muted";
 
 /**
- * The finished transcript: toolbar, then the lines in groups of overlapping
+ * The shared transcript: toolbar, then the lines in groups of overlapping
  * speech, with the recording's notes among them. The parts live in
  * `./transcript/`; this file filters the lines, places the notes, and wires
  * the state through.
  */
 export default function TranscriptView({
+  live,
   segments,
   currentTime,
   onPlaySegment,
@@ -143,6 +153,7 @@ export default function TranscriptView({
   readOnly = false,
   allowProvisionalEdits = false,
   disableSegmentPlayback = false,
+  disableExport = false,
   emptyStateTitle = "No transcript segments",
   emptyStateDescription,
   onActiveEditUtteranceChange,
@@ -158,6 +169,12 @@ export default function TranscriptView({
   // Find & Replace toolbar visibility (search match state lives in the hook)
   const [showSearch, setShowSearch] = useState(false);
   const [showReplace, setShowReplace] = useState(false);
+  const isLive = live !== undefined;
+  const hasPendingDiarisation = segments.some(isDiarisationPending);
+  const keepLineGroups = isLive || hasPendingDiarisation;
+  const LineList = isLive ? "ol" : "div";
+  const LineItem = isLive ? "li" : "div";
+  const liveLines = useMemo(() => isLive ? buildLiveTranscriptPresentation(segments) : undefined, [segments, isLive]);
 
   // The recording page's poll hands these over anew every few seconds, most
   // often with the same contents; every line reads them.
@@ -181,13 +198,13 @@ export default function TranscriptView({
     // Map to preserve original indices before filtering
     const indexedSegments = indexSegments(segments);
 
-    return hasKnownSpeakers
+    return hasKnownSpeakers && !isLive
       ? indexedSegments.filter(
           ({ segment }) =>
-            segment.speaker !== "UNKNOWN" || segment.provisional === true,
+            segment.speaker !== "UNKNOWN" || segment.provisional === true || isDiarisationPending(segment),
         )
       : indexedSegments;
-  }, [segments]);
+  }, [segments, isLive]);
 
   const recentSegmentKeys = new Set(useRecentSegmentKeys(displaySegments).split(LINE_KEY_SEPARATOR));
 
@@ -201,7 +218,9 @@ export default function TranscriptView({
     scrollContainerRef,
     scrollSegmentIntoView,
     updateScrollAnchor,
-  } = useTranscriptScroll({ segments, activeSegmentKey });
+    isFollowingLatest,
+    jumpToLatest,
+  } = useTranscriptScroll({ segments, activeSegmentKey, liveFollow: !!live, growth: timelineNotes });
 
   const search = useTranscriptSearch({ segments, showSearch, scrollSegmentIntoView });
 
@@ -257,11 +276,14 @@ export default function TranscriptView({
     () => placeTimelineNotes(segments, timelineNotes ?? []),
     [segments, timelineNotes],
   );
+  const lineNotes = useLineNoteExpansion();
   const visibleIndexes = useMemo(() => displaySegments.map((item) => item.index), [displaySegments]);
   const notesAmongLines = useMemo(
     () => bodyNotesAmongLines(notePlacements, visibleIndexes),
     [notePlacements, visibleIndexes],
   );
+  const headNotes = notePlacements.filter((placement) => placement.slot === "head").map(({ note }) => note);
+  const tailNotes = notePlacements.filter((placement) => placement.slot === "tail").map(({ note }) => note);
   const moves = useNoteMoves({
     segments,
     visibleIndexes,
@@ -298,7 +320,7 @@ export default function TranscriptView({
   const renderNote = (note: TimelineNote | InlineNote) => {
     const key = "key" in note ? note.key : note.id;
     return (
-      <div key={key} className="px-2" data-note-gap={moves.gapOf(note.id)}>
+      <LineItem key={key} className="px-2" data-testid={live ? "live-transcript-note" : undefined} data-note-gap={moves.gapOf(note.id)}>
         <TimelineNoteLine
           noteId={note.id}
           body={note.body}
@@ -312,34 +334,45 @@ export default function TranscriptView({
           timeLabel={formatTime(
             (note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0)) / 1000,
           )}
+          placementLabel={note.kind === "head" ? "Before the transcript"
+            : note.kind === "tail" ? "After the transcript" : undefined}
           timeColumnClassName={NOTE_TIME_COLUMN}
           status={"status" in note ? note.status : "saved"}
           error={"error" in note ? note.error : null}
-          onRetry={onRetryNote ? () => onRetryNote(key) : undefined}
+          onRetry={onRetryNote ? () => { moves.focusAfterRetry(note.id); onRetryNote(key); } : undefined}
           onDiscard={onDiscardNote ? () => onDiscardNote(key) : undefined}
           // Not while its editor is open: a move would take the pencil it sits against.
-          move={moves.controlsFor(note, canEditNote(note) && shownEditor?.noteId !== note.id)}
+          move={moves.controlsFor(note, (live ? isSavedNote(note) && note.revision !== undefined : canEditNote(note)) && shownEditor?.noteId !== note.id)}
           attachment={note.attachment}
         />
-      </div>
+      </LineItem>
     );
   };
 
   // --- Grouping Logic ---
   const trackGroups = useMemo(
-    () =>
-      buildTranscriptGroups(
+    () => {
+      const groups = buildTranscriptGroups(
         displaySegments,
-        new Set(notesAmongLines.afterLine.keys()),
-      ),
-    [displaySegments, notesAmongLines],
+        new Set(keepLineGroups ? displaySegments.map((item) => item.index) : notesAmongLines.afterLine.keys()),
+      );
+      const blockedIds = new Set<string>();
+      if (editing.editingTextId) blockedIds.add(editing.editingTextId);
+      if (editing.editingSpeakerLineId) blockedIds.add(editing.editingSpeakerLineId);
+      if (editing.activePopover) blockedIds.add(editing.activePopover.segmentId);
+      return appendPendingTranscriptGroups(groups, new Set(notesAmongLines.afterLine.keys()), blockedIds);
+    },
+    [displaySegments, notesAmongLines, keepLineGroups,
+      editing.editingTextId, editing.editingSpeakerLineId, editing.activePopover],
   );
 
   // Groups and lines are memoised: everything handed to them is a value, or
   // keeps its identity until it means something new, so a playback tick
   // redraws only the groups and lines it enters or leaves. The recording page
   // builds these four handlers anew on every tick; the lines get stable ones.
-  const playSegment = useStableCallback(onPlaySegment);
+  const playSegment = useStableCallback((start: number, end?: number) => {
+    if (!disableSegmentPlayback) onPlaySegment(start, end);
+  });
   const pause = useStableCallback(onPause);
   const resume = useStableCallback(onResume);
   const updateSegmentSpeaker = useStableCallback(onUpdateSegmentSpeaker);
@@ -349,7 +382,9 @@ export default function TranscriptView({
       onReviewSpeakerName?.(label, name, decision),
   );
   // "Play from here" on a line plays on, rather than to the group's end.
-  const playFrom = useStableCallback((startSeconds: number) => onPlaySegment(startSeconds));
+  const playFrom = useStableCallback((startSeconds: number) => {
+    if (!disableSegmentPlayback) onPlaySegment(startSeconds);
+  });
   const canAddNote = onAddNote !== undefined;
   const addNote = useStableCallback((note: OutboxDraft) => onAddNote?.(note) ?? null);
   const canSplit = onSplitSegment !== undefined;
@@ -359,6 +394,9 @@ export default function TranscriptView({
     () => ({
       readOnly,
       allowProvisionalEdits,
+      live,
+      liveLines,
+      preserveLiveIdentity: keepLineGroups,
       speakerMap,
       speakers,
       globalSpeakers,
@@ -374,6 +412,9 @@ export default function TranscriptView({
     [
       readOnly,
       allowProvisionalEdits,
+      live,
+      liveLines,
+      keepLineGroups,
       speakerMap,
       speakers,
       globalSpeakers,
@@ -407,14 +448,17 @@ export default function TranscriptView({
 
   return (
     <OverlapContext.Provider value={overlapBySegment}>
-    <div id="transcript-view" className="flex flex-col h-full relative min-h-0">
+    <div id="transcript-view" data-testid={live ? "live-transcript-panel" : undefined}
+      data-paused={live ? String(!!live.isPaused) : undefined} className="flex flex-col h-full relative min-h-0">
       <TranscriptToolbar
         onUndo={onUndo}
         onRedo={onRedo}
-        canUndo={canUndo}
-        canRedo={canRedo}
+        canUndo={!live && canUndo}
+        canRedo={!live && canRedo}
+        mutationsDisabled={!!live || readOnly}
         onExport={onExport}
-        exportDisabled={editing.editInProgress}
+        exportDisabled={disableExport || editing.editInProgress}
+        exportUnavailable={disableExport}
         showSearch={showSearch}
         setShowSearch={setShowSearch}
         showReplace={showReplace}
@@ -425,10 +469,17 @@ export default function TranscriptView({
         onReplaceAll={editing.handleFindReplaceSubmit}
       />
 
+      {live && segments.length > 0 ? <p className="px-4 py-2 text-xs text-contrast-helper">
+        {segments.some((segment) => segment.settling_required)
+          ? "Lines settle as the conversation continues. Your corrections are kept."
+          : "Provisional. Corrected when the recording is processed."}
+      </p> : null}
+
       <div
         ref={scrollContainerRef}
-        data-testid="transcript-scroll-region"
-        className="relative space-y-4 px-2 md:px-4 pt-3 pb-clear-floating-3 overflow-y-auto flex-1 min-h-0"
+        data-testid={live ? "live-transcript-scroll" : "transcript-scroll-region"}
+        tabIndex={-1}
+        className="relative px-2 md:px-4 pt-3 pb-clear-floating-3 overflow-y-auto flex-1 min-h-0"
         onScroll={updateScrollAnchor}
         onClick={editNoteFromText}
       >
@@ -441,32 +492,39 @@ export default function TranscriptView({
             style={{ top: moves.drag.bar.top, left: moves.drag.bar.left, width: moves.drag.bar.width }}
           />
         ) : null}
-        {trackGroups.length === 0 ? (
+        {trackGroups.length === 0 && notesAmongLines.opening.length === 0 && headNotes.length === 0 && tailNotes.length === 0 ? (
           <div className="flex h-full min-h-[220px] items-center justify-center px-4">
             <div className="flex max-w-sm flex-col items-center text-center">
               <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-action-border bg-action-tint text-action-text">
                 <Radio className="h-4 w-4" />
               </div>
               <div className="text-sm font-semibold text-foreground">
-                {emptyStateTitle}
+                {live ? live.isPaused ? "Recording is paused." : "Listening." : emptyStateTitle}
               </div>
-              {emptyStateDescription && (
+              {(live || emptyStateDescription) && (
                 <div className="mt-1 text-sm leading-5 text-contrast-helper">
-                  {emptyStateDescription}
+                  {live ? live.hasLoaded
+                    ? "Text appears a few seconds behind the conversation, as each sentence completes."
+                    : "Loading the transcript so far." : emptyStateDescription}
                 </div>
               )}
             </div>
           </div>
-        ) : [
+        ) : <LineList className="space-y-4">{[
+          ...headNotes.map(renderNote),
           ...notesAmongLines.opening.map(renderNote),
           ...trackGroups.map((group, groupIndex) => {
-            const groupKey = group.items.map((item) => item.segmentId).join("|");
-            const notesAfterGroup =
-              notesAmongLines.afterLine.get(group.items[group.items.length - 1].index) ?? [];
+            const first = group.items[0];
+            const last = group.items[group.items.length - 1];
+            const noteLineId = liveRenderIdentity(last.segment, last.index);
+            const groupKey = keepLineGroups ? liveRenderIdentity(first.segment, first.index)
+              : group.items.map((item) => item.segmentId).join("|");
+            const notesAfterGroup = notesAmongLines.afterLine.get(last.index) ?? [];
             const isGroupActive = currentTime >= group.start && currentTime < group.end;
 
             return (
               <Fragment key={groupKey || groupIndex}>
+                <LineItem>
                 <TranscriptGroup
                   group={group}
                   isGroupActive={isGroupActive}
@@ -492,9 +550,16 @@ export default function TranscriptView({
                   activePopover={editing.activePopover}
                   editor={holdsTheEditor(group.items) ? editing.editor : null}
                 />
+                </LineItem>
                 <CollapsedLineNotes
+                  as={LineItem}
                   notes={notesAfterGroup}
-                  isSaved={(note) => isSavedNote(note) && !moves.wasMoved(note.id)}
+                  isFoldable={(note) => (!("status" in note) || note.status !== "failed") &&
+                    !moves.hasRefusal(note.id) && shownEditor?.noteId !== note.id}
+                  open={lineNotes.isExpanded(noteLineId)}
+                  onToggle={() => lineNotes.toggle(noteLineId)}
+                  gapIndex={last.index}
+                  saving={notesAfterGroup.some((note) => "status" in note && note.status === "saving")}
                   renderNote={renderNote}
                   lineTime={() => formatTime(group.items[group.items.length - 1].segment.start)}
                   timeColumnClassName={NOTE_TIME_COLUMN}
@@ -503,12 +568,27 @@ export default function TranscriptView({
               </Fragment>
             );
           }),
-        ]}
+          ...tailNotes.map(renderNote),
+        ]}</LineList>}
       </div>
+      {live && !isFollowingLatest ? <div className="pointer-events-none absolute bottom-4 left-0 right-0 flex justify-center">
+        <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="action-tint"
+          data-ui-border="full"
+          chrome="action"
+          type="button"
+          onClick={jumpToLatest}
+          className="pointer-events-auto inline-flex items-center gap-1.5 rounded-pill border border-action-border bg-surface-card px-3 py-1.5 text-xs font-semibold text-action-text shadow-float transition-colors hover:bg-action-tint"
+        >
+          <ArrowDown aria-hidden className="h-3.5 w-3.5" /> Jump to latest
+        </ButtonBase>
+      </div> : null}
       <p role="status" className="sr-only">
         {moves.announcement}
       </p>
-      <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} segments={segments} />
+      <TranscriptSelectionNotes root={scrollContainerRef} onNoteOnText={live?.onNoteOnLine}
+        onAddNote={!live && onAddNote ? addNote : undefined} segments={segments} />
       {onEditNote ? (
         <TranscriptNoteEditor
           editing={shownEditor}

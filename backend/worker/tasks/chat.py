@@ -7,8 +7,13 @@ SSE (see ``backend.services.chat_relay``). This task is the *single writer* of
 the assistant ``ChatMessage``; the API relay never persists.
 """
 
+from collections.abc import Iterator
+from typing import Any
+
 from backend.models.chat import ChatMessage
 from backend.services.chat_relay import ChatStreamPublisher, friendly_chat_error
+from backend.services.live_chat import chat_transcript_in_progress, stream_live_chat
+from backend.utils.chat_prompt import ChatTranscript
 
 from .constants import *  # noqa: F401,F403 - shared task imports (celery_app, models, resolvers)
 
@@ -49,13 +54,23 @@ def meeting_chat_task(
         backend = _llm_backend_from_config(llm_config)  # noqa: F405
 
         full_response = ""
-        for chunk in backend.ask_question_streaming(
-            user_question=augmented_message,
-            meeting_notes=meeting_notes,
-            diarized_transcript=None,  # rebuilt inside via recording_id
-            conversation_history=conversation_history,
-            recording_id=recording.id,
-        ):
+
+        def ask(diarized_transcript: ChatTranscript) -> Iterator[str | dict[str, Any]]:
+            return backend.ask_question_streaming(
+                user_question=augmented_message,
+                meeting_notes=meeting_notes,
+                diarized_transcript=diarized_transcript,
+                conversation_history=conversation_history,
+                recording_id=recording.id,
+            )
+
+        # The same rule as the API's own chat path (routes_chat.py).
+        chunks = (
+            stream_live_chat(ask, recording.id)
+            if chat_transcript_in_progress(recording.status, transcript)
+            else ask(None)
+        )
+        for chunk in chunks:
             # Only a degraded secondary backend can emit control dicts (e.g.
             # notes_update); its DB side effect already ran. CLI itself never
             # does — skip framing non-text chunks.

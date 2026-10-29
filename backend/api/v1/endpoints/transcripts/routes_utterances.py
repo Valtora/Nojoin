@@ -115,9 +115,6 @@ async def get_transcript_utterances(
         return delta, live_speaker_names(sync_session, recording.id)
 
     (revision, utterances, tombstones), live_names = await db.run_sync(_read_delta)
-    await db.commit()
-    await db.refresh(transcript)
-
     if not utterances and transcript.segments and not settling_enabled(transcript):
         utterances = build_transient_utterance_payloads_from_segments(transcript)
         if after_revision is not None and after_revision >= 0:
@@ -140,7 +137,7 @@ async def get_transcript_utterances(
         )
     )
 
-    return TranscriptUtteranceListRead(
+    response = TranscriptUtteranceListRead(
         recording_id=recording.public_id,
         revision=revision,
         settling_required=settling_required(transcript),
@@ -155,6 +152,9 @@ async def get_transcript_utterances(
         ],
         live_speaker_names=live_names,
     )
+    # Backfill can write, under the fence it takes itself; commit what it wrote.
+    await db.commit()
+    return response
 
 
 @router.patch(

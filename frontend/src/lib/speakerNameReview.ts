@@ -26,8 +26,8 @@ export function describeSuggestedNameSource(
     case "heuristic":
       return "Introduced themselves";
     // A name the user gave that the final pass could not settle on one
-    // speaker: its speech went to several, it met another name, or the voice
-    // didn't match the person.
+    // speaker: its speech went to several, it met another name, the voice
+    // didn't match the person, or the processed transcript has none of it.
     case "user":
       return "You gave this name earlier";
     default:

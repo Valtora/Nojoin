@@ -106,6 +106,7 @@ export default function TranscriptActionsMenu({
     };
     const onDown = (event: PointerEvent) => {
       if (event.pointerType !== "touch" || !event.isPrimary) return;
+      if ((event.target as Element).closest("[data-line-actions]") !== line) return;
       if ((event.target as Element).closest(NATIVE_PRESS)) return;
       cancel();
       pressedAt = { x: event.clientX, y: event.clientY };

@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TranscriptSection from "@/app/(dashboard)/recordings/[id]/_components/TranscriptSection";
 import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
 import { useNoteEdits } from "@/lib/notes/useNoteEdits";
+import type { LiveTranscript } from "../transcript/_hooks/useLiveTranscript";
 import {
   RecordingStatus,
   type Recording,
@@ -12,6 +13,7 @@ import {
 } from "@/types";
 
 import MyNotesList from "./MyNotesList";
+import RecordingMyNotes from "./RecordingMyNotes";
 
 const updateTimelineNote = vi.fn();
 const deleteTimelineNote = vi.fn();
@@ -82,23 +84,39 @@ const conflict = (current: TimelineNote) => ({
 });
 
 /** The list and the transcript sharing one set of edits, as on the recording page. */
-function Page({ notes, onPlay = vi.fn() }: { notes: TimelineNote[] | null; onPlay?: (s: number) => void }) {
+function Page({ notes, onPlay = vi.fn(), disablePlayback = false, live = false, segments = SEGMENTS,
+  showList = true, showTranscript = true }: {
+  notes: TimelineNote[] | null;
+  onPlay?: (s: number) => void;
+  disablePlayback?: boolean;
+  live?: boolean;
+  segments?: TranscriptSegment[];
+  showList?: boolean;
+  showTranscript?: boolean;
+}) {
   const noteEdits = useNoteEdits(RECORDING.id);
+  const recording = live ? { ...RECORDING, status: RecordingStatus.PAUSED } : RECORDING;
+  const liveTranscript: LiveTranscript | undefined = live ? {
+    segments, speakers: [], hasLoaded: true, liveSpeakerNames: {},
+    applyLiveSpeakerNames: vi.fn(), refresh: vi.fn(),
+  } : undefined;
   return (
     <>
-      <MyNotesList
-        recordingId={RECORDING.id}
+      {showList ? <RecordingMyNotes
+        recording={recording}
         timelineNotes={notes}
-        segments={SEGMENTS}
+        segments={segments}
         noteEdits={noteEdits}
         onPlay={onPlay}
-      />
-      <TranscriptSection
+        disablePlayback={disablePlayback}
+      /> : null}
+      {showTranscript ? <TranscriptSection
         active
-        recording={RECORDING}
+        recording={recording}
+        liveTranscript={liveTranscript}
         timelineNotes={notes}
         noteEdits={noteEdits}
-        transcriptSegments={SEGMENTS}
+        transcriptSegments={segments}
         currentTime={-1}
         isPlaying={false}
         speakerMap={{ SPEAKER_0: "Alex", SPEAKER_1: "Blair" }}
@@ -119,7 +137,7 @@ function Page({ notes, onPlay = vi.fn() }: { notes: TimelineNote[] | null; onPla
         onRedo={vi.fn()}
         onExport={vi.fn()}
         onActiveEditUtteranceChange={vi.fn()}
-      />
+      /> : null}
     </>
   );
 }
@@ -146,6 +164,87 @@ afterEach(() => {
 });
 
 describe("My notes", () => {
+  it("asks before the page is left while an edit is unsaved, and not once it is saved", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<><a href="/people">People</a><button id="nav-logout" type="button">Log Out</button>
+      <Page notes={[HEAD]} /></>);
+    const leave = () => {
+      const unload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(unload);
+      return unload.defaultPrevented;
+    };
+    const editor = openFromList(HEAD.id);
+    expect(leave()).toBe(false);
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Not saved yet" } });
+    expect(leave()).toBe(true);
+    // An in-app link asks too, and staying keeps the editor and its text.
+    expect(fireEvent.click(screen.getByRole("link", { name: "People" }))).toBe(false);
+    // So does Log Out, which ends the session before any unload prompt.
+    expect(fireEvent.click(screen.getByRole("button", { name: "Log Out" }))).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(within(editor).getByRole("textbox")).toHaveValue("Not saved yet");
+
+    let answer!: (note: TimelineNote) => void;
+    updateTimelineNote.mockReturnValueOnce(new Promise<TimelineNote>((resolve) => { answer = resolve; }));
+    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
+    // Text typed now would not be in the save on its way.
+    expect(within(editor).getByRole("textbox")).toHaveAttribute("readonly");
+    expect(leave()).toBe(true);
+    await act(async () => answer({ ...HEAD, body: "Not saved yet", revision: 3 }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(leave()).toBe(false);
+    expect(fireEvent.click(screen.getByRole("link", { name: "People" }))).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an editor with unsaved text open when another note's pencil is pressed", () => {
+    render(<Page notes={[HEAD, TAIL]} />);
+    let editor = openFromList(HEAD.id);
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Still typing" } });
+    editor = openFromList(TAIL.id);
+    expect(within(editor).getByRole("textbox")).toHaveValue("Still typing");
+    fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+    // An unchanged editor closes on the press, so the next pencil opens its note.
+    openFromList(TAIL.id);
+    fireEvent.pointerDown(within(row(HEAD.id)).getByRole("button", { name: /^Edit note/ }));
+    editor = openFromList(HEAD.id);
+    expect(within(editor).getByRole("textbox")).toHaveValue(HEAD.body);
+  });
+
+  it("lets the page go when leaving with an unsaved edit is confirmed", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<><a href="/people">People</a><Page notes={[HEAD]} /></>);
+    const editor = openFromList(HEAD.id);
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Given up" } });
+    expect(fireEvent.click(screen.getByRole("link", { name: "People" }))).toBe(true);
+  });
+
+  it.each([false, true])("lists each saved note once and keeps whole-meeting notes around an empty transcript, live=%s", (live) => {
+    render(<Page notes={[TAIL, HEAD]} live={live} segments={[]} />);
+    expect(rows().map((candidate) => candidate.dataset.noteId)).toEqual([HEAD.id, TAIL.id]);
+    expect(screen.queryByText("Other notes")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    const transcriptNotes = screen.getAllByTestId("timeline-note");
+    expect(transcriptNotes.map((line) => line.dataset.noteId)).toEqual([HEAD.id, TAIL.id]);
+    expect(transcriptNotes[0]).toHaveTextContent("Before the transcript");
+    expect(transcriptNotes[1]).toHaveTextContent("After the transcript");
+  });
+
+  it("keeps note navigation and editing while blocking playback until processing finishes", () => {
+    const onPlay = vi.fn();
+    const view = render(<Page notes={[POINT]} onPlay={onPlay} disablePlayback />);
+    const play = within(row(POINT.id)).getByRole("button", { name: "Play from 01:06" });
+    expect(play).toBeDisabled();
+    fireEvent.click(play);
+    expect(onPlay).not.toHaveBeenCalled();
+    expect(within(row(POINT.id)).getByRole("button", { name: /^Show in the transcript/ })).toBeEnabled();
+    expect(within(row(POINT.id)).getByRole("button", { name: /^Edit note/ })).toBeEnabled();
+
+    view.rerender(<Page notes={[POINT]} onPlay={onPlay} />);
+    fireEvent.click(within(row(POINT.id)).getByRole("button", { name: "Play from 01:06" }));
+    expect(onPlay).toHaveBeenCalledWith(66);
+  });
+
   it("lists notes before the transcript first, the rest by time, ties by creation, then notes after it", () => {
     const sameMomentLater = note("n-a", "point", "Second at 01:06", {
       anchor_ms: 66_000,

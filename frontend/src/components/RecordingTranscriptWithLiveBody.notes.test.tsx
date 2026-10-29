@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { AudioClock } from "@/lib/notes/audioClock";
-import { type OutboxEntry } from "@/lib/notes/noteOutbox";
 import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import {
   ClientStatus,
@@ -13,7 +12,14 @@ import {
   type TimelineNoteCreate,
 } from "@/types";
 
-import RecordingStatusDisplay from "./RecordingStatusDisplay";
+import RecordingTranscriptWithLiveBody from "@/test/RecordingTranscriptWithLiveBody";
+import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
+
+// The shared page owns this reader now; keep these tests at that boundary.
+function LiveBody(props: Omit<Parameters<typeof RecordingTranscriptWithLiveBody>[0], "liveTranscript">) {
+  const liveTranscript = useLiveTranscript(props.recording);
+  return <RecordingTranscriptWithLiveBody {...props} liveTranscript={liveTranscript} />;
+}
 
 const getTranscriptUtterances = vi.fn();
 const createTimelineNote = vi.fn();
@@ -35,18 +41,6 @@ vi.mock("./Workspace", () => ({
 vi.mock("./LiveAudioWaveform", () => ({ default: () => <div /> }));
 vi.mock("./LiveMeetingControls", () => ({ default: () => <div /> }));
 vi.mock("./MeetingEdgePanel", () => ({ default: () => <div /> }));
-// The Notes box, reduced to the meeting-wide notes it is handed to list.
-vi.mock("./HeadNotePanel", () => ({
-  default: ({ pendingNotes = [] }: { pendingNotes?: readonly OutboxEntry[] }) => (
-    <div data-testid="notes-box">
-      {pendingNotes.map((entry) => (
-        <p key={entry.key} data-testid="notes-box-pending">
-          {entry.kind}: {entry.body}
-        </p>
-      ))}
-    </div>
-  ),
-}));
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
@@ -102,7 +96,7 @@ const renderLive = (
   const clock = new AudioClock(() => monotonicMs);
   clock.observe(recording);
   const view = render(
-    <RecordingStatusDisplay
+    <LiveBody
       recording={recording}
       onSaveMeetingEdgeFocus={vi.fn()}
       audioClock={clock}
@@ -113,7 +107,7 @@ const renderLive = (
     clock.observe(next);
     await act(async () => {
       view.rerender(
-        <RecordingStatusDisplay
+        <LiveBody
           recording={next}
           onSaveMeetingEdgeFocus={vi.fn()}
           audioClock={clock}
@@ -132,7 +126,7 @@ const addNote = (text: string) => {
   fireEvent.keyDown(box(), { key: "Enter" });
 };
 
-describe("RecordingStatusDisplay live notes", () => {
+describe("RecordingTranscriptWithLiveBody live notes", () => {
   beforeEach(() => {
     forgetNoteOutboxes();
     monotonicMs = 0;
@@ -175,6 +169,27 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added at 01:02.");
   });
 
+  it("keeps one editable draft, file and placement through Stop and processing without duplicate recovery", async () => {
+    const { show } = renderLive();
+    await screen.findByText("We need the budget.");
+    fireEvent.change(screen.getByLabelText("Place note"), { target: { value: "send" } });
+    fireEvent.change(box(), { target: { value: "Thought with a file" } });
+    const file = new File(["capture"], "context.png", { type: "image/png" });
+    act(() => noteOutboxFor("rec-1").setDraftFile(file));
+    const originalBox = box();
+    await show(stopped());
+    expect(screen.getAllByRole("textbox", { name: "New note" })).toHaveLength(1);
+    expect(box()).toBe(originalBox);
+    expect(box()).toHaveValue("Thought with a file");
+    expect(screen.getByLabelText("Place note")).toHaveValue("send");
+    expect(screen.getByTestId("note-draft-file")).toHaveTextContent("context.png");
+    expect(screen.queryByTestId("unsaved-draft")).toBeNull();
+    await show(buildRecording({ status: RecordingStatus.PROCESSED, client_status: undefined, duration_seconds: 600 }));
+    expect(box()).toBe(originalBox);
+    expect(noteOutboxFor("rec-1").getSnapshot().draftFile).toBe(file);
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("where capture stopped");
+  });
+
   it("empties the box in the same change that queues its note", async () => {
     createTimelineNote.mockImplementation(async (_id: string, payload: TimelineNoteCreate) =>
       savedNote(payload),
@@ -204,7 +219,7 @@ describe("RecordingStatusDisplay live notes", () => {
     );
     // A clock that has read nothing yet: the page had no answer from the server.
     render(
-      <RecordingStatusDisplay
+      <LiveBody
         recording={buildRecording()}
         onSaveMeetingEdgeFocus={vi.fn()}
         audioClock={new AudioClock(() => monotonicMs)}
@@ -245,9 +260,7 @@ describe("RecordingStatusDisplay live notes", () => {
     await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(2));
     expect(createTimelineNote.mock.calls[1][1]).toEqual(createTimelineNote.mock.calls[0][1]);
     await waitFor(() =>
-      expect(
-        screen.getByText("Ask about headcount").closest("[data-testid='timeline-note']"),
-      ).toHaveAttribute("data-note-status", "saved"),
+      expect(line).toHaveAttribute("data-note-status", "saved"),
     );
   });
 
@@ -274,7 +287,7 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(document.activeElement).toBe(box());
   });
 
-  it("keeps a half-typed note when capture stops, and adds it at its anchor from the progress card", async () => {
+  it("keeps a half-typed note in the composer when capture stops, and adds it at its anchor", async () => {
     createTimelineNote.mockImplementation(async (_id: string, payload: TimelineNoteCreate) =>
       savedNote(payload),
     );
@@ -283,13 +296,12 @@ describe("RecordingStatusDisplay live notes", () => {
     monotonicMs = 2_000;
     fireEvent.change(box(), { target: { value: "Half a thought about the budget" } });
 
-    // Stop, pressed here or on another device: the next poll ends the live view.
+    // Stop keeps the same composer rather than duplicating its draft in recovery.
     await show(stopped());
 
-    const draft = screen.getByTestId("unsaved-draft");
-    expect(draft).toHaveTextContent("Half a thought about the budget");
-    expect(draft).toHaveTextContent("Not sent: at 01:03");
-    fireEvent.click(within(draft).getByRole("button", { name: /^Add note/ }));
+    expect(box()).toHaveValue("Half a thought about the budget");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:03");
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
 
     await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(1));
     expect(createTimelineNote.mock.calls[0][1]).toMatchObject({
@@ -309,15 +321,14 @@ describe("RecordingStatusDisplay live notes", () => {
 
     await show(stopped());
 
-    expect(screen.getByText("Notes not saved yet")).toBeInTheDocument();
-    const unsaved = screen.getByTestId("unsaved-note");
+    const unsaved = screen.getByTestId("timeline-note");
     expect(unsaved).toHaveTextContent("Send the deck");
     expect(
       within(unsaved).getByRole("button", { name: "Retry note at 01:01, “Send the deck”" }),
     ).toBeInTheDocument();
   });
 
-  it("moves focus to the next unsaved note on Discard, and to the progress card after the last", async () => {
+  it("retains failed notes on their lines after Stop and returns focus to the composer on Discard", async () => {
     createTimelineNote.mockRejectedValue(NO_ANSWER);
     const { show } = renderLive();
     await screen.findByText("We need the budget.");
@@ -328,30 +339,33 @@ describe("RecordingStatusDisplay live notes", () => {
     );
     await show(stopped());
 
-    const [, second] = screen.getAllByTestId("unsaved-note");
+    const [, second] = screen.getAllByTestId("timeline-note");
     fireEvent.click(screen.getByRole("button", { name: "Discard note at 01:01, “First note”" }));
-    expect(document.activeElement).toBe(second);
+    expect(second).toBeInTheDocument();
+    expect(document.activeElement).toBe(box());
 
     fireEvent.click(screen.getByRole("button", { name: "Discard note at 01:01, “Second note”" }));
-    expect(screen.queryByTestId("unsaved-note")).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Progress" }));
+    expect(screen.queryByTestId("timeline-note")).toBeNull();
+    expect(document.activeElement).toBe(box());
   });
 
-  it("lists a meeting-wide note on its way with the Notes box, not in the live card", async () => {
+  it("keeps a failed whole-meeting note in recovery above the transcript", async () => {
     createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
     renderLive();
     await screen.findByText("We need the budget.");
     fireEvent.change(screen.getByLabelText("Place note"), { target: { value: "tail" } });
     addNote("Follow up with legal");
 
-    const pending = await screen.findByTestId("notes-box-pending");
-    expect(pending).toHaveTextContent("tail: Follow up with legal");
+    const pending = await screen.findByTestId("unsaved-notes");
+    expect(pending).toHaveTextContent("Follow up with legal");
+    expect(pending).toHaveTextContent("After the transcript");
+    expect(within(pending).getByRole("button", { name: /^Retry/ })).toBeInTheDocument();
     expect(
       within(screen.getByTestId("live-note-composer")).queryByText("Follow up with legal"),
     ).toBeNull();
   });
 
-  it("puts a note on a line from its menu, and keeps a failed one with the lines, not the Notes box", async () => {
+  it("puts a note on a line from its menu and keeps a failed one beside that line", async () => {
     createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
     const { show } = renderLive();
     await screen.findByText("Legal signs off Friday.");
@@ -376,7 +390,7 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(screen.queryByTestId("notes-box-pending")).toBeNull();
 
     await show(stopped());
-    expect(screen.getByTestId("unsaved-note")).toHaveTextContent("Who signs?");
+    expect(screen.getByTestId("timeline-note")).toHaveTextContent("Who signs?");
     expect(screen.queryByTestId("notes-box-pending")).toBeNull();
   });
 
@@ -417,10 +431,10 @@ describe("RecordingStatusDisplay live notes", () => {
     expect(payload.quoted_text ?? null).toBeNull();
   });
 
-  it("holds the Notes box back until the recording's notes have loaded", async () => {
+  it("shows the note list loading until saved notes arrive while keeping the one composer", async () => {
     renderLive(buildRecording(), null);
     await screen.findByText("We need the budget.");
-    expect(screen.queryByTestId("notes-box")).toBeNull();
+    expect(screen.getByText("Loading notes…")).toBeInTheDocument();
     expect(box()).toBeInTheDocument();
   });
 });

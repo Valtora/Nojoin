@@ -76,15 +76,19 @@ def test_native_line_sums_raw_probabilities_with_partial_and_fractional_frames(
     probabilities[:40, 1] = 0.9
     probabilities[99, 2] = 0.99
     engine.accept_blocks([ProbabilityBlock(0, probabilities, 32000)])
-    assert engine.label_line(0, 2).speaker == "LIVE_PROVISIONAL_1"
+    # Partial evidence cannot attribute the unprocessed end of a live range.
+    assert engine.label_line(0, 2).speaker == "UNKNOWN"
+    assert engine.label_line(0, 2).diarisation_pending
     assert not engine.label_line(0, 2).locked
     assert engine.label_line(0, 1).locked
+    assert engine.label_line(0, 1).speaker == "LIVE_PROVISIONAL_1"
     assert engine.label_line(0.991, 0.999).speaker == "LIVE_PROVISIONAL_3"
     assert engine.label_line(2, 3).speaker == "UNKNOWN"
-    # A nonempty all-zero vector still has an argmax: channel 0 wins the tie.
-    # UNKNOWN is reserved for an interval with no emitted frames.
+    # Covered silence has no speaker evidence; match accepted-checkpoint reads
+    # instead of assigning channel 0 merely because an all-zero argmax is zero.
     engine.posteriors[:] = 0
-    assert engine.label_line(0, 1).speaker == "LIVE_PROVISIONAL_1"
+    assert engine.label_line(0, 1).speaker == "UNKNOWN"
+    assert not engine.label_line(0, 1).diarisation_pending
     # No side effects or identity allocation through callback order.
     before = copy.deepcopy(engine.translation), engine.next_display_id, engine.route
     for interval in [(4, 5), (0, 1), (0, 2)]:
@@ -268,7 +272,10 @@ def test_unfinished_prefix_line_keeps_native_after_handback_but_straddler_uses_s
     probabilities = np.zeros((300, 8), np.float32)
     probabilities[:, 2] = 0.8
     engine.accept_blocks([ProbabilityBlock(0, probabilities, 64000)])
-    assert engine.label_line(2, 4).speaker == "LIVE_PROVISIONAL_3"
+    # Native coverage ends at 3s; the unfinished suffix stays pending until
+    # handback provides shadow coverage across the whole interval.
+    assert engine.label_line(2, 4).speaker == "UNKNOWN"
+    assert engine.label_line(2, 4).diarisation_pending
     assert not engine.label_line(2, 4).locked
     engine.fallback("audio_gap", 128000)
     engine.translation[0] = 8

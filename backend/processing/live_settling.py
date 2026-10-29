@@ -287,7 +287,9 @@ def _publish_step(
             resolve_capture_settling_policy(transcript, device="cuda")
             decide = evidence.decide if evidence is not None else None
             if decide is None and live_speaker_labels_device() is not None:
-                decide = lambda _start, _end: LiveLabelDecision("UNKNOWN", False, None)
+                decide = lambda _start, _end: LiveLabelDecision(
+                    "UNKNOWN", False, None, True
+                )
             publication = publish_live_settling(
                 session,
                 request=request,

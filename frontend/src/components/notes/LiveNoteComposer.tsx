@@ -50,7 +50,7 @@ export type { NoteInsertMode };
 export const MODE_LABELS: Record<NoteInsertMode, string> = {
   typing: "At typing start",
   send: "At send",
-  head: "Before the transcript (the Notes box's text if it has none)",
+  head: "Before the transcript",
   tail: "After the transcript",
 };
 
@@ -66,6 +66,10 @@ const ON_SELECTION = "selection";
 const ON_SELECTION_LABEL = "On the chosen text";
 
 interface LiveNoteComposerProps {
+  /** Active and paused captures retain the timeline placement choices. */
+  captureActive?: boolean;
+  /** The recording has finished processing, so a new note waits for the next notes run. */
+  finished?: boolean;
   /** Where capture is on the audio timeline now, in ms. */
   readAudioNow: () => number;
   /** Queues a note; returns why it was refused, or null once it is on its way. */
@@ -100,22 +104,22 @@ interface Message {
 
 const isBlank = (text: string) => stripNote(text) === "";
 
-const modeHint = (draft: ComposerDraft) => {
+const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
   if (draft.selection) {
     return `On the text at ${formatTimelineMs(draft.selection.startMs)}, which the note quotes.`;
   }
   switch (draft.mode) {
     case "typing":
       if (draft.typingStartMs === null) return "Placed where you start typing. Shift+Enter starts a new line.";
-      return isBlank(draft.text) || draft.typingStartFromLine
+      return (isBlank(draft.text) && !hasFile) || draft.typingStartFromLine
         ? `Placed at ${formatTimelineMs(draft.typingStartMs)}.`
         : `Placed at ${formatTimelineMs(draft.typingStartMs)}, where you started typing.`;
     case "send":
       return "Placed where the recording is when you press Enter.";
     case "head":
-      return "For the whole meeting. Becomes the Notes box's text if it has none; otherwise listed under Other notes.";
+      return "For the whole meeting, before the transcript. Also listed in My notes.";
     case "tail":
-      return "For the whole meeting, after the transcript, listed under Other notes.";
+      return "For the whole meeting, after the transcript. Also listed in My notes.";
   }
 };
 
@@ -131,7 +135,7 @@ const modeHint = (draft: ComposerDraft) => {
  * to write as it likes and still lands beside what prompted it. Emptying the
  * box drops that anchor; the next character takes a new one. "At send"
  * anchors it on Enter. "Before" and "After the transcript" make a note on
- * the whole meeting, kept with the Notes box rather than among the lines.
+ * the whole meeting, shown before or after its lines and in My notes.
  * "Note on this line", from a line's ⋯ menu, puts the next note on that
  * line's text: the quote shows above the box and the mode reads "On the
  * chosen text" until the note is sent or the quote removed, when the mode
@@ -148,6 +152,7 @@ const modeHint = (draft: ComposerDraft) => {
  * live region, so a refusal, a note added and the outbox's news are read out.
  */
 export default function LiveNoteComposer({
+  captureActive = true,
   readAudioNow,
   onSubmit,
   draft: controlledDraft,
@@ -156,13 +161,21 @@ export default function LiveNoteComposer({
   boxRef,
   onCapture,
   capturing = false,
+  finished = false,
   captureShortcut,
   draftFile = null,
   onDraftFileChange,
   captureMessage = null,
 }: LiveNoteComposerProps) {
   const [ownDraft, setOwnDraft] = useState<ComposerDraft>(EMPTY_DRAFT);
-  const draft = controlledDraft ?? ownDraft;
+  const sourceDraft = controlledDraft ?? ownDraft;
+  // A carried draft keeps its placement. Only a new, blank finished draft
+  // defaults to Before; an explicit After choice persists between notes.
+  const draft = !captureActive && isBlank(sourceDraft.text) && !draftFile &&
+    !sourceDraft.selection &&
+    (sourceDraft.mode === "typing" || sourceDraft.mode === "send")
+    ? { ...sourceDraft, mode: "head" as const }
+    : sourceDraft;
   const setDraft = onDraftChange ?? setOwnDraft;
   const [message, setMessage] = useState<Message | null>(null);
   const [dismissedNoticeSeq, setDismissedNoticeSeq] = useState(notice?.seq ?? 0);
@@ -248,11 +261,12 @@ export default function LiveNoteComposer({
       say(refusal, "error");
       return;
     }
+    // A blank finished draft reads as Before again (above).
     setDraft({ text: "", mode: draft.mode, typingStartMs: null });
     const place = notePlace(note);
     say(
       note.kind === "head" || note.kind === "tail"
-        ? `Note added ${place}, with the Notes box.`
+        ? `Note added ${place}, and in My notes.`
         : `Note added ${place}.`,
       "info",
     );
@@ -276,7 +290,9 @@ export default function LiveNoteComposer({
 
   const status = showNotice
     ? { text: notice.text, tone: notice.tone }
-    : (message ?? { text: modeHint(draft), tone: "info" as const });
+    : (message ?? { text: !captureActive && draft.mode === "send" && !selection
+      ? "At send places this note where capture stopped, at the end of the recording."
+      : modeHint(draft, draftFile !== null), tone: "info" as const });
 
   return (
     <form
@@ -360,7 +376,9 @@ export default function LiveNoteComposer({
             className="absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-lg border border-control-border bg-control-bg text-transparent outline-none focus:border-action focus:ring-2 focus:ring-action [&>option]:text-foreground"
           >
             {selection ? <option value={ON_SELECTION}>{ON_SELECTION_LABEL}</option> : null}
-            {(Object.keys(MODE_LABELS) as NoteInsertMode[]).map((value) => (
+            {(Object.keys(MODE_LABELS) as NoteInsertMode[])
+              .filter((value) => captureActive || value === "head" || value === "tail" || value === draft.mode)
+              .map((value) => (
               <option key={value} value={value}>
                 {MODE_LABELS[value]}
               </option>
@@ -424,6 +442,11 @@ export default function LiveNoteComposer({
         className={`mt-1 text-xs ${status.tone === "error" ? "text-status-danger-fg" : "text-contrast-helper"}`}
       >
         {status.text}
+      </p>
+      <p className="mt-1 text-xs text-contrast-helper">
+        {finished
+          ? "New notes are included, labelled as yours, the next time meeting notes are generated."
+          : "Your notes go into the meeting notes when they are generated, labelled as yours."}
       </p>
     </form>
   );

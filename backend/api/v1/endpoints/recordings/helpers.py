@@ -54,6 +54,10 @@ from backend.utils.recording_audio_sync import (
 from backend.utils.recording_storage import (
     RECORDING_UPLOAD_RETENTION_HOURS,
 )
+from backend.utils.reprocess_publication import (
+    mark_reprocess_pending,
+    reprocess_publication_pending,
+)
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
 from backend.utils.transcript_change import change_sequence_bump
@@ -187,6 +191,8 @@ async def _mark_recording_upload_error(
 
 
 def _should_hide_in_flight_transcript_content(recording: Recording) -> bool:
+    # A retained or newly published reprocess result is read from the
+    # utterances endpoint: carrying it here would resend it on every poll.
     return recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
 
 
@@ -686,6 +692,21 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         existing_transcript is not None
         and (existing_transcript.settling_state or {}).get("settled") is True
     )
+    if (
+        not preserve_live_work
+        and existing_transcript is not None
+        and (
+            existing_transcript.transcript_status == "completed"
+            or reprocess_publication_pending(existing_transcript)
+        )
+    ):
+        mark_reprocess_pending(existing_transcript)
+        if existing_transcript.transcription_failed():
+            existing_transcript.error_message = None
+        existing_transcript.transcript_status = "pending"
+        db.add(existing_transcript)
+        await db.flush()
+        return
     if preserve_live_work:
         from backend.utils.canonical_pipeline import (
             ensure_canonical_backfill,
@@ -752,6 +773,8 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
             existing_transcript.settling_state
         )
         retained = {"id", "recording_id", "created_at", "updated_at", "change_sequence"}
+        # The last Meeting Edge guidance and its focus stay readable on a retry.
+        retained.update({"meeting_edge_focus", "meeting_edge_payload"})
         if preserve_live_work:
             retained.update({"text", "segments"})
         for field in Transcript.model_fields:
@@ -795,6 +818,9 @@ async def _requeue_for_processing(
     from backend.models.task import register_task_ownership
 
     await register_task_ownership(db, task.id, recording.user_id)
+    # The queue response can expose retained-publication availability without
+    # making the synchronous serializer perform an async relationship load.
+    await db.refresh(recording, attribute_names=["transcript"])
 
 
 def get_ordinal_suffix(day: int) -> str:

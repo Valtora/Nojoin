@@ -1,7 +1,6 @@
-import { fireEvent, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 
-import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import { renderWithProviders, screen } from "@/test/renderWithProviders";
 import {
   RecordingStatus,
@@ -11,12 +10,6 @@ import {
 
 vi.mock("@/components/TranscriptView", () => ({
   default: () => <div data-testid="transcript-view" />,
-}));
-
-const createTimelineNote = vi.fn();
-vi.mock("@/lib/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/api")>()),
-  createTimelineNote: (...args: unknown[]) => createTimelineNote(...args),
 }));
 
 import TranscriptSection from "@/test/TranscriptSectionWithEdits";
@@ -47,12 +40,16 @@ const failedRecording = (transcript: Partial<Recording["transcript"]> = {}) =>
 const renderSection = (
   recording: Recording,
   transcriptSegments: TranscriptSegment[] = [],
+  transcriptIsAuthoritative = false,
+  inFlightContent?: ReactNode,
 ) =>
   renderWithProviders(
     <TranscriptSection
       active
       recording={recording}
       transcriptSegments={transcriptSegments}
+      transcriptIsAuthoritative={transcriptIsAuthoritative}
+      inFlightContent={inFlightContent}
       currentTime={0}
       isPlaying={false}
       speakerMap={{}}
@@ -109,6 +106,13 @@ describe("TranscriptSection transcription failure", () => {
     expect(screen.getByText("hello from the live lane")).toBeInTheDocument();
   });
 
+  it("reports failure while the last feed is retained after a failed settled read", () => {
+    renderSection(failedRecording(), [], false, <p>Retained live words</p>);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(OOM_MESSAGE);
+    expect(screen.getByText("Retained live words")).toBeInTheDocument();
+  });
+
   it("drops the notice once the recording is being processed again", () => {
     renderSection(
       recordingWith(
@@ -120,8 +124,13 @@ describe("TranscriptSection transcription failure", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
-
 describe("TranscriptSection empty states", () => {
+  it("does not revive stale metadata text after an authoritative empty handoff", () => {
+    renderSection(recordingWith({ transcript_status: "completed", text: "Stale live words" }), [], true);
+
+    expect(screen.queryByText("Stale live words")).not.toBeInTheDocument();
+    expect(screen.getByText(NO_SPEECH)).toBeInTheDocument();
+  });
   it("says no speech was detected for a completed, empty transcript", () => {
     renderSection(recordingWith({ transcript_status: "completed", text: "" }));
 
@@ -136,47 +145,5 @@ describe("TranscriptSection empty states", () => {
     expect(screen.getByText(NOT_YET)).toBeInTheDocument();
     expect(screen.queryByText(NO_SPEECH)).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-});
-
-describe("TranscriptSection notes not saved during capture", () => {
-  beforeEach(() => {
-    forgetNoteOutboxes();
-    createTimelineNote.mockReset();
-  });
-
-  it("lists them above the processed transcript, and adds the box's text at its anchor", async () => {
-    createTimelineNote.mockRejectedValueOnce({ isAxiosError: true, message: "Network Error" });
-    const outbox = noteOutboxFor("rec-1");
-    outbox.submit({ kind: "point", body: "Send the deck", anchorMs: 61_000 });
-    outbox.setDraft({ text: "Half a thought", mode: "typing", typingStartMs: 63_000 });
-    await waitFor(() => expect(outbox.getSnapshot().entries[0]?.status).toBe("failed"));
-
-    renderSection(recordingWith({ segments: [] }), [
-      { start: 0, end: 2, text: "Hello.", speaker: "SPEAKER_00" } as TranscriptSegment,
-    ]);
-
-    expect(screen.getByText("Notes not saved yet")).toBeInTheDocument();
-    const failed = screen.getByTestId("unsaved-note");
-    expect(failed).toHaveTextContent("Send the deck");
-    expect(
-      within(failed).getByRole("button", { name: "Retry note at 01:01, “Send the deck”" }),
-    ).toBeInTheDocument();
-
-    createTimelineNote.mockImplementationOnce(async (_id: string, payload: { id: string }) => ({
-      ...payload,
-      recording_id: "rec-1",
-      revision: 1,
-      created_at: "2026-10-21T10:01:00",
-      updated_at: "2026-10-21T10:01:00",
-    }));
-    const draft = screen.getByTestId("unsaved-draft");
-    fireEvent.click(within(draft).getByRole("button", { name: /^Add note/ }));
-    await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(2));
-    expect(createTimelineNote.mock.calls[1][1]).toMatchObject({
-      kind: "point",
-      body: "Half a thought",
-      anchor_ms: 63_000,
-    });
   });
 });

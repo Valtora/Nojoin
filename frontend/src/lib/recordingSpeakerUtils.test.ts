@@ -34,6 +34,22 @@ function buildRecordingSpeaker(
 }
 
 describe("recordingSpeakerUtils", () => {
+  it("reserves no speaker colour for pending-only UNKNOWN while retaining covered UNKNOWN", () => {
+    const known = [{ speaker: "LIVE_PROVISIONAL_1" }, { speaker: "LIVE_PROVISIONAL_2" }];
+    const initial = buildMeetingSpeakerColors({ segments: known });
+    const pending = buildMeetingSpeakerColors({ segments: [
+      { speaker: "UNKNOWN", diarisation_pending: true }, ...known,
+    ] });
+    expect(pending).toEqual(initial);
+    expect(pending.UNKNOWN).toBeUndefined();
+    const covered = buildMeetingSpeakerColors({ segments: [
+      ...known, { speaker: "UNKNOWN", diarisation_pending: false },
+      { speaker: "UNKNOWN", diarisation_pending: true },
+    ], existingColors: pending });
+    expect(covered.UNKNOWN).toBeDefined();
+    expect(covered.LIVE_PROVISIONAL_1).toBe(initial.LIVE_PROVISIONAL_1);
+  });
+
   it("keeps recording-page colors meeting-local even when a linked global speaker has a color", () => {
     const colors = buildMeetingSpeakerColors({
       segments: [{ speaker: "Dana" }],

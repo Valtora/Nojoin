@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import LiveTranscriptPanel from "@/components/LiveTranscriptPanel";
+import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import type { ComposerDraft, InlineNote, NoteSelection, OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { TranscriptSegment } from "@/types";
 

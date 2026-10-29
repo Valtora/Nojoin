@@ -22,6 +22,10 @@ from backend.utils.document_storage import (
 )
 from backend.utils.languages import validate_transcription_language
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
+from backend.utils.reprocess_publication import (
+    REPROCESS_RUNNING_MESSAGE,
+    reprocess_replacement_running,
+)
 
 from .helpers import (
     _get_owned_calendar_event,
@@ -344,6 +348,12 @@ async def infer_speakers_for_recording(
     Re-run speaker inference on an already processed meeting.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript = await db.run_sync(
+        lambda session: _load_transcript(session, recording.id)
+    )
+    # The pass replacing a retained transcript resolves its speakers itself.
+    if reprocess_replacement_running(transcript):
+        raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
 
     recording.status = RecordingStatus.PROCESSING
     recording.processing_step = "Inferring speakers..."

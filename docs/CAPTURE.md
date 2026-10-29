@@ -24,7 +24,7 @@ Nojoin records two channels: the shared tab, window or screen audio, and your mi
 
 If you do not share tab audio, the shared channel is silent and everyone in the room is recorded through the microphone. On a phone, remote participants are recorded only if the phone's microphone can hear them.
 
-While you record, the recording page shows a live waveform and a **Live Transcript** panel a few seconds behind the conversation ([USAGE.md](USAGE.md#live-transcription)).
+While you record, the recording view shows a live waveform in the header and the **Transcript** tab a few seconds behind the conversation ([USAGE.md](USAGE.md#live-transcription)). The same view continues through pause, upload, queueing and processing. **Analytics** shows provisional talk time, speaker share, longest turns and transcript-derived pace estimates; silence, overlapping speech, audio delivery, pitch and AI analysis wait until after processing. **Chat** answers from the transcript so far with current speaker names and your timeline notes, warning that wording and speakers may still change. When the transcript is too long for the model, Chat uses its most recent part and says that it was trimmed. Previous answers stay as written.
 
 Nojoin keeps none of the shared video. While you record, it reads one still from it only when you ask for a [capture](USAGE.md#captures), with the camera button beside the note box or Alt+Shift+C (Option+Shift+C on a Mac), and saves it on a note.
 
@@ -57,6 +57,10 @@ Brave may need its shields or site settings relaxed before it shows capture prom
 - **Discard** permanently deletes an unfinished recording, whether it is recording, paused, queued or processing: its audio, any attached documents, any processing under way and the meeting itself. Nojoin asks you to confirm first. Discard is in the live controls, the floating recording badge, the resume-or-discard dialog and the recordings list's context menu (**Discard Recording**).
 
 Selecting the browser's own **Stop sharing** button, or closing its sharing indicator, stops and saves the recording with everything captured so far, and Nojoin tells you it did.
+
+The recording keeps the same header and tabs through every stage. Its header shows the waveform and transport only in the tab capturing that recording, and in a tab reloaded during that capture while it offers the recording for recovery ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). There **Stop**, **Discard** and **Resume** work as they do in the dialog, and **Resume** asks you to share again. Opening another recording cannot control the capture from that recording's header; the global recording badge remains available. Any other tab, and a second device, sees the server's state, **Live** or **Paused** with the length of audio the server has received, and the transcript, notes and documents, with recovery actions in the global dialog.
+
+After **Stop**, the header's player area shows the upload stage and backlog, then queue or pipeline progress, estimated time remaining and discard. The transcript continues updating below it through uploading, queued and processing, with its note composer underneath. **Speakers**, **My notes**, **Captures** and **Meeting Edge** stay in the side column on desktop and the main tab row on a phone; attached documents stay in **Documents**. A failed final read keeps the feed visible while Nojoin retries; an empty successful read replaces it too. Playback and export remain unavailable while the recording is in flight.
 
 Switching tabs or windows, using another application or moving between Nojoin pages does not pause recording. On every page except the recording itself, a floating badge at the top of the screen shows the status and elapsed time, with pause, resume, stop and discard controls, and opens the recording when clicked.
 
@@ -92,6 +96,10 @@ Notes typed under the live transcript ([Live Notes](USAGE.md#live-notes)) are pl
 
 To take notes on a second device, such as a phone while a laptop records, sign in there and open the recording from the recordings list. That device shows the live transcript and the note box too, places notes on the same clock, and each device shows the other's notes within a couple of seconds. Taking notes never affects what is captured.
 
+The composer remains beneath **Transcript** after Stop. A carried draft keeps its text, attached file and displayed placement through uploading and processing; **At send** places it where capture stopped, at the end of the recording. Changing **Place note** deliberately retargets it. A new blank draft after capture defaults to **Before the transcript**, with **After the transcript** also available. Notes that have not saved and files that have not uploaded retain **Retry** and **Discard**, without duplicating the composer's draft.
+
+Use the camera button beside the composer or the screen-capture shortcut to take a still. One key press takes one still, including after changing tabs. Files still accept paste/drop into the composer, and saved files remain in **Captures**.
+
 ## Live Word Settling
 
 [Live word settling](USAGE.md#live-transcription) defaults to **Auto (GPU)**, with **3 unchanged comparisons** and a **10 s settling window**, and revises only recent transcript words and speaker boundaries. Administrators can turn it off; a stored Off stays off on upgrade. Under **Auto (GPU)** CPU processing keeps ordinary whole-line transcription; **GPU and CPU** settles there too, at a high CPU and RAM cost. Pause and Stop lock the last accepted words without another decode, and the partial segment uploaded at Pause is still transcribed while paused, then locked; Resume starts a fresh settling episode; a capture that started with settling Off stays whole-line until it ends. This changes neither recorded audio nor upload cadence. When uploads fall behind, settling skips intermediate decoding passes while retaining the uploaded audio for final processing.
@@ -104,7 +112,11 @@ How each step decides whether to transcribe again, from voice activity and speak
 
 ## Naming Speakers During Capture
 
-With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with the stretch of the meeting it was given for, the label's longest locked turn, or its longest turn when none is locked or the locked one is under a second, and processing gives it to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
+With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with that label's speech, and processing gives it to the speaker who holds most of it, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
+
+Live speech uses the same speaker-coloured cards as the finished transcript, with **Microphone** and **Shared audio** labels where the capture channel changes. Every line names its speaker, as finished lines do. A refused name or correction keeps its draft to retry; Stop closes any that are open. Scrolling away stops live following; **Jump to latest** follows new lines and in-place growth again. Play buttons remain visible but disabled until playback is available, and export has its own disabled control.
+
+The **Speakers** tab also shows live labels, with **Change identity** and **Add to People**. An ordinary name can link an existing person; only **Add to People** explicitly creates one. Name the label first. This creates no live voiceprint, and final processing still checks the speaker identity and can ask for confirmation. If Stop has closed the recording, the action is refused without creating a person.
 
 ## Paused Recording Lock
 
@@ -175,9 +187,11 @@ After 20 seconds without sound, Nojoin shows an "Audio has been quiet for a bit"
 
 Meeting Edge needs AI configured and enough completed speech to work from, so a short test can show waveform activity and live transcript lines before any guidance appears.
 
-### The Live Transcript panel stays empty
+Open the **Meeting Edge** tab in the desktop side column or the phone's main tab row. It retains earlier guidance, questions, tracked-term history and focus after Stop, processing success or failure, and after an administrator switches the feature off. Focus and the recording-specific context slider become read-only after capture ends; any pending focus autosave is cancelled. Guidance can continue while uploading, queued or processing, and an update already running can finish while paused. Update status and errors show only during recording or a pause, and an update still running when you press Stop is dropped.
 
-Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. The panel is always empty for an imported file, which is transcribed after upload.
+### The Transcript tab stays empty
+
+Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. Imported files have no browser capture feed; wait for upload and transcription to finish.
 
 ### Linux screen audio does not work
 
@@ -240,7 +254,7 @@ The recording was stopped in another tab or on another device and sent for proce
 
 ### Stop did not finish
 
-The meeting button names the stage while stopping. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. Until the server has that pause, **Start Meeting** says the last recording was not stopped instead of starting a new one. You can then stop it again from the controls on the recording's page or from the resume-or-discard dialog. A failed discard works the same way: the recording stays paused, on the server too, and you can discard it again. Stopping does not need the original capture, so it works after a reload.
+The meeting button and the recording header name the stage while stopping. The header keeps the upload backlog visible even if the server still reports recording or paused; its transport is disabled while Stop finishes. The transcript remains visible. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. Until the server has that pause, **Start Meeting** says the last recording was not stopped instead of starting a new one. You can then stop it again from this tab's controls on the recording's page or from the global resume-or-discard dialog. A failed discard works the same way: the recording stays paused, on the server too, and you can discard it again. Stopping does not need the original capture, so it works after a reload.
 
 ### Browser recording unavailable
 

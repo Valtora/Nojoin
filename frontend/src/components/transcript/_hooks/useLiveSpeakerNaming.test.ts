@@ -41,4 +41,15 @@ describe("useLiveSpeakerNaming", () => {
     });
     expect(applyNames).not.toHaveBeenCalled();
   });
+
+  it("passes explicit create-person intent and refreshes after acceptance", async () => {
+    nameLiveSpeaker.mockResolvedValue({ LIVE_PROVISIONAL_1: "Alex" });
+    const refresh = vi.fn();
+    const apply = vi.fn();
+    const { result } = renderHook(() => useLiveSpeakerNaming("rec-1", apply, refresh));
+    await act(async () => result.current.renameLiveSpeaker("LIVE_PROVISIONAL_1", "Alex", true));
+    expect(nameLiveSpeaker).toHaveBeenCalledWith("rec-1", "LIVE_PROVISIONAL_1", "Alex", true);
+    expect(apply).toHaveBeenCalledWith({ LIVE_PROVISIONAL_1: "Alex" });
+    expect(refresh).toHaveBeenCalledOnce();
+  });
 });

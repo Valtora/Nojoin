@@ -33,6 +33,12 @@ interface LiveMeetingControlsProps {
    * clock reads it from the server. The clock of a tab that is not capturing.
    */
   audioNow?: () => number | null;
+  /**
+   * The recovery dialog's Resume, for the `bar` variant of a tab that holds
+   * this recording's recovery offer but no runtime, as after a reload. Without
+   * it, Resume needs this tab's live tracks.
+   */
+  onResumeOffer?: () => void;
 }
 
 // Below this the queue is ordinary upload latency, a segment or two.
@@ -63,6 +69,7 @@ export default function LiveMeetingControls({
   barTrailing,
   serverPaused,
   audioNow,
+  onResumeOffer,
 }: LiveMeetingControlsProps) {
   const {
     cancel,
@@ -90,6 +97,10 @@ export default function LiveMeetingControls({
   const canControl = Boolean(recordingId &&
     (ownedRecordingId === recordingId || pausedRecording?.id === recordingId));
   const stopDisabled = status === "finalizing" || !canControl;
+  // An offer is resumed as the dialog does it, sharing again, so it needs no tracks.
+  const resumesOffer = Boolean(onResumeOffer && !runtimeActive && recordingId &&
+    pausedRecording?.id === recordingId);
+  const barResumeDisabled = resumesOffer ? status === "finalizing" : transportDisabled;
   // Any tab can open the recording page; only one captures. The others show
   // the server's state, "Live" rather than "Recording" since nothing records
   // here, and the server's audio timeline, which every device reads alike and
@@ -415,8 +426,8 @@ export default function LiveMeetingControls({
                 data-ui-fill="card"
                 data-ui-border="full" chrome="action"
                 type="button"
-                onClick={() => sendCommand("resume")}
-                disabled={transportDisabled}
+                onClick={resumesOffer ? onResumeOffer : () => sendCommand("resume")}
+                disabled={barResumeDisabled}
                 className={`${barButtonClass} border border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text`}
                 title="Resume recording"
               >

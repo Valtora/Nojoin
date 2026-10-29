@@ -146,6 +146,12 @@ describe("notFoundMeans", () => {
 });
 
 describe("pollFailureMeansRemoved", () => {
+  it("accepts the publication marker transition even when processing metadata is unchanged", () => {
+    const before = recordingWith({ status: RecordingStatus.PROCESSING, previous_publication_available: true });
+    expect(hasPolledRecordingChanged(before, { ...before, previous_publication_available: false })).toBe(true);
+    expect(hasPolledRecordingChanged(before, { ...before })).toBe(false);
+  });
+
   it("reads a 404 as a removed recording while the session works", () => {
     expect(pollFailureMeansRemoved(404, true)).toBe(true);
   });

@@ -27,6 +27,7 @@ class Partition:
     closure_reason: str | None = None
     boundary_locked: bool = False
     closed_at_ms: int | None = None
+    diarisation_pending: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,10 @@ def _boundary_reason(
             and end - extents[0][0] > boundaries.max_segment_ms
         ):
             return "length"
-    if partition.speaker != decision.speaker:
+    if (
+        partition.speaker != decision.speaker
+        or partition.diarisation_pending != decision.diarisation_pending
+    ):
         return "speaker"
     return None
 
@@ -167,7 +171,14 @@ def partition_words(
                 previous.boundary_locked = reason == "closure" or bool(
                     word.get("locked") and (reason != "speaker" or decision.locked)
                 )
-            partitions.append(Partition([], decision.speaker, True))
+            partitions.append(
+                Partition(
+                    [],
+                    decision.speaker,
+                    True,
+                    diarisation_pending=decision.diarisation_pending,
+                )
+            )
         partition = partitions[-1]
         partition.words.append(word)
         partition.speaker_locked = partition.speaker_locked and decision.locked

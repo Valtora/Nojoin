@@ -405,6 +405,7 @@ async def get_recording(
             ),
             selectinload(Recording.tags).selectinload(RecordingTag.tag),
         )
+        .execution_options(populate_existing=True)
     )
     result = await db.execute(statement)
     recording = result.scalar_one_or_none()

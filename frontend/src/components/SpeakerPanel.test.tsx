@@ -140,6 +140,30 @@ function renderPanel(
 }
 
 describe("SpeakerPanel", () => {
+  it("blocks voice previews and next snippets while playback is unavailable", () => {
+    const onPause = vi.fn();
+    const { onPlaySegment } = renderPanel({ disablePlayback: true, currentTime: 1, isPlaying: true, onPause });
+    const preview = screen.getByTitle("Pause");
+    expect(preview).toBeDisabled();
+    // Disabled buttons look it, rather than keeping their enabled colours.
+    expect(preview.className).toContain("disabled:opacity-60");
+    fireEvent.click(preview);
+    expect(screen.queryByTitle("Next Snippet")).not.toBeInTheDocument();
+    expect(onPause).not.toHaveBeenCalled();
+    expect(onPlaySegment).not.toHaveBeenCalled();
+  });
+
+  it("shows Preview Voice and Change identity as disabled when they are", () => {
+    renderPanel({ disablePlayback: true, disableEditing: true });
+    const [preview] = screen.getAllByTitle("Preview Voice");
+    const change = screen.getByRole("button", { name: "Change identity for Alice" });
+    for (const button of [preview, change]) {
+      expect(button).toBeDisabled();
+      expect(button.className).toContain("disabled:opacity-60");
+      expect(button.className).toContain("disabled:cursor-not-allowed");
+    }
+  });
+
   beforeEach(() => {
     addNotification.mockReset();
     updateSpeaker.mockReset().mockResolvedValue([]);
@@ -407,18 +431,19 @@ describe("suggested names", () => {
     name_source: "llm",
   });
 
-  it("marks only a pending name with a question mark and says why it was suggested", () => {
-    renderPanel({ speakers: [pendingAlice, bob] });
+  it.each(["voiceprint", "llm", "heuristic"] as const)(
+    "shows a pending %s name plainly while retaining its review controls", (nameSource) => {
+    renderPanel({ speakers: [{ ...pendingAlice, name_source: nameSource }, bob] });
 
-    // The "?" sits outside the name, which may be truncated.
-    expect(screen.getByText("Alice").parentElement).toHaveTextContent(/^Alice\?$/);
+    expect(screen.getByText("Alice").parentElement).toHaveTextContent(/^Alice$/);
     expect(screen.getByText("Alice")).toHaveClass("truncate");
-    expect(screen.getByText("?")).not.toHaveClass("truncate");
-    expect(screen.getByText("Recognised by voice")).toBeInTheDocument();
+    expect(screen.queryByText("?")).not.toBeInTheDocument();
+    const reason = nameSource === "voiceprint" ? "Recognised by voice"
+      : nameSource === "llm" ? "Suggested by AI" : "Introduced themselves";
+    expect(screen.getByText(reason)).toBeInTheDocument();
     expect(screen.getByText("Bob").parentElement).toHaveTextContent(/^Bob$/);
-    expect(screen.getAllByText("?")).toHaveLength(1);
-    expect(screen.queryByText("Suggested by AI")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm Alice" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Not Alice" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm Bob" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Not Bob" })).not.toBeInTheDocument();
   });

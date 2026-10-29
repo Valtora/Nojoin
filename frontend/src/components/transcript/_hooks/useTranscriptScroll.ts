@@ -6,6 +6,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
 } from "react";
 
 import { TranscriptSegment } from "@/types";
@@ -20,6 +21,10 @@ export interface UseTranscriptScrollOptions {
   segments: TranscriptSegment[];
   /** Key of the shown line playback-follow keeps in view, if any. */
   activeSegmentKey: string | null;
+  /** Follows the in-flight transcript's tail until the reader scrolls away. */
+  liveFollow?: boolean;
+  /** Other content, such as inline notes, which can change the tail's height. */
+  growth?: unknown;
 }
 
 export interface TranscriptScroll {
@@ -29,6 +34,8 @@ export interface TranscriptScroll {
     behavior?: ScrollBehavior,
   ) => void;
   updateScrollAnchor: () => void;
+  isFollowingLatest: boolean;
+  jumpToLatest: () => void;
 }
 
 /**
@@ -39,9 +46,12 @@ export interface TranscriptScroll {
 export function useTranscriptScroll(
   options: UseTranscriptScrollOptions,
 ): TranscriptScroll {
-  const { segments, activeSegmentKey } = options;
+  const { segments, activeSegmentKey, liveFollow = false, growth } = options;
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
+  const [isFollowingLatest, setIsFollowingLatest] = useState(true);
+  const previousFollowMode = useRef(liveFollow);
   const scrollAnchorRef = useRef<{
     segmentId: string;
     offset: number;
@@ -80,6 +90,12 @@ export function useTranscriptScroll(
       return;
     }
 
+    if (liveFollow) {
+      const following = container.scrollHeight - container.scrollTop - container.clientHeight <= 32;
+      followingRef.current = following;
+      setIsFollowingLatest(following);
+    }
+
     const segmentElements = Array.from(
       container.querySelectorAll<HTMLElement>(LINE_ROWS),
     );
@@ -103,19 +119,34 @@ export function useTranscriptScroll(
       offset: firstVisible.offsetTop - container.scrollTop,
       orderIndex: Number(firstVisible.dataset.orderIndex ?? 0),
     };
+  }, [liveFollow]);
+
+  const jumpToLatest = useCallback(() => {
+    const container = scrollContainerRef.current;
+    followingRef.current = true;
+    setIsFollowingLatest(true);
+    if (container) container.scrollTop = container.scrollHeight;
   }, []);
 
   // Follows the line by its key. Overlapping lines can be active together, and
   // a line that stops being active doesn't move this to one that still is.
   useEffect(() => {
-    if (activeSegmentKey) {
+    const leavingLive = previousFollowMode.current && !liveFollow;
+    previousFollowMode.current = liveFollow;
+    // Handoff alone does not start playback: its idle clock may still be at
+    // the first line while the reader is looking at the transcript's tail.
+    if (activeSegmentKey && !liveFollow && !leavingLive) {
       scrollSegmentIntoView(activeSegmentKey, "smooth");
     }
-  }, [activeSegmentKey, scrollSegmentIntoView]);
+  }, [activeSegmentKey, liveFollow, scrollSegmentIntoView]);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     const anchor = scrollAnchorRef.current;
+    if (container && liveFollow && followingRef.current) {
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
     if (!container || !anchor) {
       return;
     }
@@ -144,15 +175,17 @@ export function useTranscriptScroll(
     if (Math.abs(container.scrollTop - nextScrollTop) > 1) {
       container.scrollTop = nextScrollTop;
     }
-  }, [segments]);
+  }, [segments, liveFollow, growth]);
 
   useEffect(() => {
     updateScrollAnchor();
-  }, [segments, updateScrollAnchor]);
+  }, [segments, growth, updateScrollAnchor]);
 
   return {
     scrollContainerRef,
     scrollSegmentIntoView,
     updateScrollAnchor,
+    isFollowingLatest,
+    jumpToLatest,
   };
 }
