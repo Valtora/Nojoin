@@ -1,37 +1,20 @@
 "use client";
 
-import type { CaptureUnsupportedReason } from "@/lib/capture/shared";
-
-const REASON_COPY: Record<CaptureUnsupportedReason | "default", string> = {
-  firefox:
-    "Recording capture is not available in Firefox. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.",
-  safari:
-    "Recording capture is not available in Safari. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.",
-  mobile:
-    "Recording capture is not available on mobile browsers.",
-  unknown:
-    "This browser does not expose the capture APIs Nojoin needs for browser recording.",
-  default:
-    "This browser does not support Nojoin browser recording.",
-};
-
 interface CaptureUnsupportedNoticeProps {
-  reason?: CaptureUnsupportedReason;
   compact?: boolean;
 }
 
 export default function CaptureUnsupportedNotice({
-  reason,
   compact = false,
 }: CaptureUnsupportedNoticeProps) {
-  const message = REASON_COPY[reason || "default"];
-
   return (
     <div
       className={`rounded-2xl border border-status-warning-border bg-status-warning-bg text-status-warning-fg ${compact ? "px-3 py-2 text-xs" : "px-4 py-3 text-sm"}`}
     >
       <p className="font-medium">Browser recording unavailable</p>
-      <p className="mt-1 leading-5 opacity-90">{message}</p>
+      <p className="mt-1 leading-5 opacity-90">
+        This browser does not expose the capture APIs Nojoin needs for browser recording.
+      </p>
     </div>
   );
 }

@@ -97,7 +97,7 @@ export function useCaptureActions(
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [canCaptureScreen, captureScreen]);
 
-  // Only a desktop browser can share a picture, so a phone gets no hint.
+  // Only a browser that can share a tab or screen gets the hint.
   const screenCaptureHint = runtimeActive && activeRecordingId === recordingId && !canCaptureScreen
     && support.supported && support.mode === "shared_audio"
     ? "Screen captures need a shared tab, window or screen."

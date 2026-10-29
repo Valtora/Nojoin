@@ -33,17 +33,6 @@ interface CompleteStepProps {
   onComplete: () => void;
 }
 
-const CAPTURE_BLOCKER: Record<string, string> = {
-  firefox:
-    "Firefox cannot share tab or system audio. Open Nojoin in Chrome or another Chromium browser to record.",
-  safari:
-    "Safari cannot share tab or system audio. Open Nojoin in Chrome to record.",
-  mobile:
-    "This mobile browser cannot record. Chrome on Android or iOS records microphone audio only; a desktop Chromium browser records shared audio.",
-  unknown:
-    "This browser did not expose the screen-capture APIs Nojoin records through. Open Nojoin in Chrome on Windows, Linux, or macOS.",
-};
-
 export default function CompleteStep({
   modelPreparationComplete,
   modelPreparationMessage,
@@ -174,7 +163,9 @@ export default function CompleteStep({
               This browser cannot record
             </p>
             <p className="text-xs text-status-warning-fg mt-1 leading-relaxed">
-              {CAPTURE_BLOCKER[capture.reason || "unknown"]}
+              This browser did not expose the microphone APIs Nojoin records
+              through. Open Nojoin in a current version of Chrome, Edge,
+              Firefox or Safari.
             </p>
           </div>
         </div>

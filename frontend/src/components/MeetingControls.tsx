@@ -105,7 +105,7 @@ export default function MeetingControls({
             buttonMode: "wait",
             buttonDisabled: true,
             buttonTooltip:
-              "Use Chrome on desktop for browser capture, or Chrome on Android/iOS for microphone-only capture.",
+              "Open Nojoin in a current version of Chrome, Edge, Firefox or Safari to record.",
           }
         : hasPausedBlock
           ? pausedRecording?.status === RecordingStatus.UPLOADING
@@ -157,7 +157,7 @@ export default function MeetingControls({
               buttonMode: "start",
               buttonDisabled: false,
               buttonTooltip: microphoneOnly
-                ? "Start a phone microphone recording."
+                ? "Start a microphone-only recording."
                 : settings.startMode === "microphone_only"
                   ? "Start a microphone-only recording without sharing a tab or screen."
                   : "Start a new meeting recording.",
@@ -228,14 +228,14 @@ export default function MeetingControls({
           </div>
 
           {unsupported ? (
-            <CaptureUnsupportedNotice reason={support.reason} />
+            <CaptureUnsupportedNotice />
           ) : null}
 
           {microphoneOnly ? (
             <div className="rounded-2xl border border-status-info-border bg-status-info-bg px-4 py-3 text-sm text-status-info-fg">
-              <p className="font-medium">Phone microphone recording</p>
+              <p className="font-medium">Microphone-only recording</p>
               <p className="mt-1 leading-5 opacity-90">
-                Mobile Chrome records the phone microphone only. Keep this tab open and the phone awake.
+                This browser records your microphone only, not audio from other tabs or apps. Keep this tab open and the device awake.
               </p>
             </div>
           ) : null}
@@ -282,13 +282,13 @@ export default function MeetingControls({
       <div className="w-full">
         {unsupported ? (
           <div className="mb-2">
-            <CaptureUnsupportedNotice reason={support.reason} compact />
+            <CaptureUnsupportedNotice compact />
           </div>
         ) : null}
 
         {microphoneOnly ? (
           <div className="mb-2 rounded-lg border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-fg">
-            Phone microphone only. Keep this tab open.
+            Microphone only, not other tabs or apps. Keep this tab open.
           </div>
         ) : null}
 

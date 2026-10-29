@@ -33,20 +33,8 @@ const CHROMIUM_BRANDS = [
 const isMobileUserAgent = (userAgent: string) =>
   /android|iphone|ipad|ipod|mobile/i.test(userAgent);
 
-const isFirefoxUserAgent = (userAgent: string) => /firefox/i.test(userAgent);
-
-const isSafariUserAgent = (userAgent: string) => {
-  return /safari/i.test(userAgent) && !/chrome|chromium|crios|edg|opr/i.test(userAgent);
-};
-
 const isChromiumUserAgent = (userAgent: string) =>
   /chrome|chromium|crios|edg|brave|arc/i.test(userAgent);
-
-const isChromeMobileUserAgent = (userAgent: string) =>
-  (/android/i.test(userAgent) &&
-    /chrome/i.test(userAgent) &&
-    !/edg|opr|firefox/i.test(userAgent)) ||
-  /crios/i.test(userAgent);
 
 const isDesktopCapturePlatform = (platform: string) =>
   /win|windows|linux|mac/i.test(platform);
@@ -59,14 +47,6 @@ const hasChromiumBrand = (brands: UserAgentBrand[] | undefined) => {
   return brands.some((entry) =>
     CHROMIUM_BRANDS.includes(entry.brand.toLowerCase()),
   );
-};
-
-const hasChromeBrand = (brands: UserAgentBrand[] | undefined) => {
-  if (!brands || brands.length === 0) {
-    return false;
-  }
-
-  return brands.some((entry) => entry.brand.toLowerCase() === "google chrome");
 };
 
 const readNavigatorEnvironment = (): FeatureDetectEnvironment => {
@@ -94,44 +74,27 @@ export const detectCaptureSupport = (
   const userAgentData = environment.userAgentData;
   const platform = (userAgentData?.platform || userAgent).toLowerCase();
   const mediaDevices = environment.mediaDevices;
+
+  // Every capture records the microphone through an AudioWorklet tap.
+  if (!mediaDevices?.getUserMedia || !environment.audioWorkletNodeCtor) {
+    return { supported: false };
+  }
+
+  // No browser API reports whether a share carries audio, so the browser is
+  // recognised instead: only desktop Chromium shares tab or system audio.
+  // Firefox and Safari share a picture without its sound, and phones cannot
+  // share at all, so every other browser records the microphone on its own.
   const mobile = Boolean(userAgentData?.mobile) || isMobileUserAgent(userAgent);
-  const firefox = isFirefoxUserAgent(userAgent);
-  const safari = isSafariUserAgent(userAgent);
   const chromium =
     hasChromiumBrand(userAgentData?.brands) || isChromiumUserAgent(userAgent);
-  const supportedPlatform = isDesktopCapturePlatform(platform);
-  const hasDisplayMedia = Boolean(mediaDevices?.getDisplayMedia);
-  const hasUserMedia = Boolean(mediaDevices?.getUserMedia);
-  const hasAudioWorklet = Boolean(environment.audioWorkletNodeCtor);
-  const chromeMobile =
-    mobile &&
-    (hasChromeBrand(userAgentData?.brands) || isChromeMobileUserAgent(userAgent));
-
-  if (chromeMobile && hasUserMedia && hasAudioWorklet) {
-    return { supported: true, mode: "microphone_only" };
-  }
-
-  if (mobile) {
-    return { supported: false, reason: "mobile" };
-  }
-
-  if (firefox) {
-    return { supported: false, reason: "firefox" };
-  }
-
-  if (safari) {
-    return { supported: false, reason: "safari" };
-  }
-
   if (
     chromium &&
-    supportedPlatform &&
-    hasDisplayMedia &&
-    hasUserMedia &&
-    hasAudioWorklet
+    !mobile &&
+    isDesktopCapturePlatform(platform) &&
+    mediaDevices.getDisplayMedia
   ) {
     return { supported: true, mode: "shared_audio" };
   }
 
-  return { supported: false, reason: "unknown" };
+  return { supported: true, mode: "microphone_only" };
 };

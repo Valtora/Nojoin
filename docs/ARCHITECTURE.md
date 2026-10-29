@@ -157,7 +157,7 @@ The Next.js app in `frontend/` covers the dashboard, recordings and transcript r
 
 Capture lives in `frontend/src/lib/capture/`. Browser support and troubleshooting are in [CAPTURE.md](CAPTURE.md).
 
-- **Sources.** On desktop the browser asks for shared tab, window or screen audio and the microphone and mixes them with Web Audio. Mobile Chrome records the microphone alone, leaving the shared channel silent.
+- **Sources.** In desktop Chromium the browser asks for shared tab, window or screen audio and the microphone and mixes them with Web Audio. Every other browser with microphone access and AudioWorklet support (Firefox, Safari, mobile browsers) records the microphone alone, leaving the shared channel silent (`frontend/src/lib/capture/featureDetect.ts`).
 - **Segments.** An AudioWorklet tap (`frontend/public/audio-worklets/pcm-tap.js`) feeds the two-channel mix to `frontend/src/lib/capture/pcm/`, which resamples it to 16 kHz with a windowed-sinc filter, cuts exactly 32,000 frames (2 s) per segment by counting samples, and encodes each as FLAC. Nothing restarts between segments, so they join with no gap. Channel 0 is shared audio and channel 1 the microphone.
 - **Upload.** Segments upload one at a time, in order, with the session cookie. Each is written to IndexedDB when recorded and removed when the server acknowledges it, so a closed tab keeps what it had not sent, and the next resume or stop in that browser sends it first.
 - **Unload.** A real tab unload (`pagehide` or `beforeunload`) drops the unfinished segment and pauses the recording with a beacon. In-app navigation and switching tabs do not. A paused recording must be resumed, stopped or discarded before another capture starts; stopping needs no live browser runtime.

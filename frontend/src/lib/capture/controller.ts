@@ -374,20 +374,11 @@ const formatCaptureError = (error: unknown) => {
   return error ? String(error) : "The browser capture flow failed unexpectedly.";
 };
 
-const formatUnsupportedMessage = (reason: CaptureState["support"]["reason"]) => {
-  switch (reason) {
-    case "firefox":
-      return "Recording capture is not supported in Firefox. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.";
-    case "safari":
-      return "Recording capture is not supported in Safari. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.";
-    case "mobile":
-      return "Recording capture is not supported on mobile browsers.";
-    default:
-      return "This browser does not support the capture APIs required for recording.";
-  }
-};
+const UNSUPPORTED_MESSAGE =
+  "This browser does not support the capture APIs required for recording.";
 
-// A phone can only record its microphone; desktop uses the source chosen at Start.
+// A browser that cannot share audio records its microphone; desktop Chromium
+// uses the source chosen at Start.
 const resolveCaptureMode = (
   support: CaptureState["support"],
   settings: CaptureSettings,
@@ -651,9 +642,8 @@ export class CaptureController {
     const support = detectCaptureSupport();
     this.setState({ support });
     if (!support.supported) {
-      const message = formatUnsupportedMessage(support.reason);
-      this.setState({ error: message, status: "error" });
-      throw new Error(message);
+      this.setState({ error: UNSUPPORTED_MESSAGE, status: "error" });
+      throw new Error(UNSUPPORTED_MESSAGE);
     }
 
     const mode = resolveCaptureMode(support, this.state.settings);
@@ -892,9 +882,8 @@ export class CaptureController {
     const support = detectCaptureSupport();
     this.setState({ support });
     if (!support.supported) {
-      const message = formatUnsupportedMessage(support.reason);
-      this.setState({ error: message, status: "error" });
-      throw new Error(message);
+      this.setState({ error: UNSUPPORTED_MESSAGE, status: "error" });
+      throw new Error(UNSUPPORTED_MESSAGE);
     }
 
     this.setState({

@@ -9,12 +9,12 @@ Nojoin records live meetings in the browser. This guide covers which browsers ca
 | Chrome on Windows, Linux or macOS | Microphone only, or shared audio and microphone |
 | Edge, Brave, Arc or another Chromium-family browser on Windows or Linux | Microphone only, or shared audio and microphone |
 | Other Chromium-family browsers on macOS | Microphone only, or shared audio and microphone, best-effort |
-| Chrome on Android or iOS | Microphone only |
-| Firefox, Safari, other mobile browsers | Not supported |
+| Firefox on Windows, Linux or macOS, or Safari on macOS | Microphone only |
+| Chrome, Firefox, Safari or another browser on Android or iOS | Microphone only |
 
-Shared-audio capture records the tab, window or screen you share plus your microphone. On Linux it needs PipeWire screen capture. Mobile browsers cannot share another tab's or app's audio, so a phone records only what its microphone hears.
+Shared-audio capture records the tab, window or screen you share plus your microphone. On Linux it needs PipeWire screen capture. Firefox, Safari and mobile browsers cannot share another tab's or app's audio, so they record only what the microphone hears and never open the share picker. Recording needs microphone access and AudioWorklet support, which current versions of these browsers all have.
 
-On desktop, **Microphone only** records what your selected microphone hears without opening the share picker. Use it for an in-room meeting, a call on speaker or a voice memo. **Microphone and a tab or screen** keeps shared-audio capture. The source selector beside **Start Meeting** remembers the last choice in this browser, alongside the microphone settings. Until you choose, desktop capture uses shared audio and microphone; phones always use the microphone alone.
+In desktop Chromium, **Microphone only** records what your selected microphone hears without opening the share picker. Use it for an in-room meeting, a call on speaker or a voice memo. **Microphone and a tab or screen** keeps shared-audio capture. The source selector beside **Start Meeting** remembers the last choice in this browser, alongside the microphone settings. Until you choose, desktop Chromium uses shared audio and microphone. Firefox, Safari and phones always use the microphone alone and show no source selector.
 
 On macOS, tab audio is the most reliable choice. Window and entire-screen audio work on current Chrome and current macOS when the share picker offers an audio toggle; older versions may share video with no audio. Other Chromium-family browsers on macOS are best-effort because their picker can lag Chrome's.
 
@@ -30,20 +30,20 @@ While you record, the recording view shows a live waveform in the header and the
 
 Nojoin keeps none of the shared video. While you record, it reads one still from it only when you ask for a [capture](USAGE.md#captures), with the camera button beside the note box or Alt+Shift+C (Option+Shift+C on a Mac), and saves it on a note.
 
-Microphone-only recording has no shared picture: the camera button is hidden and the shortcut does nothing. On desktop, a hint explains that screen captures need a shared tab, window or screen. You can still attach files to notes.
+Microphone-only recording has no shared picture: the camera button is hidden and the shortcut does nothing. In desktop Chromium, a hint explains that screen captures need a shared tab, window or screen. You can still attach files to notes.
 
 A segment the server cannot decode is set aside and leaves a two-second gap instead of stopping the meeting. The API logs it as a `segment_corrupt_skipped` pipeline metric.
 
 ## Starting A Recording
 
-1. On desktop, open **Recording source** below **Start Meeting** on the dashboard's **Meet Now** card, beside it in the recordings list, or below the collapsed rail's microphone button. Choose **Microphone only** or **Microphone and a tab or screen**, then select **Start Meeting**.
+1. In desktop Chromium, open **Recording source** below **Start Meeting** on the dashboard's **Meet Now** card, beside it in the recordings list, or below the collapsed rail's microphone button. Choose **Microphone only** or **Microphone and a tab or screen**, then select **Start Meeting**.
 2. For **Microphone and a tab or screen**, choose the meeting tab, window or entire screen in the browser's share picker, turn on its audio option if it offers one, and select **Share**. **Microphone only** skips this picker.
 3. Allow microphone access if asked.
 4. Keep the Nojoin tab open and the device awake until you stop.
 
 The browser may switch to the tab or window you shared; Nojoin keeps recording in its own tab. Selecting **Cancel** in the picker returns you to where you were with no recording started. Before relying on Nojoin for an important meeting, record a short test and check that the live waveform moves.
 
-On a phone, select **Start Meeting**; no share picker appears. Allow microphone access, keep the phone near the meeting audio, keep Nojoin in the foreground and stop the phone locking.
+In Firefox, Safari or on a phone, select **Start Meeting**; no share picker appears. Allow microphone access and keep the device near the meeting audio. On a phone, keep Nojoin in the foreground and stop the phone locking.
 
 ## Choosing Tab, Window, Or Entire Screen
 
@@ -250,13 +250,13 @@ The meeting button and the recording header name the stage while stopping. The h
 
 ### Browser recording unavailable
 
-The meeting button reads **Unsupported browser**. Open Nojoin in a browser from [Supported Environments](#supported-environments).
+The meeting button reads **Unsupported browser** when the browser offers no microphone access or no AudioWorklet support. Open Nojoin in a browser from [Supported Environments](#supported-environments). Firefox and Safari record the microphone only; for the meeting's shared audio, use Chrome or another Chromium-family browser on desktop.
 
 If the browser is already supported, check the address. Browsers allow capture only on a secure origin, so a supported browser reaching Nojoin over plain HTTP on any address other than `localhost` reports as unsupported. See [HTTPS Is Required for Live Capture](DEPLOYMENT.md#https-is-required-for-live-capture).
 
 ## Privacy Notes
 
-The browser decides what Nojoin receives: the microphone you allow and, in shared-audio mode, the tab, window or screen you pick. Phones always use the microphone only. To end capture, stop the meeting in Nojoin or, when sharing, stop sharing from the browser's indicator.
+The browser decides what Nojoin receives: the microphone you allow and, in shared-audio mode, the tab, window or screen you pick. Firefox, Safari and phones always use the microphone only. To end capture, stop the meeting in Nojoin or, when sharing, stop sharing from the browser's indicator.
 
 ## Related Docs
 
