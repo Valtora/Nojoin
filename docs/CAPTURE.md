@@ -117,7 +117,7 @@ With live speaker labels on, a speaker's label in the live transcript can be ren
 
 Live speech uses the same speaker-coloured cards as the finished transcript, with **Microphone** and **Shared audio** labels where the capture channel changes. Every line names its speaker, as finished lines do. A refused name or correction keeps its draft to retry; Stop closes any that are open. Scrolling away stops live following; **Jump to latest** follows new lines and in-place growth again. Play buttons remain visible but disabled until playback is available, and export has its own disabled control.
 
-The **Speakers** tab also shows live labels, with **Change identity** and **Add to People**. An ordinary name can link an existing person; only **Add to People** explicitly creates one. Name the label first. This creates no live voiceprint, and final processing still checks the speaker identity and can ask for confirmation. If Stop has closed the recording, the action is refused without creating a person.
+The **Speakers** tab also shows live labels, with **Change identity** and **Add to People** in each label's **⋯** menu. An ordinary name can link an existing person; only **Add to People** explicitly creates one. Name the label first. This creates no live voiceprint, and final processing still checks the speaker identity and can ask for confirmation. If Stop has closed the recording, the action is refused without creating a person.
 
 ## Paused Recording Lock
 

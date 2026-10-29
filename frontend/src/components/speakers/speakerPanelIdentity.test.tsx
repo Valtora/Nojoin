@@ -28,6 +28,13 @@ beforeEach(() => {
 
 afterEach(() => vi.useRealTimers());
 
+/** Opens a speaker card's ⋯ menu and returns one of its items. */
+const menuItem = (speakerName: string, item: string) => {
+  fireEvent.click(screen.getByRole("button", { name: `Actions for ${speakerName}` }));
+  return within(screen.getByRole("menu", { name: `Actions for ${speakerName}` }))
+    .getByRole("menuitem", { name: item });
+};
+
 describe("speaker row controls", () => {
   const renderHighlightPanel = () => {
     const props = panelProps();
@@ -128,13 +135,15 @@ describe("speaker row controls", () => {
     props.speakers = [speaker("A", "Alex"), speaker("A2", "Alex", 3)];
     props.globalSpeakers = [person(9, "Robin")];
     render(<SpeakerPanel {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));
+    fireEvent.click(menuItem("Alex", "Change identity"));
+    expect(screen.queryByRole("menu")).toBeNull();
     expect(screen.queryByRole("button", { name: "This utterance" })).toBeNull();
     expect(screen.getByText("Whole speaker in this recording")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Robin" }));
     await waitFor(() => expect(props.onRefresh).toHaveBeenCalled());
     expect(updateSpeaker.mock.calls).toEqual([["r1", "A", "Robin"], ["r1", "A2", "Robin"]]);
-    expect(screen.getByRole("button", { name: "Change identity for Alex" })).toHaveFocus();
+    // Back on the card's menu button, which the picker sat against.
+    expect(screen.getByRole("button", { name: "Actions for Alex" })).toHaveFocus();
   });
 
   it("moves every row member onto a speaker picked from this recording", async () => {
@@ -142,7 +151,7 @@ describe("speaker row controls", () => {
     const renamed = vi.fn();
     props.speakers = [speaker("A", "Alex"), speaker("A2", "Alex", 3), speaker("B", "Blair", 2)];
     render(<SpeakerPanel {...props} onSpeakerRenamed={renamed} />);
-    fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));
+    fireEvent.click(menuItem("Alex", "Change identity"));
     fireEvent.click(screen.getByRole("button", { name: "Blair Recording only" }));
     await waitFor(() => expect(props.onRefresh).toHaveBeenCalled());
     expect(merge.mock.calls).toEqual([["r1", "B", "A"], ["r1", "B", "A2"]]);
@@ -154,25 +163,57 @@ describe("speaker row controls", () => {
   it("keeps failed identity assignment open with typed text and reports the failure", async () => {
     updateSpeaker.mockRejectedValue(new Error("conflict"));
     render(<SpeakerPanel {...panelProps()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));
+    fireEvent.click(menuItem("Alex", "Change identity"));
     fireEvent.change(screen.getByPlaceholderText("Search or add..."), { target: { value: "Robin" } });
     fireEvent.keyDown(screen.getByPlaceholderText("Search or add..."), { key: "Enter" });
     await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.objectContaining({ type: "error" })));
     expect(screen.getByPlaceholderText("Search or add...")).toHaveValue("Robin");
   });
 
-  it("shows Add to People on an unlinked row and preserves route errors for placeholder names", async () => {
+  it("offers Add to People on an unlinked row and preserves route errors for placeholder names", async () => {
     promote.mockRejectedValue({ response: { data: { detail: "Please rename them first." } } });
     render(<SpeakerPanel {...panelProps()} speakers={[speaker("A", "Speaker 1")]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add to People" }));
+    fireEvent.click(menuItem("Speaker 1", "Add to People"));
     await waitFor(() => expect(promote).toHaveBeenCalledWith("r1", "A"));
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ type: "error", message: "Please rename them first." }));
   });
 
-  it.each(["linked", "name-match"])("hides visible promotion for %s rows", (kind) => {
+  it.each(["linked", "name-match"])("leaves promotion out of the menu for %s rows", (kind) => {
     const entry = speaker("A", "Alex");
     if (kind === "linked") entry.global_speaker_id = 7;
     render(<SpeakerPanel {...panelProps()} speakers={[entry]} globalSpeakers={[person(7, "Alex")]} />);
+    menuItem("Alex", "Change identity");
+    expect(screen.queryByRole("menuitem", { name: "Add to People" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add to People" })).toBeNull();
+  });
+
+  it("keeps a card to one row and explains in its menu why actions wait", () => {
+    render(<SpeakerPanel {...panelProps()} speakers={[speaker("A", "Speaker 1")]} disableEditing />);
+    expect(screen.queryByRole("button", { name: /Change identity|Add to People/ })).toBeNull();
+    const trigger = screen.getByRole("button", { name: "Actions for Speaker 1" });
+    expect(trigger).toHaveAttribute("title", "Speaker actions");
+    const change = menuItem("Speaker 1", "Change identity");
+    const add = screen.getByRole("menuitem", { name: "Add to People" });
+    const reason = "Speakers can be changed once processing finishes.";
+    expect(screen.getAllByText(reason)).toHaveLength(1);
+    for (const item of [change, add]) {
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).toHaveAccessibleDescription(reason);
+    }
+    fireEvent.click(add);
+    fireEvent.click(change);
+    expect(promote).not.toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText("Search or add...")).toBeNull();
+  });
+
+  it("opens the card's menu from the keyboard and closes it on Escape", () => {
+    render(<SpeakerPanel {...panelProps()} />);
+    const trigger = screen.getByRole("button", { name: "Actions for Alex" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const [change] = within(screen.getByRole("menu", { name: "Actions for Alex" })).getAllByRole("menuitem");
+    expect(change).toHaveFocus();
+    fireEvent.keyDown(change, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(trigger).toHaveFocus();
   });
 });

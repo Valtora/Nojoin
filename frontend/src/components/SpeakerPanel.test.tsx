@@ -156,12 +156,13 @@ describe("SpeakerPanel", () => {
   it("shows Preview Voice and Change identity as disabled when they are", () => {
     renderPanel({ disablePlayback: true, disableEditing: true });
     const [preview] = screen.getAllByTitle("Preview Voice");
-    const change = screen.getByRole("button", { name: "Change identity for Alice" });
-    for (const button of [preview, change]) {
-      expect(button).toBeDisabled();
-      expect(button.className).toContain("disabled:opacity-60");
-      expect(button.className).toContain("disabled:cursor-not-allowed");
-    }
+    expect(preview).toBeDisabled();
+    expect(preview.className).toContain("disabled:opacity-60");
+    expect(preview.className).toContain("disabled:cursor-not-allowed");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Alice" }));
+    const change = screen.getByRole("menuitem", { name: "Change identity" });
+    expect(change).toHaveAttribute("aria-disabled", "true");
+    expect(change).toHaveAccessibleDescription("Speakers can be changed once processing finishes.");
   });
 
   beforeEach(() => {
