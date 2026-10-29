@@ -306,3 +306,44 @@ def test_offline_failure_holds_off_live_requests_until_the_backoff_passes(
         with pytest.raises(ForcedAlignerError):
             forced_aligner_model._prepared_path()
     assert len(stub_celery_dispatch) == 2
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("first_use", "forced_aligner", "cpu"),
+        ("first_use", "nemotron", "cpu"),
+        ("settings", "forced_aligner", "cpu"),
+        ("settings", "active", "gpu"),
+    ],
+)
+def test_pinned_preparation_runs_on_the_cpu_lane(
+    case: tuple[str, Any, str],
+    model_cache_env: Path,
+    progress: dict[str, Any],
+    stub_celery_dispatch: list,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path, target, queue = case
+    sent: list[dict[str, Any]] = []
+    stub = model_preparation.celery_app.send_task
+
+    def publish(name: str, **options: Any) -> Any:
+        sent.append(options)
+        return stub(name, **options)
+
+    monkeypatch.setattr(model_preparation.celery_app, "send_task", publish)
+    if path == "first_use":
+        assert model_preparation.request_pinned_preparation(target, recording_id=1)
+    else:
+        asyncio.run(model_preparation.enqueue_model_preparation(target=target))
+    options = {
+        key: value
+        for key, value in sent[0].items()
+        if key not in {"args", "kwargs", "connection"}
+    }
+    # Resolve the destination the way Celery does when it publishes.
+    route = model_preparation.celery_app.amqp.router.route(
+        options, model_preparation.MODEL_PREPARATION_TASK
+    )
+    assert route["queue"].name == queue
