@@ -286,7 +286,7 @@ export default function LiveTranscriptPanel({
       </div>
       {liveBehind && !isPaused ? (
         <p role="status" className="mt-3 text-sm text-contrast-helper">
-          Live transcript is waiting for the server to finish another task. Nothing is lost; it will catch up.
+          Live transcript is behind the recording. Nothing is lost: the full transcript is made when the meeting ends.
         </p>
       ) : null}
       {segments.some(lineIsSettling) ? (

@@ -30,7 +30,7 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({ cancel: vi.fn(), recordingId: null, pausedRecording: null, runtimeActive: false }),
 }));
 
-const NOTICE = "Live transcript is waiting for the server to finish another task. Nothing is lost; it will catch up.";
+const NOTICE = "Live transcript is behind the recording. Nothing is lost: the full transcript is made when the meeting ends.";
 
 const recording = (overrides: Partial<Recording> = {}): Recording => ({
   id: "rec-1",
