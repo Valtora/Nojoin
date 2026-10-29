@@ -67,13 +67,14 @@ const paused = {
   client_status: ClientStatus.PAUSED,
 } as Recording;
 const conflictMessage = "Handle the existing active recording before starting a new one.";
+const inAnotherTabMessage = "A recording is open in another tab. Stop or discard it there before starting a new one.";
 
 /** The server refusing a new recording while `recording` is unfinished. */
-function activeRecordingConflict(recording: Recording) {
+function activeRecordingConflict(recording: Recording, message = conflictMessage) {
   const conflict = new AxiosError("Request failed with status code 409");
   conflict.response = {
     status: 409, data: { detail: {
-      code: "active_recording_exists", message: conflictMessage,
+      code: "active_recording_exists", message,
       recording_id: recording.id, status: recording.status,
     } },
   } as NonNullable<AxiosError["response"]>;
@@ -459,7 +460,7 @@ describe("CaptureShell watching a paused capture", () => {
     await act(async () => {});
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
     await waitFor(() => expect(useNotificationStore.getState().activeNotifications).toEqual([
-      expect.objectContaining({ type: "error", message: conflictMessage }),
+      expect.objectContaining({ type: "error", message: inAnotherTabMessage }),
     ]));
 
     expect(screen.getByTitle("Stop recording")).toBeDisabled();
@@ -474,6 +475,33 @@ describe("CaptureShell watching a paused capture", () => {
     expect(pickCaptureSource).not.toHaveBeenCalled();
     expect(routerPush).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Start Meeting" })).toBeEnabled();
+  });
+});
+
+describe("Start while another tab or device records", () => {
+  const inProgressMessage = "Another recording is still in progress. Stop it before starting a new one. "
+    + "If the tab recording it was closed, Nojoin offers to resume or discard it within two minutes.";
+  const live = { ...paused, status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING } as Recording;
+
+  it.each([
+    { where: "another tab of this browser", locked: true, toast: inAnotherTabMessage },
+    { where: "another device", locked: false, toast: inProgressMessage },
+  ])("names $where in its refusal", async ({ locked, toast }) => {
+    pathname = "/";
+    held = locked ? [{ name: `nojoin-capture:${live.id}`, mode: "shared" }] : [];
+    api.getUnfinishedCaptures.mockResolvedValue([live]);
+    api.initRecording.mockRejectedValue(activeRecordingConflict(live, inProgressMessage));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+    await waitFor(() => expect(useNotificationStore.getState().activeNotifications).toEqual([
+      expect.objectContaining({ type: "error", message: toast }),
+    ]));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(pickCaptureSource).not.toHaveBeenCalled();
   });
 });
 

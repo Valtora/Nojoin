@@ -28,7 +28,7 @@ import {
 } from "@/lib/session";
 import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 
-import { holdCaptureLock } from "./captureLock";
+import { holdCaptureLock, isCaptureHeldInThisBrowser } from "./captureLock";
 import {
   findAttentionRecordings,
   reclaimableRecordingId,
@@ -725,7 +725,13 @@ export class CaptureController {
           this.setState({ status: "paused" });
           return null;
         }
-        this.setState({ status: "idle", error: detail.message });
+        const inAnotherTab = await isCaptureHeldInThisBrowser(detail.recording_id);
+        this.setState({
+          status: "idle",
+          error: inAnotherTab
+            ? "A recording is open in another tab. Stop or discard it there before starting a new one."
+            : detail.message,
+        });
       } else {
         this.setState({ status: "error", error: formatCaptureError(error) });
       }
