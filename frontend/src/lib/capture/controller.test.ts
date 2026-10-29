@@ -1783,21 +1783,19 @@ describe("a capture whose tab closed without pausing it (issue #519)", () => {
     expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
   });
 
-  it("reserves Start before preflight so concurrent callers initialise only once", async () => {
-    let finishPreflight: (captures: unknown[]) => void = () => {};
-    apiMocks.getUnfinishedCaptures.mockImplementationOnce(() => new Promise((resolve) => {
-      finishPreflight = resolve;
+  it("reserves Start before init so concurrent callers initialise only once", async () => {
+    let finishInit: (response: unknown) => void = () => {};
+    apiMocks.initRecording.mockImplementationOnce(() => new Promise((resolve) => {
+      finishInit = resolve;
     }));
-    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", capture_epoch: 3 });
     pickSourceMocks.pickCaptureSource.mockResolvedValue(microphoneSources());
     const controller = newController();
     const first = controller.start("Weekly sync");
 
     expect(controller.getState().status).toBe("starting");
     await expect(controller.start("Second click")).resolves.toBeNull();
-    expect(apiMocks.getUnfinishedCaptures).toHaveBeenCalledTimes(1);
-    expect(apiMocks.initRecording).not.toHaveBeenCalled();
-    finishPreflight([]);
+    expect(apiMocks.initRecording).toHaveBeenCalledTimes(1);
+    finishInit({ id: "rec-1", capture_epoch: 3 });
     await expect(first).resolves.toMatchObject({ recordingId: "rec-1", resumed: false });
 
     expect(apiMocks.initRecording).toHaveBeenCalledTimes(1);

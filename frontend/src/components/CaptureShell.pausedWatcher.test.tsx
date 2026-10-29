@@ -67,6 +67,19 @@ const paused = {
   client_status: ClientStatus.PAUSED,
 } as Recording;
 const conflictMessage = "Handle the existing active recording before starting a new one.";
+
+/** The server refusing a new recording while `recording` is unfinished. */
+function activeRecordingConflict(recording: Recording) {
+  const conflict = new AxiosError("Request failed with status code 409");
+  conflict.response = {
+    status: 409, data: { detail: {
+      code: "active_recording_exists", message: conflictMessage,
+      recording_id: recording.id, status: recording.status,
+    } },
+  } as NonNullable<AxiosError["response"]>;
+  return conflict;
+}
+
 const controllers: CaptureController[] = [];
 let held: LockInfo[];
 let pending: LockInfo[];
@@ -266,23 +279,23 @@ describe("recovery when entering a recording page", () => {
 });
 
 describe("Start reservation across entry surfaces", () => {
-  it("reserves before preflight so two Start buttons initialise only one recording", async () => {
+  it("reserves before init so two Start buttons initialise only one recording", async () => {
     api.getUnfinishedCaptures.mockResolvedValue([]);
-    api.initRecording.mockResolvedValue({ id: "rec-new", name: "New meeting" });
+    api.discardRecordingCapture.mockResolvedValue(undefined);
     pickCaptureSource.mockRejectedValue(new PickSourceError("display_cancelled", "Picker cancelled"));
     render(<CaptureProvider><CaptureShell>
       <MeetingControls variant="dashboard" /><MeetingControls variant="sidebar" />
     </CaptureShell></CaptureProvider>);
     await act(async () => {});
-    let answer!: (recordings: Recording[]) => void;
-    const preflight = new Promise<Recording[]>((resolve) => { answer = resolve; });
-    api.getUnfinishedCaptures.mockReturnValueOnce(preflight);
+    let answer!: (response: { id: string; name: string }) => void;
+    const init = new Promise<{ id: string; name: string }>((resolve) => { answer = resolve; });
+    api.initRecording.mockReturnValueOnce(init);
     const [dashboard, sidebar] = screen.getAllByRole("button", { name: "Start Meeting" });
 
     fireEvent.click(dashboard);
     fireEvent.click(sidebar);
-    expect(api.initRecording).not.toHaveBeenCalled();
-    await act(async () => { answer([]); await preflight; });
+    expect(api.initRecording).toHaveBeenCalledOnce();
+    await act(async () => { answer({ id: "rec-new", name: "New meeting" }); await init; });
 
     await waitFor(() => expect(pickCaptureSource).toHaveBeenCalledOnce());
     expect(api.initRecording).toHaveBeenCalledOnce();
@@ -437,14 +450,7 @@ describe("CaptureShell watching a paused capture", () => {
 
   it("leaves recording-page Stop and Discard disabled after a held capture's 409", async () => {
     pathname = `/recordings/${paused.id}`;
-    const conflict = new AxiosError("Request failed with status code 409");
-    conflict.response = {
-      status: 409, data: { detail: {
-        code: "active_recording_exists", message: conflictMessage,
-        recording_id: paused.id, status: paused.status,
-      } },
-    } as NonNullable<AxiosError["response"]>;
-    api.initRecording.mockRejectedValue(conflict);
+    api.initRecording.mockRejectedValue(activeRecordingConflict(paused));
     vi.spyOn(console, "error").mockImplementation(() => {});
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<CaptureProvider><CaptureShell>
@@ -561,8 +567,11 @@ describe("recovery on demand for another browser or device", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(screen.getByTestId("watcher-state")).toHaveTextContent("watching:none");
 
-      const label = entry === "dashboard" || entry === "sidebar" ? "Start Meeting" : "Import Audio";
-      const opener = screen.getByRole("button", { name: label });
+      const starts = entry === "dashboard" || entry === "sidebar";
+      // Start asks the server, which refuses while the paused recording is
+      // unfinished; the dialog then speaks for the refusal, with no toast.
+      api.initRecording.mockRejectedValue(activeRecordingConflict(paused));
+      const opener = screen.getByRole("button", { name: starts ? "Start Meeting" : "Import Audio" });
       expect(opener).toBeEnabled();
       fireEvent.click(opener);
 
@@ -572,12 +581,13 @@ describe("recovery on demand for another browser or device", () => {
       expect(screen.getByText(paused.name)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Stop and process" })).toBeEnabled();
       expect(useImportAudioStore.getState().isImportAudioOpen).toBe(false);
-      expect(api.initRecording).not.toHaveBeenCalled();
+      expect(api.initRecording).toHaveBeenCalledTimes(starts ? 1 : 0);
       expect(api.discardRecordingCapture).not.toHaveBeenCalled();
       expect(api.resumeRecordingCapture).not.toHaveBeenCalled();
       expect(api.finalizeRecordingCapture).not.toHaveBeenCalled();
       expect(pickCaptureSource).not.toHaveBeenCalled();
       expect(routerPush).not.toHaveBeenCalled();
+      await act(async () => {});
       expect(useNotificationStore.getState().activeNotifications).toEqual([]);
     },
   );

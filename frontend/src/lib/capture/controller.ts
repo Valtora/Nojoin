@@ -686,24 +686,7 @@ export class CaptureController {
   };
 
   start = async (name?: string): Promise<StartCaptureResponse> => {
-    // The recovery check awaits, so Start holds "starting" before it: a second
-    // click meanwhile must not start another capture.
     if (this.runtime || this.state.status === "starting" || this.state.status === "finalizing") return null;
-    const previousStatus = this.state.status;
-    this.setState({ status: "starting", error: null });
-    try {
-      if (await this.refreshPausedRecording({ onDemand: true })) {
-        this.setState({ status: previousStatus });
-        return null;
-      }
-      return await this.startCapture(name);
-    } catch (error) {
-      if (this.getState().status === "starting") this.setState({ status: previousStatus });
-      throw error;
-    }
-  };
-
-  private startCapture = async (name: string | undefined): Promise<StartCaptureResponse> => {
     this.captureActionTicket += 1;
     const support = detectCaptureSupport();
     this.setState({ support });
@@ -726,11 +709,15 @@ export class CaptureController {
         error instanceof AxiosError ? error.response?.data?.detail : null;
 
       if (isActiveRecordingConflictDetail(detail)) {
+        // Start asks the server first and looks for a recording to recover
+        // only when refused, so the share picker follows a single request.
         await this.refreshPausedRecording({ onDemand: true }).catch(() => {});
-        this.setState({
-          status: this.state.pausedRecording ? "paused" : "idle",
-          error: detail.message,
-        });
+        if (this.state.pausedRecording) {
+          // The recovery dialog says what to do with it.
+          this.setState({ status: "paused" });
+          return null;
+        }
+        this.setState({ status: "idle", error: detail.message });
       } else {
         this.setState({ status: "error", error: formatCaptureError(error) });
       }

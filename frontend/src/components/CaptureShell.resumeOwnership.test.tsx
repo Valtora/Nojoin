@@ -325,3 +325,27 @@ describe("a capture whose tab is reloaded while it records", () => {
     expect(api.resumeRecordingCapture).not.toHaveBeenCalled();
   });
 });
+
+describe("Start Meeting", () => {
+  it("opens the share picker after a single request, with no recovery check first", async () => {
+    // The picker needs the click's activation, which every round trip before
+    // it uses up; a recovery check waits for the server's refusal instead.
+    pathname = "/";
+    api.getUnfinishedCaptures.mockResolvedValue([]);
+    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    await act(async () => {});
+    const checksBeforeStart = api.getUnfinishedCaptures.mock.calls.length;
+    let checksBeforePicker = -1;
+    const pickSources = pickCaptureSource.getMockImplementation()!;
+    pickCaptureSource.mockImplementationOnce((...args: unknown[]) => {
+      checksBeforePicker = api.getUnfinishedCaptures.mock.calls.length;
+      return pickSources(...args);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+    await screen.findByTitle("Pause recording");
+    expect(api.initRecording).toHaveBeenCalledOnce();
+    expect(checksBeforePicker).toBe(checksBeforeStart);
+  });
+});
