@@ -45,7 +45,10 @@ from .router import router
 logger = logging.getLogger(__name__)
 
 # The other outcomes are set by the server when capture starts.
-_CONSENT_NOTICE_ANSWERS = {ConsentNoticeOutcome.AGREED, ConsentNoticeOutcome.NOT_AGREED}
+_CONSENT_NOTICE_ANSWERS = {
+    ConsentNoticeOutcome.NO_OBJECTIONS,
+    ConsentNoticeOutcome.OBJECTED,
+}
 
 
 class CalendarEventLink(BaseModel):
@@ -102,7 +105,7 @@ async def update_recording(
     if answer is not None and answer not in _CONSENT_NOTICE_ANSWERS:
         raise HTTPException(
             status_code=422,
-            detail="The recording notice answer must be agreed or not_agreed.",
+            detail="The recording notice answer must be no_objections or objected.",
         )
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     if answer is not None and not is_live_capture(recording):

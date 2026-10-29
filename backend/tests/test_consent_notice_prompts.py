@@ -21,7 +21,7 @@ from backend.utils.transcript_parts import split_transcript
 
 
 def test_procedure_rule_is_composed_once_in_each_generation_path() -> None:
-    transcript = "Alex: Does everyone agree to being recorded?\nSam: Yes."
+    transcript = "Alex: This meeting is being recorded.\nSam: Fine by me."
     context = context_for_notes("", None, None, None, None)
     part = split_transcript(transcript, 5000)[0]
     edge_prefix, edge_suffix = build_meeting_edge_prompt_parts(

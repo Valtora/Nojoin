@@ -53,7 +53,7 @@ export interface BaseDBModel {
 }
 
 export type RecordingId = string;
-export type ConsentNoticeOutcome = "agreed" | "not_agreed" | "no_answer" | "not_shown";
+export type ConsentNoticeOutcome = "no_objections" | "objected" | "no_answer" | "not_shown";
 
 export interface PeopleTag {
   id: number;

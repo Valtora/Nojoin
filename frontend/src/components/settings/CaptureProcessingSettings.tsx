@@ -133,7 +133,7 @@ export default function CaptureProcessingSettings() {
       <SettingsCard
         id="recording-consent-notice"
         title="Recording consent notice"
-        description="A reminder, shown when you start a recording, with a suggested statement asking the meeting's agreement."
+        description="A reminder, shown when you start a recording, with a suggested statement that invites anyone to object."
       >
         <SettingsRow
           labelId="recording-consent-notice-label"

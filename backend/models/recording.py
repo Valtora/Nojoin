@@ -40,8 +40,8 @@ class ClientStatus(str, Enum):
 
 
 class ConsentNoticeOutcome(str, Enum):
-    AGREED = "agreed"
-    NOT_AGREED = "not_agreed"
+    NO_OBJECTIONS = "no_objections"
+    OBJECTED = "objected"
     NO_ANSWER = "no_answer"
     NOT_SHOWN = "not_shown"
 

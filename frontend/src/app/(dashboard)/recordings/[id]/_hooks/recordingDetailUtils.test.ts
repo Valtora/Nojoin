@@ -71,7 +71,7 @@ describe("polling a recording with no audio and no proxy", () => {
   it("treats a saved recording notice answer as a change worth re-rendering", () => {
     const before = recordingWith({ consent_notice_outcome: "no_answer" });
     expect(
-      hasPolledRecordingChanged(before, { ...before, consent_notice_outcome: "not_agreed" }),
+      hasPolledRecordingChanged(before, { ...before, consent_notice_outcome: "objected" }),
     ).toBe(true);
   });
 

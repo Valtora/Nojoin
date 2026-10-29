@@ -364,13 +364,13 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "recording-consent-notice",
     label: "Recording consent notice",
-    description: "The reminder to ask the meeting's agreement, shown when you start a recording.",
+    description: "The reminder to tell the meeting it is being recorded, shown when you start a recording.",
     category: "recording",
     access: "all",
     advanced: "safe-default",
     settingsKeys: ["hide_recording_consent_notice"],
     defaultValue: false,
-    keywords: ["consent", "recording notice", "agreement", "permission", "don't show this again", "reminder"],
+    keywords: ["consent", "recording notice", "objection", "permission", "don't show this again", "reminder"],
   },
   {
     id: "recording-vad",

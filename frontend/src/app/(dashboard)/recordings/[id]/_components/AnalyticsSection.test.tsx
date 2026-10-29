@@ -51,8 +51,8 @@ describe("AnalyticsSection live lifecycle", () => {
   afterEach(() => vi.useRealTimers());
 
   it.each([
-    ["agreed", "Everyone agreed"],
-    ["not_agreed", "Not everyone agreed"],
+    ["no_objections", "No objections"],
+    ["objected", "Someone objected"],
     ["no_answer", "No answer recorded"],
     ["not_shown", "Not shown (your preference)"],
   ] as [ConsentNoticeOutcome, string][])("shows %s before analytics finish loading", (outcome, label) => {

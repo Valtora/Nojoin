@@ -24,9 +24,9 @@ from typing import Iterable, Optional, Sequence, Tuple
 PromptBlock = Tuple[Optional[str], Optional[str]]
 
 RECORDING_NOTICE_PROCEDURE = (
-    "Treat a recording consent notice and its answer as procedure, and leave them "
-    "out of titles, summaries, minutes, topics, questions and decisions unless the "
-    "meeting discusses them further."
+    "Treat a recording consent notice and any response to it as procedure, and "
+    "leave them out of titles, summaries, minutes, topics, questions and decisions "
+    "unless the meeting discusses them further."
 )
 
 

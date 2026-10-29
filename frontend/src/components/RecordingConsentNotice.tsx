@@ -48,12 +48,12 @@ function ConsentNoticeDialog({ recordingId, onClose }: Props) {
     return () => window.clearTimeout(timer);
   }, [stage, onClose]);
 
-  const answer = async (outcome: "agreed" | "not_agreed") => {
+  const answer = async (outcome: "no_objections" | "objected") => {
     setSaving(true);
     const saved = await answerConsentNotice(recordingId, outcome);
     setSaving(false);
     if (!saved) return;
-    if (outcome === "agreed") onClose();
+    if (outcome === "no_objections") onClose();
     else setStage("decision");
   };
 
@@ -88,8 +88,8 @@ function ConsentNoticeDialog({ recordingId, onClose }: Props) {
 
   const footer = stage === "notice" ? (
     <>
-      <Button disabled={saving} onClick={() => void answer("agreed")}>Everyone agreed</Button>
-      <Button disabled={saving} onClick={() => void answer("not_agreed")}>Not everyone agreed</Button>
+      <Button disabled={saving} onClick={() => void answer("no_objections")}>No objections</Button>
+      <Button disabled={saving} onClick={() => void answer("objected")}>Someone objected</Button>
     </>
   ) : (
     <>
@@ -108,9 +108,10 @@ function ConsentNoticeDialog({ recordingId, onClose }: Props) {
       {stage === "notice" ? (
         <div className="space-y-4 text-sm text-foreground">
           <p>Some places require everyone&apos;s consent to record a conversation. This reminder is not legal advice.</p>
-          <p>You could ask the meeting:</p>
+          <p>You could say:</p>
           <blockquote className="border-l-2 border-control-border pl-3">
-            &ldquo;May I record and transcribe this meeting to prepare AI notes? Does everyone agree?&rdquo;
+            &ldquo;This meeting is being recorded and transcribed to help prepare meeting notes.
+            If you&apos;d rather not be recorded, please say so now.&rdquo;
           </blockquote>
           <p>Recording has started. Closing this notice or leaving it unanswered keeps recording.</p>
           <label className="flex items-center gap-2">
@@ -125,7 +126,7 @@ function ConsentNoticeDialog({ recordingId, onClose }: Props) {
         </div>
       ) : (
         <p className="text-sm text-foreground">
-          Your answer has been saved as &ldquo;Not everyone agreed&rdquo;. Choose whether to stop or continue.
+          Your answer has been saved as &ldquo;Someone objected&rdquo;. Choose whether to stop or continue.
           Closing this prompt or leaving it unanswered keeps recording.
         </p>
       )}

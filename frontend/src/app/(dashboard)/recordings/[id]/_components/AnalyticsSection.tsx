@@ -7,8 +7,8 @@ import { useLiveAnalytics } from "@/components/analytics/useLiveAnalytics";
 import type { ConsentNoticeOutcome, RecordingId } from "@/types";
 
 const CONSENT_LABELS: Record<ConsentNoticeOutcome, string> = {
-  agreed: "Everyone agreed",
-  not_agreed: "Not everyone agreed",
+  no_objections: "No objections",
+  objected: "Someone objected",
   no_answer: "No answer recorded",
   not_shown: "Not shown (your preference)",
 };

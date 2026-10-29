@@ -124,7 +124,7 @@ describe("recording consent notice in the tab that starts the recording", () => 
     uninstallCaptureBrowser();
   });
 
-  it("opens on Start, and Everyone agreed saves the answer and closes it while recording continues", async () => {
+  it("opens on Start, and No objections saves the answer and closes it while recording continues", async () => {
     await startRecording();
     // The real capture path picked its sources before the notice opened.
     expect(browser.mediaDevices.getDisplayMedia).toHaveBeenCalledTimes(1);
@@ -132,10 +132,10 @@ describe("recording consent notice in the tab that starts the recording", () => 
 
     const updated = vi.fn();
     window.addEventListener("recording-updated", updated);
-    await press("Everyone agreed");
+    await press("No objections");
     window.removeEventListener("recording-updated", updated);
 
-    expect(server.outcomes.get("rec-1")).toBe("agreed");
+    expect(server.outcomes.get("rec-1")).toBe("no_objections");
     // The recording's page refreshes only for an update that names it.
     expect((updated.mock.calls[0][0] as CustomEvent).detail).toEqual({ id: "rec-1" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -161,20 +161,20 @@ describe("recording consent notice in the tab that starts the recording", () => 
 
   it.each(["Continue", "Close"])("keeps the negative answer and the recording after %s", async (button) => {
     await startRecording();
-    await press("Not everyone agreed");
+    await press("Someone objected");
     expect(screen.getByRole("dialog", { name: "Keep recording?" })).toBeInTheDocument();
 
     await press(button);
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(api.setRecordingConsentNoticeOutcome).toHaveBeenCalledExactlyOnceWith("rec-1", "not_agreed");
-    expect(server.outcomes.get("rec-1")).toBe("not_agreed");
+    expect(api.setRecordingConsentNoticeOutcome).toHaveBeenCalledExactlyOnceWith("rec-1", "objected");
+    expect(server.outcomes.get("rec-1")).toBe("objected");
     expect(status()).toBe("recording");
   });
 
   it("stops through the capture's own stop only when Stop the recording is pressed", async () => {
     await startRecording();
-    await press("Not everyone agreed");
+    await press("Someone objected");
     expect(api.finalizeRecordingCapture).not.toHaveBeenCalled();
     const updated = vi.fn();
     window.addEventListener("recording-updated", updated);
@@ -190,7 +190,7 @@ describe("recording consent notice in the tab that starts the recording", () => 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // As the meeting controls' Stop: the lists and the page hear the meeting ended.
     expect(updated).toHaveBeenCalledTimes(1);
-    expect(server.outcomes.get("rec-1")).toBe("not_agreed");
+    expect(server.outcomes.get("rec-1")).toBe("objected");
   });
 
   it("closes once the recording stops itself because screen sharing ended", async () => {
@@ -222,7 +222,7 @@ describe("recording consent notice in the tab that starts the recording", () => 
   it("gives the second prompt its own timeout, which keeps recording", async () => {
     await startRecording();
     await act(() => vi.advanceTimersByTimeAsync(50_000));
-    await press("Not everyone agreed");
+    await press("Someone objected");
     await act(() => vi.advanceTimersByTimeAsync(59_900));
     expect(screen.getByRole("dialog", { name: "Keep recording?" })).toBeInTheDocument();
 
@@ -230,20 +230,20 @@ describe("recording consent notice in the tab that starts the recording", () => 
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(status()).toBe("recording");
-    expect(api.setRecordingConsentNoticeOutcome).toHaveBeenCalledExactlyOnceWith("rec-1", "not_agreed");
+    expect(api.setRecordingConsentNoticeOutcome).toHaveBeenCalledExactlyOnceWith("rec-1", "objected");
   });
 
   it("keeps the notice open to retry when saving the answer fails", async () => {
     server.saveFailures = 1;
     await startRecording();
 
-    await press("Not everyone agreed");
+    await press("Someone objected");
     expect(consentDialog()).toBeInTheDocument();
     expect(server.outcomes.get("rec-1")).toBe("no_answer");
 
-    await press("Not everyone agreed");
+    await press("Someone objected");
     expect(screen.getByRole("dialog", { name: "Keep recording?" })).toBeInTheDocument();
-    expect(server.outcomes.get("rec-1")).toBe("not_agreed");
+    expect(server.outcomes.get("rec-1")).toBe("objected");
     expect(status()).toBe("recording");
   });
 
@@ -253,7 +253,7 @@ describe("recording consent notice in the tab that starts the recording", () => 
     await settle();
     expect(server.settings.hide_recording_consent_notice).toBe(true);
     expect(screen.getByRole("checkbox", { name: "Don't show this again" })).toBeChecked();
-    await press("Everyone agreed");
+    await press("No objections");
     await press("Stop");
 
     await press("Start");

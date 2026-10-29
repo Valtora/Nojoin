@@ -1606,7 +1606,7 @@ async def test_a_tab_on_an_older_build_sends_no_epoch_and_is_not_checked(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("outcome", ["agreed", "not_agreed"])
+@pytest.mark.parametrize("outcome", ["no_objections", "objected"])
 async def test_consent_notice_answer_is_durable_and_does_not_stop_capture(
     client: AsyncClient, test_session_maker: sessionmaker, outcome: str
 ) -> None:
@@ -1684,7 +1684,7 @@ async def test_consent_notice_rejects_invalid_answers_and_other_users(
     other_user = build_test_user()
     other_user.id = 2
     api_app.dependency_overrides[deps.get_current_user] = lambda: other_user
-    denied = await client.patch(url, json={"consent_notice_outcome": "agreed"})
+    denied = await client.patch(url, json={"consent_notice_outcome": "no_objections"})
     assert denied.status_code == 404
 
 
@@ -1708,7 +1708,7 @@ async def test_consent_notice_cannot_be_answered_once_capture_has_ended(
         await session.commit()
     response = await client.patch(
         f"/api/v1/recordings/{recording_id}",
-        json={"consent_notice_outcome": "agreed"},
+        json={"consent_notice_outcome": "no_objections"},
         headers={"Origin": TRUSTED_ORIGIN},
     )
     assert response.status_code == 409
