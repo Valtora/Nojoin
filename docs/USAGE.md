@@ -33,7 +33,7 @@ The dashboard holds:
 
 [CALENDAR.md](CALENDAR.md) covers connecting a calendar.
 
-Meeting cards and pills, the recording title and **Recent Meetings** show a short AI-generated summary when you hover over them. The agenda also shows it beside the meeting details. While a meeting records or finalises, it is labelled **Summary of transcript so far**.
+Meeting cards and pills, the recording title and **Recent Meetings** show a short AI-generated summary when you hover over them. The agenda also shows it beside the meeting details. A summary generated during the meeting is labelled **Summary of transcript so far** until final processing replaces it.
 
 ### Task List
 
@@ -385,9 +385,9 @@ Meeting notes are generated once, at the end of processing, from every document 
 
 ### Meeting Titles and Summaries
 
-Under **Settings > Notes and live assistance**, **Live title delay** chooses how many minutes of transcribed meeting audio to wait before generating a title and a one- or two-sentence summary. The default, **After the meeting**, keeps title generation until final processing. A live delay needs live transcription and a configured AI provider; generation starts when the live transcript reaches the chosen delay, so it can arrive a little later. Pausing does not count towards the delay.
+Final processing gives each meeting a title and a one- or two-sentence summary. Under **Settings > Notes and live assistance**, **Live title and summary** can also generate both during a live meeting: after the chosen number of minutes, the meeting gets a title and a short summary so far. Both are regenerated when the meeting ends. It is **Off** by default, and needs live transcription and a configured AI provider. Paused time does not count towards the minutes.
 
-The first live title and summary stay as they are until final processing generates them again from the complete transcript. Renaming a meeting protects your title from later generation, while its summary still updates. Titles already present when upgrading are also kept, because older recordings do not record whether a title was edited. New recordings receive automatic titles until you rename them.
+Renaming a meeting keeps your title from later generation, while its summary still updates. A meeting you have not renamed gets a new title when it is reprocessed.
 
 ### Choosing How Notes Are Structured
 

@@ -455,6 +455,7 @@ def _read_markdown(answer: str) -> str:
 
 
 _TAGGED_TITLE = re.compile(r"<title>\s*(.*?)\s*</title>", re.IGNORECASE | re.DOTALL)
+_TAGGED_GIST = re.compile(r"<gist>\s*(.*?)\s*</gist>", re.IGNORECASE | re.DOTALL)
 _SPEAKER_BLOCK = re.compile(
     r"<speaker_names>(.*?)(?:</speaker_names>|\Z)", re.IGNORECASE | re.DOTALL
 )
@@ -482,16 +483,15 @@ def _read_draft(answer: str) -> tuple[dict[str, str], str]:
 
 def _title_and_notes_reader(
     request: AutomaticMeetingIntelligenceRequest,
-) -> Callable[[str], tuple[str, str, dict[str, str], str]]:
-    def read(answer: str) -> tuple[str, str, dict[str, str], str]:
+) -> Callable[[str], tuple[str, str, dict[str, str], str | None]]:
+    def read(answer: str) -> tuple[str, str, dict[str, str], str | None]:
         text, names = _split_tagged(answer)
-        gist_match = re.search(
-            r"<gist>\s*(.*?)\s*</gist>", text, re.IGNORECASE | re.DOTALL
-        )
-        if gist_match is None:
-            raise MeetingIntelligenceContractError("the answer gave no gist")
-        gist = gist_match.group(1)
-        text = text[: gist_match.start()] + text[gist_match.end() :]
+        # The gist is optional: an answer without one keeps the previous gist.
+        gist = None
+        gist_match = _TAGGED_GIST.search(text)
+        if gist_match:
+            gist = gist_match.group(1)
+            text = text[: gist_match.start()] + text[gist_match.end() :]
         match = _TAGGED_TITLE.search(text)
         if match:
             title = match.group(1)
@@ -511,7 +511,7 @@ def _title_and_notes_reader(
             require_section_heading=not request.uses_custom_notes_sections,
             gist=gist,
         )
-        return checked.title, checked.notes_markdown, names, checked.gist or ""
+        return checked.title, checked.notes_markdown, names, checked.gist
 
     return read
 

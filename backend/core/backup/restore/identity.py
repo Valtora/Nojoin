@@ -86,8 +86,6 @@ def _normalise_recording_identifiers(
 
 def _resolve_recordings_identity(ctx: "_RowContext") -> "RowOutcome":
     """Reconcile a recordings row against what the target already holds."""
-    # Archives predating title provenance are as ambiguous as pre-migration rows.
-    ctx.item_data.setdefault("title_user_edited", True)
     audio_path = ctx.item_data.get("audio_path")
     meeting_uid = ctx.item_data.get("meeting_uid")
     public_id = ctx.item_data.get("public_id")

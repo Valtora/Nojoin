@@ -1977,7 +1977,7 @@ async def test_legacy_format_archive_still_restores_completely(
     assert user.username == "legacy-alice"
     assert recording.meeting_uid == "legacy-meeting-uid"
     assert recording.gist is None
-    assert recording.title_user_edited is True
+    assert recording.title_user_edited is False
     # The durable identifier is preserved, so recording URLs and later backups from the
     # same source keep lining up.
     assert recording.public_id == "legacy-public-id"

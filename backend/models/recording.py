@@ -84,6 +84,13 @@ class Recording(BaseDBModel, table=True):
 
     name: str
     gist: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    # The gist was written during capture, so it summarises the transcript so far.
+    gist_live: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean, nullable=False, server_default=false(), default=False
+        ),
+    )
     title_user_edited: bool = Field(
         default=False,
         sa_column=Column(
@@ -311,6 +318,7 @@ class TagRead(BaseDBModel):
 class RecordingRead(BaseDBModel):
     name: str
     gist: Optional[str] = None
+    gist_live: bool = False
     meeting_uid: str
     audio_path: str
     has_proxy: bool = False

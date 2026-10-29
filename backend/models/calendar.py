@@ -418,6 +418,7 @@ class CalendarDashboardRecordingRead(SQLModel):
     id: str
     name: str
     gist: Optional[str] = None
+    gist_live: bool = False
     starts_at: datetime
     ends_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None

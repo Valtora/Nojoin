@@ -8,6 +8,7 @@ LIVE_INITIAL_SEQUENCE = 0
 _STATE_FILENAME = "state.json"
 _STATE_SOURCE_CHANNEL_LABELS_KEY = "source_channel_labels"
 _STATE_SEQUENCE_OUTCOMES_KEY = "sequence_outcomes"
+_STATE_LIVE_TITLE_ATTEMPTS_KEY = "live_title_attempts"
 _MAX_LIVE_SEQUENCE_OUTCOMES = 200
 _LIVE_SEQUENCE_OUTCOMES = {"consumed", "skipped", "deferred", "failed"}
 
@@ -21,6 +22,7 @@ def _default_live_state() -> dict:
         "last_speaker_label": None,
         _STATE_SOURCE_CHANNEL_LABELS_KEY: {},
         _STATE_SEQUENCE_OUTCOMES_KEY: {},
+        _STATE_LIVE_TITLE_ATTEMPTS_KEY: 0,
     }
 
 
@@ -96,6 +98,10 @@ def _normalize_live_state(raw_state: dict | None) -> dict:
         buffer_len_s = max(0.0, float(raw_state["buffer_len_s"]))
     except (KeyError, TypeError, ValueError):
         buffer_len_s = None
+    try:
+        live_title_attempts = int(raw_state.get(_STATE_LIVE_TITLE_ATTEMPTS_KEY, 0))
+    except (TypeError, ValueError):
+        live_title_attempts = 0
 
     default.update(
         {
@@ -109,6 +115,7 @@ def _normalize_live_state(raw_state: dict | None) -> dict:
             _STATE_SEQUENCE_OUTCOMES_KEY: _sanitize_sequence_outcomes(
                 raw_state.get(_STATE_SEQUENCE_OUTCOMES_KEY)
             ),
+            _STATE_LIVE_TITLE_ATTEMPTS_KEY: max(0, live_title_attempts),
         }
     )
     return default
@@ -166,6 +173,10 @@ def write_live_state(live_dir, state: dict) -> None:
         state_payload[_STATE_SEQUENCE_OUTCOMES_KEY] = normalized_state[
             _STATE_SEQUENCE_OUTCOMES_KEY
         ]
+    if normalized_state[_STATE_LIVE_TITLE_ATTEMPTS_KEY]:
+        state_payload[_STATE_LIVE_TITLE_ATTEMPTS_KEY] = normalized_state[
+            _STATE_LIVE_TITLE_ATTEMPTS_KEY
+        ]
     with open(state_path, "w", encoding="utf-8") as f:
         json.dump(state_payload, f)
 
@@ -178,3 +189,21 @@ def _live_lane_has_consumed(state: dict) -> bool:
     """
     outcomes = state.get(_STATE_SEQUENCE_OUTCOMES_KEY) or {}
     return any(entry.get("outcome") == "consumed" for entry in outcomes.values())
+
+
+def claim_live_title_attempt(
+    state: dict[str, Any], delay_minutes: int, *, audio_end_s: float
+) -> bool:
+    """Whether this live publication should ask for the title and gist.
+
+    The first attempt waits for ``delay_minutes`` of capture audio. One that
+    fails is retried once, after another delay, rather than on every
+    publication. The count lives in the capture's live lane state.
+    """
+    attempts = int(state.get(_STATE_LIVE_TITLE_ATTEMPTS_KEY) or 0)
+    if not delay_minutes or attempts >= 2:
+        return False
+    if audio_end_s < delay_minutes * 60 * (attempts + 1):
+        return False
+    state[_STATE_LIVE_TITLE_ATTEMPTS_KEY] = attempts + 1
+    return True

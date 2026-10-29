@@ -52,7 +52,6 @@ def _sample_payload() -> str:
         {
             "speaker_mapping": {"SPEAKER_00": "Alex"},
             "title": "Launch Readiness Review",
-            "gist": "The teams confirmed launch readiness.",
             "notes_markdown": "# Meeting Notes\n\n## Summary\nAll teams are ready.",
         }
     )

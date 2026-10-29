@@ -1,4 +1,4 @@
-"""The gist migration protects existing names and defaults new captures to AI titles.
+"""The gist migration leaves every existing recording on automatic titles.
 
 Walks the real Alembic revision up, down, and up on a disposable PostgreSQL
 database. Skips when NOJOIN_TEST_POSTGRES_URL is not set.
@@ -76,7 +76,7 @@ def _brief_rows(conn: psycopg.Connection) -> list[tuple]:
     ).fetchall()
 
 
-def test_old_names_are_protected_new_names_are_automatic_and_rollback_preserves_names(
+def test_existing_recordings_keep_automatic_titles_and_rollback_preserves_names(
     scratch_database: str,
 ) -> None:
     migrate_empty_database(scratch_database, BEFORE)
@@ -86,30 +86,24 @@ def test_old_names_are_protected_new_names_are_automatic_and_rollback_preserves_
 
     _alembic(scratch_database, "upgrade", GIST)
     with psycopg.connect(scratch_database) as conn:
+        # Upstream retitled every recording at each final pass, so no existing
+        # title is treated as a rename: reprocessing still replaces it.
         assert _brief_rows(conn) == [
-            (row_id, name, True, None) for row_id, name in OLD_NAMES.items()
+            (row_id, name, False, None) for row_id, name in OLD_NAMES.items()
         ]
-        _insert_recording(conn, 3, "New capture")
-        assert _brief_rows(conn)[-1] == (3, "New capture", False, None)
         conn.execute(
-            "UPDATE recordings SET gist = 'The team reviewed the launch.' WHERE id = 1"
+            "UPDATE recordings SET gist = 'The team reviewed the launch.',"
+            " title_user_edited = true WHERE id = 1"
         )
 
     _alembic(scratch_database, "downgrade", BEFORE)
     with psycopg.connect(scratch_database) as conn:
         assert conn.execute(
             "SELECT id, name FROM recordings ORDER BY id"
-        ).fetchall() == [
-            *OLD_NAMES.items(),
-            (3, "New capture"),
-        ]
+        ).fetchall() == list(OLD_NAMES.items())
 
     _alembic(scratch_database, "upgrade", GIST)
     with psycopg.connect(scratch_database) as conn:
-        # All three now predate this upgrade, so unknown title ownership is preserved.
         assert _brief_rows(conn) == [
-            *[(row_id, name, True, None) for row_id, name in OLD_NAMES.items()],
-            (3, "New capture", True, None),
+            (row_id, name, False, None) for row_id, name in OLD_NAMES.items()
         ]
-        _insert_recording(conn, 4, "Capture after reapply")
-        assert _brief_rows(conn)[-1] == (4, "Capture after reapply", False, None)

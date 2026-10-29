@@ -62,7 +62,7 @@ describe("recording gist surfaces", () => {
   });
 
   it.each([false, true])("shows inline agenda gist with showDate=%s and updates the live label", (showDate) => {
-    const live = { ...calendarRecording, status: RecordingStatus.PROCESSING };
+    const live = { ...calendarRecording, gist_live: true };
     const { rerender } = render(<DashboardRecordingCard recording={live} timeZone="UTC" showDate={showDate} />);
     expect(screen.getByText("Summary of transcript so far: Deciding the launch date.")).toBeInTheDocument();
     expect(screen.getByRole("link")).toHaveAttribute("title", "Summary of transcript so far: Deciding the launch date.");

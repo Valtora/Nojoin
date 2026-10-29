@@ -6,9 +6,9 @@ from typing import Any
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_intelligence import (
     MeetingIntelligenceContractError,
-    _load_meeting_intelligence_payload,
-    _read_required_string,
     build_title_preference_instruction,
+    load_meeting_intelligence_payload,
+    normalise_gist,
 )
 from backend.utils.prompt_blocks import render_prompt_blocks
 
@@ -47,12 +47,13 @@ def build_meeting_brief_prompt(
 
 
 def parse_meeting_brief_response(text: str) -> tuple[str, str]:
-    """Validate both fields before publishing either; malformed answers may retry."""
-    payload = _load_meeting_intelligence_payload(text)
-    title = re.sub(r"\s+", " ", _read_required_string(payload, "title").strip())
-    gist = re.sub(r"\s+", " ", _read_required_string(payload, "gist").strip())
-    if not title or not gist or len(gist) > 400:
+    """Validate both fields before publishing either."""
+    payload = load_meeting_intelligence_payload(text)
+    title = payload.get("title")
+    title = re.sub(r"\s+", " ", title).strip() if isinstance(title, str) else ""
+    gist = normalise_gist(payload.get("gist"))
+    if not title or gist is None:
         raise MeetingIntelligenceContractError(
-            "Meeting brief requires a nonempty title and a gist of 1-400 characters"
+            "Meeting brief requires a non-empty title and gist"
         )
     return title, gist

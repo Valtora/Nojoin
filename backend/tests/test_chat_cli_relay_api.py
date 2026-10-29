@@ -38,6 +38,7 @@ CREATE TABLE users (
 CREATE TABLE recordings (
     gist TEXT,
     title_user_edited BOOLEAN NOT NULL DEFAULT 0,
+    gist_live BOOLEAN NOT NULL DEFAULT 0,
     max_speakers INTEGER,
     id INTEGER PRIMARY KEY, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
     name VARCHAR(255) NOT NULL, public_id VARCHAR(36) NOT NULL, meeting_uid VARCHAR(36) NOT NULL,

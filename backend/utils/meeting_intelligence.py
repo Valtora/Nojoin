@@ -25,6 +25,7 @@ from backend.utils.prompt_blocks import render_prompt_blocks
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
+GIST_MAX_CHARS = 400
 
 # Static prompt text. These are plain strings, never format templates: the JSON
 # schema below can therefore be written with real braces instead of doubled ones,
@@ -193,13 +194,7 @@ class AutomaticMeetingIntelligenceResult:
         object.__setattr__(self, "speaker_mapping", normalized_mapping)
         object.__setattr__(self, "title", title)
         object.__setattr__(self, "notes_markdown", notes_markdown)
-        if self.gist is not None:
-            gist = re.sub(r"\s+", " ", self.gist.strip())
-            if not gist or len(gist) > 400:
-                raise MeetingIntelligenceContractError(
-                    "gist must contain 1-400 characters"
-                )
-            object.__setattr__(self, "gist", gist)
+        object.__setattr__(self, "gist", normalise_gist(self.gist))
 
     def validate_for_request(
         self,
@@ -378,6 +373,26 @@ def finalise_automatic_meeting_intelligence_result(
     )
 
 
+def normalise_gist(value: object) -> str | None:
+    """Clean an optional gist; a missing or empty one keeps the previous gist.
+
+    The gist is a nice-to-have beside the title and notes, so an over-long one is
+    shortened at the last sentence, or failing that word, that fits rather than
+    failing the pass it rides on.
+    """
+    if not isinstance(value, str):
+        return None
+    gist = re.sub(r"\s+", " ", value).strip()
+    if len(gist) <= GIST_MAX_CHARS:
+        return gist or None
+    head = gist[:GIST_MAX_CHARS]
+    sentence_ends = [m.end() for m in re.finditer(r"[.!?](?=\s)", head)]
+    if sentence_ends:
+        return head[: sentence_ends[-1]]
+    words = gist[: GIST_MAX_CHARS - 1].rsplit(" ", 1)[0]
+    return words.rstrip(" ,;:") + "\u2026"
+
+
 def build_title_preference_instruction(prefer_short_titles: bool) -> str:
     if prefer_short_titles:
         return (
@@ -403,12 +418,12 @@ def parse_automatic_meeting_intelligence_response(
     *,
     request: AutomaticMeetingIntelligenceRequest | None = None,
 ) -> AutomaticMeetingIntelligenceResult:
-    payload = _load_meeting_intelligence_payload(response_text)
+    payload = load_meeting_intelligence_payload(response_text)
     result = AutomaticMeetingIntelligenceResult(
         speaker_mapping=_read_speaker_mapping(payload),
         title=_read_required_string(payload, "title"),
         notes_markdown=_read_required_string(payload, "notes_markdown"),
-        gist=_read_required_string(payload, "gist"),
+        gist=normalise_gist(payload.get("gist")),
         require_section_heading=not (
             request is not None and request.uses_custom_notes_sections
         ),
@@ -420,7 +435,7 @@ def parse_automatic_meeting_intelligence_response(
     return result
 
 
-def _load_meeting_intelligence_payload(response_text: str) -> Mapping[str, Any]:
+def load_meeting_intelligence_payload(response_text: str) -> Mapping[str, Any]:
     text = response_text.strip()
     if not text:
         raise MeetingIntelligenceContractError(

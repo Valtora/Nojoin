@@ -24,7 +24,6 @@ def test_parse_automatic_meeting_intelligence_response_from_json() -> None:
         {
             "speaker_mapping": {"SPEAKER_00": "Alex"},
             "title": "Launch Readiness Review",
-            "gist": "The teams confirmed launch readiness.",
             "notes_markdown": "# Meeting Notes\n\n## Summary\nAll teams are ready.",
         }
     )
@@ -46,7 +45,6 @@ def test_parse_automatic_meeting_intelligence_response_from_fenced_json() -> Non
                 "SPEAKER_01": "Jordan",
             },
             "title": "Launch Readiness Review",
-            "gist": "The teams confirmed launch readiness.",
             "notes_markdown": "# Meeting Notes\n\n## Summary\nAll teams are ready.",
         },
         indent=2,
@@ -97,7 +95,6 @@ def test_parse_automatic_meeting_intelligence_response_rejects_unknown_labels() 
         {
             "speaker_mapping": {"SPEAKER_01": "Jordan"},
             "title": "Launch Readiness Review",
-            "gist": "The teams confirmed launch readiness.",
             "notes_markdown": "# Meeting Notes\n\n## Summary\nAll teams are ready.",
         }
     )

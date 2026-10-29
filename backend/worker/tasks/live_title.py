@@ -1,7 +1,6 @@
 """Generate one delayed title/gist from committed live text on the IO lane."""
 
 import logging
-from typing import Any
 
 from celery import Task
 from sqlmodel import Session, select
@@ -66,26 +65,11 @@ def _publish_live_title(
     if not recording.title_user_edited:
         recording.name = title
     recording.gist = gist
+    recording.gist_live = True
     session.add(recording)
     session.execute(change_sequence_bump(recording_id))
     session.commit()
     return True
-
-
-def _live_brief_segments(
-    session: Session, recording: Recording, delay: int
-) -> list[dict[str, Any]]:
-    segments = [
-        segment
-        for segment in build_transcript_segments_for_read(session, recording.id)
-        if str(segment.get("text", "")).strip()
-    ]
-    if (
-        max((float(segment.get("end", 0)) for segment in segments), default=0)
-        < delay * 60
-    ):
-        return []
-    return segments
 
 
 def _generate_live_title(task: Task, recording_id: int) -> None:
@@ -96,10 +80,14 @@ def _generate_live_title(task: Task, recording_id: int) -> None:
         return
     user = session.get(User, recording.user_id) if recording.user_id else None
     settings = (user.settings if user else None) or {}
-    delay = get_live_title_delay_minutes(settings)
-    if not delay:
+    # Live dispatch already waited for the delay; a setting turned off since wins.
+    if not get_live_title_delay_minutes(settings):
         return
-    segments = _live_brief_segments(session, recording, delay)
+    segments = [
+        segment
+        for segment in build_transcript_segments_for_read(session, recording.id)
+        if str(segment.get("text", "")).strip()
+    ]
     if not segments:
         return
     config = resolve_llm_config(session, settings, user_id=recording.user_id)

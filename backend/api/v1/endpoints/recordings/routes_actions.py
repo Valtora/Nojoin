@@ -26,7 +26,6 @@ from backend.utils.reprocess_publication import (
     REPROCESS_RUNNING_MESSAGE,
     reprocess_replacement_running,
 )
-from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
     _get_owned_calendar_event,
@@ -94,8 +93,6 @@ async def update_recording(
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     if recording_update.name is not None:
-        # Match live publishers' Transcript -> Recording lock order.
-        await db.execute(change_sequence_bump(recording.id))
         recording.name = recording_update.name
         recording.title_user_edited = True
     if "transcription_language" in recording_update.model_fields_set:

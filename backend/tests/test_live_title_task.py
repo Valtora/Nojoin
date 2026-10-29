@@ -24,7 +24,7 @@ from backend.worker.tasks import live_title
 @pytest.fixture
 def live_brief(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[tuple[Any, Session, list[dict[str, Any]], list[str]]]:
+) -> Iterator[tuple[Any, Session, list[str]]]:
     engine = _create_worker_ai_database(tmp_path)
     with engine.begin() as connection:
         _set_owner_settings(connection, {"live_title_delay_minutes": 1})
@@ -33,17 +33,6 @@ def live_brief(
                 "UPDATE recordings SET status = 'UPLOADING', client_status = 'RECORDING'"
             )
         )
-    segments = [
-        {
-            "start": 0,
-            "end": 60.0,
-            "speaker": "SPEAKER_00",
-            "text": "The launch is Friday.",
-        }
-    ]
-    monkeypatch.setattr(
-        live_title, "build_transcript_segments_for_read", lambda *args: segments
-    )
     monkeypatch.setattr(
         live_title, "resolve_llm_config", lambda *args, **kwargs: _sample_llm_config()
     )
@@ -67,23 +56,20 @@ def live_brief(
             monkeypatch.setattr(
                 live_title.generate_live_title_task, "_session", session
             )
-            yield engine, session, segments, calls
+            yield engine, session, calls
     finally:
         engine.dispose()
 
 
-@pytest.mark.parametrize("end, expected_calls", [(59.99, 0), (60.0, 1), (60.01, 1)])
 @pytest.mark.parametrize(
     "capture_state", [("UPLOADING", "RECORDING"), ("PAUSED", "PAUSED")]
 )
-def test_first_live_title_waits_until_the_configured_audio_boundary(
+def test_live_title_and_gist_come_from_the_stored_transcript(
     live_brief: Any,
     fake_single_flight: Any,
-    end: float,
-    expected_calls: int,
     capture_state: tuple[str, str],
 ) -> None:
-    engine, session, segments, calls = live_brief
+    engine, session, calls = live_brief
     status, client_status = capture_state
     with engine.begin() as connection:
         connection.execute(
@@ -92,15 +78,18 @@ def test_first_live_title_waits_until_the_configured_audio_boundary(
             ),
             {"status": status, "client_status": client_status},
         )
-    segments[0]["end"] = end
     live_title.generate_live_title_task.run(1)
-    assert len(calls) == expected_calls
+    assert len(calls) == 1
+    # The prompt is built from the recording's own transcript, with its times.
+    assert (
+        "[00:04 - 00:08] SPEAKER_01 (with SPEAKER_00): Confirmed the rollout date."
+        in calls[0]
+    )
     with Session(engine) as check:
         recording = check.get(Recording, 1)
-        assert recording.gist == (
-            "The team discussed the Friday launch." if expected_calls else None
-        )
-        assert recording.name == ("Launch review" if expected_calls else "Planning")
+        assert recording.gist == "The team discussed the Friday launch."
+        assert recording.gist_live is True
+        assert recording.name == "Launch review"
         transcript = check.exec(select(Transcript)).one()
         assert transcript.notes is None
         assert transcript.notes_status == "pending"
@@ -111,7 +100,7 @@ def test_first_live_title_waits_until_the_configured_audio_boundary(
 def test_default_zero_delay_skips_the_live_llm(
     live_brief: Any, fake_single_flight: Any
 ) -> None:
-    engine, session, segments, calls = live_brief
+    engine, session, calls = live_brief
     with engine.begin() as connection:
         connection.execute(text("UPDATE users SET settings = '{}'"))
     live_title.generate_live_title_task.run(1)
@@ -123,7 +112,7 @@ def test_duplicate_task_skips_the_model_when_a_call_is_in_flight(
 ) -> None:
     from backend.core.single_flight import KEY_PREFIX
 
-    engine, session, segments, calls = live_brief
+    engine, session, calls = live_brief
     fake_single_flight.keys[f"{KEY_PREFIX}live-title:1"] = "another-worker"
     live_title.generate_live_title_task.run(1)
     assert calls == []
@@ -141,10 +130,8 @@ def test_live_title_task_is_registered_and_routed_to_io() -> None:
 def test_later_text_does_not_refresh_a_successful_live_brief(
     live_brief: Any, fake_single_flight: Any
 ) -> None:
-    engine, session, segments, calls = live_brief
+    engine, session, calls = live_brief
     live_title.generate_live_title_task.run(1)
-    segments[0]["end"] = 600.0
-    segments[0]["text"] = "A later topic must wait until final generation."
     live_title.generate_live_title_task.run(1)
     assert len(calls) == 1
     with Session(engine) as check:
@@ -158,7 +145,7 @@ def test_state_changes_during_the_call_are_respected(
     monkeypatch: pytest.MonkeyPatch,
     event: str,
 ) -> None:
-    engine, session, segments, calls = live_brief
+    engine, session, calls = live_brief
 
     class RacingLLM:
         def generate_text(self, prompt: str, timeout: int) -> str:
@@ -191,7 +178,7 @@ def test_state_changes_during_the_call_are_respected(
 def test_bad_response_can_retry_without_partial_title_write(
     live_brief: Any, fake_single_flight: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine, session, segments, calls = live_brief
+    engine, session, calls = live_brief
     answers = iter(
         [
             json.dumps({"title": "Incomplete"}),

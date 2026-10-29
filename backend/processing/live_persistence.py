@@ -35,7 +35,8 @@ class LivePublicationResult:
 
     accepted: bool
     dispatch_meeting_edge: bool = False
-    dispatch_live_title: bool = False
+    # The owner's live title delay while the recording still has no gist, else 0.
+    live_title_delay_minutes: int = 0
 
 
 def _load_recording_audio_window_manifests(
@@ -93,7 +94,7 @@ def _persist_live_run(
     from backend.core.db import get_sync_session
 
     should_dispatch_meeting_edge = False
-    should_dispatch_live_title = False
+    live_title_delay_minutes = 0
     session = get_sync_session()
     try:
         transcript, recording = load_capture_publication(session, recording_id)
@@ -151,10 +152,10 @@ def _persist_live_run(
                     user_settings = getattr(user, "settings", None) if user else None
 
                 should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
-                should_dispatch_live_title = (
-                    get_live_title_delay_minutes(user_settings) > 0
-                    and recording.gist is None
-                )
+                if recording.gist is None:
+                    live_title_delay_minutes = get_live_title_delay_minutes(
+                        user_settings
+                    )
 
             manifest_rows = _load_recording_audio_window_manifests(
                 session, recording_id
@@ -189,7 +190,7 @@ def _persist_live_run(
                     log=logger,
                 )
             return LivePublicationResult(
-                True, should_dispatch_meeting_edge, should_dispatch_live_title
+                True, should_dispatch_meeting_edge, live_title_delay_minutes
             )
     finally:
         session.close()

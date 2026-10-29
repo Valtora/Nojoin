@@ -84,6 +84,8 @@ describe("noticing a change to the notes in a poll", () => {
     expect(hasPolledRecordingChanged(before, { ...before, name: "Launch planning" })).toBe(true);
     expect(hasPolledRecordingChanged(before, { ...before, gist: "Planning the launch." })).toBe(true);
     expect(hasPolledRecordingChanged({ ...before, gist: "Old summary" }, before)).toBe(true);
+    const live = { ...before, gist: "Planning the launch.", gist_live: true };
+    expect(hasPolledRecordingChanged(live, { ...live, gist_live: false })).toBe(true);
   });
 
   it("sees a new notes list signature, which the page then fetches the list for", () => {

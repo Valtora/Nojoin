@@ -564,7 +564,6 @@ export interface UserTask extends BaseDBModel {
 export interface UserTaskRecordingLink {
   id: RecordingId;
   name: string;
-  gist?: string | null;
   created_at: string;
   duration_seconds?: number | null;
   status: RecordingStatus;
@@ -601,6 +600,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   id: RecordingId;
   name: string;
   gist?: string | null;
+  /** The gist was written during capture, so it summarises the transcript so far. */
+  gist_live?: boolean;
   meeting_uid: string;
   audio_path: string;
   has_proxy?: boolean;
@@ -791,7 +792,7 @@ export interface Settings {
   worker_url?: string;
   enable_auto_voiceprints?: boolean;
   prefer_short_titles?: boolean;
-  /** 0 keeps automatic naming after processing; otherwise wait this many live minutes. */
+  /** Minutes into a live meeting to generate its title and summary so far; 0 is off. */
   live_title_delay_minutes?: number;
   // Notes structure and vocabulary. The install_* keys are admin-managed and are
   // read-only for everyone else; the API drops writes to them from non-admins.
@@ -1010,6 +1011,7 @@ export interface CalendarDashboardRecording {
   id: RecordingId;
   name: string;
   gist?: string | null;
+  gist_live?: boolean;
   starts_at: string;
   ends_at?: string | null;
   duration_seconds?: number | null;

@@ -31,7 +31,6 @@ import {
 import { getColorByKey } from "@/lib/constants";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
-import { recordingGistLabel } from "@/lib/recordingPresentation";
 import { formatTimeZoneLocale } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import type { Recording, RecordingId, Tag, UserTask } from "@/types";
@@ -192,7 +191,6 @@ function RecordingSelector({
           <ButtonBase
             key={recording.id}
             type="button"
-            title={recordingGistLabel(recording)}
             onClick={() => {
               onChange(
                 isSelected
@@ -297,18 +295,9 @@ export default function TasksWorkspace() {
     };
 
     void load();
-    const interval = window.setInterval(() => {
-      getRecordings({ include_archived: true })
-        .then((rows) => {
-          if (!cancelled) setRecordings(rows.filter((recording) => !recording.is_deleted));
-        })
-        // A background failure keeps the last successful recording titles/gists.
-        .catch(() => undefined);
-    }, 15000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
     };
   }, [addNotification]);
 
@@ -336,7 +325,6 @@ export default function TasksWorkspace() {
   }, [tasks]);
 
   const visibleTasks = taskGroups[view];
-  const recordingsById = useMemo(() => new Map(recordings.map((recording) => [recording.id, recording])), [recordings]);
 
   const upsertTask = (updatedTask: UserTask) => {
     setTasks((currentTasks) =>
@@ -769,20 +757,16 @@ export default function TasksWorkspace() {
                             </span>
                           );
                         })}
-                        {task.linked_recordings?.map((linkedRecording) => {
-                          const recording = recordingsById.get(linkedRecording.id) ?? linkedRecording;
-                          return (
-                            <Link
-                              key={recording.id}
-                              href={`/recordings/${recording.id}`}
-                              title={recordingGistLabel(recording)}
-                              className="inline-flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
-                            >
-                              <FileAudio className="h-3.5 w-3.5" />
-                              {recording.name}
-                            </Link>
-                          );
-                        })}
+                        {task.linked_recordings?.map((recording) => (
+                          <Link
+                            key={recording.id}
+                            href={`/recordings/${recording.id}`}
+                            className="inline-flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
+                          >
+                            <FileAudio className="h-3.5 w-3.5" />
+                            {recording.name}
+                          </Link>
+                        ))}
                       </div>
                     </div>
 

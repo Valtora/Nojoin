@@ -447,7 +447,9 @@ def test_manifest_checkpoint_dispatches_intelligence_for_public_rolling_changes(
     assert result.accepted
     assert session.committed
     assert result.dispatch_meeting_edge is (public_changed and owner_enabled)
-    assert result.dispatch_live_title is (public_changed and existing_gist is None)
+    assert result.live_title_delay_minutes == (
+        1 if public_changed and existing_gist is None else 0
+    )
 
 
 def test_redecoded_words_keep_their_own_audio_source_when_the_window_changes_source(

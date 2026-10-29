@@ -47,21 +47,23 @@ const sortByNewest = (recordings: Recording[]): Recording[] =>
  * payload is one the app serves routinely, and slicing client-side keeps the
  * dashboard free of a backend change.
  *
- * Refreshes on app events and at the recordings rail's 15-second cadence, so
- * worker-generated titles and summaries appear without reopening the dashboard.
+ * Refreshes on the `recording-updated` event the app already dispatches when a
+ * capture ends or a recording changes, rather than adding a poller. A recording
+ * that finishes processing therefore leaves the in-flight list on the next
+ * event rather than on a timer.
  */
 export function useDashboardRecordings(): DashboardRecordings {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (preserveContent = false) => {
+  const load = useCallback(async () => {
     try {
       const all = await getRecordings();
       setRecordings(all.filter((recording) => !recording.is_archived && !recording.is_deleted));
     } catch {
       // A dashboard module that cannot load is hidden rather than shouted
       // about: the recordings page is where an error about recordings belongs.
-      if (!preserveContent) setRecordings([]);
+      setRecordings([]);
     } finally {
       setLoading(false);
     }
@@ -71,7 +73,6 @@ export function useDashboardRecordings(): DashboardRecordings {
     void load();
 
     const handleUpdate = () => void load();
-    const interval = window.setInterval(() => void load(true), 15000);
     window.addEventListener("recording-updated", handleUpdate);
     // A discard is explicit and irreversible, so the row goes now rather than
     // after the re-fetch a generic update would need.
@@ -79,7 +80,6 @@ export function useDashboardRecordings(): DashboardRecordings {
       setRecordings((prev) => prev.filter((recording) => recording.id !== id));
     });
     return () => {
-      window.clearInterval(interval);
       window.removeEventListener("recording-updated", handleUpdate);
       unsubscribeRemoved();
     };

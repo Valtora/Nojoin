@@ -596,8 +596,8 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "notes-live-title-delay",
-    label: "Live title delay",
-    description: "Name meetings after processing, or after a chosen number of minutes of live transcript.",
+    label: "Live title and summary",
+    description: "After a chosen number of minutes of a live meeting, generate a title and a short summary so far.",
     category: "notes",
     access: "all",
     settingsKeys: ["live_title_delay_minutes"],

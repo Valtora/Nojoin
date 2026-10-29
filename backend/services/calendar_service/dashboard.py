@@ -266,6 +266,7 @@ def _to_dashboard_recording(
         id=recording.public_id,
         name=recording.name,
         gist=recording.gist,
+        gist_live=recording.gist_live,
         starts_at=starts_at,
         ends_at=utc_naive_to_aware(ends_at),
         duration_seconds=recording.duration_seconds,

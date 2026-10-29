@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,10 @@ from backend.tests.test_automatic_meeting_intelligence_worker import (
     _create_worker_ai_database,
     _sample_llm_config,
 )
-from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceResult
+from backend.utils.meeting_intelligence import (
+    AutomaticMeetingIntelligenceResult,
+    parse_automatic_meeting_intelligence_response,
+)
 
 
 def _generate_final(session: Session) -> None:
@@ -88,24 +92,32 @@ def test_final_gist_publishes_but_user_title_survives(
         engine.dispose()
 
 
-def test_final_generation_replaces_the_first_live_gist(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("answer_has_gist", [True, False])
+def test_final_generation_replaces_the_live_gist_or_keeps_it_labelled_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer_has_gist: bool
 ) -> None:
     engine = _create_worker_ai_database(tmp_path)
     with engine.begin() as connection:
         connection.execute(
-            text("UPDATE recordings SET gist = 'The team opened with introductions.'")
+            text(
+                "UPDATE recordings SET gist = 'The team opened with introductions.',"
+                " gist_live = 1"
+            )
         )
+    answer = {
+        "speaker_mapping": {},
+        "title": "Final launch review",
+        "notes_markdown": "## Summary\nThe launch date was agreed.",
+    }
+    if answer_has_gist:
+        answer["gist"] = "The team agreed the launch date after reviewing open risks."
 
     class FakeLLM:
         def generate_meeting_intelligence(
             self, request: Any, timeout: int
         ) -> AutomaticMeetingIntelligenceResult:
-            return AutomaticMeetingIntelligenceResult(
-                speaker_mapping={},
-                title="Final launch review",
-                notes_markdown="## Summary\nThe launch date was agreed.",
-                gist="The team agreed the launch date after reviewing open risks.",
+            return parse_automatic_meeting_intelligence_response(
+                json.dumps(answer), request=request
             )
 
     monkeypatch.setattr(
@@ -116,10 +128,15 @@ def test_final_generation_replaces_the_first_live_gist(
             _generate_final(session)
         with Session(engine) as session:
             recording = session.get(Recording, 1)
+            transcript = session.exec(select(Transcript)).one()
+            # A model that leaves out the gist still delivers title and notes.
             assert recording.name == "Final launch review"
-            assert (
-                recording.gist
-                == "The team agreed the launch date after reviewing open risks."
-            )
+            assert transcript.notes_status == "completed"
+            if answer_has_gist:
+                assert recording.gist == answer["gist"]
+                assert recording.gist_live is False
+            else:
+                assert recording.gist == "The team opened with introductions."
+                assert recording.gist_live is True
     finally:
         engine.dispose()

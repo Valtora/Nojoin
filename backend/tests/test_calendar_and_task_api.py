@@ -1149,6 +1149,7 @@ async def test_calendar_dashboard_includes_unlinked_recordings_and_deduplicates_
             "id": "recording-601",
             "name": "Roadmap follow-up",
             "gist": None,
+            "gist_live": False,
             "starts_at": "2026-04-18T13:00:00Z",
             "ends_at": "2026-04-18T13:30:00Z",
             "duration_seconds": 1800.0,
@@ -1174,6 +1175,7 @@ async def test_calendar_dashboard_includes_unlinked_recordings_and_deduplicates_
             "id": "recording-602",
             "name": "Linked roadmap meeting",
             "gist": None,
+            "gist_live": False,
             "starts_at": "2026-04-18T09:05:00Z",
             "ends_at": "2026-04-18T10:00:00Z",
             "duration_seconds": 3300.0,
@@ -1201,7 +1203,7 @@ async def test_calendar_dashboard_surfaces_recordings_without_calendar_connectio
     )
     await execute_sql(
         test_session_maker,
-        "UPDATE recordings SET gist = :gist WHERE id = 701",
+        "UPDATE recordings SET gist = :gist, gist_live = true WHERE id = 701",
         {"gist": "The team reviewed the roadmap."},
     )
     override_current_user(1)
@@ -1222,6 +1224,7 @@ async def test_calendar_dashboard_surfaces_recordings_without_calendar_connectio
             "id": "recording-701",
             "name": "Standalone meeting",
             "gist": "The team reviewed the roadmap.",
+            "gist_live": True,
             "starts_at": "2026-04-07T12:00:00Z",
             "ends_at": "2026-04-07T12:45:00Z",
             "duration_seconds": 2700.0,
@@ -1784,11 +1787,6 @@ async def test_create_task_links_owned_recordings(
         public_id="rec-retro",
         created_at=TEST_TIMESTAMP,
     )
-    await execute_sql(
-        test_session_maker,
-        "UPDATE recordings SET gist = :gist WHERE id = 401",
-        {"gist": "The team agreed the launch plan."},
-    )
     override_current_user(1)
 
     response = await client.post(
@@ -1807,7 +1805,6 @@ async def test_create_task_links_owned_recordings(
         {
             "id": "rec-planning",
             "name": "Planning meeting",
-            "gist": "The team agreed the launch plan.",
             "created_at": TEST_TIMESTAMP.replace(tzinfo=UTC)
             .isoformat()
             .replace("+00:00", "Z"),
@@ -1819,7 +1816,6 @@ async def test_create_task_links_owned_recordings(
         {
             "id": "rec-retro",
             "name": "Retrospective",
-            "gist": None,
             "created_at": TEST_TIMESTAMP.replace(tzinfo=UTC)
             .isoformat()
             .replace("+00:00", "Z"),

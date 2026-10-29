@@ -51,7 +51,6 @@ def _serialise_task(task: UserTask) -> UserTaskRead:
                 UserTaskRecordingRead(
                     id=recording.public_id,
                     name=recording.name,
-                    gist=recording.gist,
                     created_at=utc_naive_to_aware(recording.created_at),
                     duration_seconds=recording.duration_seconds,
                     status=recording.status,

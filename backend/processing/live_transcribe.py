@@ -52,6 +52,7 @@ from backend.processing.live_state import (
     LIVE_INITIAL_SEQUENCE,
     _live_lane_has_consumed,
     _record_live_sequence_outcome,
+    claim_live_title_attempt,
     read_live_state,
     write_live_state,
 )
@@ -883,7 +884,11 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         # --- Diarisation dispatch (best-effort Meeting Edge refresh) ---
         if publication.dispatch_meeting_edge:
             _dispatch_meeting_edge_refresh_best_effort(recording_id)
-        if publication.dispatch_live_title:
+        if claim_live_title_attempt(
+            state,
+            publication.live_title_delay_minutes,
+            audio_end_s=combined_abs_start + combined_len,
+        ):
             _dispatch_live_title_best_effort(recording_id)
 
         for consumed_sequence in run:

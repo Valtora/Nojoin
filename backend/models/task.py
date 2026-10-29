@@ -102,7 +102,6 @@ class UserTaskRecording(BaseDBModel, table=True):
 class UserTaskRecordingRead(SQLModel):
     id: str
     name: str
-    gist: Optional[str] = None
     created_at: datetime
     duration_seconds: Optional[float] = None
     status: str

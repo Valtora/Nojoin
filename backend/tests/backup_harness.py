@@ -170,6 +170,7 @@ class TestRecording(TestBase, table=True):
     name: str
     gist: Optional[str] = None
     title_user_edited: bool = False
+    gist_live: bool = False
     meeting_uid: Optional[str] = Field(
         default=None, sa_column=Column(Text, unique=True, nullable=True)
     )

@@ -149,6 +149,7 @@ def _apply_automatic_meeting_intelligence_result(
         recording.name = result.title
     if result.gist is not None:
         recording.gist = result.gist
+        recording.gist_live = False
     transcript.notes = result.notes_markdown
     transcript.notes_status = "completed"
     # Freshly generated notes reflect every READY document by definition.

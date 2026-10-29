@@ -11,7 +11,7 @@ interface AiAutomaticEnhancementSectionProps {
   onPersist: (newSettings: Settings) => void;
 }
 
-/** Automatic meeting naming and analysis (per user). */
+/** What the AI does once a meeting has been processed (per user). */
 export default function AiAutomaticEnhancementSection({
   settings,
   onPersist,
@@ -22,14 +22,14 @@ export default function AiAutomaticEnhancementSection({
   return (
     <SettingsCard
       id="notes-after-meeting"
-      title="Automatic enhancement"
-      description="When the AI names your meetings and analyses them."
+      title="After the meeting"
+      description="What the AI does once a meeting has been processed."
     >
       <SettingsRow
         id="notes-live-title-delay"
-        label="Live title delay"
+        label="Live title and summary"
         controlId="notes-live-title-delay-select"
-        description="Name a meeting after processing, or once this much live transcript is available. Renaming it yourself keeps your chosen title."
+        description="After this many minutes of a live meeting, generate a title and a short summary so far. Both are regenerated when the meeting ends, except a title you have renamed."
       >
         <SelectBase
           data-ui-fill="control"
@@ -43,7 +43,7 @@ export default function AiAutomaticEnhancementSection({
         >
           {titleDelays.map((minutes) => (
             <option key={minutes} value={minutes}>
-              {minutes === 0 ? "After the meeting" : `After ${minutes} ${minutes === 1 ? "minute" : "minutes"}`}
+              {minutes === 0 ? "Off" : `After ${minutes} ${minutes === 1 ? "minute" : "minutes"}`}
             </option>
           ))}
         </SelectBase>

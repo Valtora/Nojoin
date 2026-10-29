@@ -214,6 +214,7 @@ class RecordingPublicRead(PublicModel):
     updated_at: datetime
     name: str
     gist: Optional[str] = None
+    gist_live: bool = False
     meeting_uid: str
     audio_path: str
     has_proxy: bool = False
@@ -492,6 +493,7 @@ def serialize_recording(
         updated_at=recording.updated_at,
         name=recording.name,
         gist=recording.gist,
+        gist_live=recording.gist_live,
         meeting_uid=recording.meeting_uid,
         audio_path=recording.audio_path,
         has_proxy=has_proxy,
