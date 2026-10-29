@@ -11,7 +11,7 @@ import logging
 
 from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.live_speaker_labels import speaker_prompt_name
 from backend.utils.meeting_notes import append_user_notes_section
 from backend.utils.persona_settings import record_notes_persona
 from backend.utils.personas import ActivePersona
@@ -33,25 +33,20 @@ def _build_automatic_meeting_intelligence_transcript_impl(
     timeline_notes: RecordingTimelineNotes,
 ) -> str:
     """The transcript for the unified prompt, with the body notes on their own lines."""
-    unresolved_labels = set(unresolved_speakers)
+    prompt_speaker_map = dict(speaker_map)
+    # Keep inferable diarisation labels intact for the speaker_mapping contract.
+    prompt_speaker_map.update((label, label) for label in unresolved_speakers)
 
     def format_line(seg: dict) -> str:
         speaker_label = str(seg.get("speaker", "Unknown"))
-        display_name = (
-            speaker_label
-            if speaker_label in unresolved_labels
-            else speaker_display_name(speaker_label, speaker_map)
-        )
+        display_name = speaker_prompt_name(speaker_label, prompt_speaker_map)
 
         overlapping_names = []
         for overlapping_label in seg.get("overlapping_speakers", []):
             normalized_label = str(overlapping_label)
-            if normalized_label in unresolved_labels:
-                overlapping_names.append(normalized_label)
-            else:
-                overlapping_names.append(
-                    speaker_display_name(normalized_label, speaker_map)
-                )
+            overlapping_names.append(
+                speaker_prompt_name(normalized_label, prompt_speaker_map)
+            )
 
         overlapping_suffix = (
             f" (with {', '.join(overlapping_names)})" if overlapping_names else ""

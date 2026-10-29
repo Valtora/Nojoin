@@ -25,7 +25,7 @@ from backend.utils.canonical_pipeline.live_compatibility import (
     prepare_live_compatibility_mutation,
 )
 from backend.utils.config_manager import config_manager
-from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.live_speaker_labels import speaker_prompt_name
 from backend.utils.reprocess_publication import (
     REPROCESS_RUNNING_MESSAGE,
     reprocess_replacement_running,
@@ -258,11 +258,11 @@ def _build_speaker_map(speakers) -> dict:
 
 
 def _format_transcript_text(segments, speaker_map: dict) -> str:
-    """Format transcript segments as text."""
+    """Format transcript segments as text for the MCP transcript tool's LLM clients."""
     lines = []
     for seg in segments:
         speaker_label = seg.get("speaker", "Unknown")
-        speaker_name = speaker_display_name(speaker_label, speaker_map)
+        speaker_name = speaker_prompt_name(speaker_label, speaker_map)
         start = seg.get("start", 0)
         minutes = int(start // 60)
         seconds = int(start % 60)

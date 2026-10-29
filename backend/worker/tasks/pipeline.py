@@ -5,6 +5,7 @@ from backend.processing.engines.errors import (
     is_task_interruption,
     transcription_error_from,
 )
+from backend.utils.capture_resume import with_resume_boundaries
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
 from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
@@ -630,7 +631,7 @@ def process_recording_task(
             diarization_result,
             enable_diarization=enable_diarization,
             recording_id=recording_id,
-            config=merged_config,
+            config=with_resume_boundaries(merged_config, transcript),
         )
 
         if not staged:
