@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.models.tag import RecordingTag
 from backend.models.user import User
 from backend.services.recording_identity_service import ensure_recording_meeting_uids
 
@@ -158,6 +159,8 @@ async def test_session_maker() -> sessionmaker:
 
     async with engine.begin() as connection:
         await connection.execute(text(RECORDINGS_SCHEMA))
+        # The list endpoint loads each recording's tags.
+        await connection.run_sync(RecordingTag.__table__.create)
 
     try:
         yield session_maker

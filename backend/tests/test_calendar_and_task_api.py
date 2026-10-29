@@ -42,6 +42,7 @@ TEST_TABLE_NAMES = [
     "calendar_events",
     "calendar_push_channels",
     "recordings",
+    "transcripts",
     "global_speakers",
     "recording_speakers",
     "tags",
@@ -1689,6 +1690,38 @@ async def test_task_tag_filter_keeps_owner_and_status_scope(
     response = await client.get(path, params={"tag_ids": 302, "status": "all"})
     assert response.status_code == 200
     assert response.json() == []
+
+
+@pytest.mark.anyio
+async def test_recordings_list_includes_tags_once_per_recording(
+    client: AsyncClient,
+    override_current_user: Callable[..., None],
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_recording(
+        test_session_maker,
+        recording_id=1,
+        user_id=1,
+        name="Planning",
+        public_id="rec-planning",
+        created_at=TEST_TIMESTAMP,
+    )
+    for tag_id, name in ((301, "Planning"), (302, "Budget")):
+        await seed_tag(test_session_maker, tag_id=tag_id, name=name)
+        await seed_recording_tag(
+            test_session_maker, row_id=tag_id, recording_id=1, tag_id=tag_id
+        )
+    override_current_user(1)
+
+    for params in ({}, {"tag_ids": [301, 302]}):
+        response = await client.get("/api/v1/recordings/", params=params)
+        assert response.status_code == 200
+        payload = response.json()
+        assert [recording["id"] for recording in payload] == ["rec-planning"]
+        assert sorted(tag["name"] for tag in payload[0]["tags"]) == [
+            "Budget",
+            "Planning",
+        ]
 
 
 @pytest.mark.anyio

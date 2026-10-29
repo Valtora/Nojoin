@@ -217,7 +217,12 @@ async def list_recordings(
     if tag_ids:
         query = query.where(Tag.id.in_(tag_ids))
 
-    query = query.order_by(Recording.created_at.desc()).offset(skip).limit(limit)
+    query = (
+        query.options(selectinload(Recording.tags).selectinload(RecordingTag.tag))
+        .order_by(Recording.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
 
     result = await db.execute(query)
     recordings = result.scalars().all()
@@ -226,6 +231,7 @@ async def list_recordings(
             recording,
             has_proxy=_recording_has_proxy(recording),
             has_audio=_recording_has_audio(recording),
+            include_tags=True,
         )
         for recording in recordings
     ]
