@@ -30,6 +30,21 @@ describe("Live word settling settings", () => {
     expect(onPersist).toHaveBeenLastCalledWith({ live_text_settling: "auto" });
   });
 
+  it("says what the selected number of comparisons asks of a word", () => {
+    const { rerender } = render(<LiveTextSettlingSettings settings={{}} isAdmin onPersist={vi.fn()} />);
+    const comparisons = screen.getByRole("combobox", { name: "Unchanged comparisons" });
+    expect(comparisons).toHaveAccessibleDescription(/^With 3, a word locks once it comes out the same in 4 transcriptions in a row\./);
+    rerender(<LiveTextSettlingSettings settings={{ live_text_settling_k: 1 }} isAdmin onPersist={vi.fn()} />);
+    expect(comparisons).toHaveAccessibleDescription(/^With 1, a word locks once it comes out the same in 2 transcriptions in a row\./);
+  });
+
+  it("says Auto settles on a GPU server and keeps whole lines on a CPU-only one", () => {
+    render(<LiveTextSettlingSettings settings={{}} isAdmin onPersist={vi.fn()} />);
+    expect(screen.getByRole("combobox", { name: "Live word settling" })).toHaveAccessibleDescription(
+      /Auto settles live text on a GPU server and shows ordinary whole lines on a CPU-only one\./,
+    );
+  });
+
   it("offers settling on CPU too, and says what it costs", () => {
     const onPersist = vi.fn();
     render(<LiveTextSettlingSettings settings={{}} isAdmin onPersist={onPersist} />);

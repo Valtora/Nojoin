@@ -32,6 +32,7 @@ from backend.utils.canonical_pipeline import (
     finalize_utterances_from_segments,
     refresh_transcript_projection_from_canonical,
     serialize_canonical_utterances,
+    update_utterance_speaker,
     update_utterance_text,
 )
 from backend.utils.canonical_pipeline.constants import _load_transcript
@@ -148,6 +149,63 @@ def test_drift_keeps_human_components_and_offers_final_wording_once(
         assert [line["revision"] for line in _lines(session, recording_id)] == revisions
 
 
+def test_speaker_correction_takes_final_wording_and_keeps_the_chosen_speaker(
+    publication_engine: Engine,
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": index * 2,
+                    "end": index * 2 + 2,
+                    "text": f"live {index}",
+                    "speaker": "LIVE_00",
+                }
+                for index in range(20)
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        corrected = serialize_canonical_utterances(session, recording_id)[7]
+        _, speaker = update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=corrected["id"],
+            new_speaker_name="Chosen person",
+            expected_revision=corrected["revision"],
+        )
+        speaker_id = speaker.id
+        session.commit()
+        # Final boundaries drift half a second, so each segment overlaps two lines.
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": index * 2 + 0.5,
+                    "end": index * 2 + 2.5,
+                    "text": f"final {index}",
+                    "speaker": "SPEAKER_00",
+                }
+                for index in range(20)
+            ],
+        )
+        lines = _lines(session, recording_id)
+        assert [line["text"] for line in lines] == [f"final {i}" for i in range(20)]
+        assert not any("final_review" in line for line in lines)
+        assert lines[7]["recording_speaker_id"] == speaker_id
+        assert lines[7]["speaker_manually_edited"]
+        assert lines[0]["recording_speaker_id"] != speaker_id
+
+
 def test_empty_success_keeps_only_protected_lines(publication_engine: Engine) -> None:
     with Session(publication_engine) as session:
         recording_id = _seed(session)
@@ -168,7 +226,7 @@ def test_empty_success_keeps_only_protected_lines(publication_engine: Engine) ->
         ]
 
 
-def test_exact_final_clears_an_old_review_without_replacing_human_atoms(
+def test_exact_final_replaces_an_old_review_without_replacing_human_atoms(
     publication_engine: Engine,
 ) -> None:
     with Session(publication_engine) as session:
@@ -188,14 +246,21 @@ def test_exact_final_clears_an_old_review_without_replacing_human_atoms(
                 {
                     "start": 0,
                     "end": 2,
-                    "text": "Different native final",
-                    "words": [{"word": "Different", "start": 0, "end": 1}],
+                    "text": " Human wording ",
+                    "words": [{"word": "Human", "start": 0, "end": 1}],
                 },
                 {"start": 2, "end": 4, "text": "Native second final"},
             ],
         )
         lines = _lines(session, recording_id)
+        # Identical wording needs no review; a different final is offered
+        # beside the kept text instead of vanishing.
         assert "final_review" not in lines[0]
+        assert [line["text"] for line in lines] == ["Human wording", "after split"]
+        assert lines[1]["final_review"] == {
+            "text": "Native second final",
+            "reason": "ambiguous_alignment",
+        }
         assert lines[0]["words"][0]["word"] == "Human wording"
         assert lines[0]["words"][0]["start_ms"] is None
 
@@ -408,7 +473,11 @@ def test_actual_locked_line_actions_survive_final_publication(
         assert [(row["id"], row["text"], row["words"]) for row in after] == [
             (row["id"], row["text"], row["words"]) for row in before
         ]
-        assert sum("final_review" in row for row in after) == (outcome == "drift")
+        reviews = [
+            row["final_review"]["text"] for row in after if "final_review" in row
+        ]
+        expected = {"drift": 1, "exact": len(after)}.get(outcome, 0)
+        assert reviews == ["Machine alternative"] * expected
         if outcome == "rollback":
             assert [row["revision"] for row in after] == [
                 row["revision"] for row in before
@@ -453,3 +522,314 @@ def test_reprocess_backfills_archived_human_work_before_refreshing_projection(
         )
         assert correction["text_manually_edited"] is True
         assert len(restored) == 3
+
+
+def test_final_speech_beside_a_text_correction_stays_ordinary_transcript(
+    publication_engine: Engine,
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": index * 2,
+                    "end": index * 2 + 2,
+                    "text": f"live {index}",
+                    "speaker": "LIVE_00",
+                }
+                for index in range(15)
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        live = serialize_canonical_utterances(session, recording_id)
+        update_utterance_text(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=live[7]["id"],
+            text="Corrected words",
+        )
+        _, speaker = update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=live[8]["id"],
+            new_speaker_name="Chosen person",
+            expected_revision=live[8]["revision"],
+        )
+        speaker_id = speaker.id
+        session.commit()
+        # One 30 s final segment spans the 2 s correction at 14-16 s.
+        words = [
+            {"word": f" w{second}", "start": second, "end": second + 1}
+            for second in range(30)
+        ]
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": 0,
+                    "end": 30,
+                    "text": " ".join(f"w{second}" for second in range(30)),
+                    "speaker": "SPEAKER_00",
+                    "words": words,
+                }
+            ],
+        )
+        lines = _lines(session, recording_id)
+        assert [line["text"] for line in lines] == [
+            " ".join(f"w{second}" for second in range(14)),
+            "Corrected words",
+            " ".join(f"w{second}" for second in range(16, 30)),
+        ]
+        assert [(line["start"], line["end"]) for line in lines] == [
+            (0, 14),
+            (14, 16),
+            (16, 30),
+        ]
+        assert lines[1]["final_review"] == {
+            "text": "w14 w15",
+            "reason": "ambiguous_alignment",
+        }
+        assert not any("final_review" in line for line in (lines[0], lines[2]))
+        # The speaker chosen beside the text correction reaches the final line.
+        assert lines[2]["recording_speaker_id"] == speaker_id
+        assert lines[2]["speaker_manually_edited"]
+        assert lines[0]["recording_speaker_id"] != speaker_id
+        stored = _load_transcript(session, recording_id)
+        assert stored is not None and stored.text is not None
+        assert "w0" in stored.text and "w29" in stored.text
+
+
+def test_a_word_straddling_a_protected_line_spreads_its_speaker_to_neither_side(
+    publication_engine: Engine,
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {"start": start, "end": end, "text": f"live {start}", "speaker": "L0"}
+                for start, end in ((0, 10), (10, 12), (12, 20))
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        protected_id = serialize_canonical_utterances(session, recording_id)[1]["id"]
+        update_utterance_text(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=protected_id,
+            text="Corrected words",
+        )
+        _, speaker = update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=protected_id,
+            new_speaker_name="Chosen person",
+        )
+        speaker_id = speaker.id
+        session.commit()
+        # The words either side of the corrected 10-12 s line overlap it by
+        # 0.4 s, but their midpoints lie outside it.
+        words = [
+            *({"word": f" w{i}", "start": i, "end": i + 1} for i in range(9)),
+            {"word": " before", "start": 9.0, "end": 10.4},
+            {"word": " inside", "start": 10.4, "end": 11.6},
+            {"word": " after", "start": 11.6, "end": 13.0},
+            *({"word": f" w{i}", "start": i, "end": i + 1} for i in range(13, 20)),
+        ]
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": 0,
+                    "end": 20,
+                    "text": "".join(word["word"] for word in words).strip(),
+                    "speaker": "SPEAKER_00",
+                    "words": words,
+                }
+            ],
+        )
+        lines = _lines(session, recording_id)
+        assert len(lines) == 3
+        assert lines[1]["recording_speaker_id"] == speaker_id
+        # Neither neighbour takes the corrected line's speaker or its lock.
+        for line in (lines[0], lines[2]):
+            assert line["recording_speaker_id"] != speaker_id
+            assert not line["speaker_manually_edited"]
+        assert lines[1]["final_review"]["text"] == "inside"
+        assert [line["text"] for line in lines] == [
+            " ".join([*(f"w{i}" for i in range(9)), "before"]),
+            "Corrected words",
+            " ".join(["after", *(f"w{i}" for i in range(13, 20))]),
+        ]
+        assert [(line["start"], line["end"]) for line in lines] == [
+            (0, 10),
+            (10, 12),
+            (12, 20),
+        ]
+
+
+def test_one_untimed_word_keeps_the_speech_beside_a_correction_in_the_transcript(
+    publication_engine: Engine,
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {"start": i * 2, "end": i * 2 + 2, "text": f"live {i}", "speaker": "L0"}
+                for i in range(15)
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        update_utterance_text(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=serialize_canonical_utterances(session, recording_id)[
+                7
+            ]["id"],
+            text="Corrected words",
+        )
+        session.commit()
+        # Partial Canary alignment: one word of the 30 s segment over the
+        # corrected 14-16 s line has no timing.
+        words = [
+            {
+                "word": f" w{second}",
+                "start": None if second == 5 else second,
+                "end": None if second == 5 else second + 1,
+                "source_id": f"source-{second}",
+            }
+            for second in range(30)
+        ]
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": 0,
+                    "end": 30,
+                    "text": " ".join(f"w{second}" for second in range(30)),
+                    "speaker": "SPEAKER_00",
+                    "words": words,
+                }
+            ],
+        )
+        stored = _load_transcript(session, recording_id)
+        assert stored is not None and stored.text is not None
+        assert "w0" in stored.text and "w5" in stored.text and "w29" in stored.text
+        lines = _lines(session, recording_id)
+        # The untimed word stays with the timed word before it.
+        assert [line["text"] for line in lines] == [
+            " ".join(f"w{second}" for second in range(14)),
+            "Corrected words",
+            " ".join(f"w{second}" for second in range(16, 30)),
+        ]
+        assert [(line["start"], line["end"]) for line in lines] == [
+            (0, 14),
+            (14, 16),
+            (16, 30),
+        ]
+        assert lines[1]["final_review"]["text"] == "w14 w15"
+
+
+@pytest.mark.parametrize("forced", [False, True], ids=["native", "forced"])
+def test_a_named_correction_holding_no_final_word_splits_its_neighbours(
+    publication_engine: Engine, forced: bool
+) -> None:
+    with Session(publication_engine) as session:
+        recording_id = _recording(session)
+        transcript = _transcript(session, recording_id)
+        transcript.settling_state = {"settled": True}
+        session.add(transcript)
+        append_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {"start": start, "end": end, "text": f"live {start}", "speaker": "L0"}
+                for start, end in ((0, 10), (10, 12), (12, 20))
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.STABLE,
+        )
+        session.commit()
+        protected_id = serialize_canonical_utterances(session, recording_id)[1]["id"]
+        update_utterance_text(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=protected_id,
+            text="Corrected words",
+        )
+        _, speaker = update_utterance_speaker(
+            session,
+            recording_id=recording_id,
+            utterance_public_id=protected_id,
+            new_speaker_name="Chosen person",
+        )
+        speaker_id = speaker.id
+        session.commit()
+        # Final ASR has no word whose midpoint lies in the corrected 10-12 s
+        # line: the boundary words end at 10.6 s and start at 11.4 s.
+        words = [
+            *({"word": f" w{i}", "start": i, "end": i + 1} for i in range(9)),
+            {"word": " before", "start": 9.0, "end": 10.6},
+            {"word": " after", "start": 11.4, "end": 13.0},
+            *({"word": f" w{i}", "start": i, "end": i + 1} for i in range(13, 20)),
+        ]
+        if forced:
+            for order, word in enumerate(words):
+                word["source_id"] = f"source-{order}"
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording_id,
+            segments=[
+                {
+                    "start": 0,
+                    "end": 20,
+                    "text": "".join(word["word"] for word in words).strip(),
+                    "speaker": "SPEAKER_00",
+                    "words": words,
+                }
+            ],
+        )
+        lines = _lines(session, recording_id)
+        assert len(lines) == 3
+        assert lines[1]["recording_speaker_id"] == speaker_id
+        for line in (lines[0], lines[2]):
+            assert line["recording_speaker_id"] != speaker_id
+            assert not line["speaker_manually_edited"]
+        assert [line["text"] for line in lines] == [
+            " ".join([*(f"w{i}" for i in range(9)), "before"]),
+            "Corrected words",
+            " ".join(["after", *(f"w{i}" for i in range(13, 20))]),
+        ]
+        assert [(line["start"], line["end"]) for line in lines] == [
+            (0, 10),
+            (10, 12),
+            (12, 20),
+        ]
+        assert "final_review" not in lines[1]
