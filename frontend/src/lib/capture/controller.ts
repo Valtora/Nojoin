@@ -807,9 +807,12 @@ export class CaptureController {
       sources?.release();
       const cancelledByUser =
         error instanceof PickSourceError && error.code === "display_cancelled";
+      // Fenced with the init epoch: a picker left open long enough for the
+      // reservation to stall may have seen another device take it over.
       await discardRecordingCapture(
         initResponse.id,
         cancelledByUser ? "display_picker_cancelled" : undefined,
+        { epoch: initResponse.capture_epoch },
       ).catch(() => {});
 
       if (cancelledByUser) {

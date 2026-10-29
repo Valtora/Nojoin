@@ -558,9 +558,11 @@ describe("capture controller", () => {
 
     await expect(controller.start("Cancelled meeting")).resolves.toBeNull();
 
+    // This init response carries no epoch, so the discard sends none.
     expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith(
       "rec-1",
       "display_picker_cancelled",
+      { epoch: undefined },
     );
     expect(controller.getState()).toMatchObject({
       status: "idle",

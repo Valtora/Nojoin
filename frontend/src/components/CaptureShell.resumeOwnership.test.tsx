@@ -7,6 +7,7 @@ import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 import { audioTrack, mediaStream } from "@/lib/capture/releaseMicrophone.fixtures";
 import { clearPausedCaptureContext } from "@/lib/capture/shared";
 import { createSegmentUploader } from "@/lib/capture/uploader";
+import { PickSourceError } from "@/lib/capture/pickSource";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
@@ -387,6 +388,35 @@ describe("Start Meeting", () => {
     await screen.findByTitle("Pause recording");
     expect(api.initRecording).toHaveBeenCalledOnce();
     expect(checksBeforePicker).toBe(checksBeforeStart);
+  });
+});
+
+describe("Start Meeting whose share picker is cancelled late", () => {
+  it("does not delete the recording another device took over meanwhile", async () => {
+    pathname = "/";
+    api.getUnfinishedCaptures.mockResolvedValue([]);
+    // The picker stayed open past the stall threshold, and another device
+    // resumed the reservation (epoch 4) before the user cancelled it here.
+    pickCaptureSource.mockRejectedValue(new PickSourceError("display_cancelled", "Picker cancelled"));
+    let deleted = false;
+    api.discardRecordingCapture.mockImplementation(
+      async (_id: string, _reason: unknown, options: { epoch?: number } = {}) => {
+        if (options.epoch !== undefined && options.epoch !== 4) {
+          throw Object.assign(new AxiosError("Request failed with status code 409"), {
+            response: { status: 409, data: { detail: { code: "capture_superseded", message: "Continued elsewhere." } } },
+          });
+        }
+        deleted = true;
+      },
+    );
+    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+    await waitFor(() => expect(api.discardRecordingCapture).toHaveBeenCalled());
+    await act(async () => {});
+    expect(deleted).toBe(false);
   });
 });
 
