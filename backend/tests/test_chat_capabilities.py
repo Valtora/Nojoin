@@ -29,6 +29,8 @@ from backend.processing.llm_services import (
 from backend.utils.chat_prompt import (
     CAPABILITIES_WITH_NOTES_TOOL,
     CAPABILITIES_WITHOUT_TOOLS,
+    ChatTranscript,
+    LiveChatTranscript,
 )
 
 QUESTION = "What is this meeting about?"
@@ -51,11 +53,11 @@ def _assert_offers_nothing_after_the_reply(prompt: str, can_edit_notes: bool) ->
     assert ("cannot change the meeting notes" in prompt) is not can_edit_notes
 
 
-def _chat(backend, stream: bool) -> None:
+def _chat(backend, stream: bool, transcript: ChatTranscript) -> None:
     kwargs = {
         "user_question": QUESTION,
         "meeting_notes": NOTES,
-        "diarized_transcript": TRANSCRIPT,
+        "diarized_transcript": transcript,
     }
     if stream:
         list(backend.ask_question_streaming(**kwargs))
@@ -63,7 +65,7 @@ def _chat(backend, stream: bool) -> None:
         backend.ask_question_about_meeting(**kwargs)
 
 
-def _anthropic(stream: bool) -> Sent:
+def _anthropic(stream: bool, transcript: ChatTranscript = TRANSCRIPT) -> Sent:
     sent: dict = {}
     reply = SimpleNamespace(
         content=[SimpleNamespace(type="text", text="An answer.")],
@@ -97,13 +99,13 @@ def _anthropic(stream: bool) -> Sent:
     backend = object.__new__(AnthropicLLMBackend)
     backend.model = "claude-opus-5"
     backend.client = SimpleNamespace(messages=FakeMessages())
-    _chat(backend, stream)
+    _chat(backend, stream, transcript)
 
     tools = {tool["name"] for tool in sent.get("tools") or []}
     return tools, "".join(block["text"] for block in sent["system"])
 
 
-def _openai(stream: bool) -> Sent:
+def _openai(stream: bool, transcript: ChatTranscript = TRANSCRIPT) -> Sent:
     sent: dict = {}
 
     class FakeCompletions:
@@ -120,13 +122,13 @@ def _openai(stream: bool) -> Sent:
     backend.client = SimpleNamespace(
         chat=SimpleNamespace(completions=FakeCompletions())
     )
-    _chat(backend, stream)
+    _chat(backend, stream, transcript)
 
     tools = {tool["function"]["name"] for tool in sent.get("tools") or []}
     return tools, sent["messages"][0]["content"]
 
 
-def _gemini(stream: bool) -> Sent:
+def _gemini(stream: bool, transcript: ChatTranscript = TRANSCRIPT) -> Sent:
     from google import genai
 
     sent: dict = {}
@@ -144,14 +146,14 @@ def _gemini(stream: bool) -> Sent:
     backend.model = "gemini-2.5-pro"
     backend.genai = genai
     backend.client = SimpleNamespace(models=FakeModels())
-    _chat(backend, stream)
+    _chat(backend, stream, transcript)
 
     config = sent.get("config")
     tools = {tool.__name__ for tool in (config.tools if config else None) or []}
     return tools, sent["contents"][-1]["parts"][0]["text"]
 
 
-def _ollama(stream: bool) -> Sent:
+def _ollama(stream: bool, transcript: ChatTranscript = TRANSCRIPT) -> Sent:
     sent: dict = {}
 
     class FakeResponse:
@@ -174,7 +176,7 @@ def _ollama(stream: bool) -> Sent:
     backend.api_url = "http://ollama.local"
     backend.context_window = 131072
     backend.requests = FakeRequests()
-    _chat(backend, stream)
+    _chat(backend, stream, transcript)
 
     return set(sent.get("tools") or []), sent["messages"][-1]["content"]
 
@@ -194,12 +196,12 @@ def _cli_prompt(stream: bool) -> str:
 
     backend = CliLLMBackend(model="claude-sonnet-5", user_id=7)
     backend._manager = FakeManager()
-    _chat(backend, stream)
+    _chat(backend, stream, TRANSCRIPT)
 
     return prompts[0]
 
 
-PATHS: dict[str, tuple[Callable[[bool], Sent], bool, bool]] = {
+PATHS: dict[str, tuple[Callable[..., Sent], bool, bool]] = {
     # id: (driver, streamed, sends the notes tool)
     "anthropic-stream": (_anthropic, True, True),
     "anthropic-ask": (_anthropic, False, False),
@@ -227,6 +229,21 @@ def test_chat_capability_statement_matches_the_tools_sent(path: str) -> None:
         assert CAPABILITIES_WITHOUT_TOOLS in prompt
         assert CAPABILITIES_WITH_NOTES_TOOL not in prompt
     _assert_offers_nothing_after_the_reply(prompt, has_notes_tool)
+
+
+@pytest.mark.parametrize("path", list(PATHS))
+def test_in_flight_chat_never_offers_the_notes_tool(path: str) -> None:
+    # The pass still running writes the notes when it finishes, over anything
+    # the tool would save now.
+    driver, stream, _ = PATHS[path]
+
+    tools, prompt = driver(stream, LiveChatTranscript(TRANSCRIPT))
+
+    assert NOTES_TOOL not in tools
+    assert NOTES in prompt and TRANSCRIPT in prompt
+    assert CAPABILITIES_WITHOUT_TOOLS in prompt
+    assert CAPABILITIES_WITH_NOTES_TOOL not in prompt
+    _assert_offers_nothing_after_the_reply(prompt, can_edit_notes=False)
 
 
 @pytest.mark.parametrize("stream", [True, False], ids=["cli-stream", "cli-ask"])

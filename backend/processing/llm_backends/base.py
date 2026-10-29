@@ -463,6 +463,15 @@ class LLMBackend:
             user_question, meeting_notes, diarized_transcript, notes_tool=notes_tool
         )
 
+    @staticmethod
+    def _offers_notes_tool(diarized_transcript: ChatTranscript) -> bool:
+        """Whether a chat request may carry ``update_meeting_notes``.
+
+        Not while the recording is in flight: the pass still running writes
+        the notes when it finishes, over anything the tool saved.
+        """
+        return not isinstance(diarized_transcript, LiveChatTranscript)
+
     def _chat_transcript(
         self,
         diarized_transcript: ChatTranscript,
