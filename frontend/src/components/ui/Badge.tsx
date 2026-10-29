@@ -107,17 +107,31 @@ const STATUS_MAP: Record<RecordingStatus, StatusDescriptor> = {
   },
 };
 
-// A capture in progress is UPLOADING on the server whether it is running or
-// paused; the browser's own state tells the two apart from a finishing upload.
-// A running one reads "Recording" only in the tab capturing it, "Live"
-// anywhere else, as the recording page's controls do.
+/**
+ * A capture in progress is UPLOADING on the server whether it is running or
+ * paused; the browser's own state tells the two apart from a finishing upload.
+ * A running one reads "Recording" only in the tab capturing it, "Live"
+ * anywhere else, as the recording page's controls do. Null for anything else.
+ */
+export const liveCaptureLabel = (
+  status: RecordingStatus,
+  clientStatus: ClientStatus | null | undefined,
+  capturedHere: boolean,
+): "Recording" | "Live" | "Paused" | null => {
+  if (status !== RecordingStatus.UPLOADING) return null;
+  if (clientStatus === ClientStatus.PAUSED) return "Paused";
+  if (clientStatus !== ClientStatus.RECORDING) return null;
+  return capturedHere ? "Recording" : "Live";
+};
+
 const captureDescriptor = (
+  status: RecordingStatus,
   clientStatus: ClientStatus | null | undefined,
   capturedHere: boolean,
 ): StatusDescriptor | null => {
-  if (clientStatus === ClientStatus.PAUSED) return STATUS_MAP[RecordingStatus.PAUSED];
-  if (clientStatus !== ClientStatus.RECORDING) return null;
-  return { tone: "warning", label: capturedHere ? "Recording" : "Live", icon: <Mic aria-hidden="true" /> };
+  const label = liveCaptureLabel(status, clientStatus, capturedHere);
+  if (label === "Paused") return STATUS_MAP[RecordingStatus.PAUSED];
+  return label ? { tone: "warning", label, icon: <Mic aria-hidden="true" /> } : null;
 };
 
 interface StatusBadgeProps {
@@ -148,8 +162,7 @@ export function StatusBadge({
         label: "Generating notes",
         icon: <Loader2 aria-hidden="true" className="animate-spin" />,
       }
-    : (status === RecordingStatus.UPLOADING && captureDescriptor(clientStatus, capturedHere)) ||
-      STATUS_MAP[status];
+    : captureDescriptor(status, clientStatus, capturedHere) ?? STATUS_MAP[status];
 
   return (
     <Badge tone={descriptor.tone} size={size} icon={descriptor.icon} className={className}>

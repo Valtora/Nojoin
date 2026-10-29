@@ -5,14 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureProvider, useCapture } from "@/lib/capture/CaptureProvider";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
+import RecordingInfoModal from "../RecordingInfoModal";
 import ProcessingCard from "./ProcessingCard";
 import RecentRecordingsCard from "./RecentRecordingsCard";
 
 const getUnfinishedCaptures = vi.hoisted(() => vi.fn());
+const getRecordingInfo = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api")>(),
   getUnfinishedCaptures,
+  getRecordingInfo,
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
@@ -60,7 +63,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe.each(surfaces)("a live capture on the %s card, in a browser that cannot capture", (_name, surface) => {
+describe.each(surfaces)("a live capture on the %s surface, in a browser that cannot capture", (_name, surface) => {
   it.each([
     // Nothing records in this browser, so it is "Live" here.
     [ClientStatus.RECORDING, "Live"],
@@ -75,5 +78,21 @@ describe.each(surfaces)("a live capture on the %s card, in a browser that cannot
     expect(screen.getByText(label)).toBeInTheDocument();
     expect(screen.queryByText(label === "Live" ? "Uploading" : "Live")).not.toBeInTheDocument();
     expect(screen.queryByText("Recording")).not.toBeInTheDocument();
+  });
+});
+
+describe("a live capture in the recording info, in a browser that cannot capture", () => {
+  it("names its state Live rather than the raw UPLOADING", async () => {
+    const recording = live(ClientStatus.RECORDING);
+    getUnfinishedCaptures.mockResolvedValue([recording]);
+    getRecordingInfo.mockResolvedValue({});
+    render(<CaptureProvider><Support />
+      <RecordingInfoModal isOpen onClose={() => {}} recording={recording} />
+    </CaptureProvider>);
+    await act(async () => {});
+
+    expect(screen.getByTestId("support")).toHaveTextContent("unsupported");
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.queryByText("UPLOADING")).not.toBeInTheDocument();
   });
 });
