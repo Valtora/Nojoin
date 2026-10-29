@@ -11,11 +11,18 @@ interface PlaybackEvents {
 }
 
 const PAUSE_REQUEST = "nojoin:pause-playback";
+const SEEK_REQUEST = "nojoin:seek-playback";
 
 /** Explicit pause still cancels resumption when a source reload already paused the element. */
 export function pauseAudioPlayback(audio: HTMLAudioElement): void {
   audio.dispatchEvent(new Event(PAUSE_REQUEST));
   audio.pause();
+}
+
+/** Seeks, first taking a newer snapshot if one is waiting, so a line past the loaded audio can play. */
+export function seekAudioPlayback(audio: HTMLAudioElement, time: number): void {
+  audio.dispatchEvent(new CustomEvent(SEEK_REQUEST, { detail: time }));
+  audio.currentTime = time;
 }
 
 /** Keeps one media element and its listening position as server audio grows. */
@@ -49,19 +56,21 @@ export function useAudioPlayback(
         setIsPlaying(false);
       });
     };
-    const refresh = () => {
-      const next = latest.current.source;
-      if (!next || next === loadedSource.current || restoring.current) return;
-      // Native pause events are queued: a snippet may already have stopped
-      // before its pause event arrives. An uploaded EOF keeps its play intent.
-      if (audio.paused && !audio.ended) wantsPlay.current = false;
-      // A new chunk need not interrupt audio already available to the listener.
-      if (latest.current.growing && !audio.paused && !audio.ended &&
-        Number.isFinite(audio.duration) && audio.duration - audio.currentTime > 2) return;
-      restoring.current = { time: audio.currentTime, rate: audio.playbackRate };
+    const reload = (next: string, time = audio.currentTime) => {
+      restoring.current = { time, rate: audio.playbackRate };
       loadedSource.current = next;
       audio.src = next;
       audio.load();
+    };
+    // Reloading drops the buffer, so a newer snapshot waits until the listener
+    // starts playing or nears the end of this one. The final file is taken at once.
+    const atSnapshotEnd = () => wantsPlay.current && (audio.ended ||
+      (!audio.paused && Number.isFinite(audio.duration) && audio.duration - audio.currentTime <= 2));
+    const refresh = (starting = false) => {
+      const next = latest.current.source;
+      if (!next || next === loadedSource.current || restoring.current) return;
+      if (latest.current.growing && loadedSource.current && !starting && !atSnapshotEnd()) return;
+      reload(next);
     };
     const durationChanged = () => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) setDuration(audio.duration);
@@ -88,14 +97,20 @@ export function useAudioPlayback(
       wantsPlay.current = true;
       setIsPlaying(true);
       latest.current.events.onPlay?.();
+      refresh(true);
     };
     const onPause = () => {
       if (restoring.current || (audio.ended && latest.current.growing)) return;
       wantsPlay.current = false;
       setIsPlaying(false);
       latest.current.events.onPause?.();
-      // Transcript playback pauses before setting its new seek position.
-      queueMicrotask(refresh);
+    };
+    const seekRequested = (event: Event) => {
+      const time = (event as CustomEvent<number>).detail;
+      if (restoring.current) restoring.current.time = time;
+      else if (latest.current.source && latest.current.source !== loadedSource.current) {
+        reload(latest.current.source, time);
+      }
     };
     const pauseRequested = () => {
       wantsPlay.current = false;
@@ -119,6 +134,7 @@ export function useAudioPlayback(
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
     audio.addEventListener(PAUSE_REQUEST, pauseRequested);
+    audio.addEventListener(SEEK_REQUEST, seekRequested);
     audio.addEventListener("ended", ended);
     audio.addEventListener("timeupdate", time);
     audio.addEventListener("loadedmetadata", metadata);
@@ -129,6 +145,7 @@ export function useAudioPlayback(
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener(PAUSE_REQUEST, pauseRequested);
+      audio.removeEventListener(SEEK_REQUEST, seekRequested);
       audio.removeEventListener("ended", ended);
       audio.removeEventListener("timeupdate", time);
       audio.removeEventListener("loadedmetadata", metadata);
@@ -152,5 +169,5 @@ export function useAudioPlayback(
       });
     }
   };
-  return { isPlaying, hasError, duration, togglePlay, waiting: !source };
+  return { isPlaying, hasError, duration, togglePlay, growing, waiting: !source };
 }

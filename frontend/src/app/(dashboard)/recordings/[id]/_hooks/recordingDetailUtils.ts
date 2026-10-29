@@ -15,8 +15,7 @@ export const isRecordingInFlight = (recording: Recording | null | undefined) =>
 
 // Processed, with audio a proxy can be made from, and no proxy yet.
 const isWaitingForProxy = (recording: Recording) =>
-  (recording.status === RecordingStatus.PROCESSED ||
-    (recording.status === RecordingStatus.ERROR && (recording.capture_playback_sequence ?? -1) >= 0)) &&
+  recording.status === RecordingStatus.PROCESSED &&
   recording.has_proxy === false &&
   recording.has_audio !== false &&
   !isDemoRecording(recording);

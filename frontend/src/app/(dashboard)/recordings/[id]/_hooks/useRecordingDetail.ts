@@ -57,7 +57,7 @@ import { useNoteEdits } from "@/lib/notes/useNoteEdits";
 import { useRecordingNotes } from "@/lib/notes/useNoteOutbox";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
 import { useRecordingActions } from "@/components/recordings/_hooks/useRecordingActions";
-import { pauseAudioPlayback } from "@/components/useAudioPlayback";
+import { pauseAudioPlayback, seekAudioPlayback } from "@/components/useAudioPlayback";
 
 import {
   cloneTranscriptSegments,
@@ -488,7 +488,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         // Pause first to interrupt any pending play requests
         pauseAudioPlayback(audioRef.current);
 
-        audioRef.current.currentTime = start;
+        seekAudioPlayback(audioRef.current, start);
         if (end) setStopTime(end);
         else setStopTime(null);
 

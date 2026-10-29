@@ -41,9 +41,11 @@ export default function AudioPlayer({
   onPause,
   compact = false,
 }: AudioPlayerProps) {
-  const { hasError, isPlaying, duration, togglePlay, waiting } = useAudioPlayback(recording, audioRef, {
+  const { hasError, isPlaying, duration, togglePlay, growing, waiting } = useAudioPlayback(recording, audioRef, {
     onTimeUpdate, onEnded, onPlay, onPause,
   });
+  // A snapshot is replaced as capture grows, so buffering it ahead is wasted.
+  const preload = growing ? "metadata" : "auto";
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -134,7 +136,7 @@ export default function AudioPlayer({
         id="audio-player"
         className={`${shellClassName} relative overflow-hidden`}
       >
-        <audio ref={audioRef} preload="metadata" />
+        <audio ref={audioRef} preload={preload} />
         <SurfaceBase data-ui-fill="card" kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 font-medium text-status-info-fg ${compact ? "text-xs" : "text-sm"}`}>
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -172,7 +174,7 @@ export default function AudioPlayer({
         id="audio-player"
         className={`${shellClassName} relative overflow-hidden`}
       >
-        {!isDemo && !audioMissing && <audio ref={audioRef} preload="metadata" />}
+        {!isDemo && !audioMissing && <audio ref={audioRef} preload={preload} />}
         {/* Blurred background visual effect */}
         <SurfaceBase data-ui-fill="card" kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 font-medium text-action-tint-fg ${compact ? "text-xs" : "text-sm"}`}>
@@ -217,7 +219,7 @@ export default function AudioPlayer({
     >
       <audio
         ref={audioRef}
-        preload="metadata"
+        preload={preload}
       />
 
       {compact ? (

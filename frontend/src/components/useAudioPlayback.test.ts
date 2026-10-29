@@ -1,7 +1,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecordingStatus, type Recording } from "@/types";
-import { pauseAudioPlayback, useAudioPlayback } from "./useAudioPlayback";
+import { pauseAudioPlayback, seekAudioPlayback, useAudioPlayback } from "./useAudioPlayback";
 
 vi.mock("@/lib/api", () => ({
   getCapturePlaybackUrl: (id: string, sequence: number) => `/recordings/${id}/capture-stream?sequence=${sequence}`,
@@ -17,7 +17,11 @@ function player(recording = live(), stopAt?: number) {
   const audio = document.createElement("audio");
   const media = { time: 0, duration: NaN, paused: true, ended: false };
   Object.defineProperties(audio, {
-    currentTime: { get: () => media.time, set: (time: number) => { media.time = time; } },
+    // Like a browser, a seek past the loaded duration lands at its end.
+    currentTime: {
+      get: () => media.time,
+      set: (time: number) => { media.time = Number.isFinite(media.duration) ? Math.min(time, media.duration) : time; },
+    },
     duration: { get: () => media.duration },
     paused: { get: () => media.paused },
     ended: { get: () => media.ended },
@@ -67,7 +71,7 @@ describe("growing server playback", () => {
     expect(p.result.current.duration).toBe(2.5);
   });
 
-  it("refreshes paused growth at the actual media position without starting playback", () => {
+  it("keeps a paused listener's snapshot until play, then resumes at the same position", () => {
     const p = player();
     p.metadata(10);
     p.media.time = 6.25;
@@ -75,14 +79,35 @@ describe("growing server playback", () => {
     p.audio.volume = 0.4;
     p.audio.muted = true;
     p.rerender({ recording: live({ capture_playback_sequence: 2 }) });
+    p.rerender({ recording: live({ capture_playback_sequence: 3 }) });
+    p.event("timeupdate");
+    expect(p.load).toHaveBeenCalledTimes(1);
+    expect(p.audio.src).toContain("sequence=1");
+    act(() => p.result.current.togglePlay());
+    expect(p.audio.src).toContain("sequence=3");
     expect(p.media.time).toBe(0); // load resets the browser's media position.
+    p.play.mockClear();
     p.metadata(15);
     expect(p.media.time).toBe(6.25);
     expect(p.audio.playbackRate).toBe(1.5);
     expect(p.audio.volume).toBe(0.4);
     expect(p.audio.muted).toBe(true);
-    expect(p.play).not.toHaveBeenCalled();
-    expect(p.onTimeUpdate).toHaveBeenCalled();
+    expect(p.play).toHaveBeenCalledOnce();
+    expect(p.result.current.isPlaying).toBe(true);
+  });
+
+  it("seeks a paused listener past its loaded snapshot onto the newer one", async () => {
+    const p = player();
+    p.metadata(10);
+    p.rerender({ recording: live({ capture_playback_sequence: 7 }) });
+    act(() => seekAudioPlayback(p.audio, 14));
+    expect(p.audio.src).toContain("sequence=7");
+    await act(async () => { await p.audio.play(); });
+    p.play.mockClear();
+    p.metadata(16);
+    expect(p.media.time).toBe(14);
+    expect(p.play).toHaveBeenCalledOnce();
+    expect(p.load).toHaveBeenCalledTimes(2);
   });
 
   it("defers playing growth until near EOF and resumes at the actual time", async () => {
@@ -102,7 +127,7 @@ describe("growing server playback", () => {
     expect(p.result.current.isPlaying).toBe(true);
   });
 
-  it("keeps a snippet stopped when native pause events arrive after its source refresh", async () => {
+  it("keeps a snippet stopped near EOF when its native pause event is still queued", async () => {
     const p = player(live(), 8.5);
     p.metadata(10);
     p.media.time = 3;
@@ -112,17 +137,10 @@ describe("growing server playback", () => {
       p.media.paused = true;
       queueMicrotask(() => p.audio.dispatchEvent(new Event("pause")));
     });
-    p.load.mockImplementation(() => {
-      p.media.time = 0;
-      p.media.paused = true;
-      p.media.duration = NaN;
-      queueMicrotask(() => p.audio.dispatchEvent(new Event("pause")));
-    });
     p.play.mockClear();
     p.media.time = 8.5;
     await act(async () => { p.audio.dispatchEvent(new Event("timeupdate")); });
-    expect(p.load).toHaveBeenCalledTimes(2);
-    p.metadata(15);
+    expect(p.load).toHaveBeenCalledTimes(1);
     expect(p.media.time).toBe(8.5);
     expect(p.play).not.toHaveBeenCalled();
     expect(p.result.current.isPlaying).toBe(false);
@@ -198,17 +216,18 @@ describe("growing server playback", () => {
     expect(p.result.current.isPlaying).toBe(false);
   });
 
-  it("ignores nonfinite duration and restores only after metadata loads", () => {
+  it("ignores nonfinite duration and restores only after metadata loads", async () => {
     const p = player();
     p.metadata(10);
-    p.media.time = 4;
+    p.media.time = 9;
+    await act(async () => { await p.audio.play(); });
     p.rerender({ recording: live({ capture_playback_sequence: 2 }) });
     p.media.duration = Infinity;
     p.event("durationchange");
     expect(p.result.current.duration).toBe(10);
     expect(p.media.time).toBe(0);
     p.metadata(15);
-    expect(p.media.time).toBe(4);
+    expect(p.media.time).toBe(9);
   });
 
   it.each([

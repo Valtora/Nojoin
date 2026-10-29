@@ -197,7 +197,7 @@ Every browser chunk is the canonical WAV that the FLAC decode writes: a 44-byte 
 
 At 16 kHz, two channels and two bytes per sample, three hours contain 691,200,000 PCM bytes across about 5,400 two-second chunks, plus the virtual header. A maximum ranged response transfers 2,560,000 bytes (40 seconds), touching about 20–21 chunk files. Each request scans the snapshot's database metadata to map offsets; audio I/O and response buffering are bounded by the selected range rather than meeting length.
 
-The existing `AudioPlayer` stays mounted in a listening tab through capture and processing. It preloads metadata, leaving audio buffering to playback. Metadata polling supplies the latest sequence; the player refreshes a snapshot when paused or near its end, preserving the media element's time and playing intent. Once the final proxy is available it switches to the existing `/stream` URL with the same restoration. The tab holding the local capture keeps playback disabled, and playback capability does not enable unfinished exports.
+The existing `AudioPlayer` stays mounted in a listening tab through capture and processing. A snapshot preloads metadata only, leaving audio buffering to playback; the final file keeps `preload="auto"`. Metadata polling supplies the latest sequence, and the player moves to a newer snapshot only when the listener presses play or nears the end of the current one, preserving the media element's time and playing intent. Once the final proxy is available it switches to the existing `/stream` URL with the same restoration. The tab holding the local capture keeps playback disabled, and playback capability does not enable unfinished exports.
 
 ### Capture Epochs
 
