@@ -186,8 +186,8 @@ export const generateNotes = async (
     output?: NotesOutput | null;
   }>(`/transcripts/${recordingId}/notes/generate`, {
     // null when no template was picked, so the backend falls through to the
-    // user default, the install default and then the built-in structure. For
-    // a new extra set, null is the built-in structure.
+    // user default, the install default and then the built-in structure. A
+    // new extra set needs a template the meeting has not used yet.
     notes_template_id: notesTemplateId ?? null,
     ...output,
   });

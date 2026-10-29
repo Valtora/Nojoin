@@ -6,6 +6,7 @@ import NotesOutputsView from "./NotesOutputsView";
 
 const api = vi.hoisted(() => ({
   listNotesOutputs: vi.fn(), generateNotes: vi.fn(), deleteNotesOutput: vi.fn(),
+  getNotes: vi.fn(),
   updateNotesOutput: vi.fn(), exportContent: vi.fn(), listNotesTemplates: vi.fn(),
   getSettings: vi.fn(), updateSettings: vi.fn(),
 }));
@@ -44,6 +45,7 @@ beforeEach(() => {
     builtin: { name: "Nojoin default", description: null },
   });
   api.generateNotes.mockResolvedValue(started({ ...extra, notes: null }));
+  api.getNotes.mockResolvedValue({ notes: "First notes", notes_template_id: null });
   api.deleteNotesOutput.mockResolvedValue(undefined);
   api.updateNotesOutput.mockResolvedValue({ ...extra, notes: "Edited extra" });
   api.exportContent.mockResolvedValue(undefined);
@@ -174,6 +176,31 @@ describe("notes outputs", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(reprocessing);
     expect(screen.getByText("First notes")).toBeInTheDocument();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  });
+
+  it("offers only templates not already on the meeting", async () => {
+    const template = (id: number, name: string) => ({ id, name, description: `${name} description` });
+    api.listNotesOutputs.mockResolvedValue([extra]);
+    api.getNotes.mockResolvedValue({ notes: "First notes", notes_template_id: 8 });
+    api.listNotesTemplates.mockResolvedValue({
+      templates: [template(7, "Task list"), template(8, "Minutes"), template(9, "Brief")],
+      builtin: { name: "Nojoin default", description: null },
+    });
+    render(<NotesOutputsView {...props()} />);
+    await screen.findByRole("tab", { name: "Task list" });
+    await waitFor(() => expect(api.getNotes).toHaveBeenCalledWith("rec-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate another set" }));
+    const free = await screen.findByRole("button", { name: "BriefBrief description" });
+    // A template is required: the built-in structure is not a choice for a new set.
+    expect(screen.queryByRole("button", { name: /Nojoin default/ })).not.toBeInTheDocument();
+    for (const name of ["Task list", "Minutes"]) {
+      const used = screen.getByRole("button", { name: `${name}Already in this meeting` });
+      expect(used).toBeDisabled();
+      fireEvent.click(used);
+    }
+    expect(api.generateNotes).not.toHaveBeenCalled();
+    fireEvent.click(free);
+    await waitFor(() => expect(api.generateNotes).toHaveBeenCalledWith("rec-1", 9, { create_output: true }));
   });
 
   it("supports keyboard navigation and keeps an extra's generation state on its own tab", async () => {

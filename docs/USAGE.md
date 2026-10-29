@@ -398,7 +398,7 @@ On a processed recording, open **Notes > Generate another set** beside **Regener
 
 **Generate another set > Glossary suggestions** creates a built-in glossary suggestions output instead of ordinary notes. Its **Glossary** sub-tab offers a checklist, **Extract more** and **Regenerate suggestions**, rather than the notes editor.
 
-The first set, labelled **Meeting notes** when sub-tabs are visible, remains the meeting's notes for chat, search, Meeting Edge, sharing and the recording's usual export. Extra sets are included only when exported from their own tab. Changing or deleting a template later does not change a set's saved structure; generate another set to use an updated template.
+The first set, labelled **Meeting notes** when sub-tabs are visible, remains the meeting's notes for chat, search, Meeting Edge, sharing and the recording's usual export. Extra sets are included only when exported from their own tab. **Generate another set** adds only a structure the meeting does not have yet: the Nojoin default is not offered, and a structure already used by a set or by the meeting's notes shows **Already in this meeting**; use **Regenerate Notes** on that set instead. Changing or deleting a template later does not change a set's saved structure; to use an updated template, delete the set made from it and generate it again.
 
 ### Glossary
 

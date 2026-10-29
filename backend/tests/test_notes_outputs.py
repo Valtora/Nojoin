@@ -155,11 +155,14 @@ async def test_extra_lifecycle_preserves_primary_and_other_output(
                 meta={"source": "notes"},
             )
         )
+        second_template = NotesTemplate(name="Owners", sections=SECTIONS, user_id=1)
+        db.add(second_template)
         await db.commit()
+        second_template_id = second_template.id
     first_extra = await create_extra(reader_client, template_id)
     assert stub_celery_dispatch[-1][1] == [recording_id, None, first_extra]
     worker(LLM())
-    second_extra = await create_extra(reader_client, template_id)
+    second_extra = await create_extra(reader_client, second_template_id)
     worker(LLM())
     response = await reader_client.post(
         f"{PATH}/generate",
@@ -514,3 +517,54 @@ async def test_renames_and_find_replace_reach_extra_sets(
     assert (await reader_client.get(f"{PATH}/outputs")).json()[0]["notes"] == (
         "## Tasks\nAna launches.\n\n## User Notes\nAsk Alice."
     )
+
+
+async def test_new_set_needs_a_template_not_already_on_the_meeting(
+    reader_client: AsyncClient,
+    reader_sessions: async_sessionmaker[AsyncSession],
+    meeting: tuple[int, int],
+    stub_celery_dispatch: list[tuple[str, object, object]],
+) -> None:
+    recording_id, task_list_id = meeting
+    async with reader_sessions() as db:
+        minutes = NotesTemplate(name="Minutes", sections=SECTIONS, user_id=1)
+        brief = NotesTemplate(name="Brief", sections=SECTIONS, user_id=1)
+        db.add_all([minutes, brief])
+        await db.flush()
+        transcript = (await db.execute(select(Transcript))).scalar_one()
+        transcript.notes_template_id = minutes.id
+        await db.commit()
+        minutes_id, brief_id = minutes.id, brief.id
+    # The picker reads the first notes' template from here.
+    assert (await reader_client.get(PATH)).json()["notes_template_id"] == minutes_id
+
+    async def create(**body: Any) -> Any:
+        return await reader_client.post(
+            f"{PATH}/generate", json={"create_output": True, **body}
+        )
+
+    for body in ({}, {"notes_template_id": None}):
+        response = await create(**body)
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "Choose a notes template for the new set."
+    response = await create(notes_template_id=minutes_id)
+    assert response.status_code == 409, response.text
+    assert "already has a set from that template" in response.json()["detail"]
+    assert stub_celery_dispatch == []
+
+    first_extra = await create_extra(reader_client, task_list_id)
+    response = await create(notes_template_id=task_list_id)
+    assert response.status_code == 409, response.text
+    response = await create(notes_template_id=brief_id)
+    assert response.status_code == 200, response.text
+    assert response.json()["output"]["notes_status"] == "generating"
+    second_extra = response.json()["output"]["id"]
+    assert [call[1] for call in stub_celery_dispatch] == [
+        [recording_id, None, first_extra],
+        [recording_id, None, second_extra],
+    ]
+    outputs = (await reader_client.get(f"{PATH}/outputs")).json()
+    assert [output["notes_template_id"] for output in outputs] == [
+        task_list_id,
+        brief_id,
+    ]

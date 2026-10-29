@@ -14,6 +14,11 @@ interface NotesTemplatePickerProps {
   /** Built-in output available only when adding another set. */
   onSelectGlossary?: () => void;
   label?: string;
+  /**
+   * Choosing a new set: the built-in entry is left out, so a template is
+   * required, and templates this returns true for are shown but disabled.
+   */
+  isTemplateUsed?: (template: NotesTemplate) => boolean;
 }
 
 /**
@@ -28,6 +33,7 @@ export default function NotesTemplatePicker({
   onSelect,
   onSelectGlossary,
   label,
+  isTemplateUsed,
 }: NotesTemplatePickerProps) {
   const [open, setOpen] = useState(false);
   const [templates, setTemplates] = useState<NotesTemplate[] | null>(null);
@@ -104,7 +110,7 @@ export default function NotesTemplatePicker({
             <span className="block">Glossary suggestions</span>
             <span className="block text-xs contrast-helper">Terms to add to your personal glossary.</span>
           </ButtonBase>}
-          <ButtonBase
+          {!isTemplateUsed && <ButtonBase
             type="button"
             onClick={() => handleSelect(null)}
             className="w-full flex items-start justify-between gap-2 px-3 py-2 text-sm text-left text-contrast-muted hover:bg-surface-inset"
@@ -120,20 +126,29 @@ export default function NotesTemplatePicker({
             {activeTemplateId === null && (
               <Check className="w-4 h-4 text-action-text shrink-0 mt-0.5" />
             )}
-          </ButtonBase>
+          </ButtonBase>}
           {templates === null ? (
             <p className="px-3 py-2 text-sm contrast-helper">Loading...</p>
+          ) : isTemplateUsed && templates.length === 0 ? (
+            <p className="px-3 py-2 text-sm contrast-helper">
+              Add a structure in Settings to generate another set.
+            </p>
           ) : (
             templates.map((template) => (
               <ButtonBase
                 key={template.id}
                 type="button"
                 onClick={() => handleSelect(template.id)}
-                className="w-full flex items-start justify-between gap-2 px-3 py-2 text-sm text-left text-contrast-muted hover:bg-surface-inset"
+                disabled={isTemplateUsed?.(template)}
+                className="w-full flex items-start justify-between gap-2 px-3 py-2 text-sm text-left text-contrast-muted hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <span className="min-w-0">
                   <span className="block truncate">{template.name}</span>
-                  {template.description && (
+                  {isTemplateUsed?.(template) ? (
+                    <span className="block text-xs contrast-helper">
+                      Already in this meeting
+                    </span>
+                  ) : template.description && (
                     <span className="block text-xs contrast-helper line-clamp-2">
                       {template.description}
                     </span>
