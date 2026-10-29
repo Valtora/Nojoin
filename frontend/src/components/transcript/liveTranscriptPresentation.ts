@@ -10,6 +10,8 @@ export const liveRenderIdentity = (segment: TranscriptSegment, index: number) =>
 export interface LiveTranscriptPresentation {
   hasLoaded: boolean;
   isPaused?: boolean;
+  /** The last live read said live transcription is behind the uploads. */
+  liveBehind?: boolean;
   lineHandlers?: LiveLineHandlers;
   onNoteOnLine?: (selection: NoteSelection) => void;
   /** Puts the note box's next note at a line's start: the note from a line still settling. */
