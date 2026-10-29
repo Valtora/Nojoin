@@ -375,7 +375,10 @@ export default function Sidebar() {
       const data = await getRecordings(filters);
       setRecordings(data);
       setHasLoadedRecordings(true);
-      void refreshPausedRecording().catch(() => {});
+      // A hidden tab's badges can wait for the first refresh after it shows.
+      if (document.visibilityState !== "hidden") {
+        void refreshPausedRecording().catch(() => {});
+      }
 
         } catch (error: unknown) {
       console.error("Failed to fetch recordings:", error);

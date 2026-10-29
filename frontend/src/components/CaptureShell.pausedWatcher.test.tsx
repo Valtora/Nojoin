@@ -167,6 +167,32 @@ describe("recovery when entering a recording page", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("leaves the recovery check out of the sidebar's refresh while the tab is hidden", async () => {
+    const setVisibility = (state: DocumentVisibilityState) => Object.defineProperty(document, "visibilityState", {
+      configurable: true, get: () => state,
+    });
+    vi.useFakeTimers();
+    api.getUnfinishedCaptures.mockResolvedValue([]);
+    setVisibility("hidden");
+    try {
+      expect(document.visibilityState).toBe("hidden");
+      render(<CaptureProvider><CaptureShell><Sidebar /><WatcherState /></CaptureShell></CaptureProvider>);
+      await act(async () => {});
+      const fetches = api.getRecordings.mock.calls.length;
+      const checks = api.getUnfinishedCaptures.mock.calls.length;
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(api.getRecordings).toHaveBeenCalledTimes(fetches + 1);
+      expect(api.getUnfinishedCaptures).toHaveBeenCalledTimes(checks);
+
+      setVisibility("visible");
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(api.getUnfinishedCaptures).toHaveBeenCalledTimes(checks + 1);
+    } finally {
+      setVisibility("visible");
+    }
+  });
+
   it.each([
     [paused, "shared_audio"], [paused, "microphone_only"],
     [interrupted, "shared_audio"], [interrupted, "microphone_only"],
