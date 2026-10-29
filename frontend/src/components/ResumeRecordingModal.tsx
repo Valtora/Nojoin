@@ -2,7 +2,9 @@
 
 import { AlertTriangle, PauseCircle, Square } from "lucide-react";
 
+import type { CaptureSupport } from "@/lib/capture/shared";
 import { RecordingStatus, type Recording } from "@/types";
+import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
 
@@ -10,39 +12,50 @@ interface ResumeRecordingModalProps {
   isOpen: boolean;
   recording: Recording | null;
   busyAction?: "resume" | "cancel" | "stop" | null;
+  /** This browser's capture support: Resume needs it, Stop and Discard do not. */
+  support: CaptureSupport;
   onResume: () => void;
   onCancel: () => void;
   onStop: () => void;
+  /** Closes the dialog and leaves the recording as it is. */
+  onDismiss: () => void;
 }
 
 export default function ResumeRecordingModal({
   isOpen,
   recording,
   busyAction = null,
+  support,
   onResume,
   onCancel,
   onStop,
+  onDismiss,
 }: ResumeRecordingModalProps) {
   if (!recording) {
     return null;
   }
 
-  // Offered while still marked as uploading only once the server judged it
-  // stalled: its tab closed without the pause arriving (issue #519).
-  const interrupted = recording.status === RecordingStatus.UPLOADING;
+  // Still marked as uploading once the server judged it stalled: its tab
+  // closed without the pause arriving (issue #519). A reloaded tab is offered
+  // its own capture before that (issue #778), and reads as paused.
+  const interrupted = recording.status === RecordingStatus.UPLOADING && Boolean(recording.capture_stalled);
   const StatusIcon = interrupted ? AlertTriangle : PauseCircle;
 
   return (
     <Modal
       open={isOpen}
-      // The paused recording holds the capture lock, so there is no neutral way
-      // out: the modal has to be resolved by one of its three actions.
-      onClose={() => {}}
+      // Leaving it changes nothing: the recording keeps its badge, and opening
+      // it or starting a meeting offers this dialog again. Only Not now closes
+      // it, so a stray click outside cannot.
+      onClose={onDismiss}
       dismissible={false}
       hideCloseButton
       size="lg"
       footer={
         <>
+          <Button variant="ghost" onClick={onDismiss} disabled={busyAction !== null}>
+            Not now
+          </Button>
           <Button
             variant="danger"
             onClick={onCancel}
@@ -68,7 +81,7 @@ export default function ResumeRecordingModal({
           <Button
             variant="primary"
             onClick={onResume}
-            disabled={busyAction !== null}
+            disabled={busyAction !== null || !support.supported}
             loading={busyAction === "resume"}
           >
             Resume recording
@@ -99,7 +112,8 @@ export default function ResumeRecordingModal({
         </p>
       ) : (
         <p className="mt-4 text-sm leading-6 text-contrast-helper">
-          Nojoin found a paused recording for your account. Resume it to keep
+          Nojoin found a paused recording for your account. It may still be open
+          on another device; if so, finish it there. Otherwise resume it to keep
           recording, stop it to process the audio captured so far, or discard it
           to clear the capture lock.
         </p>
@@ -109,6 +123,12 @@ export default function ResumeRecordingModal({
         <p className="font-medium">{recording.name}</p>
         <p className="mt-1 opacity-80">Recording ID: {recording.id}</p>
       </div>
+
+      {support.supported ? null : (
+        <div className="mt-4">
+          <CaptureUnsupportedNotice reason={support.reason} compact />
+        </div>
+      )}
     </Modal>
   );
 }

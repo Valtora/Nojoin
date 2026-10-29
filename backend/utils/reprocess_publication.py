@@ -75,20 +75,29 @@ def clear_reprocess_published(transcript: Transcript) -> None:
 
 
 def restore_retained_publication(session: Session, recording_id: int) -> None:
-    """Hand a failed replacement's recording back the publication it retained.
+    """Hand a failed or stopped replacement's recording back what it retained.
 
-    Requeue set the retained transcript to pending. Left so, notes regenerated
-    on the failed recording would move it to QUEUED with no task to finish it.
-    Requeue only retains a completed transcript, so that is what it goes back to.
-    A failed transcription keeps its error and the marker: the recording reports
-    the failure over the retained transcript, and a later Retry retains it again.
+    Requeue set the retained transcript to pending. Left so, notes generation
+    and speaker inference would refuse the failed recording as still being
+    reprocessed, and notes regenerated on it would move it to QUEUED with no
+    task to finish it. Requeue only retains a completed transcript, so that is
+    what it goes back to. A failed transcription keeps its error and the
+    marker: the recording reports the failure over the retained transcript,
+    and a later Retry retains it again. Nothing runs after a failure, so a
+    replacement that had already published stops reading as one in progress.
     """
     transcript = session.exec(
         select(Transcript).where(Transcript.recording_id == recording_id)
     ).first()
-    if transcript is not None and reprocess_replacement_running(transcript):
+    if transcript is None:
+        return
+    if reprocess_replacement_running(transcript):
         clear_reprocess_pending(transcript)
         transcript.transcript_status = "completed"
+        session.add(transcript)
+    state = getattr(transcript, "settling_state", None) or {}
+    if state.get("reprocess_published") is True:
+        clear_reprocess_published(transcript)
         session.add(transcript)
 
 
@@ -96,8 +105,10 @@ def clear_previous_reprocess_state(session: Session, recording_id: int) -> None:
     """Retire old generated dependencies under the publication fence, without committing.
 
     The caller replaces speakers, canonical rows and projection before committing.
-    A rollback therefore restores the whole previous publication. Notes, title,
-    suggestions and Meeting Edge retain their individual regeneration boundaries.
+    A rollback therefore restores the whole previous publication. Notes, title
+    and Meeting Edge retain their individual regeneration boundaries. Speaker
+    name suggestions point at the speakers and labels being replaced, so they
+    go with them, and the new pass's suggestions start from none.
     """
     transcript = _load_transcript(session, recording_id, lock=True)
     session.execute(delete(ChatMessage).where(ChatMessage.recording_id == recording_id))
@@ -131,6 +142,7 @@ def clear_previous_reprocess_state(session: Session, recording_id: int) -> None:
             "analytics_error_message",
             "analytics_ai_status",
             "analytics_ai_error_message",
+            "speaker_name_suggestions",
         ):
             setattr(transcript, field, getattr(defaults, field))
         session.add(transcript)

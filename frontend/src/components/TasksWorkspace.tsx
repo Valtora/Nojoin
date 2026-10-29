@@ -36,6 +36,7 @@ import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import type { Recording, RecordingId, Tag, UserTask } from "@/types";
 import TaskDeadlineModal from "./ui/TaskDeadlineModal";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+import RecordingAttentionBadge from "./RecordingAttentionBadge";
 
 type TaskView = "open" | "completed" | "archived";
 
@@ -761,10 +762,11 @@ export default function TasksWorkspace() {
                           <Link
                             key={recording.id}
                             href={`/recordings/${recording.id}`}
-                            className="inline-flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
+                            className="inline-flex flex-wrap items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
                           >
                             <FileAudio className="h-3.5 w-3.5" />
                             {recording.name}
+                            <RecordingAttentionBadge recordingId={recording.id} />
                           </Link>
                         ))}
                       </div>

@@ -52,7 +52,7 @@ describe("LiveNoteComposer", () => {
     render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false}
       draft={draft} onDraftChange={onDraftChange} />);
     expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("send");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("stopped audio clock");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("where capture stopped");
     expect(onDraftChange).not.toHaveBeenCalled();
     audioNowMs = 63_000;
     pressEnter(screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement);

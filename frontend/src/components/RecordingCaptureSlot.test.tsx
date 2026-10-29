@@ -13,6 +13,7 @@ const capture = {
   controller: { getState: () => ({ error: null }) },
   recordingId: null as string | null,
   ownedRecordingId: null as string | null,
+  pausedRecording: null as { id: string } | null,
   status: "idle",
   runtimeActive: false,
   elapsedSeconds: 12,
@@ -27,6 +28,7 @@ const capture = {
 };
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({ useCapture: () => capture }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("./recordings/_hooks/useRecordingActions", () => ({
   useRecordingActions: () => ({ discard }),
 }));
@@ -58,8 +60,8 @@ const ownCapture = (status = "recording") => Object.assign(capture, {
 
 describe("RecordingCaptureSlot", () => {
   beforeEach(() => {
-    Object.assign(capture, { recordingId: null, ownedRecordingId: null, status: "idle", runtimeActive: false,
-      coverageWarning: null, stopStage: null, uploadQueue: { segments: 0, seconds: 0 } });
+    Object.assign(capture, { recordingId: null, ownedRecordingId: null, pausedRecording: null, status: "idle",
+      runtimeActive: false, coverageWarning: null, stopStage: null, uploadQueue: { segments: 0, seconds: 0 } });
     discard.mockReset().mockResolvedValue(undefined);
     cancel.mockReset();
     pause.mockReset();
@@ -69,7 +71,7 @@ describe("RecordingCaptureSlot", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it.each([
-    ["Recording", RecordingStatus.UPLOADING, ClientStatus.RECORDING],
+    ["Live", RecordingStatus.UPLOADING, ClientStatus.RECORDING],
     ["Paused", RecordingStatus.PAUSED, ClientStatus.PAUSED],
     ["Uploading", RecordingStatus.UPLOADING, ClientStatus.UPLOADING],
     ["Queued", RecordingStatus.QUEUED, ClientStatus.IDLE],
@@ -101,7 +103,7 @@ describe("RecordingCaptureSlot", () => {
   it("never exposes another recording's waveform or transport", () => {
     ownCapture();
     render(<RecordingCaptureSlot recording={recording({ id: "rec-2", status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING })} />);
-    expect(screen.getByText("Recording")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
     expect(screen.queryByTestId("waveform")).not.toBeInTheDocument();
     expect(screen.queryByTitle("Pause recording")).not.toBeInTheDocument();
     expect(screen.queryByTitle("Stop recording")).not.toBeInTheDocument();

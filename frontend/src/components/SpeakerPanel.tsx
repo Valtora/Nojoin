@@ -397,7 +397,7 @@ export default function SpeakerPanel({
                       isSpeakerActive && isPlaying
                         ? "text-status-info-fg bg-status-info-bg"
                         : "text-contrast-icon-muted hover:text-status-info-fg hover:bg-status-info-bg"
-                    }`}
+                    } ${DISABLED_LOOK}`}
                     title={
                       isSpeakerActive && isPlaying ? "Pause" : "Preview Voice"
                     }
@@ -425,7 +425,7 @@ export default function SpeakerPanel({
                 <div className="mt-2 flex flex-wrap gap-2">
                   <ButtonBase type="button" disabled={disableEditing} aria-label={`Change identity for ${entry.displayName}`}
                     onClick={(event) => setPicker({ entry, anchor: event.currentTarget })}
-                    className={`inline-flex items-center gap-1 rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT}`}>
+                    className={`inline-flex items-center gap-1 rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}>
                     <Users className="h-3.5 w-3.5" aria-hidden="true" /> Change identity
                   </ButtonBase>
                   {!getResolvedGlobalSpeakerId(speaker) && !globalSpeakers.some((person) => person.name === entry.displayName) && (

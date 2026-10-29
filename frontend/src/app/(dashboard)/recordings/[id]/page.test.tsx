@@ -65,6 +65,8 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
     recordingId: localCaptureId,
+    // The tab capturing: its runtime holds the capture.
+    ownedRecordingId: localCaptureId,
     pausedRecording: null,
     runtimeActive: false,
     status: localCaptureStatus,
@@ -959,6 +961,25 @@ describe("RecordingPage (detail)", () => {
     const transcript = await screen.findByTestId("transcript-view");
     expect(screen.queryByRole("button", { name: "Open Meeting Chat" })).toBeNull();
     expect(clearanceAncestors(transcript)).toHaveLength(0);
+    expect(clearanceAncestors(transcript, "--floating-action-inline-clearance")).toHaveLength(0);
+  });
+
+  // The note box sits under the transcript in every state, level with the
+  // phone's floating chat button, so its Add note button was under it. Its
+  // region turns the page's inline clearance into right padding.
+  it("keeps the note box clear of the phone chat button", async () => {
+    vi.stubGlobal("innerWidth", 390);
+    vi.stubGlobal("innerHeight", 844);
+    renderPage();
+
+    expect(
+      await screen.findByRole("button", { name: "Open Meeting Chat" }),
+    ).toBeInTheDocument();
+    const region = await screen.findByTestId("note-box-region");
+    expect(region).toContainElement(screen.getByRole("button", { name: "Add note" }));
+    expect(region.className).toMatch(/\bpr-clear-floating-\d/);
+    expect(region.className).toMatch(/\bpb-\d/);
+    expect(clearanceAncestors(region, "--floating-action-inline-clearance")).toHaveLength(1);
   });
 
   // On a phone the speaker panel opens in the tab area, so it has a tab of its
@@ -1279,10 +1300,10 @@ async function openTabs(width: number): Promise<HTMLElement> {
 const tabLabels = (tablist: HTMLElement) =>
   within(tablist).getAllByRole("tab").map((tab) => tab.textContent);
 
-function clearanceAncestors(element: HTMLElement): HTMLElement[] {
+function clearanceAncestors(element: HTMLElement, variable = "--floating-action-clearance"): HTMLElement[] {
   const found: HTMLElement[] = [];
   for (let node: HTMLElement | null = element; node; node = node.parentElement) {
-    if (/\[--floating-action-clearance:/.test(node.className)) found.push(node);
+    if (node.className.includes(`[${variable}:`)) found.push(node);
   }
   return found;
 }

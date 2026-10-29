@@ -26,6 +26,7 @@ from backend.models.tag import RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
+from backend.services.live_chat import chat_transcript_in_progress
 from backend.utils.chat_prompt import ChatTranscript, TranscriptExcerpts
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import render_indexed_transcript_for_llm
@@ -215,9 +216,8 @@ async def chat_with_meeting(
 
     if not transcript_obj and not in_flight:
         raise HTTPException(status_code=404, detail="Transcript not found")
-    # Regenerating notes or speakers leaves a finished transcript finished.
-    transcript_in_progress = in_flight and (
-        transcript_obj is None or transcript_obj.transcript_status != "completed"
+    transcript_in_progress = chat_transcript_in_progress(
+        recording.status, transcript_obj
     )
 
     meeting_notes = (transcript_obj.notes if transcript_obj else "") or ""

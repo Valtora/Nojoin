@@ -1368,6 +1368,94 @@ def test_live_out_of_order_arrival(monkeypatch, tmp_path):
     assert state["sequence_outcomes"]["1"]["outcome"] == "consumed"
 
 
+def _gap_lane(monkeypatch, tmp_path, recording_id, sequences):
+    """A live lane whose upload directory already holds ``sequences``."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    temp_dir = tmp_path / str(recording_id)
+    temp_dir.mkdir()
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+    audio_store = _patch_live_deps(
+        monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}]
+    )
+    for sequence in sequences:
+        _make_segment_wav(temp_dir, sequence, 2.0, audio_store)
+    transcript = _FakeTranscript()
+    session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, transcript))
+    return temp_dir, audio_store, transcript, session
+
+
+def test_live_later_task_drains_a_head_whose_task_was_lost(monkeypatch, tmp_path):
+    """A lost task's chunk on disk is drained by the next task, not waited for."""
+    from backend.processing import live_transcribe as lt
+
+    _, _, transcript, session = _gap_lane(monkeypatch, tmp_path, 31, (0, 1, 2))
+
+    # Tasks 0 and 1 were lost with a worker; only task 2 runs.
+    _run_live_task(monkeypatch, 31, 2, session)
+
+    assert len(transcript.segments) == 1
+    state = lt.read_live_state(tmp_path / "31" / "live")
+    assert state["next_expected"] == 3
+    assert state["sequence_outcomes"]["0"]["outcome"] == "consumed"
+
+    # If the lost task is redelivered, it finds its chunk already drained.
+    _run_live_task(monkeypatch, 31, 0, session)
+    assert len(transcript.segments) == 1
+    state = lt.read_live_state(tmp_path / "31" / "live")
+    assert state["sequence_outcomes"]["0"]["reason"] == "already_consumed"
+
+
+def test_live_missing_head_waits_while_few_later_chunks_arrived(monkeypatch, tmp_path):
+    """Four later chunks (8 s) are not enough to give up on a missing one."""
+    from backend.processing import live_transcribe as lt
+
+    _, _, transcript, session = _gap_lane(monkeypatch, tmp_path, 32, (1, 2, 3, 4))
+
+    _run_live_task(monkeypatch, 32, 4, session)
+
+    assert transcript.segments == []
+    state = lt.read_live_state(tmp_path / "32" / "live")
+    assert state["next_expected"] == 0
+    assert state["sequence_outcomes"]["4"]["reason"] == "waiting_for_gap"
+
+
+def test_live_missing_head_is_skipped_once_five_later_chunks_wait(
+    monkeypatch, tmp_path
+):
+    """Five later chunks skip the missing one; its late arrival is ignored."""
+    from backend.processing import live_transcribe as lt
+
+    temp_dir, audio_store, transcript, session = _gap_lane(
+        monkeypatch, tmp_path, 33, (1, 2, 3, 4, 5)
+    )
+
+    _run_live_task(monkeypatch, 33, 5, session)
+
+    assert len(transcript.segments) == 1
+    state = lt.read_live_state(temp_dir / "live")
+    # The skipped chunk takes no time on the live timeline.
+    assert transcript.segments[0]["start"] == 0.0
+    assert state["buffer_abs_start"] + state["buffer_len_s"] == pytest.approx(10.0)
+    assert state["next_expected"] == 6
+    assert state["sequence_outcomes"]["0"] == {
+        "outcome": "skipped",
+        "reason": "gap_skipped",
+    }
+    assert state["sequence_outcomes"]["1"]["run"] == [1, 2, 3, 4, 5]
+
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
+    _run_live_task(monkeypatch, 33, 0, session)
+
+    assert len(transcript.segments) == 1
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 6
+    assert state["sequence_outcomes"]["0"]["reason"] == "already_consumed"
+
+
 def test_live_carry_over_across_seam(monkeypatch, tmp_path):
     """A region touching the buffer end is carried and completed by a later run."""
     from backend.models.recording import RecordingStatus

@@ -209,7 +209,8 @@ export default function RecordingPage({ params }: PageProps) {
       speakersContent={speakersContent}
       myNotesContent={myNotesContent}
       meetingEdgeContent={meetingEdgeContent}
-      playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording} onDiscarded={navigateToRecordings} /> : undefined}
+      playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording}
+        audioClock={audioClock} onDiscarded={navigateToRecordings} /> : undefined}
       inFlightContent={<RecordingNoteComposer recording={recording} segments={transcriptSegments}
         audioClock={audioClock} boxRef={liveNoteBoxRef} />}
       timelineNotes={timelineNotes}
@@ -281,8 +282,10 @@ export default function RecordingPage({ params }: PageProps) {
           // The chat button below floats over whichever tab is open, so the
           // tabs' scroll regions (pb-clear-floating-*) end with this much
           // room: the button's 3.5rem, its 1rem offset, a 0.5rem gap and the
-          // safe area it also clears.
-          <SurfaceBase data-ui-fill="card" kind="pane" className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)]">
+          // safe area it also clears. The note box under the transcript sits
+          // level with it, so it keeps the same room on its right
+          // (pr-clear-floating-*).
+          <SurfaceBase data-ui-fill="card" kind="pane" className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)] [--floating-action-inline-clearance:5rem]">
             <div className="min-h-0 flex-1">{mainContent}</div>
 
             {!isMobileChatOpen && (

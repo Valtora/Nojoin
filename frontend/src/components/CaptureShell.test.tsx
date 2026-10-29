@@ -28,6 +28,7 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     resume,
     runtimeActive: false,
     stop,
+    support: { supported: true, mode: "shared_audio" },
   }),
 }));
 
@@ -75,9 +76,10 @@ describe("CaptureShell", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers an account's paused capture in a watching tab with no local runtime", () => {
-    // Inherited upstream behaviour: PAUSED is offered even when the capturing
-    // tab remains alive. Only stalled UPLOADING captures check browser ownership.
+  it("renders an already-offered paused recording as paused, with Resume", () => {
+    // Which recordings are offered is discovery's decision, covered with the
+    // real provider in CaptureShell.pausedWatcher.test.tsx; this gives the
+    // dialog an offer directly.
     guardState.pausedRecording = { ...interrupted, status: "PAUSED", client_status: "PAUSED" };
     render(<CaptureShell><div /></CaptureShell>);
     expect(screen.getByText("Recording paused")).toBeInTheDocument();

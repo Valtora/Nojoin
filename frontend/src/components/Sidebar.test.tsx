@@ -22,6 +22,7 @@ const getRecordings = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTags = vi.fn();
 const getRecordingsCalendar = vi.fn();
+const refreshPausedRecording = async () => null;
 const start = vi.fn();
 
 const captureState = {
@@ -33,6 +34,7 @@ const captureState = {
 
 let currentView: ViewType = "recordings";
 let pausedRecording: { id: string } | null = null;
+let attentionRecordings: Recording[] = [];
 let pathname = "/recordings";
 let unsentRecordings: string[] = [];
 let selectedRecordingIds: string[] = [];
@@ -91,6 +93,8 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     cancel: vi.fn(),
     recordingId: null,
     pausedRecording,
+    attentionRecordings,
+    refreshPausedRecording,
     start: (...args: unknown[]) => start(...args),
   }),
 }));
@@ -132,12 +136,15 @@ vi.mock("@/lib/store", () => ({
 }));
 
 vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification }),
+  useNotificationStore: (selector?: (state: { addNotification: typeof addNotification }) => unknown) =>
+    selector ? selector({ addNotification }) : { addNotification },
 }));
 
 vi.mock("@/lib/searchUtils", () => ({
   createFuse: (items: Recording[]) => ({
-    search: () => items.map((item) => ({ item })),
+    search: (query: string) => items
+      .filter((item) => item.name.toLowerCase().includes(query.toLowerCase()))
+      .map((item) => ({ item })),
   }),
 }));
 
@@ -199,6 +206,7 @@ describe("Sidebar", () => {
     captureState.status = "idle";
     currentView = "recordings";
     pausedRecording = null;
+    attentionRecordings = [];
     pathname = "/recordings";
     unsentRecordings = [];
     selectedRecordingIds = [];
@@ -215,6 +223,36 @@ describe("Sidebar", () => {
       month: "2026-05",
       day_counts: [],
     });
+  });
+
+  it.each(["recordings", "archived", "deleted"] as ViewType[])(
+    "marks recoverable recordings in the %s list, including an active row and search results",
+    async (view) => {
+      currentView = view;
+      pathname = "/recordings/rec-1";
+      const paused = { ...recording, status: RecordingStatus.PAUSED };
+      const held = { ...paused, id: "held", name: "Held in another tab" };
+      getRecordings.mockResolvedValue([paused, held]);
+      attentionRecordings = [paused];
+      renderWithProviders(<Sidebar />);
+
+      const active = (await screen.findByRole("heading", { name: recording.name })).closest("a")!;
+      expect(within(active).getByText("Paused, needs attention")).toBeVisible();
+      const heldLink = screen.getByRole("heading", { name: held.name }).closest("a")!;
+      expect(within(heldLink).queryByText(/needs attention/)).not.toBeInTheDocument();
+      fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value: "Latest" } });
+      await waitFor(() => expect(screen.queryByRole("heading", { name: held.name })).not.toBeInTheDocument());
+      expect(within(active).getByText("Paused, needs attention")).toBeVisible();
+    },
+  );
+
+  it("labels an interrupted upload in the sidebar", async () => {
+    const interrupted = { ...recording, status: RecordingStatus.UPLOADING, capture_stalled: true };
+    getRecordings.mockResolvedValue([interrupted]);
+    attentionRecordings = [interrupted];
+    renderWithProviders(<Sidebar />);
+    const link = (await screen.findByRole("heading", { name: recording.name })).closest("a")!;
+    expect(within(link).getByText("Interrupted, needs attention")).toBeVisible();
   });
 
   it("checks ordinary, active and batch-selected recording fills", async () => {
@@ -447,7 +485,7 @@ describe("Sidebar", () => {
 
       fireEvent.click(button);
 
-      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+      expect(await screen.findByTestId("import-modal")).toBeInTheDocument();
     });
 
     it("offers a short Import in the phone list header, named in full", async () => {
@@ -458,7 +496,7 @@ describe("Sidebar", () => {
       expect(button).toBeDefined();
       fireEvent.click(button as HTMLElement);
 
-      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+      expect(await screen.findByTestId("import-modal")).toBeInTheDocument();
     });
 
     it("pairs compact Start and Import below lg, starts a meeting and refreshes the list", async () => {
@@ -548,7 +586,7 @@ describe("Sidebar", () => {
         await within(emptyState()).findByRole("button", { name: "Import Audio" }),
       );
 
-      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+      expect(await screen.findByTestId("import-modal")).toBeInTheDocument();
     });
 
     it("keeps the empty-list button back until the first fetch lands", async () => {

@@ -15,6 +15,7 @@ const captureState = {
   pausedRecording: null as { id: string; status: string } | null,
   runtimeActive: false,
   start: (...args: unknown[]) => start(...args),
+  refreshPausedRecording: vi.fn(async () => null),
   status: "idle",
   support: {
     supported: true,
@@ -50,6 +51,7 @@ describe("MeetingControls", () => {
     routerPush.mockReset();
     addNotification.mockReset();
     start.mockReset();
+    captureState.refreshPausedRecording.mockClear();
     connectivityStatus = "online";
     captureState.controller.getState = () => ({ error: null });
     captureState.runtimeActive = false;
@@ -94,6 +96,17 @@ describe("MeetingControls", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
+  it.each(["dashboard", "sidebar", "rail", "compact"] as const)("hands %s Start directly to the controller so its reservation covers preflight", async (variant) => {
+    start.mockResolvedValue({ recordingId: "rec-new" });
+    render(<MeetingControls variant={variant} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+    expect(start).toHaveBeenCalledWith("");
+    expect(captureState.refreshPausedRecording).not.toHaveBeenCalled();
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/recordings/rec-new"));
+  });
+
   it.each(["sidebar", "rail", "compact"] as const)("starts and opens a recording from the %s control", async (variant) => {
     const onMeetingEnd = vi.fn();
     start.mockResolvedValue({ recordingId: "rec-new" });
@@ -110,6 +123,34 @@ describe("MeetingControls", () => {
     });
     expect(start).toHaveBeenCalledExactlyOnceWith("");
     expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+  });
+
+  it("keeps Start reserved when expanding the rail during preflight", async () => {
+    let finishStart: (result: { recordingId: string }) => void = () => {};
+    start.mockImplementation(() => {
+      captureState.status = "starting";
+      return new Promise((resolve) => { finishStart = resolve; });
+    });
+    const onMeetingEnd = vi.fn();
+    const { rerender } = render(<MeetingControls variant="rail" onMeetingEnd={onMeetingEnd} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+    for (const variant of ["rail", "sidebar"] as const) {
+      rerender(<MeetingControls variant={variant} onMeetingEnd={onMeetingEnd} />);
+      const button = screen.getByRole("button", { name: "Starting meeting..." });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+    }
+    expect(start).toHaveBeenCalledExactlyOnceWith("");
+    expect(captureState.refreshPausedRecording).not.toHaveBeenCalled();
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(onMeetingEnd).not.toHaveBeenCalled();
+
+    finishStart({ recordingId: "rec-new" });
+    await waitFor(() => {
+      expect(routerPush).toHaveBeenCalledExactlyOnceWith("/recordings/rec-new");
+      expect(onMeetingEnd).toHaveBeenCalledOnce();
+    });
   });
 
   describe.each(["sidebar", "rail", "compact"] as const)("%s start availability", (variant) => {
@@ -170,6 +211,67 @@ describe("MeetingControls", () => {
     fireEvent.click(button);
     expect(start).not.toHaveBeenCalled();
     expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  describe.each(["dashboard", "sidebar", "rail"] as const)("%s recovery precedence", (variant) => {
+    it.each(["starting", "finalizing"])("preserves the owned %s stage over a retained pause offer", (status) => {
+      captureState.runtimeActive = true;
+      captureState.status = status;
+      captureState.pausedRecording = { id: "rec-owned", status: "PAUSED" };
+      render(<MeetingControls variant={variant} />);
+
+      const label = status === "starting" ? "Starting meeting..." : "Finalizing meeting...";
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(start).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { status: "PAUSED", label: "Paused recording needs attention" },
+      { status: "UPLOADING", label: "Interrupted recording needs attention" },
+    ])("keeps $status attention visible when an errored runtime remains", ({ status, label }) => {
+      captureState.runtimeActive = true;
+      captureState.status = "error";
+      captureState.pausedRecording = { id: "rec-held", status };
+      render(<MeetingControls variant={variant} />);
+
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute(
+        "title",
+        "Stop or discard the current recording from its page before starting anything new.",
+      );
+      expect(screen.queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+      fireEvent.click(button);
+      expect(start).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps an owned live pause on the rail and expanded recording controls", () => {
+    captureState.runtimeActive = true;
+    captureState.status = "paused";
+    captureState.pausedRecording = { id: "rec-owned", status: "PAUSED" };
+    const { rerender } = render(<MeetingControls variant="rail" />);
+
+    expect(screen.getByRole("button", { name: "Meeting in progress" })).toBeDisabled();
+    for (const variant of ["sidebar", "dashboard"] as const) {
+      rerender(<MeetingControls variant={variant} />);
+      expect(screen.getByTestId("live-controls")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /needs attention/ })).not.toBeInTheDocument();
+    }
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  describe.each(["sidebar", "dashboard"] as const)("%s capture ownership", (variant) => {
+    it.each(["recording", "paused"])("does not render live %s controls without this tab's runtime", (status) => {
+      captureState.status = status;
+      render(<MeetingControls variant={variant} />);
+
+      expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start Meeting" })).toBeEnabled();
+    });
   });
 
   it("keeps the sidebar's paired action through idle, recording, paused and finalizing", () => {

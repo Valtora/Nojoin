@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, Mic, Pause, Trash2, Upload } from "lucide-react";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
+import type { AudioClock } from "@/lib/notes/audioClock";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
 import DocumentUploadModal from "./DocumentUploadModal";
@@ -12,12 +13,13 @@ import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import { ButtonBase } from "./ui/nativeBases";
+import { useResumeRecoveryOffer } from "./useResumeRecoveryOffer";
 
 const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 function formatClock(seconds: number) {
-  const whole = Math.max(0, Math.round(seconds));
+  const whole = Math.max(0, Math.floor(seconds));
   const hours = Math.floor(whole / 3600);
   const minutes = Math.floor((whole % 3600) / 60);
   const remaining = (whole % 60).toString().padStart(2, "0");
@@ -34,25 +36,57 @@ function formatEta(seconds: number) {
 
 interface RecordingCaptureSlotProps {
   recording: Recording;
+  /** The page's clock of the audio the server has received for the capture. */
+  audioClock?: AudioClock;
   onDiscarded?: () => void;
 }
 
+/**
+ * Reads the audio clock once a second while `enabled`. The timer's state change
+ * both re-renders and carries the reading: a bare call during render is one
+ * the React Compiler may cache.
+ */
+function useAudioClockSeconds(readAudioMs: () => number | null, enabled: boolean): number | null {
+  const [observedMs, setObservedMs] = useState(readAudioMs);
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = setInterval(() => setObservedMs(readAudioMs()), 1000);
+    return () => clearInterval(timer);
+  }, [enabled, readAudioMs]);
+  return observedMs === null ? null : observedMs / 1000;
+}
+
 /** Capture/progress presentation in the common header's audio-player slot. */
-export default function RecordingCaptureSlot({ recording, onDiscarded }: RecordingCaptureSlotProps) {
+export default function RecordingCaptureSlot({ recording, audioClock, onDiscarded }: RecordingCaptureSlotProps) {
   const capture = useCapture();
   const actions = useRecordingActions();
+  const resumeOffer = useResumeRecoveryOffer();
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const ownsCapture = capture.recordingId === recording.id;
-  const locallyFinalising = ownsCapture && capture.status === "finalizing";
-  const locallyCapturing = ownsCapture && (capture.status === "recording" || capture.status === "paused");
+  // The live controls' own test for Stop: this tab's runtime holds the capture
+  // (a failed stop's included), or this tab was reloaded during it and holds
+  // its recovery offer. The stored ID alone is not ownership, since another
+  // tab or device may have taken the capture over since.
+  const controlsCapture = capture.recordingId === recording.id &&
+    (capture.ownedRecordingId === recording.id || capture.pausedRecording?.id === recording.id);
+  const locallyFinalising = controlsCapture && capture.status === "finalizing";
+  const locallyCapturing = controlsCapture && (capture.status === "recording" || capture.status === "paused");
   const isCapturing = isLiveCaptureInProgress(recording) || locallyCapturing;
-  const isPaused = (ownsCapture && capture.status === "paused") ||
-    recording.status === RecordingStatus.PAUSED || recording.client_status === ClientStatus.PAUSED;
-  const showTransport = ownsCapture && (isCapturing || locallyFinalising);
-  const showWaveform = ownsCapture && isCapturing && !locallyFinalising;
+  // The tab capturing goes by its own state, which the page's copy of the
+  // recording catches up with on its next poll; every other tab by the server.
+  const isPaused = locallyCapturing ? capture.status === "paused"
+    : recording.status === RecordingStatus.PAUSED || recording.client_status === ClientStatus.PAUSED;
+  const showTransport = controlsCapture && (isCapturing || locallyFinalising);
+  const showWaveform = controlsCapture && isCapturing && !locallyFinalising;
   const isPipeline = !isCapturing && !locallyFinalising;
-  const stateLabel = isCapturing ? isPaused ? "Paused" : "Recording"
+  // Any other tab or device reads "Live", since nothing records here, on the
+  // server's audio timeline, which stands still while paused:
+  // `duration_seconds` stays 0 until the recording is finalized.
+  const watchesCapture = isCapturing && !showTransport;
+  const readAudioMs = useCallback(() => audioClock?.audioNow(recording.id) ?? null, [audioClock, recording.id]);
+  const liveAudioSeconds = useAudioClockSeconds(readAudioMs, watchesCapture);
+  const clockSeconds = watchesCapture ? liveAudioSeconds : recording.duration_seconds || 0;
+  const stateLabel = isCapturing ? isPaused ? "Paused" : "Live"
     : recording.status === RecordingStatus.QUEUED ? "Queued"
     : recording.status === RecordingStatus.UPLOADING ? "Uploading" : "Processing";
   const progress = recording.status === RecordingStatus.QUEUED ? 16
@@ -96,6 +130,7 @@ export default function RecordingCaptureSlot({ recording, onDiscarded }: Recordi
           onMeetingEnd={() => window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: recording.id } }))}
           onMeetingDiscard={onDiscarded}
           barTrailing={attachDocuments}
+          onResumeOffer={() => void resumeOffer(recording.id)}
         />
       ) : (
         <div className="flex flex-wrap items-center gap-3">
@@ -104,9 +139,11 @@ export default function RecordingCaptureSlot({ recording, onDiscarded }: Recordi
               : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {stateLabel}
           </span>
-          <span className="font-mono text-sm font-semibold tabular-nums text-foreground" title="Recording length">
-            {formatClock(recording.duration_seconds || 0)}
-          </span>
+          {clockSeconds === null ? null : (
+            <span className="font-mono text-sm font-semibold tabular-nums text-foreground" title="Recording length">
+              {formatClock(clockSeconds)}
+            </span>
+          )}
           {attachDocuments}
           {isPipeline ? (
             <ButtonBase

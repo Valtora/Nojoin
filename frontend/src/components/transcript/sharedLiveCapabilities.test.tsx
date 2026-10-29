@@ -50,6 +50,27 @@ describe("shared live capabilities", () => {
     expect(handlers.onFindAndReplace).not.toHaveBeenCalled();
   });
 
+  it("offers Jump to latest as the filled, bordered pill it was before, once the reader scrolls away", () => {
+    render(<TranscriptView {...props()} live={{ hasLoaded: true }} />);
+    const region = screen.getByTestId("live-transcript-scroll");
+    Object.defineProperty(region, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(region, "clientHeight", { configurable: true, value: 300 });
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    region.scrollTop = 0;
+    fireEvent.scroll(region);
+    const jump = screen.getByRole("button", { name: "Jump to latest" });
+    expect(jump).toHaveAttribute("type", "button");
+    expect(jump).toHaveAttribute("data-ui-fill", "card");
+    expect(jump).toHaveAttribute("data-ui-border", "full");
+    expect(jump).toHaveAttribute("data-ui-hover", "action-tint");
+    expect(jump.className.split(" ")).toEqual(
+      expect.arrayContaining(["bg-surface-card", "border", "border-action-border", "shadow-float"]),
+    );
+    fireEvent.click(jump);
+    expect(region.scrollTop).toBe(1000);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+
   it("retains an unlabelled live line alongside a labelled one", () => {
     render(<TranscriptView {...props()} segments={[segment, { ...segment, id: "unknown", start: 5, end: 6,
       speaker: "UNKNOWN", provisional: false, text: "A voice without a label." }]}

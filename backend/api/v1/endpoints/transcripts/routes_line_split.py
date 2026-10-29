@@ -16,6 +16,7 @@ from .helpers import (
     _dispatch_meeting_edge_refresh,
     _get_owned_recording,
     _get_recording_transcript,
+    _refuse_while_reprocess_runs,
     _require_recording_transcript_mutations_supported,
 )
 from .router import router
@@ -38,6 +39,7 @@ async def split_transcript_utterance(
     transcript = await _get_recording_transcript(db, recording.id)
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    _refuse_while_reprocess_runs(transcript)
     # With canonical writes off, an unsettled recording's lines live in the
     # segment JSON, and a split would rebuild it from stale canonical rows.
     if not _canonical_transcript_writes_enabled() and not settling_required(transcript):

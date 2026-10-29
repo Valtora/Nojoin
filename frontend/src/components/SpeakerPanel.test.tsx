@@ -145,10 +145,23 @@ describe("SpeakerPanel", () => {
     const { onPlaySegment } = renderPanel({ disablePlayback: true, currentTime: 1, isPlaying: true, onPause });
     const preview = screen.getByTitle("Pause");
     expect(preview).toBeDisabled();
+    // Disabled buttons look it, rather than keeping their enabled colours.
+    expect(preview.className).toContain("disabled:opacity-60");
     fireEvent.click(preview);
     expect(screen.queryByTitle("Next Snippet")).not.toBeInTheDocument();
     expect(onPause).not.toHaveBeenCalled();
     expect(onPlaySegment).not.toHaveBeenCalled();
+  });
+
+  it("shows Preview Voice and Change identity as disabled when they are", () => {
+    renderPanel({ disablePlayback: true, disableEditing: true });
+    const [preview] = screen.getAllByTitle("Preview Voice");
+    const change = screen.getByRole("button", { name: "Change identity for Alice" });
+    for (const button of [preview, change]) {
+      expect(button).toBeDisabled();
+      expect(button.className).toContain("disabled:opacity-60");
+      expect(button.className).toContain("disabled:cursor-not-allowed");
+    }
   });
 
   beforeEach(() => {
