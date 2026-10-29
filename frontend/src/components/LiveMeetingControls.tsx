@@ -2,7 +2,7 @@
 
 import { ButtonBase } from '@/components/ui/nativeBases';
 import { AlertTriangle, CloudUpload, Pause, Play, Square, Trash2, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
 import { updateRecordingMaxSpeakers } from "@/lib/api";
@@ -28,6 +28,11 @@ interface LiveMeetingControlsProps {
    * state, idle, would read "Paused 00:00" whatever the recording is doing.
    */
   serverPaused?: boolean;
+  /**
+   * Where the capture is on its audio timeline, in ms, as the page's audio
+   * clock reads it from the server. The clock of a tab that is not capturing.
+   */
+  audioNow?: () => number | null;
 }
 
 // Below this the queue is ordinary upload latency, a segment or two.
@@ -57,6 +62,7 @@ export default function LiveMeetingControls({
   onMeetingDiscard,
   barTrailing,
   serverPaused,
+  audioNow,
 }: LiveMeetingControlsProps) {
   const {
     cancel,
@@ -84,14 +90,23 @@ export default function LiveMeetingControls({
   const canControl = Boolean(recordingId &&
     (ownedRecordingId === recordingId || pausedRecording?.id === recordingId));
   const stopDisabled = status === "finalizing" || !canControl;
-  // Only the capturing tab has a clock. Any other shows the server's state,
-  // as the page header does, and no clock rather than a wrong one.
+  // Any tab can open the recording page; only one captures. The others show
+  // the server's state, "Live" rather than "Recording" since nothing records
+  // here, and the server's audio timeline, which every device reads alike and
+  // which stands still while paused, rather than this tab's idle 00:00.
   const capturedElsewhere = !canControl && serverPaused !== undefined;
   const showsRecording = capturedElsewhere ? !serverPaused : isRecording;
-  // On the recording page, which any tab can open, say whose capture it is.
-  const captureMarker = serverPaused === undefined
-    ? null
-    : capturedElsewhere ? "another tab or device" : "this tab";
+  // The timer's state change both re-renders and carries the reading: a bare
+  // call during render is one the React Compiler may cache.
+  const [observedMs, setObservedMs] = useState(() => audioNow?.() ?? null);
+  useEffect(() => {
+    if (!capturedElsewhere || !audioNow) return;
+    const timer = setInterval(() => setObservedMs(audioNow()), 1000);
+    return () => clearInterval(timer);
+  }, [capturedElsewhere, audioNow]);
+  const clockSeconds = capturedElsewhere
+    ? observedMs === null ? null : observedMs / 1000
+    : elapsedSeconds;
 
   // Diarization runs at stop time, so the cap stays editable for the whole
   // recording: whatever is set when capture ends is what gets applied.
@@ -200,9 +215,11 @@ export default function LiveMeetingControls({
     ? stopStage === "flushing-uploads" && uploadQueue.segments > 0
       ? "Uploading"
       : "Finishing"
-    : showsRecording
-      ? "Recording"
-      : "Paused";
+    : !showsRecording
+      ? "Paused"
+      : capturedElsewhere
+        ? "Live"
+        : "Recording";
 
   const showUploadBacklog = isFinalizing
     ? uploadQueue.segments > 0
@@ -286,9 +303,9 @@ export default function LiveMeetingControls({
             <span className="text-xs font-semibold uppercase tracking-[0.14em]">
               {statusLabel}
             </span>
-            {capturedElsewhere ? null : (
+            {clockSeconds === null ? null : (
               <span className="ml-auto font-mono text-sm font-semibold text-foreground">
-                {formatTime(elapsedSeconds)}
+                {formatTime(clockSeconds)}
               </span>
             )}
           </div>
@@ -365,15 +382,12 @@ export default function LiveMeetingControls({
             <span
               className={`h-2.5 w-2.5 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
             />
-            <span className="flex items-baseline gap-1.5 whitespace-nowrap text-xs">
-              <span className="font-semibold uppercase tracking-[0.16em]">
-                {statusLabel}
-              </span>
-              {captureMarker ? <span>· {captureMarker}</span> : null}
+            <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+              {statusLabel}
             </span>
-            {capturedElsewhere ? null : (
+            {clockSeconds === null ? null : (
               <span className="font-mono text-xl font-semibold tabular-nums text-foreground">
-                {formatTime(elapsedSeconds)}
+                {formatTime(clockSeconds)}
               </span>
             )}
           </div>
@@ -465,9 +479,9 @@ export default function LiveMeetingControls({
             {statusLabel}
           </span>
         </div>
-        {capturedElsewhere ? null : (
+        {clockSeconds === null ? null : (
           <span className="font-mono text-3xl font-semibold text-foreground">
-            {formatTime(elapsedSeconds)}
+            {formatTime(clockSeconds)}
           </span>
         )}
       </div>

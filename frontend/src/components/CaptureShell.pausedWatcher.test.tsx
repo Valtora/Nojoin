@@ -9,6 +9,7 @@ import { clearPausedCaptureContext, writePausedCaptureContext } from "@/lib/capt
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { useImportAudioStore } from "@/lib/importAudioStore";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { AudioClock } from "@/lib/notes/audioClock";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
 import CaptureShell from "./CaptureShell";
@@ -447,31 +448,44 @@ describe("CaptureShell watching a paused capture", () => {
 });
 
 describe("the recording page in a tab that is not capturing", () => {
-  const clock = /^\d+:\d{2}(:\d{2})?$/;
   const live = {
     ...paused, id: "rec-live", status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
   } as Recording;
 
   it.each([
-    { recording: live, serverPaused: false, label: "Recording" },
-    { recording: paused, serverPaused: true, label: "Paused" },
-  ])("shows $label from the server, with no clock", async ({ recording, serverPaused, label }) => {
+    { recording: live, serverPaused: false, label: "Live", minuteLater: "13:34" },
+    { recording: paused, serverPaused: true, label: "Paused", minuteLater: "12:34" },
+  ])("shows $label and the server's audio clock", async ({ recording, serverPaused, label, minuteLater }) => {
+    vi.useFakeTimers();
     pathname = `/recordings/${recording.id}`;
     // Another tab of this browser is capturing it.
     held = [{ name: `nojoin-capture:${recording.id}`, mode: "exclusive" }];
     api.getUnfinishedCaptures.mockResolvedValue([recording]);
+    // The page's audio clock, fed the detail read as the page feeds it.
+    let now = 0;
+    const audio = new AudioClock(() => now);
+    audio.observe({ ...recording, live_audio_ms: 754_000 });
     render(<CaptureProvider>
-      <LiveMeetingControls size="bar" serverPaused={serverPaused} /><WatcherState />
+      <LiveMeetingControls
+        size="bar"
+        serverPaused={serverPaused}
+        audioNow={() => audio.audioNow(recording.id)}
+      />
+      <WatcherState />
     </CaptureProvider>);
-    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
     expect(api.getUnfinishedCaptures).toHaveBeenCalled();
     expect(screen.getByTestId("watcher-state")).toHaveTextContent("watching:none");
     expect(screen.getByText(label)).toBeInTheDocument();
-    expect(screen.queryByText(label === "Recording" ? "Paused" : "Recording")).not.toBeInTheDocument();
-    expect(screen.queryByText(clock)).not.toBeInTheDocument();
-    expect(screen.getByText("· another tab or device")).toBeInTheDocument();
+    expect(screen.queryByText("Recording")).not.toBeInTheDocument();
+    expect(screen.getByText("12:34")).toBeInTheDocument();
     expect(screen.getByTitle("Stop recording")).toBeDisabled();
+
+    now += 60_000;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+
+    expect(screen.getByText(minuteLater)).toBeInTheDocument();
   });
 });
 

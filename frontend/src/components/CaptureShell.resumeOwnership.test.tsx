@@ -71,7 +71,6 @@ const paused = {
   name: "Weekly sync",
   status: RecordingStatus.PAUSED,
   client_status: ClientStatus.PAUSED,
-  capture_epoch: 3,
 } as Recording;
 const lifecycle = (status: string) => ({
   recording_id: paused.id, status, last_sequence: 4, capture_epoch: 4,
@@ -140,7 +139,7 @@ describe("a recording claimed and resumed from the recovery dialog", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByTitle("Stop recording")).toBeEnabled();
     expect(screen.getByTitle("Discard recording")).toBeEnabled();
-    expect(screen.getByText("· this tab")).toBeInTheDocument();
+    expect(screen.getByText("Recording")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("Stop recording"));
 

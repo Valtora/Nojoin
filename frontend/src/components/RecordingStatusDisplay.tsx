@@ -128,6 +128,10 @@ export default function RecordingStatusDisplay({
     () => outboxEntries.filter((entry) => entry.kind === "head" || entry.kind === "tail"),
     [outboxEntries],
   );
+  const readLiveAudioMs = useCallback(
+    () => audioClock?.audioNow(recording.id) ?? null,
+    [audioClock, recording.id],
+  );
   const liveSegments = liveTranscript.segments;
   // Before the first read of the clock, "now" is past every line heard so
   // far, which is where the clock would place the note anyway.
@@ -391,6 +395,7 @@ export default function RecordingStatusDisplay({
                 onMeetingDiscard={onDiscarded}
                 barTrailing={uploadButton}
                 serverPaused={isPaused}
+                audioNow={readLiveAudioMs}
               />
             </div>
           ) : null}
