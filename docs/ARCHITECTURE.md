@@ -395,7 +395,7 @@ In this release a final pass meets user rows only on a run that does not reset t
 - **Meeting Chat** sends the notes and full transcript every turn, plus excerpts from the search index (`_chat_retrieval_filters` in `routes_chat.py`): documents attached to this meeting or to meetings its tags bring in, and transcript excerpts from those other meetings only. The index is rebuilt only after processing, so its excerpts can predate an edit. Chat also accepts in-flight recordings, using the shared canonical/projection renderer with current live names and timeline notes. Its prompt and interface identify the transcript so far and warn that wording and speakers may still change. The CLI path uses the same provisional context. Polling does not regenerate prior answers.
 - **Prompt caching.** Chat sends the notes and transcript as the system prompt (Anthropic marks it with `cache_control`; OpenAI-compatible providers reuse it through prefix caching), leaving history and the question in the messages. Meeting Edge and AI analysis split their prompts into a stable instruction prefix, which Anthropic marks, and the per-call context.
 
-Prompt speaker labels resolve an unassigned `UNKNOWN` label to **Unidentified speaker**, so Meeting Edge and other AI features do not treat the storage sentinel as a participant's name. This rendering does not change stored labels or transcript and export display names.
+Prompt speaker labels resolve an unassigned `UNKNOWN` label to **Unidentified speaker**, so Meeting Edge, other AI features and the MCP `get_transcript` tool do not treat the storage sentinel as a participant's name. This rendering does not change stored labels or transcript and export display names.
 
 #### Ollama Context Window
 

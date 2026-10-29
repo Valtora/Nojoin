@@ -66,10 +66,13 @@ def test_shared_prompt_formatter_names_primary_and_overlapping_unknown(
     )
     assert "UNKNOWN is the stored label." in rendered
     assert "Priya: A reply." in rendered
-    # The plain transcript remains the public display/export format.
-    assert "UNKNOWN: UNKNOWN is the stored label." in _format_transcript_text(
-        SEGMENTS, SPEAKER_MAP
-    )
+
+
+def test_mcp_transcript_text_names_unknown_as_unidentified() -> None:
+    assert _format_transcript_text(SEGMENTS, SPEAKER_MAP).splitlines() == [
+        "[00:00] Unidentified speaker: UNKNOWN is the stored label.",
+        "[00:02] Priya: A reply.",
+    ]
 
 
 def test_meeting_edge_uses_prompt_names() -> None:
