@@ -209,7 +209,8 @@ export default function RecordingPage({ params }: PageProps) {
       speakersContent={speakersContent}
       myNotesContent={myNotesContent}
       meetingEdgeContent={meetingEdgeContent}
-      playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording} onDiscarded={navigateToRecordings} /> : undefined}
+      playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording}
+        audioClock={audioClock} onDiscarded={navigateToRecordings} /> : undefined}
       inFlightContent={<RecordingNoteComposer recording={recording} segments={transcriptSegments}
         audioClock={audioClock} boxRef={liveNoteBoxRef} />}
       timelineNotes={timelineNotes}
