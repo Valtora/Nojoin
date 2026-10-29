@@ -684,6 +684,24 @@ async def test_every_provider_gets_the_tone_section_and_none_when_off(
     assert TONE_HEADING not in off and PERSONA_SAFETY not in off
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "gemini"])
+async def test_the_chat_tone_is_kept_out_of_the_notes_tool(
+    client: AsyncClient, prompts: list[str], use_provider, provider: str
+) -> None:
+    use_provider(provider)
+    await _send(client, "/persona pirate")
+
+    prompt = await _ask(client, prompts)
+
+    tone = prompt[prompt.index(TONE_HEADING) : prompt.index("# Meeting Notes:")]
+    assert "updating the meeting notes with your tool" in prompt
+    assert _line("pirate") in tone
+    assert "applies only to your conversational reply" in tone
+    assert "meeting notes content or in any tool arguments" in tone
+    assert "update_meeting_notes" in tone
+
+
 @pytest.mark.parametrize("provider", list(PROVIDERS))
 def test_the_one_shot_chat_gets_the_tone_section(provider: str) -> None:
     prompts: list[str] = []

@@ -34,6 +34,10 @@ Answer from what is provided here: the meeting notes, the transcript and any rel
 CAPABILITIES_WITHOUT_TOOLS = """# WHAT YOU CAN DO
 Answer from what is provided here: the meeting notes, the transcript and any related context. You cannot change the meeting notes. You cannot watch the meeting, schedule follow-ups, send messages or do anything after this reply, so never offer to. If the question is about a part of the meeting not recorded yet, suggest asking again later."""
 
+# A persona's tone is for the reply the user reads. Notes the chat writes go
+# through the notes tool, and the Notes surface has its own opt-in.
+CHAT_TONE_SCOPE = """This tone applies only to your conversational reply. Never use it in meeting notes content or in any tool arguments, including update_meeting_notes: write those in a plain, neutral style."""
+
 
 @dataclass(frozen=True)
 class TranscriptExcerpts:
@@ -118,13 +122,16 @@ def build_chat_context(
     ``update_meeting_notes`` tool, so the prompt never claims an action the
     provider was not given. ``tone`` is a holiday persona's tone, placed after
     the instructions and before the meeting content
-    (``backend.utils.persona_settings``).
+    (``backend.utils.persona_settings``) and limited to the reply by
+    ``CHAT_TONE_SCOPE``.
     """
     sources = _sources(diarized_transcript)
     capabilities = (
         CAPABILITIES_WITH_NOTES_TOOL if notes_tool else CAPABILITIES_WITHOUT_TOOLS
     )
-    tone_section = render_prompt_blocks([tone_block(tone)])
+    tone_section = render_prompt_blocks(
+        [tone_block(f"{tone} {CHAT_TONE_SCOPE}" if tone else None)]
+    )
     if tone_section:
         tone_section += "\n\n"
     return f"""
