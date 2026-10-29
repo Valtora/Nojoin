@@ -14,7 +14,9 @@ from backend import preload_models
 
 
 @pytest.fixture
-def prepared(monkeypatch, stub_celery_dispatch, model_cache_env) -> list[str]:
+def prepared(
+    monkeypatch, stub_celery_dispatch, model_cache_env, download_progress_in_memory
+) -> list[str]:
     """Record each preparation step in place of the real downloads.
 
     Canary's aligner is queued on the CPU lane rather than prepared here, so

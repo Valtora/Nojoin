@@ -146,7 +146,41 @@ def test_only_canary_preparation_requests_word_timing_assets(
     )
     expected = [(model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "cpu")]
     assert routed == (expected if backend == "canary" else [])
-    assert progress["status"] == "complete"
+    # Once Canary is ready, its queued aligner is what Settings shows.
+    assert (progress["stage"], progress["status"]) == (
+        ("forced_aligner", "downloading")
+        if backend == "canary"
+        else ("complete", "complete")
+    )
+
+
+def test_settings_progress_shows_the_queued_aligner_after_canary_is_ready(
+    routed: list[tuple[dict[str, Any] | None, str]],
+    download_progress_in_memory: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from backend.api.deps import get_current_user
+
+    _stub_engine_downloads(monkeypatch)
+    preload_models.download_models(transcription_backend="canary", include_core=False)
+    assert routed and assets.control.pending_task() is not None
+    app = FastAPI()
+    app.include_router(system.router, prefix="/system")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1)
+    with TestClient(app) as client:
+        response = client.get("/system/download-progress")
+    assert response.status_code == 200, response.text
+    shown = response.json()
+    # Until the CPU lane starts the transfer, the bar shows it queued, not 100%.
+    assert (shown["stage"], shown["status"], shown["progress"]) == (
+        "forced_aligner",
+        "downloading",
+        0,
+    )
+    assert shown["in_progress"] is True
 
 
 def test_startup_on_a_canary_install_prepares_the_aligner_on_the_cpu_lane(
