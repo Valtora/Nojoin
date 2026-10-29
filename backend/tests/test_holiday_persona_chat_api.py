@@ -257,6 +257,12 @@ def prompts() -> list[str]:
 
 
 @pytest.fixture
+def dispatched() -> list[tuple[str, Any]]:
+    """Every task the routes queued, as (name, args)."""
+    return []
+
+
+@pytest.fixture
 def clock(monkeypatch: pytest.MonkeyPatch) -> Callable[[datetime], None]:
     def set_now(now: datetime) -> None:
         monkeypatch.setattr(persona_settings, "utc_now", lambda: now)
@@ -288,6 +294,7 @@ async def client(
     monkeypatch: pytest.MonkeyPatch,
     clock,
     use_provider,
+    dispatched: list[tuple[str, Any]],
 ) -> AsyncIterator[AsyncClient]:
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
@@ -308,7 +315,7 @@ async def client(
     monkeypatch.setattr(
         routes_chat, "resolve_llm_config_async", lambda *a, **k: _fake_async(config)
     )
-    monkeypatch.setattr(celery_app, "send_task", _rag_and_dispatch_stubs([]))
+    monkeypatch.setattr(celery_app, "send_task", _rag_and_dispatch_stubs(dispatched))
     monkeypatch.setattr(routes_chat, "async_session_maker", session_maker)
     # The transcript is read through the worker's sync engine, which these
     # SQLite tests do not have.
@@ -535,6 +542,30 @@ async def test_a_malformed_command_gets_the_usage_and_state_not_the_model(
         ("user", message),
         ("assistant", _reply(body)),
     ]
+
+
+@pytest.mark.anyio
+async def test_a_command_that_changes_the_edge_tone_queues_an_edge_refresh(
+    client: AsyncClient, dispatched: list[tuple[str, Any]]
+) -> None:
+    edge = ("backend.worker.tasks.refresh_meeting_edge_task", [1])
+    queued = []
+    for message in (
+        "/persona pirate",
+        "/persona pirate",
+        "/eastereggs chat off",
+        "/persona",
+        "/eastereggs edge off",
+        "/persona hobbit",
+        "/eastereggs edge on",
+        "/eastereggs off",
+    ):
+        before = len(dispatched)
+        await _send(client, message)
+        queued.append(dispatched[before:] == [edge])
+
+    # Only the messages that change what Meeting Edge is told refresh it.
+    assert queued == [True, False, False, False, True, False, True, True]
 
 
 # --- which persona applies -------------------------------------------------------

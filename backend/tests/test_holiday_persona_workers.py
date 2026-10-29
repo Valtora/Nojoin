@@ -23,6 +23,10 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.processing.llm_services import AnthropicLLMBackend
 from backend.services.timeline_note_service import RecordingTimelineNotes
+from backend.tests.sqlite_schemas import (
+    GLOBAL_SPEAKERS_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
+)
 from backend.tests.test_automatic_meeting_intelligence_worker import (
     _create_worker_ai_database,
     _FakeTask,
@@ -49,7 +53,8 @@ from backend.utils.personas import (
 pytestmark = pytest.mark.usefixtures("stub_text_embedding")
 
 PIRATE = persona_by_slug("pirate")
-assert PIRATE is not None
+HOBBIT = persona_by_slug("hobbit")
+assert PIRATE is not None and HOBBIT is not None
 NOTES_TONE = f"{TONE_HEADING}\n{PIRATE.notes} {PERSONA_SAFETY} {NOTES_GUARD}"
 PIRATE_NOTES = {"slug": "pirate", "reason": "command"}
 
@@ -280,3 +285,97 @@ def test_meeting_edge_takes_the_tone_in_its_stable_prefix(
         assert TONE_HEADING not in suffix
     else:
         assert TONE_HEADING not in prefix + suffix
+
+
+# --- Meeting Edge through the real refresh task ----------------------------------
+
+EDGE_SEGMENTS = [
+    {
+        "start": 0.0,
+        "end": 80.0,
+        "speaker": "SPEAKER_00",
+        "text": "The team discussed the launch plan. " * 30,
+    }
+]
+
+
+@pytest.fixture
+def edge_meeting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_single_flight):
+    """A meeting in capture for the real Edge task, and the prompts OpenAI is sent.
+
+    The refresh policy, settings and provider resolution are real; the OpenAI
+    SDK client is the fake edge.
+    """
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    prompts: list[str] = []
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            prompts.append(kwargs["messages"][0]["content"])
+            content = json.dumps({"summary": f"Guidance {len(prompts)}"})
+            message = SimpleNamespace(content=content)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+    engines = []
+
+    def make(personas: dict[str, Any]):
+        engine = _create_notes_task_database(
+            tmp_path,
+            owner_settings={
+                "llm_provider": "openai",
+                "openai_model": "gpt-test",
+                "enable_meeting_edge": True,
+                "timezone": "UTC",
+                SETTINGS_KEY: personas,
+            },
+            transcript_segments=EDGE_SEGMENTS,
+        )
+        with engine.begin() as connection:
+            connection.execute(text(GLOBAL_SPEAKERS_SCHEMA))
+            connection.execute(text(TRANSCRIPT_UTTERANCES_SCHEMA))
+            connection.execute(text("UPDATE recordings SET status = 'UPLOADING'"))
+        engines.append(engine)
+        return engine, prompts
+
+    yield make
+    for engine in engines:
+        engine.dispose()
+
+
+def _refresh_edge(engine) -> dict[str, Any]:
+    """Run one Edge refresh and return the stored payload."""
+    task = tasks_module.refresh_meeting_edge_task
+    previous = task._session
+    with Session(engine) as session:
+        task._session = session
+        try:
+            task.run(1)
+        finally:
+            task._session = previous
+        transcript = session.exec(select(Transcript)).one()
+        return dict(transcript.meeting_edge_payload or {})
+
+
+def test_a_persona_change_refreshes_meeting_edge_at_once(edge_meeting) -> None:
+    engine, prompts = edge_meeting({"meetings": {"1": "pirate"}})
+
+    _refresh_edge(engine)
+    _set_personas(engine, {"meetings": {"1": "hobbit"}})
+    hobbit = _refresh_edge(engine)
+    _set_personas(engine, {"enabled": False, "meetings": {"1": "hobbit"}})
+    off = _refresh_edge(engine)
+    unchanged = _refresh_edge(engine)
+
+    # The speech has not moved on, so only the tone changes ask the model again.
+    assert len(prompts) == 3
+    assert PIRATE.edge in prompts[0]
+    assert HOBBIT.edge in prompts[1] and PIRATE.edge not in prompts[1]
+    assert TONE_HEADING not in prompts[2]
+    assert hobbit["summary"] == "Guidance 2"
+    assert off["summary"] == unchanged["summary"] == "Guidance 3"

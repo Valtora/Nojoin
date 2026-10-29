@@ -28,6 +28,7 @@ from backend.models.user import User
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
 from backend.services.live_chat import chat_transcript_in_progress
 from backend.utils.chat_prompt import ChatTranscript, TranscriptExcerpts
+from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import CLI_PROVIDER, resolve_llm_config_async
 from backend.utils.meeting_notes import escape_prompt_attribute
@@ -35,7 +36,12 @@ from backend.utils.note_attachments import unread_attachment_ids
 from backend.utils.persona_commands import CommandResult, run_persona_command
 from backend.utils.persona_settings import surface_tone
 
-from .helpers import ChatRequest, _build_speaker_map, _get_owned_recording
+from .helpers import (
+    ChatRequest,
+    _build_speaker_map,
+    _dispatch_meeting_edge_refresh,
+    _get_owned_recording,
+)
 from .router import router
 
 # Retrieval budgets, per source. Kept separate so an attached document can never
@@ -209,8 +215,10 @@ async def _answer_persona_command(
 
     Both turns are kept in the chat history like any other. The user's turn is
     committed first, so the reply's timestamp always sorts after it. A
-    ``persona_update`` event tells the page to read the recording again.
+    ``persona_update`` event tells the page to read the recording again, and a
+    change to Meeting Edge's tone queues an Edge refresh so the panel follows.
     """
+    edge_tone = surface_tone(user.settings, recording.id, "edge")
     db.add(
         ChatMessage(
             recording_id=recording.id, user_id=user.id, role="user", content=message
@@ -229,6 +237,12 @@ async def _answer_persona_command(
         )
     )
     await db.commit()
+    if result.settings is not None and (
+        surface_tone(result.settings, recording.id, "edge") != edge_tone
+    ):
+        await _dispatch_meeting_edge_refresh(
+            recording.id, enabled=is_meeting_edge_enabled(result.settings)
+        )
     frames = [
         f"data: {json.dumps({'token': result.reply})}\n\n",
         "data: [DONE]\n\n",
