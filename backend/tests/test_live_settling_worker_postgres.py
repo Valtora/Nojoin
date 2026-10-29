@@ -173,7 +173,7 @@ def _decoded(*words: tuple[str, int, int]) -> Any:
     }, "cuda"
 
 
-@pytest.mark.parametrize("pause_at", ["before_snapshot", "during_decode"])
+@pytest.mark.parametrize("pause_at", ["before_snapshot", "during_decode", "silent"])
 def test_tail_uploaded_before_pause_lands_locked_while_paused(
     worker_db: Any,
     settling_engine: Engine,
@@ -183,6 +183,8 @@ def test_tail_uploaded_before_pause_lands_locked_while_paused(
     """The browser uploads its partial last segment just before the pause."""
     assert worker.run_settling_step(worker_db.step(0), {}).accepted
     tail = worker_db.step(1)
+    if pause_at == "silent":
+        tail = replace(tail, vad_regions=[])
 
     def decode(*_args: Any) -> Any:
         if pause_at == "during_decode":
@@ -190,29 +192,35 @@ def test_tail_uploaded_before_pause_lands_locked_while_paused(
         return _decoded(("hello", 100, 500), (" there", 2500, 3000))
 
     monkeypatch.setattr(worker, "_decode_words", decode)
-    if pause_at == "before_snapshot":
+    if pause_at != "during_decode":
         _lifecycle(settling_engine, worker_db.recording_id, "paused")
     result = worker.run_settling_step(tail, {})
     # Accepted, so the live lane consumes the tail instead of holding it for
-    # the first segment after Resume.
-    assert result.handled and result.accepted
+    # the first segment after Resume, and locks it once its labels have run.
+    assert result.handled and result.accepted and result.paused
+    expected = ["hello"] if pause_at == "silent" else ["hello", " there"]
+
+    def words() -> list[dict[str, Any]]:
+        with Session(settling_engine) as session:
+            return [
+                word
+                for row in _active(session, worker_db.recording_id)
+                for word in row_words(row)
+            ]
+
+    assert [word["locked"] for word in words()] == [True, False][: len(expected)]
+    worker.close_paused_tail(worker_db.recording_id, tail.expected_token)
+    assert [word["word"] for word in words()] == expected
+    assert all(word["locked"] for word in words())
+    assert words()[-1]["lock_reason"] == "closure"
     with Session(settling_engine) as session:
-        words = [
-            word
-            for row in _active(session, worker_db.recording_id)
-            for word in row_words(row)
-        ]
-        assert [word["word"] for word in words] == ["hello", " there"]
-        assert all(word["locked"] for word in words)
-        assert words[1]["lock_reason"] == "closure"
         transcript = session.exec(
             select(Transcript).where(Transcript.recording_id == worker_db.recording_id)
         ).one()
         assert transcript.settling_state["phase"] == "paused"
         # The compatibility snapshot holds the tail too, as at any closure.
         assert [segment["text"] for segment in transcript.segments] == [
-            "hello",
-            "there",
+            word.strip() for word in expected
         ]
 
     # Resume starts a new episode after the tail, which no later decode repeats.

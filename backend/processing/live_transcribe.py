@@ -4,6 +4,8 @@ import logging
 import os
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from backend.celery_app import celery_app
 from backend.processing.browser_live_audio import (
     BROWSER_LIVE_MICROPHONE_SOURCE,
@@ -39,7 +41,11 @@ from backend.processing.live_persistence import (
     _persist_live_run,
     logger,
 )
-from backend.processing.live_settling import SettlingStep, run_settling_step
+from backend.processing.live_settling import (
+    SettlingStep,
+    close_paused_tail,
+    run_settling_step,
+)
 from backend.processing.live_state import (
     _STATE_SOURCE_CHANNEL_LABELS_KEY,
     LIVE_INITIAL_SEQUENCE,
@@ -513,7 +519,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         log=logger,
     )
 
-    # The tail uploaded at a pause still runs; a rolling episode locks it as it lands.
+    # The tail uploaded at a pause still runs; a rolling episode locks it after labels.
     # Final/terminal states reject queued work even while chunk files remain.
     session = get_sync_session()
     try:
@@ -711,6 +717,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
     )
 
     labels_ready = False
+    paused_tail = False
     combined = None
     label_retention_s = 0.0
     try:
@@ -802,6 +809,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             live_config,
         )
         labels_ready = settling.handled
+        paused_tail = settling.paused
         if not settling.accepted:
             return
         live_config["_settling_public_changed"] = settling.public_changed
@@ -927,3 +935,9 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
                 )
         except Exception:  # noqa: BLE001 -- boundary: labels are best-effort
             logger.exception("Live speaker labels failed for %s", recording_id)
+        if paused_tail:
+            # After the labels, so the tail locks with the speaker they decided.
+            try:
+                close_paused_tail(recording_id, expected_token)
+            except SQLAlchemyError:
+                logger.exception("Locking the paused tail failed for %s", recording_id)

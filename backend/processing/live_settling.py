@@ -55,12 +55,17 @@ class SettlingStep:
 
 @dataclass(frozen=True)
 class SettlingStepResult:
-    """Whether rolling owns this step, and whether its episode remains current."""
+    """Whether rolling owns this step, and whether its episode remains current.
+
+    ``paused``: the step published into a paused episode, whose words the live
+    task locks once this chunk's speaker labels have run (``close_paused_tail``).
+    """
 
     handled: bool
     accepted: bool = True
     window_s: float = 10.0
     public_changed: bool = False
+    paused: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,7 +108,7 @@ def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResul
         if policy.get("enabled") is False:
             return SettlingStepResult(False)
         # A paused episode still decodes the tail uploaded before its pause;
-        # publication then locks it (``_publish_step``).
+        # the live task locks it after its labels (``close_paused_tail``).
         if step.sequence <= state.get("last_step_index", -1):
             return SettlingStepResult(True, window_s=float(policy["window_s"]))
         boundary = step.audio_end_ms - round(float(policy["window_s"]) * 1000)
@@ -118,6 +123,28 @@ def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResul
             trailing_silence_start_ms=state.get("trailing_silence_start_ms"),
             silence_audio_end_ms=state.get("silence_audio_end_ms"),
         )
+    finally:
+        session.close()
+
+
+def close_paused_tail(
+    recording_id: int, expected_token: CapturePublicationToken
+) -> None:
+    """Lock the tail a paused episode published, as the pause locked the rest."""
+    from backend.core.db import get_sync_session
+    from backend.utils.canonical_pipeline.live_settling import close_live_settling
+
+    session = get_sync_session()
+    try:
+        transcript, recording = load_capture_publication(session, recording_id)
+        state = getattr(transcript, "settling_state", None) or {}
+        # A Resume since publication starts a new episode, whose words stay open.
+        if (
+            publication_is_current(recording, transcript, expected_token)
+            and state.get("phase") == "paused"
+        ):
+            close_live_settling(session, recording_id=recording_id)
+            session.commit()
     finally:
         session.close()
 
@@ -226,7 +253,6 @@ def _publish_step(
     from backend.processing.live_diarization.step import live_speaker_labels_device
     from backend.utils.canonical_pipeline.live_settling import (
         SettlingPass,
-        close_live_settling,
         expire_live_settling,
         publish_live_settling,
     )
@@ -275,18 +301,19 @@ def _publish_step(
         accepted = publication.accepted
         transcript, recording = load_capture_publication(session, step.recording_id)
         state = getattr(transcript, "settling_state", None) or {}
-        if accepted and state.get("phase") == "paused":
-            # The pause already locked the episode's words; the tail it
-            # uploaded first locks with them instead of waiting for Resume.
-            close_live_settling(session, recording_id=step.recording_id)
-        elif not accepted:
+        # The tail uploaded before a pause stays open until its speaker labels
+        # run, then locks with the rest of the episode (``close_paused_tail``).
+        paused = accepted and state.get("phase") == "paused"
+        if not accepted:
             # A duplicate step is dropped, but ingestion still advances to the
             # next chunk while its episode is current.
             accepted = publication_is_current(
                 recording, transcript, step.expected_token
             )
         session.commit()
-        return SettlingStepResult(True, accepted, window_s, bool(publication.changed))
+        return SettlingStepResult(
+            True, accepted, window_s, bool(publication.changed), paused
+        )
     finally:
         session.close()
 
