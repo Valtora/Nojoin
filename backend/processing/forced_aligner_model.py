@@ -28,10 +28,14 @@ CPU_MAX_INPUT_TOKENS = 4096
 
 
 def _prepared_path() -> Path:
+    """Use only prepared assets; a missing model is queued, never fetched inline."""
     resolution = assets.inspect_forced_aligner_model()
     if resolution.state == "verified" and resolution.path is not None:
         return resolution.path
-    return assets.prepare_forced_aligner_model()
+    from backend.services.model_preparation import request_pinned_preparation
+
+    request_pinned_preparation("forced_aligner", recording_id=None)
+    raise ForcedAlignerError("Forced aligner is not prepared yet")
 
 
 def _processor(path: Path) -> Any:
@@ -175,7 +179,7 @@ def align_audio(audio: np.ndarray, *, text: str, language: str) -> list[dict[str
     """
     _validate_request(audio, text, language)
     try:
-        # Preparation may take the file lock, so it must precede the runtime lock.
+        # Queueing preparation may take the file lock, so it precedes the runtime lock.
         path = _prepared_path()
         with assets.control.model_lock(), _LOCK:
             # Deletion between preparation and this lock is an explicit failure.

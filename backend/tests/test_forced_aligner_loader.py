@@ -166,19 +166,19 @@ def clear_runtime() -> Any:
     runtime.release_forced_aligner_model_cache()
 
 
-def test_first_use_prepares_then_independently_verifies_before_processor(
+def test_prepared_assets_are_independently_verified_before_processor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
     monkeypatch.setattr(
         runtime.assets,
         "inspect_forced_aligner_model",
-        lambda: SimpleNamespace(state="missing"),
+        lambda: SimpleNamespace(state="verified", path=Path("snapshot")),
     )
     monkeypatch.setattr(
         runtime.assets,
         "prepare_forced_aligner_model",
-        lambda: calls.append("prepare") or Path("snapshot"),
+        lambda: pytest.fail("Prepared assets were fetched again"),
     )
     monkeypatch.setattr(
         runtime.assets,
@@ -193,7 +193,7 @@ def test_first_use_prepares_then_independently_verifies_before_processor(
     path = runtime._prepared_path()
     first = runtime._processor(path)
     assert runtime._processor(path) is first
-    assert calls == ["prepare", "verify", "processor"]
+    assert calls == ["verify", "processor"]
 
 
 def test_single_cpu_model_cached_until_release_without_changing_worker_threads(
@@ -262,44 +262,25 @@ def test_dense_prompt_is_refused_before_loading_model(
         )
 
 
-def test_first_use_takes_file_lock_before_runtime_lock(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.usefixtures("download_progress_in_memory")
+def test_unprepared_assets_queue_preparation_once_and_never_download(
+    monkeypatch: pytest.MonkeyPatch, stub_celery_dispatch: list
 ) -> None:
-    events: list[str] = []
-    path = Path("snapshot")
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("Alignment must not fetch, hash or load unprepared assets")
 
-    def prepare() -> Path:
-        assert not runtime._LOCK._is_owned()
-        events.append("prepare")
-        return path
-
-    @contextmanager
-    def file_lock(*_args: Any, **_kwargs: Any) -> Any:
-        assert not runtime._LOCK._is_owned()
-        events.append("file_lock")
-        yield True
-
-    def align(*_args: Any) -> list[dict[str, Any]]:
-        assert runtime._LOCK._is_owned()
-        events.append("align")
-        return []
-
-    resolutions = iter(
-        [SimpleNamespace(state="missing"), SimpleNamespace(state="verified", path=path)]
-    )
-    monkeypatch.setattr(
-        runtime.assets, "inspect_forced_aligner_model", lambda: next(resolutions)
-    )
-    monkeypatch.setattr(runtime.assets, "prepare_forced_aligner_model", prepare)
-    monkeypatch.setattr(type(runtime.assets.control), "model_lock", file_lock)
-    monkeypatch.setattr(runtime, "_align", align)
-    assert (
-        runtime.align_audio(
-            np.zeros(160, dtype=np.float32), text="hello", language="en"
-        )
-        == []
-    )
-    assert events == ["prepare", "file_lock", "align"]
+    monkeypatch.setattr(runtime.assets, "prepare_forced_aligner_model", forbidden)
+    monkeypatch.setattr(runtime.assets, "verify_forced_aligner_model", forbidden)
+    monkeypatch.setattr(runtime, "_align", forbidden)
+    for _ in range(3):
+        with pytest.raises(ForcedAlignerError, match="not prepared"):
+            runtime.align_audio(
+                np.zeros(160, dtype=np.float32), text="hello", language="en"
+            )
+    assert [kwargs for _name, _args, kwargs in stub_celery_dispatch] == [
+        {"pinned_model": "forced_aligner", "include_core": False}
+    ]
+    assert runtime.assets.control.pending_task() is not None
 
 
 def test_deletion_between_preparation_and_load_is_explicit_failure(
