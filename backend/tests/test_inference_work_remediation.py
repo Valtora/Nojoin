@@ -59,6 +59,7 @@ SCHEMA_STATEMENTS = [
         processing_step VARCHAR,
         processing_started_at DATETIME,
         processing_completed_at DATETIME,
+        first_processed_at DATETIME,
         pipeline_generation VARCHAR,
         is_archived BOOLEAN,
         is_deleted BOOLEAN,

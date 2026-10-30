@@ -14,6 +14,7 @@ import RecordingNoteComposer from "@/components/notes/RecordingNoteComposer";
 import { NoteFilesProvider } from "@/components/notes/NoteFiles";
 import MeetingEdgePanel from "@/components/MeetingEdgePanel";
 import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
+import { liveTextActivityMark } from "@/components/transcript/liveTranscriptPresentation";
 import ExportModal from "@/components/ExportModal";
 import { RecordingTranscriptTour } from "@/components/TourGuide";
 import { RecordingStatus } from "@/types";
@@ -184,6 +185,7 @@ export default function RecordingPage({ params }: PageProps) {
     className="bg-surface-inset"
   />;
   const capturing = isLiveCaptureInProgress(recording);
+  const liveTextMark = usesInFlightTranscript ? liveTextActivityMark(liveTranscript.segments) : null;
   const meetingEdgeContent = showMeetingEdge ? <MeetingEdgePanel
     readOnly={!capturing}
     payload={recording.transcript?.meeting_edge_payload}
@@ -210,7 +212,7 @@ export default function RecordingPage({ params }: PageProps) {
       myNotesContent={myNotesContent}
       meetingEdgeContent={meetingEdgeContent}
       playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording}
-        audioClock={audioClock} onDiscarded={navigateToRecordings} /> : undefined}
+        audioClock={audioClock} onDiscarded={navigateToRecordings} liveTextMark={liveTextMark} /> : undefined}
       inFlightContent={<RecordingNoteComposer recording={recording} segments={transcriptSegments}
         audioClock={audioClock} boxRef={liveNoteBoxRef} />}
       timelineNotes={timelineNotes}

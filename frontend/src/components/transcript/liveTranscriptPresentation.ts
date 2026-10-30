@@ -7,8 +7,24 @@ import type { LiveLineHandlers } from "./LiveLineEditor";
 export const liveRenderIdentity = (segment: TranscriptSegment, index: number) =>
   segment.id ?? `${segment.start}-${index}`;
 
+/**
+ * A mark that moves with each new live line and each change to the last one,
+ * which the meter's quiet notice takes as proof that audio is getting through.
+ * The last line's text length is in it because settling revises a line's
+ * words in place without moving its end.
+ */
+export function liveTextActivityMark(segments: readonly TranscriptSegment[]): string | null {
+  const last = segments.at(-1);
+  return last ? `${segments.length}:${last.end}:${last.text.length}` : null;
+}
+
 export interface LiveTranscriptPresentation {
   hasLoaded: boolean;
+  /**
+   * The capture is recording or paused, so a view with no lines yet is
+   * listening. Once it stops, the feed shows what it heard while it processes.
+   */
+  capturing?: boolean;
   isPaused?: boolean;
   /** The last live read said live transcription is behind the uploads. */
   liveBehind?: boolean;

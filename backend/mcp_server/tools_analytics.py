@@ -3,14 +3,13 @@
 import logging
 from typing import Any
 
-from fastapi import HTTPException
-
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import (
     MCP_WRITE_SCOPE,
     _require_write_scope,
     mcp_tool,
 )
+from backend.utils.generation_claim import reported_generation_status
 
 logger = logging.getLogger(__name__)
 
@@ -402,8 +401,12 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
         analytics, revision, baselines = await db.run_sync(_compute)
         await db.commit()
         stored = transcript.analytics_payload or {}
-        delivery_status = transcript.analytics_status
-        ai_status = transcript.analytics_ai_status
+        delivery_status = reported_generation_status(
+            transcript.analytics_status, transcript.updated_at
+        )
+        ai_status = reported_generation_status(
+            transcript.analytics_ai_status, transcript.updated_at
+        )
 
     ai_watermark = (stored.get("ai") or {}).get("event_watermark")
     ai_stale = ai_watermark is not None and revision > int(ai_watermark)
@@ -488,8 +491,6 @@ async def analyse_meeting(recording_id: str) -> dict[str, Any]:
     Args:
         recording_id: The recording's string id from list_recordings.
     """
-    from mcp.server.mcpserver.exceptions import ToolError
-
     from backend.api.v1.endpoints.transcripts.routes_analytics import (
         generate_recording_ai_analytics,
     )
@@ -499,11 +500,8 @@ async def analyse_meeting(recording_id: str) -> dict[str, Any]:
     _require_write_scope("analysing meetings")
 
     async with async_session_maker() as db:
-        try:
-            result = await generate_recording_ai_analytics(
-                recording_id, db=db, current_user=user
-            )
-        except HTTPException as exc:
-            raise ToolError(str(exc.detail)) from exc
+        result = await generate_recording_ai_analytics(
+            recording_id, db=db, current_user=user
+        )
 
     return {"id": result.recording_id, "ai_status": result.ai_status}

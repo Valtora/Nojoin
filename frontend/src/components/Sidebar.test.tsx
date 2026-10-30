@@ -11,7 +11,7 @@ import { useImportAudioStore } from "@/lib/importAudioStore";
 import type { ViewType } from "@/lib/store";
 import Sidebar from "./Sidebar";
 import ImportAudioHost from "./importAudio/ImportAudioHost";
-import { RecordingStatus, type Recording } from "@/types";
+import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 import { activeTransitions, animatesWidth } from "@/test/widthTransition";
 
@@ -28,6 +28,8 @@ const start = vi.fn();
 const captureState = {
   controller: { getState: () => ({ error: null }) },
   runtimeActive: false,
+  uploadQueue: { segments: 0, seconds: 0 },
+  coverageWarning: null,
   status: "idle",
   support: { supported: true, mode: "shared_audio" },
 };
@@ -97,6 +99,8 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     refreshPausedRecording,
     start: (...args: unknown[]) => start(...args),
   }),
+  useCaptureState: (select: (state: { elapsedSeconds: number; uploadQueue: { segments: number; seconds: number } }) => unknown) =>
+    select({ elapsedSeconds: 0, uploadQueue: { segments: 0, seconds: 0 } }),
 }));
 
 vi.mock("@/lib/connectivity/monitor", () => ({
@@ -148,7 +152,8 @@ vi.mock("@/lib/searchUtils", () => ({
   }),
 }));
 
-vi.mock("./LiveMeetingControls", () => ({
+vi.mock("./LiveMeetingControls", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./LiveMeetingControls")>(),
   default: () => <div data-testid="live-controls" />,
 }));
 
@@ -246,6 +251,15 @@ describe("Sidebar", () => {
     },
   );
 
+  it("names the search filter button and says whether the filters are open (issue #840)", async () => {
+    renderWithProviders(<Sidebar />);
+    const filter = await screen.findByRole("button", { name: "Filter recordings" });
+    expect(filter).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(filter);
+    expect(screen.getByRole("button", { name: "Filter recordings" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Date Filter")).toBeInTheDocument();
+  });
+
   it("labels an interrupted upload in the sidebar", async () => {
     const interrupted = { ...recording, status: RecordingStatus.UPLOADING, capture_stalled: true };
     getRecordings.mockResolvedValue([interrupted]);
@@ -309,6 +323,27 @@ describe("Sidebar", () => {
       "Archive",
       "Move to Bin",
     ]);
+  });
+
+  const unfinished = ["Rename", "Discard Recording", "Show Recording Info", "Archive", "Move to Bin"];
+  it.each([
+    ["a live capture", { status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING, discardable: true }, unfinished],
+    ["a paused capture", { status: RecordingStatus.PAUSED, client_status: ClientStatus.PAUSED, discardable: true }, unfinished],
+    ["a first pass", { status: RecordingStatus.PROCESSING, discardable: true }, unfinished],
+    // Regenerating notes, inferring speakers or reprocessing: still a finished meeting.
+    ["a finished meeting back in processing", { status: RecordingStatus.PROCESSING, discardable: false },
+      ["Rename", "Show Recording Info", "Archive", "Move to Bin"]],
+    ["a failed recording", { status: RecordingStatus.ERROR },
+      ["Rename", "Retry Processing", "Show Recording Info", "Archive", "Move to Bin"]],
+  ] as const)("offers on %s only what the server would do (#832, #833)", async (_, state, expected) => {
+    getRecordings.mockResolvedValue([{ ...recording, ...state }]);
+    lastMenuItems = [];
+    renderWithProviders(<Sidebar />);
+
+    fireEvent.contextMenu(await screen.findByRole("heading", { name: "Latest meeting" }));
+
+    expect(await screen.findByTestId("sidebar-context-menu")).toBeInTheDocument();
+    expect(lastMenuItems.map((item) => item.label)).toEqual(expected);
   });
 
   it("follows the pointer while resizing and animates only collapse and expand (#747)", async () => {
@@ -383,9 +418,16 @@ describe("Sidebar", () => {
       captureState.status = status;
       renderWithProviders(<Sidebar />);
 
-      const button = await screen.findByRole("button", { name: "Meeting in progress" });
-      expect(button).toBeDisabled();
-      fireEvent.click(button);
+      if (status === "error") {
+        const button = await screen.findByRole("button", { name: "Meeting in progress" });
+        expect(button).toBeDisabled();
+        fireEvent.click(button);
+      } else {
+        const passive = await screen.findByTestId("capture-status");
+        expect(passive).toHaveTextContent(status === "paused" ? /^Paused$/ : /^Recording$/);
+        expect(screen.queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
+      }
       expect(start).not.toHaveBeenCalled();
       expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
     });
@@ -528,10 +570,16 @@ describe("Sidebar", () => {
       await screen.findByRole("heading", { name: "Latest meeting" });
 
       const actionGroup = phoneImport()!.parentElement!;
-      const button = within(actionGroup).getByRole("button", { name: "Meeting in progress" });
-      expect(button).toBeDisabled();
+      if (status === "error") {
+        const button = within(actionGroup).getByRole("button", { name: "Meeting in progress" });
+        expect(button).toBeDisabled();
+        fireEvent.click(button);
+      } else {
+        expect(within(actionGroup).getByTestId("capture-status")).toHaveTextContent(status === "paused" ? /^Paused$/ : /^Recording$/);
+        expect(within(actionGroup).queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
+        expect(within(actionGroup).queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
+      }
       expect(within(actionGroup).queryByTestId("live-controls")).not.toBeInTheDocument();
-      fireEvent.click(button);
       expect(start).not.toHaveBeenCalled();
       expect(routerPush).not.toHaveBeenCalled();
     });

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SpeakerPanel from "./SpeakerPanel";
+import { useNavigationStore } from "@/lib/store";
 import { matchesStyleDeclaration } from "@/test/styleMarkerContracts";
 import type {
   GlobalSpeaker,
@@ -156,12 +157,13 @@ describe("SpeakerPanel", () => {
   it("shows Preview Voice and Change identity as disabled when they are", () => {
     renderPanel({ disablePlayback: true, disableEditing: true });
     const [preview] = screen.getAllByTitle("Preview Voice");
-    const change = screen.getByRole("button", { name: "Change identity for Alice" });
-    for (const button of [preview, change]) {
-      expect(button).toBeDisabled();
-      expect(button.className).toContain("disabled:opacity-60");
-      expect(button.className).toContain("disabled:cursor-not-allowed");
-    }
+    expect(preview).toBeDisabled();
+    expect(preview.className).toContain("disabled:opacity-60");
+    expect(preview.className).toContain("disabled:cursor-not-allowed");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Alice" }));
+    const change = screen.getByRole("menuitem", { name: "Change identity" });
+    expect(change).toHaveAttribute("aria-disabled", "true");
+    expect(change).toHaveAccessibleDescription("Speakers can be changed once processing finishes.");
   });
 
   beforeEach(() => {
@@ -184,6 +186,31 @@ describe("SpeakerPanel", () => {
         dark ? "--depth-fill-base" : "--depth-light-fill", "var(--surface-inset)", appearance))
         .toBe(style === "depth");
     }
+  });
+
+  it("takes focus with its ring for Analytics' Review speakers, until focus moves on", () => {
+    renderPanel();
+    const panel = screen.getByRole("complementary", { name: "Speakers" });
+    expect(panel).not.toHaveAttribute("data-reviewing");
+
+    act(() => useNavigationStore.getState().setSpeakerReviewPending(true));
+
+    expect(panel).toHaveFocus();
+    expect(panel).toHaveAttribute("data-reviewing", "true");
+    expect(panel.className).toContain("data-reviewing:ring-2");
+    expect(useNavigationStore.getState().speakerReviewPending).toBe(false);
+
+    act(() => panel.blur());
+    expect(panel).not.toHaveAttribute("data-reviewing");
+  });
+
+  it("takes the review when it mounts for it, as a collapsed side column does", () => {
+    act(() => useNavigationStore.getState().setSpeakerReviewPending(true));
+    renderPanel();
+    const panel = screen.getByRole("complementary", { name: "Speakers" });
+    expect(panel).toHaveFocus();
+    expect(panel).toHaveAttribute("data-reviewing", "true");
+    expect(useNavigationStore.getState().speakerReviewPending).toBe(false);
   });
 
   it("groups speakers into rows by display name", () => {

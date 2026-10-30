@@ -5,9 +5,12 @@ import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Pause, Play, Square, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
+import { cn } from "@/lib/cn";
 import { useNotificationStore } from "@/lib/notificationStore";
+
+import { TOUCH_TARGET_HEIGHT, TOUCH_TARGET_SQUARE } from "./ui/touchTarget";
 
 const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
@@ -22,13 +25,26 @@ function formatTime(seconds: number) {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
+// The controls take the bar's full height on a touch screen.
+const CONTROL = cn(
+  "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-50",
+  TOUCH_TARGET_SQUARE,
+);
+
+/**
+ * The capture's state, clock and controls, on every page but its own
+ * recording's. It is a strip across the top of the app shell rather than a
+ * card floating over the page, so it covers nothing: the shell gives it a row
+ * of its own, and `--capture-bar-h` (set on the shell while the bar is there)
+ * tells the full-height nav rail and the recording header's phone menu how
+ * far down the page now starts.
+ */
 export default function RecordingFloatingBadge() {
   const pathname = usePathname();
   const router = useRouter();
   const {
     cancel,
     controller,
-    elapsedSeconds,
     pause,
     resume,
     runtimeActive,
@@ -36,6 +52,7 @@ export default function RecordingFloatingBadge() {
     stop,
     recordingId,
   } = useCapture();
+  const elapsedSeconds = useCaptureState((state) => state.elapsedSeconds);
   const { addNotification } = useNotificationStore();
 
   const isRecording = status === "recording";
@@ -107,12 +124,19 @@ export default function RecordingFloatingBadge() {
   };
 
   return (
-    <div className="fixed top-6 left-1/2 z-[var(--z-sticky)] -translate-x-1/2">
-      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="float" className="flex items-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-2.5 shadow-float">
+    <SurfaceBase
+      data-ui-fill="card"
+      kind="pane"
+      data-capture-bar=""
+      role="region"
+      aria-label="Recording in progress"
+      className="flex h-[var(--capture-bar-h)] shrink-0 items-end justify-center border-b border-status-danger-border bg-surface-card px-3 pt-[env(safe-area-inset-top)]"
+    >
+      <div className="flex h-[44px] min-w-0 items-center gap-2">
         <ButtonBase
           type="button"
           onClick={handleNavigate}
-          className="flex items-center gap-2"
+          className={cn("flex items-center gap-2 rounded-lg px-1", TOUCH_TARGET_HEIGHT)}
           title="Go to recording"
         >
           <span
@@ -133,7 +157,7 @@ export default function RecordingFloatingBadge() {
             type="button"
             onClick={() => sendCommand("pause")}
             disabled={transportDisabled}
-            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg disabled:opacity-50"
+            className={cn(CONTROL, "text-contrast-helper hover:bg-status-danger-bg hover:text-status-danger-fg")}
             title="Pause recording"
             aria-label="Pause recording"
           >
@@ -144,7 +168,7 @@ export default function RecordingFloatingBadge() {
             type="button"
             onClick={() => sendCommand("resume")}
             disabled={transportDisabled}
-            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-status-success-bg hover:text-status-success-fg disabled:opacity-50"
+            className={cn(CONTROL, "text-contrast-helper hover:bg-status-success-bg hover:text-status-success-fg")}
             title="Resume recording"
             aria-label="Resume recording"
           >
@@ -158,7 +182,7 @@ export default function RecordingFloatingBadge() {
           type="button"
           onClick={() => sendCommand("stop")}
           disabled={stopDisabled}
-          className="rounded-lg bg-status-danger-bg p-1.5 text-foreground transition-colors hover:bg-status-danger-bg disabled:opacity-50"
+          className={cn(CONTROL, "bg-status-danger-bg text-foreground hover:bg-status-danger-bg")}
           title="Stop recording"
           aria-label="Stop recording"
         >
@@ -169,13 +193,13 @@ export default function RecordingFloatingBadge() {
           type="button"
           onClick={handleDiscard}
           disabled={stopDisabled}
-          className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg disabled:opacity-50"
+          className={cn(CONTROL, "text-contrast-helper hover:bg-status-danger-bg hover:text-status-danger-fg")}
           title="Discard recording"
           aria-label="Discard recording"
         >
           <Trash2 className="h-4 w-4" />
         </ButtonBase>
-      </SurfaceBase>
-    </div>
+      </div>
+    </SurfaceBase>
   );
 }

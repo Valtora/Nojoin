@@ -20,6 +20,7 @@ from backend.models.recording import (
     RecordingStatus,
     capture_looks_stalled,
     import_looks_stalled,
+    recording_is_discardable,
 )
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
@@ -28,6 +29,10 @@ from backend.processing.embedding import (
     LIBRARY_VOICEPRINT_MIN_SPEECH_S,
     LibraryVoiceprintUpdate,
     VoiceprintStatus,
+)
+from backend.utils.generation_claim import (
+    reported_generation_error,
+    reported_generation_status,
 )
 from backend.utils.language_notice import language_notice
 from backend.utils.reprocess_publication import (
@@ -279,6 +284,10 @@ class RecordingPublicRead(PublicModel):
     # A file import that has received no part for STALLED_IMPORT_AFTER: the page
     # sending it went away. The client offers to import it again or discard it.
     import_stalled: bool = False
+    # Whether Discard would delete it: a capture, an import or a first pass that
+    # has not finished. False for a finished meeting while its notes regenerate,
+    # its speakers are inferred or it is reprocessed (recording_is_discardable).
+    discardable: bool = False
     # Computed server-side when the detail read includes the transcript: shown
     # once processing is complete, until the recording has a language of its
     # own (backend/utils/language_notice.py).
@@ -377,10 +386,23 @@ def serialize_transcript(
             for item in (transcript.speaker_name_suggestions or [])
             if isinstance(item, dict)
         ],
-        notes_status=transcript.notes_status,
+        # A claim lost with its worker reads as failed, and says so, so the
+        # page offers generation again (issue #828). A failed transcription's
+        # message stays its own.
+        notes_status=reported_generation_status(
+            transcript.notes_status, transcript.updated_at
+        ),
         notes_stale_documents=bool(getattr(transcript, "notes_stale_documents", False)),
         transcript_status=transcript.transcript_status,
-        error_message=transcript.error_message,
+        error_message=(
+            transcript.error_message
+            if transcript.transcript_status == "error"
+            else reported_generation_error(
+                transcript.notes_status,
+                transcript.updated_at,
+                transcript.error_message,
+            )
+        ),
     )
 
 
@@ -525,6 +547,7 @@ def serialize_recording(
         capture_stalled=capture_looks_stalled(recording),
         capture_epoch=getattr(recording, "capture_epoch", 0) or 0,
         import_stalled=import_looks_stalled(recording),
+        discardable=recording_is_discardable(recording),
         language_notice=LanguageNoticeRead(**notice) if notice else None,
         transcript=transcript,
         speakers=speakers,

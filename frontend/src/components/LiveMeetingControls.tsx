@@ -6,7 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
 import { updateRecordingMaxSpeakers } from "@/lib/api";
-import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { useNotificationStore } from "@/lib/notificationStore";
 
@@ -74,9 +74,6 @@ export default function LiveMeetingControls({
   const {
     cancel,
     controller,
-    coverageWarning,
-    dismissCoverageWarning,
-    elapsedSeconds,
     pause,
     recordingId,
     ownedRecordingId,
@@ -86,8 +83,9 @@ export default function LiveMeetingControls({
     status,
     stop,
     stopStage,
-    uploadQueue,
   } = useCapture();
+  const elapsedSeconds = useCaptureState((state) => state.elapsedSeconds);
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
 
   const { addNotification } = useNotificationStore();
   const isRecording = status === "recording";
@@ -232,77 +230,6 @@ export default function LiveMeetingControls({
         ? "Live"
         : "Recording";
 
-  const showUploadBacklog = isFinalizing
-    ? uploadQueue.segments > 0
-    : uploadQueue.seconds >= UPLOAD_BACKLOG_NOTICE_SECONDS;
-  const uploadBacklogNotice = showUploadBacklog ? (
-    <div
-      className="density-surface-panel flex items-start gap-2 border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-fg"
-      role="status"
-    >
-      <CloudUpload className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <span className="flex-1">
-        {isFinalizing ? (
-          <>
-            <span className="font-semibold">
-              Uploading the last {formatTime(uploadQueue.seconds)} of audio
-            </span>{" "}
-            before processing starts. Keep this tab open until it finishes.
-          </>
-        ) : (
-          <>
-            <span className="font-semibold">
-              Uploads are {formatTime(uploadQueue.seconds)} behind.
-            </span>{" "}
-            The audio is kept in this browser and sent as the connection allows,
-            so keep this tab open.
-          </>
-        )}
-      </span>
-    </div>
-  ) : null;
-
-  // The timer is wall clock, so it keeps counting whether or not audio is
-  // reaching the server. This badge appears only when the two diverge, naming
-  // what the server actually holds rather than quietly overstating the
-  // recording (issue #166).
-  //
-  // The cause comes from the controller, which has the evidence to tell a
-  // suspended tab from an unreachable backend.
-  const coverageBadge = coverageWarning ? (
-    <div
-      className="density-surface-panel flex items-start gap-2 border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
-      role="status"
-    >
-      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <span className="flex-1">
-        <span className="font-semibold">
-          {formatTime(coverageWarning.capturedSeconds)} captured
-        </span>{" "}
-        of {formatTime(coverageWarning.elapsedSeconds)} elapsed.{" "}
-        {coverageWarning.queuedSeconds > 0 ? (
-          <>
-            Another {formatTime(coverageWarning.queuedSeconds)} is recorded and
-            waiting to upload.{" "}
-          </>
-        ) : null}
-        {coverageWarning.cause === "backend-unreachable"
-          ? "Nojoin cannot reach the server at the moment. Recording is continuing, and queued audio uploads when the connection returns."
-          : coverageWarning.cause === "tab-suspended"
-            ? "Audio is being lost because this tab is being suspended. Keep the Nojoin tab open and the device awake."
-            : "Keep the Nojoin tab open and the device awake, and check your connection to the Nojoin server."}
-      </span>
-      <ButtonBase
-        type="button"
-        onClick={dismissCoverageWarning}
-        className="-mr-1 -mt-1 shrink-0 rounded p-1 text-status-warning-fg/70 transition-colors hover:bg-status-warning-border/40 hover:text-status-warning-fg"
-        aria-label="Dismiss the capture coverage warning"
-      >
-        <X className="h-3.5 w-3.5" />
-      </ButtonBase>
-    </div>
-  ) : null;
-
   if (size === "compact") {
     return (
       <div className="space-y-2">
@@ -373,8 +300,7 @@ export default function LiveMeetingControls({
             <Trash2 className="h-4 w-4" />
           </ButtonBase>
         </div>
-        {coverageBadge}
-        {uploadBacklogNotice}
+        <CaptureNotices />
         {speakerCapField}
       </div>
     );
@@ -474,8 +400,7 @@ export default function LiveMeetingControls({
           </div>
         </div>
 
-        {coverageBadge}
-        {uploadBacklogNotice}
+        <CaptureNotices />
       </div>
     );
   }
@@ -555,9 +480,95 @@ export default function LiveMeetingControls({
         </ButtonBase>
       </div>
 
-      {coverageBadge}
-      {uploadBacklogNotice}
+      <CaptureNotices />
       {speakerCapField}
     </div>
+  );
+}
+
+/**
+ * The upload backlog and capture coverage notices of a running capture, shown
+ * with its controls and, while it runs, under the recordings list's status.
+ */
+export function CaptureNotices() {
+  const { coverageWarning, dismissCoverageWarning, status } = useCapture();
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
+  const isFinalizing = status === "finalizing";
+  const showUploadBacklog = isFinalizing
+    ? uploadQueue.segments > 0
+    : uploadQueue.seconds >= UPLOAD_BACKLOG_NOTICE_SECONDS;
+  const uploadBacklogNotice = showUploadBacklog ? (
+    <div
+      className="density-surface-panel flex items-start gap-2 border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-fg"
+      role="status"
+    >
+      <CloudUpload className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span className="flex-1">
+        {isFinalizing ? (
+          <>
+            <span className="font-semibold">
+              Uploading the last {formatTime(uploadQueue.seconds)} of audio
+            </span>{" "}
+            before processing starts. Keep this tab open until it finishes.
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">
+              Uploads are {formatTime(uploadQueue.seconds)} behind.
+            </span>{" "}
+            The audio is kept in this browser and sent as the connection allows,
+            so keep this tab open.
+          </>
+        )}
+      </span>
+    </div>
+  ) : null;
+
+  // The timer is wall clock, so it keeps counting whether or not audio is
+  // reaching the server. This badge appears only when the two diverge, naming
+  // what the server actually holds rather than quietly overstating the
+  // recording (issue #166).
+  //
+  // The cause comes from the controller, which has the evidence to tell a
+  // suspended tab from an unreachable backend.
+  const coverageBadge = coverageWarning ? (
+    <div
+      className="density-surface-panel flex items-start gap-2 border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
+      role="status"
+    >
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span className="flex-1">
+        <span className="font-semibold">
+          {formatTime(coverageWarning.capturedSeconds)} captured
+        </span>{" "}
+        of {formatTime(coverageWarning.elapsedSeconds)} elapsed.{" "}
+        {coverageWarning.queuedSeconds > 0 ? (
+          <>
+            Another {formatTime(coverageWarning.queuedSeconds)} is recorded and
+            waiting to upload.{" "}
+          </>
+        ) : null}
+        {coverageWarning.cause === "backend-unreachable"
+          ? "Nojoin cannot reach the server at the moment. Recording is continuing, and queued audio uploads when the connection returns."
+          : coverageWarning.cause === "tab-suspended"
+            ? "Audio is being lost because this tab is being suspended. Keep the Nojoin tab open and the device awake."
+            : "Keep the Nojoin tab open and the device awake, and check your connection to the Nojoin server."}
+      </span>
+      <ButtonBase
+        type="button"
+        onClick={dismissCoverageWarning}
+        className="-mr-1 -mt-1 shrink-0 rounded p-1 text-status-warning-fg/70 transition-colors hover:bg-status-warning-border/40 hover:text-status-warning-fg"
+        aria-label="Dismiss the capture coverage warning"
+      >
+        <X className="h-3.5 w-3.5" />
+      </ButtonBase>
+    </div>
+  ) : null;
+
+  return (
+    <>
+      {coverageBadge}
+      {uploadBacklogNotice}
+    </>
   );
 }

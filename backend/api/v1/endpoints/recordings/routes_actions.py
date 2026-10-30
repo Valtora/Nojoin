@@ -7,8 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import CalendarEvent
-from backend.models.recording import RecordingStatus, RecordingUpdate
+from backend.models.recording import (
+    SPEAKER_INFERENCE_STEP,
+    Recording,
+    RecordingStatus,
+    RecordingUpdate,
+)
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
+from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.speaker_cap import (
     MAX_SPEAKER_CAP,
@@ -20,6 +26,7 @@ from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
 )
+from backend.utils.generation_claim import generation_active
 from backend.utils.languages import validate_transcription_language
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.reprocess_publication import (
@@ -33,6 +40,7 @@ from .helpers import (
     _recording_has_audio,
     _recording_has_proxy,
     _requeue_for_processing,
+    lock_recording_for_delete,
     revoke_recording_task,
 )
 from .router import router
@@ -114,14 +122,8 @@ async def delete_recording(
     Delete a recording and its associated file.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    # A live capture's publisher holds Transcript before Recording; take the
-    # same order so deleting a capture mid-step cannot deadlock against it.
-    await db.run_sync(
-        lambda session: _load_transcript(session, recording.id, lock=True)
-    )
-    # Locked, so a worker cannot repoint audio_path between this read and the
-    # delete (keep_imported_audio_task) and leave its new file behind.
-    await db.refresh(recording, with_for_update=True)
+    if not await lock_recording_for_delete(db, recording):
+        raise HTTPException(status_code=404, detail="Recording not found")
 
     # The paths are read under the lock, and the files go once the delete has
     # committed, so a failed commit keeps them for the row it leaves.
@@ -159,6 +161,58 @@ class ReprocessRequest(BaseModel):
         return None if value is None else validate_transcription_language(value)
 
 
+REPROCESS_CAPTURE_PAUSED_MESSAGE = (
+    "This recording is paused, not finished. Stop it before reprocessing."
+)
+
+
+REPROCESS_NOTES_GENERATING_MESSAGE = (
+    "Meeting notes are generating. Reprocess once they have finished."
+)
+
+
+def _ensure_reprocessable(
+    recording: Recording, transcript: Transcript | None = None
+) -> None:
+    """Refuse a recording that a reprocess would harm or cannot help."""
+    if recording.is_deleted:
+        raise HTTPException(status_code=400, detail="Cannot retry a deleted recording")
+
+    # A paused capture's segments are joined into audio only when it stops, so
+    # a run queued now ends the capture and finds no audio (issue #851).
+    if recording.status == RecordingStatus.PAUSED:
+        raise HTTPException(status_code=409, detail=REPROCESS_CAPTURE_PAUSED_MESSAGE)
+
+    if recording.status in {
+        RecordingStatus.UPLOADING,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="Recording is already uploading or processing",
+        )
+
+    # Notes no longer hold the recording in PROCESSING (issue #828), so their
+    # claim keeps a reprocess from replacing the transcript under them. A claim
+    # lost with its worker expires and stops refusing.
+    if transcript is not None and generation_active(
+        transcript.notes_status, transcript.updated_at
+    ):
+        raise HTTPException(status_code=409, detail=REPROCESS_NOTES_GENERATING_MESSAGE)
+
+    # A failed recording with no audio left, such as an import whose file was
+    # refused, keeps the reason it failed rather than losing it to a run that
+    # can only find no audio.
+    if recording.status == RecordingStatus.ERROR and not _recording_has_audio(
+        recording
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=recording.processing_step or "This recording has no audio.",
+        )
+
+
 @router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
 async def reprocess_recording(
     recording_id: str,
@@ -173,30 +227,15 @@ async def reprocess_recording(
     from backend.utils.transcription_models import ENGINE_OVERRIDE_CHOICES
 
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-
-    if recording.is_deleted:
-        raise HTTPException(status_code=400, detail="Cannot retry a deleted recording")
-
-    if recording.status in {
-        RecordingStatus.UPLOADING,
-        RecordingStatus.QUEUED,
-        RecordingStatus.PROCESSING,
-    }:
-        raise HTTPException(
-            status_code=400,
-            detail="Recording is already uploading or processing",
-        )
-
-    # A failed recording with no audio left, such as an import whose file was
-    # refused, keeps the reason it failed rather than losing it to a run that
-    # can only find no audio.
-    if recording.status == RecordingStatus.ERROR and not _recording_has_audio(
-        recording
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=recording.processing_step or "This recording has no audio.",
-        )
+    # Transcript before the row, the order a live capture's publisher takes:
+    # a changed speaker cap or language below dirties the row, which the
+    # reset's first query would otherwise flush ahead of the Transcript
+    # update (issue #816). Read under that lock, the notes claim also fences
+    # this reprocess (issue #828).
+    transcript = await db.run_sync(
+        lambda session: _load_transcript(session, recording.id, lock=True)
+    )
+    _ensure_reprocessable(recording, transcript)
 
     if body.transcription_backend not in TRANSCRIPTION_BACKENDS:
         raise HTTPException(
@@ -312,8 +351,8 @@ async def permanently_delete_recording(
     (bin, then destroy) holds server-side for every surface, including MCP.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    # Locked for the same reason as in delete_recording.
-    await db.refresh(recording, with_for_update=True)
+    if not await lock_recording_for_delete(db, recording):
+        raise HTTPException(status_code=404, detail="Recording not found")
 
     if not recording.is_deleted:
         raise HTTPException(
@@ -338,6 +377,14 @@ async def permanently_delete_recording(
     return {"ok": True}
 
 
+SPEAKER_INFERENCE_NOT_FINISHED_MESSAGE = (
+    "Speakers can be inferred once the recording has finished processing."
+)
+SPEAKER_INFERENCE_FAILED_RECORDING_MESSAGE = (
+    "Processing failed for this recording. Reprocess it before inferring speakers."
+)
+
+
 @router.post("/{recording_id}/infer-speakers")
 async def infer_speakers_for_recording(
     recording_id: str,
@@ -346,17 +393,32 @@ async def infer_speakers_for_recording(
 ):
     """
     Re-run speaker inference on an already processed meeting.
+
+    Anything else is refused. The run holds the recording in PROCESSING and
+    hands it back as PROCESSED, which would end a live or paused capture
+    before its audio was assembled (issue #832).
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    # Locked, so two requests cannot both find it PROCESSED and start two runs.
+    await db.refresh(recording, with_for_update=True)
     transcript = await db.run_sync(
         lambda session: _load_transcript(session, recording.id)
     )
     # The pass replacing a retained transcript resolves its speakers itself.
     if reprocess_replacement_running(transcript):
         raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
+    if recording.status != RecordingStatus.PROCESSED:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                SPEAKER_INFERENCE_FAILED_RECORDING_MESSAGE
+                if recording.status == RecordingStatus.ERROR
+                else SPEAKER_INFERENCE_NOT_FINISHED_MESSAGE
+            ),
+        )
 
     recording.status = RecordingStatus.PROCESSING
-    recording.processing_step = "Inferring speakers..."
+    recording.processing_step = SPEAKER_INFERENCE_STEP
     db.add(recording)
     await db.commit()
     await db.refresh(recording)

@@ -218,6 +218,7 @@ export default function RecordingMainContent({
     (state) => state.setSpeakerPanelCollapsed,
   );
   const setSideTab = useNavigationStore((state) => state.setSideTab);
+  const setSpeakerReviewPending = useNavigationStore((state) => state.setSpeakerReviewPending);
   const tablistRef = useRef<HTMLDivElement>(null);
   const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
   const tabs = !isMobile ? TABS
@@ -393,15 +394,18 @@ export default function RecordingMainContent({
           speakerColors={speakerColors}
           onPlaySegment={canPlayback ? (startMs) => onPlaySegment(startMs / 1000) : undefined}
           // Two routes to one panel: mobile switches to it, desktop reveals it
-          // in the side column, which may have been collapsed away.
-          onReviewSpeakers={
-            isMobile
-              ? () => setActivePanel("speakers")
-              : () => {
-                  setSideTab("speakers");
-                  setSpeakerPanelCollapsed(false);
-                }
-          }
+          // in the side column, which may have been collapsed away. Either
+          // way the speaker list then takes focus, so the link visibly does
+          // something when the list was already open, as it is by default.
+          onReviewSpeakers={() => {
+            if (isMobile) {
+              setActivePanel("speakers");
+            } else {
+              setSideTab("speakers");
+              setSpeakerPanelCollapsed(false);
+            }
+            setSpeakerReviewPending(true);
+          }}
         />
 
         {isMobile && (

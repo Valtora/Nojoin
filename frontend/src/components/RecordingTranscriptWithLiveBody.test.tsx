@@ -27,6 +27,11 @@ const buildRecording = (overrides: Partial<Recording> = {}): Recording => ({
   processing_step: "Catching up speaker windows...", is_archived: false, is_deleted: false,
   ...overrides,
 });
+// A capture's transcript row: "processing" from capture start until its run publishes.
+const captureTranscript = {
+  id: 1, recording_id: "rec-1", created_at: "2026-05-26T10:00:00Z", updated_at: "2026-05-26T10:00:00Z",
+  segments: [], transcript_status: "processing",
+};
 
 const feed: LiveTranscript = {
   segments: [{ id: "line-1", start: 0, end: 2, text: "The meeting continues", speaker: "UNKNOWN" }],
@@ -56,7 +61,7 @@ describe("RecordingTranscriptWithLiveBody shared-shell body", () => {
     ["queued", RecordingStatus.QUEUED, ClientStatus.IDLE, false],
     ["processing", RecordingStatus.PROCESSING, ClientStatus.IDLE, false],
   ] as const)("keeps the supplied transcript visible while %s", (_, status, client_status, paused) => {
-    show(buildRecording({ status, client_status }));
+    show(buildRecording({ status, client_status, transcript: captureTranscript }));
     expect(screen.getByText("The meeting continues")).toBeInTheDocument();
     expect(screen.getByTestId("live-transcript-panel")).toHaveAttribute("data-paused", String(paused));
   });

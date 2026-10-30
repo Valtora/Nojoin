@@ -1,3 +1,4 @@
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { Recording, RecordingStatus, TimelineNote, TranscriptSegment } from "@/types";
 import type {
   RollingSpeakerCorrectionHistory,
@@ -12,6 +13,24 @@ export const isRecordingInFlight = (recording: Recording | null | undefined) =>
   recording?.status === RecordingStatus.UPLOADING ||
   recording?.status === RecordingStatus.PROCESSING ||
   recording?.status === RecordingStatus.QUEUED;
+
+/**
+ * Whether an in-flight recording has lines for the live feed to read: a
+ * capture's, from its start until its transcript publishes, or a finished
+ * transcript that a later step (speaker inference, notes) runs over. An import
+ * has no transcript until processing makes one, and the utterances read
+ * answers 404 until then; a reprocess resets its transcript to pending. Neither
+ * has lines before its run publishes (#835).
+ *
+ * Only capture start creates a transcript as "processing"
+ * (`routes_batch_init.py`), and only a finished run sets "completed".
+ * A settled meeting's reprocess keeps its settled lines, flagged by the server's `settling_required`.
+ */
+export const hasInFlightTranscriptFeed = (recording: Recording | null | undefined) =>
+  isLiveCaptureInProgress(recording) ||
+  recording?.transcript?.transcript_status === "processing" ||
+  recording?.transcript?.transcript_status === "completed" ||
+  recording?.transcript?.settling_required === true;
 
 // Processed, with audio a proxy can be made from, and no proxy yet.
 const isWaitingForProxy = (recording: Recording) =>
@@ -152,8 +171,12 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.processing_eta_seconds !== current.processing_eta_seconds ||
   polled.processing_eta_learning !== current.processing_eta_learning ||
   polled.processing_eta_sample_size !== current.processing_eta_sample_size ||
+  !!polled.discardable !== !!current.discardable ||
   polled.has_proxy !== current.has_proxy ||
   polled.has_audio !== current.has_audio ||
+  // Whether the live feed has anything to read (hasInFlightTranscriptFeed).
+  polled.transcript?.transcript_status !== current.transcript?.transcript_status ||
+  polled.transcript?.settling_required !== current.transcript?.settling_required ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||
   // Changes with the notes list, which the page then fetches.

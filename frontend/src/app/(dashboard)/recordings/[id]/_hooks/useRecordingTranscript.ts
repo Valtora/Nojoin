@@ -4,7 +4,7 @@ import { useLiveTranscript, LIVE_TRANSCRIPT_POLL_INTERVAL_MS } from "@/component
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import type { Recording } from "@/types";
 
-import { isRecordingInFlight } from "./recordingDetailUtils";
+import { hasInFlightTranscriptFeed, isRecordingInFlight } from "./recordingDetailUtils";
 import { useDetailTranscript } from "./useDetailTranscript";
 
 /** Owns the independent readers and switches their complete presentation snapshot. */
@@ -45,8 +45,21 @@ export function useRecordingTranscript(
   useOnDepsChange([runEnded], () => {
     if (runEnded) setRetainedRecordingId(null);
   });
+  // While in flight, only a capture, a finished transcript a later step runs
+  // over, or a settled meeting's reprocess (which keeps its settled lines) has
+  // lines to read. An import or any other reprocess shows its processing state
+  // until it publishes, with no feed polling a transcript it lacks.
+  const liveFeed = inFlight && (localCaptureActive || hasInFlightTranscriptFeed(recording));
+  // The run this page read the feed for keeps it until the settled read takes
+  // over, and a later run with nothing to read starts without it.
+  const [feedRecordingId, setFeedRecordingId] = useState(liveFeed ? recordingId : null);
+  useOnDepsChange([recordingId, inFlight, liveFeed, isSettledTranscriptReady], () => {
+    setFeedRecordingId((previous) => liveFeed ? recordingId
+      : inFlight || isSettledTranscriptReady || previous !== recordingId ? null : previous);
+  });
+  const feedHandoff = recordingId !== null && feedRecordingId === recordingId;
   const usesInFlightTranscript = !hasRetainedPublication &&
-    (inFlight || (handoffRequired && !isSettledTranscriptReady));
+    (liveFeed || (feedHandoff && !isSettledTranscriptReady));
   // Keep this reader alive through Stop, pipeline work and a failed final read.
   // The settled reader has its own cursor; neither reader ever seeds the other.
   const feed = useLiveTranscript(recording, usesInFlightTranscript);

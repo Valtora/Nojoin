@@ -157,6 +157,7 @@ SCHEMA_STATEMENTS = [
         processing_step VARCHAR(255),
         processing_started_at DATETIME,
         processing_completed_at DATETIME,
+        first_processed_at DATETIME,
         pipeline_generation VARCHAR(32) DEFAULT 'unified',
         is_archived BOOLEAN NOT NULL,
         is_deleted BOOLEAN NOT NULL,
@@ -1032,9 +1033,8 @@ async def test_get_transcript_utterances_rejects_bad_cursor_and_foreign_recordin
     with pytest.raises(ToolError):
         await get_transcript_utterances(public_id, after_revision=-1)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ToolError, match="^Recording not found$"):
         await get_transcript_utterances(public_id)
-    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.anyio
@@ -1100,9 +1100,8 @@ async def test_get_speakers_rejects_other_users_recording(
     await seed_person(session_maker, person_id=11, name="Dana", user_id=999)
     public_id = await seed_recording_with_speakers(session_maker, user_id=999)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ToolError, match="^Recording not found$"):
         await get_speakers(public_id)
-    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.anyio
@@ -1409,9 +1408,8 @@ async def test_get_documents_rejects_other_users_recording(
     bind_mcp_identity(test_user)
     public_id = await seed_recording_with_speakers(session_maker, user_id=999)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ToolError, match="^Recording not found$"):
         await get_documents(public_id)
-    assert exc_info.value.status_code == 404
 
 
 # --- get_person ------------------------------------------------------------
@@ -1802,6 +1800,93 @@ async def test_tool_logging_warns_on_rejection(
     )
 
 
+@pytest.mark.anyio
+async def test_a_route_refusal_reaches_the_assistant_with_its_reason(
+    session_maker, test_user: User, mcp_context, caplog
+):
+    """Called through the server, as a client's request is (issue #853). A
+    route's HTTPException used to reach the assistant as "Error executing tool
+    get_speakers" alone, and was logged as a crash with a traceback."""
+    from mcp.server.mcpserver.exceptions import UnexpectedToolError
+
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=999)
+
+    with caplog.at_level(logging.INFO, logger=MCP_LOGGER):
+        with pytest.raises(ToolError) as refused:
+            await mcp_server.mcp.call_tool("get_speakers", {"recording_id": public_id})
+
+    assert not isinstance(refused.value, UnexpectedToolError)
+    assert (
+        str(refused.value) == "Error executing tool get_speakers: Recording not found"
+    )
+    records = [r for r in caplog.records if r.name == MCP_LOGGER]
+    assert [(r.levelno, r.exc_info) for r in records] == [(logging.WARNING, None)]
+    assert "get_speakers rejected" in records[0].getMessage()
+    assert "404 Recording not found" in records[0].getMessage()
+
+
+def _refusing_tool(error: Exception):
+    from backend.mcp_server.tool_logging import logged_tool
+
+    async def refuse(recording_id: str) -> None:
+        raise error
+
+    return logged_tool(refuse)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("detail", "reason"),
+    [
+        ("Recording not found", "Recording not found"),
+        ({"code": "past_end", "message": "Past the end."}, "Past the end."),
+        # Structure built for another client never reaches the assistant.
+        ({"code": "conflict", "field": "anchor_ms"}, "Conflict"),
+        ([{"loc": ["body"], "msg": "bad"}], "Conflict"),
+    ],
+    ids=["text", "message", "dict-without-message", "list"],
+)
+async def test_logged_tool_gives_only_the_routes_detail(
+    test_user: User, detail, reason: str
+):
+    bind_mcp_identity(test_user)
+    tool = _refusing_tool(HTTPException(status_code=409, detail=detail))
+
+    with pytest.raises(ToolError) as refused:
+        await tool("rec-1")
+
+    assert str(refused.value) == reason
+    assert isinstance(refused.value.__cause__, HTTPException)
+
+
+@pytest.mark.anyio
+async def test_logged_tool_logs_a_server_fault_but_hands_on_only_its_detail(
+    test_user: User, caplog
+):
+    """A 5xx is a fault, so it keeps its traceback in the log. The assistant
+    gets the detail the route wrote for its client and nothing behind it."""
+    bind_mcp_identity(test_user)
+    try:
+        raise RuntimeError("broker at redis://internal:6379 refused")
+    except RuntimeError as cause:
+        error = HTTPException(
+            status_code=503, detail="Analysis could not be queued right now"
+        )
+        error.__cause__ = cause
+    tool = _refusing_tool(error)
+
+    with caplog.at_level(logging.INFO, logger=MCP_LOGGER):
+        with pytest.raises(ToolError) as refused:
+            await tool("rec-1")
+
+    assert str(refused.value) == "Analysis could not be queued right now"
+    records = [r for r in caplog.records if r.name == MCP_LOGGER]
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert records[0].exc_info is not None
+    assert "refuse failed" in records[0].getMessage()
+
+
 # --- Agentic surface: management, tasks, calendar, search ---
 
 
@@ -2107,9 +2192,8 @@ async def test_calendar_event_tools_scope_to_owner(
         assert stored.scalar() == 1
 
     # Another user's event id must be invisible, not linkable.
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ToolError, match="^Calendar event not found$"):
         await link_calendar_event("rec-1", 2)
-    assert exc_info.value.status_code == 404
 
     unlinked = await link_calendar_event("rec-1")
     assert unlinked["linked"] is False
@@ -2594,9 +2678,8 @@ async def test_get_meeting_analytics_rejects_other_users_recording(
     public_id = await seed_recording_with_speakers(session_maker, user_id=999)
     await seed_analytics_transcript(session_maker)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ToolError, match="^Recording not found$"):
         await get_meeting_analytics(public_id)
-    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.anyio

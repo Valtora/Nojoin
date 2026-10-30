@@ -300,7 +300,7 @@ export function useRecordingActions(): RecordingActions {
         } catch (e: unknown) {
           console.error("Failed to infer speakers", e);
           addNotification({
-            message: "Failed to infer speakers.",
+            message: getErrorDetail(e) ?? "Failed to infer speakers.",
             type: "error",
           });
           callbacks?.onError?.();
@@ -338,7 +338,7 @@ export function useRecordingActions(): RecordingActions {
         } catch (e: unknown) {
           console.error("Failed to discard recording", e);
           addNotification({
-            message: "Failed to discard recording.",
+            message: getErrorDetail(e) ?? "Failed to discard recording.",
             type: "error",
           });
           callbacks?.onError?.();

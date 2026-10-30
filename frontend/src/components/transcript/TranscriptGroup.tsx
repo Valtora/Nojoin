@@ -33,7 +33,8 @@ import {
 import TranscriptLine from "./TranscriptLine";
 import { liveRenderIdentity, type LiveLinePresentation,
   type LiveTranscriptPresentation } from "./liveTranscriptPresentation";
-import { pendingTranscriptRuns } from "./pendingTranscriptGroups";
+import { isDiarisationPending, pendingTranscriptRuns } from "./pendingTranscriptGroups";
+import { NO_OVERLAPS, OverlapContext, sameOverlaps } from "./OverlapIndicator";
 
 /** What every line of the view shares; memoised by the view. */
 export interface TranscriptLineShared {
@@ -68,6 +69,8 @@ const SPEAKER_LIST = new Intl.ListFormat("en", { type: "conjunction" });
 
 interface TranscriptGroupProps {
   group: TranscriptGroupData;
+  /** Every line's overlapping lines; compared only for this group's own lines. */
+  overlaps: ReadonlyMap<TranscriptSegment, readonly TranscriptSegment[]>;
   isGroupActive: boolean;
   /** Playback is running and inside this group: false for every other group. */
   isPlaying: boolean;
@@ -105,6 +108,7 @@ interface TranscriptGroupProps {
  */
 function TranscriptGroup({
   group,
+  overlaps,
   isGroupActive,
   isPlaying,
   onPlaySegment,
@@ -135,8 +139,11 @@ function TranscriptGroup({
     const isEditingSpeaker = editingSpeakerLineId === segmentId;
     const isEditingText = editingTextId === segmentId;
     return (
+      // The overlap marker reads its line's overlaps from its own provider, so
+      // a neighbour's change redraws the marker, not the memoised line.
+      <OverlapContext.Provider key={lineShared.preserveLiveIdentity ? liveRenderIdentity(segment, item.index) : segmentId}
+        value={overlaps.get(segment) ?? NO_OVERLAPS}>
       <TranscriptLine
-        key={lineShared.preserveLiveIdentity ? liveRenderIdentity(segment, item.index) : segmentId}
         segment={segment}
         index={item.index}
         segmentId={segmentId}
@@ -172,10 +179,22 @@ function TranscriptGroup({
         live={lineShared.live}
         liveLine={lineShared.liveLines?.get(segmentId)}
       />
+      </OverlapContext.Provider>
     );
   };
 
-  const involvedSpeakers = Array.from(group.involved).sort((left, right) => {
+  // Only the speakers the lines show: a capture's line with no speaker yet
+  // reads as UNKNOWN underneath, which the play label must not name (#840).
+  const shownSpeakers = new Set<string>();
+  for (const { segment, segmentId } of group.items) {
+    const shown = !isDiarisationPending(segment) &&
+      (!lineShared.live || Boolean(lineShared.liveLines?.get(segmentId)?.speakerLabel));
+    if (shown) shownSpeakers.add(segment.speaker);
+    for (const other of segment.overlapping_speakers ?? []) {
+      if (other !== "UNKNOWN") shownSpeakers.add(other);
+    }
+  }
+  const involvedSpeakers = Array.from(group.involved).filter((speaker) => shownSpeakers.has(speaker)).sort((left, right) => {
     const leftOrder = speakerDisplayOrder.get(left) ?? Number.MAX_SAFE_INTEGER;
     const rightOrder = speakerDisplayOrder.get(right) ?? Number.MAX_SAFE_INTEGER;
 
@@ -202,11 +221,14 @@ function TranscriptGroup({
             data-ui-hover={(isGroupActive) ? "status-success" : "action"}
             size="sm"
             // Who and when, so two groups in the same second differ.
-            aria-label={`${pauses ? "Pause" : "Play"} ${SPEAKER_LIST.format(
-              involvedSpeakers.map((speaker) =>
-                segmentSpeakerDisplayName(speakerMap, speaker),
-              ),
-            )} at ${timeLabel}`}
+            aria-label={[
+              pauses ? "Pause" : "Play",
+              ...(involvedSpeakers.length > 0
+                ? [SPEAKER_LIST.format(involvedSpeakers.map((speaker) =>
+                    segmentSpeakerDisplayName(speakerMap, speaker)))]
+                : []),
+              `at ${timeLabel}`,
+            ].join(" ")}
             title={pauses ? "Pause segment" : "Play segment"}
             disabled={disableSegmentPlayback}
             onClick={() => {
@@ -277,6 +299,10 @@ function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupPro
       switch (key) {
         case "group":
           return sameGroup(previous.group, next.group);
+        case "overlaps":
+          return next.group.items.every(({ segment }) => sameOverlaps(
+            previous.overlaps.get(segment) ?? NO_OVERLAPS, next.overlaps.get(segment) ?? NO_OVERLAPS,
+          ));
         case "lineShared":
           return sameLineShared(previous, next);
         case "speakerDisplayOrder":

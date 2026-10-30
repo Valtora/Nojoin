@@ -16,7 +16,7 @@ import { ClientStatus } from "@/types";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, shownNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
-import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import { selectNoteList, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import { useSpeakerNameReview } from "@/lib/useSpeakerNameReview";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -134,12 +134,18 @@ export default function TranscriptSection({
   const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
     hasRetainedPublication;
   const readOnly = (isRecordingInFlight(recording) || awaitingPublication) && !activeCapture;
-  // A finished recording keeps its finished presentation while a reprocess
-  // reads the feed; capture keeps its live one through processing until handoff.
-  const [presentFeed, setPresentFeed] = useState(usesLiveFeed);
-  useOnDepsChange([usesLiveFeed, readOnly], () => {
+  const transcriptStatus = recording.transcript?.transcript_status;
+  // The live presentation is a capture's own run: recording, paused, or
+  // processing what it heard (only capture start makes a "processing"
+  // transcript). It holds until the finished transcript takes over. A later
+  // run over a finished transcript (notes, speaker inference, a settled
+  // meeting's reprocess) reads the feed in the finished presentation, opened
+  // during the run or before it, and through its publication.
+  const captureRun = activeCapture || transcriptStatus === "processing";
+  const [presentFeed, setPresentFeed] = useState(usesLiveFeed && captureRun);
+  useOnDepsChange([usesLiveFeed, captureRun], () => {
     if (!usesLiveFeed) setPresentFeed(false);
-    else if (!readOnly) setPresentFeed(true);
+    else if (captureRun) setPresentFeed(true);
   });
   // The one handler guard: a control drawn before the view turned read-only
   // can still be used. Refresh follows the selected reader after a write.
@@ -148,12 +154,11 @@ export default function TranscriptSection({
   const reviewSpeakerName = async (label: string, name: string, decision: SpeakerNameDecision) => {
     if (!readOnly) await nameReview.review({ labels: [label], name }, decision);
   };
-  const transcriptStatus = recording.transcript?.transcript_status;
   // The listed notes and those saved from this page since, less any it
   // discarded: the outbox outlives the live view, and its notes land here.
   // A note added here from a line's menu shows on its line while it saves;
   // the others still on their way are listed above the transcript.
-  const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id);
+  const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id, selectNoteList);
   // Edits, moves and deletes made here or in My notes show at once: a finished
   // recording's list is not fetched again.
   const { apply: applyEdits, edit: editNote, remove: removeNote, move: moveNote } = noteEdits;
@@ -204,7 +209,7 @@ export default function TranscriptSection({
   const hasLoaded = liveTranscript?.hasLoaded ?? false;
   const liveBehind = activeCapture && (liveTranscript?.liveBehind ?? false);
   const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed && presentFeed ? ({
-    hasLoaded, isPaused: paused, liveBehind, lineHandlers: liveLineHandlers,
+    hasLoaded, capturing: activeCapture, isPaused: paused, liveBehind, lineHandlers: liveLineHandlers,
     onNoteOnLine: activeCapture ? noteOnLine : undefined,
     onNoteAtTime: activeCapture ? noteAtTime : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,

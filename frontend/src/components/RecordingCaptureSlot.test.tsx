@@ -27,7 +27,10 @@ const capture = {
   uploadQueue: { segments: 0, seconds: 0 },
 };
 
-vi.mock("@/lib/capture/CaptureProvider", () => ({ useCapture: () => capture }));
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => capture,
+  useCaptureState: (select: (state: typeof capture) => unknown) => select(capture),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("./recordings/_hooks/useRecordingActions", () => ({
   useRecordingActions: () => ({ discard }),
@@ -51,7 +54,7 @@ const recording = (overrides: Partial<Recording> = {}): Recording => ({
   id: "rec-1", created_at: "2026-10-27T10:00:00Z", updated_at: "2026-10-27T10:00:00Z",
   name: "Weekly sync", meeting_uid: "meeting-1", audio_path: "/tmp/audio.wav",
   status: RecordingStatus.PROCESSING, duration_seconds: 600, processing_progress: 40,
-  is_archived: false, is_deleted: false, ...overrides,
+  discardable: true, is_archived: false, is_deleted: false, ...overrides,
 });
 
 const ownCapture = (status = "recording") => Object.assign(capture, {
@@ -182,6 +185,22 @@ describe("RecordingCaptureSlot", () => {
     }));
     expect(screen.getByRole("button", { name: "Discard Recording" })).toBeDisabled();
     expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it.each([RecordingStatus.QUEUED, RecordingStatus.PROCESSING])(
+    "offers no Discard on a finished meeting back in %s, as notes regenerate or it is reprocessed (#833)",
+    (status) => {
+      render(<RecordingCaptureSlot recording={recording({ status, discardable: false, processing_step: "Generating notes" })} />);
+      expect(screen.getByText("Generating notes")).toBeInTheDocument();
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Discard Recording" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Attach Docs" })).toBeInTheDocument();
+    },
+  );
+
+  it("offers no Discard when the server has not said the recording can be discarded", () => {
+    render(<RecordingCaptureSlot recording={recording({ discardable: undefined })} />);
+    expect(screen.queryByRole("button", { name: "Discard Recording" })).not.toBeInTheDocument();
   });
 
   it("allows another discard attempt after the shared action reports failure", async () => {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getUserMe } from '@/lib/api';
 import { useNavigationStore } from '@/lib/store';
+import { TOUR_RESTORE_PANEL_EVENT } from '@/lib/tour-config';
 import TourGuide, { RecordingTranscriptTour } from './TourGuide';
 
 const tour = vi.hoisted(() => ({
@@ -94,6 +95,23 @@ describe('recording transcript tour', () => {
     view.unmount();
     expect(tour.instances[0].destroy).toHaveBeenCalledOnce();
     expect(useNavigationStore.getState().hasSeenTranscriptTour[7]).toBeUndefined();
+  });
+
+  it.each([
+    ['finishes', (view: ReturnType<typeof render>) => { act(() => tour.instances[0].finish()); void view; }],
+    ['is cancelled with its page', (view: ReturnType<typeof render>) => view.unmount()],
+  ])('asks the page to put its panel back when the tour %s', async (_, end) => {
+    const restored = vi.fn();
+    window.addEventListener(TOUR_RESTORE_PANEL_EVENT, restored);
+    try {
+      const view = render(detail(true));
+      await tick();
+      expect(restored).not.toHaveBeenCalled();
+      end(view);
+      expect(restored).toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(TOUR_RESTORE_PANEL_EVENT, restored);
+    }
   });
 
   it('does not consume a tour when no usable anchor exists', async () => {

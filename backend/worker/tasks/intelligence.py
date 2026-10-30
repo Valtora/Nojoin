@@ -1,5 +1,7 @@
+from backend.models.recording import is_side_run_hold
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.generation_claim import claim_generation
 from backend.utils.live_speaker_labels import (
     prompt_speaker_label,
     speaker_display_name,
@@ -10,6 +12,7 @@ from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 from backend.utils.transcript_change import change_sequence_bump
 
 from .constants import *
+from .side_runs import claim_heartbeat, hand_back_side_run_hold
 from .speaker_name_apply import apply_inferred_names
 
 
@@ -53,14 +56,13 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 session.commit()
             return
 
-        transcript.notes_status = "generating"
+        # The run's own claim, renewed while the model works. It never moves the
+        # recording: a run lost with its worker then strands only its notes,
+        # and only until the claim expires (issue #828).
+        claim_generation(transcript, "notes_status")
         transcript.set_notes_error_message(None)
-        recording.processing_step = "Generating meeting notes..."
-        recording.processing_progress = 97
         session.add(transcript)
-        session.add(recording)
         session.commit()
-        update_recording_status(session, recording.id)
 
         user_settings = {}
         if recording.user_id:
@@ -127,26 +129,27 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             "output_language_instruction": language_preferences.notes_language_instruction,
             "notes_context": notes_context,
         }
-        try:
-            notes = llm.generate_meeting_notes(
-                transcript_text, speaker_map, timeout=300, **notes_arguments
-            )
-        except ContextWindowExceededError as overflow:
-            # Reached only when the secondary provider, if any, also failed on
-            # the whole meeting. See backend.utils.long_meeting_notes.
-            logger.info(
-                "Recording %s is too long for one call; generating its notes "
-                "in parts: %s",
-                recording_id,
-                overflow,
-            )
-            notes = llm.generate_meeting_notes_in_parts(
-                transcript_text,
-                speaker_map,
-                overflow=overflow,
-                timeout=300,
-                **notes_arguments,
-            )
+        with claim_heartbeat(recording_id, "notes_status"):
+            try:
+                notes = llm.generate_meeting_notes(
+                    transcript_text, speaker_map, timeout=300, **notes_arguments
+                )
+            except ContextWindowExceededError as overflow:
+                # Reached only when the secondary provider, if any, also failed
+                # on the whole meeting. See backend.utils.long_meeting_notes.
+                logger.info(
+                    "Recording %s is too long for one call; generating its notes "
+                    "in parts: %s",
+                    recording_id,
+                    overflow,
+                )
+                notes = llm.generate_meeting_notes_in_parts(
+                    transcript_text,
+                    speaker_map,
+                    overflow=overflow,
+                    timeout=300,
+                    **notes_arguments,
+                )
 
         transcript.notes = append_user_notes_section(
             notes, timeline_notes.appendix_lines()
@@ -159,15 +162,11 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         # time, so a later edit or deletion cannot rewrite the record.
         transcript.notes_template_id = resolved_template.template_id
         transcript.notes_template_sections = resolved_template.sections
-        recording.processing_step = "Completed"
-        recording.processing_progress = 100
         session.add(transcript)
-        session.add(recording)
         # A regeneration can finish between two of another tab's checks, with
         # its notes status back where that tab last saw it.
         session.execute(change_sequence_bump(recording.id))
         session.commit()
-        update_recording_status(session, recording.id)
         logger.info(f"Generated meeting notes for recording {recording_id}")
 
         # --- Index Notes for RAG ---
@@ -534,21 +533,18 @@ def _mark_notes_generation_error_impl(
     transcript: Transcript | None,
     error: Exception | str,
 ) -> None:
+    """Record a notes failure on the notes alone.
+
+    The recording's status and step belong to whatever is driving it: the
+    pipeline, when the notes ran inline, or nothing at all once it finished.
+    """
     if not transcript or transcript.transcription_failed():
         return
 
     transcript.notes_status = "error"
     transcript.set_notes_error_message(_format_notes_generation_error(error))
     session.add(transcript)
-
-    if recording:
-        recording.processing_step = "Error generating notes"
-        session.add(recording)
-
     session.commit()
-
-    if recording:
-        update_recording_status(session, recording.id)
 
 
 def _complete_speaker_inference_task(
@@ -558,19 +554,14 @@ def _complete_speaker_inference_task(
     if not recording:
         return
 
-    # Speaker inference never repairs a failed transcription, so a recording
-    # whose ASR failed goes back to ERROR rather than reading as finished.
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording.id)
-    ).first()
-    if transcript is not None and transcript.transcript_status == "error":
-        recording.status = RecordingStatus.ERROR
-        recording.processing_step = transcript.error_message or "Transcription failed"
-    else:
-        recording.status = RecordingStatus.PROCESSED
-        recording.processing_step = "Completed"
-    recording.client_status = ClientStatus.IDLE
-    session.add(recording)
+    # The API holds the finished meeting in PROCESSING for the run. Anything
+    # else belongs to something else: a capture above all, which a PROCESSED
+    # here would end before its audio was assembled (issue #832), or a
+    # reprocess that started once a lost run's hold was released (#828). Read
+    # it afresh: the copy loaded when the run began may be stale.
+    session.refresh(recording)
+    if is_side_run_hold(recording):
+        hand_back_side_run_hold(session, recording)
     # The status returns to where another tab last saw it, so only the counter
     # tells that tab the speakers and suggestions changed.
     session.execute(change_sequence_bump(recording.id))

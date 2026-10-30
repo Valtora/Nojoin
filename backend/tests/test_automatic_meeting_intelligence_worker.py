@@ -60,6 +60,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    first_processed_at DATETIME,
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
@@ -480,7 +481,8 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
         assert suggestions[0]["resolution_reason"] is None
         assert suggestions[0]["origin"] == "automatic_meeting_intelligence"
         assert recording.name == "Launch Readiness Review"
-        assert recording.status == "PROCESSED"
+        # Inline, the pipeline running the stage owns the status (issue #828).
+        assert recording.status == "PROCESSING"
         assert recording.processing_step == "Generating meeting notes... (CPU)"
         assert recording.processing_progress == 97
         assert transcript.notes_status == "completed"
@@ -681,8 +683,10 @@ def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
             ).first()
 
         assert result is None
-        assert recording.status == "PROCESSED"
-        assert recording.processing_step == "Error generating notes"
+        # The failure is the notes' alone; the pipeline running the stage still
+        # owns the recording's status and step (issue #828).
+        assert recording.status == "PROCESSING"
+        assert recording.processing_step == "Generating meeting notes... (CPU)"
         assert recording.processing_progress == 97
         assert transcript.notes_status == "error"
         assert transcript.error_message == "Unified AI contract failed"

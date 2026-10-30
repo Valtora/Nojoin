@@ -40,6 +40,7 @@ const captureState = {
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => captureState,
+  useCaptureState: (select: (state: typeof captureState) => unknown) => select(captureState),
 }));
 
 vi.mock("@/lib/api", () => ({

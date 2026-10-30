@@ -183,6 +183,7 @@ class TestRecording(TestBase, table=True):
     processing_step: Optional[str] = None
     processing_progress: int = 0
     upload_progress: int = 0
+    first_processed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     # Mirrors the real model: the default lives on the Pydantic field, not the column,
     # so an explicit NULL is inserted as NULL rather than being replaced by a
     # SQLAlchemy column default.

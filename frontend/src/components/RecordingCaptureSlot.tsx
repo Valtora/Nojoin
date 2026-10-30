@@ -39,6 +39,8 @@ interface RecordingCaptureSlotProps {
   /** The page's clock of the audio the server has received for the capture. */
   audioClock?: AudioClock;
   onDiscarded?: () => void;
+  /** Changes whenever new live transcript text arrives; see LiveAudioWaveform. */
+  liveTextMark?: string | null;
 }
 
 /**
@@ -57,7 +59,9 @@ function useAudioClockSeconds(readAudioMs: () => number | null, enabled: boolean
 }
 
 /** Capture/progress presentation in the common header's audio-player slot. */
-export default function RecordingCaptureSlot({ recording, audioClock, onDiscarded }: RecordingCaptureSlotProps) {
+export default function RecordingCaptureSlot({
+  recording, audioClock, onDiscarded, liveTextMark,
+}: RecordingCaptureSlotProps) {
   const capture = useCapture();
   const actions = useRecordingActions();
   const resumeOffer = useResumeRecoveryOffer();
@@ -122,7 +126,8 @@ export default function RecordingCaptureSlot({ recording, audioClock, onDiscarde
   return (
     <section aria-label="Recording status and controls" className="flex min-w-0 flex-col gap-3">
       {showWaveform ? (
-        <LiveAudioWaveform recordingId={recording.id} enabled={capture.runtimeActive} paused={isPaused} compact />
+        <LiveAudioWaveform recordingId={recording.id} enabled={capture.runtimeActive} paused={isPaused} compact
+          liveTextMark={liveTextMark} />
       ) : null}
       {showTransport ? (
         <LiveMeetingControls
@@ -145,7 +150,9 @@ export default function RecordingCaptureSlot({ recording, audioClock, onDiscarde
             </span>
           )}
           {attachDocuments}
-          {isPipeline ? (
+          {/* A finished meeting whose notes regenerate or that is being
+              reprocessed is in the pipeline too, and goes to the bin (#833). */}
+          {isPipeline && recording.discardable ? (
             <ButtonBase
               data-ui-fill="card" data-ui-hover="status-danger" data-ui-border="full" chrome="action"
               type="button" onClick={discard} disabled={isDiscarding}

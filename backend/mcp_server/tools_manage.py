@@ -12,6 +12,7 @@ the connector at all.
 import logging
 from typing import Any, Optional
 
+from fastapi import HTTPException
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlmodel import select
 
@@ -261,9 +262,10 @@ async def reprocess_recording(
 
     Replaces the transcript and regenerates downstream artefacts; most
     utterance ids will change, though the revision cursor keeps
-    increasing. Processing occupies the deployment's GPU, so avoid
-    triggering this while a live meeting is being captured. Requires the
-    mcp:write scope.
+    increasing. A recording still being captured, running or paused, or
+    already queued or processing is refused with the reason. Processing
+    occupies the deployment's GPU, so avoid triggering this while another
+    live meeting is being captured. Requires the mcp:write scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -306,7 +308,9 @@ async def regenerate_notes(
 
     Re-runs Nojoin's own notes pipeline over the transcript, replacing the
     current AI-generated notes; user notes are untouched. The agent never
-    authors note content directly. Requires the mcp:write scope.
+    authors note content directly. A recording still being captured,
+    running or paused, is refused with the reason. Requires the mcp:write
+    scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -392,8 +396,6 @@ async def attach_document(
 
 
 async def _load_recording_for_correction(db, recording_id: str, user_id: int):
-    from fastapi import HTTPException
-
     from backend.api.v1.endpoints.transcripts.helpers import (
         _get_owned_recording,
         _get_recording_transcript,

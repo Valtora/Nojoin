@@ -46,6 +46,7 @@ from backend.utils.config_manager import (
     get_trusted_web_origin,
     is_mcp_anonymous_discovery_enabled,
 )
+from backend.utils.generation_claim import reported_generation_status
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +277,11 @@ def _compact_recording(
         if hasattr(recording.status, "value")
         else str(recording.status),
         "transcript_status": transcript.transcript_status if transcript else None,
-        "notes_status": transcript.notes_status if transcript else None,
+        "notes_status": (
+            reported_generation_status(transcript.notes_status, transcript.updated_at)
+            if transcript
+            else None
+        ),
         "transcript_revision": transcript_revision,
         "tags": tags,
         "speakers": speakers,
@@ -756,7 +761,7 @@ async def append_meeting_notes(
             stamp from get_transcript, converted to seconds), to place the
             note at. A time past the end of a finished recording is refused.
     """
-    from fastapi import HTTPException, Response
+    from fastapi import Response
 
     from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.api.v1.endpoints.transcripts.routes_timeline_notes import (
@@ -796,34 +801,27 @@ async def append_meeting_notes(
         )
 
     async with async_session_maker() as db:
-        try:
-            if at_seconds is not None:
-                # The length is known once the recording has finished; while
-                # it records there is no end to check against. Its last
-                # second counts in whole, so a time read off the last line
-                # is not refused over a fraction.
-                recording = await _get_owned_recording(db, recording_id, user.id)
-                duration = recording.duration_seconds
-                if duration and at_seconds > math.ceil(duration):
-                    raise ToolError(
-                        "at_seconds is past the end of the recording "
-                        f"({format_timeline_ms(round(duration * 1000))})."
-                    )
-            note = await create_timeline_note(
-                recording_id,
-                create,
-                Response(),
-                db=db,
-                current_user=user,
-            )
-        except HTTPException as error:
-            # The route refuses with {code, message}; the assistant gets the
-            # message, not the status and the dict.
-            detail = error.detail
-            message = detail.get("message") if isinstance(detail, dict) else None
-            raise ToolError(
-                message if isinstance(message, str) else str(detail)
-            ) from error
+        if at_seconds is not None:
+            # The length is known once the recording has finished; while it
+            # records there is no end to check against. Its last second counts
+            # in whole, so a time read off the last line is not refused over a
+            # fraction.
+            recording = await _get_owned_recording(db, recording_id, user.id)
+            duration = recording.duration_seconds
+            if duration and at_seconds > math.ceil(duration):
+                raise ToolError(
+                    "at_seconds is past the end of the recording "
+                    f"({format_timeline_ms(round(duration * 1000))})."
+                )
+        # The route refuses with {code, message}; logged_tool hands the
+        # assistant the message.
+        note = await create_timeline_note(
+            recording_id,
+            create,
+            Response(),
+            db=db,
+            current_user=user,
+        )
     return {
         "recording_id": recording_id,
         "note": {
