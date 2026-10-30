@@ -73,8 +73,10 @@ class LiveSpeakerNamesRead(BaseModel):
     """Every live label the user has named, with the name it now shows."""
 
     live_speaker_names: dict[str, str]
-    # Live label -> the live label it was merged into.
-    live_speaker_merges: dict[str, str] = {}
+    # Live label -> the live label it was merged into; left out when none.
+    live_speaker_merges: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
 
 
 class LiveSpeakerMergeCreate(BaseModel):

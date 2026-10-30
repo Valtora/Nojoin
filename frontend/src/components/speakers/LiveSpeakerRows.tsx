@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { UserPlus, Users } from "lucide-react";
+import { Merge, UserPlus, Users } from "lucide-react";
 import type { GlobalSpeaker, RecordingSpeaker } from "@/types";
 import {
   isPlaceholderSpeakerName, liveSpeakerDisplayName, segmentSpeakerDisplayName,
@@ -23,6 +23,8 @@ export type MergeLiveSpeaker = (label: string, intoLabel: string) => Promise<boo
 const NAMING_CLOSED = "Speakers can be named here while recording or paused, and again once processing finishes.";
 const NEEDS_NAME = "Choose a name with Change identity before adding to People.";
 export const SPEAKER_SAVING = "Wait for the last change to save.";
+const NO_PEOPLE: GlobalSpeaker[] = [];
+const NO_SPEAKERS: RecordingSpeaker[] = [];
 
 interface Props {
   labels: string[];
@@ -39,7 +41,9 @@ interface Props {
 export default function LiveSpeakerRows({ labels, names, speakers, globalSpeakers,
   speakerColors, onRename, onMerge, readOnly }: Props) {
   const highlight = useSpeakerTurnHighlight();
-  const [picker, setPicker] = useState<{ label: string; anchor: HTMLElement } | null>(null);
+  // Change identity offers names, People and the other live speakers; Merge
+  // into offers the other live speakers alone.
+  const [picker, setPicker] = useState<{ label: string; anchor: HTMLElement; merge: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // As the transcript's live header chip: no line needs to have locked.
   const canName = (label: string) => !readOnly && !!onRename && liveSpeakerDisplayName(label) !== null;
@@ -55,6 +59,7 @@ export default function LiveSpeakerRows({ labels, names, speakers, globalSpeaker
   // Another live speaker picked for the whole row merges this one into it.
   const merge = (label: string, into: string) =>
     onMerge ? run(label, () => onMerge(label, into)) : Promise.resolve(false);
+  const liveLabels = Object.fromEntries(labels.map((label) => [label, displayName(label)]));
 
   return <>{labels.map((label) => {
     const name = displayName(label);
@@ -68,8 +73,15 @@ export default function LiveSpeakerRows({ labels, names, speakers, globalSpeaker
         label: "Change identity",
         icon: Users,
         disabledReason: closed,
-        onSelect: (trigger) => setPicker({ label, anchor: trigger }),
+        onSelect: (trigger) => setPicker({ label, anchor: trigger, merge: false }),
       },
+      ...(onMerge && labels.length > 1 ? [{
+        id: "merge-into",
+        label: "Merge into...",
+        icon: Merge,
+        disabledReason: closed,
+        onSelect: (trigger: HTMLButtonElement) => setPicker({ label, anchor: trigger, merge: true }),
+      }] : []),
       ...(offersPeople ? [{
         id: "add-to-people",
         label: "Add to People",
@@ -89,7 +101,9 @@ export default function LiveSpeakerRows({ labels, names, speakers, globalSpeaker
         items={items} active={picker?.label === label} />
     </SurfaceBase>;
   })}
-    {picker && !readOnly && onRename && <SpeakerAssignmentPopover availableSpeakers={speakers} globalSpeakers={globalSpeakers}
+    {picker && !readOnly && onRename && <SpeakerAssignmentPopover availableSpeakers={picker.merge ? NO_SPEAKERS : speakers}
+      globalSpeakers={picker.merge ? NO_PEOPLE : globalSpeakers} offerNames={!picker.merge}
+      liveSpeakerLabels={liveLabels} liveTargets="speaker"
       currentSpeakerLabel={picker.label} currentSpeakerName={displayName(picker.label)}
       speakerColors={speakerColors} targetElement={picker.anchor}
       fixedScope="speaker_everywhere_in_recording"

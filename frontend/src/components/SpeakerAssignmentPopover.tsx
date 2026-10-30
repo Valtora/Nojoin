@@ -223,8 +223,8 @@ export default function SpeakerAssignmentPopover({
         left.name.localeCompare(right.name))
     : [], [peopleOutsideMeeting, normalisedQuery, offerNames]);
 
-  // Every name this meeting already has, the current speaker's included: a
-  // typed one picks that speaker rather than making a second one.
+  // Every name this meeting already has, live speakers' and the current
+  // speaker's included: typing one never makes a second speaker of it.
   const meetingNames = useMemo(() => new Set([
     ...availableSpeakers.map((speaker) => getRecordingSpeakerDisplayName(speaker, globalSpeakerById)),
     ...Object.values(liveSpeakerLabels ?? {}),
@@ -316,12 +316,13 @@ export default function SpeakerAssignmentPopover({
   }, [filteredAvailable.length, filteredGlobal.length, filteredLive.length, search, targetElement]);
 
   // Enter takes what the typed name means: this meeting's speaker or the
-  // person of that name, else a new name where one is offered.
+  // person of that name, else a new name where one is offered. Never a live
+  // speaker: two can share a name, and a live speaker is chosen by its label,
+  // from the list.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
       if (exactOption) selectOption(exactOption);
-      else if (exactLive) selectLive(exactLive);
       else if (exactPerson) selectPerson(exactPerson);
       else if (canCreate) onSelect({ name: query, scope });
     } else if (e.key === "Escape") {

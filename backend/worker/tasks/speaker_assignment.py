@@ -21,7 +21,11 @@ from sqlmodel import col
 
 from backend.models.pipeline import TranscriptUtterance
 from backend.models.speaker_name_event import SpeakerNameEvent
-from backend.utils.canonical_pipeline.constants import _load_transcript
+from backend.utils.canonical_pipeline.constants import (
+    SPEAKER_ASSIGNMENT_AUTHORITY_MANUAL,
+    SPEAKER_ASSIGNMENT_SOURCE_MANUAL,
+    _load_transcript,
+)
 from backend.utils.speaker_assignment import remap_overlapping_speakers
 from backend.utils.speaker_names.anchors import first_turn, lines_from_final_segments
 from backend.utils.speaker_names.events import add_event
@@ -575,7 +579,9 @@ def _move_live_lines(session, recording: Recording, targets: dict[int, str]) -> 
 
     After the merge passes, so a target label absorbed into another speaker
     lands on the survivor. Transcript first, then the lines in id order, the
-    order every speaker correction takes.
+    order every speaker correction takes. A merged live label's own line
+    becomes the user's as a picked one is, since the merge was theirs, so the
+    final lines it covers take its speaker the same way.
     """
     if not targets:
         return
@@ -596,8 +602,59 @@ def _move_live_lines(session, recording: Recording, targets: dict[int, str]) -> 
             continue
         row.speaker_label = speaker.diarization_label
         row.recording_speaker_id = speaker.id
+        if not row.manual_speaker_locked:
+            row.manual_speaker_locked = True
+            row.speaker_assignment_source = SPEAKER_ASSIGNMENT_SOURCE_MANUAL
+            row.speaker_assignment_authority = SPEAKER_ASSIGNMENT_AUTHORITY_MANUAL
+            row.speaker_last_edit_source = row.speaker_last_edit_source or "api"
         session.add(row)
     session.flush()
+
+
+def _fold_live_merges(  # noqa: PLR0913 - the loop's state, handed over whole
+    session,
+    recording: Recording,
+    folded: list[str],
+    carried: CarriedNames,
+    landed: dict[str, dict],
+    speaker_voiceprints: dict,
+    final_segments: list[dict],
+) -> None:
+    """Merge each final speaker a live merge folds into its group's final speaker.
+
+    Made as a merge-by-name is, into wherever the group's final speaker
+    landed, so the folded speaker takes no "Speaker N" of its own.
+    """
+    for label in folded:
+        target = landed.get(carried.folds[label])
+        if target is None:
+            continue
+        voiceprint = speaker_voiceprints.get(label)
+        logger.info(
+            "Folding %s into %s: the user merged their live speakers",
+            label,
+            target["label"],
+        )
+        _absorb_into_existing_name(
+            session,
+            _LabelWork(
+                recording=recording,
+                label=label,
+                identity=_ResolvedIdentity(name=target["name"]),
+                embedding=voiceprint.embedding if voiceprint is not None else None,
+                speech_seconds=(
+                    voiceprint.speech_seconds if voiceprint is not None else None
+                ),
+                existing_speaker=session.exec(
+                    select(RecordingSpeaker)
+                    .where(RecordingSpeaker.recording_id == recording.id)
+                    .where(RecordingSpeaker.diarization_label == label)
+                ).first(),
+            ),
+            target_id=target["id"],
+            target_label=target["label"],
+            final_segments=final_segments,
+        )
 
 
 def assign_and_identify_speakers(
@@ -630,8 +687,16 @@ def assign_and_identify_speakers(
     speaker_counter = 1
     # name -> {'id': recording_speaker_id, 'label': diarization_label}
     resolved_names_map: dict = {}
+    # label -> where it ended: its own row, or the row it was merged into.
+    landed: dict[str, dict] = {}
+    # Final speakers a live merge folds into another, made once the loop is
+    # done, so they take no "Speaker N" of their own.
+    folded: list[str] = []
 
     for label in ordered_speakers:
+        if label in carried.folds:
+            folded.append(label)
+            continue
         existing_speaker = session.exec(
             select(RecordingSpeaker)
             .where(RecordingSpeaker.recording_id == recording.id)
@@ -676,6 +741,7 @@ def assign_and_identify_speakers(
                 target_label=target["label"],
                 final_segments=final_segments,
             )
+            landed[label] = {**target, "name": identity.name}
             continue
 
         logger.info("Mapped %s -> %s", label, identity.name)
@@ -683,7 +749,11 @@ def assign_and_identify_speakers(
         _record_voiceprint_match(session, work, speaker_id, lines, confirm)
         if identity.name and speaker_id:
             resolved_names_map[identity.name] = {"id": speaker_id, "label": label}
+            landed[label] = {"id": speaker_id, "label": label, "name": identity.name}
 
+    _fold_live_merges(
+        session, recording, folded, carried, landed, speaker_voiceprints, final_segments
+    )
     _run_duplicate_merge_pass(ctx, recording, final_segments, diarization_result)
     apply_pending_names(session, recording, carried.pending)
     _move_live_lines(session, recording, carried.live_lines)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from sqlalchemy import text
 from sqlmodel import select
 
@@ -24,6 +25,15 @@ from backend.utils.speaker_names.live import (
     record_live_speaker_merge,
 )
 from backend.worker.tasks import speaker_assignment
+
+
+@pytest.fixture(autouse=True)
+def _settled(session) -> None:
+    """A GPU capture's lines settle, and only settled lines take a live speaker."""
+    session.execute(
+        text("""UPDATE transcripts SET settling_state = '{"settled": true}'""")
+    )
+    session.commit()
 
 
 def _pick(db, start_s: float, label: str) -> None:
@@ -59,8 +69,15 @@ def _process(db, monkeypatch, final=FINAL) -> None:
     )
     db.execute(text("UPDATE recordings SET status = 'PROCESSING'"))
     db.commit()
+    # Each final line keeps its diariser cluster, as final_segments stamps it.
     segments = [
-        {"start": start, "end": end, "speaker": label, "text": f"final {start}"}
+        {
+            "start": start,
+            "end": end,
+            "speaker": label,
+            "diarization_label": label,
+            "text": f"final {start}",
+        }
         for label, start, end in final
     ]
     ctx = type("Ctx", (), {"session": db, "merged_config": {}, "recording_id": 1})()
@@ -167,6 +184,13 @@ def test_a_merged_pair_ends_as_one_final_speaker(session, monkeypatch) -> None:
     # The fold merged no one else: TWO's voice is still its own speaker.
     assert lines[6.0]["speaker"] == "SPEAKER_00"
     assert set(shown) == {"SPEAKER_00", "SPEAKER_01"}
+    # The fold is processing's merge, so Undo merge can give the voice back.
+    from backend.utils.canonical_pipeline.unmerge import list_merged_recording_speakers
+
+    assert [
+        (row["diarization_label"], row["merged_into_label"])
+        for row in list_merged_recording_speakers(session, 1)
+    ] == [("SPEAKER_02", "SPEAKER_01")]
 
 
 def test_a_merge_never_folds_a_final_speaker_another_live_speaker_holds(

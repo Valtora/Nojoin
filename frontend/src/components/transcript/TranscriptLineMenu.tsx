@@ -14,7 +14,13 @@ import type { TranscriptLineActions } from "./_hooks/useTranscriptEditing";
 import TranscriptActionsMenu from "./TranscriptActionsMenu";
 import { formatTime } from "./transcriptDisplay";
 import { formatTimelineMs, segmentStartMs } from "@/lib/notes/placement";
-import LiveLineEditor, { type LiveEditKind } from "./LiveLineEditor";
+import LiveLineEditor, { type LiveEditKind, type LiveLineHandlers } from "./LiveLineEditor";
+import { liveSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
+
+// The merge picker takes no line edit.
+const NO_HANDLERS: LiveLineHandlers = {
+  editText: async () => false, changeSpeaker: async () => false, split: async () => false,
+};
 import type { LiveTranscriptPresentation } from "./liveTranscriptPresentation";
 
 interface TranscriptLineMenuProps {
@@ -105,12 +111,17 @@ export default function TranscriptLineMenu({
       returnFocusTo.current = trigger;
       actions.openSpeakerPopover(segmentId, trigger);
     },
+    mergeSpeaker: (trigger) => setLineEdit({ kind: "mergeSpeaker", anchor: trigger, segment }),
     play: () => onPlayFrom?.(segment.start),
     split: (trigger) => setLineEdit({ kind: "split", anchor: trigger, segment }),
   };
 
   const liveCanEdit = !readOnly && live?.lineHandlers !== undefined && segment.settling_required === true &&
     !!segment.id && segment.revision !== undefined;
+  // The line's live speaker, while the capture is open and has another to join.
+  const canMerge = !readOnly && live?.onMergeLiveSpeaker !== undefined &&
+    liveSpeakerDisplayName(segment.speaker) !== null &&
+    Object.keys(liveSpeakerLabels ?? {}).some((label) => label !== segment.speaker);
   const items = lineActionsFor({
     view: live ? "live" : "finished",
     canNote: live
@@ -122,6 +133,7 @@ export default function TranscriptLineMenu({
     canSplit: (live ? liveCanEdit : !isSegmentReadOnly && !!segment.id && segment.revision !== undefined &&
       onSplitSegment !== null) && splitWords(segment).length > 0,
     settlingRequired: segment.settling_required,
+    canMerge,
     disabledReason: settling ? LINE_SETTLING_REASON : undefined,
   }).map((action) => ({ ...action, onSelect: run[action.id] }));
   // An editor submits against the line as it opened, so a line changed since
@@ -129,8 +141,8 @@ export default function TranscriptLineMenu({
   // edit: it is settling again, or the view stopped offering it.
   const editHandlers = live ? live.lineHandlers
     : onSplitSegment ? { split: onSplitSegment, editText: async () => false, changeSpeaker: async () => false } : undefined;
-  const editorOpen = lineEdit !== null && editHandlers !== undefined && !settling &&
-    (live ? liveCanEdit : lineEdit.kind === "split" && !isSegmentReadOnly);
+  const editorOpen = lineEdit !== null && (lineEdit.kind === "mergeSpeaker" ? canMerge
+    : editHandlers !== undefined && !settling && (live ? liveCanEdit : lineEdit.kind === "split" && !isSegmentReadOnly));
   if (lineEdit !== null && !editorOpen) setLineEdit(null);
 
   return (
@@ -146,8 +158,8 @@ export default function TranscriptLineMenu({
       {editorOpen ? <LiveLineEditor
         key={`${lineEdit.kind}-${lineEdit.segment.id}`}
         kind={lineEdit.kind} segment={lineEdit.segment} anchor={lineEdit.anchor}
-        handlers={editHandlers} speakers={speakers}
-        liveSpeakerLabels={liveSpeakerLabels}
+        handlers={editHandlers ?? NO_HANDLERS} speakers={speakers}
+        liveSpeakerLabels={liveSpeakerLabels} onMergeSpeaker={live?.onMergeLiveSpeaker}
         onClose={() => setLineEdit(null)}
       /> : null}
       {noteAnchor && (settling || quoted) && onAddNote ? (
