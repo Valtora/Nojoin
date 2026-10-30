@@ -77,6 +77,7 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
 
 const setSideTab = vi.fn();
 const setSpeakerPanelCollapsed = vi.fn();
+const setSpeakerReviewPending = vi.fn();
 
 vi.mock("@/lib/store", () => ({
   useNavigationStore: (select?: (state: Record<string, unknown>) => unknown) => {
@@ -91,6 +92,8 @@ vi.mock("@/lib/store", () => ({
       setChatPanelCollapsed: vi.fn(),
       sideTab,
       setSideTab,
+      speakerReviewPending: false,
+      setSpeakerReviewPending,
     };
     return select ? select(state) : state;
   },
@@ -330,6 +333,7 @@ describe("RecordingPage (detail)", () => {
     setActivePanel.mockReset();
     setSideTab.mockReset().mockImplementation((value: string) => { sideTab = value; });
     setSpeakerPanelCollapsed.mockReset().mockImplementation((value: boolean) => { speakerPanelCollapsed = value; });
+    setSpeakerReviewPending.mockReset();
     exportAudio.mockReset();
     exportContent.mockReset().mockResolvedValue(undefined);
     getRecording.mockReset();
@@ -1175,6 +1179,20 @@ describe("RecordingPage (detail)", () => {
 
     expect(setSideTab).toHaveBeenCalledWith("speakers");
     expect(setSpeakerPanelCollapsed).toHaveBeenCalledWith(false);
+    // The list then takes focus, so the link shows it did something even
+    // where Speakers was already the open tab.
+    expect(setSpeakerReviewPending).toHaveBeenCalledWith(true);
+    expect(setActivePanel).not.toHaveBeenCalledWith("speakers");
+  });
+
+  it("opens the Speakers tab from Analytics' link on a phone", async () => {
+    await openTabs(360);
+
+    fireEvent.click(screen.getByRole("button", { name: "Review speakers" }));
+
+    expect(setActivePanel).toHaveBeenCalledWith("speakers");
+    expect(setSpeakerReviewPending).toHaveBeenCalledWith(true);
+    expect(setSideTab).not.toHaveBeenCalled();
   });
 
   it.each([360, 1440])("matches the real Meeting panels tablist to Depth pane elevation at %i px", async (width) => {
