@@ -27,7 +27,9 @@ Four invariants are load-bearing and are locked by tests:
 3. **Diagnostics are never sent without consent.** A new install consents
    through the first-run wizard; an upgraded install sends no diagnostics until
    the admin notice has actually been shown, and then only after
-   acknowledgement or the grace period.
+   acknowledgement or the grace period. A wizard run under an environment pin
+   records no choice, since the operator was shown the pinned value and not
+   asked.
 4. **A "no" given before the heartbeat existed still stands.** An install that
    turned telemetry off before the heartbeat shipped turned off what was then
    all of it, so it sends no heartbeat either until diagnostics are turned back
@@ -374,6 +376,28 @@ def set_enabled(enabled: bool, *, acknowledge: bool = True) -> None:
     if enabled or not opted_out_before_heartbeat():
         updates[POLICY_CONFIG_KEY] = HEARTBEAT_POLICY_VERSION
     _write_config(updates)
+
+
+def record_first_run_choice(enabled: bool) -> bool:
+    """Store the setup wizard's diagnostics choice, unless the environment pins it.
+
+    While ``NOJOIN_TELEMETRY_ENABLED`` is set the wizard shows its value
+    read-only, so the operator has made no choice and none is stored. Storing
+    one anyway would be consent nobody gave, waiting to take effect: an install
+    pinned ``false`` that later dropped the variable would start sending
+    diagnostics with no notice ever shown. Left unstored, dropping the pin puts
+    the install on the upgrade path, where the admin notice asks first.
+
+    Returns whether the choice was stored.
+    """
+    if is_env_managed():
+        logger.info(
+            "First-run diagnostics choice not stored: %s pins telemetry.",
+            TELEMETRY_ENABLED_ENV_KEY,
+        )
+        return False
+    set_enabled(enabled)
+    return True
 
 
 def mark_notice_shown() -> None:
