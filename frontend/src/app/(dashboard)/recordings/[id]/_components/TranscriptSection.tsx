@@ -204,7 +204,7 @@ export default function TranscriptSection({
   const hasLoaded = liveTranscript?.hasLoaded ?? false;
   const liveBehind = activeCapture && (liveTranscript?.liveBehind ?? false);
   const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed && presentFeed ? ({
-    hasLoaded, isPaused: paused, liveBehind, lineHandlers: liveLineHandlers,
+    hasLoaded, capturing: activeCapture, isPaused: paused, liveBehind, lineHandlers: liveLineHandlers,
     onNoteOnLine: activeCapture ? noteOnLine : undefined,
     onNoteAtTime: activeCapture ? noteAtTime : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,

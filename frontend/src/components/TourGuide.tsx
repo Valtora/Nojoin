@@ -6,7 +6,7 @@ import { driver, type Driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
 import '@/app/driver-theme.css';
 import { useNavigationStore } from '@/lib/store';
-import { dashboardSteps, recordingsSteps, transcriptSteps } from '@/lib/tour-config';
+import { dashboardSteps, recordingsSteps, restoreTourPanel, transcriptSteps } from '@/lib/tour-config';
 import { getUserMe } from '@/lib/api';
 
 function useTourUserId(enabled = true) {
@@ -27,6 +27,8 @@ function useScheduledTour(
   enabled: boolean,
   scope: string,
   onSeen: () => void,
+  // Runs however the tour ends, cancelled included.
+  onEnd?: () => void,
 ) {
   useEffect(() => {
     if (!enabled) return;
@@ -45,6 +47,7 @@ function useScheduledTour(
         prevBtnText: 'Previous',
         doneBtnText: 'Done',
         onDestroyed: () => {
+          onEnd?.();
           // Route/state cleanup must leave the tour available for a later visit.
           if (!cancelled) onSeen();
         },
@@ -56,7 +59,7 @@ function useScheduledTour(
       clearTimeout(timer);
       activeDriver?.destroy();
     };
-  }, [enabled, onSeen, scope, steps]);
+  }, [enabled, onEnd, onSeen, scope, steps]);
 }
 
 /** Detail metadata owns eligibility, including completion without navigation. */
@@ -69,8 +72,9 @@ export function RecordingTranscriptTour({ recordingId, eligible }: {
   const onSeen = useCallback(() => {
     if (userId !== null) setHasSeenTranscriptTour(userId, true);
   }, [setHasSeenTranscriptTour, userId]);
+  // Its steps open the panels they describe; the page puts back the one it found.
   useScheduledTour(transcriptSteps,
-    eligible && userId !== null && !hasSeenTranscriptTour[userId], recordingId, onSeen);
+    eligible && userId !== null && !hasSeenTranscriptTour[userId], recordingId, onSeen, restoreTourPanel);
   return null;
 }
 

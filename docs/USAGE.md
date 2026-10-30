@@ -6,7 +6,7 @@ This guide covers day-to-day use of Nojoin once it is deployed and you have an a
 
 For a first test recording, follow [Make Your First Recording](GETTING_STARTED.md#5-make-your-first-recording). [CAPTURE.md](CAPTURE.md) lists the supported browsers and covers choosing what to share.
 
-Guided tours introduce the dashboard, the recordings list and the transcript view the first time you open each. **Settings > Help > Restart tours** shows them again, and **Create it again** brings back the Welcome to Nojoin demo meeting if you deleted it.
+Guided tours introduce the dashboard, the recordings list and the transcript view the first time you open each. The transcript view's tour opens the tabs it describes, and when it ends you are back on the tab you were on. **Settings > Help > Restart tours** shows them again, and **Create it again** brings back the Welcome to Nojoin demo meeting if you deleted it.
 
 ## Dashboard
 
@@ -169,7 +169,7 @@ An administrator can turn Meeting Edge off for the installation, or give it its 
 
 Keep the page open until the import finishes. Closing or reloading it during the upload makes the browser ask first. An import whose page closes or loses its connection before the whole file arrives cannot carry on, since the file is on your device. The recordings list marks it, and 15 minutes after the last of it arrived Nojoin says the import did not finish, in a notification that stays until you choose: **Import again** discards it and opens **Import Audio** so you can choose the file again, and **Discard** deletes what arrived. Closing the notification leaves the import until you next open or reload a page. An import that fails while the dialog is open is discarded at once, so trying again leaves nothing behind. An unfinished import never stops you starting a meeting.
 
-Nojoin accepts WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA and OPUS, and the media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP. It keeps only the audio. A file with no audio track is refused: the import shows as failed and nothing of the file is kept. An import is then processed like a live recording.
+Nojoin accepts WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA and OPUS, and the media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP. It keeps only the audio. A file with no audio track is refused: the import shows as failed and nothing of the file is kept. An import is then processed like a live recording. It has no live transcript, so its **Transcript** tab says no transcript is available yet until processing finishes.
 
 ### Retry Processing
 
@@ -179,7 +179,7 @@ If transcription fails, the recording is marked **Error**, a notification says s
 
 ## Transcript And Playback
 
-A meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs in every recording state. On desktop a resizable column beside them holds **Speakers**, **My notes**, **Captures** and **Meeting Edge** (where it is shown) as tabs, above **Chat** in every state. On a phone the same four panels join the main tab row: **My notes** and **Captures** follow **Notes**, and **Speakers** and **Meeting Edge** follow **Analytics**, with **Chat** after them. Tabs remember your selection. Left and Right arrows move between tabs; Home and End select the first and last. The side column collapses to a rail whose buttons reopen each panel. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
+A meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs in every recording state. On desktop a resizable column beside them holds **Speakers**, **My notes**, **Captures** and **Meeting Edge** (where it is shown) as tabs, above **Chat** in every state. On a phone the same four panels join the main tab row: **My notes** and **Captures** follow **Notes**, and **Speakers** and **Meeting Edge** follow **Analytics**, with **Chat** after them. Tabs remember your selection, except that a meeting being recorded opens on **Transcript**. Left and Right arrows move between tabs; Home and End select the first and last. The side column collapses to a rail whose buttons reopen each panel. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
 
 During capture and processing, **Transcript** keeps the shared line cards and the composer below them, and the header shows recording controls or progress in place of the audio player. Timestamp play buttons stay visible but disabled, the line menu omits **Play from here**, and export is disabled separately. Speaker previews, notes and their files cannot play either. Search remains available; **Undo**, **Redo** and **Find & Replace** wait for the finished transcript. Locked lines on recordings using word settling retain their individual correction actions. Live speaker rows offer naming and identity actions while capture is open; finished speaker operations and generated notes retain their processing gates. Analytics estimates and Chat remain available. Processed recordings and those in error retain their existing playback and export behaviour, including the explanation when audio is missing or its playable copy is still being prepared.
 

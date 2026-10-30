@@ -69,6 +69,7 @@ import {
   shouldPollRecordingUpdates,
 } from "./recordingDetailUtils";
 import { useRecordingNotFound } from "./useRecordingNotFound";
+import { useRecordingPanel } from "./useRecordingPanel";
 import { useRecordingTranscript } from "./useRecordingTranscript";
 import { createRecordingMetadataReader } from "./recordingMetadataReader";
 
@@ -122,7 +123,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const audioRef = useRef<HTMLAudioElement>(null);
   const { addNotification } = useNotificationStore();
   const recordingActions = useRecordingActions();
-  const { chatPanelHeight, setChatPanelHeight, activePanel, setActivePanel } = useNavigationStore();
+  const {
+    chatPanelHeight, setChatPanelHeight, activePanel: rememberedPanel, setActivePanel: rememberPanel,
+  } = useNavigationStore();
 
   // Player State
   const [currentTime, setCurrentTime] = useState(0);
@@ -170,6 +173,12 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // has nothing to play back from either.
   const localCaptureActive = !!recording && capture?.ownedRecordingId === recording.id &&
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
+  const { activePanel, setActivePanel } = useRecordingPanel(
+    recording?.id ?? null,
+    !!recording && (isLiveCaptureInProgress(recording) || localCaptureActive),
+    rememberedPanel,
+    rememberPanel,
+  );
   const canPlayback = !!recording && !isInFlightRecording && !localCaptureActive;
   const canExport = canPlayback;
   const {
@@ -398,23 +407,6 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       }),
     [navigateToRecordings, recording],
   );
-
-  // Listen for tour events to switch panels
-  useEffect(() => {
-    const handleTourSwitch = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (
-        customEvent.detail === "notes" ||
-        customEvent.detail === "transcript"
-      ) {
-        setActivePanel(customEvent.detail);
-      }
-    };
-
-    window.addEventListener("tour:switch-panel", handleTourSwitch);
-    return () =>
-      window.removeEventListener("tour:switch-panel", handleTourSwitch);
-  }, [setActivePanel]);
 
   // Initialize speaker colors
   useEffect(() => {
