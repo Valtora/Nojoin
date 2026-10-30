@@ -40,6 +40,7 @@ from .helpers import (
     _recording_has_audio,
     _recording_has_proxy,
     _requeue_for_processing,
+    lock_recording_for_delete,
     revoke_recording_task,
 )
 from .router import router
@@ -121,14 +122,8 @@ async def delete_recording(
     Delete a recording and its associated file.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    # A live capture's publisher holds Transcript before Recording; take the
-    # same order so deleting a capture mid-step cannot deadlock against it.
-    await db.run_sync(
-        lambda session: _load_transcript(session, recording.id, lock=True)
-    )
-    # Locked, so a worker cannot repoint audio_path between this read and the
-    # delete (keep_imported_audio_task) and leave its new file behind.
-    await db.refresh(recording, with_for_update=True)
+    if not await lock_recording_for_delete(db, recording):
+        raise HTTPException(status_code=404, detail="Recording not found")
 
     # The paths are read under the lock, and the files go once the delete has
     # committed, so a failed commit keeps them for the row it leaves.
@@ -232,8 +227,13 @@ async def reprocess_recording(
     from backend.utils.transcription_models import ENGINE_OVERRIDE_CHOICES
 
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    # Transcript before the row, the order a live capture's publisher takes:
+    # a changed speaker cap or language below dirties the row, which the
+    # reset's first query would otherwise flush ahead of the Transcript
+    # update (issue #816). Read under that lock, the notes claim also fences
+    # this reprocess (issue #828).
     transcript = await db.run_sync(
-        lambda session: _load_transcript(session, recording.id)
+        lambda session: _load_transcript(session, recording.id, lock=True)
     )
     _ensure_reprocessable(recording, transcript)
 
@@ -351,8 +351,8 @@ async def permanently_delete_recording(
     (bin, then destroy) holds server-side for every surface, including MCP.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    # Locked for the same reason as in delete_recording.
-    await db.refresh(recording, with_for_update=True)
+    if not await lock_recording_for_delete(db, recording):
+        raise HTTPException(status_code=404, detail="Recording not found")
 
     if not recording.is_deleted:
         raise HTTPException(

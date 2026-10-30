@@ -130,6 +130,8 @@ Whether diagnostics are sent at all depends on whether you installed Nojoin fres
 
 The first-run setup wizard shows a **Share anonymous usage diagnostics** checkbox, ticked by default, on the same screen as the legal disclaimer. Leaving it ticked is your consent, and pings begin from the next cycle. Unticking it means no diagnostics are sent unless you turn them on later in Settings. The same screen says that the heartbeat is sent separately.
 
+If `NOJOIN_TELEMETRY_ENABLED` is set, the checkbox shows its value and cannot be changed, as in **Settings > Privacy**, and says what that value sends: both reports for `true`, nothing for `false`. The wizard records no choice in that case, so if you remove the variable later, the installation is treated like an upgraded one: no diagnostics until an administrator has seen the notice.
+
 ### Existing installations that upgraded
 
 **No diagnostics are sent until an administrator has seen the notice.** After the upgrade, an admin sees a banner explaining the heartbeat and the diagnostics, with three options:
@@ -154,7 +156,7 @@ The heartbeat does not wait for the notice. It starts on the first start of 2.7.
 NOJOIN_TELEMETRY_ENABLED=false
 ```
 
-This is a hard switch for both. It stops the heartbeat and the diagnostics, overrides the in-app setting, and cannot be changed from the UI, where the Settings toggle shows as read-only. Use it when telemetry must be off as a matter of policy, for example on an air-gapped or regulated network.
+This is a hard switch for both. It stops the heartbeat and the diagnostics, overrides the in-app setting, and cannot be changed from the UI, where the setup wizard's checkbox and the Settings toggle show it read-only. Use it when telemetry must be off as a matter of policy, for example on an air-gapped or regulated network.
 
 Set to `true`, the same variable is consent to both in its own right: diagnostics start on the next cycle without waiting for the notice, which is suppressed while the environment pins the setting. Left empty, the default, it leaves the diagnostics decision to the app.
 

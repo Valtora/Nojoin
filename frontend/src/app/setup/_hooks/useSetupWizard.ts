@@ -189,7 +189,8 @@ export function useSetupWizard() {
   });
   const [includeDemoRecording, setIncludeDemoRecording] = useState(true);
   // Opt-out: ticked by default, and the tick is this install's telemetry
-  // consent, so a first-run install never sees the later admin notice.
+  // consent, so a first-run install never sees the later admin notice. Unused
+  // while the server's environment pins telemetry (telemetryPinned below).
   const [enableTelemetry, setEnableTelemetry] = useState(true);
 
   // AI step
@@ -222,6 +223,10 @@ export function useSetupWizard() {
   // The AI line of a Finish step restored after a reload, when the AI step's
   // choices that produced it are gone.
   const [resumedAiSummary, setResumedAiSummary] = useState<string | null>(null);
+
+  // NOJOIN_TELEMETRY_ENABLED outranks the box in both directions, so a pinned
+  // value is shown read-only and no choice is sent with the account.
+  const telemetryPinned = serverConfig?.telemetry_pinned ?? null;
 
   const applyInitialConfig = useCallback((initialConfig: InitialSetupConfig) => {
     setServerConfig(initialConfig);
@@ -407,7 +412,7 @@ export function useSetupWizard() {
           password: formData.password,
           whisper_model_size: formData.whisper_model_size,
           include_demo_recording: includeDemoRecording,
-          enable_telemetry: enableTelemetry,
+          ...(telemetryPinned === null ? { enable_telemetry: enableTelemetry } : {}),
         },
         getBootstrapPassword(),
       );
@@ -728,6 +733,7 @@ export function useSetupWizard() {
     setIncludeDemoRecording,
     enableTelemetry,
     setEnableTelemetry,
+    telemetryPinned,
     ffmpegMissing,
     // AI step
     aiRoute,
