@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getLanguageOptions, reprocessRecording } from "@/lib/api";
+import { getLanguageOptions, getSettings, reprocessRecording } from "@/lib/api";
 import type { LanguageRegistry, Recording } from "@/types";
 
 import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
@@ -52,6 +52,10 @@ const submit = async () => {
   await vi.waitFor(() => expect(reprocessRecording).toHaveBeenCalled());
   return vi.mocked(reprocessRecording).mock.calls[0][1];
 };
+
+beforeEach(() => {
+  vi.mocked(getSettings).mockResolvedValue({});
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -107,5 +111,52 @@ describe("ReprocessDialog language", () => {
     expect(screen.queryByLabelText("Language")).toBeNull();
 
     expect(await submit()).not.toHaveProperty("transcription_language");
+  });
+});
+
+describe("ReprocessDialog Whisper model size", () => {
+  const props = { recordingId: "rec-1", onClose: vi.fn(), onReprocessed: vi.fn() };
+
+  const modelSize = () =>
+    screen.getByLabelText("Whisper Model Size") as HTMLSelectElement;
+
+  it("opens on the installation's model size and sends it", async () => {
+    vi.mocked(getSettings).mockResolvedValue({ whisper_model_size: "base" });
+    await openDialog(null);
+
+    await vi.waitFor(() => expect(modelSize().value).toBe("base"));
+    expect(await submit()).toMatchObject({
+      transcription_backend: "whisper",
+      whisper_model_size: "base",
+    });
+  });
+
+  it("reopens on the installation's size after another was picked", async () => {
+    vi.mocked(getLanguageOptions).mockResolvedValue(registry);
+    vi.mocked(getSettings).mockResolvedValue({ whisper_model_size: "small" });
+    const { rerender } = renderWithProviders(<ReprocessDialog {...props} isOpen />);
+    await vi.waitFor(() => expect(modelSize().value).toBe("small"));
+    fireEvent.change(modelSize(), { target: { value: "large" } });
+    expect(modelSize().value).toBe("large");
+
+    rerender(<ReprocessDialog {...props} isOpen={false} />);
+    vi.mocked(getSettings).mockResolvedValue({ whisper_model_size: "medium" });
+    rerender(<ReprocessDialog {...props} isOpen />);
+
+    await vi.waitFor(() => expect(modelSize().value).toBe("medium"));
+  });
+
+  it.each([
+    ["an unknown size", () => vi.mocked(getSettings).mockResolvedValue({ whisper_model_size: "huge" })],
+    ["no settings", () => vi.mocked(getSettings).mockRejectedValue(new Error("offline"))],
+  ])("falls back to Turbo for %s", async (_, arrange) => {
+    arrange();
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    await openDialog(null);
+
+    await vi.waitFor(() => expect(getSettings).toHaveBeenCalled());
+    expect(modelSize().value).toBe("turbo");
+    expect(await submit()).toMatchObject({ whisper_model_size: "turbo" });
+    quiet.mockRestore();
   });
 });

@@ -463,7 +463,7 @@ export default function ChatPanel({
                 className="p-2 bg-status-danger-bg text-foreground rounded-lg hover:bg-status-danger-bg transition-colors shadow-card"
                 title="Stop Generation"
               >
-                <StopCircle className="w-4 h-4" />
+                <StopCircle aria-hidden="true" className="w-4 h-4" />
               </ButtonBase>
             ) : (
               <ButtonBase
@@ -471,9 +471,11 @@ export default function ChatPanel({
                 data-ui-hover="action-hover" chrome="action"
                 onClick={handleSend}
                 disabled={!recordingId || !inputValue.trim() || !historyReady}
+                aria-label="Send message"
+                title="Send message"
                 className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-card"
               >
-                <Send className="w-4 h-4" />
+                <Send aria-hidden="true" className="w-4 h-4" />
               </ButtonBase>
             )}
           </div>

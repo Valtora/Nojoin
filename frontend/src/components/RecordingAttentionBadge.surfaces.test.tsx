@@ -117,6 +117,15 @@ describe("recording attention identity", () => {
     expect(within(link).getByText("Paused")).toBeVisible();
   });
 
+  it("reads a reloaded tab's own capture as paused, as the dialog it opens does (issue #789)", () => {
+    // Offered at once after a reload, before the server judges it stalled.
+    const reloaded = { ...recording(RecordingStatus.UPLOADING), capture_stalled: false };
+    attentionRecordings = [reloaded];
+    render(<RecordingAttentionBadge recordingId="recoverable" />);
+    expect(screen.getByText("Paused, needs attention")).toBeVisible();
+    expect(screen.queryByText(/Interrupted/)).not.toBeInTheDocument();
+  });
+
   it("renders no badge or placeholder when the recording needs no recovery", () => {
     const { container } = render(<RecordingAttentionBadge recordingId="recoverable" />);
     expect(container).toBeEmptyDOMElement();

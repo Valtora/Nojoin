@@ -78,16 +78,45 @@ describe("live transcript behind notice", () => {
     vi.useRealTimers();
   });
 
-  it("appears while the live read says it is behind and clears when lines arrive", async () => {
+  it("appears while the live read says it is behind and clears once two reads find it caught up", async () => {
     getTranscriptUtterances
       .mockResolvedValueOnce(read(true))
-      .mockResolvedValueOnce(read(false, ["Caught up at last."]));
+      .mockResolvedValueOnce(read(false, ["Caught up at last."]))
+      .mockResolvedValueOnce(read(false, ["Caught up at last.", "And still."]));
     render(<LiveTranscriptTab recording={recording()} />);
     await settle();
     expect(screen.getByText(NOTICE)).toHaveAttribute("role", "status");
 
     await poll();
     expect(screen.getByText("Caught up at last.")).toBeInTheDocument();
+    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+
+    await poll();
+    expect(screen.getByText("And still.")).toBeInTheDocument();
+    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+  });
+
+  it("stays up while slow runs make reads alternate between behind and caught up (issue #812)", async () => {
+    const pattern = [true, false, true, false, true, false, false];
+    for (const behind of pattern) getTranscriptUtterances.mockResolvedValueOnce(read(behind));
+    render(<LiveTranscriptTab recording={recording()} />);
+    await settle();
+    const notice = screen.getByText(NOTICE);
+
+    for (let index = 1; index < pattern.length - 1; index += 1) {
+      await poll();
+      // The same element throughout: nothing re-announces or shifts the transcript.
+      expect(screen.getByText(NOTICE)).toBe(notice);
+    }
+    await poll();
+    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+  });
+
+  it("does not show when the first read finds the lane caught up", async () => {
+    getTranscriptUtterances.mockResolvedValue(read(false, ["Keeping up."]));
+    render(<LiveTranscriptTab recording={recording()} />);
+    await settle();
+    expect(screen.getByText("Keeping up.")).toBeInTheDocument();
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
   });
 

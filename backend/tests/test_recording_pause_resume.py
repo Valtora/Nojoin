@@ -1739,10 +1739,11 @@ async def test_a_stop_from_a_superseded_tab_does_not_finalize(
     assert stale_stop.json()["detail"] == SUPERSEDED
     row = await _recording_row(test_session_maker, recording_id)
     assert row.status == "UPLOADING"
-    # Stop from a dialog acts for no tab, and finalizes whoever holds it.
-    dialog_stop = await _post(client, f"{recording_id}/finalize")
-    assert dialog_stop.status_code == 200
-    assert dialog_stop.json()["status"] == "QUEUED"
+    # A stop with no epoch, from a tab on an older build, is not checked and
+    # finalizes whoever holds it.
+    unfenced_stop = await _post(client, f"{recording_id}/finalize")
+    assert unfenced_stop.status_code == 200
+    assert unfenced_stop.json()["status"] == "QUEUED"
 
 
 @pytest.mark.anyio
@@ -1982,3 +1983,74 @@ async def test_a_tab_reloaded_before_its_first_upload_cannot_delete_a_takeover(
         "RECORDING",
         1,
     )
+
+
+@pytest.mark.anyio
+async def test_a_stale_recovery_offer_cannot_stop_or_discard_a_takeover(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Issue #789: the dialog sends its offer's epoch with Stop and Discard.
+
+    A dialog on one device offered the stalled capture at epoch 0. Before its
+    next check withdrew the offer, another device took the capture over.
+    """
+    set_session_cookie(client)
+    init = await _post(client, "init", params={"name": "Weekly sync"})
+    recording_id = init.json()["id"]
+    assert (
+        await _upload(client, recording_id, 0, make_wav_bytes(), epoch=0)
+    ).status_code == 200
+    await _set_last_heard(
+        test_session_maker, recording_id, quiet_for=QUIET_PAST_THRESHOLD, capture=True
+    )
+    offer = (
+        await client.get(
+            "/api/v1/recordings", params={"status": "UPLOADING", "user": "me"}
+        )
+    ).json()[0]
+    assert (offer["capture_epoch"], offer["capture_stalled"]) == (0, True)
+    takeover = await _post(client, f"{recording_id}/resume")
+    assert takeover.json()["capture_epoch"] == 1
+    assert (
+        await _upload(client, recording_id, 1, make_wav_bytes(), epoch=1)
+    ).status_code == 200
+
+    stale_resume = await _post(client, f"{recording_id}/resume")
+    # Stop first pauses to upload the audio that browser kept, then finalizes.
+    stale_pause = await _post(
+        client, f"{recording_id}/pause", params={"epoch": offer["capture_epoch"]}
+    )
+    stale_stop = await _post(
+        client, f"{recording_id}/finalize", params={"epoch": offer["capture_epoch"]}
+    )
+    stale_discard = await _post(
+        client, f"{recording_id}/discard", params={"epoch": offer["capture_epoch"]}
+    )
+
+    # Resume was refused already, because the capture is uploading again.
+    assert stale_resume.status_code == 409
+    for refused in (stale_pause, stale_stop, stale_discard):
+        assert refused.status_code == 409
+        assert refused.json()["detail"] == SUPERSEDED
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.client_status, row.capture_epoch) == (
+        "UPLOADING",
+        "RECORDING",
+        1,
+    )
+
+    # Once the new holder pauses, a fresh offer carries epoch 1 and acts.
+    assert (
+        await _post(client, f"{recording_id}/pause", params={"epoch": 1})
+    ).status_code == 200
+    fresh = (
+        await client.get(
+            "/api/v1/recordings", params={"status": "PAUSED", "user": "me"}
+        )
+    ).json()[0]
+    assert fresh["capture_epoch"] == 1
+    discard = await _post(
+        client, f"{recording_id}/discard", params={"epoch": fresh["capture_epoch"]}
+    )
+    assert discard.status_code == 200

@@ -115,6 +115,12 @@ describe("ChatPanel provisional context", () => {
     expect(screen.getByText("Earlier answer.")).toBeInTheDocument();
   });
 
+  it("names its Send button (issue #840)", async () => {
+    render(<ChatPanel inFlight />);
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
+  });
+
 });
 
 describe("ChatPanel stream lifecycle", () => {

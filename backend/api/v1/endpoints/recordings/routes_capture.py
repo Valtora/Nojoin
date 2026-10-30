@@ -857,7 +857,7 @@ async def discard_upload(
     await lock_capture_publication(db, recording)
     await db.refresh(recording, with_for_update=True)
     # A tab whose capture continued elsewhere must not delete it from under the
-    # tab running it. The list and the dialogs discard without an epoch.
+    # tab running it, nor may a recovery dialog left open while it was taken over.
     recordings_module._ensure_capture_epoch(recording, epoch)
     # Nor may a tab delete its capture once it has been stopped, which a stop
     # from a dialog does without issuing an epoch: the meeting is being

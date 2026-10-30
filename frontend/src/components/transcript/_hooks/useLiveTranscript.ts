@@ -43,6 +43,15 @@ export const LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS = 10;
  */
 export const LIVE_TRANSCRIPT_READ_TIMEOUT_MS = 15_000;
 
+/**
+ * Reads in a row that must find the lane caught up before the behind notice
+ * clears (issue #812). The lane writes `live/state.json` only when a run ends,
+ * so the lag a read measures swings between about one and two runs' length:
+ * with runs of 10 to 20 s a single read could clear the notice between two
+ * that raise it again, re-announcing it and shifting the transcript each time.
+ */
+export const LIVE_BEHIND_CLEAR_READS = 2;
+
 export interface LiveTranscript {
   speakers: readonly RecordingSpeaker[];
   refresh: () => void;
@@ -53,7 +62,10 @@ export interface LiveTranscript {
   liveSpeakerNames: Readonly<Record<string, string>>;
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
-  /** The last read said live transcription is behind the uploads. */
+  /**
+   * A read said live transcription is behind the uploads, and fewer than
+   * {@link LIVE_BEHIND_CLEAR_READS} reads since have found it caught up.
+   */
   liveBehind?: boolean;
 }
 
@@ -128,6 +140,8 @@ export function useLiveTranscript(
 
     let cancelled = false;
     stateRef.current = null;
+    // Reads in a row that found the lane caught up, since one found it behind.
+    let caughtUpReads = LIVE_BEHIND_CLEAR_READS;
 
     const sync = async (mode: "full" | "delta") => {
       const current = stateRef.current;
@@ -173,7 +187,12 @@ export function useLiveTranscript(
       setLiveSpeakerNames((previous) =>
         sameOrNext(previous, delta.live_speaker_names),
       );
-      setLiveBehind(delta.live_behind === true);
+      if (delta.live_behind === true) {
+        caughtUpReads = 0;
+        setLiveBehind(true);
+      } else if (++caughtUpReads >= LIVE_BEHIND_CLEAR_READS) {
+        setLiveBehind(false);
+      }
       setHasLoaded(true);
     };
 

@@ -12,7 +12,7 @@ const captureState = {
   controller: {
     getState: () => ({ error: null }),
   },
-  pausedRecording: null as { id: string; status: string } | null,
+  pausedRecording: null as { id: string; status: string; capture_stalled?: boolean } | null,
   runtimeActive: false,
   uploadQueue: { segments: 0, seconds: 0 },
   coverageWarning: null,
@@ -162,13 +162,15 @@ describe("MeetingControls", () => {
   describe.each(["sidebar", "rail", "compact"] as const)("%s start availability", (variant) => {
     it.each([
       { state: "paused", label: "Paused recording needs attention", paused: "PAUSED" },
-      { state: "interrupted", label: "Interrupted recording needs attention", paused: "UPLOADING" },
+      { state: "interrupted", label: "Interrupted recording needs attention", paused: "UPLOADING", stalled: true },
+      // A reloaded tab's own capture, offered before it stalls, reads as paused (issue #789).
+      { state: "reloaded", label: "Paused recording needs attention", paused: "UPLOADING", stalled: false },
       { state: "starting", label: "Starting meeting...", status: "starting" },
       { state: "finalising", label: "Finalizing meeting...", status: "finalizing" },
       { state: "unsupported", label: "Unsupported browser", unsupported: true },
       { state: "offline", label: "Nojoin unavailable", offline: true },
-    ])("prevents starting while $state", ({ label, paused, status, unsupported, offline }) => {
-      captureState.pausedRecording = paused ? { id: "rec-held", status: paused } : null;
+    ])("prevents starting while $state", ({ label, paused, stalled, status, unsupported, offline }) => {
+      captureState.pausedRecording = paused ? { id: "rec-held", status: paused, capture_stalled: stalled } : null;
       captureState.status = status ?? "idle";
       captureState.support.supported = !unsupported;
       connectivityStatus = offline ? "offline" : "online";
@@ -247,7 +249,7 @@ describe("MeetingControls", () => {
     ])("keeps $status attention visible when an errored runtime remains", ({ status, label }) => {
       captureState.runtimeActive = true;
       captureState.status = "error";
-      captureState.pausedRecording = { id: "rec-held", status };
+      captureState.pausedRecording = { id: "rec-held", status, capture_stalled: status === "UPLOADING" };
       render(<MeetingControls variant={variant} />);
 
       const button = screen.getByRole("button", { name: label });
@@ -315,7 +317,7 @@ describe("MeetingControls", () => {
   });
 
   it("names an interrupted capture apart from a paused one", () => {
-    captureState.pausedRecording = { id: "rec-1", status: "UPLOADING" };
+    captureState.pausedRecording = { id: "rec-1", status: "UPLOADING", capture_stalled: true };
     const { rerender } = render(<MeetingControls variant="dashboard" />);
 
     expect(
