@@ -44,17 +44,18 @@ export const LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS = 10;
 export const LIVE_TRANSCRIPT_READ_TIMEOUT_MS = 15_000;
 
 /**
- * Reads in a row that must find the lane caught up before the behind notice
- * clears (issue #812), about 20 s at one read per poll. The lane writes
+ * How long the lane must read as caught up, from the first read that finds it
+ * so, before the behind notice clears (issue #812). The lane writes
  * `live/state.json` only when a run ends, so for runs of length T the lag a
- * read measures swings between about T and 2T, and stays under the 20 s
- * threshold only for the first 20 s less T after each run ends. A streak as
- * long as the threshold outlasts that window for any run under 20 s, so the
- * notice holds steady instead of re-announcing and shifting the transcript
- * every run. The cost is that it can stay up to about 20 s after the lane
- * catches up.
+ * read measures swings between about T and 2T and stays under the 20 s
+ * threshold only for the first 20 s less T after each run ends. Holding on for
+ * longer than the slowest run that can raise the notice outlasts that window,
+ * so the notice holds steady instead of re-announcing and shifting the
+ * transcript every run. Time rather than a count of reads, since a refresh
+ * adds reads between polls. The cost is that it can stay up to about 20 s
+ * after the lane catches up.
  */
-export const LIVE_BEHIND_CLEAR_READS = 7;
+export const LIVE_BEHIND_CLEAR_MS = 20_000;
 
 export interface LiveTranscript {
   speakers: readonly RecordingSpeaker[];
@@ -67,8 +68,8 @@ export interface LiveTranscript {
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
   /**
-   * A read said live transcription is behind the uploads, and fewer than
-   * {@link LIVE_BEHIND_CLEAR_READS} reads since have found it caught up.
+   * A read said live transcription is behind the uploads, and the reads since
+   * have not found it caught up for {@link LIVE_BEHIND_CLEAR_MS}.
    */
   liveBehind?: boolean;
 }
@@ -144,8 +145,8 @@ export function useLiveTranscript(
 
     let cancelled = false;
     stateRef.current = null;
-    // Reads in a row that found the lane caught up, since one found it behind.
-    let caughtUpReads = LIVE_BEHIND_CLEAR_READS;
+    // When the first of the reads in a row that found the lane caught up came.
+    let caughtUpSince: number | null = null;
 
     const sync = async (mode: "full" | "delta") => {
       const current = stateRef.current;
@@ -192,10 +193,12 @@ export function useLiveTranscript(
         sameOrNext(previous, delta.live_speaker_names),
       );
       if (delta.live_behind === true) {
-        caughtUpReads = 0;
+        caughtUpSince = null;
         setLiveBehind(true);
-      } else if (++caughtUpReads >= LIVE_BEHIND_CLEAR_READS) {
-        setLiveBehind(false);
+      } else {
+        const now = Date.now();
+        caughtUpSince ??= now;
+        if (now - caughtUpSince >= LIVE_BEHIND_CLEAR_MS) setLiveBehind(false);
       }
       setHasLoaded(true);
     };

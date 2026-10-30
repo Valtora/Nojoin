@@ -1012,6 +1012,34 @@ async def _status(session_maker: sessionmaker, recording_id: int) -> str | None:
 
 
 @pytest.mark.anyio
+async def test_a_discard_sent_as_processing_ends_is_told_to_use_the_bin(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Issue #850 follow-up: a Discard clicked while the first pass ran, and
+    arriving just after it finished, met the not-in-flight 400 before the
+    finished-meeting 409 that says what to do instead."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4445,
+        public_id="just-finished",
+        status="PROCESSING",
+    )
+    await _finish_processing(test_session_maker, 4445)
+    assert await _status(test_session_maker, 4445) == "PROCESSED"
+
+    set_session_cookie(client)
+    discard_response = await client.post(
+        "/api/v1/recordings/just-finished/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert discard_response.status_code == 409
+    assert "Move it to the bin" in discard_response.json()["detail"]
+    assert await _status(test_session_maker, 4445) == "PROCESSED"
+
+
+@pytest.mark.anyio
 async def test_discard_cannot_delete_a_finished_meeting_while_its_notes_regenerate(
     client: AsyncClient,
     test_session_maker: sessionmaker,
