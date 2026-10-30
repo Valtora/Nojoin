@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import CalendarEvent
-from backend.models.recording import RecordingStatus, RecordingUpdate
+from backend.models.recording import Recording, RecordingStatus, RecordingUpdate
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.user import User
 from backend.processing.speaker_cap import (
@@ -159,23 +159,20 @@ class ReprocessRequest(BaseModel):
         return None if value is None else validate_transcription_language(value)
 
 
-@router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
-async def reprocess_recording(
-    recording_id: str,
-    body: ReprocessRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Re-run the full processing pipeline with a caller-chosen transcription engine.
-    """
-    from backend.utils.config_manager import TRANSCRIPTION_BACKENDS
-    from backend.utils.transcription_models import ENGINE_OVERRIDE_CHOICES
+REPROCESS_CAPTURE_PAUSED_MESSAGE = (
+    "This recording is paused, not finished. Stop it before reprocessing."
+)
 
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
+def _ensure_reprocessable(recording: Recording) -> None:
+    """Refuse a recording that a reprocess would harm or cannot help."""
     if recording.is_deleted:
         raise HTTPException(status_code=400, detail="Cannot retry a deleted recording")
+
+    # A paused capture's segments are joined into audio only when it stops, so
+    # a run queued now ends the capture and finds no audio (issue #851).
+    if recording.status == RecordingStatus.PAUSED:
+        raise HTTPException(status_code=409, detail=REPROCESS_CAPTURE_PAUSED_MESSAGE)
 
     if recording.status in {
         RecordingStatus.UPLOADING,
@@ -197,6 +194,23 @@ async def reprocess_recording(
             status_code=409,
             detail=recording.processing_step or "This recording has no audio.",
         )
+
+
+@router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
+async def reprocess_recording(
+    recording_id: str,
+    body: ReprocessRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Re-run the full processing pipeline with a caller-chosen transcription engine.
+    """
+    from backend.utils.config_manager import TRANSCRIPTION_BACKENDS
+    from backend.utils.transcription_models import ENGINE_OVERRIDE_CHOICES
+
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _ensure_reprocessable(recording)
 
     if body.transcription_backend not in TRANSCRIPTION_BACKENDS:
         raise HTTPException(

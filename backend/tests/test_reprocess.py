@@ -431,6 +431,7 @@ async def _insert_recording(
     public_id: str = "reprocess-rec-public-id",
     user_id: int = 1,
     status: str = "PROCESSED",
+    client_status: str | None = None,
     pipeline_generation: str = "unified",
 ) -> None:
     """Insert a single recording row into the test DB."""
@@ -440,11 +441,13 @@ async def _insert_recording(
                 """
                 INSERT INTO recordings (
                     id, created_at, updated_at, name, public_id, meeting_uid,
-                    audio_path, status, upload_progress, processing_progress,
-                    pipeline_generation, is_archived, is_deleted, user_id
+                    audio_path, status, client_status, upload_progress,
+                    processing_progress, pipeline_generation, is_archived,
+                    is_deleted, user_id
                 ) VALUES (
                     :id, :now, :now, :name, :public_id, :meeting_uid,
-                    :audio_path, :status, 0, 100, :pipeline_generation, 0, 0, :user_id
+                    :audio_path, :status, :client_status, 0, 100,
+                    :pipeline_generation, 0, 0, :user_id
                 )
                 """
             ),
@@ -456,6 +459,7 @@ async def _insert_recording(
                 "meeting_uid": f"meeting-uid-{recording_id}",
                 "audio_path": "/tmp/recording.wav",
                 "status": status,
+                "client_status": client_status,
                 "pipeline_generation": pipeline_generation,
                 "user_id": user_id,
             },
@@ -597,6 +601,45 @@ async def test_reprocess_in_progress_recording_rejected(
 
     assert response.status_code == 400
     assert calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("client_status", ["PAUSED", None])
+async def test_reprocess_refuses_a_paused_capture(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    client_status: str | None,
+) -> None:
+    """Issue #851: a paused capture was requeued, ending it before its segments
+    were joined into audio. A capture paused before captures recorded a client
+    status has none."""
+    await _insert_recording(
+        test_session_maker,
+        recording_id=209,
+        public_id="rec-209",
+        status="PAUSED",
+        client_status=client_status,
+    )
+    calls = _patch_delay(monkeypatch)
+
+    response = await client.post(
+        "/api/v1/recordings/rec-209/reprocess",
+        json={"transcription_backend": "whisper"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "This recording is paused, not finished. Stop it before reprocessing."
+    )
+    assert calls == []
+    async with test_session_maker() as session:
+        row = (
+            await session.execute(
+                text("SELECT status, client_status FROM recordings WHERE id = 209")
+            )
+        ).one()
+    assert tuple(row) == ("PAUSED", client_status)
 
 
 @pytest.mark.anyio
