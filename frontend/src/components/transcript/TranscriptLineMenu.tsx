@@ -21,6 +21,7 @@ interface TranscriptLineMenuProps {
   readOnly?: boolean;
   live?: LiveTranscriptPresentation;
   speakers?: readonly RecordingSpeaker[];
+  liveSpeakerLabels?: Readonly<Record<string, string>>;
   segment: TranscriptSegment;
   segmentId: string;
   /** The speaker the line shows; null when it shows none yet. */
@@ -58,6 +59,7 @@ export default function TranscriptLineMenu({
   isChangingSpeaker,
   live,
   speakers,
+  liveSpeakerLabels,
 }: TranscriptLineMenuProps) {
   const [noteAnchor, setNoteAnchor] = useState<HTMLElement | null>(null);
   const [lineEdit, setLineEdit] = useState<{
@@ -145,6 +147,7 @@ export default function TranscriptLineMenu({
         key={`${lineEdit.kind}-${lineEdit.segment.id}`}
         kind={lineEdit.kind} segment={lineEdit.segment} anchor={lineEdit.anchor}
         handlers={editHandlers} speakers={speakers}
+        liveSpeakerLabels={liveSpeakerLabels}
         onClose={() => setLineEdit(null)}
       /> : null}
       {noteAnchor && (settling || quoted) && onAddNote ? (

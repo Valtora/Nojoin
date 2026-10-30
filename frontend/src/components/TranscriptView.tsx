@@ -43,6 +43,7 @@ import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import { indexOverlaps } from "./transcript/OverlapIndicator";
 import { appendPendingTranscriptGroups, isDiarisationPending } from "./transcript/pendingTranscriptGroups";
+import { liveSpeakerDisplayName, segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 
 interface TranscriptViewProps {
   /** The selected in-flight reader, with its source-specific actions. */
@@ -117,6 +118,7 @@ interface TranscriptViewProps {
 
 // One empty list for every render, so the memoised lines it reaches hold.
 const NO_PENDING_UPDATES: readonly string[] = [];
+const NO_LIVE_SPEAKERS: Readonly<Record<string, string>> = {};
 
 const NOTE_TIME_COLUMN =
   "min-w-16 md:min-w-[60px] shrink-0 pt-1 text-right font-mono text-sm text-contrast-icon-muted";
@@ -180,6 +182,14 @@ export default function TranscriptView({
   // often with the same contents; every line reads them.
   const speakerMap = useContentStable(speakerMapProp);
   const speakers = useContentStable(speakersProp);
+  // Live speakers are line targets only in the live view (#861 decides it),
+  // which is the one the server accepts them from; a finished meeting that
+  // kept a live line offers none.
+  const liveSpeakerLabels = useContentStable(useMemo(() => isLive ? Object.fromEntries(
+    [...new Set(segments.map((segment) => segment.speaker))]
+      .filter((label) => liveSpeakerDisplayName(label) !== null)
+      .map((label) => [label, segmentSpeakerDisplayName(speakerMap, label)]),
+  ) : NO_LIVE_SPEAKERS, [isLive, segments, speakerMap]));
   const globalSpeakers = useContentStable(globalSpeakersProp);
   const speakerColors = useContentStable(speakerColorsProp);
   const pendingRemoteUtteranceIds = useContentStable(pendingRemoteUtteranceIdsProp);
@@ -410,6 +420,7 @@ export default function TranscriptView({
       preserveLiveIdentity: keepLineGroups,
       speakerMap,
       speakers,
+      liveSpeakerLabels,
       globalSpeakers,
       speakerColors,
       onUpdateSegmentSpeaker: updateSegmentSpeaker,
@@ -428,6 +439,7 @@ export default function TranscriptView({
       keepLineGroups,
       speakerMap,
       speakers,
+      liveSpeakerLabels,
       globalSpeakers,
       speakerColors,
       updateSegmentSpeaker,

@@ -23,24 +23,47 @@ A held name stops identification for its speaker. A pending one is applied
 only after the merge pass, and only to a speaker still unnamed and unlinked,
 so it never blocks a merge, never triggers merge-by-name and never overrides a
 voiceprint match.
+
+A line moved by hand to a live speaker goes where that speaker's name goes:
+one placement of the label's speech decides both (``_live_line_targets``).
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from sqlmodel import select
+from sqlmodel import col, select
 
+from backend.models.pipeline import TranscriptUtterance
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
+from backend.models.transcript import Transcript
 from backend.processing.pipeline_metrics import record_pipeline_metric
-from backend.utils.speaker_names.anchors import lines_from_final_segments
+from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
+from backend.utils.live_speaker_labels import live_speaker_display_name
+from backend.utils.speaker_names.anchors import Line, Span, lines_from_final_segments
 from backend.utils.speaker_names.events import as_name_event
-from backend.utils.speaker_names.live import SURFACE_LIVE, live_label_spans
-from backend.utils.speaker_names.resolve import NameEvent, ResolvedName, resolve_names
-from backend.utils.speaker_names.sources import MACHINE_SOURCES
+from backend.utils.speaker_names.live import (
+    SURFACE_LIVE,
+    live_label_spans,
+    manually_reassigned_live_turns,
+)
+from backend.utils.speaker_names.resolve import (
+    NameEvent,
+    Placement,
+    ResolvedName,
+    place_event,
+    resolve_names,
+)
+from backend.utils.speaker_names.sources import (
+    AUTHORITY,
+    KIND_NAME,
+    MACHINE_SOURCES,
+    SOURCE_USER,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +76,9 @@ class CarriedNames:
     held: dict[str, ResolvedName] = field(default_factory=dict)
     # Offered as "Alex?" once the merge pass is done.
     pending: dict[str, ResolvedName] = field(default_factory=dict)
+    # A line moved by hand to a live speaker, by utterance id: the final label
+    # it goes to, moved once the merge pass is done.
+    live_lines: dict[int, str] = field(default_factory=dict)
 
 
 def _floor_score(session: Any, global_speaker_id: int, voiceprint: Any) -> float | None:
@@ -96,21 +122,116 @@ def _standing_rows_after_dropping_machine_ones(
 
 
 def _name_events(
-    session: Any, recording_id: int, rows: list[SpeakerNameEvent]
+    session: Any,
+    recording_id: int,
+    rows: list[SpeakerNameEvent],
+    live: dict[int, str],
+    spans: dict[str, tuple[Span, ...]],
 ) -> list[NameEvent]:
     """Each row as an event; a live name follows all of its label's speech."""
-    live = {
-        row.id: str(row.anchor_label)
+    removed = manually_reassigned_live_turns(
+        session, recording_id, set(live.values()) - spans.keys()
+    )
+    invalidated = {
+        row.id
         for row in rows
-        if row.surface == SURFACE_LIVE and row.anchor_label
+        if row.id in live
+        and any(
+            start <= row.anchor_start_ms and end >= row.anchor_end_ms
+            for start, end in removed.get(live[row.id], ())
+        )
     }
-    spans = live_label_spans(session, recording_id, set(live.values()))
     return [
-        replace(as_name_event(row), anchor_spans=spans.get(live[row.id], ()))
+        replace(
+            as_name_event(row),
+            anchor_spans=spans.get(live[row.id], ()),
+            # Missing raw labels also follow ordinary finalisation. Only an
+            # explicit correction covering the saved turn invalidates it.
+            anchor_end_ms=(
+                row.anchor_start_ms if row.id in invalidated else row.anchor_end_ms
+            ),
+        )
         if row.id in live
         else as_name_event(row)
         for row in rows
     ]
+
+
+def _lines_moved_to_live_speakers(
+    session: Any, recording_id: int
+) -> list[TranscriptUtterance]:
+    """Active lines whose hand-picked speaker is still a live label.
+
+    Live lines take corrections only once settling has published them, so
+    any other transcript has none.
+    """
+    transcript = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording_id)
+    ).first()
+    if (getattr(transcript, "settling_state", None) or {}).get("settled") is not True:
+        return []
+    rows = (
+        session.execute(
+            select(TranscriptUtterance)
+            .where(TranscriptUtterance.recording_id == recording_id)
+            .where(col(TranscriptUtterance.state).in_(ACTIVE_UTTERANCE_STATES))
+            .where(col(TranscriptUtterance.manual_speaker_locked).is_(True))
+        )
+        .scalars()
+        .all()
+    )
+    return [row for row in rows if live_speaker_display_name(row.speaker_label)]
+
+
+def _user_act_on(spans: tuple[Span, ...]) -> NameEvent:
+    """A user's act on this speech, placed as a user's name on it would be."""
+    return NameEvent(
+        event_id=0,
+        kind=KIND_NAME,
+        name="",
+        global_speaker_id=None,
+        source=SOURCE_USER,
+        authority=AUTHORITY[SOURCE_USER],
+        anchor_start_ms=spans[0][0],
+        anchor_end_ms=spans[-1][1],
+        anchor_spans=spans,
+    )
+
+
+def _live_line_targets(
+    moved: list[TranscriptUtterance],
+    live: dict[int, str],
+    spans: dict[str, tuple[Span, ...]],
+    placements: Sequence[Placement],
+    lines: Sequence[Line],
+) -> dict[int, str]:
+    """The final label each moved line goes to: where its live speaker's name goes.
+
+    A named label reuses its name's placement; an unnamed one is placed the
+    same way on the same speech. Either is the holder, the top holder when no
+    speaker clearly holds it, or the nearest speaker when processing heard
+    none of it. An unnamed label with no speech of its own left, every line
+    of it moved by hand, gives each line to the final speaker of its own span.
+    """
+    placed = {
+        live[placement.event.event_id]: placement.label
+        for placement in placements
+        if placement.event.event_id in live
+    }
+    targets: dict[int, str] = {}
+    for row in moved:
+        label = str(row.speaker_label)
+        own = spans.get(label)
+        if own and label not in placed:
+            placed[label] = place_event(_user_act_on(own), lines).label
+        target = (
+            placed[label]
+            if label in placed
+            else place_event(_user_act_on(((row.start_ms, row.end_ms),)), lines).label
+        )
+        if target is not None:
+            targets[int(row.id)] = target
+    return targets
 
 
 def carry_names_to_final_speakers(
@@ -119,21 +240,34 @@ def carry_names_to_final_speakers(
     final_segments: list[dict],
     speaker_voiceprints: dict[str, Any],
 ) -> CarriedNames:
-    """Resolve the standing events against this run's speakers."""
+    """Resolve the standing events, and lines moved to live speakers, against this run."""
     from backend.utils.speaker_names.durability import restore_name_anchors
 
     restore_name_anchors(session, recording.id)
     rows = _standing_rows_after_dropping_machine_ones(session, recording.id)
-    carried = CarriedNames()
+    moved = _lines_moved_to_live_speakers(session, recording.id)
+    live = {
+        row.id: str(row.anchor_label)
+        for row in rows
+        if row.surface == SURFACE_LIVE and row.anchor_label
+    }
+    spans = live_label_spans(
+        session,
+        recording.id,
+        {*live.values(), *(str(row.speaker_label) for row in moved)},
+    )
+    lines = lines_from_final_segments(final_segments)
+    resolved, placements = resolve_names(
+        _name_events(session, recording.id, rows, live, spans), lines
+    )
+    carried = CarriedNames(
+        live_lines=_live_line_targets(moved, live, spans, placements, lines)
+    )
     if not rows:
         return carried
 
     from backend.processing.embedding import IDENTIFIED_MERGE_VOICEPRINT_FLOOR
 
-    resolved, placements = resolve_names(
-        _name_events(session, recording.id, rows),
-        lines_from_final_segments(final_segments),
-    )
     floor_scores: dict[str, float | None] = {}
     for label, name in resolved.items():
         if name.pending:
@@ -176,16 +310,49 @@ def carry_names_to_final_speakers(
     return carried
 
 
+def follow_merge_chain(
+    session: Any, speaker: RecordingSpeaker, label: str
+) -> RecordingSpeaker:
+    """Walk to the surviving speaker of a merge chain, guarding against cycles."""
+    current = speaker
+    visited = {current.id}
+    while current.merged_into_id:
+        nxt = session.get(RecordingSpeaker, current.merged_into_id)
+        if not nxt:
+            logger.warning(
+                f"Merge chain broken for speaker {label} at ID {current.merged_into_id}"
+            )
+            break
+        if nxt.id in visited:
+            logger.warning(f"Circular merge detected for speaker {label}")
+            break
+        visited.add(nxt.id)
+        current = nxt
+    return current
+
+
+def surviving_speaker(
+    session: Any, recording_id: int, label: str
+) -> RecordingSpeaker | None:
+    """The speaker a final label ends on once the merge passes are done.
+
+    Pending names and the lines moved to live speakers both land here, so a
+    name and its lines end on one speaker.
+    """
+    speaker = session.exec(
+        select(RecordingSpeaker)
+        .where(RecordingSpeaker.recording_id == recording_id)
+        .where(RecordingSpeaker.diarization_label == label)
+    ).first()
+    return None if speaker is None else follow_merge_chain(session, speaker, label)
+
+
 def apply_pending_names(
     session: Any, recording: Any, pending: dict[str, ResolvedName]
 ) -> None:
-    """Offer each pending name on its speaker, if nothing else named it."""
+    """Offer each pending name on its speaker's survivor, if nothing else named it."""
     for label, name in pending.items():
-        speaker = session.exec(
-            select(RecordingSpeaker)
-            .where(RecordingSpeaker.recording_id == recording.id)
-            .where(RecordingSpeaker.diarization_label == label)
-        ).first()
+        speaker = surviving_speaker(session, recording.id, label)
         if speaker is None or speaker.merged_into_id is not None:
             continue
         if speaker.global_speaker_id is not None or speaker.local_name:

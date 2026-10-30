@@ -1,8 +1,54 @@
 """Speaker assignment targets, segment speakers, and utterance states."""
 
+from backend.utils.live_speaker_labels import live_speaker_display_name
+
 from .constants import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker
+
+LIVE_TARGET_CLOSED_DETAIL = (
+    "Live speakers can be chosen only while the meeting is recording or paused. "
+    "Change the speaker once processing finishes."
+)
+LIVE_TARGET_ONE_LINE_DETAIL = (
+    "A live speaker can be chosen for this line only, not the whole transcript."
+)
+
+
+def _live_assignment_target(
+    session: Any, recording_id: int, label: str | None, scope: SpeakerCorrectionScope
+) -> bool:
+    """Whether ``label`` is a live speaker heard here, open to this correction.
+
+    Gated as live names are: only while the capture runs or is paused, checked
+    under the Transcript fence the correction already holds. A live speaker
+    takes single lines only, since nothing merges live speakers yet.
+    """
+    if live_speaker_display_name(label) is None:
+        return False
+    # Deferred: the settling module loads the config manager, which a
+    # process importing the canonical pipeline must not start.
+    from backend.utils.transcript_settling import (
+        load_capture_publication,
+        publication_is_current,
+    )
+
+    transcript, recording = load_capture_publication(session, recording_id)
+    if not publication_is_current(recording, transcript, None):
+        raise RuntimeError(LIVE_TARGET_CLOSED_DETAIL)
+    if scope != SpeakerCorrectionScope.UTTERANCE_ONLY:
+        raise RuntimeError(LIVE_TARGET_ONE_LINE_DETAIL)
+    heard = session.execute(
+        select(TranscriptUtterance.id)
+        .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES))
+        .where(TranscriptUtterance.speaker_label == label)
+        .limit(1)
+    ).first()
+    if heard is None:
+        raise LookupError("Live speaker not found in this recording")
+    return True
 
 
 def resolve_assignment_target(
@@ -15,7 +61,10 @@ def resolve_assignment_target(
     diarization_label: str | None,
     source_speaker: RecordingSpeaker | None = None,
     scope: SpeakerCorrectionScope = SpeakerCorrectionScope.UTTERANCE_ONLY,
-) -> RecordingSpeaker:
+) -> RecordingSpeaker | None:
+    if _live_assignment_target(session, recording_id, diarization_label, scope):
+        return None
+
     cleaned_name = new_speaker_name.strip()
     recording_speakers = ensure_recording_speaker_aliases(session, recording_id)
 
