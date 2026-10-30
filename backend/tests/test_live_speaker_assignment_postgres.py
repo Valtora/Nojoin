@@ -400,6 +400,80 @@ async def test_a_live_speaker_with_no_speech_of_its_own_leaves_each_line_its_fin
     _assert_no_live_label_survives(body)
 
 
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "speaker_everywhere_in_recording",
+        "from_this_utterance_forward",
+        "merge_into_speaker",
+    ],
+)
+async def test_a_live_speaker_takes_one_line_only(
+    live_api: tuple[Any, ...], scope: str
+) -> None:
+    client, sessions, recording = live_api
+    url = f"/api/v1/transcripts/{recording.public_id}/utterances"
+    line = (await client.get(url)).json()["utterances"][0]
+    refused = await client.patch(
+        f"{url}/{line['id']}/speaker",
+        json={
+            "new_speaker_name": "Speaker 2",
+            "diarization_label": TWO,
+            "scope": scope,
+            "expected_revision": line["revision"],
+        },
+    )
+    assert refused.status_code == 409, refused.text
+    assert "this line only" in refused.json()["detail"]
+    after = (await client.get(url)).json()["utterances"]
+    assert [row["speaker"] for row in after] == [ONE, TWO, TWO, THREE]
+    assert after[0]["revision"] == line["revision"]
+
+
+@pytest.mark.parametrize(
+    ("status", "sealed"),
+    [(RecordingStatus.PROCESSED, False), (RecordingStatus.UPLOADING, True)],
+    ids=["processed", "stopping"],
+)
+async def test_a_live_speaker_is_offered_only_while_the_capture_runs(
+    live_api: tuple[Any, ...], status: RecordingStatus, sealed: bool
+) -> None:
+    client, sessions, recording = live_api
+    url = f"/api/v1/transcripts/{recording.public_id}/utterances"
+    line = (await client.get(url)).json()["utterances"][0]
+    async with sessions() as db:
+        current = await db.get(Recording, recording.id)
+        current.status = status
+        if sealed:
+            transcript = (
+                await db.execute(
+                    select(Transcript).where(Transcript.recording_id == recording.id)
+                )
+            ).scalar_one()
+            transcript.settling_state = {**transcript.settling_state, "sealed": True}
+        await db.commit()
+    refused = await client.patch(
+        f"{url}/{line['id']}/speaker",
+        json={
+            "new_speaker_name": "Speaker 2",
+            "diarization_label": TWO,
+            "scope": "utterance_only",
+            "expected_revision": line["revision"],
+        },
+    )
+    assert refused.status_code == 409, refused.text
+    assert "recording or paused" in refused.json()["detail"]
+    async with sessions() as db:
+        row = (
+            await db.execute(
+                select(TranscriptUtterance).where(
+                    TranscriptUtterance.public_id == line["id"]
+                )
+            )
+        ).scalar_one()
+        assert row.speaker_label == ONE and not row.manual_speaker_locked
+
+
 @contextmanager
 def _fresh_diarisation_module() -> Iterator[None]:
     """Load the real wrapper against this test's temporary third-party export."""

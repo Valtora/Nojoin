@@ -118,6 +118,7 @@ interface TranscriptViewProps {
 
 // One empty list for every render, so the memoised lines it reaches hold.
 const NO_PENDING_UPDATES: readonly string[] = [];
+const NO_LIVE_SPEAKERS: Readonly<Record<string, string>> = {};
 
 const NOTE_TIME_COLUMN =
   "min-w-16 md:min-w-[60px] shrink-0 pt-1 text-right font-mono text-sm text-contrast-icon-muted";
@@ -181,11 +182,14 @@ export default function TranscriptView({
   // often with the same contents; every line reads them.
   const speakerMap = useContentStable(speakerMapProp);
   const speakers = useContentStable(speakersProp);
-  const liveSpeakerLabels = useContentStable(useMemo(() => Object.fromEntries(
+  // Live speakers are line targets only in the live view (#861 decides it),
+  // which is the one the server accepts them from; a finished meeting that
+  // kept a live line offers none.
+  const liveSpeakerLabels = useContentStable(useMemo(() => isLive ? Object.fromEntries(
     [...new Set(segments.map((segment) => segment.speaker))]
       .filter((label) => liveSpeakerDisplayName(label) !== null)
       .map((label) => [label, segmentSpeakerDisplayName(speakerMap, label)]),
-  ), [segments, speakerMap]));
+  ) : NO_LIVE_SPEAKERS, [isLive, segments, speakerMap]));
   const globalSpeakers = useContentStable(globalSpeakersProp);
   const speakerColors = useContentStable(speakerColorsProp);
   const pendingRemoteUtteranceIds = useContentStable(pendingRemoteUtteranceIdsProp);

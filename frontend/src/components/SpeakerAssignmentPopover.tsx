@@ -173,8 +173,10 @@ export default function SpeakerAssignmentPopover({
     liveSpeakerLabels,
   ]);
 
-  const filteredLive = Object.entries(liveSpeakerLabels ?? {}).filter(([label, name]) =>
-    label !== currentSpeakerLabel && name.toLowerCase().includes(search.trim().toLowerCase()));
+  // A live speaker takes one line at a time: nothing merges live speakers
+  // yet, so Whole transcript lists none.
+  const filteredLive = scope === "utterance_only" ? Object.entries(liveSpeakerLabels ?? {}).filter(([label, name]) =>
+    label !== currentSpeakerLabel && name.toLowerCase().includes(search.trim().toLowerCase())) : [];
   // Every live label counts, the line's own included: typing its current name
   // must not offer a second speaker of that name.
   const searchNamesLiveSpeaker = Object.values(liveSpeakerLabels ?? {}).some((name) =>

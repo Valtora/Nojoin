@@ -100,3 +100,51 @@ it("offers no new speaker for the name the line's own live label already has", a
   await Promise.resolve();
   expect(requests.filter((request) => request.method === "PATCH")).toHaveLength(0);
 });
+
+it("lists live speakers for this line only, never for the whole transcript", async () => {
+  read = {
+    recording_id: "rec-1", revision: 9, settling_required: true, speakers: [], tombstones: [],
+    live_speaker_names: {},
+    utterances: [ONE, TWO].map((speaker, index) => ({
+      id: `u${index}`, revision: 3, speaker, start: index * 4, end: index * 4 + 2,
+      start_ms: index * 4000, end_ms: index * 4000 + 2000,
+      text: `Voice ${index}.`, state: "provisional", provisional: true, segment_source: "live", locked: true,
+    })),
+  };
+  render(<TranscriptSection {...props(await getTranscriptUtterances("rec-1"))} />);
+  fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Change speaker" }));
+  expect(screen.getByRole("button", { name: "Speaker 2 Recording only" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Whole transcript" }));
+  expect(screen.queryByRole("button", { name: "Speaker 2 Recording only" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "This utterance" }));
+  fireEvent.click(screen.getByRole("button", { name: "Speaker 2 Recording only" }));
+  await waitFor(() => expect(requests.filter((request) => request.method === "PATCH")).toHaveLength(1));
+  const patch = requests.find((request) => request.method === "PATCH")!;
+  expect(await patch.json()).toMatchObject({ diarization_label: TWO, scope: "utterance_only" });
+});
+
+it.each([false, true])("offers no live speaker on a processed meeting that kept a live line (rerun feed: %s)",
+  async (feed) => {
+    read = {
+      recording_id: "rec-1", revision: 9, settling_required: true, tombstones: [], live_speaker_names: {},
+      speakers: [{ id: 1, diarization_label: "SPEAKER_00", name: "Alice", recording_id: "rec-1" }] as never,
+      utterances: ["SPEAKER_00", TWO].map((speaker, index) => ({
+        id: `u${index}`, revision: 3, speaker, start: index * 4, end: index * 4 + 2,
+        start_ms: index * 4000, end_ms: index * 4000 + 2000,
+        text: `Voice ${index}.`, state: "finalized", segment_source: index ? "live" : "final", locked: true,
+      })),
+    };
+    const shown = props(await getTranscriptUtterances("rec-1"));
+    const processed = { ...shown.recording, status: RecordingStatus.PROCESSED, client_status: "idle",
+      speakers: read.speakers, transcript: { id: 1, recording_id: "rec-1", segments: [],
+        transcript_status: "completed", notes_status: "completed" } } as unknown as Recording;
+    render(<TranscriptSection {...shown} recording={processed} speakerMap={{ SPEAKER_00: "Alice" }}
+      liveTranscript={feed ? shown.liveTranscript : undefined} />);
+    expect(screen.queryByTestId("live-transcript-panel")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Alice's line at 00:00" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Change speaker" }));
+    expect(screen.getByPlaceholderText("Search or add...")).toBeInTheDocument();
+    expect(screen.queryByText("Recording only")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Speaker 2 Recording only" })).not.toBeInTheDocument();
+  });
