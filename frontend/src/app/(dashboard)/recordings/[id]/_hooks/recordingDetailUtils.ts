@@ -24,11 +24,13 @@ export const isRecordingInFlight = (recording: Recording | null | undefined) =>
  *
  * Only capture start creates a transcript as "processing"
  * (`routes_batch_init.py`), and only a finished run sets "completed".
+ * A settled meeting's reprocess keeps its settled lines, flagged by the server's `settling_required`.
  */
 export const hasInFlightTranscriptFeed = (recording: Recording | null | undefined) =>
   isLiveCaptureInProgress(recording) ||
   recording?.transcript?.transcript_status === "processing" ||
-  recording?.transcript?.transcript_status === "completed";
+  recording?.transcript?.transcript_status === "completed" ||
+  recording?.transcript?.settling_required === true;
 
 // Processed, with audio a proxy can be made from, and no proxy yet.
 const isWaitingForProxy = (recording: Recording) =>
@@ -174,6 +176,7 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.has_audio !== current.has_audio ||
   // Whether the live feed has anything to read (hasInFlightTranscriptFeed).
   polled.transcript?.transcript_status !== current.transcript?.transcript_status ||
+  polled.transcript?.settling_required !== current.transcript?.settling_required ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||
   // Changes with the notes list, which the page then fetches.
