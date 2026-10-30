@@ -436,6 +436,12 @@ For Canary, administrators can prepare the **Qwen3 forced aligner** in **Setting
 
 **Settings > Appearance > Date and time** sets the timezone Nojoin shows dates and times in, and reads the date you give an imported recording in. It can differ from your computer's timezone. Until you choose one it is UTC, or the timezone your administrator set with `DEFAULT_TIMEZONE`. System logs show UTC, as `docker logs` does, and a date with no time of day, such as a subscription's last-used date, is shown as it is.
 
+### Resources
+
+Administrators can open **Settings > System and logs > Resources** to see host CPU and RAM, accessible GPUs and Nojoin's container CPU/RAM share. Graphs keep up to five minutes (150 samples) in browser memory and refresh every two seconds while the section and browser tab are visible. Opening the page starts a new history; no history is stored on the server.
+
+The worker list shows each lane's running tasks, start times, elapsed time, reserved tasks and broker queue counts. Reports expire after 15 seconds if a worker stops reporting. Resident models use their Settings names without local filesystem paths; the final diarisation pipeline appears as **Speaker separation**. Model memory is an estimate: CUDA tensor storage excludes activations and workspaces, shared tensors are counted once, and PyTorch process reserved memory includes its allocator cache. ONNX Runtime and diarisation pipeline estimates are unavailable. An unavailable Docker connection shows an unavailable Nojoin share, rather than zero.
+
 ### Language Preferences
 
 Two per-user settings:

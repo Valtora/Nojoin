@@ -50,7 +50,7 @@ from backend.core.security import (
     validate_password_policy,
 )
 from backend.core.task_dispatch import dispatch_task
-from backend.models.system_public import ModelStatusInfo
+from backend.models.system_public import ModelStatusInfo, SystemResources
 from backend.models.user import User
 from backend.preload_models import check_model_status
 from backend.seed_demo import seed_demo_data
@@ -170,6 +170,15 @@ def get_docker_client() -> DockerClient:
     except DockerException as e:
         logger.error(f"Failed to initialize Docker client: {e}")
         raise
+
+
+@router.get("/resources", response_model=SystemResources)
+async def get_resources(
+    current_user: User = Depends(get_current_admin_user),
+) -> SystemResources:
+    from backend.api.services.resources import system_resources
+
+    return await asyncio.to_thread(system_resources, get_docker_client)
 
 
 ALLOWED_CONTAINERS = {

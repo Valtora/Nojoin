@@ -845,6 +845,14 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["health", "status", "worker", "queue", "database", "readiness", "pipeline", "gpu"],
   },
   {
+    id: "system-resources",
+    label: "Resources",
+    description: "Host CPU, RAM, GPUs and Nojoin worker activity.",
+    category: "system",
+    access: "admin",
+    keywords: ["resources", "cpu", "ram", "gpu", "vram", "worker", "queue", "models"],
+  },
+  {
     id: "system-logs",
     label: "Logs",
     description: "Live output from the Nojoin services.",
