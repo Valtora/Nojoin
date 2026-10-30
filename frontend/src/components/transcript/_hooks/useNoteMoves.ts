@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import { moveTargets, targetBeside, type MoveTarget } from "@/lib/notes/noteMoves";
 import { holdPendingNoteWrite } from "@/lib/notes/noteOutboxes";
@@ -11,6 +11,7 @@ import type { NoteLineMove } from "../../notes/TimelineNoteLine";
 import { formatTime } from "../transcriptDisplay";
 
 import { useNoteDrag } from "./useNoteDrag";
+import { useStableCallback } from "./useStableCallback";
 
 /** Saves a point note's new moment; resolves to why it was refused, or null. */
 export type MoveNoteHandler = (note: EditableNote, anchorMs: number) => Promise<NoteEditRefusal>;
@@ -79,7 +80,7 @@ export function useNoteMoves<N extends MovableNote>({
     (button ?? chip ?? region).focus();
   });
 
-  const moveTo = async (note: N, target: MoveTarget, direction: Direction | null) => {
+  const moveTo = useCallback(async (note: N, target: MoveTarget, direction: Direction | null) => {
     if (!onMoveNote) return;
     setRefusal(null);
     if (direction) pendingFocus.current = { noteId: note.id, direction };
@@ -96,7 +97,7 @@ export function useNoteMoves<N extends MovableNote>({
     } finally {
       release();
     }
-  };
+  }, [onMoveNote, segments]);
 
   const { drag, start } = useNoteDrag({
     regionRef,
@@ -106,9 +107,10 @@ export function useNoteMoves<N extends MovableNote>({
       if (placement) void moveTo(placement.note, target, null);
     },
   });
+  const startDrag = useStableCallback(start);
 
   /** The Move controls for a note, or undefined for one that can't move here. */
-  const controlsFor = (note: N, canMove: boolean): NoteLineMove | undefined => {
+  const controlsFor = useCallback((note: N, canMove: boolean): NoteLineMove | undefined => {
     const after = shownAfter.get(note.id);
     if (!onMoveNote || !canMove || note.kind !== "point" || after === undefined) return undefined;
     const step = (direction: Direction) => {
@@ -118,17 +120,18 @@ export function useNoteMoves<N extends MovableNote>({
     return {
       onUp: step("up"),
       onDown: step("down"),
-      onGripPointerDown: (event) => start(event, note.id, after),
+      onGripPointerDown: (event) => startDrag(event, note.id, after),
       dragging: drag?.noteId === note.id,
       refusal: refusal?.noteId === note.id ? refusal.message : null,
     };
-  };
+  }, [shownAfter, onMoveNote, targets, moveTo, startDrag, drag, refusal]);
 
   /** The gap a note shows in, for a drag over it: the shown line it follows. */
-  const gapOf = (noteId: string) => shownAfter.get(noteId);
+  const gapOf = useCallback((noteId: string) => shownAfter.get(noteId), [shownAfter]);
   // Retrying can now fold the focused recovery row into the same chip.
-  const focusAfterRetry = (noteId: string) => { pendingFocus.current = { noteId, direction: null }; };
+  const focusAfterRetry = useCallback((noteId: string) => { pendingFocus.current = { noteId, direction: null }; }, []);
+  const hasRefusal = useCallback((noteId: string) => refusal?.noteId === noteId, [refusal]);
 
   return { controlsFor, gapOf, focusAfterRetry,
-    hasRefusal: (noteId: string) => refusal?.noteId === noteId, drag, announcement };
+    hasRefusal, drag, announcement };
 }

@@ -6,7 +6,7 @@ import { CAPTURE_NOTE_BODY, captureShortcutLabel, useCaptureActions } from "@/li
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import type { AudioClock } from "@/lib/notes/audioClock";
 import { segmentStartMs } from "@/lib/notes/placement";
-import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import { selectComposer, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
 
 import LiveNoteComposer from "./LiveNoteComposer";
@@ -20,7 +20,7 @@ interface Props {
 
 /** One draft owner and screen-capture shortcut for every recording state. */
 export default function RecordingNoteComposer({ recording, segments, audioClock, boxRef }: Props) {
-  const { outbox, snapshot } = useNoteOutbox(recording.id);
+  const { outbox, snapshot } = useNoteOutbox(recording.id, selectComposer);
   const activeCapture = isLiveCaptureInProgress(recording);
   const readAudioNow = useCallback(() => audioClock?.audioNow(recording.id) ??
     (activeCapture

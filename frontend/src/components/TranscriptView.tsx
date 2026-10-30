@@ -8,7 +8,7 @@ import {
   TimelineNote,
   TranscriptSpeakerAssignment,
 } from "@/types";
-import { Fragment, useMemo, useState, type MouseEvent } from "react";
+import { Fragment, useCallback, useMemo, useState, type MouseEvent } from "react";
 import { ArrowDown, Radio } from "lucide-react";
 import { ButtonBase } from "./ui/nativeBases";
 import { buildLiveTranscriptPresentation, liveRenderIdentity,
@@ -41,7 +41,7 @@ import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
-import { indexOverlaps, OverlapContext } from "./transcript/OverlapIndicator";
+import { indexOverlaps } from "./transcript/OverlapIndicator";
 import { appendPendingTranscriptGroups, isDiarisationPending } from "./transcript/pendingTranscriptGroups";
 
 interface TranscriptViewProps {
@@ -303,10 +303,20 @@ export default function TranscriptView({
   // An editor still open holds typed text or a write, so another note's marks
   // or pencil never replace it; one left as it opened has already closed on
   // the press (`NoteOnSelectionPopover`).
-  const openNoteEditor = (next: EditingNote) =>
-    setEditingNote((open) => (open !== null && open === shownEditor ? open : next));
-  const canEditNote = (note: TimelineNote | InlineNote) =>
-    onEditNote !== undefined && isSavedNote(note) && note.revision !== undefined;
+  const openNoteEditor = useCallback((next: EditingNote) =>
+    setEditingNote((open) => (open !== null && open === shownEditor ? open : next)), [shownEditor, setEditingNote]);
+  const hasNoteEditor = onEditNote !== undefined;
+  const canRetryNote = onRetryNote !== undefined;
+  const canDiscardNote = onDiscardNote !== undefined;
+  const retryNote = useStableCallback((key: string) => onRetryNote?.(key));
+  const discardNote = useStableCallback((key: string) => onDiscardNote?.(key));
+  const canEditNote = useCallback((note: TimelineNote | InlineNote) =>
+    hasNoteEditor && isSavedNote(note) && note.revision !== undefined, [hasNoteEditor]);
+  const { controlsFor, gapOf, focusAfterRetry, hasRefusal } = moves;
+  const isFoldable = useCallback((note: TimelineNote | InlineNote) =>
+    (!("status" in note) || note.status !== "failed") && !hasRefusal(note.id) && shownEditor?.noteId !== note.id,
+  [hasRefusal, shownEditor]);
+  const toggleLineNotes = useStableCallback(lineNotes.toggle);
   // A click on a note's marked words edits the note, unless it ended a
   // drag that selected text, which is for a new note or a copy.
   const editNoteFromText = (event: MouseEvent<HTMLDivElement>) => {
@@ -317,10 +327,10 @@ export default function TranscriptView({
     if (window.getSelection()?.isCollapsed === false) return;
     openNoteEditor({ noteId, anchor: mark });
   };
-  const renderNote = (note: TimelineNote | InlineNote) => {
+  const renderNote = useCallback((note: TimelineNote | InlineNote) => {
     const key = "key" in note ? note.key : note.id;
     return (
-      <LineItem key={key} className="px-2" data-testid={live ? "live-transcript-note" : undefined} data-note-gap={moves.gapOf(note.id)}>
+      <LineItem key={key} className="px-2" data-testid={live ? "live-transcript-note" : undefined} data-note-gap={gapOf(note.id)}>
         <TimelineNoteLine
           noteId={note.id}
           body={note.body}
@@ -339,15 +349,16 @@ export default function TranscriptView({
           timeColumnClassName={NOTE_TIME_COLUMN}
           status={"status" in note ? note.status : "saved"}
           error={"error" in note ? note.error : null}
-          onRetry={onRetryNote ? () => { moves.focusAfterRetry(note.id); onRetryNote(key); } : undefined}
-          onDiscard={onDiscardNote ? () => onDiscardNote(key) : undefined}
+          onRetry={canRetryNote ? () => { focusAfterRetry(note.id); retryNote(key); } : undefined}
+          onDiscard={canDiscardNote ? () => discardNote(key) : undefined}
           // Not while its editor is open: a move would take the pencil it sits against.
-          move={moves.controlsFor(note, (live ? isSavedNote(note) && note.revision !== undefined : canEditNote(note)) && shownEditor?.noteId !== note.id)}
+          move={controlsFor(note, (live ? isSavedNote(note) && note.revision !== undefined : canEditNote(note)) && shownEditor?.noteId !== note.id)}
           attachment={note.attachment}
         />
       </LineItem>
     );
-  };
+  }, [LineItem, live, gapOf, wordsChanged, canEditNote, openNoteEditor, canRetryNote, canDiscardNote,
+    retryNote, discardNote, focusAfterRetry, controlsFor, shownEditor]);
 
   // --- Grouping Logic ---
   const trackGroups = useMemo(
@@ -447,7 +458,6 @@ export default function TranscriptView({
     );
 
   return (
-    <OverlapContext.Provider value={overlapBySegment}>
     <div id="transcript-view" data-testid={live ? "live-transcript-panel" : undefined}
       data-paused={live ? String(!!live.isPaused) : undefined} className="flex flex-col h-full relative min-h-0">
       <TranscriptToolbar
@@ -530,6 +540,7 @@ export default function TranscriptView({
                 <LineItem>
                 <TranscriptGroup
                   group={group}
+                  overlaps={overlapBySegment}
                   isGroupActive={isGroupActive}
                   // Only the group playback is in shows play or pause, so
                   // only it redraws when playback starts or stops.
@@ -554,20 +565,20 @@ export default function TranscriptView({
                   editor={holdsTheEditor(group.items) ? editing.editor : null}
                 />
                 </LineItem>
-                <CollapsedLineNotes
+                {notesAfterGroup.length > 0 ? <CollapsedLineNotes
                   as={LineItem}
                   notes={notesAfterGroup}
-                  isFoldable={(note) => (!("status" in note) || note.status !== "failed") &&
-                    !moves.hasRefusal(note.id) && shownEditor?.noteId !== note.id}
+                  isFoldable={isFoldable}
                   open={lineNotes.isExpanded(noteLineId)}
-                  onToggle={() => lineNotes.toggle(noteLineId)}
+                  lineId={noteLineId}
+                  onToggle={toggleLineNotes}
                   gapIndex={last.index}
                   saving={notesAfterGroup.some((note) => "status" in note && note.status === "saving")}
                   renderNote={renderNote}
-                  lineTime={() => formatTime(group.items[group.items.length - 1].segment.start)}
+                  lineTime={formatTime(last.segment.start)}
                   timeColumnClassName={NOTE_TIME_COLUMN}
                   className="px-2"
-                />
+                /> : null}
               </Fragment>
             );
           }),
@@ -602,6 +613,5 @@ export default function TranscriptView({
         />
       ) : null}
     </div>
-    </OverlapContext.Provider>
   );
 }

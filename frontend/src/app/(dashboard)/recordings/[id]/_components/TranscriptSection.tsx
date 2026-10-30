@@ -16,7 +16,7 @@ import { ClientStatus } from "@/types";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, shownNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
-import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import { selectNoteList, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import { useSpeakerNameReview } from "@/lib/useSpeakerNameReview";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -153,7 +153,7 @@ export default function TranscriptSection({
   // discarded: the outbox outlives the live view, and its notes land here.
   // A note added here from a line's menu shows on its line while it saves;
   // the others still on their way are listed above the transcript.
-  const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id);
+  const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id, selectNoteList);
   // Edits, moves and deletes made here or in My notes show at once: a finished
   // recording's list is not fetched again.
   const { apply: applyEdits, edit: editNote, remove: removeNote, move: moveNote } = noteEdits;
