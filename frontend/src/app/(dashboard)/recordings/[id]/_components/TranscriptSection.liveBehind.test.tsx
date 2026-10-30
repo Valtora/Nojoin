@@ -2,7 +2,10 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TranscriptSection from "@/test/TranscriptSectionWithEdits";
-import { LIVE_TRANSCRIPT_POLL_INTERVAL_MS } from "@/components/transcript/_hooks/useLiveTranscript";
+import {
+  LIVE_BEHIND_CLEAR_READS,
+  LIVE_TRANSCRIPT_POLL_INTERVAL_MS,
+} from "@/components/transcript/_hooks/useLiveTranscript";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
 import { useRecordingTranscript } from "../_hooks/useRecordingTranscript";
@@ -78,39 +81,48 @@ describe("live transcript behind notice", () => {
     vi.useRealTimers();
   });
 
-  it("appears while the live read says it is behind and clears once two reads find it caught up", async () => {
-    getTranscriptUtterances
-      .mockResolvedValueOnce(read(true))
-      .mockResolvedValueOnce(read(false, ["Caught up at last."]))
-      .mockResolvedValueOnce(read(false, ["Caught up at last.", "And still."]));
+  it("appears while the live read says it is behind and clears after a 20 s caught-up streak", async () => {
+    expect(LIVE_BEHIND_CLEAR_READS * LIVE_TRANSCRIPT_POLL_INTERVAL_MS).toBeGreaterThanOrEqual(20_000);
+    getTranscriptUtterances.mockResolvedValueOnce(read(true));
+    for (let index = 1; index <= LIVE_BEHIND_CLEAR_READS; index += 1) {
+      getTranscriptUtterances.mockResolvedValueOnce(read(false, [`Caught up ${index}.`]));
+    }
     render(<LiveTranscriptTab recording={recording()} />);
     await settle();
     expect(screen.getByText(NOTICE)).toHaveAttribute("role", "status");
 
-    await poll();
-    expect(screen.getByText("Caught up at last.")).toBeInTheDocument();
-    expect(screen.getByText(NOTICE)).toBeInTheDocument();
-
-    await poll();
-    expect(screen.getByText("And still.")).toBeInTheDocument();
-    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
-  });
-
-  it("stays up while slow runs make reads alternate between behind and caught up (issue #812)", async () => {
-    const pattern = [true, false, true, false, true, false, false];
-    for (const behind of pattern) getTranscriptUtterances.mockResolvedValueOnce(read(behind));
-    render(<LiveTranscriptTab recording={recording()} />);
-    await settle();
-    const notice = screen.getByText(NOTICE);
-
-    for (let index = 1; index < pattern.length - 1; index += 1) {
+    for (let index = 1; index < LIVE_BEHIND_CLEAR_READS; index += 1) {
       await poll();
-      // The same element throughout: nothing re-announces or shifts the transcript.
-      expect(screen.getByText(NOTICE)).toBe(notice);
+      expect(screen.getByText(`Caught up ${index}.`)).toBeInTheDocument();
+      expect(screen.getByText(NOTICE)).toBeInTheDocument();
     }
     await poll();
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
   });
+
+  it.each([11, 12, 16, 19])(
+    "stays up while %i s lane runs make reads swing between behind and caught up (issue #812)",
+    async (runSeconds) => {
+      // The lag a read sees is about T just after a run ends and grows to 2T
+      // before the next one ends: behind once it reaches 20 s.
+      const reads = 60;
+      const pattern = Array.from({ length: reads }, (_, index) => {
+        const sinceRunEnd = (index * LIVE_TRANSCRIPT_POLL_INTERVAL_MS / 1000) % runSeconds;
+        return runSeconds + sinceRunEnd >= 20;
+      });
+      pattern[0] = true;
+      for (const behind of pattern) getTranscriptUtterances.mockResolvedValueOnce(read(behind));
+      render(<LiveTranscriptTab recording={recording()} />);
+      await settle();
+      const notice = screen.getByText(NOTICE);
+
+      for (let index = 1; index < reads; index += 1) {
+        await poll();
+        // The same element throughout: nothing re-announces or shifts the transcript.
+        expect(screen.getByText(NOTICE)).toBe(notice);
+      }
+    },
+  );
 
   it("does not show when the first read finds the lane caught up", async () => {
     getTranscriptUtterances.mockResolvedValue(read(false, ["Keeping up."]));

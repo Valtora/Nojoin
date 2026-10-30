@@ -45,12 +45,16 @@ export const LIVE_TRANSCRIPT_READ_TIMEOUT_MS = 15_000;
 
 /**
  * Reads in a row that must find the lane caught up before the behind notice
- * clears (issue #812). The lane writes `live/state.json` only when a run ends,
- * so the lag a read measures swings between about one and two runs' length:
- * with runs of 10 to 20 s a single read could clear the notice between two
- * that raise it again, re-announcing it and shifting the transcript each time.
+ * clears (issue #812), about 20 s at one read per poll. The lane writes
+ * `live/state.json` only when a run ends, so for runs of length T the lag a
+ * read measures swings between about T and 2T, and stays under the 20 s
+ * threshold only for the first 20 s less T after each run ends. A streak as
+ * long as the threshold outlasts that window for any run under 20 s, so the
+ * notice holds steady instead of re-announcing and shifting the transcript
+ * every run. The cost is that it can stay up to about 20 s after the lane
+ * catches up.
  */
-export const LIVE_BEHIND_CLEAR_READS = 2;
+export const LIVE_BEHIND_CLEAR_READS = 7;
 
 export interface LiveTranscript {
   speakers: readonly RecordingSpeaker[];
