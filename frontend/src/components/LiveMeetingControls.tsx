@@ -6,7 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
 import { updateRecordingMaxSpeakers } from "@/lib/api";
-import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { useNotificationStore } from "@/lib/notificationStore";
 
@@ -74,7 +74,6 @@ export default function LiveMeetingControls({
   const {
     cancel,
     controller,
-    elapsedSeconds,
     pause,
     recordingId,
     ownedRecordingId,
@@ -84,8 +83,9 @@ export default function LiveMeetingControls({
     status,
     stop,
     stopStage,
-    uploadQueue,
   } = useCapture();
+  const elapsedSeconds = useCaptureState((state) => state.elapsedSeconds);
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
 
   const { addNotification } = useNotificationStore();
   const isRecording = status === "recording";
@@ -491,7 +491,8 @@ export default function LiveMeetingControls({
  * with its controls and, while it runs, under the recordings list's status.
  */
 export function CaptureNotices() {
-  const { coverageWarning, dismissCoverageWarning, status, uploadQueue } = useCapture();
+  const { coverageWarning, dismissCoverageWarning, status } = useCapture();
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
   const isFinalizing = status === "finalizing";
   const showUploadBacklog = isFinalizing
     ? uploadQueue.segments > 0

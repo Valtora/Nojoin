@@ -41,8 +41,9 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     status: "idle",
     runtimeActive: false,
     stop: vi.fn(),
-    uploadQueue: { segments: 0, seconds: 0 },
   }),
+  useCaptureState: (select: (state: { elapsedSeconds: number; uploadQueue: { segments: number; seconds: number } }) => unknown) =>
+    select({ elapsedSeconds: 0, uploadQueue: { segments: 0, seconds: 0 } }),
 }));
 
 const SESSION_ENDED = {

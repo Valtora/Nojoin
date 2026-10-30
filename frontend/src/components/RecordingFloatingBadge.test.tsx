@@ -21,7 +21,6 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
     controller: { getState: () => ({ error: null }) },
-    elapsedSeconds: 12,
     pause: vi.fn(),
     resume: (...args: unknown[]) => resume(...args),
     runtimeActive: true,
@@ -29,6 +28,8 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     stop: vi.fn(),
     recordingId: "rec-1",
   }),
+  useCaptureState: (select: (state: { elapsedSeconds: number }) => unknown) =>
+    select({ elapsedSeconds: 12 }),
 }));
 
 vi.mock("@/lib/notificationStore", () => ({

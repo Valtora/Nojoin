@@ -99,6 +99,8 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     refreshPausedRecording,
     start: (...args: unknown[]) => start(...args),
   }),
+  useCaptureState: (select: (state: { elapsedSeconds: number; uploadQueue: { segments: number; seconds: number } }) => unknown) =>
+    select({ elapsedSeconds: 0, uploadQueue: { segments: 0, seconds: 0 } }),
 }));
 
 vi.mock("@/lib/connectivity/monitor", () => ({
