@@ -100,6 +100,20 @@ AGREEING_PICK: Layout = [
     (14.0, 20.0, ONE, True),
 ]
 AGREEING_PICK_FINAL = [(0.0, 12.0, "SPEAKER_01"), (14.0, 20.0, "SPEAKER_00")]
+# SHORT_PICK's voices, numbered the other way round by a later run.
+SWAPPED_FINAL = [
+    (0.0, 20.4, "SPEAKER_01"),
+    (21.0, 25.0, "SPEAKER_00"),
+    (26.0, 30.0, "SPEAKER_00"),
+]
+# SHORT_PICK's live lines, each kept as a final line.
+LINE_PER_LIVE_LINE_FINAL = [
+    (0.0, 8.0, "SPEAKER_00"),
+    (8.0, 10.0, "SPEAKER_00"),
+    (10.0, 20.4, "SPEAKER_00"),
+    (21.0, 25.0, "SPEAKER_01"),
+    (26.0, 30.0, "SPEAKER_01"),
+]
 
 
 def _words(start: float, end: float, prefix: str) -> list[dict[str, Any]]:
@@ -263,6 +277,98 @@ async def _publish(
 
 def _labels(speakers: list[dict[str, Any]]) -> set[str]:
     return {speaker["diarization_label"] for speaker in speakers}
+
+
+async def _named(
+    client: AsyncClient, recording: Recording
+) -> list[tuple[float, float, str | None, bool]]:
+    """Each line's span, its speaker's name, and whether its speaker is locked."""
+    lines, speakers = await _read(client, recording)
+    names = {row["diarization_label"]: row["local_name"] for row in speakers}
+    return [
+        (
+            line["start"],
+            line["end"],
+            names.get(line["speaker"]),
+            line["speaker_manually_edited"],
+        )
+        for line in lines
+    ]
+
+
+async def _reprocess_settled(
+    sessions: Any, recording: Recording, final: list[dict[str, Any]]
+) -> None:
+    """Retry Processing on a settled recording: the production reset, then a run."""
+    from backend.api.v1.endpoints.recordings.helpers import (
+        _reset_generated_recording_state,
+    )
+
+    async with sessions() as db:
+        await _reset_generated_recording_state(db, recording.id)
+        await db.commit()
+    await _publish(sessions, recording, final)
+
+
+# Alice's 2 s line moved to Bob, after the word split.
+ALICE_AND_BOB = [
+    (0.0, 8.05, "Alice Example", False),
+    (8.05, 10.05, "Bob Example", True),
+    (10.05, 20.4, "Alice Example", False),
+    (21.0, 25.0, "Bob Example", False),
+    (26.0, 30.0, "Bob Example", False),
+]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("live_api", [SHORT_PICK], indirect=True)
+async def test_a_live_pick_follows_its_person_through_a_relabelled_reprocess(
+    live_api: tuple[Any, ...],
+) -> None:
+    client, sessions, recording = live_api
+    for label, name in ((ONE, "Alice Example"), (TWO, "Bob Example")):
+        named = await client.put(
+            f"/api/v1/speakers/recordings/{recording.public_id}/live/{label}",
+            json={"name": name},
+        )
+        assert named.status_code == 200, named.text
+    await _pick(client, recording, 1)
+    await _publish(sessions, recording, _final(SHORT_PICK_FINAL, timed=True))
+    assert await _named(client, recording) == ALICE_AND_BOB
+    # The names follow the voices to their new labels, and so must the pick.
+    await _reprocess_settled(sessions, recording, _final(SWAPPED_FINAL, timed=True))
+    assert await _named(client, recording) == ALICE_AND_BOB
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("live_api", [SHORT_PICK], indirect=True)
+async def test_a_processed_correction_follows_its_person_through_a_relabelled_reprocess(
+    live_api: tuple[Any, ...],
+) -> None:
+    client, sessions, recording = live_api
+    await _publish(sessions, recording, _final(LINE_PER_LIVE_LINE_FINAL, timed=True))
+    url = f"/api/v1/speakers/recordings/{recording.public_id}"
+    for label, name in (("SPEAKER_00", "Alice Example"), ("SPEAKER_01", "Bob Example")):
+        renamed = await client.put(
+            url, json={"diarization_label": label, "global_speaker_name": name}
+        )
+        assert renamed.status_code == 200, renamed.text
+    line = (await _read(client, recording))[0][1]
+    corrected = await client.patch(
+        f"/api/v1/transcripts/{recording.public_id}/utterances/{line['id']}/speaker",
+        json={
+            "new_speaker_name": "Bob Example",
+            "diarization_label": "SPEAKER_01",
+            "scope": "utterance_only",
+            "expected_revision": line["revision"],
+        },
+    )
+    assert corrected.status_code == 200, corrected.text
+    assert [row[2:] for row in await _named(client, recording)] == [
+        (name, locked) for *_, name, locked in ALICE_AND_BOB
+    ]
+    await _reprocess_settled(sessions, recording, _final(SWAPPED_FINAL, timed=True))
+    assert await _named(client, recording) == ALICE_AND_BOB
 
 
 @pytest.mark.anyio

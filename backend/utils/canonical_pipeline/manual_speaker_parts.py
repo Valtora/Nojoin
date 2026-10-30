@@ -23,6 +23,13 @@ A corrected line whose bounds a final segment matches exactly is the
 finaliser's to match: it keeps its own row, speaker and lock there, and carries
 onto nothing else. Nothing here changes the final diarisation.
 
+A choice made in an earlier run names one of the recording's speakers, and a
+settled reprocess keeps both the line and that speaker's row. Speaker
+assignment reuses rows by diarisation label, so after a relabel the row can
+hold another voice, under the name that followed that voice. The choice was the
+person, so first it follows its speaker's own speech, as names do
+(``follow_chosen_speakers``).
+
 A line moved by hand to a live speaker has reached a processed speaker by now
 whenever processing found any (``_move_live_lines``). One still holding the
 raw live label found none, as when diarisation is off or fails. It carries
@@ -37,7 +44,11 @@ from itertools import groupby
 from typing import Any
 
 from backend.models.pipeline import TranscriptUtterance
+from backend.models.speaker import RecordingSpeaker
 from backend.utils.live_speaker_labels import live_speaker_display_name
+from backend.utils.speaker_names.anchors import Span, lines_from_final_segments
+from backend.utils.speaker_names.resolve import NameEvent, place_event
+from backend.utils.speaker_names.sources import AUTHORITY, KIND_NAME, SOURCE_USER
 from backend.utils.word_text import reconstruct_text_from_words
 from backend.utils.word_times import has_word_timing
 
@@ -95,6 +106,91 @@ def _chosen_labels(
         or str(line.speaker_label or "")
         for line in lines
     }
+
+
+def _disjoint(spans: Iterable[Span]) -> tuple[Span, ...]:
+    merged: list[Span] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return tuple(merged)
+
+
+def _surviving(
+    speaker: RecordingSpeaker, by_id: Mapping[int, RecordingSpeaker]
+) -> RecordingSpeaker:
+    seen = {speaker.id}
+    while speaker.merged_into_id and speaker.merged_into_id not in seen:
+        target = by_id.get(speaker.merged_into_id)
+        if target is None:
+            break
+        seen.add(target.id)
+        speaker = target
+    return speaker
+
+
+def follow_chosen_speakers(
+    lines: Sequence[TranscriptUtterance],
+    final_segments: Sequence[dict[str, Any]],
+    speakers: Sequence[RecordingSpeaker],
+) -> None:
+    """Move each chosen speaker's lines to the speaker now holding its speech.
+
+    The chosen speaker's own lines from the earlier run, less any moved by
+    hand, are placed on this run's final speakers as a user's name is
+    (``place_event``), and the choice moves to the surviving speaker they land
+    on, as ``_move_live_lines`` moves a live pick. A chosen speaker with no
+    such lines (one the correction itself made, a live pick placed this run,
+    or one whose every line was moved by hand), or a run with no final
+    speakers, keeps its choice as it is. ``final_segments`` are this run's,
+    before preservation adds lines it keeps.
+    """
+    chosen = {
+        line.recording_speaker_id
+        for line in lines
+        if carries_manual_speaker(line) and line.recording_speaker_id is not None
+    }
+    final_lines = lines_from_final_segments(final_segments)
+    if not chosen or not final_lines:
+        return
+    speech: dict[int, list[Span]] = defaultdict(list)
+    for line in lines:
+        speaker_id = line.recording_speaker_id
+        if speaker_id in chosen and not line.manual_speaker_locked:
+            speech[speaker_id].append((line.start_ms, line.end_ms))
+    by_id = {int(speaker.id): speaker for speaker in speakers if speaker.id}
+    by_label = {
+        speaker.diarization_label: speaker
+        for speaker in speakers
+        if speaker.diarization_label
+    }
+    moved: dict[int, RecordingSpeaker] = {}
+    for speaker_id, spans in speech.items():
+        disjoint = _disjoint(spans)
+        label = place_event(
+            NameEvent(
+                event_id=0,
+                kind=KIND_NAME,
+                name="",
+                global_speaker_id=None,
+                source=SOURCE_USER,
+                authority=AUTHORITY[SOURCE_USER],
+                anchor_start_ms=disjoint[0][0],
+                anchor_end_ms=disjoint[-1][1],
+                anchor_spans=disjoint,
+            ),
+            final_lines,
+        ).label
+        holder = by_label.get(label or "")
+        if holder is not None:
+            moved[speaker_id] = _surviving(holder, by_id)
+    for line in lines:
+        target = moved.get(line.recording_speaker_id or 0)
+        if carries_manual_speaker(line) and target is not None:
+            line.recording_speaker_id = target.id
+            line.speaker_label = target.diarization_label
 
 
 def _segment_bounds(segment: dict[str, Any]) -> Bounds:
@@ -267,6 +363,7 @@ __all__ = [
     "UNTIMED_MIN_SHARE",
     "carries_manual_speaker",
     "final_speaker_value",
+    "follow_chosen_speakers",
     "manual_speaker_key",
     "split_for_manual_speakers",
     "unplaced_live_pick",

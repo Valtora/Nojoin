@@ -4,6 +4,7 @@ from .assignment import _resolve_recording_speaker_for_value
 from .constants import *
 from .manual_speaker_parts import (
     final_speaker_value,
+    follow_chosen_speakers,
     split_for_manual_speakers,
     unplaced_live_pick,
 )
@@ -189,6 +190,7 @@ def finalize_utterances_from_segments(
         idempotency_key=run_idempotency_key,
     )
 
+    final_pass_segments = segments
     segments = _settled_segments(transcript, active_utterances, segments)
 
     recording_speakers = ensure_recording_speaker_aliases(
@@ -196,7 +198,9 @@ def finalize_utterances_from_segments(
         recording_id,
         source_run_id=processing_run.id,
     )
-    # A speaker chosen for a line goes to the final words that line covers.
+    # A speaker chosen for a line follows that speaker's speech into this run,
+    # then goes to the final words the line covers.
+    follow_chosen_speakers(active_utterances, final_pass_segments, recording_speakers)
     segments, manual_sources = split_for_manual_speakers(
         active_utterances,
         segments,

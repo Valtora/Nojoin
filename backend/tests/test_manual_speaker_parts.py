@@ -7,9 +7,11 @@ from typing import Any
 import pytest
 
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
+from backend.models.speaker import RecordingSpeaker
 from backend.utils.canonical_pipeline.manual_speaker_parts import (
     UNTIMED_MIN_SHARE,
     final_speaker_value,
+    follow_chosen_speakers,
     split_for_manual_speakers,
     unplaced_live_pick,
 )
@@ -257,3 +259,60 @@ def test_a_second_line_with_the_same_bounds_is_not_matched_twice() -> None:
         lines, [segment, _segment(8.0, 10.5, timed=False)]
     )
     assert sources == [frozenset(), frozenset({2})]
+
+
+def _speakers(*labels: str) -> list[RecordingSpeaker]:
+    return [
+        RecordingSpeaker(id=index, recording_id=1, diarization_label=label)
+        for index, label in enumerate(labels, start=7)
+    ]
+
+
+def _earlier_run() -> list[TranscriptUtterance]:
+    """Speaker 7's line at 8-10 s moved to speaker 8, whose own speech is 21-30 s."""
+    return [
+        _line(1, (0.0, 8.0), label="SPEAKER_00", locked=False),
+        _line(2, (8.0, 10.0), label="SPEAKER_01", speaker_id=8),
+        _line(3, (21.0, 25.0), label="SPEAKER_01", speaker_id=8, locked=False),
+        _line(4, (26.0, 30.0), label="SPEAKER_01", speaker_id=8, locked=False),
+    ]
+
+
+def test_a_choice_follows_its_speakers_speech_to_a_new_label() -> None:
+    lines = _earlier_run()
+    # This run numbers the two voices the other way round.
+    final = [
+        _segment(0.0, 20.4, speaker="SPEAKER_01"),
+        _segment(21.0, 30.0, speaker="SPEAKER_00"),
+    ]
+    follow_chosen_speakers(lines, final, _speakers("SPEAKER_00", "SPEAKER_01"))
+    assert (lines[1].recording_speaker_id, lines[1].speaker_label) == (7, "SPEAKER_00")
+    # Only the chosen line moves; the earlier run's own lines are the finaliser's.
+    assert [line.recording_speaker_id for line in lines] == [7, 7, 8, 8]
+    parts, sources = split_for_manual_speakers(
+        lines, final, {7: "SPEAKER_00", 8: "SPEAKER_01"}
+    )
+    assert sources[:3] == [frozenset(), frozenset({2}), frozenset()]
+    assert parts[1]["text"] == "w16 w17 w18 w19"
+
+
+def test_a_choice_follows_a_merge_to_its_survivor() -> None:
+    lines = _earlier_run()
+    speakers = _speakers("SPEAKER_00", "SPEAKER_01", "SPEAKER_02")
+    speakers[1].merged_into_id = 9
+    final = [_segment(21.0, 30.0, speaker="SPEAKER_01")]
+    follow_chosen_speakers(lines, final, speakers)
+    assert lines[1].recording_speaker_id == 9
+
+
+@pytest.mark.parametrize("case", ["no-speech", "no-final-speakers"])
+def test_a_choice_with_nothing_to_follow_keeps_its_speaker(case: str) -> None:
+    lines = _earlier_run()
+    if case == "no-speech":
+        # Every line of the chosen speaker was moved by hand.
+        lines = lines[:2]
+        final = [_segment(0.0, 30.0, speaker="SPEAKER_00")]
+    else:
+        final = [_segment(0.0, 30.0, speaker="UNKNOWN")]
+    follow_chosen_speakers(lines, final, _speakers("SPEAKER_00", "SPEAKER_01"))
+    assert (lines[1].recording_speaker_id, lines[1].speaker_label) == (8, "SPEAKER_01")
