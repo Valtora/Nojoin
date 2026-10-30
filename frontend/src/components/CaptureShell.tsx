@@ -83,13 +83,17 @@ export default function CaptureShell({ children }: CaptureShellProps) {
       router.push("/recordings");
 
         } catch (cancelError: unknown) {
-      addNotification({
-        type: "error",
-        message: getErrorMessage(
-          cancelError,
-          "Failed to discard the paused recording.",
-        ),
-      });
+      // A refusal the controller already reports, such as a capture carried
+      // on elsewhere since the dialog opened, is not reported twice.
+      if (!controller.getState().error) {
+        addNotification({
+          type: "error",
+          message: getErrorMessage(
+            cancelError,
+            "Failed to discard the paused recording.",
+          ),
+        });
+      }
     } finally {
       setBusyAction(null);
     }

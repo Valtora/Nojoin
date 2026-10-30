@@ -277,13 +277,18 @@ export default function ChatPanel({
             <ButtonBase
               id="chat-context-toggle"
               onClick={() => setShowTagFilter(!showTagFilter)}
+              // Its word is hidden on a phone, where the icon alone shows.
+              aria-label={selectedTagIds.length > 0
+                ? `Context, ${selectedTagIds.length} tag${selectedTagIds.length === 1 ? "" : "s"} selected`
+                : "Context"}
+              aria-expanded={showTagFilter}
               className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border transition-colors ${
                 showTagFilter || selectedTagIds.length > 0
                   ? "bg-action-tint text-action-text border-action-border"
                   : "text-contrast-helper border-transparent hover:bg-surface-inset"
               }`}
             >
-              <TagIcon className="w-3.5 h-3.5" />
+              <TagIcon aria-hidden="true" className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Context</span>
               {selectedTagIds.length > 0 && (
                 <span className="ml-0.5 bg-action-tint text-action-text text-[10px] px-1.5 rounded-pill">
@@ -463,7 +468,7 @@ export default function ChatPanel({
                 className="p-2 bg-status-danger-bg text-foreground rounded-lg hover:bg-status-danger-bg transition-colors shadow-card"
                 title="Stop Generation"
               >
-                <StopCircle className="w-4 h-4" />
+                <StopCircle aria-hidden="true" className="w-4 h-4" />
               </ButtonBase>
             ) : (
               <ButtonBase
@@ -471,9 +476,11 @@ export default function ChatPanel({
                 data-ui-hover="action-hover" chrome="action"
                 onClick={handleSend}
                 disabled={!recordingId || !inputValue.trim() || !historyReady}
+                aria-label="Send message"
+                title="Send message"
                 className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-card"
               >
-                <Send className="w-4 h-4" />
+                <Send aria-hidden="true" className="w-4 h-4" />
               </ButtonBase>
             )}
           </div>

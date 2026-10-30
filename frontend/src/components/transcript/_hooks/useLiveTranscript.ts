@@ -43,6 +43,20 @@ export const LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS = 10;
  */
 export const LIVE_TRANSCRIPT_READ_TIMEOUT_MS = 15_000;
 
+/**
+ * How long the lane must read as caught up, from the first read that finds it
+ * so, before the behind notice clears (issue #812). The lane writes
+ * `live/state.json` only when a run ends, so for runs of length T the lag a
+ * read measures swings between about T and 2T and stays under the 20 s
+ * threshold only for the first 20 s less T after each run ends. Holding on for
+ * longer than the slowest run that can raise the notice outlasts that window,
+ * so the notice holds steady instead of re-announcing and shifting the
+ * transcript every run. Time rather than a count of reads, since a refresh
+ * adds reads between polls. The cost is that it can stay up to about 20 s
+ * after the lane catches up.
+ */
+export const LIVE_BEHIND_CLEAR_MS = 20_000;
+
 export interface LiveTranscript {
   speakers: readonly RecordingSpeaker[];
   refresh: () => void;
@@ -53,7 +67,10 @@ export interface LiveTranscript {
   liveSpeakerNames: Readonly<Record<string, string>>;
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
-  /** The last read said live transcription is behind the uploads. */
+  /**
+   * A read said live transcription is behind the uploads, and the reads since
+   * have not found it caught up for {@link LIVE_BEHIND_CLEAR_MS}.
+   */
   liveBehind?: boolean;
 }
 
@@ -128,6 +145,8 @@ export function useLiveTranscript(
 
     let cancelled = false;
     stateRef.current = null;
+    // When the first of the reads in a row that found the lane caught up came.
+    let caughtUpSince: number | null = null;
 
     const sync = async (mode: "full" | "delta") => {
       const current = stateRef.current;
@@ -173,7 +192,14 @@ export function useLiveTranscript(
       setLiveSpeakerNames((previous) =>
         sameOrNext(previous, delta.live_speaker_names),
       );
-      setLiveBehind(delta.live_behind === true);
+      if (delta.live_behind === true) {
+        caughtUpSince = null;
+        setLiveBehind(true);
+      } else {
+        const now = Date.now();
+        caughtUpSince ??= now;
+        if (now - caughtUpSince >= LIVE_BEHIND_CLEAR_MS) setLiveBehind(false);
+      }
       setHasLoaded(true);
     };
 

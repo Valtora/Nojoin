@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import Button from "@/components/ui/Button";
@@ -8,7 +8,7 @@ import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 import SpeakerCapField from "@/components/SpeakerCapField";
 import RecordingLanguageField from "@/components/RecordingLanguageField";
-import { reprocessRecording } from "@/lib/api";
+import { getSettings, reprocessRecording } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingId, ReprocessRequest } from "@/types";
 
@@ -25,6 +25,7 @@ const WHISPER_MODEL_SIZES = [
 
 const PARAKEET_MODEL = "parakeet-tdt-0.6b-v3";
 const CANARY_MODEL = "nemo-canary-1b-v2";
+/** Shown until the install's own size has loaded, or when it can't be read. */
 const DEFAULT_WHISPER_MODEL_SIZE = "turbo";
 
 interface ReprocessDialogProps {
@@ -49,9 +50,9 @@ export default function ReprocessDialog({
   currentTranscriptionLanguage = null,
 }: ReprocessDialogProps) {
   const [backend, setBackend] = useState<TranscriptionBackend>(defaultBackend);
-  const [whisperModelSize, setWhisperModelSize] = useState<string>(
-    DEFAULT_WHISPER_MODEL_SIZE,
-  );
+  // The size picked in this dialog; null follows the install's (issue #839).
+  const [whisperModelSize, setWhisperModelSize] = useState<string | null>(null);
+  const [installModelSize, setInstallModelSize] = useState<string | null>(null);
   const [maxSpeakers, setMaxSpeakers] = useState<number | null>(
     currentMaxSpeakers,
   );
@@ -66,13 +67,33 @@ export default function ReprocessDialog({
     () => {
       if (isOpen) {
         setBackend(defaultBackend);
-        setWhisperModelSize(DEFAULT_WHISPER_MODEL_SIZE);
+        setWhisperModelSize(null);
         setMaxSpeakers(currentMaxSpeakers);
         setLanguage(currentTranscriptionLanguage);
         setIsSubmitting(false);
       }
     },
   );
+
+  // Read on every open, so a size an administrator changed since shows.
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    getSettings()
+      .then((settings) => {
+        const size = settings.whisper_model_size;
+        if (active && size && WHISPER_MODEL_SIZES.includes(size)) {
+          setInstallModelSize(size);
+        }
+      })
+      .catch(console.error);
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+
+  const shownModelSize =
+    whisperModelSize ?? installModelSize ?? DEFAULT_WHISPER_MODEL_SIZE;
 
   if (!isOpen) return null;
 
@@ -83,7 +104,7 @@ export default function ReprocessDialog({
     if (backend === "whisper") {
       body = {
         transcription_backend: "whisper",
-        whisper_model_size: whisperModelSize,
+        whisper_model_size: shownModelSize,
       };
     } else if (backend === "canary") {
       body = {
@@ -165,7 +186,7 @@ export default function ReprocessDialog({
         {backend === "whisper" ? (
           <Select
             label="Whisper Model Size"
-            value={whisperModelSize}
+            value={shownModelSize}
             onChange={(e) => setWhisperModelSize(e.target.value)}
             disabled={isSubmitting}
           >

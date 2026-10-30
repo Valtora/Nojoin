@@ -23,7 +23,8 @@ interface TranscriptLineMenuProps {
   speakers?: readonly RecordingSpeaker[];
   segment: TranscriptSegment;
   segmentId: string;
-  speakerName: string;
+  /** The speaker the line shows; null when it shows none yet. */
+  speakerName: string | null;
   /** The line's text and speaker can't be changed. */
   isSegmentReadOnly: boolean;
   actions: TranscriptLineActions;
@@ -134,6 +135,7 @@ export default function TranscriptLineMenu({
     <>
       <TranscriptActionsMenu
         label={live ? `Actions for the line at ${formatTimelineMs(segmentStartMs(segment))}`
+          : speakerName === null ? `Actions for the line at ${formatTime(segment.start)}`
           : `Actions for ${speakerName}'s line at ${formatTime(segment.start)}`}
         items={items}
         active={noteAnchor !== null || lineEdit !== null || opened}

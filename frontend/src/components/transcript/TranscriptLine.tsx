@@ -298,7 +298,7 @@ function TranscriptLine({
         <TranscriptLineMenu
           segment={segment}
           segmentId={segmentId}
-          speakerName={speakerName}
+          speakerName={pendingDiarisation ? null : speakerName}
           isSegmentReadOnly={isSegmentReadOnly}
           actions={actions}
           onAddNote={onAddNote}

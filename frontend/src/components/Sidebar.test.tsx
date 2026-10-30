@@ -251,6 +251,15 @@ describe("Sidebar", () => {
     },
   );
 
+  it("names the search filter button and says whether the filters are open (issue #840)", async () => {
+    renderWithProviders(<Sidebar />);
+    const filter = await screen.findByRole("button", { name: "Filter recordings" });
+    expect(filter).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(filter);
+    expect(screen.getByRole("button", { name: "Filter recordings" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Date Filter")).toBeInTheDocument();
+  });
+
   it("labels an interrupted upload in the sidebar", async () => {
     const interrupted = { ...recording, status: RecordingStatus.UPLOADING, capture_stalled: true };
     getRecordings.mockResolvedValue([interrupted]);
