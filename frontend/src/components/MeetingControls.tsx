@@ -13,7 +13,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { RecordingStatus } from "@/types";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
-import LiveMeetingControls from "./LiveMeetingControls";
+import { CaptureNotices } from "./LiveMeetingControls";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
 
@@ -23,7 +23,7 @@ type MeetingControlsProps =
       variant?: "sidebar";
       /**
        * A second "add a recording" action, laid out beside Start Meeting and
-       * under the live controls while a meeting runs.
+       * under the capture's status while a meeting runs.
        */
       pairedAction?: ReactNode;
     }
@@ -195,7 +195,32 @@ export default function MeetingControls({
     }
   };
 
+  // While this tab captures, the capture's controls are on its page and in the
+  // floating badge; here it is only named, with its upload and coverage
+  // notices, so there is one set of buttons. The time is shown with those
+  // controls, and this is no live region: they already announce the state.
+  const isRail = variant === "rail";
+  const liveLabel = status === "paused" ? "Paused" : "Recording";
+  const liveStatus = hasLiveRecording ? (
+    <div
+      data-testid="capture-status"
+      title={isRail ? liveLabel : undefined}
+      className={`flex items-center rounded-xl border border-status-danger-border bg-status-danger-bg text-status-danger-fg ${
+        isRail ? "h-10 w-10 justify-center" : "gap-2 px-3 py-2"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 shrink-0 rounded-full bg-danger ${status === "recording" ? "animate-pulse" : ""}`}
+      />
+      <span className={isRail ? "sr-only" : "text-xs font-semibold uppercase tracking-[0.14em]"}>
+        {liveLabel}
+      </span>
+    </div>
+  ) : null;
+
   if (variant === "rail") {
+    if (liveStatus) return liveStatus;
     return (
       <IconButton
         size="sm"
@@ -210,6 +235,7 @@ export default function MeetingControls({
   }
 
   if (variant === "compact") {
+    if (liveStatus) return liveStatus;
     return (
       <Button
         variant="primary"
@@ -272,7 +298,10 @@ export default function MeetingControls({
               </ButtonBase>
             </div>
           ) : (
-            <LiveMeetingControls size="full" onMeetingEnd={onMeetingEnd} />
+            <div className="space-y-3">
+              {liveStatus}
+              <CaptureNotices />
+            </div>
           )}
         </div>
       </SurfaceBase>
@@ -328,7 +357,10 @@ export default function MeetingControls({
           </div>
         ) : (
           <>
-            <LiveMeetingControls size="compact" onMeetingEnd={onMeetingEnd} />
+            <div className="space-y-2">
+              {liveStatus}
+              <CaptureNotices />
+            </div>
             {pairedAction ? <div className="mt-2 flex">{pairedAction}</div> : null}
           </>
         )}
