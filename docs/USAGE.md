@@ -362,7 +362,7 @@ Every claim about a person carries a quote you can play back. An item the model 
 
 Every figure belongs to a speaker, so it is only as good as the speaker separation. When one person is split into two, their share is split too, and the number looks normal.
 
-The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting that reached its **Max Speakers** limit, or unnamed speakers. The warning links to the speaker panel, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
+The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting that reached its **Max Speakers** limit, or unnamed speakers. Its **Review speakers** opens the speaker panel, in the side column or the **Speakers** tab on a phone, and moves focus to the speaker list, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
 
 ### Attaching Documents
 

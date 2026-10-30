@@ -20,6 +20,8 @@ import {
   Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigationStore } from "@/lib/store";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -94,6 +96,20 @@ export default function SpeakerPanel({
     if (highlightTimer.current !== null) clearTimeout(highlightTimer.current);
   }, []);
   const [picker, setPicker] = useState<{ entry: SpeakerPanelEntry; anchor: HTMLElement } | null>(null);
+  // Analytics' Review speakers: the list takes focus and shows the focus
+  // ring until focus moves on, including when it was already open.
+  const panelRef = useRef<HTMLElement>(null);
+  const reviewPending = useNavigationStore((state) => state.speakerReviewPending);
+  const setReviewPending = useNavigationStore((state) => state.setSpeakerReviewPending);
+  const [reviewing, setReviewing] = useState(reviewPending);
+  useOnDepsChange([reviewPending], () => {
+    if (reviewPending) setReviewing(true);
+  });
+  useEffect(() => {
+    if (!reviewPending) return;
+    setReviewPending(false);
+    panelRef.current?.focus({ preventScroll: true });
+  }, [reviewPending, setReviewPending]);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -184,10 +200,17 @@ export default function SpeakerPanel({
 
   return (
     <aside
+      ref={panelRef}
       id="speaker-panel"
+      aria-label="Speakers"
+      tabIndex={-1}
+      data-reviewing={reviewing || undefined}
+      onBlur={(event) => {
+        if (event.target === event.currentTarget) setReviewing(false);
+      }}
       data-ui-reading="pane"
       data-ui-fill="inset"
-      className="@container flex h-full min-w-0 flex-col bg-surface-inset"
+      className="@container flex h-full min-w-0 flex-col bg-surface-inset outline-none data-reviewing:ring-2 data-reviewing:ring-inset data-reviewing:ring-action"
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         <LiveSpeakerRows labels={liveLabels} names={liveSpeakerNames} speakers={speakers}
