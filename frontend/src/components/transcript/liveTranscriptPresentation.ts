@@ -9,6 +9,11 @@ export const liveRenderIdentity = (segment: TranscriptSegment, index: number) =>
 
 export interface LiveTranscriptPresentation {
   hasLoaded: boolean;
+  /**
+   * The capture is recording or paused, so a view with no lines yet is
+   * listening. Once it stops, the feed shows what it heard while it processes.
+   */
+  capturing?: boolean;
   isPaused?: boolean;
   /** The last live read said live transcription is behind the uploads. */
   liveBehind?: boolean;

@@ -12,6 +12,8 @@ interface SharedLiveTranscriptProps {
   speakers?: readonly RecordingSpeaker[];
   segments: TranscriptSegment[];
   hasLoaded: boolean;
+  /** A running or paused capture unless said otherwise, as these fixtures were written for. */
+  capturing?: boolean;
   isPaused?: boolean;
   notes?: readonly (InlineNote | TimelineNote)[];
   onRetryNote?: (key: string) => void;
@@ -29,7 +31,7 @@ const noop = () => {};
 
 /** Runs legacy live behavioural fixtures through the production shared cards. */
 export default function SharedLiveTranscript({
-  segments, hasLoaded, isPaused, lineHandlers, speakers = [], notes, onRetryNote,
+  segments, hasLoaded, capturing = true, isPaused, lineHandlers, speakers = [], notes, onRetryNote,
   onDiscardNote, onMoveNote, footer, onNoteOnLine, onNoteAtTime, liveSpeakerNames = {},
   onRenameLiveSpeaker, loadPeopleNames,
 }: SharedLiveTranscriptProps) {
@@ -48,7 +50,7 @@ export default function SharedLiveTranscript({
       onUndo={noop} onRedo={noop} canUndo={false} canRedo={false} onExport={noop}
       disableSegmentPlayback disableExport timelineNotes={notes} onRetryNote={onRetryNote}
       onDiscardNote={onDiscardNote} onMoveNote={onMoveNote}
-      live={{ hasLoaded, isPaused, lineHandlers, onNoteOnLine, onNoteAtTime, onRenameLiveSpeaker, loadPeopleNames }} />
+      live={{ hasLoaded, capturing, isPaused, lineHandlers, onNoteOnLine, onNoteAtTime, onRenameLiveSpeaker, loadPeopleNames }} />
     {footer}
   </>;
 }
