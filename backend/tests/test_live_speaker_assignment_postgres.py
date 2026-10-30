@@ -282,13 +282,45 @@ async def test_a_corrected_line_follows_the_targets_other_speech_through_finalis
         )
 
 
-@pytest.mark.parametrize("reference", ["split", "missing"])
-async def test_an_unresolved_live_identity_keeps_its_manual_target_despite_boundary_drift(
-    live_api: tuple[Any, ...],
-    reference: str,
+async def _finalise(sessions: Any, recording: Recording, final: list[dict]) -> None:
+    """The final pass's speaker stage and canonical finalisation, as it runs them."""
+    async with sessions() as db:
+
+        def publish(sync: Any) -> None:
+            current = sync.get(Recording, recording.id)
+            current.status = RecordingStatus.PROCESSING
+            speaker_assignment.assign_and_identify_speakers(
+                SimpleNamespace(
+                    session=sync, merged_config={}, recording_id=recording.id
+                ),
+                current,
+                final,
+                None,
+            )
+            finalize_utterances_from_segments(
+                sync, recording_id=recording.id, segments=final
+            )
+            refresh_transcript_projection_from_canonical(sync, recording.id)
+            current.status = RecordingStatus.PROCESSED
+
+        await db.run_sync(publish)
+        await db.commit()
+
+
+def _assert_no_live_label_survives(body: dict[str, Any]) -> None:
+    assert not [row for row in body["utterances"] if "LIVE_" in row["speaker"]]
+    assert not [row for row in body["speakers"] if "LIVE_" in row["diarization_label"]]
+
+
+@pytest.mark.parametrize("named", [False, True], ids=["unnamed", "named"])
+@pytest.mark.parametrize(
+    ("reference", "holder"), [("split", "SPEAKER_01"), ("missing", "SPEAKER_00")]
+)
+async def test_an_unclear_live_identity_sends_the_line_where_its_name_goes(
+    live_api: tuple[Any, ...], named: bool, reference: str, holder: str
 ) -> None:
     client, sessions, recording = live_api
-    await _assign(client, recording, named=False)
+    await _assign(client, recording, named=named)
     final = [
         {"start": 0.2, "end": 10.2, "speaker": "SPEAKER_00", "text": "Final words."}
     ]
@@ -309,31 +341,63 @@ async def test_an_unresolved_live_identity_keeps_its_manual_target_despite_bound
                 },
             ]
         )
-    async with sessions() as db:
-
-        def publish(sync: Any) -> None:
-            current = sync.get(Recording, recording.id)
-            speaker_assignment.assign_and_identify_speakers(
-                SimpleNamespace(
-                    session=sync, merged_config={}, recording_id=recording.id
-                ),
-                current,
-                final,
-                None,
-            )
-            finalize_utterances_from_segments(
-                sync, recording_id=recording.id, segments=final
-            )
-            refresh_transcript_projection_from_canonical(sync, recording.id)
-
-        await db.run_sync(publish)
-        await db.commit()
+    await _finalise(sessions, recording, final)
     response = await client.get(f"/api/v1/transcripts/{recording.public_id}/utterances")
     assert response.status_code == 200, response.text
-    corrected = response.json()["utterances"][0]
-    assert (corrected["speaker"], corrected["recording_speaker_id"]) == (TWO, None)
+    body = response.json()
+    corrected = body["utterances"][0]
+    target = next(row for row in body["speakers"] if row["diarization_label"] == holder)
+    # Split evenly, the top holder (first in time) takes the line, as it takes
+    # the name; with none of the label's speech heard, the nearest speaker.
+    assert corrected["speaker"] == holder
+    assert corrected["recording_speaker_id"] == target["id"]
     assert corrected["speaker_manually_edited"] is True
     assert corrected["speaker_edit_source"] == "api"
+    _assert_no_live_label_survives(body)
+    if named:
+        assert target["local_name"] == "Alex" and target["name_pending"] is True
+        assert sum(row["local_name"] == "Alex" for row in body["speakers"]) == 1
+
+
+async def test_a_live_speaker_with_no_speech_of_its_own_leaves_each_line_its_final_speaker(
+    live_api: tuple[Any, ...],
+) -> None:
+    client, sessions, recording = live_api
+    url = f"/api/v1/transcripts/{recording.public_id}/utterances"
+    lines = (await client.get(url)).json()["utterances"]
+    # The first line goes to Speaker 3, then Speaker 3's own line goes to
+    # Speaker 2: nothing of Speaker 3's own speech is left.
+    for index, target in [(0, THREE), (3, TWO)]:
+        moved = await client.patch(
+            f"{url}/{lines[index]['id']}/speaker",
+            json={
+                "new_speaker_name": "Speaker",
+                "diarization_label": target,
+                "scope": "utterance_only",
+                "expected_revision": lines[index]["revision"],
+            },
+        )
+        assert moved.status_code == 200, moved.text
+    final = [
+        {"start": 0.2, "end": 10.2, "speaker": "SPEAKER_00", "text": "Own speech."},
+        {"start": 12.0, "end": 14.0, "speaker": "SPEAKER_01", "text": "Two."},
+        {"start": 15.0, "end": 17.0, "speaker": "SPEAKER_01", "text": "Two again."},
+        {"start": 20.0, "end": 24.0, "speaker": "SPEAKER_02", "text": "Moved to two."},
+    ]
+    await _finalise(sessions, recording, final)
+    body = (await client.get(url)).json()
+    by_text = {row["text"]: row for row in body["utterances"]}
+    assert by_text["Own speech."]["speaker"] == "SPEAKER_00"
+    assert by_text["Moved to two."]["speaker"] == "SPEAKER_01"
+    assert (
+        by_text["Moved to two."]["recording_speaker_id"]
+        == by_text["Two."]["recording_speaker_id"]
+    )
+    assert all(
+        by_text[text]["speaker_manually_edited"]
+        for text in ("Own speech.", "Moved to two.")
+    )
+    _assert_no_live_label_survives(body)
 
 
 @contextmanager

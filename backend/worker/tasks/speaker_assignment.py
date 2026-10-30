@@ -17,7 +17,11 @@ Two load-bearing invariants run through the whole stage:
 
 from dataclasses import dataclass
 
+from sqlmodel import col
+
+from backend.models.pipeline import TranscriptUtterance
 from backend.models.speaker_name_event import SpeakerNameEvent
+from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.speaker_assignment import remap_overlapping_speakers
 from backend.utils.speaker_names.anchors import first_turn, lines_from_final_segments
 from backend.utils.speaker_names.events import add_event
@@ -34,7 +38,6 @@ from backend.utils.speaker_names.sources import (
 )
 
 from .constants import *  # noqa: F403
-from .live_speaker_assignment_carryover import carry_live_speaker_assignments
 from .speaker_name_carryover import (
     CarriedNames,
     apply_pending_names,
@@ -584,6 +587,42 @@ def _resolve_identity(
     return _ResolvedIdentity(name=label)
 
 
+def _move_live_lines(session, recording: Recording, targets: dict[int, str]) -> None:
+    """Move each line picked for a live speaker to its final speaker.
+
+    After the merge passes, so a target label absorbed into another speaker
+    lands on the survivor. Transcript first, then the lines in id order, the
+    order every speaker correction takes.
+    """
+    if not targets:
+        return
+    _load_transcript(session, recording.id, lock=True)
+    rows = (
+        session.execute(
+            select(TranscriptUtterance)
+            .where(col(TranscriptUtterance.id).in_(targets))
+            .order_by(col(TranscriptUtterance.id))
+            .with_for_update()
+        )
+        .scalars()
+        .all()
+    )
+    for row in rows:
+        label = targets[row.id]
+        speaker = session.exec(
+            select(RecordingSpeaker)
+            .where(RecordingSpeaker.recording_id == recording.id)
+            .where(RecordingSpeaker.diarization_label == label)
+        ).first()
+        if speaker is None:
+            continue
+        speaker = _follow_merge_chain(session, speaker, label)
+        row.speaker_label = speaker.diarization_label
+        row.recording_speaker_id = speaker.id
+        session.add(row)
+    session.flush()
+
+
 def assign_and_identify_speakers(
     ctx,
     recording: Recording,
@@ -670,7 +709,7 @@ def assign_and_identify_speakers(
 
     _run_duplicate_merge_pass(ctx, recording, final_segments, diarization_result)
     apply_pending_names(session, recording, carried.pending)
-    carry_live_speaker_assignments(session, recording, final_segments)
+    _move_live_lines(session, recording, carried.live_lines)
 
 
 __all__ = [
