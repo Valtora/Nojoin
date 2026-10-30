@@ -14,6 +14,8 @@ import { useSpeakerTurnHighlight } from "./SpeakerTurnHighlight";
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 
 export type RenameLiveSpeaker = (label: string, name: string, createPerson?: boolean) => Promise<boolean>;
+/** Merges live label `label` into live label `intoLabel`. */
+export type MergeLiveSpeaker = (label: string, intoLabel: string) => Promise<boolean>;
 
 // Said in a card's menu, under the actions they hold back. Live names are
 // taken only while the capture runs or is paused; the final speakers can be
@@ -29,24 +31,30 @@ interface Props {
   globalSpeakers: GlobalSpeaker[];
   speakerColors: Record<string, string>;
   onRename?: RenameLiveSpeaker;
+  onMerge?: MergeLiveSpeaker;
   readOnly: boolean;
 }
 
 /** Live identities are source labels, never invented recording-speaker records. */
 export default function LiveSpeakerRows({ labels, names, speakers, globalSpeakers,
-  speakerColors, onRename, readOnly }: Props) {
+  speakerColors, onRename, onMerge, readOnly }: Props) {
   const highlight = useSpeakerTurnHighlight();
   const [picker, setPicker] = useState<{ label: string; anchor: HTMLElement } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // As the transcript's live header chip: no line needs to have locked.
   const canName = (label: string) => !readOnly && !!onRename && liveSpeakerDisplayName(label) !== null;
   const displayName = (label: string) => segmentSpeakerDisplayName(names, label);
-  const assign = async (label: string, name: string, createPerson: boolean) => {
-    if (submitting || !canName(label) || !onRename) return false;
+  const run = async (label: string, command: () => Promise<boolean>) => {
+    if (submitting || !canName(label)) return false;
     setSubmitting(true);
-    try { return await onRename(label, name, createPerson); }
+    try { return await command(); }
     finally { setSubmitting(false); }
   };
+  const assign = (label: string, name: string, createPerson: boolean) =>
+    onRename ? run(label, () => onRename(label, name, createPerson)) : Promise.resolve(false);
+  // Another live speaker picked for the whole row merges this one into it.
+  const merge = (label: string, into: string) =>
+    onMerge ? run(label, () => onMerge(label, into)) : Promise.resolve(false);
 
   return <>{labels.map((label) => {
     const name = displayName(label);
@@ -86,7 +94,11 @@ export default function LiveSpeakerRows({ labels, names, speakers, globalSpeaker
       speakerColors={speakerColors} targetElement={picker.anchor}
       fixedScope="speaker_everywhere_in_recording"
       onSelect={async (assignment) => {
-        if (await assign(picker.label, assignment.name, false)) {
+        const into = assignment.diarizationLabel;
+        const done = into && liveSpeakerDisplayName(into) !== null
+          ? await merge(picker.label, into)
+          : await assign(picker.label, assignment.name, false);
+        if (done) {
           setPicker(null); picker.anchor.focus();
         }
       }}

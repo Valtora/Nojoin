@@ -425,4 +425,40 @@ describe("useLiveTranscript", () => {
     expect(result.current.liveSpeakerNames).toEqual({});
     expect(result.current.liveSpeakerNames).toBe(empty);
   });
+  it("reads a merged live label's lines as the label it joined, and a merge's answer at once", async () => {
+    const line = (id: string, start: number, speaker: string, overlapping?: string[]) => ({
+      ...buildUtterance(id, start, `line ${id}`, 4), speaker,
+      ...(overlapping ? { overlapping_speakers: overlapping } : {}),
+    });
+    const lines = [
+      line("a", 0, "LIVE_PROVISIONAL_1"),
+      line("b", 2, "LIVE_PROVISIONAL_3", ["LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_2"]),
+      line("c", 4, "LIVE_PROVISIONAL_2", ["LIVE_PROVISIONAL_3"]),
+    ];
+    getTranscriptUtterances
+      .mockResolvedValueOnce(buildDelta(4, lines))
+      // The merge rewrote no line: a delta with none still carries it.
+      .mockResolvedValueOnce({ ...buildDelta(4, []), live_speaker_merges: { LIVE_PROVISIONAL_3: "LIVE_PROVISIONAL_1" } });
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    expect(result.current.segments.map((segment) => segment.speaker))
+      .toEqual(["LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_3", "LIVE_PROVISIONAL_2"]);
+
+    act(() => {
+      result.current.applyLiveSpeakerMerges?.({ LIVE_PROVISIONAL_3: "LIVE_PROVISIONAL_1" });
+    });
+    const shown = result.current.segments;
+    expect(shown.map((segment) => segment.speaker))
+      .toEqual(["LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_2"]);
+    // An overlap with the merged label reads as the speaker it joined, and a
+    // line never overlaps itself.
+    expect(shown[1].overlapping_speakers).toEqual(["LIVE_PROVISIONAL_2"]);
+    expect(shown[2].overlapping_speakers).toEqual(["LIVE_PROVISIONAL_1"]);
+
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerMerges).toEqual({ LIVE_PROVISIONAL_3: "LIVE_PROVISIONAL_1" });
+    expect(result.current.segments.map((segment) => segment.speaker))
+      .toEqual(["LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_2"]);
+  });
 });

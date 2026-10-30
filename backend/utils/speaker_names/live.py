@@ -15,6 +15,11 @@ it before then.
 Until the final pass replaces the live lines, every reader that would show
 "Speaker <n>" for the label shows the newest name given for it instead
 (``live_speaker_names``).
+
+The user can also merge one live label into another (``record_live_speaker_merge``,
+kind ``merge``): the merged label then shows as the label it joined, with that
+label's name, and the two are one live speaker at the final pass
+(``live_carry``). A merge supersedes the merged label's own name.
 """
 
 from __future__ import annotations
@@ -30,8 +35,9 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 
 from .anchors import Line, Span, longest_turn, turns_of
 from .events import UserNameAct
+from .live_carry import live_groups
 from .resolve import MIN_COVERED_MS
-from .sources import AUTHORITY, KIND_NAME, SOURCE_USER
+from .sources import AUTHORITY, KIND_MERGE, KIND_NAME, SOURCE_USER
 
 SURFACE_LIVE = "live"
 _UNLABELLED = "UNKNOWN"
@@ -85,17 +91,19 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
 
 
 def live_label_spans(
-    session: Any, recording_id: int, labels: Iterable[str]
+    session: Any, recording_id: int, labels: Iterable[str] | None = None
 ) -> dict[str, tuple[Span, ...]]:
-    """Each live label's speech: the union of the live lines it labels.
+    """Each live label's own speech: the union of the live lines it labels.
 
-    Superseded rows count: the final pass reads the live lines before it
-    replaces them, and a reprocess reads them after.
+    Every live label when ``labels`` is None. Superseded rows count: the final
+    pass reads the live lines before it replaces them, and a reprocess reads
+    them after. A line whose speaker the user chose is left out: its label is
+    the user's claim, not the live diariser's evidence of where the voice is.
     """
-    wanted = set(labels)
-    if not wanted:
+    wanted = None if labels is None else set(labels)
+    if wanted is not None and not wanted:
         return {}
-    rows = session.execute(
+    statement = (
         select(
             TranscriptUtterance.speaker_label,
             TranscriptUtterance.start_ms,
@@ -104,8 +112,17 @@ def live_label_spans(
         .where(TranscriptUtterance.recording_id == recording_id)
         .where(TranscriptUtterance.source_kind == "live")
         .where(TranscriptUtterance.state != TranscriptUtteranceState.DELETED)
-        .where(col(TranscriptUtterance.speaker_label).in_(wanted))
-    ).all()
+        .where(col(TranscriptUtterance.manual_speaker_locked).is_(False))
+    )
+    if wanted is not None:
+        statement = statement.where(col(TranscriptUtterance.speaker_label).in_(wanted))
+    rows = session.execute(statement).all()
+    if wanted is None:
+        from backend.utils.live_speaker_labels import live_speaker_display_name
+
+        wanted = {
+            str(key) for key, _, _ in rows if live_speaker_display_name(str(key or ""))
+        }
     spans: dict[str, tuple[Span, ...]] = {}
     for label in wanted:
         lines = [
@@ -124,17 +141,14 @@ def record_live_speaker_name(
     """Record the user's name for a live label; None when no line carries it.
 
     The row supersedes the label's previous live name, so only the newest one
-    stands at the final pass. ``act.surface`` is ``live``.
+    stands at the final pass. ``act.surface`` is ``live``. A label merged into
+    another is named as the label it joined.
     """
+    label = live_speaker_groups(session, recording_id).get(label, label)
     anchor = live_label_anchor(session, recording_id, label)
     if anchor is None:
         return None
-    previous = session.execute(
-        select(func.max(SpeakerNameEvent.id))
-        .where(SpeakerNameEvent.recording_id == recording_id)
-        .where(SpeakerNameEvent.surface == SURFACE_LIVE)
-        .where(SpeakerNameEvent.anchor_label == label)
-    ).scalar()
+    previous = _newest_live_row_id(session, recording_id, label)
     row = SpeakerNameEvent(
         recording_id=recording_id,
         kind=KIND_NAME,
@@ -157,28 +171,122 @@ def record_live_speaker_name(
     return row
 
 
+def _newest_live_row_id(session: Any, recording_id: int, label: str) -> int | None:
+    return session.execute(
+        select(func.max(SpeakerNameEvent.id))
+        .where(SpeakerNameEvent.recording_id == recording_id)
+        .where(SpeakerNameEvent.surface == SURFACE_LIVE)
+        .where(SpeakerNameEvent.anchor_label == label)
+    ).scalar()
+
+
+def _live_rows(session: Any, recording_id: int) -> list[Any]:
+    return list(
+        session.execute(
+            select(
+                SpeakerNameEvent.anchor_label,
+                SpeakerNameEvent.name,
+                SpeakerNameEvent.kind,
+                SpeakerNameEvent.evidence,
+            )
+            .where(SpeakerNameEvent.recording_id == recording_id)
+            .where(SpeakerNameEvent.surface == SURFACE_LIVE)
+            .order_by(col(SpeakerNameEvent.id))
+        ).all()
+    )
+
+
+def _merges_of(rows: Iterable[Any]) -> list[tuple[str, str]]:
+    return [
+        (str(label), str((evidence or {}).get("into_label")))
+        for label, _, kind, evidence in rows
+        if kind == KIND_MERGE and label and (evidence or {}).get("into_label")
+    ]
+
+
+def live_speaker_groups(session: Any, recording_id: int) -> dict[str, str]:
+    """Each live label the user merged -> the label it now shows as."""
+    return live_groups(_merges_of(_live_rows(session, recording_id)))
+
+
+def record_live_speaker_merge(
+    session: Any, recording_id: int, label: str, into: str, actor_user_id: int | None
+) -> SpeakerNameEvent | None:
+    """Merge live label ``label`` into ``into``; None when either has no line.
+
+    Merging into a label of the same group changes nothing and is refused by
+    the caller. The row supersedes the merged label's own name, so only the
+    group's name stands; it records the name the target showed, for the audit.
+    """
+    groups = live_speaker_groups(session, recording_id)
+    source, target = groups.get(label, label), groups.get(into, into)
+    anchor = live_label_anchor(session, recording_id, source)
+    if anchor is None or live_label_anchor(session, recording_id, target) is None:
+        return None
+    from backend.utils.live_speaker_labels import live_speaker_display_name
+
+    shown = live_speaker_names(session, recording_id).get(target)
+    row = SpeakerNameEvent(
+        recording_id=recording_id,
+        kind=KIND_MERGE,
+        name=shown or live_speaker_display_name(target) or target,
+        source=SOURCE_USER,
+        authority=AUTHORITY[SOURCE_USER],
+        surface=SURFACE_LIVE,
+        anchor_start_ms=anchor[0],
+        anchor_end_ms=anchor[1],
+        anchor_label=source,
+        supersedes_event_id=_newest_live_row_id(session, recording_id, source),
+        created_by_user_id=actor_user_id,
+        evidence={"into_label": target},
+    )
+    session.add(row)
+    session.flush()
+    from .durability import persist_name_anchors
+
+    persist_name_anchors(session, recording_id)
+    return row
+
+
+def _names_by_label(rows: Iterable[Any]) -> dict[str, str]:
+    """The newest name per label, then each merged label shows its group's."""
+    row_list = list(rows)
+    own: dict[str, str | None] = {}
+    for label, name, kind, _ in row_list:
+        if label:
+            own[str(label)] = str(name) if kind == KIND_NAME else None
+    names = {label: name for label, name in own.items() if name}
+    from backend.utils.live_speaker_labels import live_speaker_display_name
+
+    for label, head in live_groups(_merges_of(row_list)).items():
+        shown = names.get(head) or live_speaker_display_name(head)
+        if shown:
+            names[label] = shown
+        else:
+            names.pop(label, None)
+    return names
+
+
 def live_speaker_names(
     session: Any, recording_id: int, *, labels: Iterable[str] | None = None
 ) -> dict[str, str]:
     """Live label -> the newest name the user gave it, while a line carries it.
 
-    Only the naming route writes ``live`` rows, each a name for a live label.
-    Once the final pass has replaced the live lines no current line carries a
-    live label, so the map is empty and no read shows one. Readers with a
-    canonical-first projection supply its effective ``labels`` so fallback
-    reads resolve names without requiring matching canonical rows.
+    Only the live naming routes write ``live`` rows: a name for a live label,
+    or a merge into another. A merged label shows the name of the label it
+    joined, or that label's "Speaker <n>". Once the final pass has replaced
+    the live lines no current line carries a live label, so the map is empty
+    and no read shows one. Readers with a canonical-first projection supply
+    its effective ``labels`` so fallback reads resolve names without
+    requiring matching canonical rows.
     """
-    rows = session.execute(
-        select(SpeakerNameEvent.anchor_label, SpeakerNameEvent.name)
-        .where(SpeakerNameEvent.recording_id == recording_id)
-        .where(SpeakerNameEvent.surface == SURFACE_LIVE)
-        .order_by(col(SpeakerNameEvent.id))
-    ).all()
+    rows = _live_rows(session, recording_id)
     if not rows:
         return {}
+    named = _names_by_label(rows)
     if labels is not None:
         heard_labels = set(labels)
-        return {str(label): str(name) for label, name in rows if label in heard_labels}
+        return {label: name for label, name in named.items() if label in heard_labels}
     from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
     heard = set(
@@ -186,11 +294,11 @@ def live_speaker_names(
             select(TranscriptUtterance.speaker_label)
             .where(TranscriptUtterance.recording_id == recording_id)
             .where(col(TranscriptUtterance.state).in_(ACTIVE_UTTERANCE_STATES))
-            .where(col(TranscriptUtterance.speaker_label).in_({r[0] for r in rows}))
+            .where(col(TranscriptUtterance.speaker_label).in_(set(named)))
             .distinct()
         ).scalars()
     )
-    return {str(label): str(name) for label, name in rows if label in heard}
+    return {label: name for label, name in named.items() if label in heard}
 
 
 def with_live_speaker_names(

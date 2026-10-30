@@ -36,7 +36,9 @@ from backend.utils.speaker_names.sources import (
 from .constants import *  # noqa: F403
 from .speaker_name_carryover import (
     CarriedNames,
+    apply_live_moves,
     apply_pending_names,
+    carry_live_picks,
     carry_names_to_final_speakers,
 )
 
@@ -592,13 +594,6 @@ def assign_and_identify_speakers(
     """Resolve diarization labels to speakers, persisting RecordingSpeaker rows."""
     session = ctx.session
 
-    # Processed in order of appearance so the sequential fallback names read as
-    # "Speaker 1", "Speaker 2", ... down the transcript.
-    ordered_speakers = _collect_ordered_final_speaker_labels(final_segments)
-    logger.info(
-        f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}"
-    )
-
     speaker_voiceprints = getattr(ctx, "speaker_voiceprints", None)
     if speaker_voiceprints is None:
         speaker_voiceprints = _extract_speaker_voiceprints(
@@ -607,14 +602,31 @@ def assign_and_identify_speakers(
     carried = carry_names_to_final_speakers(
         session, recording, final_segments, speaker_voiceprints
     )
+    # The final lines a live merge moves are moved before speakers are made,
+    # so a final speaker they leave empty gets no row and no number.
+    apply_live_moves(final_segments, carried.live)
+
+    # Processed in order of appearance so the sequential fallback names read as
+    # "Speaker 1", "Speaker 2", ... down the transcript.
+    ordered_speakers = _collect_ordered_final_speaker_labels(final_segments)
+    logger.info(
+        f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}"
+    )
     lines = lines_from_final_segments(final_segments)
     confirm = confirm_suggested_names_enabled(ctx.merged_config)
 
     speaker_counter = 1
     # name -> {'id': recording_speaker_id, 'label': diarization_label}
     resolved_names_map: dict = {}
+    # label -> where it ended: its own row, or the row it was merged into.
+    landed: dict[str, dict] = {}
+    # Final speakers a live merge folds into another, made once the loop is done.
+    folded: list[str] = []
 
     for label in ordered_speakers:
+        if label in carried.live.folds:
+            folded.append(label)
+            continue
         existing_speaker = session.exec(
             select(RecordingSpeaker)
             .where(RecordingSpeaker.recording_id == recording.id)
@@ -659,6 +671,7 @@ def assign_and_identify_speakers(
                 target_label=target["label"],
                 final_segments=final_segments,
             )
+            landed[label] = {**target, "name": identity.name}
             continue
 
         logger.info("Mapped %s -> %s", label, identity.name)
@@ -666,9 +679,66 @@ def assign_and_identify_speakers(
         _record_voiceprint_match(session, work, speaker_id, lines, confirm)
         if identity.name and speaker_id:
             resolved_names_map[identity.name] = {"id": speaker_id, "label": label}
+            landed[label] = {"id": speaker_id, "label": label, "name": identity.name}
 
+    _fold_live_merges(
+        session,
+        recording,
+        folded,
+        carried,
+        landed,
+        speaker_voiceprints,
+        final_segments,
+    )
     _run_duplicate_merge_pass(ctx, recording, final_segments, diarization_result)
     apply_pending_names(session, recording, carried.pending)
+    carry_live_picks(session, recording, carried)
+
+
+def _fold_live_merges(  # noqa: PLR0913 - the loop's state, handed over whole
+    session,
+    recording: Recording,
+    folded: list[str],
+    carried: CarriedNames,
+    landed: dict[str, dict],
+    speaker_voiceprints: dict,
+    final_segments: list[dict],
+) -> None:
+    """Merge each final speaker a live merge folds into its group's final speaker.
+
+    Made as a merge-by-name is, into wherever the group's final speaker
+    landed, so the folded speaker takes no "Speaker N" of its own.
+    """
+    for label in folded:
+        target = landed.get(carried.live.folds[label])
+        if target is None:
+            continue
+        voiceprint = speaker_voiceprints.get(label)
+        logger.info(
+            "Folding %s into %s: the user merged their live speakers",
+            label,
+            target["label"],
+        )
+        _absorb_into_existing_name(
+            session,
+            _LabelWork(
+                recording=recording,
+                label=label,
+                identity=_ResolvedIdentity(name=target["name"]),
+                embedding=voiceprint.embedding if voiceprint is not None else None,
+                speech_seconds=(
+                    voiceprint.speech_seconds if voiceprint is not None else None
+                ),
+                existing_speaker=session.exec(
+                    select(RecordingSpeaker)
+                    .where(RecordingSpeaker.recording_id == recording.id)
+                    .where(RecordingSpeaker.diarization_label == label)
+                ).first(),
+            ),
+            target_id=target["id"],
+            target_label=target["label"],
+            final_segments=final_segments,
+        )
 
 
 __all__ = [

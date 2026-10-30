@@ -9,7 +9,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.utils.canonical_pipeline.constants import _load_transcript
 
-from .sources import AUTHORITY, KIND_DISMISS, SOURCE_USER
+from .sources import AUTHORITY, KIND_DISMISS, KIND_MERGE, SOURCE_USER
 
 
 def snapshot_name_anchors(session: Any, recording_id: int) -> list[dict[str, Any]]:
@@ -53,6 +53,8 @@ def snapshot_name_anchors(session: Any, recording_id: int) -> list[dict[str, Any
             "anchor_end_ms": row.anchor_end_ms,
             "anchor_label": row.anchor_label,
             "recording_speaker_public_id": speakers.get(row.recording_speaker_id),
+            # A live merge's target label lives here.
+            **({"evidence": deepcopy(row.evidence)} if row.kind == KIND_MERGE else {}),
         }
         for row in rows
         if row.source == SOURCE_USER
@@ -131,6 +133,7 @@ def restore_name_anchors(session: Any, recording_id: int) -> None:
                 anchor_end_ms=anchor["anchor_end_ms"],
                 anchor_label=anchor.get("anchor_label"),
                 recording_speaker_id=speaker.id if speaker else None,
+                evidence=deepcopy(anchor.get("evidence")),
             )
         )
         existing.add(anchor["public_id"])

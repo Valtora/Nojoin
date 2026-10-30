@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { getTranscriptUtterances } from "@/lib/api/transcript";
@@ -68,6 +68,13 @@ export interface LiveTranscript {
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
   /**
+   * Live label -> the live label the user merged it into. `segments` already
+   * read a merged label's lines as the label it joined.
+   */
+  liveSpeakerMerges?: Readonly<Record<string, string>>;
+  /** Shows the merges a merge answered with, ahead of the next read. */
+  applyLiveSpeakerMerges?: (merges: Record<string, string>) => void;
+  /**
    * A read said live transcription is behind the uploads, and the reads since
    * have not found it caught up for {@link LIVE_BEHIND_CLEAR_MS}.
    */
@@ -124,6 +131,8 @@ export function useLiveTranscript(
   const [liveBehind, setLiveBehind] = useState(false);
   const [liveSpeakerNames, setLiveSpeakerNames] =
     useState<Readonly<Record<string, string>>>(NO_NAMES);
+  const [liveSpeakerMerges, setLiveSpeakerMerges] =
+    useState<Readonly<Record<string, string>>>(NO_NAMES);
   const stateRef = useRef<LocalTranscriptState | null>(null);
 
   // A feed that starts, or restarts for another recording, shows nothing until
@@ -134,6 +143,7 @@ export function useLiveTranscript(
       setHasLoaded(false);
       setLiveBehind(false);
       setLiveSpeakerNames(NO_NAMES);
+      setLiveSpeakerMerges(NO_NAMES);
       setSpeakers([]);
     }
   });
@@ -191,6 +201,9 @@ export function useLiveTranscript(
       setSpeakers((previous) => JSON.stringify(previous) === JSON.stringify(delta.speakers) ? previous : delta.speakers);
       setLiveSpeakerNames((previous) =>
         sameOrNext(previous, delta.live_speaker_names),
+      );
+      setLiveSpeakerMerges((previous) =>
+        sameOrNext(previous, delta.live_speaker_merges),
       );
       if (delta.live_behind === true) {
         caughtUpSince = null;
@@ -252,6 +265,37 @@ export function useLiveTranscript(
     [],
   );
 
+  const applyLiveSpeakerMerges = useCallback(
+    (merges: Record<string, string>) =>
+      setLiveSpeakerMerges((previous) => sameOrNext(previous, merges)),
+    [],
+  );
+
+  // A merge rewrites no line, so each read's lines are shown under the label
+  // their speaker was merged into: one speaker in the lines, the panel and
+  // the colours.
+  const shown = useMemo(
+    () => (Object.keys(liveSpeakerMerges).length === 0 ? segments : segments.map((segment) => {
+      const into = liveSpeakerMerges[segment.speaker];
+      const overlaps = segment.overlapping_speakers;
+      const remapped = !!overlaps?.length && (!!into || overlaps.some((label) => label in liveSpeakerMerges));
+      if (!into && !remapped) return segment;
+      const speaker = into ?? segment.speaker;
+      return {
+        ...segment,
+        speaker,
+        ...(remapped ? {
+          overlapping_speakers: [...new Set(overlaps!.map((label) => liveSpeakerMerges[label] ?? label))]
+            .filter((label) => label !== speaker),
+        } : {}),
+      };
+    })),
+    [segments, liveSpeakerMerges],
+  );
+
   const refresh = useCallback(() => refreshRef.current?.(), []);
-  return { segments, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames, refresh, liveBehind };
+  return {
+    segments: shown, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames,
+    liveSpeakerMerges, applyLiveSpeakerMerges, refresh, liveBehind,
+  };
 }
