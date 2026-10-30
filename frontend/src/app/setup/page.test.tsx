@@ -528,6 +528,64 @@ describe("SetupPage", () => {
     });
   });
 
+  it.each([
+    {
+      pinned: false,
+      sends: "Nothing is sent: no diagnostics and no daily heartbeat.",
+    },
+    {
+      pinned: true,
+      sends:
+        "Counts and settings every six hours, and a daily heartbeat with a random install ID and the version, so installations can be counted. Neither includes your recordings, transcripts, notes, names, or keys.",
+    },
+  ])(
+    "shows telemetry pinned to $pinned by the server read-only, and sends no choice",
+    async ({ pinned, sends }) => {
+      getInitialConfig.mockResolvedValue({
+        ...CONFIGURED_GEMINI,
+        telemetry_pinned: pinned,
+      });
+      validateLLM.mockResolvedValue({ message: "Validation successful" });
+      listModels.mockResolvedValue({ models: ["gemini-pro-latest"] });
+
+      renderWithProviders(<SetupPage />);
+      await unlockWizard();
+
+      // NOJOIN_TELEMETRY_ENABLED outranks the box in both directions, so the
+      // box shows the pinned value and says where it comes from, as
+      // Settings > Privacy does.
+      const telemetryCheckbox = screen.getByLabelText(
+        /Share anonymous usage diagnostics/,
+      );
+      expect(telemetryCheckbox).toBeDisabled();
+      expect((telemetryCheckbox as HTMLInputElement).checked).toBe(pinned);
+      expect(
+        screen.getByText(
+          /Set by NOJOIN_TELEMETRY_ENABLED in the server's environment, so it cannot be changed here/,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText(sends, { exact: false })).toBeInTheDocument();
+      expect(screen.queryByText(/Changeable in Settings/)).not.toBeInTheDocument();
+
+      fireEvent.click(telemetryCheckbox);
+      expect((telemetryCheckbox as HTMLInputElement).checked).toBe(pinned);
+
+      fireEvent.click(screen.getByText("I Accept & Continue"));
+      await screen.findByLabelText("Transcription model");
+      fireEvent.click(screen.getByText("Next Step"));
+      await screen.findByLabelText("Username");
+      fillAccount();
+      fireEvent.click(screen.getByText("Create account"));
+
+      // The operator was shown a value, not asked for one, so the account is
+      // created without a telemetry choice for the server to store.
+      await waitFor(() => {
+        expect(setupSystem).toHaveBeenCalled();
+      });
+      expect(setupSystem.mock.calls[0][0]).not.toHaveProperty("enable_telemetry");
+    },
+  );
+
   it("does not carry an error banner into a later step", async () => {
     renderWithProviders(<SetupPage />);
     await advanceToAccount();
