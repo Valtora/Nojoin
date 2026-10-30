@@ -5,7 +5,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { getCurrentUser, login } from "@/lib/api";
 import { leaveForSignIn } from "@/lib/api/client";
-import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { getErrorMessage } from "@/lib/errors";
 import { useSessionStore } from "@/lib/session";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
@@ -84,7 +84,8 @@ export default function SessionSignInDialog() {
   const heldBy = useSessionStore((state) => state.heldBy);
   const forCapture = heldBy.includes("capture");
   const wording = forCapture ? CAPTURE_WORDING : NOTES_WORDING;
-  const { runtimeActive, status, stop, uploadQueue } = useCapture();
+  const { runtimeActive, status, stop } = useCapture();
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
   const [typedUsername, setTypedUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

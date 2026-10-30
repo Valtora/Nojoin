@@ -5,7 +5,7 @@ import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Pause, Play, Square, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { cn } from "@/lib/cn";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -45,7 +45,6 @@ export default function RecordingFloatingBadge() {
   const {
     cancel,
     controller,
-    elapsedSeconds,
     pause,
     resume,
     runtimeActive,
@@ -53,6 +52,7 @@ export default function RecordingFloatingBadge() {
     stop,
     recordingId,
   } = useCapture();
+  const elapsedSeconds = useCaptureState((state) => state.elapsedSeconds);
   const { addNotification } = useNotificationStore();
 
   const isRecording = status === "recording";

@@ -1,5 +1,29 @@
 import { DriveStep } from "driver.js";
 
+import type { ActivePanel } from "./store";
+
+/** The recording page's panels the transcript tour opens to describe them. */
+export type TourPanel = Extract<ActivePanel, "transcript" | "notes" | "documents">;
+const TOUR_PANELS: readonly TourPanel[] = ["transcript", "notes", "documents"];
+export const isTourPanel = (value: unknown): value is TourPanel =>
+  (TOUR_PANELS as readonly unknown[]).includes(value);
+
+/** Asks the recording page to open one of its panels for a step. */
+export const TOUR_SWITCH_PANEL_EVENT = "tour:switch-panel";
+/**
+ * Sent however the transcript tour ends, so the page puts back the panel the
+ * tour found. Left on the tour's last panel, every recording opened afterwards
+ * would open on it too, a new capture included (#834).
+ */
+export const TOUR_RESTORE_PANEL_EVENT = "tour:restore-panel";
+
+const showPanel = (panel: TourPanel) => () => {
+  window.dispatchEvent(new CustomEvent(TOUR_SWITCH_PANEL_EVENT, { detail: panel }));
+};
+export const restoreTourPanel = () => {
+  window.dispatchEvent(new CustomEvent(TOUR_RESTORE_PANEL_EVENT));
+};
+
 export const dashboardSteps: DriveStep[] = [
   {
     element: '#nav-dashboard',
@@ -79,9 +103,7 @@ export const transcriptSteps: DriveStep[] = [
       description: 'This is where you read the full transcript of your meeting. Select some text to add a note on it, or use the ⋯ button beside a speaker\'s name to play from that line, edit its text or change its speaker.',
       side: 'right',
     },
-    onHighlightStarted: () => {
-      window.dispatchEvent(new CustomEvent('tour:switch-panel', { detail: 'transcript' }));
-    }
+    onHighlightStarted: showPanel('transcript'),
   },
   {
     element: '#audio-player',
@@ -106,9 +128,7 @@ export const transcriptSteps: DriveStep[] = [
       description: 'Generate and edit AI-powered meeting notes, summaries, and action items.',
       side: 'right',
     },
-    onHighlightStarted: () => {
-      window.dispatchEvent(new CustomEvent('tour:switch-panel', { detail: 'notes' }));
-    }
+    onHighlightStarted: showPanel('notes'),
   },
   {
     element: '#tab-documents',
@@ -117,9 +137,7 @@ export const transcriptSteps: DriveStep[] = [
       description: 'Upload PDF or text files relevant to this meeting. Nojoin will index them so you can ask questions about them in the chat.',
       side: 'right',
     },
-    onHighlightStarted: () => {
-      window.dispatchEvent(new CustomEvent('tour:switch-panel', { detail: 'documents' }));
-    }
+    onHighlightStarted: showPanel('documents'),
   },
   {
     element: '#meeting-chat',

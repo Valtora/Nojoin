@@ -71,8 +71,9 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     runtimeActive: false,
     status: localCaptureStatus,
     stop: vi.fn(),
-    uploadQueue: { seconds: 0 },
   }),
+  useCaptureState: (select: (state: { elapsedSeconds: number; uploadQueue: { segments: number; seconds: number } }) => unknown) =>
+    select({ elapsedSeconds: 0, uploadQueue: { segments: 0, seconds: 0 } }),
 }));
 
 const setSideTab = vi.fn();

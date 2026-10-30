@@ -31,6 +31,7 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => captureState,
+  useCaptureState: (select: (state: typeof captureState) => unknown) => select(captureState),
 }));
 
 const alice = { username: "alice", force_password_change: false };

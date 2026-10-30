@@ -27,7 +27,10 @@ const capture = {
   uploadQueue: { segments: 0, seconds: 0 },
 };
 
-vi.mock("@/lib/capture/CaptureProvider", () => ({ useCapture: () => capture }));
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => capture,
+  useCaptureState: (select: (state: typeof capture) => unknown) => select(capture),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("./recordings/_hooks/useRecordingActions", () => ({
   useRecordingActions: () => ({ discard }),
