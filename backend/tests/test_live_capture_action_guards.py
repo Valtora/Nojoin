@@ -2,11 +2,11 @@
 
 The web app offers neither while a meeting records, but MCP's
 regenerate_notes and reprocess_recording call the same routes. A notes run
-marks the recording PROCESSING, and its live transcript keeps it there, so the
-capture's next segment is refused; a reprocess of a paused capture ends it
-before its segments are joined into audio. The MCP tools pass the route's
-reason on, where an HTTPException would reach the assistant only as
-"Error executing tool".
+marked the recording PROCESSING until #828, and its live transcript kept it
+there, so the capture's next segment was refused; a reprocess of a paused
+capture ends it before its segments are joined into audio. The MCP tools
+pass the route's reason on, where an HTTPException would reach the
+assistant only as "Error executing tool".
 """
 
 from __future__ import annotations

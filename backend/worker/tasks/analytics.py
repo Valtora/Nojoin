@@ -22,6 +22,7 @@ from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.processing.pipeline_metrics import pipeline_metric_timer
 from backend.utils.analytics_payload import DELIVERY_KEY, merge_analytics_payload
+from backend.utils.generation_claim import claim_generation
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
 
@@ -103,7 +104,9 @@ def compute_delivery_analytics_task(recording_id: int) -> dict[str, Any]:
             session.commit()
             return {"status": "skipped", "reason": "audio_missing"}
 
-        transcript.analytics_status = "generating"
+        # A claim of its own, which a run lost with its worker gives up once it
+        # expires (backend.utils.generation_claim).
+        claim_generation(transcript, "analytics_status")
         transcript.analytics_error_message = None
         session.add(transcript)
         session.commit()

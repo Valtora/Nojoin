@@ -11,11 +11,13 @@ import logging
 
 from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.generation_claim import claim_generation
 from backend.utils.live_speaker_labels import speaker_prompt_name
 from backend.utils.meeting_notes import append_user_notes_section
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.utils.transcript_change import change_sequence_bump
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
+from backend.worker.tasks.side_runs import claim_heartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +162,6 @@ def _apply_automatic_meeting_intelligence_result(
         },
         log=logger,
     )
-    update_recording_status(session, recording.id)
 
 
 def _run_automatic_meeting_intelligence_stage_impl(
@@ -297,33 +298,37 @@ def _run_automatic_meeting_intelligence_stage_impl(
         recording.processing_progress = AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS
         session.add(recording)
 
-    transcript.notes_status = "generating"
+    # The notes claim is the stage's own. The recording's status belongs to the
+    # pipeline when this runs inline, and to nothing once it is deferred: the
+    # pipeline has already finished it (issue #828).
+    claim_generation(transcript, "notes_status")
     transcript.set_notes_error_message(None)
     session.add(transcript)
     session.commit()
-    update_recording_status(session, recording.id)
 
     try:
         llm = _llm_backend_from_config(llm_config)
-        try:
-            result = llm.generate_meeting_intelligence(
-                request,
-                timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
-            )
-        except ContextWindowExceededError as overflow:
-            # Reached only when the secondary provider, if any, also failed on
-            # the whole meeting. See backend.utils.long_meeting_notes.
-            logger.info(
-                "Recording %s is too long for one call; generating its notes "
-                "in parts: %s",
-                recording.id,
-                overflow,
-            )
-            result = llm.generate_meeting_intelligence_in_parts(
-                request,
-                overflow=overflow,
-                timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
-            )
+        assert recording.id is not None
+        with claim_heartbeat(recording.id, "notes_status"):
+            try:
+                result = llm.generate_meeting_intelligence(
+                    request,
+                    timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
+                )
+            except ContextWindowExceededError as overflow:
+                # Reached only when the secondary provider, if any, also failed
+                # on the whole meeting. See backend.utils.long_meeting_notes.
+                logger.info(
+                    "Recording %s is too long for one call; generating its notes "
+                    "in parts: %s",
+                    recording.id,
+                    overflow,
+                )
+                result = llm.generate_meeting_intelligence_in_parts(
+                    request,
+                    overflow=overflow,
+                    timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
+                )
         result = dataclasses.replace(
             result,
             notes_markdown=append_user_notes_section(

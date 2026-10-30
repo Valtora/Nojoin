@@ -69,6 +69,23 @@ IN_FLIGHT_TRANSCRIPT_STATUSES = frozenset(
 )
 
 
+# The step a finished meeting shows while Retry Speaker Inference holds it.
+SPEAKER_INFERENCE_STEP = "Inferring speakers..."
+
+
+def is_side_run_hold(recording: "Recording") -> bool:
+    """A finished meeting held in PROCESSING by a run over it, not by the pipeline.
+
+    The pipeline clears processing_completed_at when it marks a recording
+    PROCESSING, so one still carrying it was put there by something else:
+    Retry Speaker Inference, or a notes run from an earlier release (#828).
+    """
+    return recording.status == RecordingStatus.PROCESSING and (
+        recording.processing_completed_at is not None
+        or recording.processing_step == SPEAKER_INFERENCE_STEP
+    )
+
+
 def generate_meeting_uid() -> str:
     return str(uuid4())
 
@@ -220,10 +237,9 @@ def recording_is_discardable(recording: "Recording") -> bool:
 
     Discard gives up on a meeting whose capture or first processing never
     finished. A meeting that has been PROCESSED once stays finished while its
-    notes regenerate, its speakers are inferred again or it is reprocessed,
-    each of which shows it as QUEUED or PROCESSING, so status alone cannot say
-    (issue #833). Such a meeting goes to the bin instead, where it can be
-    restored.
+    speakers are inferred again or it is reprocessed, each of which shows it
+    as QUEUED or PROCESSING, so status alone cannot say (issue #833). Such a
+    meeting goes to the bin instead, where it can be restored.
     """
     return (
         recording.status in DISCARDABLE_STATUSES
