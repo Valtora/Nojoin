@@ -11,7 +11,7 @@ import { useImportAudioStore } from "@/lib/importAudioStore";
 import type { ViewType } from "@/lib/store";
 import Sidebar from "./Sidebar";
 import ImportAudioHost from "./importAudio/ImportAudioHost";
-import { RecordingStatus, type Recording } from "@/types";
+import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 import { activeTransitions, animatesWidth } from "@/test/widthTransition";
 
@@ -312,6 +312,27 @@ describe("Sidebar", () => {
       "Archive",
       "Move to Bin",
     ]);
+  });
+
+  const unfinished = ["Rename", "Discard Recording", "Show Recording Info", "Archive", "Move to Bin"];
+  it.each([
+    ["a live capture", { status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING, discardable: true }, unfinished],
+    ["a paused capture", { status: RecordingStatus.PAUSED, client_status: ClientStatus.PAUSED, discardable: true }, unfinished],
+    ["a first pass", { status: RecordingStatus.PROCESSING, discardable: true }, unfinished],
+    // Regenerating notes, inferring speakers or reprocessing: still a finished meeting.
+    ["a finished meeting back in processing", { status: RecordingStatus.PROCESSING, discardable: false },
+      ["Rename", "Show Recording Info", "Archive", "Move to Bin"]],
+    ["a failed recording", { status: RecordingStatus.ERROR },
+      ["Rename", "Retry Processing", "Show Recording Info", "Archive", "Move to Bin"]],
+  ] as const)("offers on %s only what the server would do (#832, #833)", async (_, state, expected) => {
+    getRecordings.mockResolvedValue([{ ...recording, ...state }]);
+    lastMenuItems = [];
+    renderWithProviders(<Sidebar />);
+
+    fireEvent.contextMenu(await screen.findByRole("heading", { name: "Latest meeting" }));
+
+    expect(await screen.findByTestId("sidebar-context-menu")).toBeInTheDocument();
+    expect(lastMenuItems.map((item) => item.label)).toEqual(expected);
   });
 
   it("follows the pointer while resizing and animates only collapse and expand (#747)", async () => {

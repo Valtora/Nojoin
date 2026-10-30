@@ -47,6 +47,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    first_processed_at DATETIME,
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
@@ -972,6 +973,247 @@ async def test_discard_rejects_completed_recording(
         headers={"Origin": TRUSTED_ORIGIN},
     )
     assert discard_response.status_code == 400
+
+
+async def _finish_processing(session_maker: sessionmaker, recording_id: int) -> None:
+    """Take a seeded first pass to PROCESSED the way the pipeline does."""
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcripts SET transcript_status = 'completed', "
+                "notes_status = 'completed', text = 'Hello team.' "
+                "WHERE recording_id = :id"
+            ),
+            {"id": recording_id},
+        )
+        await session.commit()
+    await _run_status_manager(session_maker, recording_id)
+
+
+async def _run_status_manager(session_maker: sessionmaker, recording_id: int) -> None:
+    from sqlmodel import Session as SQLModelSession
+
+    from backend.utils.status_manager import update_recording_status
+
+    async with session_maker(sync_session_class=SQLModelSession) as session:
+        await session.run_sync(
+            lambda sync_session: update_recording_status(sync_session, recording_id)
+        )
+
+
+async def _status(session_maker: sessionmaker, recording_id: int) -> str | None:
+    async with session_maker() as session:
+        return (
+            await session.execute(
+                text("SELECT status FROM recordings WHERE id = :id"),
+                {"id": recording_id},
+            )
+        ).scalar_one_or_none()
+
+
+@pytest.mark.anyio
+async def test_discard_cannot_delete_a_finished_meeting_while_its_notes_regenerate(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Issue #833: notes generating show a finished meeting as PROCESSING, and
+    Discard used to delete it, its transcript and its audio outright."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4444,
+        public_id="regenerating-notes",
+        status="PROCESSING",
+    )
+    await _finish_processing(test_session_maker, 4444)
+    assert await _status(test_session_maker, 4444) == "PROCESSED"
+
+    # What generate_notes_task does as it starts.
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcripts SET notes_status = 'generating' "
+                "WHERE recording_id = :id"
+            ),
+            {"id": 4444},
+        )
+        await session.commit()
+    await _run_status_manager(test_session_maker, 4444)
+    assert await _status(test_session_maker, 4444) == "PROCESSING"
+
+    set_session_cookie(client)
+    discard_response = await client.post(
+        "/api/v1/recordings/regenerating-notes/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert discard_response.status_code == 409
+    assert "Move it to the bin" in discard_response.json()["detail"]
+    assert await _status(test_session_maker, 4444) == "PROCESSING"
+    async with test_session_maker() as session:
+        transcript_text = (
+            await session.execute(
+                text("SELECT text FROM transcripts WHERE recording_id = :id"),
+                {"id": 4444},
+            )
+        ).scalar_one()
+    assert transcript_text == "Hello team."
+
+
+@pytest.mark.anyio
+async def test_a_first_pass_that_has_not_finished_can_still_be_discarded(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Discard keeps its purpose: giving up on a meeting still being processed,
+    even once the status manager has had a hand in its status."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4545,
+        public_id="first-pass",
+        status="QUEUED",
+    )
+    await _run_status_manager(test_session_maker, 4545)
+    assert await _status(test_session_maker, 4545) == "PROCESSING"
+
+    set_session_cookie(client)
+    discard_response = await client.post(
+        "/api/v1/recordings/first-pass/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert discard_response.status_code == 200
+    assert await _status(test_session_maker, 4545) is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("paused", [False, True])
+async def test_speaker_inference_is_refused_during_a_live_capture(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    paused: bool,
+) -> None:
+    """Issue #832: inference held a live capture in PROCESSING and handed it back
+    as PROCESSED, so the tab's next segment was refused and its audio lost."""
+    set_session_cookie(client)
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Live standup"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    recording_id = init_response.json()["id"]
+    first_segment = await client.post(
+        f"/api/v1/recordings/{recording_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.wav", make_wav_bytes(), "audio/wav")},
+    )
+    assert first_segment.status_code == 200
+    if paused:
+        pause_response = await client.post(
+            f"/api/v1/recordings/{recording_id}/pause",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+        assert pause_response.status_code == 200
+
+    refused = await client.post(
+        f"/api/v1/recordings/{recording_id}/infer-speakers",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert refused.status_code == 409
+    assert "finished processing" in refused.json()["detail"]
+    async with test_session_maker() as session:
+        status, client_status, task_id = (
+            await session.execute(
+                text(
+                    "SELECT status, client_status, celery_task_id FROM recordings "
+                    "WHERE public_id = :id"
+                ),
+                {"id": recording_id},
+            )
+        ).one()
+    assert (status, client_status, task_id) == (
+        ("PAUSED", "PAUSED", None) if paused else ("UPLOADING", "RECORDING", None)
+    )
+    if not paused:
+        next_segment = await client.post(
+            f"/api/v1/recordings/{recording_id}/segment",
+            params={"sequence": 1},
+            headers={"Origin": TRUSTED_ORIGIN},
+            files={"file": ("1.wav", make_wav_bytes(), "audio/wav")},
+        )
+        assert next_segment.status_code == 200
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "detail"),
+    [
+        ("QUEUED", "finished processing"),
+        ("PROCESSING", "finished processing"),
+        ("ERROR", "Reprocess it"),
+    ],
+)
+async def test_speaker_inference_is_refused_on_an_unfinished_recording(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    status: str,
+    detail: str,
+) -> None:
+    await insert_recording(
+        test_session_maker,
+        recording_id=4646,
+        public_id="not-finished",
+        status=status,
+    )
+
+    set_session_cookie(client)
+    refused = await client.post(
+        "/api/v1/recordings/not-finished/infer-speakers",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert refused.status_code == 409
+    assert detail in refused.json()["detail"]
+    assert await _status(test_session_maker, 4646) == status
+
+
+@pytest.mark.anyio
+async def test_speaker_inference_runs_on_a_finished_meeting_that_discard_then_spares(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Inference holds the meeting in PROCESSING as notes do, so Discard, and a
+    second run, must refuse it until the run hands it back."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4747,
+        public_id="finished-meeting",
+        status="PROCESSING",
+    )
+    await _finish_processing(test_session_maker, 4747)
+
+    set_session_cookie(client)
+    started = await client.post(
+        "/api/v1/recordings/finished-meeting/infer-speakers",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert started.status_code == 200
+    assert started.json()["status"] == "queued"
+    assert await _status(test_session_maker, 4747) == "PROCESSING"
+
+    second = await client.post(
+        "/api/v1/recordings/finished-meeting/infer-speakers",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert second.status_code == 409
+
+    discard_response = await client.post(
+        "/api/v1/recordings/finished-meeting/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert discard_response.status_code == 409
+    assert await _status(test_session_maker, 4747) == "PROCESSING"
 
 
 @pytest.mark.anyio

@@ -145,7 +145,9 @@ export default function RecordingCaptureSlot({ recording, audioClock, onDiscarde
             </span>
           )}
           {attachDocuments}
-          {isPipeline ? (
+          {/* A finished meeting whose notes regenerate or that is being
+              reprocessed is in the pipeline too, and goes to the bin (#833). */}
+          {isPipeline && recording.discardable ? (
             <ButtonBase
               data-ui-fill="card" data-ui-hover="status-danger" data-ui-border="full" chrome="action"
               type="button" onClick={discard} disabled={isDiscarding}

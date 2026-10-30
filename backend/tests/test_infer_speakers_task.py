@@ -64,6 +64,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    first_processed_at DATETIME,
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
@@ -839,6 +840,49 @@ def test_infer_speakers_task_leaves_a_failed_transcription_in_error(
             ).one()
 
         assert tuple(recording_row) == ("ERROR", failure, "IDLE")
+    finally:
+        verification_engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("status", "client_status"),
+    [("UPLOADING", "RECORDING"), ("PAUSED", "PAUSED"), ("QUEUED", "IDLE")],
+)
+def test_infer_speakers_task_never_finishes_a_recording_it_does_not_hold(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    client_status: str,
+) -> None:
+    """Issue #832: a run that found a live capture handed it back as PROCESSED,
+    which ended the capture before its audio was assembled. The API holds the
+    recording in PROCESSING for a run; any other status is someone else's."""
+    engine = _create_infer_speakers_task_database(tmp_path, owner_settings={})
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE recordings SET status = :status, client_status = :client, "
+                "processing_step = NULL WHERE id = 1"
+            ),
+            {"status": status, "client": client_status},
+        )
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_infer_speakers_task(engine)
+
+        with Session(verification_engine) as session:
+            recording_row = session.exec(
+                text(
+                    "SELECT status, client_status, processing_step, "
+                    "first_processed_at FROM recordings WHERE id = 1"
+                )
+            ).one()
+
+        assert tuple(recording_row) == (status, client_status, None, None)
     finally:
         verification_engine.dispose()
 

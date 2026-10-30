@@ -558,19 +558,27 @@ def _complete_speaker_inference_task(
     if not recording:
         return
 
-    # Speaker inference never repairs a failed transcription, so a recording
-    # whose ASR failed goes back to ERROR rather than reading as finished.
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording.id)
-    ).first()
-    if transcript is not None and transcript.transcript_status == "error":
-        recording.status = RecordingStatus.ERROR
-        recording.processing_step = transcript.error_message or "Transcription failed"
-    else:
-        recording.status = RecordingStatus.PROCESSED
-        recording.processing_step = "Completed"
-    recording.client_status = ClientStatus.IDLE
-    session.add(recording)
+    # The API holds the recording in PROCESSING for the run. Any other status
+    # belongs to something else, a capture above all, which a PROCESSED here
+    # would end before its audio was assembled (issue #832). Read it afresh:
+    # the copy loaded when the run began may be stale.
+    session.refresh(recording)
+    if recording.status == RecordingStatus.PROCESSING:
+        # Speaker inference never repairs a failed transcription, so a recording
+        # whose ASR failed goes back to ERROR rather than reading as finished.
+        transcript = session.exec(
+            select(Transcript).where(Transcript.recording_id == recording.id)
+        ).first()
+        if transcript is not None and transcript.transcript_status == "error":
+            recording.status = RecordingStatus.ERROR
+            recording.processing_step = (
+                transcript.error_message or "Transcription failed"
+            )
+        else:
+            recording.status = RecordingStatus.PROCESSED
+            recording.processing_step = "Completed"
+        recording.client_status = ClientStatus.IDLE
+        session.add(recording)
     # The status returns to where another tab last saw it, so only the counter
     # tells that tab the speakers and suggestions changed.
     session.execute(change_sequence_bump(recording.id))

@@ -20,6 +20,7 @@ from backend.models.recording import (
     RecordingStatus,
     capture_looks_stalled,
     import_looks_stalled,
+    recording_is_discardable,
 )
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
@@ -279,6 +280,10 @@ class RecordingPublicRead(PublicModel):
     # A file import that has received no part for STALLED_IMPORT_AFTER: the page
     # sending it went away. The client offers to import it again or discard it.
     import_stalled: bool = False
+    # Whether Discard would delete it: a capture, an import or a first pass that
+    # has not finished. False for a finished meeting while its notes regenerate,
+    # its speakers are inferred or it is reprocessed (recording_is_discardable).
+    discardable: bool = False
     # Computed server-side when the detail read includes the transcript: shown
     # once processing is complete, until the recording has a language of its
     # own (backend/utils/language_notice.py).
@@ -525,6 +530,7 @@ def serialize_recording(
         capture_stalled=capture_looks_stalled(recording),
         capture_epoch=getattr(recording, "capture_epoch", 0) or 0,
         import_stalled=import_looks_stalled(recording),
+        discardable=recording_is_discardable(recording),
         language_notice=LanguageNoticeRead(**notice) if notice else None,
         transcript=transcript,
         speakers=speakers,

@@ -31,6 +31,7 @@ from backend.core.backup.restore.state import _RestoreState
 from backend.utils.db_batching import bind_batches
 from backend.utils.document_storage import document_file_identity
 from backend.utils.recording_storage import delete_recording_artifacts
+from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -457,11 +458,21 @@ def _normalise_restored_recording_state(session: Any, state: "_RestoreState") ->
     A recording captured mid-flight carries a status this installation can never
     advance. Recordings whose transcript came across completed are marked processed;
     the rest are marked errored so the operator can reprocess them deliberately.
+
+    Every restored recording also counts as a finished meeting, so Discard never
+    deletes one outright (issue #833). An archive written before
+    ``first_processed_at`` existed cannot say which meetings had finished, and a
+    restored failure may hold a finished meeting whose reprocess failed. A
+    restored first pass that never finished can still go to the bin.
     """
     for recording_id in sorted(state.restored_recording_ids):
         recording = session.get(runtime.Recording, recording_id)
         if recording is None:
             continue
+
+        if getattr(recording, "first_processed_at", None) is None:
+            recording.first_processed_at = utc_now()
+            session.add(recording)
 
         status = getattr(recording, "status", None)
         status_value = getattr(status, "value", status)

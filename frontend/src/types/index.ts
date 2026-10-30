@@ -672,6 +672,13 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * imported again or discarded.
    */
   import_stalled?: boolean;
+  /**
+   * Whether Discard would delete it: a capture, an import or a first pass that
+   * has not finished. False for a finished meeting while its notes regenerate,
+   * its speakers are inferred or it is reprocessed, which also show as queued
+   * or processing (issue #833). Judged by the server.
+   */
+  discardable?: boolean;
   /** Detail read only; null when there is nothing to ask. */
   language_notice?: LanguageNotice | null;
   is_archived: boolean;
