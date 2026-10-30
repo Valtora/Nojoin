@@ -11,9 +11,11 @@ import functools
 import inspect
 import logging
 import time
+from http import HTTPStatus
 from typing import Any, Callable
 
 from mcp.server.mcpserver.exceptions import ToolError
+from starlette.exceptions import HTTPException
 
 from backend.mcp_server.auth import current_mcp_user
 
@@ -73,6 +75,24 @@ def _summarise_result(result: Any) -> str:
     return type(result).__name__
 
 
+def _route_refusal(exc: HTTPException) -> str:
+    """The text a route meant its caller to read, and nothing else.
+
+    A plain string detail is that text. A ``{code, message}`` detail gives its
+    message. Anything else falls back to the status phrase, so no structure the
+    route built for another client reaches the assistant.
+    """
+    detail = exc.detail
+    if isinstance(detail, dict):
+        detail = detail.get("message")
+    if isinstance(detail, str) and detail.strip():
+        return detail
+    try:
+        return HTTPStatus(exc.status_code).phrase
+    except ValueError:
+        return f"Request failed ({exc.status_code})"
+
+
 def logged_tool(func: Callable) -> Callable:
     """Wrap an MCP tool with structured call logging.
 
@@ -81,6 +101,14 @@ def logged_tool(func: Callable) -> Callable:
     user-facing rejection), and an EXCEPTION for anything unexpected. The
     signature is preserved via functools.wraps so the SDK still builds the
     tool's input schema from the original annotations.
+
+    Tools call the web routes and their helpers, which refuse with an
+    HTTPException. The SDK treats anything but a ToolError as a crash and
+    gives the assistant only "Error executing tool <name>", so the route's
+    reason is passed on here as a ToolError, for every tool. A 4xx is logged
+    as a rejection. A 5xx is still a server fault, logged with its traceback;
+    the assistant gets the route's detail, the same text the web app shows,
+    and never the traceback or the exception behind it.
     """
     signature = inspect.signature(func)
 
@@ -106,6 +134,26 @@ def logged_tool(func: Callable) -> Callable:
                 exc,
             )
             raise
+        except HTTPException as exc:
+            reason = _route_refusal(exc)
+            if exc.status_code < 500:
+                logger.warning(
+                    "mcp tool %s rejected user=%s %s: %s %s",
+                    func.__name__,
+                    user_id,
+                    arg_summary,
+                    exc.status_code,
+                    reason,
+                )
+            else:
+                logger.exception(
+                    "mcp tool %s failed user=%s %s: %s",
+                    func.__name__,
+                    user_id,
+                    arg_summary,
+                    exc.status_code,
+                )
+            raise ToolError(reason) from exc
         except Exception:
             logger.exception(
                 "mcp tool %s failed user=%s %s",
