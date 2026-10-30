@@ -71,6 +71,14 @@ describe("LiveTranscriptPanel", () => {
     expect(screen.getByText("Recording is paused.")).toBeInTheDocument();
   });
 
+  it("does not say it is listening once the capture has stopped", () => {
+    render(<LiveTranscriptPanel segments={[]} hasLoaded capturing={false} />);
+
+    expect(screen.queryByText("Listening.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/a few seconds behind the conversation/i)).not.toBeInTheDocument();
+    expect(screen.getByText("No transcript segments")).toBeInTheDocument();
+  });
+
   it("says it is still loading before the first fetch resolves", () => {
     renderPanel([], false);
 

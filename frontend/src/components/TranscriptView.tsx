@@ -512,11 +512,11 @@ export default function TranscriptView({
                 <Radio className="h-4 w-4" />
               </div>
               <div className="text-sm font-semibold text-foreground">
-                {live ? live.isPaused ? "Recording is paused." : "Listening." : emptyStateTitle}
+                {live?.capturing ? live.isPaused ? "Recording is paused." : "Listening." : emptyStateTitle}
               </div>
-              {(live || emptyStateDescription) && (
+              {(live?.capturing || emptyStateDescription) && (
                 <div className="mt-1 text-sm leading-5 text-contrast-helper">
-                  {live ? live.hasLoaded
+                  {live?.capturing ? live.hasLoaded
                     ? "Text appears a few seconds behind the conversation, as each sentence completes."
                     : "Loading the transcript so far." : emptyStateDescription}
                 </div>

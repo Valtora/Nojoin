@@ -544,7 +544,12 @@ export interface Transcript extends BaseDBModel {
    * never triggers one, since that spends provider quota and overwrites edits.
    */
   notes_stale_documents?: boolean;
-  transcript_status?: string; // pending, processing, completed, error
+  /**
+   * pending, processing, completed or error. Only a capture's transcript is
+   * "processing", from its start until its run publishes; an import's and a
+   * reprocess's stay "pending" until then.
+   */
+  transcript_status?: string;
   error_message?: string;
 }
 

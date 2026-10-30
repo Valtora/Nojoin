@@ -91,7 +91,7 @@ export default function NotesSection({
       )}
       {inFlight && hasRetainedPublication && recording.transcript?.notes ? (
         <RichTextEditor content={recording.transcript.notes} editable={false} onChange={() => undefined} />
-      ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the live transcript.</p> : <NotesView
+      ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the transcript.</p> : <NotesView
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
         onNotesChange={onNotesChange}
