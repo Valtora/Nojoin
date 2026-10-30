@@ -69,7 +69,7 @@ safetensors==0.8.0
 # Native Nemotron inference. No broad Transformers extras or NeMo dependency:
 # the immutable asset manifest and golden fixture pin this version together
 # (scripts/check_held_pins.py). Revalidate both before changing it.
-transformers==5.20.2
+transformers==5.21.0
 librosa==1.0.0
 soxr==1.1.0
 lazy-loader==0.6
