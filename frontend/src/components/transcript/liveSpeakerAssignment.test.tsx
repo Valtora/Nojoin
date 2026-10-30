@@ -79,3 +79,24 @@ it.each([false, true])("selects a distinct %s-named live identity through the me
   expect(await patch.json()).toEqual({ new_speaker_name: named ? "Alex" : "Speaker 2",
     diarization_label: TWO, scope: "utterance_only", expected_revision: 3 });
 });
+
+it("offers no new speaker for the name the line's own live label already has", async () => {
+  read = {
+    recording_id: "rec-1", revision: 9, settling_required: true, speakers: [], tombstones: [],
+    live_speaker_names: { [ONE]: "Alex" },
+    utterances: [ONE, TWO].map((speaker, index) => ({
+      id: `u${index}`, revision: 3, speaker, start: index * 4, end: index * 4 + 2,
+      start_ms: index * 4000, end_ms: index * 4000 + 2000,
+      text: `Voice ${index}.`, state: "provisional", provisional: true, segment_source: "live", locked: true,
+    })),
+  };
+  render(<TranscriptSection {...props(await getTranscriptUtterances("rec-1"))} />);
+  fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 00:00" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Change speaker" }));
+  const search = screen.getByPlaceholderText("Search or add...");
+  fireEvent.change(search, { target: { value: "alex" } });
+  expect(screen.queryByText(/Create local/)).not.toBeInTheDocument();
+  fireEvent.keyDown(search, { key: "Enter" });
+  await Promise.resolve();
+  expect(requests.filter((request) => request.method === "PATCH")).toHaveLength(0);
+});

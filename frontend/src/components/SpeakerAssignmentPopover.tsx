@@ -175,6 +175,10 @@ export default function SpeakerAssignmentPopover({
 
   const filteredLive = Object.entries(liveSpeakerLabels ?? {}).filter(([label, name]) =>
     label !== currentSpeakerLabel && name.toLowerCase().includes(search.trim().toLowerCase()));
+  // Every live label counts, the line's own included: typing its current name
+  // must not offer a second speaker of that name.
+  const searchNamesLiveSpeaker = Object.values(liveSpeakerLabels ?? {}).some((name) =>
+    name.toLowerCase() === search.trim().toLowerCase());
 
   const filteredGlobal = globalSpeakers.filter(
     (s) =>
@@ -253,8 +257,7 @@ export default function SpeakerAssignmentPopover({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (search.trim() && !filteredLive.some(([, name]) =>
-        name.toLowerCase() === search.trim().toLowerCase())) {
+      if (search.trim() && !searchNamesLiveSpeaker) {
         onSelect({ name: search.trim(), scope });
       }
     } else if (e.key === "Escape") {
@@ -443,7 +446,7 @@ export default function SpeakerAssignmentPopover({
 
         {/* Create New */}
         {search.trim() &&
-          !filteredLive.some(([, name]) => name.toLowerCase() === search.trim().toLowerCase()) &&
+          !searchNamesLiveSpeaker &&
           !filteredAvailable.some(
             (option) =>
               option.displayName.toLowerCase() === search.trim().toLowerCase(),
