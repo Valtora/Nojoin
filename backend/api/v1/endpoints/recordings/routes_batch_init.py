@@ -25,7 +25,7 @@ from backend.utils.recording_storage import delete_recording_artifacts_after_com
 from backend.utils.time import utc_now
 from backend.utils.transcript_settling import new_capture_settling_state
 
-from .helpers import revoke_recording_task
+from .helpers import lock_recording_for_delete, revoke_recording_task
 from .router import router
 
 logger = logging.getLogger(__name__)
@@ -163,14 +163,16 @@ async def batch_permanently_delete_recordings(
     """
     recordings, requested = await _requested_recordings(db, batch, current_user.id)
 
-    # Locked in id order, so two batches over the same recordings, or a batch
-    # and a user deletion, take the locks in one order and cannot deadlock.
+    # Locked in id order, each in the single delete's order (audio lock,
+    # Transcript, row), so two batches over the same recordings, or a batch and
+    # a user deletion, take the locks in one order and cannot deadlock.
+    # One deleted by another request while this waited is skipped.
     recordings = sorted(recordings, key=lambda recording: recording.id)
+    locked: list[Recording] = []
     for recording in recordings:
-        # Locked, as in delete_recording, so keep_imported_audio_task cannot
-        # repoint audio_path between this read and the delete.
-        await db.refresh(recording, with_for_update=True)
-    binned = [recording for recording in recordings if recording.is_deleted]
+        if await lock_recording_for_delete(db, recording):
+            locked.append(recording)
+    binned = [recording for recording in locked if recording.is_deleted]
 
     for recording in binned:
         await revoke_recording_task(recording)

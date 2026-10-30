@@ -295,6 +295,12 @@ def _get_recording_speaker_display_name(recording_speaker: RecordingSpeaker) -> 
 import re2
 
 
+def _mark_replaced_text(segment: dict, text: str) -> None:
+    segment["text"] = text
+    segment["text_manually_edited"] = True
+    segment["text_edit_source"] = "api"
+
+
 def _apply_find_replace(
     transcript: Transcript,
     find_text: str,
@@ -304,7 +310,10 @@ def _apply_find_replace(
 ) -> int:
     """
     Apply find and replace to both transcript segments and notes.
-    Returns the number of segment replacements made.
+
+    Returns the number of lines whose text changed. Each is marked as the
+    person's own edit from the web app, which locks it against later passes;
+    a match the replacement leaves as it was is neither counted nor marked.
     """
     if len(find_text) > 1000:
         raise HTTPException(
@@ -320,8 +329,7 @@ def _apply_find_replace(
             if find_text in segment["text"]:
                 new_text = segment["text"].replace(find_text, replace_text)
                 if new_text != segment["text"]:
-                    segment["text"] = new_text
-                    segment["text_manually_edited"] = True
+                    _mark_replaced_text(segment, new_text)
                     total_segment_replacements += 1
 
         if transcript.notes and find_text in transcript.notes:
@@ -348,10 +356,9 @@ def _apply_find_replace(
             raise HTTPException(status_code=400, detail="Invalid regular expression")
 
         for segment in transcript.segments:
-            new_text, count = regex.subn(replace_text, segment["text"])
-            if count > 0:
-                segment["text"] = new_text
-                segment["text_manually_edited"] = True
+            new_text = regex.sub(replace_text, segment["text"])
+            if new_text != segment["text"]:
+                _mark_replaced_text(segment, new_text)
                 total_segment_replacements += 1
 
         if transcript.notes:

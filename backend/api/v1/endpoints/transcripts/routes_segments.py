@@ -1,6 +1,7 @@
 import copy
 import logging
 import uuid
+from collections.abc import Collection
 from typing import Optional
 
 from fastapi import Depends, HTTPException
@@ -61,13 +62,20 @@ logger = logging.getLogger(__name__)
 
 
 async def _apply_segment_replace(
-    db: AsyncSession, *, recording_id: int, segments: list[dict]
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    segments: list[dict],
+    text_edit_ids: Collection[str] = (),
 ) -> None:
     """Replace the canonical segments; reused utterance ids are a 409."""
     try:
         await db.run_sync(
             lambda sync_session: apply_compatibility_segment_replace(
-                sync_session, recording_id=recording_id, segments=segments
+                sync_session,
+                recording_id=recording_id,
+                segments=segments,
+                text_edit_ids=text_edit_ids,
             )
         )
     except SegmentIdConflictError as exc:
@@ -604,7 +612,15 @@ async def find_and_replace(
         staged = Transcript(
             segments=copy.deepcopy(transcript.segments), notes=transcript.notes
         )
+    before = [segment.get("text") for segment in staged.segments or []]
     _apply_find_replace(staged, find_text, replace_text, case_sensitive, use_regex)
+    # The lines this changed are the person's own edit, so they go through the
+    # lock an earlier edit or replace left on them (issue #842).
+    replaced_ids = {
+        str(segment["id"])
+        for segment, text in zip(staged.segments or [], before)
+        if segment.get("id") and segment.get("text") != text
+    }
 
     if (
         settling_required(transcript)
@@ -620,6 +636,7 @@ async def find_and_replace(
             db,
             recording_id=recording.id,
             segments=[dict(segment) for segment in (staged.segments or [])],
+            text_edit_ids=replaced_ids,
         )
 
     if staged is not transcript:

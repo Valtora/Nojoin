@@ -291,17 +291,12 @@ async def reprocess_recording(
         body_kwargs["max_speakers"] = max_speakers
 
     async with async_session_maker() as db:
-        try:
-            updated = await api_reprocess_recording(
-                recording_id,
-                ReprocessRequest(**body_kwargs),
-                db=db,
-                current_user=user,
-            )
-        except HTTPException as exc:
-            # The assistant gets the route's reason. Anything else raised from
-            # a tool reaches it only as "Error executing tool".
-            raise ToolError(str(exc.detail)) from exc
+        updated = await api_reprocess_recording(
+            recording_id,
+            ReprocessRequest(**body_kwargs),
+            db=db,
+            current_user=user,
+        )
     return {"id": updated.id, "status": str(updated.status)}
 
 
@@ -332,15 +327,12 @@ async def regenerate_notes(
     _require_write_scope("notes regeneration")
 
     async with async_session_maker() as db:
-        try:
-            result = await generate_notes(
-                recording_id,
-                GenerateNotesRequest(notes_template_id=notes_template_id),
-                db=db,
-                current_user=user,
-            )
-        except HTTPException as exc:
-            raise ToolError(str(exc.detail)) from exc
+        result = await generate_notes(
+            recording_id,
+            GenerateNotesRequest(notes_template_id=notes_template_id),
+            db=db,
+            current_user=user,
+        )
     return {
         "recording_id": recording_id,
         "notes_status": result.get("notes_status"),
