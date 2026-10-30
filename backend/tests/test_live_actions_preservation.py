@@ -658,22 +658,29 @@ def test_final_speech_beside_a_text_correction_stays_ordinary_transcript(
         assert [line["text"] for line in lines] == [
             " ".join(f"w{second}" for second in range(14)),
             "Corrected words",
-            " ".join(f"w{second}" for second in range(16, 30)),
+            "w16 w17",
+            " ".join(f"w{second}" for second in range(18, 30)),
         ]
         assert [(line["start"], line["end"]) for line in lines] == [
             (0, 14),
             (14, 16),
-            (16, 30),
+            (16, 18),
+            (18, 30),
         ]
         assert lines[1]["final_review"] == {
             "text": "w14 w15",
             "reason": "ambiguous_alignment",
         }
-        assert not any("final_review" in line for line in (lines[0], lines[2]))
-        # The speaker chosen beside the text correction reaches the final line.
+        assert not any(
+            "final_review" in line for line in (lines[0], lines[2], lines[3])
+        )
+        # The speaker chosen beside the text correction reaches the final words
+        # its 16-18 s line covers, and the rest keeps the final speaker.
         assert lines[2]["recording_speaker_id"] == speaker_id
         assert lines[2]["speaker_manually_edited"]
         assert lines[0]["recording_speaker_id"] != speaker_id
+        assert lines[3]["recording_speaker_id"] != speaker_id
+        assert not lines[3]["speaker_manually_edited"]
         stored = _load_transcript(session, recording_id)
         assert stored is not None and stored.text is not None
         assert "w0" in stored.text and "w29" in stored.text

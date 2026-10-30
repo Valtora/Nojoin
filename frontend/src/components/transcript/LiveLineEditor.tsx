@@ -21,13 +21,14 @@ export type LiveEditKind = "editText" | "changeSpeaker" | "split";
 
 /** An explicit text editor, speaker picker, or genuine-word boundary picker. */
 export default function LiveLineEditor({
-  kind, segment, anchor, handlers, speakers = [], onClose,
+  kind, segment, anchor, handlers, speakers = [], liveSpeakerLabels, onClose,
 }: {
   kind: LiveEditKind;
   segment: TranscriptSegment;
   anchor: HTMLElement;
   handlers: LiveLineHandlers;
   speakers?: readonly RecordingSpeaker[];
+  liveSpeakerLabels?: Readonly<Record<string, string>>;
   onClose: () => void;
 }) {
   const [text, setText] = useState(segment.text);
@@ -85,6 +86,7 @@ export default function LiveLineEditor({
   if (kind === "changeSpeaker") return (
     <SpeakerAssignmentPopover
       availableSpeakers={speakers} globalSpeakers={people} currentSpeakerLabel={segment.speaker}
+      liveSpeakerLabels={liveSpeakerLabels}
       targetElement={anchor} speakerColors={{}}
       onSelect={(assignment) => void save(() => handlers.changeSpeaker(segment, assignment))} onClose={close}
     />

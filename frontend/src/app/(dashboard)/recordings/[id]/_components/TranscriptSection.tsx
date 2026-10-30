@@ -134,12 +134,18 @@ export default function TranscriptSection({
   const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
     hasRetainedPublication;
   const readOnly = (isRecordingInFlight(recording) || awaitingPublication) && !activeCapture;
-  // A finished recording keeps its finished presentation while a reprocess
-  // reads the feed; capture keeps its live one through processing until handoff.
-  const [presentFeed, setPresentFeed] = useState(usesLiveFeed);
-  useOnDepsChange([usesLiveFeed, readOnly], () => {
+  const transcriptStatus = recording.transcript?.transcript_status;
+  // The live presentation is a capture's own run: recording, paused, or
+  // processing what it heard (only capture start makes a "processing"
+  // transcript). It holds until the finished transcript takes over. A later
+  // run over a finished transcript (notes, speaker inference, a settled
+  // meeting's reprocess) reads the feed in the finished presentation, opened
+  // during the run or before it, and through its publication.
+  const captureRun = activeCapture || transcriptStatus === "processing";
+  const [presentFeed, setPresentFeed] = useState(usesLiveFeed && captureRun);
+  useOnDepsChange([usesLiveFeed, captureRun], () => {
     if (!usesLiveFeed) setPresentFeed(false);
-    else if (!readOnly) setPresentFeed(true);
+    else if (captureRun) setPresentFeed(true);
   });
   // The one handler guard: a control drawn before the view turned read-only
   // can still be used. Refresh follows the selected reader after a write.
@@ -148,7 +154,6 @@ export default function TranscriptSection({
   const reviewSpeakerName = async (label: string, name: string, decision: SpeakerNameDecision) => {
     if (!readOnly) await nameReview.review({ labels: [label], name }, decision);
   };
-  const transcriptStatus = recording.transcript?.transcript_status;
   // The listed notes and those saved from this page since, less any it
   // discarded: the outbox outlives the live view, and its notes land here.
   // A note added here from a line's menu shows on its line while it saves;

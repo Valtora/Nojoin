@@ -18,6 +18,7 @@ import {
   getRecordingSpeakerDisplayName,
   getRecordingSpeakerGroupKey,
   getResolvedGlobalSpeakerId,
+  liveSpeakerDisplayName,
 } from "@/lib/recordingSpeakerUtils";
 import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton";
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
@@ -32,6 +33,7 @@ interface RecordingSpeakerOption {
 
 interface SpeakerAssignmentPopoverProps {
   availableSpeakers: readonly RecordingSpeaker[];
+  liveSpeakerLabels?: Readonly<Record<string, string>>;
   globalSpeakers: GlobalSpeaker[];
   currentSpeakerLabel: string;
   onSelect: (assignment: TranscriptSpeakerAssignment) => void;
@@ -64,6 +66,7 @@ const clamp = (value: number, min: number, max: number) => {
 
 export default function SpeakerAssignmentPopover({
   availableSpeakers,
+  liveSpeakerLabels,
   globalSpeakers,
   currentSpeakerLabel,
   onSelect,
@@ -120,7 +123,8 @@ export default function SpeakerAssignmentPopover({
     const normalisedSearch = search.toLowerCase();
 
     availableSpeakers
-      .filter((speaker) => speaker.diarization_label !== currentSpeakerLabel)
+      .filter((speaker) => speaker.diarization_label !== currentSpeakerLabel &&
+        !liveSpeakerLabels?.[speaker.diarization_label])
       .forEach((speaker) => {
         const key = getRecordingSpeakerGroupKey(
           speaker,
@@ -166,7 +170,17 @@ export default function SpeakerAssignmentPopover({
     globalSpeakerById,
     search,
     uniqueGlobalSpeakerIdByName,
+    liveSpeakerLabels,
   ]);
+
+  // A live speaker takes one line at a time: nothing merges live speakers
+  // yet, so Whole transcript lists none.
+  const filteredLive = scope === "utterance_only" ? Object.entries(liveSpeakerLabels ?? {}).filter(([label, name]) =>
+    label !== currentSpeakerLabel && name.toLowerCase().includes(search.trim().toLowerCase())) : [];
+  // Every live label counts, the line's own included: typing its current name
+  // must not offer a second speaker of that name.
+  const searchNamesLiveSpeaker = Object.values(liveSpeakerLabels ?? {}).some((name) =>
+    name.toLowerCase() === search.trim().toLowerCase());
 
   const filteredGlobal = globalSpeakers.filter(
     (s) =>
@@ -240,12 +254,12 @@ export default function SpeakerAssignmentPopover({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [filteredAvailable.length, filteredGlobal.length, search, targetElement]);
+  }, [filteredAvailable.length, filteredGlobal.length, filteredLive.length, search, targetElement]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (search.trim()) {
+      if (search.trim() && !searchNamesLiveSpeaker) {
         onSelect({ name: search.trim(), scope });
       }
     } else if (e.key === "Escape") {
@@ -353,11 +367,23 @@ export default function SpeakerAssignmentPopover({
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {/* Current Recording Speakers */}
-        {filteredAvailable.length > 0 && (
+        {(filteredAvailable.length > 0 || filteredLive.length > 0) && (
           <div className="px-2 py-1">
             <div className="text-xs font-semibold text-contrast-icon-muted mb-1 uppercase tracking-wider">
               In this recording
             </div>
+            {filteredLive.map(([label, name]) => (
+              <ButtonBase key={label} type="button"
+                onClick={() => onSelect({ name, diarizationLabel: label, scope })}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-contrast-muted hover:bg-surface-inset">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate">{name}</div>
+                  <div className="truncate text-[11px] text-contrast-icon-muted">
+                    {name === liveSpeakerDisplayName(label) ? "Recording only" : liveSpeakerDisplayName(label)}
+                  </div>
+                </div>
+              </ButtonBase>
+            ))}
             {filteredAvailable.map((option) => {
               const representativeLabel = option.representative.diarization_label;
               const colorKey =
@@ -422,6 +448,7 @@ export default function SpeakerAssignmentPopover({
 
         {/* Create New */}
         {search.trim() &&
+          !searchNamesLiveSpeaker &&
           !filteredAvailable.some(
             (option) =>
               option.displayName.toLowerCase() === search.trim().toLowerCase(),
@@ -446,6 +473,7 @@ export default function SpeakerAssignmentPopover({
           )}
 
         {filteredAvailable.length === 0 &&
+          filteredLive.length === 0 &&
           filteredGlobal.length === 0 &&
           !search.trim() && (
             <div className="px-4 py-2 text-xs text-contrast-icon-muted text-center">
