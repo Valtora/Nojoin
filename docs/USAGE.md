@@ -301,7 +301,7 @@ A voiceprint that cannot be rebuilt, because its meeting's audio was removed or 
 
 ## Notes, Chat, Documents, And Search
 
-- **Notes** holds the AI meeting notes, which you can edit. **Generate Notes** (or **Regenerate Notes**) writes them again when AI is configured, overwriting your edits. Notes you type during the meeting are fed into the generated notes and kept when you reprocess.
+- **Notes** holds the AI meeting notes, which you can edit. **Generate Notes** (or **Regenerate Notes**) writes them again when AI is configured, overwriting your edits. The rest of the meeting stays open while they generate, and **Retry Processing** waits until they finish. Notes you type during the meeting are fed into the generated notes and kept when you reprocess.
 - **Meeting Chat** answers questions from the transcript, with your edits and speaker names, the notes and the meeting's documents. It is available while recording, paused, uploading, queued and processing, on desktop and mobile. Each question uses the transcript so far, including current speaker names and your timeline notes; wording and speakers may still change. If the transcript exceeds the model's context, Chat uses the most recent part and marks that answer as trimmed. Each answer reflects the meeting as it was when you asked, and earlier answers stay as written when the transcript updates; chat cannot watch a meeting or act later, so ask again for a newer answer. **Context** in the chat header adds meetings with the tags you choose.
 - **Documents** holds files attached to the meeting, which the notes and Meeting Chat draw on. A note's file is with its note, and the AI reads it only while it is switched on ([Captures](#captures)).
 - **Analytics** reports how the conversation went, measured from the transcript and audio, with an optional AI reading of what was discussed.
@@ -483,4 +483,5 @@ When a newer release is out, owners and administrators get a persistent notifica
 - For capture problems, such as missing remote participants, a missing microphone or an unsupported browser, see [CAPTURE.md](CAPTURE.md#troubleshooting).
 - A paused or interrupted recording blocks new capture until you resume it, stop and process it, or discard it.
 - A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry Processing**; the account that set up Nojoin can check the logs in **Settings > System and logs**.
+- If Nojoin restarts while notes, **Analyse meeting** or **Measure delivery** are running, that output shows **Generation did not finish. Try again.** within 15 minutes; run it again. A meeting left processing by **Retry Speaker Inference** returns as soon as Nojoin's workers are back, or within 20 minutes.
 - For calendar sync problems, see [CALENDAR.md](CALENDAR.md#troubleshooting).

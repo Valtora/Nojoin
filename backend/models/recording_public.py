@@ -30,6 +30,10 @@ from backend.processing.embedding import (
     LibraryVoiceprintUpdate,
     VoiceprintStatus,
 )
+from backend.utils.generation_claim import (
+    reported_generation_error,
+    reported_generation_status,
+)
 from backend.utils.language_notice import language_notice
 from backend.utils.reprocess_publication import (
     reprocess_publication_complete,
@@ -382,10 +386,23 @@ def serialize_transcript(
             for item in (transcript.speaker_name_suggestions or [])
             if isinstance(item, dict)
         ],
-        notes_status=transcript.notes_status,
+        # A claim lost with its worker reads as failed, and says so, so the
+        # page offers generation again (issue #828). A failed transcription's
+        # message stays its own.
+        notes_status=reported_generation_status(
+            transcript.notes_status, transcript.updated_at
+        ),
         notes_stale_documents=bool(getattr(transcript, "notes_stale_documents", False)),
         transcript_status=transcript.transcript_status,
-        error_message=transcript.error_message,
+        error_message=(
+            transcript.error_message
+            if transcript.transcript_status == "error"
+            else reported_generation_error(
+                transcript.notes_status,
+                transcript.updated_at,
+                transcript.error_message,
+            )
+        ),
     )
 
 

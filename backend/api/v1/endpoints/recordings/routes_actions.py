@@ -7,8 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import CalendarEvent
-from backend.models.recording import Recording, RecordingStatus, RecordingUpdate
+from backend.models.recording import (
+    SPEAKER_INFERENCE_STEP,
+    Recording,
+    RecordingStatus,
+    RecordingUpdate,
+)
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
+from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.speaker_cap import (
     MAX_SPEAKER_CAP,
@@ -20,6 +26,7 @@ from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
 )
+from backend.utils.generation_claim import generation_active
 from backend.utils.languages import validate_transcription_language
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.reprocess_publication import (
@@ -164,7 +171,14 @@ REPROCESS_CAPTURE_PAUSED_MESSAGE = (
 )
 
 
-def _ensure_reprocessable(recording: Recording) -> None:
+REPROCESS_NOTES_GENERATING_MESSAGE = (
+    "Meeting notes are generating. Reprocess once they have finished."
+)
+
+
+def _ensure_reprocessable(
+    recording: Recording, transcript: Transcript | None = None
+) -> None:
     """Refuse a recording that a reprocess would harm or cannot help."""
     if recording.is_deleted:
         raise HTTPException(status_code=400, detail="Cannot retry a deleted recording")
@@ -183,6 +197,14 @@ def _ensure_reprocessable(recording: Recording) -> None:
             status_code=400,
             detail="Recording is already uploading or processing",
         )
+
+    # Notes no longer hold the recording in PROCESSING (issue #828), so their
+    # claim keeps a reprocess from replacing the transcript under them. A claim
+    # lost with its worker expires and stops refusing.
+    if transcript is not None and generation_active(
+        transcript.notes_status, transcript.updated_at
+    ):
+        raise HTTPException(status_code=409, detail=REPROCESS_NOTES_GENERATING_MESSAGE)
 
     # A failed recording with no audio left, such as an import whose file was
     # refused, keeps the reason it failed rather than losing it to a run that
@@ -210,7 +232,10 @@ async def reprocess_recording(
     from backend.utils.transcription_models import ENGINE_OVERRIDE_CHOICES
 
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _ensure_reprocessable(recording)
+    transcript = await db.run_sync(
+        lambda session: _load_transcript(session, recording.id)
+    )
+    _ensure_reprocessable(recording, transcript)
 
     if body.transcription_backend not in TRANSCRIPTION_BACKENDS:
         raise HTTPException(
@@ -393,7 +418,7 @@ async def infer_speakers_for_recording(
         )
 
     recording.status = RecordingStatus.PROCESSING
-    recording.processing_step = "Inferring speakers..."
+    recording.processing_step = SPEAKER_INFERENCE_STEP
     db.add(recording)
     await db.commit()
     await db.refresh(recording)

@@ -11,6 +11,7 @@ from backend.mcp_server.server import (
     _require_write_scope,
     mcp_tool,
 )
+from backend.utils.generation_claim import reported_generation_status
 
 logger = logging.getLogger(__name__)
 
@@ -402,8 +403,12 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
         analytics, revision, baselines = await db.run_sync(_compute)
         await db.commit()
         stored = transcript.analytics_payload or {}
-        delivery_status = transcript.analytics_status
-        ai_status = transcript.analytics_ai_status
+        delivery_status = reported_generation_status(
+            transcript.analytics_status, transcript.updated_at
+        )
+        ai_status = reported_generation_status(
+            transcript.analytics_ai_status, transcript.updated_at
+        )
 
     ai_watermark = (stored.get("ai") or {}).get("event_watermark")
     ai_stale = ai_watermark is not None and revision > int(ai_watermark)
