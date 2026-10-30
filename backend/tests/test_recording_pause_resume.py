@@ -1075,10 +1075,8 @@ async def test_discard_cannot_delete_a_finished_meeting_while_its_notes_regenera
         headers={"Origin": TRUSTED_ORIGIN},
     )
 
-    assert discard_response.status_code == 400
-    assert discard_response.json()["detail"] == (
-        "Only in-flight or processing recordings can be discarded"
-    )
+    assert discard_response.status_code == 409
+    assert "Move it to the bin" in discard_response.json()["detail"]
     assert await _status(test_session_maker, 4444) == "PROCESSED"
     async with test_session_maker() as session:
         transcript_text = (
