@@ -15,6 +15,7 @@ from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transc
 from backend.models.user import User
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
+from backend.utils.generation_claim import claim_generation, generation_active
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import resolve_notes_template_async
 from backend.utils.reprocess_publication import (
@@ -45,6 +46,7 @@ class GenerateNotesRequest(BaseModel):
 
 
 NOTES_DURING_CAPTURE_MESSAGE = "Notes can be generated once the recording has stopped."
+NOTES_ALREADY_GENERATING_MESSAGE = "Meeting notes are already generating."
 
 
 @router.get("/{recording_id}/notes")
@@ -154,9 +156,10 @@ async def generate_notes(
     it falls through to the user's default, then the install default, then the
     built-in structure.
 
-    A live or paused capture is refused. The run marks the recording
-    PROCESSING, its live transcript keeps it there once the notes finish, and
-    the capture's next segment is refused (issue #851).
+    A live or paused capture is refused (issue #851). The run claims the
+    notes alone and leaves the recording's status as it is, so a run lost with
+    its worker strands only the notes, and only until the claim expires
+    (issue #828).
     """
     recording = await _get_owned_recording(
         db,
@@ -193,10 +196,10 @@ async def generate_notes(
     if not segments:
         raise HTTPException(status_code=404, detail="Transcript not found or empty")
 
-    if transcript.notes_status == "generating":
-        raise HTTPException(
-            status_code=409, detail="Meeting notes are already generating."
-        )
+    # A claim older than the expiry belongs to a run lost with its worker
+    # (issue #828), so it no longer refuses a new one.
+    if generation_active(transcript.notes_status, transcript.updated_at):
+        raise HTTPException(status_code=409, detail=NOTES_ALREADY_GENERATING_MESSAGE)
 
     llm_config = await resolve_llm_config_async(
         db, current_user.settings or {}, user_id=current_user.id
@@ -229,7 +232,7 @@ async def generate_notes(
                 detail="Notes template not found",
             )
 
-    transcript.notes_status = "generating"
+    claim_generation(transcript, "notes_status")
     transcript.set_notes_error_message(None)
     db.add(transcript)
     await db.commit()

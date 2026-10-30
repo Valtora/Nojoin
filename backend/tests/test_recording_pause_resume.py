@@ -1044,8 +1044,9 @@ async def test_discard_cannot_delete_a_finished_meeting_while_its_notes_regenera
     client: AsyncClient,
     test_session_maker: sessionmaker,
 ) -> None:
-    """Issue #833: notes generating show a finished meeting as PROCESSING, and
-    Discard used to delete it, its transcript and its audio outright."""
+    """Issue #833: notes generating showed a finished meeting as PROCESSING, and
+    Discard used to delete it, its transcript and its audio outright. Since
+    #828 the notes leave it PROCESSED, and Discard still refuses it."""
     await insert_recording(
         test_session_maker,
         recording_id=4444,
@@ -1066,7 +1067,7 @@ async def test_discard_cannot_delete_a_finished_meeting_while_its_notes_regenera
         )
         await session.commit()
     await _run_status_manager(test_session_maker, 4444)
-    assert await _status(test_session_maker, 4444) == "PROCESSING"
+    assert await _status(test_session_maker, 4444) == "PROCESSED"
 
     set_session_cookie(client)
     discard_response = await client.post(
@@ -1076,7 +1077,7 @@ async def test_discard_cannot_delete_a_finished_meeting_while_its_notes_regenera
 
     assert discard_response.status_code == 409
     assert "Move it to the bin" in discard_response.json()["detail"]
-    assert await _status(test_session_maker, 4444) == "PROCESSING"
+    assert await _status(test_session_maker, 4444) == "PROCESSED"
     async with test_session_maker() as session:
         transcript_text = (
             await session.execute(
