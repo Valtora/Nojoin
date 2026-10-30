@@ -62,13 +62,22 @@ describe("RecordingFloatingBadge", () => {
     expect(screen.queryByRole("region", { name: "Recording in progress" })).toBeNull();
   });
 
-  it("is given room by the shell, the nav rail and the phone header menu", () => {
+  // Where the bar renders in the shell is layout.test.tsx's; these are the
+  // parts of the page that make room for it.
+  it("is given room by the nav rail and the phone headers, which leave the top inset to it", () => {
     const read = (path: string) => readFileSync(join(process.cwd(), "src", path), "utf8");
-    expect(read("app/(dashboard)/layout.tsx")).toContain(
-      "has-[>[data-capture-bar]]:[--capture-bar-h:calc(44px+env(safe-area-inset-top))]");
     expect(read("components/MainNav.tsx")).toContain("_-_var(--capture-bar-h,0px))]");
-    expect(read("app/(dashboard)/recordings/[id]/_components/RecordingHeader.tsx")).toContain(
-      "top-[calc(env(safe-area-inset-top)+4rem+var(--capture-bar-h,0px))]");
+    const header = read("app/(dashboard)/recordings/[id]/_components/RecordingHeader.tsx");
+    const topBar = read("components/TopBar.tsx");
+    // The bar pads the safe-area inset itself, so the header under it must not
+    // pad it a second time, and the header's menu sits below the bar and header.
+    expect(header).toContain("pt-[calc(var(--page-safe-top,env(safe-area-inset-top))+0.75rem)]");
+    expect(header).toContain(
+      "top-[calc(var(--page-safe-top,env(safe-area-inset-top))+4rem+var(--capture-bar-h,0px))]");
+    expect(topBar).toContain("pt-[calc(var(--page-safe-top,env(safe-area-inset-top))+0.5rem)]");
+    for (const source of [header, topBar]) {
+      expect(source).not.toMatch(/\[calc\(env\(safe-area-inset-top\)/);
+    }
   });
 
   it("stays quiet about a Resume that a Stop or Discard overtook", async () => {

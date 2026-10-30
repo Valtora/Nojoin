@@ -48,9 +48,11 @@ export default function DashboardLayout({
             nav off screen. Only <main> and the panes inside it scroll. */}
         {/* The capture bar takes a row of its own while it shows, and sets
             the height the nav rail and the recording header's phone menu
-            leave for it. */}
+            leave for it. It also clears the top safe-area inset, so
+            `--page-safe-top`, the inset the phone headers below still pad,
+            drops to 0 while it shows. */}
         <div
-          className="flex flex-col h-dvh w-full overflow-clip has-[>[data-capture-bar]]:[--capture-bar-h:calc(44px+env(safe-area-inset-top))]"
+          className="flex flex-col h-dvh w-full overflow-clip [--page-safe-top:env(safe-area-inset-top)] has-[>[data-capture-bar]]:[--capture-bar-h:calc(44px+env(safe-area-inset-top))] has-[>[data-capture-bar]]:[--page-safe-top:0px]"
           style={DEMO_BANNER_STYLE}
         >
           <TourGuide />
