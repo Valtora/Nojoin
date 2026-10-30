@@ -67,11 +67,11 @@ const expectFinishedView = () => {
 };
 
 /** Publication: the feed still answers, and the settled read waits until released. */
-const holdSettledRead = () => {
+const holdSettledRead = (feedRead = lines()) => {
   const settledRead = deferred<TranscriptUtteranceList>();
   // The feed passes its abort signal; the settled reader does not.
   getTranscriptUtterances.mockImplementation((_id: string, _after?: number, signal?: AbortSignal) =>
-    signal ? Promise.resolve(lines()) : settledRead.promise);
+    signal ? Promise.resolve(feedRead) : settledRead.promise);
   return settledRead;
 };
 
@@ -127,6 +127,35 @@ describe("transcript tab while a finished meeting reruns (#860)", () => {
     await settle();
     expectFinishedView();
     settledRead.resolve(lines());
+    await settle();
+    expectFinishedView();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it("opens a settled meeting mid-reprocess in the finished view, and keeps it through publication", async () => {
+    const kept: TranscriptUtteranceList = {
+      ...lines(), settling_required: true,
+      utterances: lines().utterances.map((line) => ({ ...line, locked: true })),
+    };
+    getTranscriptUtterances.mockResolvedValue(kept);
+    const settledRow = { ...transcriptRow("pending"), settling_required: true };
+    const reprocessing = recording({
+      status: RecordingStatus.PROCESSING, processing_step: "Transcribing audio...",
+      previous_publication_available: false, transcript: settledRow,
+    });
+    const view = render(<TranscriptTab recording={reprocessing} />);
+    await settle();
+    // #858: the kept lines are read from the feed while the run is in flight.
+    expect(getTranscriptUtterances).toHaveBeenCalledWith("rec-1", undefined, expect.any(AbortSignal));
+    expectFinishedView();
+
+    const settledRead = holdSettledRead(kept);
+    view.rerender(<TranscriptTab recording={recording({
+      transcript: { ...settledRow, transcript_status: "completed" },
+    })} />);
+    await settle();
+    expectFinishedView();
+    settledRead.resolve(kept);
     await settle();
     expectFinishedView();
     expect(consoleError).not.toHaveBeenCalled();
