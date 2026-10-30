@@ -554,6 +554,7 @@ export default function SpeakerPanel({
       {picker && !disableEditing && <SpeakerAssignmentPopover
         availableSpeakers={speakers.filter((speaker) => !picker.entry.labels.includes(speaker.diarization_label))}
         globalSpeakers={globalSpeakers} currentSpeakerLabel={picker.entry.speaker.diarization_label}
+        currentSpeakerName={picker.entry.displayName}
         speakerColors={speakerColors} targetElement={picker.anchor} fixedScope="speaker_everywhere_in_recording"
         onSelect={async (assignment) => {
           // Another speaker of this recording takes over the row's lines, as

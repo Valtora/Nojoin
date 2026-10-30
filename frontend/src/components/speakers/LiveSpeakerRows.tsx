@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { UserPlus, Users } from "lucide-react";
 import type { GlobalSpeaker, RecordingSpeaker } from "@/types";
-import { liveSpeakerDisplayName, segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
+import {
+  isPlaceholderSpeakerName, liveSpeakerDisplayName, segmentSpeakerDisplayName,
+} from "@/lib/recordingSpeakerUtils";
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import SpeakerAssignmentPopover from "@/components/SpeakerAssignmentPopover";
@@ -48,7 +50,7 @@ export default function LiveSpeakerRows({ labels, names, speakers, globalSpeaker
 
   return <>{labels.map((label) => {
     const name = displayName(label);
-    const needsName = !names[label]?.trim() || /^(speaker[\s_]*\d+|unknown)$/i.test(name.trim());
+    const needsName = !names[label]?.trim() || isPlaceholderSpeakerName(name);
     const offersPeople = !globalSpeakers.some((person) => person.name === name);
     // The menu says why an action is held back, under its items.
     const closed = !canName(label) ? NAMING_CLOSED : submitting ? SPEAKER_SAVING : undefined;
@@ -80,7 +82,8 @@ export default function LiveSpeakerRows({ labels, names, speakers, globalSpeaker
     </SurfaceBase>;
   })}
     {picker && !readOnly && onRename && <SpeakerAssignmentPopover availableSpeakers={speakers} globalSpeakers={globalSpeakers}
-      currentSpeakerLabel={picker.label} speakerColors={speakerColors} targetElement={picker.anchor}
+      currentSpeakerLabel={picker.label} currentSpeakerName={displayName(picker.label)}
+      speakerColors={speakerColors} targetElement={picker.anchor}
       fixedScope="speaker_everywhere_in_recording"
       onSelect={async (assignment) => {
         if (await assign(picker.label, assignment.name, false)) {

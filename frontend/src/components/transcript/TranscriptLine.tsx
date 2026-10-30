@@ -260,6 +260,7 @@ function TranscriptLine({
               <SpeakerAssignmentPopover
                 availableSpeakers={speakers}
                 currentSpeakerLabel={segment.speaker}
+                currentSpeakerName={speakerName}
                 globalSpeakers={globalSpeakers}
                 speakerColors={speakerColors}
                 targetElement={popoverAnchor}

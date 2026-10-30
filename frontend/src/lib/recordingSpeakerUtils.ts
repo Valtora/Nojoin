@@ -275,6 +275,16 @@ export const normaliseSpeakerName = (name: string): string => {
   return name.trim().toLocaleLowerCase();
 };
 
+const PLACEHOLDER_SPEAKER_NAME = /^(speaker[\s_]*\d+|unknown)$/i;
+
+/**
+ * A fallback label such as "Speaker 2" or "Unknown", never a person's name.
+ * The server refuses these as names: processing merges speakers that share
+ * a name, so one would join its voice to the speaker the label belongs to.
+ */
+export const isPlaceholderSpeakerName = (name: string): boolean =>
+  PLACEHOLDER_SPEAKER_NAME.test(name.trim());
+
 export const buildGlobalSpeakerById = (
   globalSpeakers: GlobalSpeaker[],
 ): Map<number, GlobalSpeaker> => {

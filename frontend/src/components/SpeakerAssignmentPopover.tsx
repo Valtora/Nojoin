@@ -18,6 +18,8 @@ import {
   getRecordingSpeakerDisplayName,
   getRecordingSpeakerGroupKey,
   getResolvedGlobalSpeakerId,
+  isPlaceholderSpeakerName,
+  normaliseSpeakerName,
 } from "@/lib/recordingSpeakerUtils";
 import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton";
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
@@ -28,12 +30,16 @@ interface RecordingSpeakerOption {
   members: RecordingSpeaker[];
   displayName: string;
   isGlobalLinked: boolean;
+  /** Its name and the names of the People it is linked to, normalised. */
+  names: string[];
 }
 
 interface SpeakerAssignmentPopoverProps {
   availableSpeakers: readonly RecordingSpeaker[];
   globalSpeakers: GlobalSpeaker[];
   currentSpeakerLabel: string;
+  /** The name the current speaker shows, which typing it doesn't offer to create. */
+  currentSpeakerName?: string;
   onSelect: (assignment: TranscriptSpeakerAssignment) => void;
   onClose: () => void;
   speakerColors: Record<string, string>;
@@ -66,6 +72,7 @@ export default function SpeakerAssignmentPopover({
   availableSpeakers,
   globalSpeakers,
   currentSpeakerLabel,
+  currentSpeakerName,
   onSelect,
   onClose,
   speakerColors,
@@ -115,9 +122,10 @@ export default function SpeakerAssignmentPopover({
     [availableSpeakers, globalSpeakerById],
   );
 
+  const query = search.trim();
+  const normalisedQuery = normaliseSpeakerName(query);
   const filteredAvailable = useMemo(() => {
     const groupedOptions = new Map<string, RecordingSpeaker[]>();
-    const normalisedSearch = search.toLowerCase();
 
     availableSpeakers
       .filter((speaker) => speaker.diarization_label !== currentSpeakerLabel)
@@ -143,38 +151,71 @@ export default function SpeakerAssignmentPopover({
           members.find((speaker) => getResolvedGlobalSpeakerId(speaker)) ||
           members[0];
 
+        const displayName = getRecordingSpeakerDisplayName(
+          representative,
+          globalSpeakerById,
+        );
+        const linkedNames = members.flatMap((speaker) => {
+          const id = getResolvedGlobalSpeakerId(speaker);
+          const person = speaker.global_speaker ?? (id ? globalSpeakerById.get(id) : undefined);
+          return person ? [person.name] : [];
+        });
         return {
           key,
           representative,
           members,
-          displayName: getRecordingSpeakerDisplayName(
-            representative,
-            globalSpeakerById,
-          ),
-          isGlobalLinked: members.some((speaker) =>
-            Boolean(getResolvedGlobalSpeakerId(speaker)),
-          ),
+          displayName,
+          isGlobalLinked: linkedNames.length > 0,
+          names: [...new Set([displayName, ...linkedNames].map(normaliseSpeakerName))],
         } satisfies RecordingSpeakerOption;
       })
       .filter((option) =>
-        option.displayName.toLowerCase().includes(normalisedSearch),
+        option.names.some((name) => name.includes(normalisedQuery)),
       )
       .sort((left, right) => left.displayName.localeCompare(right.displayName));
   }, [
     availableSpeakers,
     currentSpeakerLabel,
     globalSpeakerById,
-    search,
+    normalisedQuery,
     uniqueGlobalSpeakerIdByName,
   ]);
 
-  const filteredGlobal = globalSpeakers.filter(
-    (s) =>
-      s.name.toLowerCase().includes(search.toLowerCase()) &&
-      !availableSpeakers.some(
-        (as) => as.global_speaker_id === s.id || as.global_speaker?.id === s.id,
-      ),
+  // People already in this meeting are offered as its speakers instead.
+  const peopleOutsideMeeting = useMemo(
+    () => globalSpeakers.filter((person) => !availableSpeakers.some(
+      (speaker) => getResolvedGlobalSpeakerId(speaker) === person.id,
+    )),
+    [globalSpeakers, availableSpeakers],
   );
+  // A People library can be large, so it is listed only for what is typed,
+  // names that start with it first.
+  const filteredGlobal = useMemo(() => normalisedQuery
+    ? peopleOutsideMeeting
+      .filter((person) => normaliseSpeakerName(person.name).includes(normalisedQuery))
+      .sort((left, right) =>
+        Number(!normaliseSpeakerName(left.name).startsWith(normalisedQuery)) -
+          Number(!normaliseSpeakerName(right.name).startsWith(normalisedQuery)) ||
+        left.name.localeCompare(right.name))
+    : [], [peopleOutsideMeeting, normalisedQuery]);
+
+  // Every name this meeting already has, the current speaker's included: a
+  // typed one picks that speaker rather than making a second one.
+  const meetingNames = useMemo(() => new Set([
+    ...availableSpeakers.map((speaker) => getRecordingSpeakerDisplayName(speaker, globalSpeakerById)),
+    ...(currentSpeakerName ? [currentSpeakerName] : []),
+  ].map(normaliseSpeakerName)), [availableSpeakers, currentSpeakerName, globalSpeakerById]);
+  const exactOption = filteredAvailable.find((option) => option.names.includes(normalisedQuery));
+  const exactPerson = filteredGlobal.find((person) => normaliseSpeakerName(person.name) === normalisedQuery);
+  const isCurrentName = !!currentSpeakerName && normaliseSpeakerName(currentSpeakerName) === normalisedQuery;
+  const isPlaceholder = isPlaceholderSpeakerName(query);
+  const canCreate = !!query && !exactOption && !exactPerson && !meetingNames.has(normalisedQuery) && !isPlaceholder;
+  const selectOption = (option: RecordingSpeakerOption) => onSelect({
+    name: option.displayName,
+    diarizationLabel: option.representative.diarization_label,
+    scope,
+  });
+  const selectPerson = (person: GlobalSpeaker) => onSelect({ name: person.name, globalSpeakerId: person.id, scope });
 
   useLayoutEffect(() => {
     if (!targetElement) {
@@ -242,12 +283,14 @@ export default function SpeakerAssignmentPopover({
     };
   }, [filteredAvailable.length, filteredGlobal.length, search, targetElement]);
 
+  // Enter takes what the typed name means: this meeting's speaker or the
+  // person of that name, else a new name where one is offered.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (search.trim()) {
-        onSelect({ name: search.trim(), scope });
-      }
+      if (exactOption) selectOption(exactOption);
+      else if (exactPerson) selectPerson(exactPerson);
+      else if (canCreate) onSelect({ name: query, scope });
     } else if (e.key === "Escape") {
       onClose();
     }
@@ -370,13 +413,7 @@ export default function SpeakerAssignmentPopover({
                 <ButtonBase
                   key={option.key}
                   type="button"
-                  onClick={() =>
-                    onSelect({
-                      name: option.displayName,
-                      diarizationLabel: representativeLabel,
-                      scope,
-                    })
-                  }
+                  onClick={() => selectOption(option)}
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-contrast-muted hover:bg-surface-inset"
                 >
                   <div className={`h-2 w-2 rounded-full ${colorOption.dot}`} />
@@ -398,19 +435,13 @@ export default function SpeakerAssignmentPopover({
         {filteredGlobal.length > 0 && (
           <div className="px-2 py-1 border-t border-surface-divider mt-1 pt-2">
             <div className="text-xs font-semibold text-contrast-icon-muted mb-1 uppercase tracking-wider">
-              Global Library
+              People
             </div>
             {filteredGlobal.map((s) => (
               <ButtonBase
                 key={s.id}
                 type="button"
-                onClick={() =>
-                  onSelect({
-                    name: s.name,
-                    globalSpeakerId: s.id,
-                    scope,
-                  })
-                }
+                onClick={() => selectPerson(s)}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-contrast-muted hover:bg-surface-inset"
               >
                 <User className="h-3 w-3 text-contrast-icon-muted" />
@@ -420,40 +451,51 @@ export default function SpeakerAssignmentPopover({
           </div>
         )}
 
-        {/* Create New */}
-        {search.trim() &&
-          !filteredAvailable.some(
-            (option) =>
-              option.displayName.toLowerCase() === search.trim().toLowerCase(),
-          ) &&
-          !filteredGlobal.some(
-            (s) => s.name.toLowerCase() === search.trim().toLowerCase(),
-          ) && (
+        {/* Create New: never a name this meeting has, nor a placeholder. */}
+        {canCreate && (
             <div className="px-2 py-1 border-t border-surface-divider mt-1 pt-2">
               <ButtonBase
-                onClick={() =>
-                  onSelect({
-                    name: search.trim(),
-                    scope,
-                  })
-                }
+                onClick={() => onSelect({ name: query, scope })}
                 className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-action-tint text-action-text flex items-center gap-2"
               >
                 <Plus className="w-3 h-3" />
-                <span className="truncate">Create local &quot;{search}&quot;</span>
+                <span className="truncate">Create local &quot;{query}&quot;</span>
               </ButtonBase>
             </div>
           )}
 
-        {filteredAvailable.length === 0 &&
-          filteredGlobal.length === 0 &&
-          !search.trim() && (
-            <div className="px-4 py-2 text-xs text-contrast-icon-muted text-center">
-              Type to search or add
-            </div>
-          )}
+        <PickerHint
+          searching={!!query}
+          isCurrentName={isCurrentName && !exactOption}
+          isPlaceholder={isPlaceholder && !exactOption && !exactPerson}
+          currentSpeakerName={currentSpeakerName}
+          hasOptions={filteredAvailable.length > 0}
+          hasPeople={peopleOutsideMeeting.length > 0}
+        />
       </div>
     </SurfaceBase>,
     document.body,
+  );
+}
+
+/** What the picker says when the list alone doesn't: how to reach People, or why nothing is offered. */
+function PickerHint({ searching, isCurrentName, isPlaceholder, currentSpeakerName, hasOptions, hasPeople }: {
+  searching: boolean;
+  isCurrentName: boolean;
+  isPlaceholder: boolean;
+  currentSpeakerName?: string;
+  hasOptions: boolean;
+  hasPeople: boolean;
+}) {
+  const text = !searching
+    ? hasPeople ? "Type to search People" : hasOptions ? null : "Type to search or add"
+    : isCurrentName ? `This speaker is already ${currentSpeakerName}.`
+    : isPlaceholder ? "Type a real name, not a placeholder."
+    : null;
+  // Mounted throughout, so a screen reader hears the text change.
+  return (
+    <div role="status" className={text ? "px-4 py-2 text-xs text-contrast-icon-muted text-center" : undefined}>
+      {text}
+    </div>
   );
 }
