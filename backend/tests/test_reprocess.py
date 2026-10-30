@@ -40,6 +40,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    first_processed_at DATETIME,
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
@@ -508,6 +509,49 @@ async def test_reprocess_processed_recording_queues_with_override(
     assert response.json()["status"] == "QUEUED"
     assert len(calls) == 1
     assert calls[0][0] == (201, True, {"transcription_backend": "parakeet"})
+
+
+@pytest.mark.anyio
+async def test_discard_cannot_delete_a_finished_meeting_being_reprocessed(
+    client: AsyncClient,
+    api_app: FastAPI,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+) -> None:
+    """Issue #833: a reprocess queues a finished meeting, and Discard used to
+    delete it outright, retained transcript and all."""
+    from backend.api.deps import get_current_recording_client_user
+    from backend.models.recording import Recording, RecordingStatus
+
+    await _insert_recording(
+        test_session_maker, recording_id=208, public_id="rec-208", status="PROCESSING"
+    )
+    # The pipeline's last write, through the ORM as every writer's is.
+    async with test_session_maker() as session:
+        recording = await session.get(Recording, 208)
+        recording.status = RecordingStatus.PROCESSED
+        await session.commit()
+    _patch_delay(monkeypatch)
+    api_app.dependency_overrides[get_current_recording_client_user] = lambda: (
+        build_test_user()
+    )
+
+    queued = await client.post(
+        "/api/v1/recordings/rec-208/reprocess",
+        json={"transcription_backend": "whisper"},
+    )
+    assert queued.status_code == 200
+    assert queued.json()["status"] == "QUEUED"
+    assert queued.json()["discardable"] is False
+
+    response = await client.post("/api/v1/recordings/rec-208/discard")
+
+    assert response.status_code == 409
+    async with test_session_maker() as session:
+        status = (
+            await session.execute(text("SELECT status FROM recordings WHERE id = 208"))
+        ).scalar_one()
+    assert status == "QUEUED"
 
 
 @pytest.mark.anyio

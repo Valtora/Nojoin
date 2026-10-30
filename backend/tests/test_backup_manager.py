@@ -1744,6 +1744,8 @@ async def test_restore_settles_in_flight_recordings_and_drops_foreign_task_state
     # The transcript came across, so the recording settles as processed rather than
     # sitting in a state nothing on this installation can advance.
     assert restored.status == "PROCESSED"
+    # And it counts as a finished meeting, so Discard cannot delete it (#833).
+    assert restored.first_processed_at is not None
     assert restored.celery_task_id is None
     assert restored.client_status is None
     assert restored.processing_step is None
@@ -1799,6 +1801,9 @@ async def test_restore_marks_in_flight_recording_without_transcript_as_errored(
     # No transcript came across, so the operator is told to reprocess rather than being
     # shown a meeting that silently has nothing in it.
     assert restored.status == "ERROR"
+    # The archive cannot say whether it ever finished, so its reprocess goes to the
+    # bin rather than being discarded outright (#833).
+    assert restored.first_processed_at is not None
 
     await source_context.async_engine.dispose()
     await target_context.async_engine.dispose()

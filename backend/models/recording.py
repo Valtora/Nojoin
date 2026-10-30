@@ -4,7 +4,16 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import field_validator
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, or_
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    event,
+    or_,
+)
 from sqlmodel import Field, Relationship, SQLModel, col
 
 from backend.utils.languages import validate_transcription_language
@@ -104,6 +113,11 @@ class Recording(BaseDBModel, table=True):
     processing_step: Optional[str] = Field(default=None)
     processing_started_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     processing_completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    # When the recording first reached PROCESSED, stamped on that flush and
+    # never cleared. processing_completed_at is an ETA timing that a reprocess
+    # or a failed run clears, so it cannot say whether the meeting ever finished;
+    # this can, and Discard refuses a recording that has it (issue #833).
+    first_processed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     pipeline_generation: Optional[str] = Field(
         default=RecordingPipelineGeneration.UNIFIED.value,
         sa_column=Column(String(32), nullable=True, index=True),
@@ -167,6 +181,53 @@ class Recording(BaseDBModel, table=True):
     context_chunks: List["ContextChunk"] = Relationship(
         back_populates="recording",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+@event.listens_for(Recording, "before_insert")
+@event.listens_for(Recording, "before_update")
+def _stamp_first_processed(mapper: Any, connection: Any, target: Recording) -> None:
+    """Remember that the meeting finished, whichever writer made it PROCESSED.
+
+    Every ORM path to PROCESSED (the status manager, the no-speech pass, speaker
+    inference, a restore, the sample meeting) flushes through here, so none of
+    them has to remember to stamp it.
+    """
+    if target.status == RecordingStatus.PROCESSED and target.first_processed_at is None:
+        target.first_processed_at = utc_now()
+
+
+# What Discard may delete outright: a capture, an import or a first pass that
+# has not finished. Statuses only; recording_is_discardable adds the rest.
+DISCARDABLE_STATUSES = frozenset(
+    {
+        RecordingStatus.UPLOADING,
+        RecordingStatus.PAUSED,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }
+)
+
+
+FINISHED_MEETING_DISCARD_DETAIL = (
+    "This meeting has finished processing, so Discard cannot delete it. "
+    "Move it to the bin instead."
+)
+
+
+def recording_is_discardable(recording: "Recording") -> bool:
+    """Whether Discard may delete this recording, its audio and transcript.
+
+    Discard gives up on a meeting whose capture or first processing never
+    finished. A meeting that has been PROCESSED once stays finished while its
+    notes regenerate, its speakers are inferred again or it is reprocessed,
+    each of which shows it as QUEUED or PROCESSING, so status alone cannot say
+    (issue #833). Such a meeting goes to the bin instead, where it can be
+    restored.
+    """
+    return (
+        recording.status in DISCARDABLE_STATUSES
+        and recording.first_processed_at is None
     )
 
 

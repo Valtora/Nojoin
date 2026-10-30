@@ -338,6 +338,14 @@ async def permanently_delete_recording(
     return {"ok": True}
 
 
+SPEAKER_INFERENCE_NOT_FINISHED_MESSAGE = (
+    "Speakers can be inferred once the recording has finished processing."
+)
+SPEAKER_INFERENCE_FAILED_RECORDING_MESSAGE = (
+    "Processing failed for this recording. Reprocess it before inferring speakers."
+)
+
+
 @router.post("/{recording_id}/infer-speakers")
 async def infer_speakers_for_recording(
     recording_id: str,
@@ -346,14 +354,29 @@ async def infer_speakers_for_recording(
 ):
     """
     Re-run speaker inference on an already processed meeting.
+
+    Anything else is refused. The run holds the recording in PROCESSING and
+    hands it back as PROCESSED, which would end a live or paused capture
+    before its audio was assembled (issue #832).
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    # Locked, so two requests cannot both find it PROCESSED and start two runs.
+    await db.refresh(recording, with_for_update=True)
     transcript = await db.run_sync(
         lambda session: _load_transcript(session, recording.id)
     )
     # The pass replacing a retained transcript resolves its speakers itself.
     if reprocess_replacement_running(transcript):
         raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
+    if recording.status != RecordingStatus.PROCESSED:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                SPEAKER_INFERENCE_FAILED_RECORDING_MESSAGE
+                if recording.status == RecordingStatus.ERROR
+                else SPEAKER_INFERENCE_NOT_FINISHED_MESSAGE
+            ),
+        )
 
     recording.status = RecordingStatus.PROCESSING
     recording.processing_step = "Inferring speakers..."

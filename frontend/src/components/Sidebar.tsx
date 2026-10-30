@@ -721,14 +721,19 @@ export default function Sidebar() {
           label: "Rename",
           onClick: () => handleRenameStart(recording.id, recording.name),
         },
-        {
-          label: "Retry Speaker Inference",
-          onClick: () => handleInferSpeakers(recording.id),
-        },
-        ...(recording.status === RecordingStatus.PROCESSING ||
-        recording.status === RecordingStatus.QUEUED ||
-        recording.status === RecordingStatus.UPLOADING ||
-        recording.status === RecordingStatus.PAUSED
+        // Only a finished meeting: the run holds the recording in processing
+        // and hands it back as processed, which would end a capture (#832).
+        ...(recording.status === RecordingStatus.PROCESSED
+          ? [
+              {
+                label: "Retry Speaker Inference",
+                onClick: () => handleInferSpeakers(recording.id),
+              },
+            ]
+          : []),
+        // A finished meeting regenerating notes, inferring speakers or being
+        // reprocessed shows as processing too, and goes to the bin (#833).
+        ...(recording.discardable
           ? [
               {
                 label: "Discard Recording",

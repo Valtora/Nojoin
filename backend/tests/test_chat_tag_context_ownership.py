@@ -40,7 +40,7 @@ CREATE TABLE recordings (
     audio_path VARCHAR(1024) NOT NULL, proxy_path VARCHAR(1024), celery_task_id VARCHAR(255),
     duration_seconds FLOAT, file_size_bytes INTEGER, status VARCHAR(32) NOT NULL,
     client_status VARCHAR(32), upload_progress INTEGER NOT NULL, processing_progress INTEGER NOT NULL,
-    processing_step VARCHAR(255), processing_started_at TIMESTAMP, processing_completed_at TIMESTAMP,
+    processing_step VARCHAR(255), processing_started_at TIMESTAMP, processing_completed_at TIMESTAMP, first_processed_at TIMESTAMP,
     pipeline_generation VARCHAR(32) DEFAULT 'unified', is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL, last_activity_at TIMESTAMP, capture_epoch INTEGER NOT NULL DEFAULT 0, transcription_language VARCHAR(16), user_id INTEGER, calendar_event_id INTEGER
 );

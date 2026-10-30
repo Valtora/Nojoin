@@ -15,12 +15,15 @@ from backend.api.error_handling import sanitized_http_exception
 from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import (
+    DISCARDABLE_STATUSES,
+    FINISHED_MEETING_DISCARD_DETAIL,
     CaptureSourceReportCreate,
     ClientStatus,
     Recording,
     RecordingCaptureLifecycleResponse,
     RecordingStatus,
     capture_looks_stalled,
+    recording_is_discardable,
 )
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.transcript import Transcript
@@ -842,6 +845,9 @@ async def discard_upload(
     pipeline is actively running (``PROCESSING``). Whatever stage it is at, the
     backend revokes any running Celery task, removes every on-disk artefact, and
     deletes the recording row so no manual cancel-then-delete is required.
+
+    A meeting that has finished once is refused whatever its status shows; it
+    goes to the bin instead (``recording_is_discardable``).
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
@@ -864,17 +870,13 @@ async def discard_upload(
             status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL
         )
 
-    discardable_states = {
-        RecordingStatus.UPLOADING,
-        RecordingStatus.PAUSED,
-        RecordingStatus.QUEUED,
-        RecordingStatus.PROCESSING,
-    }
-    if recording.status not in discardable_states:
+    if recording.status not in DISCARDABLE_STATUSES:
         raise HTTPException(
             status_code=400,
             detail="Only in-flight or processing recordings can be discarded",
         )
+    if not recording_is_discardable(recording):
+        raise HTTPException(status_code=409, detail=FINISHED_MEETING_DISCARD_DETAIL)
 
     if reason:
         logger.info(

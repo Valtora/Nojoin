@@ -169,6 +169,7 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.processing_eta_seconds !== current.processing_eta_seconds ||
   polled.processing_eta_learning !== current.processing_eta_learning ||
   polled.processing_eta_sample_size !== current.processing_eta_sample_size ||
+  !!polled.discardable !== !!current.discardable ||
   polled.has_proxy !== current.has_proxy ||
   polled.has_audio !== current.has_audio ||
   // Whether the live feed has anything to read (hasInFlightTranscriptFeed).
