@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import delete
+from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -38,6 +39,7 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.browser_capture_audio import BROWSER_MASTER_SUFFIX
+from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.recording_audio_sync import (
     SEGMENT_CORRUPT_SUFFIX,
     STAGED_BROWSER_SEGMENT_SUFFIXES,
@@ -47,6 +49,7 @@ from backend.utils.recording_audio_sync import (
     find_pending_recording_upload_sequences,
     list_recording_audio_chunks,
     list_recording_upload_sequences,
+    lock_recording_audio,
     sync_recording_audio_chunks_from_directory,
     sync_recording_audio_chunks_from_entries,
     sync_recording_audio_window_manifests,
@@ -120,6 +123,30 @@ async def revoke_recording_task(recording: Recording) -> None:
             recording.public_id,
             exc_info=True,
         )
+
+
+async def lock_recording_for_delete(db: AsyncSession, recording: Recording) -> bool:
+    """Lock a recording to delete it: its audio lock, Transcript, then the row.
+
+    Discard's order, which Stop and pause take too. A live capture's publisher
+    holds Transcript before the row, and the audio bookkeeping holds the audio
+    lock before either. A delete that locked the row first reached Transcript
+    only through the cascade, and could deadlock with them (issue #816). The
+    row is locked so a worker cannot repoint ``audio_path`` between the read
+    and the delete (keep_imported_audio_task) and leave its new file behind.
+
+    Returns False when another request deleted the recording while this one
+    waited for the locks.
+    """
+    await db.run_sync(lambda session: lock_recording_audio(session, recording.id))
+    await db.run_sync(
+        lambda session: _load_transcript(session, recording.id, lock=True)
+    )
+    try:
+        await db.refresh(recording, with_for_update=True)
+    except InvalidRequestError:
+        return False
+    return True
 
 
 def _estimated_audio_bitrate_bits_per_second(
