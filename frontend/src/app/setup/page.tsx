@@ -45,6 +45,7 @@ export default function SetupPage() {
     includeDemoRecording,
     enableTelemetry,
     setEnableTelemetry,
+    telemetryPinned,
     setIncludeDemoRecording,
     ffmpegMissing,
     aiRoute,
@@ -228,6 +229,7 @@ export default function SetupPage() {
               onAccept={handleLegalSubmit}
               enableTelemetry={enableTelemetry}
               onEnableTelemetryChange={setEnableTelemetry}
+              telemetryPinned={telemetryPinned}
             />
           )}
 

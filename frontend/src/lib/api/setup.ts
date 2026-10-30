@@ -53,6 +53,12 @@ export interface InitialSetupConfig {
   selected_model?: string;
   pyannote_models_ready?: boolean;
   bundled_pyannote_models_ready?: boolean;
+  /**
+   * The value NOJOIN_TELEMETRY_ENABLED pins telemetry to, or null when it is
+   * unset and the wizard's diagnostics box is the operator's choice. A pinned
+   * value outranks the box, so the wizard shows it read-only.
+   */
+  telemetry_pinned?: boolean | null;
 }
 
 export const getInitialConfig = async (
