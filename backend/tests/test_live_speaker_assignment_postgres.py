@@ -282,8 +282,16 @@ async def test_a_corrected_line_follows_the_targets_other_speech_through_finalis
         )
 
 
-async def _finalise(sessions: Any, recording: Recording, final: list[dict]) -> None:
-    """The final pass's speaker stage and canonical finalisation, as it runs them."""
+async def _finalise(
+    sessions: Any,
+    recording: Recording,
+    final: list[dict],
+    voiceprints: dict[str, Any] | None = None,
+) -> None:
+    """The final pass's speaker stage and canonical finalisation, as it runs them.
+
+    ``voiceprints`` stands in for extraction, which needs the audio.
+    """
     async with sessions() as db:
 
         def publish(sync: Any) -> None:
@@ -291,7 +299,10 @@ async def _finalise(sessions: Any, recording: Recording, final: list[dict]) -> N
             current.status = RecordingStatus.PROCESSING
             speaker_assignment.assign_and_identify_speakers(
                 SimpleNamespace(
-                    session=sync, merged_config={}, recording_id=recording.id
+                    session=sync,
+                    merged_config={},
+                    recording_id=recording.id,
+                    speaker_voiceprints=voiceprints,
                 ),
                 current,
                 final,
@@ -359,11 +370,19 @@ async def test_an_unclear_live_identity_sends_the_line_where_its_name_goes(
         assert sum(row["local_name"] == "Alex" for row in body["speakers"]) == 1
 
 
-async def test_a_live_speaker_with_no_speech_of_its_own_leaves_each_line_its_final_speaker(
-    live_api: tuple[Any, ...],
+@pytest.mark.parametrize("named", [False, True], ids=["unnamed", "named"])
+async def test_a_live_speaker_with_no_speech_of_its_own_places_its_moved_lines(
+    live_api: tuple[Any, ...], named: bool
 ) -> None:
     client, sessions, recording = live_api
     url = f"/api/v1/transcripts/{recording.public_id}/utterances"
+    if named:
+        # Anchored on Speaker 3's own line, which is then moved away.
+        response = await client.put(
+            f"/api/v1/speakers/recordings/{recording.public_id}/live/{THREE}",
+            json={"name": "Carol"},
+        )
+        assert response.status_code == 200, response.text
     lines = (await client.get(url)).json()["utterances"]
     # The first line goes to Speaker 3, then Speaker 3's own line goes to
     # Speaker 2: nothing of Speaker 3's own speech is left.
@@ -387,7 +406,16 @@ async def test_a_live_speaker_with_no_speech_of_its_own_leaves_each_line_its_fin
     await _finalise(sessions, recording, final)
     body = (await client.get(url)).json()
     by_text = {row["text"]: row for row in body["utterances"]}
-    assert by_text["Own speech."]["speaker"] == "SPEAKER_00"
+    # Unnamed, the line keeps the final speaker of its own words. Named, it
+    # goes where the name goes: nearest the name's saved turn, as pending.
+    own = "SPEAKER_02" if named else "SPEAKER_00"
+    assert by_text["Own speech."]["speaker"] == own
+    if named:
+        target = next(
+            row for row in body["speakers"] if row["diarization_label"] == own
+        )
+        assert target["local_name"] == "Carol" and target["name_pending"] is True
+        assert sum(row["local_name"] == "Carol" for row in body["speakers"]) == 1
     assert by_text["Moved to two."]["speaker"] == "SPEAKER_01"
     assert (
         by_text["Moved to two."]["recording_speaker_id"]
@@ -397,6 +425,60 @@ async def test_a_live_speaker_with_no_speech_of_its_own_leaves_each_line_its_fin
         by_text[text]["speaker_manually_edited"]
         for text in ("Own speech.", "Moved to two.")
     )
+    _assert_no_live_label_survives(body)
+
+
+async def test_a_pending_name_and_its_lines_follow_a_merged_away_holder(
+    live_api: tuple[Any, ...],
+) -> None:
+    client, sessions, recording = live_api
+    await _assign(client, recording, named=True)
+    # Speaker 2's speech is split 1.8 s / 2.2 s, so Alex is pending on the top
+    # holder, SPEAKER_02; its voice matches SPEAKER_01, which absorbs it.
+    final = [
+        {"start": 0.2, "end": 10.2, "speaker": "SPEAKER_00", "text": "Moved line."},
+        {"start": 12.0, "end": 13.8, "speaker": "SPEAKER_01", "text": "Survivor."},
+        {"start": 13.8, "end": 14.0, "speaker": "SPEAKER_02", "text": "Holder."},
+        {"start": 15.0, "end": 17.0, "speaker": "SPEAKER_02", "text": "Holder again."},
+        {"start": 20.0, "end": 24.0, "speaker": "SPEAKER_03", "text": "Other voice."},
+    ]
+
+    def voice(axis: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            embedding=[1.0 if index == axis else 0.0 for index in range(8)],
+            speech_seconds=5.0,
+        )
+
+    await _finalise(
+        sessions,
+        recording,
+        final,
+        {
+            "SPEAKER_00": voice(0),
+            "SPEAKER_01": voice(1),
+            "SPEAKER_02": voice(1),
+            "SPEAKER_03": voice(2),
+        },
+    )
+    async with sessions() as db:
+        merged = (
+            await db.execute(
+                select(RecordingSpeaker).where(
+                    RecordingSpeaker.recording_id == recording.id,
+                    RecordingSpeaker.diarization_label == "SPEAKER_02",
+                )
+            )
+        ).scalar_one()
+        assert merged.merged_into_id is not None
+    body = (
+        await client.get(f"/api/v1/transcripts/{recording.public_id}/utterances")
+    ).json()
+    by_text = {row["text"]: row for row in body["utterances"]}
+    survivor = next(
+        row for row in body["speakers"] if row["id"] == merged.merged_into_id
+    )
+    assert by_text["Moved line."]["recording_speaker_id"] == survivor["id"]
+    assert survivor["local_name"] == "Alex" and survivor["name_pending"] is True
     _assert_no_live_label_survives(body)
 
 

@@ -210,8 +210,8 @@ def _live_line_targets(
     A named label reuses its name's placement; an unnamed one is placed the
     same way on the same speech. Either is the holder, the top holder when no
     speaker clearly holds it, or the nearest speaker when processing heard
-    none of it. A label with no speech of its own left, every line of it
-    moved by hand, gives each line to the final speaker of its own span.
+    none of it. An unnamed label with no speech of its own left, every line
+    of it moved by hand, gives each line to the final speaker of its own span.
     """
     placed = {
         live[placement.event.event_id]: placement.label
@@ -226,7 +226,7 @@ def _live_line_targets(
             placed[label] = place_event(_user_act_on(own), lines).label
         target = (
             placed[label]
-            if own
+            if label in placed
             else place_event(_user_act_on(((row.start_ms, row.end_ms),)), lines).label
         )
         if target is not None:
@@ -310,16 +310,49 @@ def carry_names_to_final_speakers(
     return carried
 
 
+def follow_merge_chain(
+    session: Any, speaker: RecordingSpeaker, label: str
+) -> RecordingSpeaker:
+    """Walk to the surviving speaker of a merge chain, guarding against cycles."""
+    current = speaker
+    visited = {current.id}
+    while current.merged_into_id:
+        nxt = session.get(RecordingSpeaker, current.merged_into_id)
+        if not nxt:
+            logger.warning(
+                f"Merge chain broken for speaker {label} at ID {current.merged_into_id}"
+            )
+            break
+        if nxt.id in visited:
+            logger.warning(f"Circular merge detected for speaker {label}")
+            break
+        visited.add(nxt.id)
+        current = nxt
+    return current
+
+
+def surviving_speaker(
+    session: Any, recording_id: int, label: str
+) -> RecordingSpeaker | None:
+    """The speaker a final label ends on once the merge passes are done.
+
+    Pending names and the lines moved to live speakers both land here, so a
+    name and its lines end on one speaker.
+    """
+    speaker = session.exec(
+        select(RecordingSpeaker)
+        .where(RecordingSpeaker.recording_id == recording_id)
+        .where(RecordingSpeaker.diarization_label == label)
+    ).first()
+    return None if speaker is None else follow_merge_chain(session, speaker, label)
+
+
 def apply_pending_names(
     session: Any, recording: Any, pending: dict[str, ResolvedName]
 ) -> None:
-    """Offer each pending name on its speaker, if nothing else named it."""
+    """Offer each pending name on its speaker's survivor, if nothing else named it."""
     for label, name in pending.items():
-        speaker = session.exec(
-            select(RecordingSpeaker)
-            .where(RecordingSpeaker.recording_id == recording.id)
-            .where(RecordingSpeaker.diarization_label == label)
-        ).first()
+        speaker = surviving_speaker(session, recording.id, label)
         if speaker is None or speaker.merged_into_id is not None:
             continue
         if speaker.global_speaker_id is not None or speaker.local_name:

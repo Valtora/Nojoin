@@ -42,6 +42,8 @@ from .speaker_name_carryover import (
     CarriedNames,
     apply_pending_names,
     carry_names_to_final_speakers,
+    follow_merge_chain,
+    surviving_speaker,
 )
 
 
@@ -136,25 +138,6 @@ def _extract_speaker_voiceprints(ctx, recording: Recording, diarization_result) 
     )
 
 
-def _follow_merge_chain(session, speaker: RecordingSpeaker, label: str):
-    """Walk to the surviving speaker of a merge chain, guarding against cycles."""
-    current = speaker
-    visited = {current.id}
-    while current.merged_into_id:
-        nxt = session.get(RecordingSpeaker, current.merged_into_id)
-        if not nxt:
-            logger.warning(
-                f"Merge chain broken for speaker {label} at ID {current.merged_into_id}"
-            )
-            break
-        if nxt.id in visited:
-            logger.warning(f"Circular merge detected for speaker {label}")
-            break
-        visited.add(nxt.id)
-        current = nxt
-    return current
-
-
 def _identity_from_existing_row(
     session, existing_speaker: RecordingSpeaker | None, label: str
 ) -> _ResolvedIdentity | None:
@@ -168,7 +151,7 @@ def _identity_from_existing_row(
 
     if existing_speaker.merged_into_id:
         logger.info("Speaker %s is merged. Resolving target...", label)
-        target = _follow_merge_chain(session, existing_speaker, label)
+        target = follow_merge_chain(session, existing_speaker, label)
         resolved_name = target.name or target.local_name or target.diarization_label
         logger.info("Resolved %s (Merged) -> %s", label, resolved_name)
         # Identified either way: a global link is honoured, and a purely local
@@ -608,15 +591,9 @@ def _move_live_lines(session, recording: Recording, targets: dict[int, str]) -> 
         .all()
     )
     for row in rows:
-        label = targets[row.id]
-        speaker = session.exec(
-            select(RecordingSpeaker)
-            .where(RecordingSpeaker.recording_id == recording.id)
-            .where(RecordingSpeaker.diarization_label == label)
-        ).first()
+        speaker = surviving_speaker(session, recording.id, targets[row.id])
         if speaker is None:
             continue
-        speaker = _follow_merge_chain(session, speaker, label)
         row.speaker_label = speaker.diarization_label
         row.recording_speaker_id = speaker.id
         session.add(row)
