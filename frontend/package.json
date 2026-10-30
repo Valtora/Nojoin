@@ -21,7 +21,7 @@
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",
     "@tiptap/starter-kit": "^3.32.0",
-    "axios": "^1.19.0",
+    "axios": "^1.21.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "date-fns-tz": "^3.2.0",
@@ -29,8 +29,8 @@
     "dictionary-en-gb": "^3.0.0",
     "driver.js": "^1.10.2",
     "fuse.js": "^7.5.0",
-    "lucide-react": "^1.60.0",
-    "next": "16.4.2",
+    "lucide-react": "^1.62.0",
+    "next": "16.4.3",
     "nspell": "^2.1.5",
     "react": "19.3.1",
     "react-datepicker": "^9.1.0",
@@ -40,7 +40,7 @@
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.7.0",
     "tiptap-markdown": "^0.9.0",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
