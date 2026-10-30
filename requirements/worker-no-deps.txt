@@ -13,4 +13,4 @@
 # checks those pins against fastembed's metadata, since pip no longer does.
 # When a fastembed release accepts the pinned pillow, that test fails: move
 # fastembed back into worker.txt and delete this file and its install lines.
-fastembed==0.9.0
+fastembed==0.9.1
