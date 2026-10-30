@@ -7,7 +7,7 @@ import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import type { AudioClock } from "@/lib/notes/audioClock";
 import { segmentStartMs } from "@/lib/notes/placement";
 import { selectComposer, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
-import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
+import type { Recording, TranscriptSegment } from "@/types";
 
 import LiveNoteComposer from "./LiveNoteComposer";
 
@@ -33,7 +33,6 @@ export default function RecordingNoteComposer({ recording, segments, audioClock,
 
   return <LiveNoteComposer
     captureActive={activeCapture}
-    finished={recording.status === RecordingStatus.PROCESSED || recording.status === RecordingStatus.ERROR}
     readAudioNow={readAudioNow}
     onSubmit={(note) => outbox.submit(note, { clearDraft: true })}
     draft={snapshot.draft}

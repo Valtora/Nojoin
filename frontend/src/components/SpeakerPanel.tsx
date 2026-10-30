@@ -16,9 +16,12 @@ import {
   UserCheck,
   Loader2,
   Sparkles,
+  UserPlus,
   Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigationStore } from "@/lib/store";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -40,7 +43,11 @@ import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
 import { useSpeakerTurnHighlight } from "./speakers/SpeakerTurnHighlight";
-import LiveSpeakerRows, { type RenameLiveSpeaker } from "./speakers/LiveSpeakerRows";
+import LiveSpeakerRows, { SPEAKER_SAVING, type RenameLiveSpeaker } from "./speakers/LiveSpeakerRows";
+import TranscriptActionsMenu, { type TranscriptMenuItem } from "./transcript/TranscriptActionsMenu";
+
+// Said in a card's menu, under the actions it holds back.
+const EDITING_CLOSED = "Speakers can be changed once processing finishes.";
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -89,6 +96,20 @@ export default function SpeakerPanel({
     if (highlightTimer.current !== null) clearTimeout(highlightTimer.current);
   }, []);
   const [picker, setPicker] = useState<{ entry: SpeakerPanelEntry; anchor: HTMLElement } | null>(null);
+  // Analytics' Review speakers: the list takes focus and shows the focus
+  // ring until focus moves on, including when it was already open.
+  const panelRef = useRef<HTMLElement>(null);
+  const reviewPending = useNavigationStore((state) => state.speakerReviewPending);
+  const setReviewPending = useNavigationStore((state) => state.setSpeakerReviewPending);
+  const [reviewing, setReviewing] = useState(reviewPending);
+  useOnDepsChange([reviewPending], () => {
+    if (reviewPending) setReviewing(true);
+  });
+  useEffect(() => {
+    if (!reviewPending) return;
+    setReviewPending(false);
+    panelRef.current?.focus({ preventScroll: true });
+  }, [reviewPending, setReviewPending]);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -179,10 +200,17 @@ export default function SpeakerPanel({
 
   return (
     <aside
+      ref={panelRef}
       id="speaker-panel"
+      aria-label="Speakers"
+      tabIndex={-1}
+      data-reviewing={reviewing || undefined}
+      onBlur={(event) => {
+        if (event.target === event.currentTarget) setReviewing(false);
+      }}
       data-ui-reading="pane"
       data-ui-fill="inset"
-      className="@container flex h-full min-w-0 flex-col bg-surface-inset"
+      className="@container flex h-full min-w-0 flex-col bg-surface-inset outline-none data-reviewing:ring-2 data-reviewing:ring-inset data-reviewing:ring-action"
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         <LiveSpeakerRows labels={liveLabels} names={liveSpeakerNames} speakers={speakers}
@@ -279,6 +307,24 @@ export default function SpeakerPanel({
             const absorbedClusters = mergedClusters.filter((cluster) =>
               memberIds.has(cluster.merged_into_id),
             );
+            const offersPeople = !getResolvedGlobalSpeakerId(speaker) &&
+              !globalSpeakers.some((person) => person.name === entry.displayName);
+            const menuItems: TranscriptMenuItem[] = [
+              {
+                id: "change-identity",
+                label: "Change identity",
+                icon: Users,
+                disabledReason: disableEditing ? EDITING_CLOSED : undefined,
+                onSelect: (trigger) => setPicker({ entry, anchor: trigger }),
+              },
+              ...(offersPeople ? [{
+                id: "add-to-people",
+                label: "Add to People",
+                icon: UserPlus,
+                disabledReason: disableEditing ? EDITING_CLOSED : isSubmitting ? SPEAKER_SAVING : undefined,
+                onSelect: () => handlePromoteToGlobal(entry),
+              }] : []),
+            ];
 
             return (
               <SurfaceBase
@@ -339,7 +385,7 @@ export default function SpeakerPanel({
                           <ButtonBase
                             type="button"
                             aria-pressed={entry.labels.every((label) => highlight.labels.includes(label))}
-                            className={`flex min-w-0 max-w-full text-left text-sm font-medium text-foreground cursor-pointer hover:text-status-info-fg ${TOUCH_TARGET_HEIGHT}`}
+                            className={`flex min-w-0 max-w-full items-center text-left text-sm font-medium text-foreground cursor-pointer hover:text-status-info-fg ${TOUCH_TARGET_HEIGHT}`}
                             title={
                               entry.pendingName
                                 ? "Suggested name, not confirmed yet. Click to highlight turns. Double-click to rename"
@@ -390,7 +436,10 @@ export default function SpeakerPanel({
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0 self-start">
+                  {/* Stacked in a narrow column, the side column's default
+                      width on desktop, so the name keeps the width it had
+                      before the ⋯ joined Preview Voice here. */}
+                  <div className="flex flex-col items-center gap-0.5 shrink-0 self-start @min-[18rem]:flex-row @min-[18rem]:gap-1">
                   <ButtonBase
                     disabled={disablePlayback}
                     className={`p-1.5 rounded-full transition-colors ${
@@ -420,20 +469,14 @@ export default function SpeakerPanel({
                       <ArrowRightToLine className="w-3 h-3 fill-current" />
                     </ButtonBase>
                   )}
+                  <TranscriptActionsMenu
+                    label={`Actions for ${entry.displayName}`}
+                    title="Speaker actions"
+                    reveal="always"
+                    items={menuItems}
+                    active={picker?.entry.key === entry.key}
+                  />
                   </div>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <ButtonBase type="button" disabled={disableEditing} aria-label={`Change identity for ${entry.displayName}`}
-                    onClick={(event) => setPicker({ entry, anchor: event.currentTarget })}
-                    className={`inline-flex items-center gap-1 rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}>
-                    <Users className="h-3.5 w-3.5" aria-hidden="true" /> Change identity
-                  </ButtonBase>
-                  {!getResolvedGlobalSpeakerId(speaker) && !globalSpeakers.some((person) => person.name === entry.displayName) && (
-                    <ButtonBase type="button" disabled={isSubmitting || disableEditing} onClick={() => handlePromoteToGlobal(entry)}
-                      className={`rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}>
-                      Add to People
-                    </ButtonBase>
-                  )}
                 </div>
                 {/* A suggested name shows at once but links nobody to People
                     until it is confirmed here or on a transcript line. */}

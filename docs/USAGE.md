@@ -122,7 +122,7 @@ The automatic speaker engine favours small meetings. In larger meetings, or if t
 
 ### Live Notes
 
-The note composer stays under **Transcript** in every recording state. Enter adds a note and Shift+Enter starts a new line. The menu before the box, **Place note**, sets where it goes, and the line under the box says where the next note will land. During recording or a pause:
+The note composer stays under **Transcript** in every recording state. Enter adds a note and Shift+Enter starts a new line. The menu before the box, **Place note**, sets where it goes. For every place but **Before the transcript**, the line under the box says where the next note will land. During recording or a pause:
 
 - **At typing start**, the default, places the note where the recording was when you typed its first character, however long you take to finish it. Clearing the box starts again.
 - **At send** places it where the recording is when you press Enter.
@@ -230,10 +230,10 @@ The speaker panel lists the meeting's speakers. Right-click one for **Rename / A
 
 During recording or a pause, **Speakers** also lists live labels that do not yet have a processed speaker record. **Change identity** names or links the label. Naming alone can link an existing person and never creates one. The separate **Add to People** action explicitly creates a person and links the live name; give the label a real name first. It does not extract or learn a live voiceprint. Final processing still reviews whether that name and person fit the resulting speaker, and may ask you to confirm them. A closed recording refuses the action without creating a person. **Confirm** appears for a genuine pending suggestion on a stored speaker.
 
-Click or tap a speaker's name to highlight all their turns in the transcript; click again to clear the highlight. Other speakers remain visible. Double-click the name to rename it. The visible **Change identity** button opens the same searchable speaker and People picker as a transcript speaker name, applying your choice to the whole speaker in this recording, including every linked label in that row. Enter or Space activates either button from the keyboard.
+Click or tap a speaker's name to highlight all their turns in the transcript; click again to clear the highlight. Other speakers remain visible. Double-click the name to rename it. The **⋯** button at the right of each speaker, live labels included, opens its menu: **Change identity**, and **Add to People** for a speaker not yet in People. An action you can't use yet stays in the menu, which says why under it, such as while the recording is processing. **Change identity** opens the same searchable speaker and People picker as a transcript speaker name, applying your choice to the whole speaker in this recording, including every linked label in that row. In the menu, the arrow keys move and Escape closes it.
 
 - **Create Voiceprint** saves the speaker's voice and offers to link it to a person in your library, create a new person, or keep it to this meeting.
-- **Add to People** is visible on the speaker row as well as in its context menu. It promotes the speaker into your People library and hides when they are already linked or their name exactly matches a person. Rename a placeholder such as **Speaker 1** first; promotion still rejects placeholder names. An ordinary rename or identity choice links an existing matching person but does not create a new one.
+- **Add to People** is in the speaker's **⋯** menu as well as its context menu. It promotes the speaker into your People library and hides when they are already linked or their name exactly matches a person. Rename a placeholder such as **Speaker 1** first; promotion still rejects placeholder names. An ordinary rename or identity choice links an existing matching person but does not create a new one.
 - **Delete** marks the speaker's lines as unknown. A person in your library stays there.
 
 When processing finishes, Nojoin suggests names for speakers that have no name yet, and **Retry Speaker Inference** in the recordings list runs this again. With an AI provider it reads the meeting; without one, it uses only self-introductions with a capitalised name, such as "I'm Alice", so a lowercase transcript gets no names. A speaker whose voice matches someone in People is suggested as that person. Inference never renames a speaker you have named, and a rename, merge, promotion or deletion you make always wins.
@@ -362,7 +362,7 @@ Every claim about a person carries a quote you can play back. An item the model 
 
 Every figure belongs to a speaker, so it is only as good as the speaker separation. When one person is split into two, their share is split too, and the number looks normal.
 
-The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting that reached its **Max Speakers** limit, or unnamed speakers. The warning links to the speaker panel, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
+The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting that reached its **Max Speakers** limit, or unnamed speakers. Its **Review speakers** opens the speaker panel, in the side column or the **Speakers** tab on a phone, and moves focus to the speaker list, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
 
 ### Attaching Documents
 

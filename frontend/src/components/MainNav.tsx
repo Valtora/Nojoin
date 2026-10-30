@@ -279,7 +279,7 @@ export default function MainNav() {
       <SurfaceBase
         data-ui-fill="rail" as="aside" kind={isDesktop ? "pane" : "float"}
         id="main-nav"
-        className={`shrink-0 border-r border-rail-border bg-rail flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-[var(--z-modal)] ${railTransition} lg:sticky lg:top-0 lg:h-[calc(100dvh_-_var(--demo-banner-h,0px))] ${
+        className={`shrink-0 border-r border-rail-border bg-rail flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-[var(--z-modal)] ${railTransition} lg:sticky lg:top-0 lg:h-[calc(100dvh_-_var(--demo-banner-h,0px)_-_var(--capture-bar-h,0px))] ${
           isMobileNavOpen
             ? "fixed inset-y-2 left-2 translate-x-0 rounded-surface-subtle shadow-float lg:inset-auto lg:left-0 lg:rounded-none lg:shadow-none"
             : "fixed inset-y-2 left-2 -translate-x-[calc(100%+1rem)] rounded-surface-subtle lg:relative lg:inset-auto lg:left-0 lg:translate-x-0 lg:rounded-none lg:shadow-none"
