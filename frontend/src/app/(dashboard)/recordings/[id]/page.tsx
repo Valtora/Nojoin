@@ -184,6 +184,10 @@ export default function RecordingPage({ params }: PageProps) {
     className="bg-surface-inset"
   />;
   const capturing = isLiveCaptureInProgress(recording);
+  // Moves with each new or growing live line, which the meter's quiet notice
+  // takes as proof that audio is getting through.
+  const lastLiveLine = usesInFlightTranscript ? liveTranscript.segments.at(-1) : undefined;
+  const liveTextMark = lastLiveLine ? `${liveTranscript.segments.length}:${lastLiveLine.end}` : null;
   const meetingEdgeContent = showMeetingEdge ? <MeetingEdgePanel
     readOnly={!capturing}
     payload={recording.transcript?.meeting_edge_payload}
@@ -210,7 +214,7 @@ export default function RecordingPage({ params }: PageProps) {
       myNotesContent={myNotesContent}
       meetingEdgeContent={meetingEdgeContent}
       playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording}
-        audioClock={audioClock} onDiscarded={navigateToRecordings} /> : undefined}
+        audioClock={audioClock} onDiscarded={navigateToRecordings} liveTextMark={liveTextMark} /> : undefined}
       inFlightContent={<RecordingNoteComposer recording={recording} segments={transcriptSegments}
         audioClock={audioClock} boxRef={liveNoteBoxRef} />}
       timelineNotes={timelineNotes}

@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
-import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { RecordingStatus } from "@/types";
@@ -57,8 +57,8 @@ export default function MeetingControls({
     status,
     stopStage,
     support,
-    uploadQueue,
   } = useCapture();
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
 
   const { addNotification } = useNotificationStore();
   const router = useRouter();

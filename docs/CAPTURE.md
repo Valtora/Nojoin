@@ -182,7 +182,7 @@ The browser shared the screen or tab without audio, and Nojoin is recording your
 
 Check that the meeting is making sound, that the picker's audio option was on, and the gain in **Settings > Recording**. The input test there shows whether the microphone level is high enough. If only your microphone moves the waveform, shared audio was not granted.
 
-After 20 seconds without sound, Nojoin shows an "Audio has been quiet for a bit" hint. **Don't show again** turns these hints off in this browser; turn them back on under **Settings > Recording**, **Advanced**, **Quiet audio warnings**.
+After 20 seconds without sound or new live transcript text, Nojoin shows an "Audio has been quiet for a bit" hint. Soft speech can stay under the meter's threshold and still be transcribed, so text arriving holds the hint off. **Don't show again** turns these hints off in this browser; turn them back on under **Settings > Recording**, **Advanced**, **Quiet audio warnings**.
 
 ### Meeting Edge is still empty during capture
 
