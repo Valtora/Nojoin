@@ -45,9 +45,10 @@ export function useRecordingTranscript(
   useOnDepsChange([runEnded], () => {
     if (runEnded) setRetainedRecordingId(null);
   });
-  // While in flight, only a capture, or a finished transcript a later step runs
-  // over, has lines to read. An import or a reprocess shows its processing
-  // state until it publishes, with no feed polling a transcript it lacks.
+  // While in flight, only a capture, a finished transcript a later step runs
+  // over, or a settled meeting's reprocess (which keeps its settled lines) has
+  // lines to read. An import or any other reprocess shows its processing state
+  // until it publishes, with no feed polling a transcript it lacks.
   const liveFeed = inFlight && (localCaptureActive || hasInFlightTranscriptFeed(recording));
   // The run this page read the feed for keeps it until the settled read takes
   // over, and a later run with nothing to read starts without it.

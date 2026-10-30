@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import Engine, delete
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlmodel import Session, select
 
+from backend.api.deps import get_current_user, get_db
+from backend.api.v1.api import api_router
 from backend.models.pipeline import (
     ProcessingRunKind,
     TranscriptUtterance,
@@ -17,11 +24,12 @@ from backend.models.pipeline import (
 )
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.speaker_name_event import SpeakerNameEvent
+from backend.models.user import User
 from backend.tests.canonical_engine import _recording, _transcript
 from backend.tests.canonical_engine import (
     publication_engine as publication_engine,
 )
-from backend.tests.test_canonical_publication_fence import Database
+from backend.tests.test_canonical_publication_fence import SCHEMA, Database
 from backend.tests.test_canonical_publication_fence import (
     publication_database as publication_database,
 )
@@ -285,6 +293,7 @@ def test_unmarked_drift_keeps_existing_machine_replacement_contract(
 
 def test_marked_reset_retains_accepted_view_and_name_anchors(
     publication_database: Database,
+    stub_celery_dispatch: Any,
 ) -> None:
     engine, recording_id, _ = publication_database
     with Session(engine) as session:
@@ -297,6 +306,11 @@ def test_marked_reset_retains_accepted_view_and_name_anchors(
         transcript = _load_transcript(session, recording_id)
         assert transcript is not None
         transcript.settling_state = {"settled": True, "generation": "discard-runtime"}
+        transcript.complete_transcription()
+        recording = session.get(Recording, recording_id)
+        assert recording is not None
+        recording.status = RecordingStatus.PROCESSED
+        session.add(recording)
         session.add(transcript)
         session.add(
             SpeakerNameEvent(
@@ -316,7 +330,32 @@ def test_marked_reset_retains_accepted_view_and_name_anchors(
         session.commit()
         before = serialize_canonical_utterances(session, recording_id)
         anchors = deepcopy(transcript.settling_state["name_anchors"])
-    asyncio.run(_reset(engine, recording_id))
+
+    async def reprocess_and_read() -> None:
+        async with _endpoint_client(engine, recording_id) as (client, url):
+            response = await client.post(
+                f"{url}/reprocess", json={"transcription_backend": "whisper"}
+            )
+            assert response.status_code == 200, response.text
+            detail = await client.get(url)
+            assert detail.status_code == 200, detail.text
+            payload = detail.json()
+            assert payload["status"] == "QUEUED"
+            assert payload["previous_publication_available"] is False
+            assert payload["transcript"]["transcript_status"] == "pending"
+            assert payload["transcript"]["settling_required"] is True
+            assert payload["transcript"]["segments"] == []
+            response = await client.get(f"/transcripts/{payload['id']}/utterances")
+            assert response.status_code == 200, response.text
+            utterances = response.json()
+            assert utterances["settling_required"] is True
+            assert [line["text"] for line in utterances["utterances"]] == [
+                line["text"] for line in before
+            ]
+            assert all(line["locked"] for line in utterances["utterances"])
+
+    asyncio.run(reprocess_and_read())
+    assert len(stub_celery_dispatch) == 1
     with Session(engine) as session:
         transcript = _load_transcript(session, recording_id)
         assert transcript is not None
@@ -325,6 +364,38 @@ def test_marked_reset_retains_accepted_view_and_name_anchors(
         assert transcript.transcript_status == "pending"
         assert transcript.text and "Accepted correction" in transcript.text
         assert session.exec(select(SpeakerNameEvent)).one().name == "Alex"
+
+
+@asynccontextmanager
+async def _endpoint_client(
+    engine: Engine, recording_id: int
+) -> AsyncIterator[tuple[AsyncClient, str]]:
+    """Use the real routes and a fresh database session for each request."""
+    async_engine = create_async_engine(
+        engine.url.set(drivername="postgresql+asyncpg"),
+        connect_args={"server_settings": {"search_path": SCHEMA}},
+    )
+    try:
+        async with AsyncSession(async_engine) as session:
+            recording = await session.get(Recording, recording_id)
+            assert recording is not None
+            url = f"/recordings/{recording.public_id}"
+            owner = await session.get(User, recording.user_id)
+
+        async def database() -> AsyncIterator[AsyncSession]:
+            async with AsyncSession(async_engine, expire_on_commit=False) as session:
+                yield session
+
+        app = FastAPI()
+        app.include_router(api_router)
+        app.dependency_overrides[get_db] = database
+        app.dependency_overrides[get_current_user] = lambda: owner
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            yield client, url
+    finally:
+        await async_engine.dispose()
 
 
 def test_name_snapshot_rebuild_is_idempotent_and_drops_a_superseded_act(
