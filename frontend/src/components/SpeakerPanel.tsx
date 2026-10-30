@@ -436,7 +436,10 @@ export default function SpeakerPanel({
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0 self-start">
+                  {/* Stacked in a narrow column, the side column's default
+                      width on desktop, so the name keeps the width it had
+                      before the ⋯ joined Preview Voice here. */}
+                  <div className="flex flex-col items-center gap-0.5 shrink-0 self-start @min-[18rem]:flex-row @min-[18rem]:gap-1">
                   <ButtonBase
                     disabled={disablePlayback}
                     className={`p-1.5 rounded-full transition-colors ${
