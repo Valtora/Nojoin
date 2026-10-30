@@ -273,24 +273,17 @@ export function useLiveTranscript(
 
   // A merge rewrites no line, so each read's lines are shown under the label
   // their speaker was merged into: one speaker in the lines, the panel and
-  // the colours.
+  // the colours. Each shown line is kept per source line until the merges
+  // change: lines redraw by identity, and a poll must redraw only the lines
+  // it changed, not every line under a merged label.
+  const remapped = useMemo(
+    () => ({ merges: liveSpeakerMerges, lines: new WeakMap<TranscriptSegment, TranscriptSegment>() }),
+    [liveSpeakerMerges],
+  );
   const shown = useMemo(
-    () => (Object.keys(liveSpeakerMerges).length === 0 ? segments : segments.map((segment) => {
-      const into = liveSpeakerMerges[segment.speaker];
-      const overlaps = segment.overlapping_speakers;
-      const remapped = !!overlaps?.length && (!!into || overlaps.some((label) => label in liveSpeakerMerges));
-      if (!into && !remapped) return segment;
-      const speaker = into ?? segment.speaker;
-      return {
-        ...segment,
-        speaker,
-        ...(remapped ? {
-          overlapping_speakers: [...new Set(overlaps!.map((label) => liveSpeakerMerges[label] ?? label))]
-            .filter((label) => label !== speaker),
-        } : {}),
-      };
-    })),
-    [segments, liveSpeakerMerges],
+    () => (Object.keys(remapped.merges).length === 0 ? segments
+      : segments.map((segment) => showMerged(segment, remapped.merges, remapped.lines))),
+    [segments, remapped],
   );
 
   const refresh = useCallback(() => refreshRef.current?.(), []);
@@ -298,4 +291,29 @@ export function useLiveTranscript(
     segments: shown, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames,
     liveSpeakerMerges, applyLiveSpeakerMerges, refresh, liveBehind,
   };
+}
+
+/** A line under the label its speaker was merged into; the same object for the same line. */
+function showMerged(
+  segment: TranscriptSegment,
+  merges: Readonly<Record<string, string>>,
+  shown: WeakMap<TranscriptSegment, TranscriptSegment>,
+): TranscriptSegment {
+  const kept = shown.get(segment);
+  if (kept) return kept;
+  const into = merges[segment.speaker];
+  const overlaps = segment.overlapping_speakers;
+  const remapsOverlaps = !!overlaps?.length && (!!into || overlaps.some((label) => label in merges));
+  if (!into && !remapsOverlaps) return segment;
+  const speaker = into ?? segment.speaker;
+  const line = {
+    ...segment,
+    speaker,
+    ...(remapsOverlaps ? {
+      overlapping_speakers: [...new Set(overlaps!.map((label) => merges[label] ?? label))]
+        .filter((label) => label !== speaker),
+    } : {}),
+  };
+  shown.set(segment, line);
+  return line;
 }

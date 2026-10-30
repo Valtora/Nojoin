@@ -461,4 +461,33 @@ describe("useLiveTranscript", () => {
     expect(result.current.segments.map((segment) => segment.speaker))
       .toEqual(["LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_2"]);
   });
+  it("keeps a merged line the same object when a read only adds another line", async () => {
+    const line = (id: string, start: number, speaker: string) => ({
+      ...buildUtterance(id, start, `line ${id}`, 4), speaker,
+    });
+    const merges = { live_speaker_merges: { LIVE_PROVISIONAL_3: "LIVE_PROVISIONAL_1" } };
+    getTranscriptUtterances
+      .mockResolvedValueOnce({ ...buildDelta(4, [line("a", 0, "LIVE_PROVISIONAL_3"), line("b", 2, "LIVE_PROVISIONAL_1")]), ...merges })
+      .mockResolvedValueOnce({ ...buildDelta(5, [{ ...line("c", 4, "LIVE_PROVISIONAL_3"), revision: 5 }]), ...merges });
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    const [mergedBefore, plainBefore] = result.current.segments;
+    expect(mergedBefore.speaker).toBe("LIVE_PROVISIONAL_1");
+
+    await advanceOnePoll();
+    const after = result.current.segments;
+    expect(after.map((segment) => segment.speaker))
+      .toEqual(["LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_1"]);
+    // Lines redraw by identity: only the new line is a new object.
+    expect(after[0]).toBe(mergedBefore);
+    expect(after[1]).toBe(plainBefore);
+
+    // A new merge shows every line afresh.
+    act(() => {
+      result.current.applyLiveSpeakerMerges?.({ LIVE_PROVISIONAL_3: "LIVE_PROVISIONAL_2" });
+    });
+    expect(result.current.segments[0]).not.toBe(mergedBefore);
+    expect(result.current.segments[0].speaker).toBe("LIVE_PROVISIONAL_2");
+  });
 });
