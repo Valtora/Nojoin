@@ -1125,6 +1125,10 @@ async def test_a_delete_racing_the_task_leaves_no_file(
         ).scalar_one()
     reached, release = threading.Event(), threading.Event()
     real = getattr(imported_audio, paused_in)
+    # Waiting at the audio lock the task holds, a permanent delete can read
+    # the row after the task has stored its processing task's id, and then
+    # revokes that task.
+    monkeypatch.setattr(celery_app.control, "revoke", lambda task_id, **options: None)
 
     def paused(*args, **kwargs):
         reached.set()

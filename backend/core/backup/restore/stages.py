@@ -297,9 +297,23 @@ def _note_replaced_files(
     Their audio and proxy paths, and the files of their documents. The document
     rows go with the recordings by cascade, and with them the only record of where
     the files are. The recordings are locked first, in id order, as the API's
-    deletes lock theirs, so no upload commits a document this misses.
+    deletes lock theirs, so no upload commits a document this misses: each one's
+    audio lock, then the transcripts, then the rows, the order Discard takes them
+    in, since the cascade reaches Transcript only after the row (issue #816).
     """
+    # Imported here: the module loads config_manager, which writes the data
+    # directory, and storage hygiene's CLI imports this package and must not.
+    from backend.utils.recording_audio_sync import lock_recording_audio
+
     for id_batch in bind_batches(sorted(recording_ids)):
+        for recording_id in id_batch:
+            lock_recording_audio(session, recording_id)
+        session.exec(
+            select(runtime.Transcript.id)
+            .where(runtime.Transcript.recording_id.in_(id_batch))
+            .order_by(runtime.Transcript.recording_id)
+            .with_for_update()
+        ).all()
         recording_files = session.exec(
             select(runtime.Recording.audio_path, runtime.Recording.proxy_path)
             .where(runtime.Recording.id.in_(id_batch))
