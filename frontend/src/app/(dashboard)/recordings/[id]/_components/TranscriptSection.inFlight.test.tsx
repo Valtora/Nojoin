@@ -2,6 +2,8 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TranscriptSection from "@/test/TranscriptSectionWithEdits";
+import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
+import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
 import { useRecordingTranscript } from "../_hooks/useRecordingTranscript";
@@ -11,6 +13,15 @@ const getTranscriptUtterances = vi.fn();
 vi.mock("@/lib/api/transcript", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/transcript")>()),
   getTranscriptUtterances: (...args: unknown[]) => getTranscriptUtterances(...args),
+}));
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getUnfinishedCaptures: async () => [],
+}));
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/recordings/rec-1",
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: noop }),
 }));
 
 const noop = () => {};
@@ -101,5 +112,34 @@ describe("transcript tab while a recording is in flight (#835)", () => {
     expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 0, expect.any(AbortSignal));
     expect(screen.queryByText("Listening.")).not.toBeInTheDocument();
     expect(screen.getByText("No transcript available yet.")).toBeInTheDocument();
+  });
+
+  it("shows kept settled lines on a fresh open during reprocessing", async () => {
+    getTranscriptUtterances.mockResolvedValue({
+      ...emptyRead, revision: 4, settling_required: true,
+      utterances: [
+        { id: "fence-b", revision: 2, start: 1, end: 9, text: "first", speaker: "UNKNOWN", locked: true },
+        { id: "fence-c", revision: 3, start: 10, end: 14, text: "middle", speaker: "UNKNOWN", locked: true },
+        { id: "fence-a", revision: 4, start: 20, end: 29, text: "Accepted correction", speaker: "UNKNOWN", locked: true },
+      ],
+    });
+    const reprocessing = recording({
+      status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE,
+      previous_publication_available: false,
+      transcript: { ...transcriptRow("pending"), settling_required: true },
+    });
+    render(<CaptureProvider>
+      <RecordingCaptureSlot recording={reprocessing} />
+      <TranscriptTab recording={reprocessing} />
+    </CaptureProvider>);
+    await settle();
+    expect(screen.getByText("first")).toBeInTheDocument();
+    expect(screen.getByText("middle")).toBeInTheDocument();
+    expect(screen.getByText("Accepted correction")).toBeInTheDocument();
+    expect(screen.getByText("Processing")).toBeInTheDocument();
+    expect(screen.getByText("Preparing your meeting transcript.")).toBeInTheDocument();
+    expect(screen.queryByText("Listening.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/a few seconds behind the conversation/i)).not.toBeInTheDocument();
+    expect(consoleError).not.toHaveBeenCalled();
   });
 });
