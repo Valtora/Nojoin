@@ -12,6 +12,7 @@ the connector at all.
 import logging
 from typing import Any, Optional
 
+from fastapi import HTTPException
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlmodel import select
 
@@ -261,9 +262,10 @@ async def reprocess_recording(
 
     Replaces the transcript and regenerates downstream artefacts; most
     utterance ids will change, though the revision cursor keeps
-    increasing. Processing occupies the deployment's GPU, so avoid
-    triggering this while a live meeting is being captured. Requires the
-    mcp:write scope.
+    increasing. A recording still being captured, running or paused, or
+    already queued or processing is refused with the reason. Processing
+    occupies the deployment's GPU, so avoid triggering this while another
+    live meeting is being captured. Requires the mcp:write scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -289,12 +291,17 @@ async def reprocess_recording(
         body_kwargs["max_speakers"] = max_speakers
 
     async with async_session_maker() as db:
-        updated = await api_reprocess_recording(
-            recording_id,
-            ReprocessRequest(**body_kwargs),
-            db=db,
-            current_user=user,
-        )
+        try:
+            updated = await api_reprocess_recording(
+                recording_id,
+                ReprocessRequest(**body_kwargs),
+                db=db,
+                current_user=user,
+            )
+        except HTTPException as exc:
+            # The assistant gets the route's reason. Anything else raised from
+            # a tool reaches it only as "Error executing tool".
+            raise ToolError(str(exc.detail)) from exc
     return {"id": updated.id, "status": str(updated.status)}
 
 
@@ -306,7 +313,9 @@ async def regenerate_notes(
 
     Re-runs Nojoin's own notes pipeline over the transcript, replacing the
     current AI-generated notes; user notes are untouched. The agent never
-    authors note content directly. Requires the mcp:write scope.
+    authors note content directly. A recording still being captured,
+    running or paused, is refused with the reason. Requires the mcp:write
+    scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -323,12 +332,15 @@ async def regenerate_notes(
     _require_write_scope("notes regeneration")
 
     async with async_session_maker() as db:
-        result = await generate_notes(
-            recording_id,
-            GenerateNotesRequest(notes_template_id=notes_template_id),
-            db=db,
-            current_user=user,
-        )
+        try:
+            result = await generate_notes(
+                recording_id,
+                GenerateNotesRequest(notes_template_id=notes_template_id),
+                db=db,
+                current_user=user,
+            )
+        except HTTPException as exc:
+            raise ToolError(str(exc.detail)) from exc
     return {
         "recording_id": recording_id,
         "notes_status": result.get("notes_status"),
@@ -392,8 +404,6 @@ async def attach_document(
 
 
 async def _load_recording_for_correction(db, recording_id: str, user_id: int):
-    from fastapi import HTTPException
-
     from backend.api.v1.endpoints.transcripts.helpers import (
         _get_owned_recording,
         _get_recording_transcript,

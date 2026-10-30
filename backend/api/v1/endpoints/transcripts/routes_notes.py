@@ -44,6 +44,9 @@ class GenerateNotesRequest(BaseModel):
     notes_template_id: Optional[int] = None
 
 
+NOTES_DURING_CAPTURE_MESSAGE = "Notes can be generated once the recording has stopped."
+
+
 @router.get("/{recording_id}/notes")
 async def get_notes(
     recording_id: str,
@@ -150,6 +153,10 @@ async def generate_notes(
     An optional ``notes_template_id`` picks the structure for this run. Omitting
     it falls through to the user's default, then the install default, then the
     built-in structure.
+
+    A live or paused capture is refused. The run marks the recording
+    PROCESSING, its live transcript keeps it there once the notes finish, and
+    the capture's next segment is refused (issue #851).
     """
     recording = await _get_owned_recording(
         db,
@@ -161,6 +168,8 @@ async def generate_notes(
             ),
         ),
     )
+    if is_live_capture(recording):
+        raise HTTPException(status_code=409, detail=NOTES_DURING_CAPTURE_MESSAGE)
 
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)

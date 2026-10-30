@@ -94,8 +94,8 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `tag_recording` / `untag_recording` | `mcp:write` | Add a tag to a recording, creating the tag if needed, or remove one. |
 | `archive_recording` / `restore_recording` | `mcp:write` | Archive a recording, or bring it back from the archive or the bin. |
 | `trash_recording` | `mcp:write` | Move a recording to the bin. |
-| `reprocess_recording` | `mcp:write` | Re-run processing. The transcript is rebuilt, so every utterance id changes and earlier corrections are replaced. |
-| `regenerate_notes` | `mcp:write` | Re-run Nojoin's notes pipeline. The assistant never writes the notes itself. |
+| `reprocess_recording` | `mcp:write` | Re-run processing. The transcript is rebuilt, so every utterance id changes and earlier corrections are replaced. Refused while the recording is being captured, paused, queued or processing. |
+| `regenerate_notes` | `mcp:write` | Re-run Nojoin's notes pipeline. The assistant never writes the notes itself. Refused while the recording is being captured or paused. |
 | `analyse_meeting` | `mcp:write` | Run the AI analysis of a meeting, then read it with `get_meeting_analytics`. Claims without a verified quote from the transcript are discarded. |
 | `attach_document` | `mcp:write` | Attach text the assistant wrote as a markdown document. Binary files can only be uploaded in the web app. |
 | `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a line's text or speaker. The edit is logged with source `mcp`, locked like a web edit, and labelled `AI corrected text` or `AI corrected speaker` in the app. A speaker correction applies to every line by that speaker unless limited to one. |
