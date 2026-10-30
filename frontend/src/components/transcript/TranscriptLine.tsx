@@ -60,6 +60,7 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
   speakers: readonly RecordingSpeaker[];
+  liveSpeakerLabels?: Readonly<Record<string, string>>;
   globalSpeakers: GlobalSpeaker[];
   speakerColors: Record<string, string>;
   onUpdateSegmentSpeaker: (
@@ -114,6 +115,7 @@ function TranscriptLine({
   allowProvisionalEdits,
   speakerMap,
   speakers,
+  liveSpeakerLabels,
   globalSpeakers,
   speakerColors,
   onUpdateSegmentSpeaker,
@@ -259,6 +261,7 @@ function TranscriptLine({
             {popoverAnchor && !isSegmentReadOnly && (
               <SpeakerAssignmentPopover
                 availableSpeakers={speakers}
+                liveSpeakerLabels={liveSpeakerLabels}
                 currentSpeakerLabel={segment.speaker}
                 currentSpeakerName={speakerName}
                 globalSpeakers={globalSpeakers}
@@ -310,6 +313,7 @@ function TranscriptLine({
           isChangingSpeaker={popoverAnchor !== null}
           live={live}
           speakers={speakers}
+          liveSpeakerLabels={liveSpeakerLabels}
         />
       </div>
       {liveLine?.sourceLabel ? (

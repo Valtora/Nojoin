@@ -19,6 +19,7 @@ import {
   getRecordingSpeakerGroupKey,
   getResolvedGlobalSpeakerId,
   isPlaceholderSpeakerName,
+  liveSpeakerDisplayName,
   normaliseSpeakerName,
 } from "@/lib/recordingSpeakerUtils";
 import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton";
@@ -36,6 +37,16 @@ interface RecordingSpeakerOption {
 
 interface SpeakerAssignmentPopoverProps {
   availableSpeakers: readonly RecordingSpeaker[];
+  /** The capture's live labels, the current one included, with the names they show. */
+  liveSpeakerLabels?: Readonly<Record<string, string>>;
+  /**
+   * What a live speaker is offered for. "line" (the default): one line at a
+   * time, so only with This utterance, as the server takes it. "speaker": the
+   * whole speaker, which the caller merges into the live speaker picked.
+   */
+  liveTargets?: "line" | "speaker";
+  /** False for a picker of this meeting's speakers alone: no People, nothing to create. */
+  offerNames?: boolean;
   globalSpeakers: GlobalSpeaker[];
   currentSpeakerLabel: string;
   /** The name the current speaker shows, which typing it doesn't offer to create. */
@@ -70,6 +81,9 @@ const clamp = (value: number, min: number, max: number) => {
 
 export default function SpeakerAssignmentPopover({
   availableSpeakers,
+  liveSpeakerLabels,
+  liveTargets = "line",
+  offerNames = true,
   globalSpeakers,
   currentSpeakerLabel,
   currentSpeakerName,
@@ -128,7 +142,8 @@ export default function SpeakerAssignmentPopover({
     const groupedOptions = new Map<string, RecordingSpeaker[]>();
 
     availableSpeakers
-      .filter((speaker) => speaker.diarization_label !== currentSpeakerLabel)
+      .filter((speaker) => speaker.diarization_label !== currentSpeakerLabel &&
+        !liveSpeakerLabels?.[speaker.diarization_label])
       .forEach((speaker) => {
         const key = getRecordingSpeakerGroupKey(
           speaker,
@@ -179,7 +194,16 @@ export default function SpeakerAssignmentPopover({
     globalSpeakerById,
     normalisedQuery,
     uniqueGlobalSpeakerIdByName,
+    liveSpeakerLabels,
   ]);
+
+  // Live speakers, first heard first. For one line they are offered with
+  // This utterance only: Whole transcript would move a speaker, which a merge
+  // does instead.
+  const liveOffered = liveTargets === "speaker" || scope === "utterance_only";
+  const filteredLive = liveOffered ? Object.entries(liveSpeakerLabels ?? {}).filter(([label, name]) =>
+    label !== currentSpeakerLabel && normaliseSpeakerName(name).includes(normalisedQuery)) : [];
+  const currentName = currentSpeakerName ?? liveSpeakerLabels?.[currentSpeakerLabel];
 
   // People already in this meeting are offered as its speakers instead.
   const peopleOutsideMeeting = useMemo(
@@ -190,31 +214,39 @@ export default function SpeakerAssignmentPopover({
   );
   // A People library can be large, so it is listed only for what is typed,
   // names that start with it first.
-  const filteredGlobal = useMemo(() => normalisedQuery
+  const filteredGlobal = useMemo(() => normalisedQuery && offerNames
     ? peopleOutsideMeeting
       .filter((person) => normaliseSpeakerName(person.name).includes(normalisedQuery))
       .sort((left, right) =>
         Number(!normaliseSpeakerName(left.name).startsWith(normalisedQuery)) -
           Number(!normaliseSpeakerName(right.name).startsWith(normalisedQuery)) ||
         left.name.localeCompare(right.name))
-    : [], [peopleOutsideMeeting, normalisedQuery]);
+    : [], [peopleOutsideMeeting, normalisedQuery, offerNames]);
 
   // Every name this meeting already has, the current speaker's included: a
   // typed one picks that speaker rather than making a second one.
   const meetingNames = useMemo(() => new Set([
     ...availableSpeakers.map((speaker) => getRecordingSpeakerDisplayName(speaker, globalSpeakerById)),
-    ...(currentSpeakerName ? [currentSpeakerName] : []),
-  ].map(normaliseSpeakerName)), [availableSpeakers, currentSpeakerName, globalSpeakerById]);
+    ...Object.values(liveSpeakerLabels ?? {}),
+    ...(currentName ? [currentName] : []),
+  ].map(normaliseSpeakerName)), [availableSpeakers, liveSpeakerLabels, currentName, globalSpeakerById]);
   const exactOption = filteredAvailable.find((option) => option.names.includes(normalisedQuery));
+  const exactLive = filteredLive.find(([, name]) => normaliseSpeakerName(name) === normalisedQuery);
   const exactPerson = filteredGlobal.find((person) => normaliseSpeakerName(person.name) === normalisedQuery);
-  const isCurrentName = !!currentSpeakerName && normaliseSpeakerName(currentSpeakerName) === normalisedQuery;
+  const isCurrentName = !!currentName && normaliseSpeakerName(currentName) === normalisedQuery;
   const isPlaceholder = isPlaceholderSpeakerName(query);
-  const canCreate = !!query && !exactOption && !exactPerson && !meetingNames.has(normalisedQuery) && !isPlaceholder;
+  const canCreate = offerNames && !!query && !exactOption && !exactLive && !exactPerson &&
+    !meetingNames.has(normalisedQuery) && !isPlaceholder;
+  // A live speaker the typed name belongs to, held back because Whole
+  // transcript is chosen.
+  const liveNeedsOneLine = !liveOffered && !isCurrentName && Object.entries(liveSpeakerLabels ?? {}).some(
+    ([label, name]) => label !== currentSpeakerLabel && normaliseSpeakerName(name) === normalisedQuery);
   const selectOption = (option: RecordingSpeakerOption) => onSelect({
     name: option.displayName,
     diarizationLabel: option.representative.diarization_label,
     scope,
   });
+  const selectLive = ([label, name]: [string, string]) => onSelect({ name, diarizationLabel: label, scope });
   const selectPerson = (person: GlobalSpeaker) => onSelect({ name: person.name, globalSpeakerId: person.id, scope });
 
   useLayoutEffect(() => {
@@ -281,7 +313,7 @@ export default function SpeakerAssignmentPopover({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [filteredAvailable.length, filteredGlobal.length, search, targetElement]);
+  }, [filteredAvailable.length, filteredGlobal.length, filteredLive.length, search, targetElement]);
 
   // Enter takes what the typed name means: this meeting's speaker or the
   // person of that name, else a new name where one is offered.
@@ -289,6 +321,7 @@ export default function SpeakerAssignmentPopover({
     if (e.key === "Enter") {
       e.preventDefault();
       if (exactOption) selectOption(exactOption);
+      else if (exactLive) selectLive(exactLive);
       else if (exactPerson) selectPerson(exactPerson);
       else if (canCreate) onSelect({ name: query, scope });
     } else if (e.key === "Escape") {
@@ -396,11 +429,23 @@ export default function SpeakerAssignmentPopover({
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {/* Current Recording Speakers */}
-        {filteredAvailable.length > 0 && (
+        {(filteredAvailable.length > 0 || filteredLive.length > 0) && (
           <div className="px-2 py-1">
             <div className="text-xs font-semibold text-contrast-icon-muted mb-1 uppercase tracking-wider">
               In this recording
             </div>
+            {filteredLive.map(([label, name]) => (
+              <ButtonBase key={label} type="button"
+                onClick={() => selectLive([label, name])}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-contrast-muted hover:bg-surface-inset">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate">{name}</div>
+                  <div className="truncate text-[11px] text-contrast-icon-muted">
+                    {name === liveSpeakerDisplayName(label) ? "Recording only" : liveSpeakerDisplayName(label)}
+                  </div>
+                </div>
+              </ButtonBase>
+            ))}
             {filteredAvailable.map((option) => {
               const representativeLabel = option.representative.diarization_label;
               const colorKey =
@@ -466,11 +511,13 @@ export default function SpeakerAssignmentPopover({
 
         <PickerHint
           searching={!!query}
-          isCurrentName={isCurrentName && !exactOption}
-          isPlaceholder={isPlaceholder && !exactOption && !exactPerson}
-          currentSpeakerName={currentSpeakerName}
-          hasOptions={filteredAvailable.length > 0}
-          hasPeople={peopleOutsideMeeting.length > 0}
+          isCurrentName={isCurrentName && !exactOption && !exactLive}
+          isPlaceholder={isPlaceholder && !exactOption && !exactLive && !exactPerson}
+          liveNeedsOneLine={liveNeedsOneLine}
+          currentSpeakerName={currentName}
+          hasOptions={filteredAvailable.length > 0 || filteredLive.length > 0}
+          hasPeople={offerNames && peopleOutsideMeeting.length > 0}
+          offerNames={offerNames}
         />
       </div>
     </SurfaceBase>,
@@ -479,18 +526,24 @@ export default function SpeakerAssignmentPopover({
 }
 
 /** What the picker says when the list alone doesn't: how to reach People, or why nothing is offered. */
-function PickerHint({ searching, isCurrentName, isPlaceholder, currentSpeakerName, hasOptions, hasPeople }: {
+function PickerHint({
+  searching, isCurrentName, isPlaceholder, liveNeedsOneLine, currentSpeakerName, hasOptions, hasPeople, offerNames,
+}: {
   searching: boolean;
   isCurrentName: boolean;
   isPlaceholder: boolean;
+  liveNeedsOneLine: boolean;
   currentSpeakerName?: string;
   hasOptions: boolean;
   hasPeople: boolean;
+  offerNames: boolean;
 }) {
   const text = !searching
-    ? hasPeople ? "Type to search People" : hasOptions ? null : "Type to search or add"
+    ? hasPeople ? "Type to search People" : hasOptions ? null
+      : offerNames ? "Type to search or add" : "No other speaker yet."
     : isCurrentName ? `This speaker is already ${currentSpeakerName}.`
-    : isPlaceholder ? "Type a real name, not a placeholder."
+    : liveNeedsOneLine ? "Choose This utterance to move this line to that live speaker."
+    : isPlaceholder && offerNames ? "Type a real name, not a placeholder."
     : null;
   // Mounted throughout, so a screen reader hears the text change.
   return (

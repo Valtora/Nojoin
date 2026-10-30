@@ -30,7 +30,11 @@ from typing import Any
 from sqlalchemy import func
 from sqlmodel import col, select
 
-from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
+from backend.models.pipeline import (
+    TranscriptUtterance,
+    TranscriptUtteranceEvent,
+    TranscriptUtteranceState,
+)
 from backend.models.speaker_name_event import SpeakerNameEvent
 
 from .anchors import Line, Span, longest_turn, turns_of
@@ -93,12 +97,12 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
 def live_label_spans(
     session: Any, recording_id: int, labels: Iterable[str] | None = None
 ) -> dict[str, tuple[Span, ...]]:
-    """Each live label's own speech: the union of the live lines it labels.
+    """Each live label's reference speech, as a union of its live lines.
 
     Every live label when ``labels`` is None. Superseded rows count: the final
     pass reads the live lines before it replaces them, and a reprocess reads
-    them after. A line whose speaker the user chose is left out: its label is
-    the user's claim, not the live diariser's evidence of where the voice is.
+    them after. Manually assigned rows do not vote: a correction must follow
+    the label's other speech.
     """
     wanted = None if labels is None else set(labels)
     if wanted is not None and not wanted:
@@ -111,8 +115,8 @@ def live_label_spans(
         )
         .where(TranscriptUtterance.recording_id == recording_id)
         .where(TranscriptUtterance.source_kind == "live")
-        .where(TranscriptUtterance.state != TranscriptUtteranceState.DELETED)
         .where(col(TranscriptUtterance.manual_speaker_locked).is_(False))
+        .where(TranscriptUtterance.state != TranscriptUtteranceState.DELETED)
     )
     if wanted is not None:
         statement = statement.where(col(TranscriptUtterance.speaker_label).in_(wanted))
@@ -133,6 +137,45 @@ def live_label_spans(
         if merged:
             spans[label] = merged
     return spans
+
+
+def manually_reassigned_live_turns(
+    session: Any, recording_id: int, labels: Iterable[str]
+) -> dict[str, tuple[Span, ...]]:
+    """Turns explicitly moved away from each live label by a human correction.
+
+    The audit's old label survives finalisation rewriting the row's label.
+    Turn gaps match the saved naming anchor's gaps, including short silences.
+    """
+    wanted = set(labels)
+    if not wanted:
+        return {}
+    rows = session.execute(
+        select(
+            TranscriptUtteranceEvent.old_values,
+            TranscriptUtteranceEvent.new_values,
+            TranscriptUtterance.start_ms,
+            TranscriptUtterance.end_ms,
+        )
+        .join(
+            TranscriptUtterance,
+            col(TranscriptUtterance.id) == col(TranscriptUtteranceEvent.utterance_id),
+        )
+        .where(TranscriptUtteranceEvent.recording_id == recording_id)
+        .where(TranscriptUtteranceEvent.event_type == "update_speaker")
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(col(TranscriptUtterance.manual_speaker_locked).is_(True))
+    ).all()
+    changed: list[Line] = []
+    for old, new, start, end in rows:
+        label = (old or {}).get("speaker_label")
+        if label in wanted and (new or {}).get("speaker_label") != label:
+            changed.append((label, int(start), int(end)))
+    turns = turns_of(changed)
+    return {
+        label: tuple((start, end) for key, start, end in turns if key == label)
+        for label in wanted
+    }
 
 
 def record_live_speaker_name(
