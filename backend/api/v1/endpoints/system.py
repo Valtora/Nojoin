@@ -353,9 +353,10 @@ class SetupRequest(BaseModel):
     include_demo_recording: bool = True
     # The wizard checkbox is this install's telemetry consent, so a first-run
     # install never needs the admin notice and can start pinging immediately.
-    # Ignored while NOJOIN_TELEMETRY_ENABLED pins telemetry, when the wizard
-    # shows the box read-only and sends no choice.
-    enable_telemetry: bool = True
+    # None when setup sends no choice, as the wizard does after seeing a
+    # NOJOIN_TELEMETRY_ENABLED pin: none is recorded, so an absent field can
+    # never stand in for consent. Ignored while the pin is set, whatever it is.
+    enable_telemetry: Optional[bool] = None
 
     @field_validator("password")
     @classmethod
@@ -525,7 +526,7 @@ async def setup_system(
     # The wizard checkbox is an explicit, visible consent, so it also retires
     # the admin notice: a first-run install never needs to be told after the
     # fact, and can start pinging on the next beat tick. Under an environment
-    # pin there was no choice to record, and none is.
+    # pin, or when setup sends no choice, there is none to record.
     from backend.utils import telemetry
 
     try:
