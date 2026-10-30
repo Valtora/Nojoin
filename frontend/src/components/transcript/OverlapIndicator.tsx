@@ -31,17 +31,27 @@ export function indexOverlaps(segments: readonly TranscriptSegment[]): Map<Trans
 }
 
 export const NO_OVERLAPS: readonly TranscriptSegment[] = [];
-export const OverlapContext = createContext<ReadonlyMap<TranscriptSegment, readonly TranscriptSegment[]>>(new Map());
+/**
+ * One line's overlapping lines, provided around each line by its group. The
+ * marker reads it through context so that a neighbour's change redraws the
+ * marker and not the memoised line it sits in.
+ */
+export const OverlapContext = createContext(NO_OVERLAPS);
+
+/** The same lines overlap: a group whose lines' overlaps are unchanged need not redraw. */
+export function sameOverlaps(
+  left: readonly TranscriptSegment[], right: readonly TranscriptSegment[],
+): boolean {
+  return left === right || left.length === right.length && left.every((segment, index) => segment === right[index]);
+}
 
 /** Secondary voices stay on the credited line; only real separate text is quoted. */
-export default function OverlapIndicator({ segment, overlaps, speakerMap }: {
+export default function OverlapIndicator({ segment, speakerMap }: {
   segment: TranscriptSegment;
-  overlaps?: readonly TranscriptSegment[];
   speakerMap: Record<string, string>;
 }) {
   const id = useId();
-  const indexed = useContext(OverlapContext);
-  const peers = overlaps ?? indexed.get(segment) ?? NO_OVERLAPS;
+  const peers = useContext(OverlapContext);
   const [hovered, setHovered] = useState(false);
   const [pinned, setPinned] = useState(false);
   const labels = [...new Set([

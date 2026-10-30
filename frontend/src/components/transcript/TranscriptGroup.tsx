@@ -34,6 +34,7 @@ import TranscriptLine from "./TranscriptLine";
 import { liveRenderIdentity, type LiveLinePresentation,
   type LiveTranscriptPresentation } from "./liveTranscriptPresentation";
 import { pendingTranscriptRuns } from "./pendingTranscriptGroups";
+import { NO_OVERLAPS, OverlapContext, sameOverlaps } from "./OverlapIndicator";
 
 /** What every line of the view shares; memoised by the view. */
 export interface TranscriptLineShared {
@@ -68,6 +69,8 @@ const SPEAKER_LIST = new Intl.ListFormat("en", { type: "conjunction" });
 
 interface TranscriptGroupProps {
   group: TranscriptGroupData;
+  /** Every line's overlapping lines; compared only for this group's own lines. */
+  overlaps: ReadonlyMap<TranscriptSegment, readonly TranscriptSegment[]>;
   isGroupActive: boolean;
   /** Playback is running and inside this group: false for every other group. */
   isPlaying: boolean;
@@ -105,6 +108,7 @@ interface TranscriptGroupProps {
  */
 function TranscriptGroup({
   group,
+  overlaps,
   isGroupActive,
   isPlaying,
   onPlaySegment,
@@ -135,8 +139,11 @@ function TranscriptGroup({
     const isEditingSpeaker = editingSpeakerLineId === segmentId;
     const isEditingText = editingTextId === segmentId;
     return (
+      // The overlap marker reads its line's overlaps from its own provider, so
+      // a neighbour's change redraws the marker, not the memoised line.
+      <OverlapContext.Provider key={lineShared.preserveLiveIdentity ? liveRenderIdentity(segment, item.index) : segmentId}
+        value={overlaps.get(segment) ?? NO_OVERLAPS}>
       <TranscriptLine
-        key={lineShared.preserveLiveIdentity ? liveRenderIdentity(segment, item.index) : segmentId}
         segment={segment}
         index={item.index}
         segmentId={segmentId}
@@ -172,6 +179,7 @@ function TranscriptGroup({
         live={lineShared.live}
         liveLine={lineShared.liveLines?.get(segmentId)}
       />
+      </OverlapContext.Provider>
     );
   };
 
@@ -277,6 +285,10 @@ function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupPro
       switch (key) {
         case "group":
           return sameGroup(previous.group, next.group);
+        case "overlaps":
+          return next.group.items.every(({ segment }) => sameOverlaps(
+            previous.overlaps.get(segment) ?? NO_OVERLAPS, next.overlaps.get(segment) ?? NO_OVERLAPS,
+          ));
         case "lineShared":
           return sameLineShared(previous, next);
         case "speakerDisplayOrder":

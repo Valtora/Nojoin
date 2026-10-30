@@ -392,6 +392,16 @@ npm run build
 
 On the containerised stack, rebuild with `docker compose up -d --build frontend`. Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibility or troubleshooting guidance.
 
+### Checks At Real Size
+
+Some problems only show on an instance the size of a real one, so smoke UI and capture changes there too, not only with a handful of recordings:
+
+- Use a library of 150 or more recordings in the list, and a long meeting with thousands of transcript lines and hundreds of notes.
+- During a live capture, move between recordings and type in the note box, and watch for lag.
+- In the React DevTools profiler, or Chrome's Performance panel, check that a meter frame, a clock tick, a playback tick or a keystroke re-renders only what shows it, not every row.
+
+The rule behind these checks: a value that changes often (an animation frame, a clock, playback position, keystrokes, live or polled updates) does not go in shared state, such as a context value or a whole-store subscription, that one component per row reads. The cost is the update rate times the number of readers: a 60 Hz audio meter read once per recordings row froze navigation in #822. Readers select only what they show, and per-row components are memoised with stable props. Say in the PR what you tried.
+
 ### Spellcheck Dictionaries
 
 Dictionaries live in `frontend/public/dictionaries/<locale>/` as `index.aff.gz` and `index.dic.gz`. To add or update one, compress the raw files with `gzip -k index.aff index.dic` and commit only the `.gz` files.

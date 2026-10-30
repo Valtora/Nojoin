@@ -1,9 +1,9 @@
 import type { ComponentPropsWithoutRef } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AxiosError } from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CaptureProvider } from "@/lib/capture/CaptureProvider";
+import { CaptureProvider, useCapture } from "@/lib/capture/CaptureProvider";
 import { audioTrack, mediaStream } from "@/lib/capture/releaseMicrophone.fixtures";
 import { clearPausedCaptureContext } from "@/lib/capture/shared";
 import { createSegmentUploader } from "@/lib/capture/uploader";
@@ -141,6 +141,47 @@ afterEach(() => {
   clearPausedCaptureContext();
 });
 
+// The entry points only name a running capture; the transport is the one
+// the recording's page shows, so these tests drive it there.
+function RunningTransport() {
+  const { runtimeActive } = useCapture();
+  return runtimeActive ? <LiveMeetingControls size="bar" /> : null;
+}
+
+function MeetingEntry() {
+  return <><MeetingControls variant="dashboard" /><RunningTransport /></>;
+}
+
+describe("the meeting entry points during a capture in this tab", () => {
+  it.each(["sidebar", "rail", "compact", "dashboard"] as const)(
+    "%s shows only capture status, then restores Start after Stop",
+    async (variant) => {
+      pathname = "/";
+      api.getUnfinishedCaptures.mockResolvedValue([]);
+      render(<CaptureProvider><CaptureShell>
+        <section aria-label="Meeting entry"><MeetingControls variant={variant} /></section>
+        <section aria-label="Recording transport"><RunningTransport /></section>
+      </CaptureShell></CaptureProvider>);
+      await act(async () => {});
+      const entry = within(screen.getByRole("region", { name: "Meeting entry" }));
+      const transport = within(screen.getByRole("region", { name: "Recording transport" }));
+      fireEvent.click(entry.getByRole("button", { name: "Start Meeting" }));
+      await waitFor(() => expect(entry.getByTestId("capture-status")).toHaveTextContent(/^Recording$/));
+      expect(entry.queryByRole("button")).not.toBeInTheDocument();
+      expect(entry.queryByText("Max Speakers")).not.toBeInTheDocument();
+      expect(transport.getByText("Max Speakers")).toBeInTheDocument();
+
+      fireEvent.click(transport.getByTitle("Pause recording"));
+      await waitFor(() => expect(entry.getByTestId("capture-status")).toHaveTextContent(/^Paused$/));
+      expect(entry.queryByRole("button")).not.toBeInTheDocument();
+      expect(entry.queryByText("Max Speakers")).not.toBeInTheDocument();
+      fireEvent.click(transport.getByTitle("Stop recording"));
+      await waitFor(() => expect(entry.getByRole("button", { name: "Start Meeting" })).toBeEnabled());
+      expect(entry.queryByTestId("capture-status")).not.toBeInTheDocument();
+    },
+  );
+});
+
 describe("a recording claimed and resumed from the recovery dialog", () => {
   it("can be stopped and discarded from the page it was resumed on", async () => {
     // The recording page is already mounted, with no capture of its own, when
@@ -184,7 +225,7 @@ describe("a recording paused and resumed in the tab capturing it", () => {
   it("can still be stopped and discarded", async () => {
     pathname = "/";
     api.getUnfinishedCaptures.mockResolvedValue([]);
-    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    render(<CaptureProvider><CaptureShell><MeetingEntry /></CaptureShell></CaptureProvider>);
     await act(async () => {});
 
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
@@ -250,7 +291,7 @@ describe("a capture the browser refuses", () => {
     api.getUnfinishedCaptures.mockResolvedValue([]);
     pickCaptureSource.mockRejectedValue(refused);
     vi.spyOn(console, "error").mockImplementation(() => {});
-    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    render(<CaptureProvider><CaptureShell><MeetingEntry /></CaptureShell></CaptureProvider>);
     await act(async () => {});
 
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
@@ -282,7 +323,7 @@ describe("a capture whose tab is reloaded while it records", () => {
     pathname = "/";
     api.getUnfinishedCaptures.mockResolvedValue([]);
     const oldPage = render(
-      <CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>,
+      <CaptureProvider><CaptureShell><MeetingEntry /></CaptureShell></CaptureProvider>,
     );
     await act(async () => {});
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
@@ -383,7 +424,7 @@ describe("Start Meeting", () => {
     // it uses up; a recovery check waits for the server's refusal instead.
     pathname = "/";
     api.getUnfinishedCaptures.mockResolvedValue([]);
-    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    render(<CaptureProvider><CaptureShell><MeetingEntry /></CaptureShell></CaptureProvider>);
     await act(async () => {});
     const checksBeforeStart = api.getUnfinishedCaptures.mock.calls.length;
     let checksBeforePicker = -1;
@@ -419,7 +460,7 @@ describe("Start Meeting whose share picker is cancelled late", () => {
         deleted = true;
       },
     );
-    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    render(<CaptureProvider><CaptureShell><MeetingEntry /></CaptureShell></CaptureProvider>);
     await act(async () => {});
 
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
@@ -435,7 +476,7 @@ describe("Start Meeting after a failed stop", () => {
     pathname = "/";
     api.getUnfinishedCaptures.mockResolvedValue([]);
     vi.spyOn(console, "error").mockImplementation(() => {});
-    render(<CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>);
+    render(<CaptureProvider><CaptureShell><MeetingEntry /></CaptureShell></CaptureProvider>);
     await act(async () => {});
     fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
     await screen.findByTitle("Pause recording");
