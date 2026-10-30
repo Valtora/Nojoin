@@ -124,8 +124,11 @@ async def _lock_capture(db: AsyncSession, recording: Recording) -> None:
 def _ensure_capture_epoch(recording: Recording, epoch: int | None) -> None:
     """Refuse a request from a tab whose capture was resumed elsewhere.
 
-    A request without an epoch is accepted: tabs on a build from before epochs
-    send none, and stop or discard from a dialog acts for no tab.
+    A stop or discard from the resume-or-discard dialog sends the epoch of the
+    offer it acts on, so it is refused once another tab or device has taken
+    the capture over since (issue #789). A request without an epoch is
+    accepted: tabs on a build from before epochs send none, nor does the
+    recordings list for a recording that browser was not offered.
     """
     if epoch is not None and epoch != recording.capture_epoch:
         raise HTTPException(

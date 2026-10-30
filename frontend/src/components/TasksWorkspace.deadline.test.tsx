@@ -116,7 +116,7 @@ describe("Tasks page deadline picker in New York with the setting in Tokyo", () 
     expect(within(screen.getByRole("link", { name: /Held meeting/ }))
       .queryByText(/needs attention/)).not.toBeInTheDocument();
 
-    attentionRecordings = [{ ...linked, status: RecordingStatus.UPLOADING } as Recording];
+    attentionRecordings = [{ ...linked, status: RecordingStatus.UPLOADING, capture_stalled: true } as Recording];
     rerender(<TasksWorkspace />);
     expect(within(link).getByText("Interrupted, needs attention")).toBeVisible();
     attentionRecordings = [];

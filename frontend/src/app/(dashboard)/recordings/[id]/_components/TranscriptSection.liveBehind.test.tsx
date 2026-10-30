@@ -2,7 +2,10 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TranscriptSection from "@/test/TranscriptSectionWithEdits";
-import { LIVE_TRANSCRIPT_POLL_INTERVAL_MS } from "@/components/transcript/_hooks/useLiveTranscript";
+import {
+  LIVE_BEHIND_CLEAR_MS,
+  LIVE_TRANSCRIPT_POLL_INTERVAL_MS,
+} from "@/components/transcript/_hooks/useLiveTranscript";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 
 import { useRecordingTranscript } from "../_hooks/useRecordingTranscript";
@@ -78,16 +81,71 @@ describe("live transcript behind notice", () => {
     vi.useRealTimers();
   });
 
-  it("appears while the live read says it is behind and clears when lines arrive", async () => {
-    getTranscriptUtterances
-      .mockResolvedValueOnce(read(true))
-      .mockResolvedValueOnce(read(false, ["Caught up at last."]));
+  it("appears while the live read says it is behind and clears once the lane has kept up for 20 s", async () => {
+    // The first caught-up read starts the clock; the notice goes at the first
+    // read 20 s after it.
+    const pollsToClear = Math.ceil(LIVE_BEHIND_CLEAR_MS / LIVE_TRANSCRIPT_POLL_INTERVAL_MS) + 1;
+    getTranscriptUtterances.mockResolvedValueOnce(read(true));
+    for (let index = 1; index <= pollsToClear; index += 1) {
+      getTranscriptUtterances.mockResolvedValueOnce(read(false, [`Caught up ${index}.`]));
+    }
     render(<LiveTranscriptTab recording={recording()} />);
     await settle();
     expect(screen.getByText(NOTICE)).toHaveAttribute("role", "status");
 
+    for (let index = 1; index < pollsToClear; index += 1) {
+      await poll();
+      expect(screen.getByText(`Caught up ${index}.`)).toBeInTheDocument();
+      expect(screen.getByText(NOTICE)).toBeInTheDocument();
+    }
     await poll();
-    expect(screen.getByText("Caught up at last.")).toBeInTheDocument();
+    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+  });
+
+  it("holds through several caught-up reads inside one lag cycle of 12 s runs (issue #812)", async () => {
+    // Seconds of unread audio each read sees: about 12 s just after a run
+    // ends, growing to 24 s before the next. Behind from 20 s.
+    const lags = [20, 12, 14, 18, 20, 12, 14, 18, 20, 12, 14, 18, 20, 12, 14, 18, 20];
+    for (const lag of lags) getTranscriptUtterances.mockResolvedValueOnce(read(lag >= 20));
+    render(<LiveTranscriptTab recording={recording()} />);
+    await settle();
+    const notice = screen.getByText(NOTICE);
+
+    for (let index = 1; index < lags.length; index += 1) {
+      await poll();
+      // The same element throughout: nothing re-announces or shifts the transcript.
+      expect(screen.getByText(NOTICE)).toBe(notice);
+    }
+  });
+
+  it.each([11, 12, 16, 19])(
+    "stays up while %i s lane runs make reads swing between behind and caught up",
+    async (runSeconds) => {
+      // The lag a read sees is about T just after a run ends and grows to 2T
+      // before the next one ends: behind once it reaches 20 s.
+      const reads = 60;
+      const pattern = Array.from({ length: reads }, (_, index) => {
+        const sinceRunEnd = (index * LIVE_TRANSCRIPT_POLL_INTERVAL_MS / 1000) % runSeconds;
+        return runSeconds + sinceRunEnd >= 20;
+      });
+      pattern[0] = true;
+      for (const behind of pattern) getTranscriptUtterances.mockResolvedValueOnce(read(behind));
+      render(<LiveTranscriptTab recording={recording()} />);
+      await settle();
+      const notice = screen.getByText(NOTICE);
+
+      for (let index = 1; index < reads; index += 1) {
+        await poll();
+        expect(screen.getByText(NOTICE)).toBe(notice);
+      }
+    },
+  );
+
+  it("does not show when the first read finds the lane caught up", async () => {
+    getTranscriptUtterances.mockResolvedValue(read(false, ["Keeping up."]));
+    render(<LiveTranscriptTab recording={recording()} />);
+    await settle();
+    expect(screen.getByText("Keeping up.")).toBeInTheDocument();
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
   });
 

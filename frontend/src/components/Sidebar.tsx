@@ -935,9 +935,12 @@ export default function Sidebar() {
               />
               <ButtonBase
                 onClick={() => setShowFilters(!showFilters)}
+                aria-label="Filter recordings"
+                title="Filter recordings"
+                aria-expanded={showFilters}
                 className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-rail-item-hover ${showFilters ? "text-action-text" : "text-contrast-icon-muted"}`}
               >
-                <Filter className="w-4 h-4" />
+                <Filter aria-hidden="true" className="w-4 h-4" />
               </ButtonBase>
             </div>
             <IconButton

@@ -26,6 +26,17 @@ export function reclaimableCapture(): ReclaimableCapture | null {
   return context?.epoch === undefined ? null : { recordingId: context.recordingId, epoch: context.epoch };
 }
 
+/**
+ * Whether an offered capture reads as interrupted rather than paused: still
+ * marked as uploading once the server judged it stalled, because its tab
+ * closed without the pause arriving (issue #519). A reloaded tab is offered
+ * its own capture before that (issue #778), and every surface reads that one
+ * as paused, as the recovery dialog does (issue #789).
+ */
+export const isCaptureInterrupted = (
+  recording: Pick<Recording, "status" | "capture_stalled">,
+): boolean => recording.status === RecordingStatus.UPLOADING && recording.capture_stalled === true;
+
 /** All recoverable captures, excluding this tab's runtime and other held tabs. */
 export async function findAttentionRecordings(
   captures: Recording[],

@@ -8,9 +8,9 @@ import type { ReactNode } from "react";
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
+import { isCaptureInterrupted } from "@/lib/capture/recovery";
 import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { RecordingStatus } from "@/types";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import { CaptureNotices } from "./LiveMeetingControls";
@@ -106,7 +106,7 @@ export default function MeetingControls({
               "Use Chrome on desktop for browser capture, or Chrome on Android/iOS for microphone-only capture.",
           }
         : hasPausedBlock
-          ? pausedRecording?.status === RecordingStatus.UPLOADING
+          ? pausedRecording && isCaptureInterrupted(pausedRecording)
             ? {
                 buttonLabel: "Interrupted recording needs attention",
                 buttonMode: "wait",

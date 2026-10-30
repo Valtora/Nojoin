@@ -4,8 +4,9 @@ import type { ReactNode } from "react";
 import { AlertCircle, Pause } from "lucide-react";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { isCaptureInterrupted } from "@/lib/capture/recovery";
 import { cn } from "@/lib/cn";
-import { RecordingStatus, type RecordingId } from "@/types";
+import type { RecordingId } from "@/types";
 
 import { Badge } from "./ui/Badge";
 
@@ -25,7 +26,8 @@ export default function RecordingAttentionBadge({
   const recording = attentionRecordings.find((candidate) => candidate.id === recordingId);
   if (!recording) return fallback;
 
-  const paused = recording.status === RecordingStatus.PAUSED;
+  // As the recovery dialog it opens reads it (issue #789).
+  const paused = !isCaptureInterrupted(recording);
   return (
     <Badge
       tone="warning"
