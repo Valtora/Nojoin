@@ -137,6 +137,13 @@ class PinnedModelControl:
             return False
         return 0 <= time.time() - failed_at < FAILURE_BACKOFF
 
+    def clear_failure(self) -> None:
+        """Forget a previous failure after verification, under the model lock."""
+        try:
+            self.path("failed.json").unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Could not clear %s preparation failure", self.name)
+
     def complete_pending(self, task_id: str | None) -> None:
         """Preserve the task outcome if completion housekeeping fails."""
         try:

@@ -4,7 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-ModelPreparationState = Literal["absent", "downloading", "ready", "failed"]
+ModelPreparationState = Literal[
+    "absent", "downloading", "ready", "failed", "retry_wait"
+]
 
 
 class ModelStatusInfo(BaseModel):

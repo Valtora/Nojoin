@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from kombu.exceptions import KombuError
 
-from backend.celery_app import CPU_QUEUE, celery_app
+from backend.celery_app import IO_QUEUE, celery_app
 from backend.core.task_dispatch import dispatch_task
 from backend.utils import forced_aligner_model_utils as aligner_assets
 from backend.utils.config_manager import config_manager
@@ -20,8 +20,8 @@ from backend.utils.nemotron_model_utils import (
 logger = logging.getLogger(__name__)
 
 MODEL_PREPARATION_TASK = "backend.worker.tasks.download_models_task"
-# Pinned targets only download and hash, so they run on the CPU lane, which
-# mounts the same model cache, rather than holding live ASR's GPU queue.
+# Pinned targets only download and hash. The IO lane shares the model cache
+# and leaves live ASR's GPU queue and segment transcodes' CPU slots available.
 _PINNED_TASK_KWARGS: dict[str, dict[str, Any]] = {
     "nemotron": {"nemotron_only": True, "include_core": False},
     "forced_aligner": {"pinned_model": "forced_aligner", "include_core": False},
@@ -59,7 +59,7 @@ async def enqueue_model_preparation(
     options: dict[str, Any] = {}
     if target in _PINNED_TASK_KWARGS:
         kwargs = dict(_PINNED_TASK_KWARGS[target])
-        options["queue"] = CPU_QUEUE
+        options["queue"] = IO_QUEUE
     task = await dispatch_task(
         MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True, **options
     )
@@ -150,7 +150,7 @@ def _publish_pinned_preparation(target: str, task_id: str) -> None:
             MODEL_PREPARATION_TASK,
             kwargs=dict(_PINNED_TASK_KWARGS[target]),
             task_id=task_id,
-            queue=CPU_QUEUE,
+            queue=IO_QUEUE,
             connection=connection,
             retry=False,
             ignore_result=True,

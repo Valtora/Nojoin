@@ -423,9 +423,9 @@ def preparation_failure_message(stage: str | None) -> str:
 
 
 def _hand_off_aligner() -> bool:
-    """Queue the aligner on the CPU lane; whether it is now queued or running.
+    """Queue the aligner on the IO lane; whether it is now queued or running.
 
-    The aligner only downloads and hashes, so it goes to the CPU lane rather
+    The aligner only downloads and hashes, so it goes to the IO lane rather
     than holding live ASR's GPU queue behind 1.8 GB. One already pending, from
     first use say, is shown as queued instead of this run's completion, unless
     its own task is already reporting.
@@ -434,7 +434,7 @@ def _hand_off_aligner() -> bool:
         return True
     if aligner_control.pending_task() is None:
         return False
-    if (get_download_progress() or {}).get("stage") != "forced_aligner":
+    if get_download_progress("forced_aligner") is None:
         set_download_progress(
             0,
             "Model preparation queued...",
@@ -550,12 +550,9 @@ def download_models(
             )
             _prepare_onnx_asr_model(onnx_model_id)
 
-        if engine_has_native_word_timestamps(transcription_backend) or not (
+        if not engine_has_native_word_timestamps(transcription_backend):
             _hand_off_aligner()
-        ):
-            report(
-                "Model preparation complete.", 100, stage="complete", status="complete"
-            )
+        report("Model preparation complete.", 100, stage="complete", status="complete")
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
         set_download_progress(
@@ -588,7 +585,7 @@ def _download_pinned_only(
     if model not in recipes:
         raise ValueError("Unknown pinned model preparation target")
     prepare, label = recipes[model]
-    clear_download_progress()
+    clear_download_progress(model)
 
     def report(message: str, percent: int) -> None:
         status = "complete" if percent == 100 else "downloading"

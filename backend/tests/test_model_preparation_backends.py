@@ -23,7 +23,7 @@ def prepared(
     that request is recorded by the dispatch stub against an isolated cache.
     """
     steps: list[str] = []
-    monkeypatch.setattr(preload_models, "clear_download_progress", lambda: None)
+    monkeypatch.setattr(preload_models, "clear_download_progress", lambda *_args: None)
     monkeypatch.setattr(
         preload_models, "set_download_progress", lambda *args, **kwargs: None
     )
