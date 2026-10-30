@@ -2,6 +2,12 @@
 
 from .assignment import _resolve_recording_speaker_for_value
 from .constants import *
+from .manual_speaker_parts import (
+    final_speaker_value,
+    follow_chosen_speakers,
+    split_for_manual_speakers,
+    unplaced_live_pick,
+)
 from .preservation import preserve_human_segments, protected_final_payload
 from .projection_segments import _build_projection_segment
 from .public_ids import UtterancePublicIds
@@ -184,12 +190,25 @@ def finalize_utterances_from_segments(
         idempotency_key=run_idempotency_key,
     )
 
+    final_pass_segments = segments
     segments = _settled_segments(transcript, active_utterances, segments)
 
     recording_speakers = ensure_recording_speaker_aliases(
         session,
         recording_id,
         source_run_id=processing_run.id,
+    )
+    # A speaker chosen for a line follows that speaker's speech into this run,
+    # then goes to the final words the line covers.
+    follow_chosen_speakers(active_utterances, final_pass_segments, recording_speakers)
+    segments, manual_sources = split_for_manual_speakers(
+        active_utterances,
+        segments,
+        {
+            int(speaker.id): speaker.diarization_label
+            for speaker in recording_speakers
+            if speaker.id is not None and speaker.diarization_label
+        },
     )
     exact_matches: dict[tuple[int, int], list[TranscriptUtterance]] = defaultdict(list)
     for utterance in active_utterances:
@@ -208,6 +227,7 @@ def finalize_utterances_from_segments(
         *,
         start_ms: int,
         end_ms: int,
+        sources: frozenset[int],
     ) -> dict[str, Any] | None:
         overlap_by_speaker: dict[int | str, int] = defaultdict(int)
         source_public_ids_by_speaker: dict[int | str, list[str]] = defaultdict(list)
@@ -215,6 +235,9 @@ def finalize_utterances_from_segments(
         edit_sources_by_speaker: dict[int | str, set[str]] = defaultdict(set)
 
         for source_utterance in active_utterances:
+            # split_for_manual_speakers chose the lines this segment inherits from.
+            if source_utterance.id not in sources:
+                continue
             if source_utterance.id in matched_utterance_ids:
                 continue
             if not source_utterance.manual_speaker_locked or (
@@ -296,21 +319,34 @@ def finalize_utterances_from_segments(
                 break
 
         manual_speaker_inheritance = None
-        if matched_utterance is None:
+        if matched_utterance is None and manual_sources[index]:
             manual_speaker_inheritance = inherit_manual_speaker_for_range(
                 start_ms=start_ms,
                 end_ms=end_ms,
+                sources=manual_sources[index],
             )
 
+        # A line moved to a live speaker that processing placed nowhere keeps
+        # no lock: it takes the final pass's speaker, as its neighbours do.
+        unplaced_pick = matched_utterance is not None and unplaced_live_pick(
+            matched_utterance
+        )
+        speaker_value = (
+            final_speaker_value(segment)
+            if unplaced_pick
+            else str(segment.get("speaker") or UNKNOWN_SPEAKER)
+        )
         resolved_speaker = None
         if manual_speaker_inheritance is None and (
-            matched_utterance is None or not matched_utterance.manual_speaker_locked
+            matched_utterance is None
+            or not matched_utterance.manual_speaker_locked
+            or unplaced_pick
         ):
             resolved_speaker = _resolve_recording_speaker_for_value(
                 session,
                 recording_id=recording_id,
                 recording=recording,
-                speaker_value=str(segment.get("speaker") or UNKNOWN_SPEAKER),
+                speaker_value=speaker_value,
                 recording_speakers=recording_speakers,
                 source_run_id=processing_run.id,
                 source_segment=segment,
@@ -333,6 +369,7 @@ def finalize_utterances_from_segments(
             }
             old_text_locked = bool(matched_utterance.manual_text_locked)
             old_speaker_locked = bool(matched_utterance.manual_speaker_locked)
+            keeps_speaker = old_speaker_locked and not unplaced_pick
             protected_wording = bool(
                 (transcript.settling_state or {}).get("settled") is True
                 and (matched_utterance.confidence_payload or {}).get("human_protection")
@@ -359,7 +396,7 @@ def finalize_utterances_from_segments(
                 else segment.get("text_edit_source")
             )
 
-            if old_speaker_locked:
+            if keeps_speaker:
                 current_speaker = (
                     session.get(
                         RecordingSpeaker, matched_utterance.recording_speaker_id
@@ -378,14 +415,14 @@ def finalize_utterances_from_segments(
                 effective_segment["speaker"] = (
                     recording_speaker.diarization_label
                     if recording_speaker is not None
-                    else str(segment.get("speaker") or UNKNOWN_SPEAKER)
+                    else speaker_value
                 )
-            effective_segment["speaker_manually_edited"] = old_speaker_locked or bool(
-                segment.get("speaker_manually_edited") is True
+            effective_segment["speaker_manually_edited"] = keeps_speaker or bool(
+                not unplaced_pick and segment.get("speaker_manually_edited") is True
             )
             effective_segment["speaker_edit_source"] = (
                 matched_utterance.speaker_last_edit_source
-                if old_speaker_locked
+                if keeps_speaker
                 else segment.get("speaker_edit_source")
             )
 

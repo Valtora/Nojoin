@@ -1,15 +1,18 @@
 """Conservative final remapping of accepted human work on settled recordings."""
 
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from copy import deepcopy
 from itertools import groupby
 from operator import itemgetter
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeVar
 
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.utils.final_word_boundaries import final_words
 from backend.utils.word_text import reconstruct_text_from_words
 from backend.utils.word_times import has_word_timing
+
+T = TypeVar("T")
 
 
 def line_is_protected(line: TranscriptUtterance) -> bool:
@@ -82,6 +85,23 @@ def _middle_ms(word: dict[str, Any]) -> float:
     return (float(word["start"]) + float(word["end"])) * 500
 
 
+def timed_word_owners(
+    words: list[dict[str, Any]], owner: Callable[[dict[str, Any]], T]
+) -> list[T]:
+    """Each word's owner: a timed word's own, an untimed word's from its neighbour.
+
+    An untimed word goes with the timed word before it, or the first timed
+    word when none precedes it. ``words`` must hold at least one timed word.
+    """
+    current = next(owner(word) for word in words if has_word_timing(word))
+    owners: list[T] = []
+    for word in words:
+        if has_word_timing(word):
+            current = owner(word)
+        owners.append(current)
+    return owners
+
+
 def _part_bounds(
     words: list[dict[str, Any]],
     found: list[int],
@@ -136,13 +156,7 @@ def _consume_overlap(
         )
         return line, sum(line_bounds[i][1] <= middle for i in found)
 
-    current = next(owner(word) for word in words if has_word_timing(word))
-    owners: list[tuple[int | None, int]] = []
-    for word in words:
-        if has_word_timing(word):
-            current = owner(word)
-        owners.append(current)
-
+    owners = timed_word_owners(words, owner)
     parts: list[dict[str, Any]] = []
     for (index, _gap), run in groupby(zip(words, owners), key=itemgetter(1)):
         kept = [word for word, _ in run]
