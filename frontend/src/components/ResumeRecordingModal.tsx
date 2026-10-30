@@ -2,8 +2,9 @@
 
 import { AlertTriangle, PauseCircle, Square } from "lucide-react";
 
+import { isCaptureInterrupted } from "@/lib/capture/recovery";
 import type { CaptureSupport } from "@/lib/capture/shared";
-import { RecordingStatus, type Recording } from "@/types";
+import type { Recording } from "@/types";
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
@@ -35,10 +36,7 @@ export default function ResumeRecordingModal({
     return null;
   }
 
-  // Still marked as uploading once the server judged it stalled: its tab
-  // closed without the pause arriving (issue #519). A reloaded tab is offered
-  // its own capture before that (issue #778), and reads as paused.
-  const interrupted = recording.status === RecordingStatus.UPLOADING && Boolean(recording.capture_stalled);
+  const interrupted = isCaptureInterrupted(recording);
   const StatusIcon = interrupted ? AlertTriangle : PauseCircle;
 
   return (

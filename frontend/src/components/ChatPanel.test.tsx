@@ -115,6 +115,17 @@ describe("ChatPanel provisional context", () => {
     expect(screen.getByText("Earlier answer.")).toBeInTheDocument();
   });
 
+  it("names its Send and Context buttons (issue #840)", async () => {
+    render(<ChatPanel inFlight />);
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
+    // Named even on a phone, where its word is hidden.
+    const context = screen.getByRole("button", { name: "Context" });
+    expect(context).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(context);
+    expect(screen.getByRole("button", { name: "Context" })).toHaveAttribute("aria-expanded", "true");
+  });
+
 });
 
 describe("ChatPanel stream lifecycle", () => {

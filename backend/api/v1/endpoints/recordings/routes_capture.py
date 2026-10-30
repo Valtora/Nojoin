@@ -15,7 +15,6 @@ from backend.api.error_handling import sanitized_http_exception
 from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import (
-    DISCARDABLE_STATUSES,
     FINISHED_MEETING_DISCARD_DETAIL,
     CaptureSourceReportCreate,
     ClientStatus,
@@ -857,7 +856,7 @@ async def discard_upload(
     await lock_capture_publication(db, recording)
     await db.refresh(recording, with_for_update=True)
     # A tab whose capture continued elsewhere must not delete it from under the
-    # tab running it. The list and the dialogs discard without an epoch.
+    # tab running it, nor may a recovery dialog left open while it was taken over.
     recordings_module._ensure_capture_epoch(recording, epoch)
     # Nor may a tab delete its capture once it has been stopped, which a stop
     # from a dialog does without issuing an epoch: the meeting is being
@@ -870,13 +869,16 @@ async def discard_upload(
             status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL
         )
 
-    if recording.status not in DISCARDABLE_STATUSES:
+    if not recording_is_discardable(recording):
+        # A meeting that has finished once is told to use the bin whatever its
+        # status shows, so a Discard sent just as processing ends gets that
+        # answer rather than a refusal of a recording not in flight.
+        if recording.first_processed_at is not None:
+            raise HTTPException(status_code=409, detail=FINISHED_MEETING_DISCARD_DETAIL)
         raise HTTPException(
             status_code=400,
             detail="Only in-flight or processing recordings can be discarded",
         )
-    if not recording_is_discardable(recording):
-        raise HTTPException(status_code=409, detail=FINISHED_MEETING_DISCARD_DETAIL)
 
     if reason:
         logger.info(

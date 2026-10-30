@@ -115,10 +115,9 @@ const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
     case "send":
       return "Placed where the recording is when you press Enter.";
     case "head":
-      // Nothing to add to the mode's own label: a finished recording opens on it.
-      return "";
     case "tail":
-      return "For the whole meeting, after the transcript. Also listed in My notes.";
+      // Nothing to add to the mode's own label (issue #825).
+      return "";
   }
 };
 

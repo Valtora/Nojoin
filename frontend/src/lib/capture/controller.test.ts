@@ -2532,6 +2532,67 @@ describe("a capture taken over or stopped elsewhere (issues #570, #590)", () => 
     expectStoodDown(started);
   });
 
+  describe("Stop and Discard from a recovery offer (issue #789)", () => {
+    /** The resume-or-discard dialog's offer: a stalled capture at epoch 2. */
+    const offered = async () => {
+      const controller = track(new CaptureController());
+      apiMocks.getUnfinishedCaptures.mockResolvedValueOnce([{
+        id: "rec-1", name: "Weekly sync", status: "UPLOADING", client_status: "RECORDING",
+        capture_stalled: true, capture_epoch: 2,
+      }]);
+      await controller.refreshPausedRecording({ onDemand: true });
+      expect(controller.getState().pausedRecording?.capture_epoch).toBe(2);
+      return controller;
+    };
+
+    it("sends the offer's epoch with Stop, the pause before it included", async () => {
+      const controller = await offered();
+      await storeOf(controller).put(stored(5, 2));
+      apiMocks.pauseRecordingCapture.mockResolvedValue(lifecycle("PAUSED", 4, 2));
+
+      await controller.stop("rec-1");
+
+      expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 2 });
+      expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-1", {
+        clientElapsedSeconds: undefined,
+        epoch: 2,
+      });
+    });
+
+    it("sends the offer's epoch with Discard", async () => {
+      const controller = await offered();
+
+      await controller.cancel("rec-1");
+
+      expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1", undefined, { epoch: 2 });
+    });
+
+    it.each([
+      ["Stop", "finalizeRecordingCapture", (controller: CaptureController) => controller.stop("rec-1")],
+      ["Discard", "discardRecordingCapture", (controller: CaptureController) => controller.cancel("rec-1")],
+    ] as const)("leaves a capture taken over since the offer as it is on %s", async (_, request, act) => {
+      const controller = await offered();
+      apiMocks[request].mockRejectedValueOnce(superseded());
+
+      await expect(act(controller)).rejects.toThrow(
+        "This recording continued in another tab or on another device, so it was left as it is. Finish it there.",
+      );
+
+      expect(apiMocks[request]).toHaveBeenCalledTimes(1);
+      expect(controller.getState()).toMatchObject({ status: "idle", recordingId: null, pausedRecording: null });
+      expect(apiMocks.discardRecordingCapture).toHaveBeenCalledTimes(request === "discardRecordingCapture" ? 1 : 0);
+    });
+
+    it("says a stale offer's capture was stopped elsewhere without claiming this tab recorded it", async () => {
+      const controller = await offered();
+      apiMocks.discardRecordingCapture.mockRejectedValueOnce(closed());
+
+      await expect(controller.cancel("rec-1")).rejects.toThrow(
+        /^This recording has already been stopped and sent for processing\.$/,
+      );
+    });
+  });
+
   it("leaves out audio it kept from before another device carried the capture on", async () => {
     const controller = track(new CaptureController());
     // Kept under epoch 1. Another device took over at 2 and recorded 5 and 6,

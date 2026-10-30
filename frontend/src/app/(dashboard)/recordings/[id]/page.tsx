@@ -14,6 +14,7 @@ import RecordingNoteComposer from "@/components/notes/RecordingNoteComposer";
 import { NoteFilesProvider } from "@/components/notes/NoteFiles";
 import MeetingEdgePanel from "@/components/MeetingEdgePanel";
 import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
+import { liveTextActivityMark } from "@/components/transcript/liveTranscriptPresentation";
 import ExportModal from "@/components/ExportModal";
 import { RecordingTranscriptTour } from "@/components/TourGuide";
 import { RecordingStatus } from "@/types";
@@ -184,10 +185,7 @@ export default function RecordingPage({ params }: PageProps) {
     className="bg-surface-inset"
   />;
   const capturing = isLiveCaptureInProgress(recording);
-  // Moves with each new or growing live line, which the meter's quiet notice
-  // takes as proof that audio is getting through.
-  const lastLiveLine = usesInFlightTranscript ? liveTranscript.segments.at(-1) : undefined;
-  const liveTextMark = lastLiveLine ? `${liveTranscript.segments.length}:${lastLiveLine.end}` : null;
+  const liveTextMark = usesInFlightTranscript ? liveTextActivityMark(liveTranscript.segments) : null;
   const meetingEdgeContent = showMeetingEdge ? <MeetingEdgePanel
     readOnly={!capturing}
     payload={recording.transcript?.meeting_edge_payload}

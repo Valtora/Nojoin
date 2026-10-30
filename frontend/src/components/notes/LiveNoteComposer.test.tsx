@@ -58,6 +58,14 @@ describe("LiveNoteComposer", () => {
     );
   });
 
+  it.each([true, false])("adds no hint to After the transcript (capturing: %s)", (captureActive) => {
+    render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={captureActive} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Place note" }), { target: { value: "tail" } });
+    expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("tail");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent(/^$/);
+    expect(screen.getByTestId("live-note-composer")).not.toHaveTextContent(/whole meeting|Also listed/);
+  });
+
   it("shows a carried send placement after Stop until a deliberate change retargets it", () => {
     const draft = { text: "Carried thought", mode: "send" as const, typingStartMs: 12_000 };
     const onDraftChange = vi.fn();
