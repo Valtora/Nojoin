@@ -31,6 +31,7 @@ from backend.processing.embedding import (
     VoiceprintStatus,
 )
 from backend.utils.language_notice import language_notice
+from backend.utils.personas import ActivePersona, Surface
 from backend.utils.reprocess_publication import (
     reprocess_publication_complete,
     reprocess_publication_pending,
@@ -209,6 +210,47 @@ class LanguageNoticeRead(PublicModel):
     reprocess_language: str
 
 
+class ActivePersonaRead(PublicModel):
+    """A holiday persona in use on one surface, for its egg icon."""
+
+    slug: str
+    name: str
+    # The persona file's tooltip.
+    tooltip: str
+    # Why it applies: "Today is Talk Like a Pirate Day.", "Set with /persona."
+    reason: str
+
+
+class RecordingPersonasRead(PublicModel):
+    """Which surfaces of this recording a holiday persona applies to now.
+
+    ``notes`` is the persona the current notes were written with, if any.
+    """
+
+    chat: Optional[ActivePersonaRead] = None
+    edge: Optional[ActivePersonaRead] = None
+    notes: Optional[ActivePersonaRead] = None
+
+
+def serialize_recording_personas(
+    personas: dict[Surface, Optional[ActivePersona]],
+) -> RecordingPersonasRead:
+    def read(surface: Surface) -> Optional[ActivePersonaRead]:
+        active = personas.get(surface)
+        if active is None:
+            return None
+        return ActivePersonaRead(
+            slug=active.persona.slug,
+            name=active.persona.name,
+            tooltip=active.persona.tooltip,
+            reason=active.reason_text(surface),
+        )
+
+    return RecordingPersonasRead(
+        chat=read("chat"), edge=read("edge"), notes=read("notes")
+    )
+
+
 class RecordingPublicRead(PublicModel):
     id: str
     created_at: datetime
@@ -292,6 +334,8 @@ class RecordingPublicRead(PublicModel):
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
     calendar_event: Optional[CalendarEventLinkRead] = None
+    # Only the detail endpoint fills it; None elsewhere.
+    personas: Optional[RecordingPersonasRead] = None
 
 
 class RecordingsCalendarRead(BaseModel):
@@ -451,6 +495,7 @@ def serialize_recording(
     captured_audio_seconds: Optional[float] = None,
     live_audio_ms: Optional[int] = None,
     timeline_notes_list_signature: Optional[str] = None,
+    personas: Optional[RecordingPersonasRead] = None,
 ) -> RecordingPublicRead:
     transcript = None
     notice = None
@@ -536,4 +581,5 @@ def serialize_recording(
         speakers=speakers,
         tags=tags,
         calendar_event=calendar_event_link,
+        personas=personas,
     )

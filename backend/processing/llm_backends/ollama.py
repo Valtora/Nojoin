@@ -809,6 +809,7 @@ class OllamaLLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ):
         diarized_transcript = self._fitted_chat_transcript(
             diarized_transcript,
@@ -819,7 +820,7 @@ class OllamaLLMBackend(LLMBackend):
         )
 
         prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+            user_question, meeting_notes, diarized_transcript, tone=tone
         )
 
         messages = []
@@ -861,6 +862,7 @@ class OllamaLLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ) -> Generator[str, None, None]:
         diarized_transcript = self._fitted_chat_transcript(
             diarized_transcript,
@@ -871,7 +873,7 @@ class OllamaLLMBackend(LLMBackend):
         )
 
         prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+            user_question, meeting_notes, diarized_transcript, tone=tone
         )
 
         messages = []

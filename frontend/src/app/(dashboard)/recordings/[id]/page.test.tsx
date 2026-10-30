@@ -136,7 +136,9 @@ vi.mock("@/lib/api", () => ({
 // orchestration (which panel/section renders, what data it receives) rather
 // than the children's internals.
 vi.mock("@/components/ChatPanel", () => ({
-  default: () => <div data-testid="chat-panel" />,
+  default: ({ persona }: { persona?: { slug: string } | null }) => (
+    <div data-testid="chat-panel" data-persona={persona?.slug ?? ""} />
+  ),
 }));
 vi.mock("@/components/TourGuide", () => ({
   RecordingTranscriptTour: ({ eligible }: { eligible: boolean }) =>
@@ -567,6 +569,54 @@ describe("RecordingPage (detail)", () => {
     await screen.findByRole("heading", { name: /Quarterly sync/ });
     if (width === 360) fireEvent.click(screen.getByRole("button", { name: "Open Meeting Chat" }));
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+  });
+
+  // The shape GET /recordings/{id} returns (test_holiday_persona_chat_api.py).
+  const pirate = (reason: string) => ({
+    slug: "pirate",
+    name: "Talk Like a Pirate Day",
+    tooltip: "Talk Like a Pirate Day: friendly storybook pirate speech.",
+    reason,
+  });
+
+  it("shows an egg on Chat, Meeting Edge and the Notes tab from the recording read's personas", async () => {
+    vi.stubGlobal("innerWidth", 1440);
+    sidePanelsCollapsed = false;
+    sideTab = "meeting-edge";
+    getRecording.mockResolvedValue(buildRecording({
+      personas: {
+        chat: pirate("Today is Talk Like a Pirate Day."),
+        edge: pirate("Today is Talk Like a Pirate Day."),
+        notes: pirate("Written with /persona."),
+      },
+    }));
+    renderPage();
+
+    const notesEgg = await screen.findByRole("img", {
+      name: "Talk Like a Pirate Day: friendly storybook pirate speech. Written with /persona.",
+    });
+    const edgeEgg = screen.getByRole("img", {
+      name: "Talk Like a Pirate Day: friendly storybook pirate speech. Today is Talk Like a Pirate Day.",
+    });
+    expect(notesEgg).toHaveAttribute("title", notesEgg.getAttribute("aria-label"));
+    expect(notesEgg.closest("[role=tab]")).toHaveTextContent(/^Notes/);
+    expect(edgeEgg.parentElement).toHaveTextContent("Meeting Edge");
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute("data-persona", "pirate");
+  });
+
+  it("shows no egg when the recording read names no persona", async () => {
+    vi.stubGlobal("innerWidth", 1440);
+    sidePanelsCollapsed = false;
+    sideTab = "meeting-edge";
+    getRecording.mockResolvedValue(buildRecording({
+      personas: { chat: null, edge: null, notes: null },
+    }));
+    renderPage();
+    await screen.findByRole("heading", { name: /Quarterly sync/ });
+
+    expect(screen.getByRole("tab", { name: "Notes" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Talk Like a Pirate Day/ })).toBeNull();
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute("data-persona", "");
   });
 
   it.each([RecordingStatus.UPLOADING, RecordingStatus.PROCESSING])(

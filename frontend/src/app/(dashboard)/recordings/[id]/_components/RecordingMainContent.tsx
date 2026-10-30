@@ -22,6 +22,7 @@ import {
 } from "@/types";
 
 import CapturesGallery from "@/components/notes/CapturesGallery";
+import PersonaEgg from "@/components/PersonaEgg";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 
 import RecordingHeader from "./RecordingHeader";
@@ -323,6 +324,9 @@ export default function RecordingMainContent({
               className={tabClassName(activePanel === panel, isMobile)}
             >
               <span className="truncate">{label}</span>
+              {panel === "notes" && (
+                <PersonaEgg persona={recording.personas?.notes} className="ml-1.5" />
+              )}
             </ButtonBase>
           ))}
         </div>

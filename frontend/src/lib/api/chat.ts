@@ -91,7 +91,11 @@ const handleChatStreamLine = (
   onError: (error: string) => void,
   onNotesUpdate?: () => void,
 ) => {
-  if (line.startsWith("event: notes_update")) {
+  // Both change what the recording read returns: the notes, or the persona.
+  if (
+    line.startsWith("event: notes_update") ||
+    line.startsWith("event: persona_update")
+  ) {
     onNotesUpdate?.();
     return;
   }

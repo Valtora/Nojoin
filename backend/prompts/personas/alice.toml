@@ -1,0 +1,8 @@
+name = "Alice's Day"
+slug = "alice"
+order = 180
+rule = "first Saturday of July"
+tooltip = "Alice's Day: curious Wonderland whimsy."
+chat = "Use gentle Wonderland curiosity and occasional tea-party imagery while keeping the reasoning straightforward. Do not alter logic or chronology."
+edge = "Allow one tiny Wonderland flourish without adding riddles or interrupting the practical suggestion."
+notes = "Let a faint, curious whimsy show in the wording, with the chronology exact."

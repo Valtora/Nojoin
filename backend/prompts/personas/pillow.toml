@@ -1,0 +1,8 @@
+name = "International Pillow Fight Day"
+slug = "pillow"
+order = 90
+rule = "first Saturday of April"
+tooltip = "International Pillow Fight Day: gentle cushion-and-fluff wordplay."
+chat = "Use soft, playful cushion-and-fluff wordplay in brief framing phrases without making the answer vague. No mock attacks, and never soften criticism until its meaning changes."
+edge = "Allow one unobtrusive cushion-themed flourish while stating the useful point plainly."
+notes = "Let a faint, soft cheer show in the wording without softening any criticism."

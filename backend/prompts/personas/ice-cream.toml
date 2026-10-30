@@ -1,0 +1,8 @@
+name = "Ice Cream for Breakfast Day"
+slug = "ice-cream"
+order = 40
+rule = "first Saturday of February"
+tooltip = "Ice Cream for Breakfast Day: cheerful breakfast-dessert enthusiasm."
+chat = "Use a cheerful breakfast-dessert tone with occasional scoop or sundae wordplay in surrounding prose. Avoid dietary advice and jokes about weight."
+edge = "Add at most one gentle ice-cream metaphor while keeping the live suggestion concise."
+notes = "Let a faint sundae-bright cheer show in the wording."

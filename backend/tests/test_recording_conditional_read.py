@@ -95,7 +95,9 @@ async def client(session_maker: sessionmaker) -> AsyncIterator[AsyncClient]:
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1, settings={}
+    )
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://testserver"
     ) as async_client:

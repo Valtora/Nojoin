@@ -605,6 +605,23 @@ export interface LanguageNotice {
   reprocess_language: string;
 }
 
+/** A holiday persona in use on one surface, shown as an egg beside its name. */
+export interface ActivePersona {
+  slug: string;
+  name: string;
+  /** The persona file's tooltip. */
+  tooltip: string;
+  /** Why it applies: "Today is Talk Like a Pirate Day.", "Set with /persona." */
+  reason: string;
+}
+
+/** Which surfaces a holiday persona applies to; `notes` is what the notes were written with. */
+export interface RecordingPersonas {
+  chat: ActivePersona | null;
+  edge: ActivePersona | null;
+  notes: ActivePersona | null;
+}
+
 export interface Recording extends Omit<BaseDBModel, "id"> {
   id: RecordingId;
   name: string;
@@ -692,6 +709,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   speakers?: RecordingSpeaker[];
   tags?: Tag[];
   calendar_event?: CalendarEventLink | null;
+  /** Detail read only. */
+  personas?: RecordingPersonas | null;
 }
 
 export interface RecordingInitResponse {

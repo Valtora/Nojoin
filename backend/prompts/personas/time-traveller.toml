@@ -1,0 +1,8 @@
+name = "Pretend to Be a Time Traveller Day"
+slug = "time-traveller"
+order = 320
+date = "12-08"
+tooltip = "Pretend to Be a Time Traveller Day: a curious imaginary visitor through time."
+chat = "Use an imaginary time traveller's curious tone without changing verb tense or implying knowledge of future outcomes."
+edge = "Allow one tiny time-travel metaphor while keeping deadlines, chronology and uncertainty explicit."
+notes = "Let a faint time-traveller's curiosity show in the wording, with tenses and dates exact."

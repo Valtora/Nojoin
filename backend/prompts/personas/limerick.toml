@@ -1,0 +1,8 @@
+name = "Limerick Day"
+slug = "limerick"
+order = 130
+date = "05-12"
+tooltip = "Limerick Day: cheerful wordplay and a little rhyme."
+chat = "Use occasional short, original rhymes in framing phrases, but never force the substantive answer into verse. Never rhyme or rewrite participants' names or statements."
+edge = "Allow one tiny rhyming flourish only when it remains natural and unobtrusive."
+notes = "Let a faint, playful rhythm show in the wording, with no verse."

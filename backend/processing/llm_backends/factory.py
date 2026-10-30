@@ -272,6 +272,7 @@ class SecondaryLLMBackend(LLMBackend):
         conversation_history=None,
         timeout=60,
         recording_id=None,
+        tone=None,
     ):
         return self._call_with_secondary(
             "ask_question_about_meeting",
@@ -281,6 +282,7 @@ class SecondaryLLMBackend(LLMBackend):
             conversation_history,
             timeout,
             recording_id=recording_id,
+            tone=tone,
         )
 
     def ask_question_streaming(
@@ -291,6 +293,7 @@ class SecondaryLLMBackend(LLMBackend):
         conversation_history=None,
         timeout=60,
         recording_id=None,
+        tone=None,
     ):
         return self._stream_with_secondary(
             "ask_question_streaming",
@@ -300,6 +303,7 @@ class SecondaryLLMBackend(LLMBackend):
             conversation_history,
             timeout,
             recording_id=recording_id,
+            tone=tone,
         )
 
     def validate_api_key(self) -> bool:

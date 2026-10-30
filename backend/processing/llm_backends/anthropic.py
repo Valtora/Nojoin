@@ -501,13 +501,14 @@ class AnthropicLLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ):
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
 
         # Put the stable meeting context in the cached system prompt (render order
         # is tools -> system -> messages), so it is reused across turns while the
         # messages array carries only the volatile history and question.
-        context = build_chat_context(meeting_notes, diarized_transcript)
+        context = build_chat_context(meeting_notes, diarized_transcript, tone=tone)
         messages = build_chat_messages(user_question, conversation_history)
         if not self.model:
             raise ValueError(
@@ -535,6 +536,7 @@ class AnthropicLLMBackend(LLMBackend):
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ) -> Generator[Any, None, None]:
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
         notes_tool = self._offers_notes_tool(diarized_transcript)
@@ -543,7 +545,7 @@ class AnthropicLLMBackend(LLMBackend):
         # is tools -> system -> messages), so it is reused across turns while the
         # messages array carries only the volatile history and question.
         context = build_chat_context(
-            meeting_notes, diarized_transcript, notes_tool=notes_tool
+            meeting_notes, diarized_transcript, notes_tool=notes_tool, tone=tone
         )
         messages = build_chat_messages(user_question, conversation_history)
 

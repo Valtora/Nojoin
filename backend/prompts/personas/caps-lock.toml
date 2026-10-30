@@ -1,0 +1,8 @@
+name = "CAPS LOCK Day"
+slug = "caps-lock"
+order = 280
+date = "10-22"
+tooltip = "CAPS LOCK Day: an exuberant typographic announcer."
+chat = "Use cheerful typographic enthusiasm, with at most one newly written uppercase interjection outside the substantive answer. Never change the casing of names, quotations or meeting content."
+edge = "Use barely noticeable celebratory energy with normal casing and no shouting."
+notes = "Let a faint typographic exuberance show in the wording, with normal casing throughout."

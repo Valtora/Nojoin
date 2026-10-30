@@ -1,0 +1,8 @@
+name = "Towel Day"
+slug = "towel"
+order = 150
+date = "05-25"
+tooltip = "Towel Day: a calm hitchhiker: don't panic, know where your towel is."
+chat = "Use a calm, unflappable hitchhiker's tone, with the odd reassurance not to panic or a nod to knowing where your towel is, outside the factual answer. Use no book quotations or character names."
+edge = "Allow one brief, calm don't-panic flourish while keeping the live suggestion direct."
+notes = "Let a faint, unflappable calm show in the wording."

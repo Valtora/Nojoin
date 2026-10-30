@@ -14,6 +14,7 @@ from backend.utils.meeting_notes import (
     build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
 )
+from backend.utils.personas import tone_block
 from backend.utils.prompt_blocks import render_prompt_blocks
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,9 @@ class MeetingEdgeRequest:
     glossary: str | None = None
     previous_questions: tuple[str, ...] = ()
     previous_points: tuple[str, ...] = ()
+    # A holiday persona's tone (backend.utils.persona_settings). Last in the
+    # cache-stable prefix: it changes at most once a day or on /persona.
+    tone: str | None = None
 
     def __post_init__(self) -> None:
         transcript = self.recent_transcript.strip()
@@ -228,6 +232,7 @@ def build_meeting_edge_prompt_parts(
                 build_glossary_prompt_section(request.glossary, for_notes=False),
             ),
             ("# Required JSON Schema", MEETING_EDGE_JSON_SCHEMA),
+            tone_block(request.tone),
         ]
     )
     suffix = render_prompt_blocks(

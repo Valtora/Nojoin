@@ -159,13 +159,14 @@ class _FakeBackend:
         meeting_notes,
         diarized_transcript,
         conversation_history,
-        recording_id,
+        **context,
     ):
+        # ``context``: the recording id and the persona tone.
         self.received = {
             "user_question": user_question,
             "meeting_notes": meeting_notes,
-            "recording_id": recording_id,
             "conversation_history": conversation_history,
+            **context,
         }
         if self.raise_exc:
             raise self.raise_exc
@@ -265,3 +266,22 @@ def test_no_text_response_persists_nothing(monkeypatch):
     pub = _FakePublisher.instances[0]
     assert ("done", None) in pub.events
     assert _chat_rows(engine) == []
+
+
+def test_a_meeting_persona_reaches_the_subscription_chat_as_its_tone(monkeypatch):
+    from backend.utils.personas import PERSONA_SAFETY, persona_by_slug
+
+    engine = _engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET settings = :s WHERE id = 1"),
+            {"s": '{"holiday_personas": {"meetings": {"1": "pirate"}}}'},
+        )
+    backend = _FakeBackend(chunks=["Ahoy"])
+    _wire(monkeypatch, engine, backend)
+
+    tasks_module.meeting_chat_task.run(1, "What happened?", None)
+
+    pirate = persona_by_slug("pirate")
+    assert pirate is not None
+    assert backend.received["tone"] == f"{pirate.chat} {PERSONA_SAFETY}"

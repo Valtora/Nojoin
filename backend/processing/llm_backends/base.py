@@ -58,6 +58,7 @@ from backend.utils.meeting_notes import (
     build_user_notes_prompt_section,
     strip_leading_title_heading,
 )
+from backend.utils.personas import tone_block
 from backend.utils.prompt_blocks import render_prompt_blocks
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -411,6 +412,7 @@ class LLMBackend:
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ):
         """
         Ask a question about the meeting.
@@ -425,6 +427,7 @@ class LLMBackend:
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
+        tone: Optional[str] = None,
     ) -> Generator[str, None, None]:
         """
         Ask a question about the meeting and yield response chunks.
@@ -458,9 +461,14 @@ class LLMBackend:
         diarized_transcript: ChatTranscript,
         *,
         notes_tool: bool = False,
+        tone: Optional[str] = None,
     ) -> str:
         return build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript, notes_tool=notes_tool
+            user_question,
+            meeting_notes,
+            diarized_transcript,
+            notes_tool=notes_tool,
+            tone=tone,
         )
 
     @staticmethod
@@ -604,6 +612,8 @@ class LLMBackend:
                     build_meeting_metadata_prompt_section(context.metadata),
                 ),
                 ("# Glossary", build_glossary_prompt_section(context.glossary)),
+                # Before every part of the meeting's own content.
+                tone_block(context.tone),
                 ("# User Notes Context", build_user_notes_prompt_section(user_notes)),
                 (
                     "# Meeting Context",

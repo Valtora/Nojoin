@@ -13,6 +13,7 @@ from backend.services.timeline_note_service import (
     load_recording_timeline_notes,
 )
 from backend.utils.meeting_edge import normalize_meeting_edge_items
+from backend.utils.persona_settings import surface_tone
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.timeline_notes import (
     iter_timeline,
@@ -167,6 +168,7 @@ def _should_refresh_meeting_edge_impl(
     focus_text: str | None,
     notes_signature: str,
     context_level: int | None = None,
+    tone: str | None = None,
 ) -> bool:
     if (
         transcript.meeting_edge_source_signature == source_signature
@@ -202,11 +204,17 @@ def _should_refresh_meeting_edge_impl(
         and previous_payload.get("context_level") is not None
         and previous_payload.get("context_level") != context_level
     )
+    # A persona chosen or dropped mid-meeting shows at once, like a new focus.
+    # A payload from before personas has no hash and counts as toneless.
+    tone_changed = previous_payload.get(
+        "tone_hash", _hash_meeting_edge_text(None)
+    ) != _hash_meeting_edge_text(tone)
 
     if (
         focus_changed
         or notes_changed
         or context_level_changed
+        or tone_changed
         or not previous_generated_at
     ):
         return True
@@ -411,12 +419,14 @@ def _refresh_meeting_edge(self, recording_id: int):
         # refresh signature; otherwise an edit mid-meeting would not take effect
         # until the transcript moved on by itself.
         glossary = resolve_glossary(llm_config.merged_config)
+        tone = surface_tone(user_settings, recording.id, "edge")
         config_signature = ":".join(
             [
                 llm_config.provider,
                 llm_config.model or "",
                 llm_config.api_url or "",
                 hashlib.sha1(glossary.encode("utf-8")).hexdigest() if glossary else "",
+                _hash_meeting_edge_text(tone) if tone else "",
             ]
         )
 
@@ -448,6 +458,7 @@ def _refresh_meeting_edge(self, recording_id: int):
             focus_text=focus_text,
             notes_signature=notes_signature,
             context_level=context_level,
+            tone=tone,
         ):
             return None
 
@@ -484,6 +495,7 @@ def _refresh_meeting_edge(self, recording_id: int):
             previous_points=_read_meeting_edge_payload_items(
                 previous_payload, "points"
             ),
+            tone=tone,
         )
 
         _set_meeting_edge_state(
@@ -508,6 +520,7 @@ def _refresh_meeting_edge(self, recording_id: int):
                 "source_last_end": float(segments[-1].get("end", 0.0)),
                 "focus_hash": _hash_meeting_edge_text(focus_text),
                 "notes_hash": _hash_meeting_edge_text(notes_signature),
+                "tone_hash": _hash_meeting_edge_text(tone),
                 "context_level": context_level,
             }
         )
