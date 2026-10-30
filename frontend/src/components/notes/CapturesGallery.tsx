@@ -10,7 +10,7 @@ import { cn } from "@/lib/cn";
 import { shownNotes } from "@/lib/notes/noteOutbox";
 import { formatTimelineMs, placeTimelineNotes, type NotePlacement } from "@/lib/notes/placement";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
-import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import { selectSavedNotes, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { RecordingId, TimelineNote, TranscriptSegment } from "@/types";
 
 import { noteFileTimeMs, useOpenNoteFile } from "./NoteFiles";
@@ -41,7 +41,7 @@ export default function CapturesGallery({
   onShowTranscript,
   className,
 }: CapturesGalleryProps) {
-  const { snapshot } = useNoteOutbox(recordingId);
+  const { snapshot } = useNoteOutbox(recordingId, selectSavedNotes);
   const { apply } = noteEdits;
   const open = useOpenNoteFile();
   const placements = useMemo(
