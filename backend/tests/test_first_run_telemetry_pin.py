@@ -4,13 +4,14 @@ The environment outranks the UI in both directions (docs/TELEMETRY.md), so a
 pinned install's wizard has nothing to ask. The unlock response says what the
 pin is, so the wizard can show it read-only as Settings > Privacy does, and
 setup stores no choice under a pin: the operator was shown a value, not asked
-for one.
+for one. Nor does it store one when setup sends none, which a wizard that saw a
+pin still does after the pin is removed and the API restarted (#854).
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -85,7 +86,19 @@ def _stored(manager: ConfigManager) -> dict:
     return {key: value for key, value in data.items() if key.startswith("telemetry_")}
 
 
-async def _unlock_and_set_up(setup_body: dict) -> tuple[dict, int]:
+def _assert_no_choice_stored(manager: ConfigManager, before: dict) -> None:
+    """Nothing was written, so the admin notice decides, as on an upgrade."""
+    assert _stored(manager) == before
+    assert before[telemetry.ACKNOWLEDGED_CONFIG_KEY] is False
+    assert before[telemetry.POLICY_CONFIG_KEY] is None
+    assert telemetry.notice_pending() is True
+    assert telemetry.should_send() is False
+
+
+async def _unlock_and_set_up(
+    setup_body: dict, between: Callable[[], None] | None = None
+) -> tuple[dict, int]:
+    """Unlock the wizard, run ``between`` if given, then finish setup."""
     app = create_app(app_lifespan=None)
     session = _Session()
 
@@ -97,6 +110,8 @@ async def _unlock_and_set_up(setup_body: dict) -> tuple[dict, int]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL) as c:
         unlock = await c.get("/api/v1/setup/initial-config", headers=headers)
         assert unlock.status_code == 200
+        if between is not None:
+            between()
         created = await c.post(
             "/api/v1/system/setup",
             headers=headers,
@@ -131,31 +146,62 @@ async def test_a_pinned_install_is_told_the_pin_and_stores_no_choice(
     config, status = await _unlock_and_set_up(sent)
 
     assert status == 200
-    assert _stored(telemetry_config) == before
-    assert before[telemetry.ACKNOWLEDGED_CONFIG_KEY] is False
-    assert before[telemetry.POLICY_CONFIG_KEY] is None
     assert config["telemetry_pinned"] is pinned
     # Dropping the pin later leaves the diagnostics decision to the admin
     # notice, as on an upgraded install, rather than to consent nobody gave.
     monkeypatch.delenv(telemetry.TELEMETRY_ENABLED_ENV_KEY)
-    assert telemetry.notice_pending() is True
-    assert telemetry.should_send() is False
+    _assert_no_choice_stored(telemetry_config, before)
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("raw", [None, "", "maybe"])
+@pytest.mark.parametrize("choice", [True, False])
 async def test_without_a_pin_the_wizard_choice_is_stored(
-    telemetry_config, monkeypatch, raw
+    telemetry_config, monkeypatch, raw, choice
 ) -> None:
     """Empty or unrecognised is no pin, as Settings > Privacy reads it."""
     if raw is not None:
         monkeypatch.setenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, raw)
 
-    config, status = await _unlock_and_set_up({"enable_telemetry": False})
+    config, status = await _unlock_and_set_up({"enable_telemetry": choice})
 
     assert config["telemetry_pinned"] is None
     assert status == 200
     stored = _stored(telemetry_config)
-    assert stored[telemetry.ENABLED_CONFIG_KEY] is False
+    assert stored[telemetry.ENABLED_CONFIG_KEY] is choice
     assert stored[telemetry.ACKNOWLEDGED_CONFIG_KEY] is True
     assert stored[telemetry.POLICY_CONFIG_KEY] == telemetry.HEARTBEAT_POLICY_VERSION
+    assert telemetry.notice_pending() is False
+    assert telemetry.should_send() is choice
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("sent", [{}, {"enable_telemetry": None}])
+async def test_setup_that_sends_no_choice_stores_none(telemetry_config, sent) -> None:
+    """No choice sent is not a tick, though the model's default once read it as one."""
+    before = _stored(telemetry_config)
+
+    config, status = await _unlock_and_set_up(sent)
+
+    assert config["telemetry_pinned"] is None
+    assert status == 200
+    _assert_no_choice_stored(telemetry_config, before)
+
+
+@pytest.mark.anyio
+async def test_a_pin_removed_while_the_wizard_is_open_stores_no_choice(
+    telemetry_config, monkeypatch
+) -> None:
+    """The wizard saw the pin and sends no choice, although none is set now."""
+    monkeypatch.setenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, "false")
+    before = _stored(telemetry_config)
+
+    def remove_the_pin() -> None:
+        monkeypatch.delenv(telemetry.TELEMETRY_ENABLED_ENV_KEY)
+
+    config, status = await _unlock_and_set_up({}, between=remove_the_pin)
+
+    assert config["telemetry_pinned"] is False
+    assert status == 200
+    assert telemetry.is_env_managed() is False
+    _assert_no_choice_stored(telemetry_config, before)
