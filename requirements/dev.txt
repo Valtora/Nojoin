@@ -6,10 +6,6 @@
 # contributor needs to run the same fast checks as CI:
 #
 #   python -m pip install -r requirements/dev.txt
-#   python -m pip install --no-deps -r requirements/worker-no-deps.txt
-#
-# The second line installs fastembed, which must skip its declared
-# dependencies; worker-no-deps.txt says why.
 #
 # For a GPU host with the live processing stack, use local.txt instead.
 -r test.txt

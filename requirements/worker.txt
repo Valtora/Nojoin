@@ -1,5 +1,3 @@
-# Follow this file with:
-#   python -m pip install --no-deps -r requirements/worker-no-deps.txt
 -r base.txt
 celery[redis]==5.6.3
 openai-whisper==20250625
@@ -69,7 +67,7 @@ safetensors==0.8.0
 # Native Nemotron inference. No broad Transformers extras or NeMo dependency:
 # the immutable asset manifest and golden fixture pin this version together
 # (scripts/check_held_pins.py). Revalidate both before changing it.
-transformers==5.21.0
+transformers==5.20.2
 librosa==1.0.0
 soxr==1.1.0
 lazy-loader==0.6
@@ -91,13 +89,12 @@ pyannoteai-sdk==0.4.0
 # swaps it for the CPU build of this version, which links no CUDA library.
 torchcodec==0.17.0
 
-# fastembed's own dependencies. fastembed itself is in worker-no-deps.txt and is
-# installed with --no-deps, because it caps pillow below the release that fixes
-# its advisories (#526), so everything else it declares is pinned here.
-# backend/tests/test_no_deps_requirements.py fails if a pin is missing or falls
-# outside fastembed's range. huggingface_hub, numpy and requests are above and
-# in base.txt. Keep onnxruntime in step with onnxruntime-gpu in
-# docker/Dockerfile.worker, which replaces it in the image.
+# Text embeddings (backend/processing/text_embedding.py), followed by the rest
+# of what fastembed declares, pinned so that the resolve does not drift.
+# huggingface_hub, numpy and requests are above and in base.txt. Keep
+# onnxruntime in step with onnxruntime-gpu in docker/Dockerfile.worker, which
+# replaces it in the image.
+fastembed==0.9.1
 onnxruntime==1.31.1
 tokenizers==0.23.3
 loguru==0.7.3

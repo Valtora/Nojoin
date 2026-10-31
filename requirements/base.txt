@@ -22,8 +22,6 @@ httpx==0.28.1
 # pillow (export chart images and reportlab in the api image; matplotlib,
 #   python-pptx, pytesseract and fastembed in the worker): 13.0.0 is the first
 #   release with the fixes for 20 advisories, two of them critical (#526).
-#   fastembed caps pillow below 13, so it is installed without its declared
-#   dependencies: see requirements/worker-no-deps.txt.
 urllib3==2.8.0
 pillow==13.0.0
 alembic==1.20.1
