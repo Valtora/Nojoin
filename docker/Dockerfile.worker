@@ -122,7 +122,10 @@ RUN apt-get update && \
 # pins in step with requirements/base.txt and requirements/worker.txt:
 # pillow==13.0.0 closes the 20 advisories fixed only in that release (#526);
 # urllib3==2.8.0 closes CVE-2026-44431/44432 and CVE-2026-97687/97689;
-# fsspec==2026.9.0 keeps the CVE-2026-104851 fix.
+# fsspec==2026.9.0 keeps the CVE-2026-104851 fix;
+# filelock==4.2.1 (torch and huggingface_hub use this copy, as the venv has none)
+# closes CVE-2026-112940; dnspython==2.9.0 (only python-etcd from the base
+# image needs it) closes CVE-2026-114605.
 #
 # certifi is the exception: no requirements file pins it, and the venv has no
 # copy of its own, so this system copy is the CA bundle the worker verifies TLS
@@ -138,6 +141,7 @@ RUN apt-get update && \
 # CVEs the image scan reports like installed packages.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
     --root-user-action=ignore --upgrade pillow==13.0.0 urllib3==2.8.0 fsspec==2026.9.0 \
+    filelock==4.2.1 dnspython==2.9.0 \
     "certifi>=2026.10.19" && \
     /usr/bin/python3 -m pip uninstall -y --break-system-packages \
     --root-user-action=ignore uv pip && \
