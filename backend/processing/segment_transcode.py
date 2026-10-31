@@ -4,6 +4,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
 from backend.processing.browser_live_audio import (
@@ -37,15 +39,44 @@ BROWSER_SOURCE_KIND = "browser"
 logger = logging.getLogger(__name__)
 
 
+# Neither creates the capture's folder: a transcode queued before a Discard
+# would bring a discarded folder back (issue #869).
 def _transcode_failed_marker_path(recording_id: int, sequence: int) -> Path:
     return (
-        recording_upload_temp_dir(recording_id, create=True)
+        recording_upload_temp_dir(recording_id, create=False)
         / f"{sequence}{TRANSCODE_FAILED_SUFFIX}"
     )
 
 
 def _wav_segment_path(recording_id: int, sequence: int) -> Path:
-    return recording_upload_temp_dir(recording_id, create=True) / f"{sequence}.wav"
+    return recording_upload_temp_dir(recording_id, create=False) / f"{sequence}.wav"
+
+
+def _recording_exists(recording_id: int) -> bool:
+    """Whether the recording is still there. Discard deletes it, then its folder.
+
+    A database error counts as the recording being there, so a genuine failure
+    is still recorded.
+    """
+    from backend.models.recording import Recording
+
+    session = get_sync_session()
+    try:
+        return session.get(Recording, recording_id) is not None
+    except SQLAlchemyError:
+        return True
+    finally:
+        session.close()
+
+
+def _skip_discarded(recording_id: int, sequence: int) -> dict:
+    logger.info(
+        "Segment transcode for recording %s segment %s stopped: the recording "
+        "was discarded",
+        recording_id,
+        sequence,
+    )
+    return {"status": "skipped", "segment": sequence}
 
 
 def _locate_staged_browser_segment(recording_id: int, sequence: int) -> Path | None:
@@ -143,9 +174,58 @@ def _advance_past_failed_segment(recording_id: int, temp_dir: Path) -> None:
         session.close()
 
 
+def _record_transcode_failure(
+    recording_id: int, sequence: int, exc: Exception, raw_segment_path: Path | None
+) -> dict:
+    """Mark a failed transcode, so the cursor and finalize can pass its sequence."""
+    failure_marker = _transcode_failed_marker_path(recording_id, sequence)
+    wav_path = _wav_segment_path(recording_id, sequence)
+    try:
+        failure_marker.parent.mkdir(parents=True, exist_ok=True)
+        failure_marker.write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
+    except OSError as marker_error:
+        logger.warning(
+            "Failed to write transcode failure marker %s: %s",
+            failure_marker,
+            marker_error,
+        )
+
+    try:
+        record_pipeline_metric(
+            stage="segment_transcode_failed",
+            recording_id=recording_id,
+            payload={
+                "sequence": sequence,
+                "input_path": str(raw_segment_path)
+                if raw_segment_path is not None
+                else None,
+                "output_path": str(wav_path),
+                "error": str(exc),
+            },
+            log=logger,
+        )
+    except Exception as metric_error:  # noqa: BLE001 -- boundary: metrics must never mask the transcode failure being recorded
+        logger.warning(
+            "Failed to record transcode failure metric for recording %s segment %s: %s",
+            recording_id,
+            sequence,
+            metric_error,
+        )
+
+    logger.warning(
+        "Segment transcode failed for recording %s segment %s: %s",
+        recording_id,
+        sequence,
+        exc,
+    )
+    _advance_past_failed_segment(recording_id, failure_marker.parent)
+    return {"status": "failed", "segment": sequence}
+
+
 @celery_app.task
 def transcode_segment_task(recording_id: int, sequence: int):
-    failure_marker = _transcode_failed_marker_path(recording_id, sequence)
+    if not _recording_exists(recording_id):
+        return _skip_discarded(recording_id, sequence)
     wav_path = _wav_segment_path(recording_id, sequence)
     raw_segment_path = _locate_staged_browser_segment(recording_id, sequence)
 
@@ -208,44 +288,7 @@ def transcode_segment_task(recording_id: int, sequence: int):
                 cleanup_error,
             )
 
-        try:
-            failure_marker.write_text(
-                f"{type(exc).__name__}: {exc}\n", encoding="utf-8"
-            )
-        except OSError as marker_error:
-            logger.warning(
-                "Failed to write transcode failure marker %s: %s",
-                failure_marker,
-                marker_error,
-            )
-
-        try:
-            record_pipeline_metric(
-                stage="segment_transcode_failed",
-                recording_id=recording_id,
-                payload={
-                    "sequence": sequence,
-                    "input_path": str(raw_segment_path)
-                    if raw_segment_path is not None
-                    else None,
-                    "output_path": str(wav_path),
-                    "error": str(exc),
-                },
-                log=logger,
-            )
-        except Exception as metric_error:  # noqa: BLE001 -- boundary: metrics must never mask the transcode failure being recorded
-            logger.warning(
-                "Failed to record transcode failure metric for recording %s segment %s: %s",
-                recording_id,
-                sequence,
-                metric_error,
-            )
-
-        logger.warning(
-            "Segment transcode failed for recording %s segment %s: %s",
-            recording_id,
-            sequence,
-            exc,
-        )
-        _advance_past_failed_segment(recording_id, failure_marker.parent)
-        return {"status": "failed", "segment": sequence}
+        if not _recording_exists(recording_id):
+            # Discarded mid-transcode: no marker, and no folder written back.
+            return _skip_discarded(recording_id, sequence)
+        return _record_transcode_failure(recording_id, sequence, exc, raw_segment_path)
