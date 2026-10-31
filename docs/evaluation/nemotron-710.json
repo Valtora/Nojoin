@@ -3170,70 +3170,70 @@
           {
             "stream": "Array1-01_EN2002a",
             "frames": 214270,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "Array1-01_ES2004d",
             "frames": 222229,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "Array1-01_IS1009d",
             "frames": 194466,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "Array1-01_TS3003d",
             "frames": 261820,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "Mix-Headset_EN2002a",
             "frames": 214270,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "Mix-Headset_ES2004d",
             "frames": 222229,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "Mix-Headset_IS1009d",
             "frames": 194450,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "Mix-Headset_TS3003d",
             "frames": 261820,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "london",
             "frames": 1089909,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           },
           {
             "stream": "lords",
             "frames": 900000,
-            "max_abs_5202_vs_5211": 0.0,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
             "activity_changes": 0,
             "argmax_changes": 0
           }
@@ -3247,7 +3247,7 @@
       "retained_scripts_verified": "all hf-parity script hashes in original_input_and_script_hashes matched on disk; all ten input wavs matched PROVENANCE.json"
     },
     "commands": [
-      "python source_parity_requal.py <out.json>   (CPU; once under each of venv-5202 and venv-5211)",
+      "python source_parity_requal.py <out.json>   (CPU; once under Transformers 5.20.2 and once under 5.21.0)",
       "python -B replay_hf_requal.py --device cuda --tag <out dir>   (no --reference; once under each venv)",
       "compare_replay.py: per-stream comparison of hf.npz between versions and against runs-corrected/"
     ],
