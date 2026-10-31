@@ -1,9 +1,9 @@
 """The upload's deep_parse form field is true unless the client sends false.
 
-From 0.147, FastAPI reads an absent ``bool`` form field as an unchecked HTML
-checkbox, which is False whatever the declared default. The endpoint types the
-field so that its default still applies; these tests fail if a FastAPI release
-changes that again.
+FastAPI 0.147 to 0.161 read an absent ``bool`` form field as an unchecked HTML
+checkbox, which is False whatever the declared default, and 0.162 restored the
+default. The endpoint types the field so that its default applies either way;
+these tests fail if a FastAPI release changes that again.
 """
 
 from __future__ import annotations
