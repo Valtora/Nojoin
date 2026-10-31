@@ -9,7 +9,7 @@ from typing import Any
 
 from backend.utils.forced_aligner_manifest import ForcedAlignerError
 
-TRANSFORMERS_VERSION = "5.20.2"
+TRANSFORMERS_VERSION = "5.21.0"
 KEY_MAPPING = {
     r"^thinker\.audio_tower\.proj1\.": "model.multi_modal_projector.linear_1.",
     r"^thinker\.audio_tower\.proj2\.": "model.multi_modal_projector.linear_2.",
@@ -111,7 +111,7 @@ def load_native_model(path: Path) -> Any:
 def require_transformers_version(version: str) -> None:
     """Refuse silent drift from the evaluated native implementation."""
     if version != TRANSFORMERS_VERSION:
-        raise ForcedAlignerError("Forced alignment requires Transformers 5.20.2")
+        raise ForcedAlignerError("Forced alignment requires Transformers 5.21.0")
 
 
 def load_native_processor(path: Path) -> Any:
@@ -129,7 +129,7 @@ def load_native_processor(path: Path) -> Any:
         )
     # The pinned checkpoint names Whisper's extractor. Promote its configuration
     # in memory, as for the model above: the native extractor owns chunk padding
-    # (Transformers 5.20.2, feature_extraction_qwen3_asr.py:219–230).
+    # (Transformers 5.21.0, feature_extraction_qwen3_asr.py:219–230).
     feature_config = json.loads(
         (path / "preprocessor_config.json").read_text(encoding="utf-8")
     )

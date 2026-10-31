@@ -28,7 +28,7 @@ def test_transformers_bump_requires_evidence(compatibility_tree: Path) -> None:
     assert check_nemotron_compatibility(compatibility_tree) == []
     path = compatibility_tree / "requirements/worker.txt"
     path.write_text(
-        path.read_text().replace("transformers==5.20.2", "transformers==5.20.3")
+        path.read_text().replace("transformers==5.21.0", "transformers==5.21.1")
     )
     assert any(
         "pin disagrees" in error

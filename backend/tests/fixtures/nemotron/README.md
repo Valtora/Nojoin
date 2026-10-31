@@ -55,7 +55,8 @@ ordinary inference validates its inputs, probabilities and CPU cache storage.
 
 Three recorded generation repeats on RTX 4070 Ti (Ada), Torch 2.14.1+cu130,
 Transformers 5.20.2, fp32/SDPA, matmul TF32 off and cuDNN TF32 on produced maximum
-posterior/live-cache drift **0/0**, including transient EOF arrays. Other GPU
+posterior/live-cache drift **0/0**, including transient EOF arrays. Regenerating
+under Transformers 5.21.0 on the same card produced byte-identical arrays. Other GPU
 architectures differ in the last digits: a Turing card (no TF32) deviated by up to
 2.6e-6, and the same Ada card with cuDNN TF32 off by up to 8.6e-5. The posterior
 policy is `atol=4e-4, rtol=1e-5`, four times the larger deviation, rounded up. The
