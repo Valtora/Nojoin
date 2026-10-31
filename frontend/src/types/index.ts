@@ -339,13 +339,19 @@ export interface TranscriptUtteranceList {
    * capture. Whole on every read, delta or not: naming changes no utterance.
    */
   live_speaker_names?: Record<string, string>;
+  /**
+   * Live label -> the live label the user merged it into during capture, so
+   * its lines read as that speaker's. Whole on every read, like the names.
+   */
+  live_speaker_merges?: Record<string, string>;
   /** The live lane is behind a running capture's uploads. */
   live_behind?: boolean;
 }
 
-/** The answer to naming a live speaker: every live name, as the live read gives it. */
+/** The answer to naming or merging a live speaker, as the live read gives it. */
 export interface LiveSpeakerNames {
   live_speaker_names: Record<string, string>;
+  live_speaker_merges?: Record<string, string>;
 }
 
 export interface TranscriptSegment extends LiveTranscriptSettling {

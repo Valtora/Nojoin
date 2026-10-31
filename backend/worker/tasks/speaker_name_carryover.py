@@ -26,6 +26,13 @@ voiceprint match.
 
 A line moved by hand to a live speaker goes where that speaker's name goes:
 one placement of the label's speech decides both (``_live_line_targets``).
+
+A live speaker the user merged into another during the capture is one live
+speaker here (#775): its labels' speech is placed together, for its name and
+its lines alike, and a member label's own final speaker is folded into the
+group's where that is clearly the merged voice and no one else's
+(``backend/utils/speaker_names/live_carry.py``). Where it is not, the member's
+own lines go to the group's final speaker as lines moved by hand do.
 """
 
 from __future__ import annotations
@@ -49,7 +56,13 @@ from backend.utils.speaker_names.events import as_name_event
 from backend.utils.speaker_names.live import (
     SURFACE_LIVE,
     live_label_spans,
+    live_speaker_groups,
     manually_reassigned_live_turns,
+)
+from backend.utils.speaker_names.live_carry import (
+    fold_merged_groups,
+    group_spans,
+    users_act_on,
 )
 from backend.utils.speaker_names.resolve import (
     NameEvent,
@@ -58,12 +71,7 @@ from backend.utils.speaker_names.resolve import (
     place_event,
     resolve_names,
 )
-from backend.utils.speaker_names.sources import (
-    AUTHORITY,
-    KIND_NAME,
-    MACHINE_SOURCES,
-    SOURCE_USER,
-)
+from backend.utils.speaker_names.sources import MACHINE_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +85,11 @@ class CarriedNames:
     # Offered as "Alex?" once the merge pass is done.
     pending: dict[str, ResolvedName] = field(default_factory=dict)
     # A line moved by hand to a live speaker, by utterance id: the final label
-    # it goes to, moved once the merge pass is done.
+    # it goes to, moved once the merge pass is done. A merged live label's own
+    # lines join them where its final speaker could not be folded.
     live_lines: dict[int, str] = field(default_factory=dict)
+    # Final label -> the final label a live merge folds it into.
+    folds: dict[str, str] = field(default_factory=dict)
 
 
 def _floor_score(session: Any, global_speaker_id: int, voiceprint: Any) -> float | None:
@@ -183,55 +194,69 @@ def _lines_moved_to_live_speakers(
     return [row for row in rows if live_speaker_display_name(row.speaker_label)]
 
 
-def _user_act_on(spans: tuple[Span, ...]) -> NameEvent:
-    """A user's act on this speech, placed as a user's name on it would be."""
-    return NameEvent(
-        event_id=0,
-        kind=KIND_NAME,
-        name="",
-        global_speaker_id=None,
-        source=SOURCE_USER,
-        authority=AUTHORITY[SOURCE_USER],
-        anchor_start_ms=spans[0][0],
-        anchor_end_ms=spans[-1][1],
-        anchor_spans=spans,
-    )
-
-
-def _live_line_targets(
-    moved: list[TranscriptUtterance],
+def _live_speakers_placed(
     live: dict[int, str],
     spans: dict[str, tuple[Span, ...]],
     placements: Sequence[Placement],
     lines: Sequence[Line],
-) -> dict[int, str]:
-    """The final label each moved line goes to: where its live speaker's name goes.
+) -> dict[str, Placement]:
+    """Each live speaker's placement: its name's, else the same rule on its speech.
 
-    A named label reuses its name's placement; an unnamed one is placed the
-    same way on the same speech. Either is the holder, the top holder when no
-    speaker clearly holds it, or the nearest speaker when processing heard
-    none of it. An unnamed label with no speech of its own left, every line
-    of it moved by hand, gives each line to the final speaker of its own span.
+    Either is the holder, the top holder when no speaker clearly holds it, or
+    the nearest speaker when processing heard none of it.
     """
     placed = {
-        live[placement.event.event_id]: placement.label
+        live[placement.event.event_id]: placement
         for placement in placements
         if placement.event.event_id in live
     }
+    for label, own in spans.items():
+        if label not in placed:
+            placed[label] = place_event(users_act_on(own), lines)
+    return placed
+
+
+def _live_line_targets(
+    moved: list[TranscriptUtterance],
+    groups: dict[str, str],
+    placed: dict[str, Placement],
+    lines: Sequence[Line],
+) -> dict[int, str]:
+    """The final label each moved line goes to: where its live speaker's name goes.
+
+    A label merged into another is that live speaker. One with no speech of
+    its own left, every line of it moved by hand, gives each line to the
+    final speaker of its own span.
+    """
     targets: dict[int, str] = {}
     for row in moved:
         label = str(row.speaker_label)
-        own = spans.get(label)
-        if own and label not in placed:
-            placed[label] = place_event(_user_act_on(own), lines).label
+        placement = placed.get(groups.get(label, label))
         target = (
-            placed[label]
-            if label in placed
-            else place_event(_user_act_on(((row.start_ms, row.end_ms),)), lines).label
+            placement.label
+            if placement is not None
+            else place_event(users_act_on(((row.start_ms, row.end_ms),)), lines).label
         )
         if target is not None:
             targets[int(row.id)] = target
     return targets
+
+
+def _merged_label_lines(
+    session: Any, recording_id: int, by_line: dict[str, str]
+) -> dict[int, str]:
+    """A merged label's own live lines, by id, where its speaker was not folded."""
+    if not by_line:
+        return {}
+    rows = session.execute(
+        select(TranscriptUtterance.id, TranscriptUtterance.speaker_label)
+        .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(col(TranscriptUtterance.state).in_(ACTIVE_UTTERANCE_STATES))
+        .where(col(TranscriptUtterance.manual_speaker_locked).is_(False))
+        .where(col(TranscriptUtterance.speaker_label).in_(set(by_line)))
+    ).all()
+    return {int(row_id): by_line[str(label)] for row_id, label in rows}
 
 
 def carry_names_to_final_speakers(
@@ -246,23 +271,42 @@ def carry_names_to_final_speakers(
     restore_name_anchors(session, recording.id)
     rows = _standing_rows_after_dropping_machine_ones(session, recording.id)
     moved = _lines_moved_to_live_speakers(session, recording.id)
+    # A merged live label is the live speaker it joined.
+    groups = live_speaker_groups(session, recording.id) if rows else {}
     live = {
-        row.id: str(row.anchor_label)
+        row.id: groups.get(str(row.anchor_label), str(row.anchor_label))
         for row in rows
         if row.surface == SURFACE_LIVE and row.anchor_label
     }
-    spans = live_label_spans(
+    # With a merge, every live speaker's speech counts: a final speaker another
+    # live speaker is placed on is never folded into the group.
+    own = live_label_spans(
         session,
         recording.id,
-        {*live.values(), *(str(row.speaker_label) for row in moved)},
+        None
+        if groups
+        else {*live.values(), *(str(row.speaker_label) for row in moved)},
     )
+    spans = group_spans(own, groups)
     lines = lines_from_final_segments(final_segments)
     resolved, placements = resolve_names(
         _name_events(session, recording.id, rows, live, spans), lines
     )
-    carried = CarriedNames(
-        live_lines=_live_line_targets(moved, live, spans, placements, lines)
-    )
+    placed = _live_speakers_placed(live, spans, placements, lines)
+    carried = CarriedNames(live_lines=_live_line_targets(moved, groups, placed, lines))
+    if groups:
+        merged = fold_merged_groups(own, groups, lines, placed)
+        carried.folds = merged.folds
+        carried.live_lines = {
+            **_merged_label_lines(session, recording.id, merged.by_line),
+            **carried.live_lines,
+        }
+        record_pipeline_metric(
+            stage="live_speaker_merges_carried",
+            recording_id=recording.id,
+            payload={"folds": merged.folds, "by_line": merged.by_line},
+            log=logger,
+        )
     if not rows:
         return carried
 

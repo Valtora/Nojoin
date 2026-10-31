@@ -164,6 +164,7 @@ describe("api public surface", () => {
         "login",
         "logout",
         "markTelemetryNoticeShown",
+        "mergeLiveSpeaker",
         "mergeRecordingSpeakers",
         "mergeSpeakers",
         "nameLiveSpeaker",

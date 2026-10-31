@@ -125,6 +125,24 @@ export const nameLiveSpeaker = async (
   return response.data.live_speaker_names;
 };
 
+/**
+ * Merges live speaker `label` ("Speaker 3") into live speaker `intoLabel`
+ * while the meeting is recorded or paused: its lines then read as that
+ * speaker's, and processing makes the two one speaker. Answers with every live
+ * name and merge.
+ */
+export const mergeLiveSpeaker = async (
+  recordingId: RecordingId,
+  label: string,
+  intoLabel: string,
+): Promise<LiveSpeakerNames> => {
+  const response = await api.post<LiveSpeakerNames>(
+    `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}/merge`,
+    { into_label: intoLabel },
+  );
+  return response.data;
+};
+
 export const updateSpeakerColor = async (
   recordingId: RecordingId,
   label: string,

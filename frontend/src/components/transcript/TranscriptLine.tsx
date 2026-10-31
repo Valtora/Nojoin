@@ -263,6 +263,7 @@ function TranscriptLine({
                 availableSpeakers={speakers}
                 liveSpeakerLabels={liveSpeakerLabels}
                 currentSpeakerLabel={segment.speaker}
+                currentSpeakerName={speakerName}
                 globalSpeakers={globalSpeakers}
                 speakerColors={speakerColors}
                 targetElement={popoverAnchor}

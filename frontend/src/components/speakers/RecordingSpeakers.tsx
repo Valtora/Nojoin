@@ -25,9 +25,14 @@ export default function RecordingSpeakers({ recording, liveTranscript, readOnly 
     liveTranscript?.refresh();
     await onPeopleChanged?.();
   }, [liveTranscript, onPeopleChanged]);
-  const naming = useLiveSpeakerNaming(recording.id, applyNames, onAccepted);
+  const applyMerges = useCallback((merges: Record<string, string>) => {
+    liveTranscript?.applyLiveSpeakerMerges?.(merges);
+  }, [liveTranscript]);
+  const naming = useLiveSpeakerNaming(recording.id, applyNames, onAccepted, applyMerges);
+  const capturing = isLiveCaptureInProgress(recording) && !readOnly;
   const panelSpeakers = useMemo(() => [...speakers], [speakers]);
   return <SpeakerPanel {...props} speakers={panelSpeakers} disableEditing={readOnly || props.disableEditing}
     liveSpeakerNames={liveTranscript?.liveSpeakerNames}
-    onRenameLiveSpeaker={isLiveCaptureInProgress(recording) && !readOnly ? naming.renameLiveSpeaker : undefined} />;
+    onRenameLiveSpeaker={capturing ? naming.renameLiveSpeaker : undefined}
+    onMergeLiveSpeaker={capturing ? naming.mergeLiveSpeaker : undefined} />;
 }
