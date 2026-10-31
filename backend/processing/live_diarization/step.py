@@ -27,6 +27,7 @@ from backend.utils.canonical_pipeline.live_labels import (
     LiveLabelWrite,
     apply_live_speaker_labels,
 )
+from backend.utils.canonical_pipeline.live_sentence_start import native_activity
 from backend.utils.config_manager import config_manager
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
@@ -160,6 +161,15 @@ def _write_labels(
             recording_id=recording_id,
             settled_ms=engine.settled_ms,
             decide=decide,
+            activity=native_activity(
+                engine.posteriors,
+                engine.posterior_first_frame,
+                engine.native_complete_frame,
+                native=engine.route == "nemotron",
+                switched=engine.switch_emitted_at_n is not None,
+            )
+            if isinstance(engine, HybridLiveState)
+            else None,
         )
         session.commit()
         return write

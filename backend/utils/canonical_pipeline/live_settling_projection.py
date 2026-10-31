@@ -143,6 +143,32 @@ def _windowed_rows(
     return sorted(rows, key=lambda row: (row.start_ms, row.sort_key, row.id))
 
 
+def locked_line_before(
+    session: Session, recording_id: int, rows: Sequence[TranscriptUtterance]
+) -> TranscriptUtterance | None:
+    """The newest locked live line starting at or before the first of ``rows``.
+
+    Streamed newest first: the line just before them usually qualifies, so a
+    long meeting's older lines are never read.
+    """
+    if not rows:
+        return None
+    with session.execute(
+        select(TranscriptUtterance)
+        .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(col(TranscriptUtterance.id).not_in([row.id for row in rows]))
+        .where(TranscriptUtterance.start_ms <= rows[0].start_ms)
+        .order_by(
+            col(TranscriptUtterance.start_ms).desc(),
+            col(TranscriptUtterance.id).desc(),
+        )
+        .execution_options(yield_per=8)
+    ) as lines:
+        return next((line for line in lines.scalars() if line_is_locked(line)), None)
+
+
 LeadSpeaker = Callable[[str | None], str | None]
 
 
@@ -203,6 +229,38 @@ def mutable_row(row: TranscriptUtterance) -> bool:
     )
 
 
+def stored_speakers(
+    rows: Sequence[TranscriptUtterance],
+) -> dict[Any, LiveLabelDecision]:
+    """The speaker each stored word shows now, by word ID."""
+    return {
+        word.get("id"): _stored_speaker(row, word)
+        for row in rows
+        for word in row_words(row)
+    }
+
+
+def speaker_locked(word: dict[str, Any], stored: LiveLabelDecision) -> bool:
+    """Whether a stored word's speaker can no longer change.
+
+    Today a word's speaker settles only once its text has locked as well; this
+    is the one place that says so.
+    """
+    return bool(word.get("locked")) and stored.locked
+
+
+def speaker_locked_word_ids(
+    stored: dict[Any, LiveLabelDecision], rows: Sequence[TranscriptUtterance]
+) -> set[Any]:
+    """IDs of the stored words whose speaker can no longer change."""
+    return {
+        word.get("id")
+        for row in rows
+        for word in row_words(row)
+        if speaker_locked(word, stored[word.get("id")])
+    }
+
+
 def word_decisions(
     words: Sequence[dict[str, Any]],
     rows: Sequence[TranscriptUtterance],
@@ -212,17 +270,8 @@ def word_decisions(
     closing: Closing | None = None,
 ) -> list[LiveLabelDecision]:
     """Assign timed words independently; untimed atoms follow their neighbour."""
-    previous = {
-        word.get("id"): _stored_speaker(row, word)
-        for row in rows
-        for word in row_words(row)
-    }
-    immutable_speakers = {
-        word.get("id")
-        for row in rows
-        for word in row_words(row)
-        if word.get("locked") and previous[word.get("id")].locked
-    }
+    previous = stored_speakers(rows)
+    immutable_speakers = speaker_locked_word_ids(previous, rows)
     decisions: list[LiveLabelDecision | None] = []
     covered_untimed: dict[int, LiveLabelDecision] = {}
     for word in words:

@@ -31,6 +31,7 @@ from backend.utils.transcript_settling import (
     publication_is_current,
 )
 
+from .live_sentence_start import LivePass, NativeActivity, correct_sentence_starts
 from .live_settling_flags import (
     flags_readable,
     live_lines,
@@ -45,6 +46,7 @@ from .live_settling_projection import (
     PartitionWrite,
     lead_speaker,
     live_rows,
+    locked_line_before,
     mutable_row,
     partition_words,
     row_words,
@@ -87,6 +89,9 @@ class _Projection:
     rows: list[TranscriptUtterance]
     decide: DecideSpeaker | None = None
     closing: Closing | None = None
+    activity: NativeActivity | None = None
+    # Immutable rows the pass did not read, as context for the correction.
+    context: tuple[TranscriptUtterance, ...] = ()
     metadata: dict[str, Any] | None = None
     decode_id: str | None = None
     silence_start_ms: int | None = None
@@ -251,6 +256,7 @@ def _project(
     words = [word for word in words if word.get("id") not in immutable_ids]
     state = transcript.settling_state or {}
     speaker_enabled = _stored_speaker_enabled(state)
+    resume_boundaries = load_resume_boundaries(session, transcript)
     decisions = word_decisions(
         words,
         mutable,
@@ -258,7 +264,18 @@ def _project(
         speaker_enabled=speaker_enabled,
         closing=context.closing,
     )
-    resume_boundaries = load_resume_boundaries(session, transcript)
+    if context.activity is not None and context.decide is not None:
+        decisions = correct_sentence_starts(
+            words,
+            [*rows, *context.context],
+            decisions,
+            context.decide,
+            LivePass(
+                context.activity,
+                resume_boundaries,
+                resolve_tuning(state, LINE_BREAK_PAUSE_KEY),
+            ),
+        )
     partitions = partition_words(
         words,
         decisions,
@@ -364,8 +381,12 @@ def publish_live_settling(
     request: SettlingPass,
     words: list[dict[str, Any]],
     decide_speaker: DecideSpeaker | None = None,
+    activity: NativeActivity | None = None,
 ) -> SettlingPublicationResult:
-    """Accept one fresh observation and publish its complete word partition atomically."""
+    """Accept one fresh observation and publish its complete word partition atomically.
+
+    ``activity`` is the native diariser's, for the sentence-start correction.
+    """
     transcript, recording = load_capture_publication(session, request.recording_id)
     if transcript is None or not _fresh(
         transcript,
@@ -443,6 +464,7 @@ def publish_live_settling(
             rows,
             decide_speaker,
             metadata=metadata,
+            activity=activity,
             decode_id=request.decode_id,
             silence_start_ms=_confirmed_silence(request, state),
         ),
@@ -534,13 +556,29 @@ def expire_live_settling(
 
 
 def project_live_settling_speakers(
-    session: Session, transcript: Transcript, decide: DecideSpeaker
+    session: Session,
+    transcript: Transcript,
+    decide: DecideSpeaker,
+    activity: NativeActivity | None = None,
 ) -> tuple[SettlingPublicationResult, int, float | None]:
     """Repartition marked mutable lines per word, independent of the legacy cursor."""
     rows = live_rows(session, transcript.recording_id, lock=True)
+    # This read leaves out locked lines; the one before the open lines may hold
+    # the sentence end that starts their first speaker change.
+    previous = (
+        locked_line_before(session, transcript.recording_id, rows)
+        if activity is not None
+        else None
+    )
     result = _project(
         session,
-        _Projection(transcript, rows, decide),
+        _Projection(
+            transcript,
+            rows,
+            decide,
+            activity=activity,
+            context=(previous,) if previous is not None else (),
+        ),
         [word for row in rows for word in row_words(row)],
     )
     current = live_rows(session, transcript.recording_id)

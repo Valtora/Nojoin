@@ -12,6 +12,7 @@ from backend.processing.processing_tuning import (
     line_break_pause_exceeded,
     resolve_tuning,
 )
+from backend.processing.sentence_start import correct_word_assignments
 from backend.utils.partial_word_segments import (
     normalise_partial_word_segments,
     timed_word_groups,
@@ -297,6 +298,13 @@ def _combine_word_level(segments, speaker_turns, config=None):
         max_gap_s=resolve_tuning(config, WORD_FLIP_MAX_GAP_KEY),
     )
     line_config = {LINE_BREAK_PAUSE_KEY: resolve_tuning(config, LINE_BREAK_PAUSE_KEY)}
+    correct_word_assignments(
+        word_assignments,
+        groups,
+        speaker_turns,
+        config,
+        line_config[LINE_BREAK_PAUSE_KEY],
+    )
 
     for i, assignment in enumerate(word_assignments):
         word_data = assignment["word"]

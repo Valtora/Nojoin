@@ -25,4 +25,8 @@ httpx==0.28.1
 urllib3==2.8.0
 pillow==13.0.0
 alembic==1.20.1
+# Unicode property classes (\p{Sentence_Terminal}) for the sentence-start
+# speaker correction (backend/processing/sentence_start.py), which runs in the
+# worker's final merge and live lane. The stdlib re has no property classes.
+regex==2026.9.29
 pgvector==0.5.1

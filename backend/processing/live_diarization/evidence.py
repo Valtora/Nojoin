@@ -10,6 +10,10 @@ from zipfile import BadZipFile
 import numpy as np
 
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
+from backend.utils.canonical_pipeline.live_sentence_start import (
+    NativeActivity,
+    native_activity,
+)
 from backend.utils.live_speaker_labels import live_speaker_label
 
 from .engine import LiveLabelConfig
@@ -49,6 +53,16 @@ class SpeakerEvidence:
         winner = int(np.argmax(totals))
         return LiveLabelDecision(
             live_speaker_label(winner + 1), complete, float(totals[winner] / total)
+        )
+
+    def native_activity(self) -> NativeActivity | None:
+        """Native speaker activity for the sentence-start correction."""
+        return native_activity(
+            self.posteriors,
+            self.posterior_first_frame,
+            self.native_complete_frame,
+            native=self.native,
+            switched=self.switch_frame is not None,
         )
 
     def speech_spans(self) -> list[tuple[float, float]]:

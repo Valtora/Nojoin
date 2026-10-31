@@ -5,7 +5,6 @@ from backend.processing.engines.errors import (
     is_task_interruption,
     transcription_error_from,
 )
-from backend.utils.capture_resume import with_resume_boundaries
 from backend.utils.generation_claim import claim_generation
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
 from backend.utils.reprocess_publication import restore_retained_publication
@@ -23,7 +22,11 @@ from .final_publication import (
     staged_publication_required,
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
-from .final_segments import combine_and_consolidate_segments, drop_unheard_words
+from .final_segments import (
+    combine_and_consolidate_segments,
+    drop_unheard_words,
+    final_merge_config,
+)
 from .side_runs import release_holds_among
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
@@ -630,7 +633,7 @@ def process_recording_task(
             diarization_result,
             enable_diarization=enable_diarization,
             recording_id=recording_id,
-            config=with_resume_boundaries(merged_config, transcript),
+            config=final_merge_config(merged_config, transcript, session, recording_id),
         )
 
         if not staged:
