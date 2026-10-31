@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,7 @@ from backend.utils.live_speaker_labels import live_speaker_label
 
 from .engine import LiveLabelConfig
 from .files import DISABLED_FILENAME
-from .lines import LabelTimeline
+from .lines import LabelTimeline, native_frame_range
 from .state import LiveLabelStateError, _validate, read_snapshot
 
 
@@ -36,8 +35,7 @@ class SpeakerEvidence:
             self.switch_frame is not None and end_ms <= self.native_complete_frame * 10
         ):
             return self.timeline.label_line(start_ms / 1000, end_ms / 1000)
-        first = max(0, math.floor(start_ms / 10) - self.posterior_first_frame)
-        stop = max(0, math.ceil(end_ms / 10) - self.posterior_first_frame)
+        first, stop = native_frame_range(start_ms, end_ms, self.posterior_first_frame)
         probabilities = self.posteriors[first:stop]
         complete = end_ms <= self.native_complete_frame * 10
         if not complete:

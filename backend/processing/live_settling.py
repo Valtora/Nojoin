@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, uuid5
 
 from backend.processing.engines.errors import TranscriptionError
 from backend.processing.live_asr_payload import (
@@ -187,7 +189,10 @@ def _decode_words(
     )
     from backend.processing.vad import silero_vad
 
-    path = step.live_dir / f"settling-{uuid4().hex}.wav"
+    # Outside the capture's folder, which a Discard removes during the call.
+    fd, name = tempfile.mkstemp(prefix="nojoin-settling-", suffix=".wav")
+    os.close(fd)
+    path = Path(name)
     try:
         silero_vad.save_audio(str(path), audio.unsqueeze(0), sampling_rate=16000)
         result = transcribe_audio(str(path), config=config)
