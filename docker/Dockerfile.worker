@@ -37,11 +37,6 @@ RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints
 # Install dependencies using the constraints to force usage of system torch
 RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 
-# fastembed caps pillow below the release that fixes its advisories, so it goes
-# in without its declared dependencies; worker.txt pins the ones it needs.
-# requirements/worker-no-deps.txt explains.
-RUN pip install --no-cache-dir --no-deps -r requirements/worker-no-deps.txt
-
 # Install pyannote.audio without dependencies to use system torch. The pin is
 # read from local.txt so the image and a GPU host install cannot drift apart.
 RUN pip install --no-cache-dir --no-deps \
@@ -61,7 +56,7 @@ RUN torchcodec_version="$(python -c 'import importlib.metadata as m; print(m.ver
 # builds target CUDA 13 from 1.27.0 and CUDA 12 before that, so this pin must
 # move with the CUDA major of the base image above.
 RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
-    pip install --no-cache-dir onnxruntime-gpu==1.31.0
+    pip install --no-cache-dir onnxruntime-gpu==1.31.1
 
 # Install Triton in the venv so Whisper word-level timestamps use GPU-accelerated
 # kernels instead of falling back to slower CPU implementations. The base PyTorch
@@ -179,9 +174,8 @@ COPY --from=builder /opt/venv /opt/venv
 # this image's torch, CUDA runtime and FFmpeg.
 RUN python -c "from torchcodec.decoders import AudioDecoder"
 
-# Likewise for fastembed, installed without its declared dependencies: its
-# import loads every one of them, so a dependency worker.txt stopped pinning
-# fails the build here.
+# Likewise for fastembed, whose import loads onnxruntime from the
+# onnxruntime-gpu build that replaced the CPU one above.
 RUN python -c "from fastembed import TextEmbedding"
 
 # Validate the native Nemotron classes/frontend without fetching weights or
