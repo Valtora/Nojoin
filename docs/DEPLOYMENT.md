@@ -247,7 +247,7 @@ Nojoin generates its JWT signing keyring at `data/.secret_keys.json` ([JWT Signi
 
 Restart after changing `.env` (`docker compose up -d`). The LLM provider, Ollama URL and Ollama context window variables take precedence over the same settings in `data/config.json`.
 
-Put each comment on a line of its own. Compose strips a comment that follows a value, so `KEY=value # note` sets `value`, but with nothing before the `#` it keeps the comment: `KEY= # note` sets the variable to `# note`. The `.env.example` of earlier releases had up to nine lines of that shape, and for those nine variables Nojoin reads a value that starts with `#` as empty, and the api and each worker log a warning naming them when they start ([Version Notes](#unreleased-changes-on-main)). Any other variable takes the comment as its value.
+Put each comment on a line of its own. Compose strips a comment that follows a value, so `KEY=value # note` sets `value`, but with nothing before the `#` it keeps the comment: `KEY= # note` sets the variable to `# note`. The `.env.example` of earlier releases had up to nine lines of that shape, and for those nine variables Nojoin reads a value that starts with `#` as empty, and the api and each worker log a warning naming them when they start ([Version Notes](#upgrading-from-before-300)). Any other variable takes the comment as its value.
 
 ### Always Set
 
@@ -645,7 +645,7 @@ If your `docker-compose.yml` has its own `build:` directives, run `docker compos
 
 These run on the first start after the upgrade and need no action unless a note says so.
 
-#### Unreleased Changes on Main
+#### Upgrading From Before 3.0.0
 
 - **Live word settling (#735).** Alembic revision `f2a6e1d9c735` adds `transcripts.change_sequence`, `0` by default, which a finished recording's page checks every 15 s to notice edits made elsewhere, and the nullable `transcripts.settling_state`, with no backfill: existing recordings keep their usual behaviour. A downgrade drops both. A newer worker fails on the missing columns until the API has migrated, so upgrade the API and the workers together.
 - **Settling on by default on GPU (#735).** New `live_text_settling` (`off`, `auto` or `always`), `live_text_settling_k` (3) and `live_text_settling_window_s` (10) keys in `data/config.json` ([ADMIN.md](ADMIN.md#transcription)). An installation without a stored mode inherits `auto`, so from the next capture a CUDA worker settles live words, and a CPU worker keeps whole-line live transcription. A stored `off` stays off. `always` settles on a CPU worker too, decoding the recent audio again at every step, which needs a lot of CPU and RAM.
