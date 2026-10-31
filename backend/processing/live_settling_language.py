@@ -6,7 +6,9 @@ like the final pass, which detects once per recording (#671). So once Whisper
 has heard the same language on ``CAPTURE_LANGUAGE_AGREEMENT`` successive
 steps, the capture is pinned to it and later steps transcribe in it without
 detecting. Agreement guards the first steps, whose short or noisy input can be
-heard as another language; until then each step detects as before.
+heard as another language; until then each step detects as before. Only a step
+whose decode kept a recognised word counts: music or join chatter that VAD lets
+through but Whisper hears no words in still gets a guessed language.
 
 Only Whisper on automatic detects. A set language, the recording's own or else
 the owner's, never does, and Parakeet and Canary have no detection to skip.
@@ -52,9 +54,24 @@ class StepLanguage:
         return str(heard) if self.detects and heard else None
 
     def tag(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """``payload`` noting what this step's detection chose, if it detected."""
+        """``payload`` noting what this step's detection chose, if it detected.
+
+        A decode that kept no recognised word is left untagged, so it never
+        counts towards the capture's language.
+        """
         heard = self.heard()
-        return {**payload, HEARD_LANGUAGE: heard} if heard else payload
+        if not heard or not _has_words(payload):
+            return payload
+        return {**payload, HEARD_LANGUAGE: heard}
+
+
+def _has_words(payload: dict[str, Any]) -> bool:
+    """Whether the decoded payload, after the live filters, holds a word."""
+    return any(
+        str(word.get("word") or "").strip()
+        for segment in payload.get("asr_segments") or []
+        for word in segment.get("words") or []
+    )
 
 
 def step_language(

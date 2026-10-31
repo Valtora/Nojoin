@@ -29,7 +29,9 @@ from backend.processing.engines import whisper_engine
 from backend.processing.engines.base import CAPTURE_LANGUAGE
 from backend.processing.live_settling_language import (
     CAPTURE_LANGUAGE_KEY,
+    HEARD_LANGUAGE,
     observe_language,
+    record_heard_language,
     step_language,
 )
 from backend.tests.test_live_settling_publication import _seed
@@ -41,7 +43,11 @@ from backend.utils.transcript_settling import capture_publication_token
 
 
 class _FakeWhisper:
-    """Whisper's model: hears ``heard`` in turn when asked to detect."""
+    """Whisper's model: hears ``heard`` in turn when asked to detect.
+
+    The first ``wordless`` calls hear no words, as with music that VAD lets
+    through, but still report the language Whisper guessed.
+    """
 
     dims = SimpleNamespace(n_mels=128)
     device = torch.device("cpu")
@@ -50,12 +56,16 @@ class _FakeWhisper:
     def __init__(self, heard: list[str]) -> None:
         self.heard = list(heard)
         self.languages: list[str | None] = []
+        self.wordless = 0
 
     def transcribe(self, _path: str, **kwargs: Any) -> dict[str, Any]:
         language = kwargs.get("language")
         self.languages.append(language)
         if language is None:
             language = self.heard.pop(0) if len(self.heard) > 1 else self.heard[0]
+        if self.wordless:
+            self.wordless -= 1
+            return {"text": "", "language": language, "segments": []}
         return {
             "text": " hello",
             "language": language,
@@ -153,6 +163,25 @@ def test_three_steps_that_agree_pin_the_capture_and_later_steps_skip_detection(
     assert CAPTURE_LANGUAGE not in config
 
 
+def test_decodes_with_no_words_never_count_towards_the_pin(capture: Any) -> None:
+    # Join music heard as Japanese with no words, then three steps of English.
+    capture.model.heard = ["ja", "ja", "ja", "en"]
+    capture.model.wordless = 3
+    for sequence in range(3):
+        capture.run(sequence)
+    assert CAPTURE_LANGUAGE_KEY not in capture.state()
+
+    for sequence in range(3, 8):
+        capture.run(sequence)
+
+    assert capture.model.languages == [None] * 6 + ["en"] * 2
+    assert capture.state()[CAPTURE_LANGUAGE_KEY] == {
+        "code": "en",
+        "count": 3,
+        "pinned": True,
+    }
+
+
 def test_a_set_language_never_detects(capture: Any) -> None:
     for sequence in range(5):
         capture.run(sequence, language="fr")
@@ -229,3 +258,14 @@ def test_a_disagreement_starts_the_count_again() -> None:
     assert capture == {"code": "en", "count": 3, "pinned": True}
     assert observe_language(capture, "de") is capture
     assert step_language({}, capture).config == {CAPTURE_LANGUAGE: "en"}
+
+
+def test_only_a_decode_that_kept_a_word_is_tagged_with_its_language() -> None:
+    step = step_language({}, None)
+    record_heard_language(step.config, {"language": "ja"})
+    blank = {"asr_segments": [{"words": [{"word": " "}]}, {"words": []}]}
+    worded = {"asr_segments": [{"words": [{"word": " hello"}]}]}
+
+    assert step.tag({"asr_segments": []}) == {"asr_segments": []}
+    assert step.tag(blank) == blank
+    assert step.tag(worded) == {**worded, HEARD_LANGUAGE: "ja"}
