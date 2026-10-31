@@ -44,6 +44,28 @@ def mark_capture_resume(transcript: Transcript | None, next_sequence: int) -> No
     }
 
 
+def move_capture_resume(
+    transcript: Transcript | None, from_sequence: int, to_sequence: int
+) -> None:
+    """Move a resume's break from where restored audio starts to where new audio does.
+
+    A tab resuming with audio it recorded before the pause (after a reload or a
+    failed Stop) numbers that audio after the last sequence the resume answered,
+    and its new audio after that. The resume stored its break at
+    ``from_sequence``, where the restored audio starts, and the tab's first new
+    segment, ``to_sequence``, says where recording resumed. Any other stored
+    break, an earlier resume's included, stays.
+    """
+    if transcript is None or to_sequence <= from_sequence:
+        return
+    state = transcript.settling_state or {}
+    breaks = {*state.get(RESUME_SEQUENCES, [])} - {from_sequence}
+    transcript.settling_state = {
+        **state,
+        RESUME_SEQUENCES: sorted(breaks | {to_sequence}),
+    }
+
+
 def durable_resume_state(state: dict[str, Any] | None) -> dict[str, Any]:
     """Keep capture geometry independently of word-settling eligibility."""
     return {

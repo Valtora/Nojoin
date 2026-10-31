@@ -453,6 +453,8 @@ A recording can have its own language, set under **Language** when you import it
 
 With Whisper and VAD on, Nojoin also listens for the language on the first 30 seconds of speech, even when a language is set. When it is fairly sure the meeting is in another language than its transcript, the recording page says so above the tabs, once processing is complete. **Reprocess in** that language sets it as the recording's language and reprocesses with the same Whisper model, after you confirm; a language Nojoin doesn't list, such as Hebrew, is set to **Auto-detect**, which finds it again. **Keep** sets the transcript's language as the recording's. Either answer is kept, so the notice doesn't come back for that recording until you choose **Your default** for it again. Nothing is detected with VAD off, or with Parakeet or Canary.
 
+Live text on **Auto-detect** with Whisper keeps one language for the whole recording: once Whisper has heard the same language over a few seconds of speech, the rest of the live text is transcribed in it. Processing detects the language again for the final transcript.
+
 Changes apply to new work. Reprocess a recording to transcribe it in a new language, and generate its notes again to change their language; saved notes are not translated. Neither setting translates the interface, Meeting Edge or chat.
 
 ### Your own subscription (CLI OAuth)

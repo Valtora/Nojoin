@@ -50,9 +50,15 @@ from backend.utils.time import utc_now
 from backend.utils.transcript_settling import update_capture_settling_state
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
+from .capture_queries import (
+    ResumeNextSequence,
+    SegmentResumeMark,
+    capture_epoch_query,
+)
 from .capture_settling import (
     close_live_words,
     lock_capture_publication,
+    move_resume_break,
     seal_live_settling,
 )
 from .router import router
@@ -142,18 +148,6 @@ def _record_finalize_capture_metrics(
         )
 
 
-def _capture_epoch_query(action: str):
-    return Query(
-        None,
-        ge=0,
-        description=(
-            f"The capture epoch of the tab sending the {action}, from init or "
-            "resume. One from before a resume elsewhere is refused with 409 "
-            "capture_superseded. Omitted, the request is not checked."
-        ),
-    )
-
-
 def _serialize_capture_track(track_payload):
     if track_payload is None:
         return None
@@ -170,7 +164,7 @@ def _serialize_capture_track(track_payload):
 @router.post("/{recording_id}/pause", response_model=RecordingCaptureLifecycleResponse)
 async def pause_upload(
     recording_id: str,
-    epoch: Optional[int] = _capture_epoch_query("pause"),
+    epoch: Optional[int] = capture_epoch_query("pause"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -250,6 +244,7 @@ async def resume_upload(
             "nothing."
         ),
     ),
+    next_sequence: ResumeNextSequence = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -292,7 +287,7 @@ async def resume_upload(
 
     stalled_last_activity = recording.last_activity_at
     last_sequence = recordings_module._get_last_uploaded_sequence(recording.id)
-    mark_capture_resume(transcript, last_sequence + 1)
+    mark_capture_resume(transcript, max(last_sequence + 1, next_sequence or 0))
     recording.status = RecordingStatus.UPLOADING
     update_capture_settling_state(
         transcript, capture_epoch=recording.capture_epoch, sealed=False, phase="live"
@@ -461,7 +456,8 @@ async def upload_segment(
     request: Request,
     recording_id: str,
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
-    epoch: Optional[int] = _capture_epoch_query("segment"),
+    epoch: Optional[int] = capture_epoch_query("segment"),
+    resume_mark: SegmentResumeMark = None,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
@@ -499,6 +495,8 @@ async def upload_segment(
             await recordings_module._lock_capture(db, recording)
             recordings_module._ensure_capture_epoch(recording, epoch)
             recordings_module._ensure_recording_accepts_uploads(recording)
+            if resume_mark is not None:
+                await move_resume_break(db, recording, resume_mark, sequence)
             os.replace(staging_path, segment_path)
             file_size = segment_path.stat().st_size
             live_ready = await _store_uploaded_segment(
@@ -650,7 +648,7 @@ async def finalize_upload(
             "the capture coverage metric."
         ),
     ),
-    epoch: Optional[int] = _capture_epoch_query("stop"),
+    epoch: Optional[int] = capture_epoch_query("stop"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -831,7 +829,7 @@ async def discard_upload(
     reason: Optional[str] = Query(
         None, description="Optional client-provided discard reason"
     ),
-    epoch: Optional[int] = _capture_epoch_query("discard"),
+    epoch: Optional[int] = capture_epoch_query("discard"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
