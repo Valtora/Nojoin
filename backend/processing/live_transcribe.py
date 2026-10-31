@@ -381,6 +381,8 @@ def _transcribe_live_regions(
     engine via transcribe_audio) stay inside this worker-only helper so module
     import time stays light.
     """
+    import tempfile
+
     import torch
 
     from backend.processing.transcribe import (
@@ -427,7 +429,9 @@ def _transcribe_live_regions(
         region_start_ms = int(round((combined_abs_start + sp["start"]) * 1000.0))
         region_end_ms = int(round((combined_abs_start + sp["end"]) * 1000.0))
 
-        clip_path = str(live_dir / "clip.wav")
+        # Outside the capture's folder, which a Discard removes during the call.
+        clip_fd, clip_path = tempfile.mkstemp(prefix="nojoin-live-", suffix=".wav")
+        os.close(clip_fd)
         try:
             from backend.processing.vad import silero_vad
 
