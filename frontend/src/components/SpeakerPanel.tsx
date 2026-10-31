@@ -43,7 +43,9 @@ import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
 import { useSpeakerTurnHighlight } from "./speakers/SpeakerTurnHighlight";
-import LiveSpeakerRows, { SPEAKER_SAVING, type RenameLiveSpeaker } from "./speakers/LiveSpeakerRows";
+import LiveSpeakerRows, {
+  SPEAKER_SAVING, type MergeLiveSpeaker, type RenameLiveSpeaker,
+} from "./speakers/LiveSpeakerRows";
 import TranscriptActionsMenu, { type TranscriptMenuItem } from "./transcript/TranscriptActionsMenu";
 
 // Said in a card's menu, under the actions it holds back.
@@ -67,6 +69,7 @@ interface SpeakerPanelProps {
   disableEditing?: boolean;
   liveSpeakerNames?: Record<string, string>;
   onRenameLiveSpeaker?: RenameLiveSpeaker;
+  onMergeLiveSpeaker?: MergeLiveSpeaker;
 }
 
 export default function SpeakerPanel({
@@ -87,6 +90,7 @@ export default function SpeakerPanel({
   disableEditing = false,
   liveSpeakerNames = {},
   onRenameLiveSpeaker,
+  onMergeLiveSpeaker,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const highlight = useSpeakerTurnHighlight();
@@ -215,6 +219,7 @@ export default function SpeakerPanel({
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         <LiveSpeakerRows labels={liveLabels} names={liveSpeakerNames} speakers={speakers}
           globalSpeakers={globalSpeakers} speakerColors={speakerColors} onRename={onRenameLiveSpeaker}
+          onMerge={onMergeLiveSpeaker}
           readOnly={disableEditing} />
         {pendingEntries.length >= 2 && !disableEditing && (
           <div className="flex justify-end">
@@ -554,6 +559,7 @@ export default function SpeakerPanel({
       {picker && !disableEditing && <SpeakerAssignmentPopover
         availableSpeakers={speakers.filter((speaker) => !picker.entry.labels.includes(speaker.diarization_label))}
         globalSpeakers={globalSpeakers} currentSpeakerLabel={picker.entry.speaker.diarization_label}
+        currentSpeakerName={picker.entry.displayName}
         speakerColors={speakerColors} targetElement={picker.anchor} fixedScope="speaker_everywhere_in_recording"
         onSelect={async (assignment) => {
           // Another speaker of this recording takes over the row's lines, as

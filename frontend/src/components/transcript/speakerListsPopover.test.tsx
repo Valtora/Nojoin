@@ -68,6 +68,12 @@ const openPopoverOn = (container: HTMLElement, id: string) => {
   fireEvent.click(container.querySelector<HTMLButtonElement>(`[data-segment-id="${id}"] button`)!);
 };
 
+// People are listed only for what is typed; "a" is in every name below.
+const searchPopover = (value: string) => {
+  fireEvent.change(document.body.querySelector<HTMLInputElement>('input[placeholder="Search or add..."]')!,
+    { target: { value } });
+};
+
 // The speaker lists pass through the view's content-stable copies and the
 // memoised lines to the popover, which renders in a portal.
 describe("speaker lists in the speaker popover", () => {
@@ -78,6 +84,7 @@ describe("speaker lists in the speaker popover", () => {
       />,
     );
     openPopoverOn(view.container, "u0");
+    searchPopover("a");
     expect(document.body.textContent).toContain("Blair");
     expect(document.body.textContent).toContain("Gina");
 
@@ -123,6 +130,7 @@ describe("speaker lists in the speaker popover", () => {
     const speakers = [recordingSpeaker("SPEAKER_0", "Alex", 1), recordingSpeaker("SPEAKER_1", "Blair", 2)];
     const view = render(<TranscriptView {...props(speakers, [person(10, "Gina")])} />);
     openPopoverOn(view.container, "u0");
+    searchPopover("a");
 
     view.rerender(<TranscriptView {...props(speakers, [person(10, "Gina"), person(11, "Hal")])} />);
 

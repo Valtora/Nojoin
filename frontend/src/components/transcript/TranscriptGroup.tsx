@@ -45,6 +45,7 @@ export interface TranscriptLineShared {
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
   speakers: readonly RecordingSpeaker[];
+  liveSpeakerLabels?: Readonly<Record<string, string>>;
   globalSpeakers: GlobalSpeaker[];
   speakerColors: Record<string, string>;
   onUpdateSegmentSpeaker: (
@@ -156,6 +157,7 @@ function TranscriptGroup({
         allowProvisionalEdits={lineShared.allowProvisionalEdits}
         speakerMap={speakerMap}
         speakers={lineShared.speakers}
+        liveSpeakerLabels={lineShared.liveSpeakerLabels}
         globalSpeakers={lineShared.globalSpeakers}
         speakerColors={speakerColors}
         onUpdateSegmentSpeaker={lineShared.onUpdateSegmentSpeaker}

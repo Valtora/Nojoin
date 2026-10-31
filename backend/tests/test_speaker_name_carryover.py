@@ -30,6 +30,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     SPEAKER_NAME_EVENTS_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
 )
@@ -64,6 +65,8 @@ def session():
             P_TAGS_SCHEMA,
             SPEAKER_NAME_EVENTS_SCHEMA,
             TRANSCRIPTS_SCHEMA,
+            # The final pass reads the live lines for the user's live choices.
+            TRANSCRIPT_UTTERANCES_SCHEMA,
         ):
             connection.execute(text(schema))
         connection.execute(

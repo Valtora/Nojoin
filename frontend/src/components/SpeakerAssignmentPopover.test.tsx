@@ -124,6 +124,118 @@ describe("SpeakerAssignmentPopover", () => {
     targetElement.remove();
   });
 
+  const person = (id: number, name: string) => ({
+    id, name, created_at: "2026-05-20T00:00:00Z", updated_at: "2026-05-20T00:00:00Z",
+  });
+
+  it("lists this meeting's speakers and finds People only by search", () => {
+    const onSelect = vi.fn();
+    const targetElement = createTargetElement();
+
+    render(
+      <SpeakerAssignmentPopover
+        availableSpeakers={[
+          buildSpeaker({ id: 1, diarization_label: "SPEAKER_00", local_name: "Alice Example" }),
+          buildSpeaker({ id: 2, diarization_label: "SPEAKER_01", local_name: "Bob Sample" }),
+        ]}
+        globalSpeakers={[person(7, "Carol Mock"), person(8, "Ada Carlton"), person(9, "Dan Placeholder")]}
+        currentSpeakerLabel="SPEAKER_00"
+        currentSpeakerName="Alice Example"
+        onSelect={onSelect}
+        onClose={() => {}}
+        speakerColors={{}}
+        targetElement={targetElement}
+      />,
+    );
+
+    expect(screen.getByText("Bob Sample")).toBeInTheDocument();
+    expect(screen.queryByText("Carol Mock")).not.toBeInTheDocument();
+    expect(screen.queryByText("People")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Type to search People");
+
+    fireEvent.change(screen.getByPlaceholderText("Search or add..."), { target: { value: "car" } });
+    expect(screen.getByText("People")).toBeInTheDocument();
+    // A name that starts with what was typed comes first.
+    expect(screen.getAllByRole("button").map((button) => button.textContent))
+      .toEqual(expect.arrayContaining(["Carol Mock", "Ada Carlton"]));
+    const names = screen.getAllByRole("button").map((button) => button.textContent);
+    expect(names.indexOf("Carol Mock")).toBeLessThan(names.indexOf("Ada Carlton"));
+    expect(screen.queryByText("Dan Placeholder")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bob Sample")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Search or add..."), { target: { value: "ada carlton" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("Search or add..."), { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith({ name: "Ada Carlton", globalSpeakerId: 8, scope: "utterance_only" });
+
+    targetElement.remove();
+  });
+
+  it("never offers a name this meeting has or a placeholder, and Enter takes the match", () => {
+    const onSelect = vi.fn();
+    const targetElement = createTargetElement();
+
+    render(
+      <SpeakerAssignmentPopover
+        availableSpeakers={[
+          buildSpeaker({ id: 1, diarization_label: "SPEAKER_00", local_name: "Alice Example" }),
+          buildSpeaker({ id: 2, diarization_label: "SPEAKER_01", name: "Speaker 2" }),
+          buildSpeaker({
+            id: 3, diarization_label: "SPEAKER_02", local_name: "Bo",
+            global_speaker_id: 9, global_speaker: person(9, "Bob Sample"),
+          }),
+        ]}
+        globalSpeakers={[person(9, "Bob Sample")]}
+        currentSpeakerLabel="SPEAKER_00"
+        currentSpeakerName="Alice Example"
+        onSelect={onSelect}
+        onClose={() => {}}
+        speakerColors={{}}
+        targetElement={targetElement}
+      />,
+    );
+    const input = screen.getByPlaceholderText("Search or add...");
+    const type = (value: string) => fireEvent.change(input, { target: { value } });
+
+    // The speaker's own name: nothing to create, and Enter sends nothing.
+    type("alice example");
+    expect(screen.queryByRole("button", { name: /Create local/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("This speaker is already Alice Example.");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // A placeholder that is no speaker's name.
+    type("Speaker 7");
+    expect(screen.queryByRole("button", { name: /Create local/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Type a real name, not a placeholder.");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // A placeholder another speaker shows is that speaker.
+    type("speaker 2");
+    expect(screen.queryByRole("button", { name: /Create local/i })).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith({
+      name: "Speaker 2", diarizationLabel: "SPEAKER_01", scope: "utterance_only",
+    });
+
+    // The person a speaker is linked to is that speaker, not a new one.
+    type("Bob Sample");
+    expect(screen.queryByRole("button", { name: /Create local/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("People")).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith({
+      name: "Bo", diarizationLabel: "SPEAKER_02", scope: "utterance_only",
+    });
+
+    // A new name is still offered, and Enter creates it.
+    type("  Dana Sample ");
+    expect(screen.getByRole("button", { name: /Create local "Dana Sample"/i })).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith({ name: "Dana Sample", scope: "utterance_only" });
+
+    targetElement.remove();
+  });
+
   it("flips above the target when opened near the bottom of the viewport", () => {
     const onSelect = vi.fn();
     const targetElement = createTargetElement({

@@ -219,6 +219,11 @@ class TranscriptUtteranceListRead(BaseModel):
     # Live label -> the name the user gave it during capture. Sent whole on every
     # read, delta or not: naming a live speaker changes no utterance.
     live_speaker_names: dict[str, str] = {}
+    # Live label -> the live label the user merged it into, whole on every read
+    # for the same reason: a merge changes no utterance.
+    live_speaker_merges: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     # The live lane is behind a running capture's uploads.
     live_behind: bool = Field(default=False, exclude_if=lambda value: value is False)
 

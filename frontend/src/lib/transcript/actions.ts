@@ -1,7 +1,7 @@
-import { Pencil, Play, Scissors, StickyNote, UserRound, type LucideIcon } from "lucide-react";
+import { Merge, Pencil, Play, Scissors, StickyNote, UserRound, type LucideIcon } from "lucide-react";
 
 /** What a transcript line's ⋯ menu can offer. */
-export type LineActionId = "note" | "editText" | "changeSpeaker" | "split" | "play";
+export type LineActionId = "note" | "editText" | "changeSpeaker" | "mergeSpeaker" | "split" | "play";
 
 /** What a line and its view allow. */
 export interface LineActionContext {
@@ -19,6 +19,8 @@ export interface LineActionContext {
   /** Why the edits are unavailable: on a settling line they wait for its lock; a note and Play don't. */
   disabledReason?: string;
   canSplit?: boolean;
+  /** The line's live speaker can be merged into another live speaker of the capture. */
+  canMerge?: boolean;
 }
 
 export interface LineAction {
@@ -58,6 +60,14 @@ export const LINE_ACTIONS: readonly LineAction[] = [
     when: ({ view, canEdit, settlingRequired }) => canEdit && (view === "finished" || settlingRequired === true),
   },
   {
+    // The line's whole live speaker, so it does not wait for the line's lock,
+    // as naming a live speaker does not.
+    id: "mergeSpeaker",
+    label: "Merge speaker into...",
+    icon: Merge,
+    when: ({ view, canMerge }) => view === "live" && canMerge === true,
+  },
+  {
     id: "split",
     label: "Split line",
     icon: Scissors,
@@ -74,6 +84,6 @@ export const LINE_ACTIONS: readonly LineAction[] = [
 /** The actions a line offers, in menu order; empty when it offers none. */
 export const lineActionsFor = (context: LineActionContext): LineAction[] =>
   LINE_ACTIONS.filter((action) => action.when(context)).map((action) =>
-    action.id !== "play" && action.id !== "note" && context.disabledReason
+    action.id !== "play" && action.id !== "note" && action.id !== "mergeSpeaker" && context.disabledReason
       ? { ...action, disabledReason: context.disabledReason } : action,
   );
