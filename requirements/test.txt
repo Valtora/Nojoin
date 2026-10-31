@@ -1,7 +1,7 @@
 -r backend.txt
 -r worker.txt
 aiosqlite==0.22.1
-pytest==9.1.1
+pytest==9.2.0
 # Matched stack. torch must move together with the pin in local.txt and
 # the pytorch/pytorch base image in docker/Dockerfile.worker, which also fixes
 # the worker's Python; scripts/check_held_pins.py fails CI if they drift apart.
