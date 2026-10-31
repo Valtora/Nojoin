@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
 
+from backend.prompts import render_prompt
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_notes import (
     AttachedDocument,
@@ -25,35 +26,6 @@ from backend.utils.prompt_blocks import render_prompt_blocks
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
-
-# Static prompt text. These are plain strings, never format templates: the JSON
-# schema below can therefore be written with real braces instead of doubled ones,
-# and nothing interpolated into the prompt needs escaping. See
-# backend.utils.prompt_blocks for why.
-AUTOMATIC_MEETING_INTELLIGENCE_INTRO = """You are an expert meeting-notes assistant.
-
-Your task is to produce one valid JSON object that combines:
-1. speaker suggestions for unresolved diarization labels only
-2. a meeting title
-3. final meeting notes in Markdown"""
-
-AUTOMATIC_MEETING_INTELLIGENCE_CRITICAL_RULES = """- Treat any non-generic speaker names already present in the transcript as trusted.
-- Only use `speaker_mapping` for the unresolved labels listed below.
-- If you are not confident about a label, omit it from `speaker_mapping` and keep the generic label in `notes_markdown`.
-- The names or roles used in `notes_markdown` for unresolved labels must match the returned `speaker_mapping` entries exactly.
-- The `title` and `notes_markdown` must reflect the same meeting interpretation.
-- Return valid JSON only. Do not include prose before or after the JSON object.
-- Escape newlines inside `notes_markdown` according to JSON rules."""
-
-# The ``\\n`` sequences are literal backslash-n in the rendered prompt: the schema
-# is showing the model how to escape newlines inside a JSON string.
-AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA = """{
-    "speaker_mapping": {
-        "SPEAKER_00": "Person name or role"
-    },
-    "title": "Meeting title",
-    "notes_markdown": "## Localized summary heading\\n\\n...\\n\\n## Localized section heading\\n..."
-}"""
 
 
 class MeetingIntelligenceContractError(ValueError):
@@ -280,31 +252,37 @@ def build_automatic_meeting_intelligence_prompt(
 
     body = render_prompt_blocks(
         [
-            (None, AUTOMATIC_MEETING_INTELLIGENCE_INTRO),
-            ("# Critical Rules", AUTOMATIC_MEETING_INTELLIGENCE_CRITICAL_RULES),
+            (None, render_prompt("notes.intelligence_intro")),
             (
-                "# Title Style",
+                render_prompt("shared.heading_critical_rules"),
+                render_prompt("notes.intelligence_rules"),
+            ),
+            (
+                render_prompt("shared.heading_title_style"),
                 build_title_preference_instruction(request.prefer_short_titles),
             ),
             (
-                "# Unresolved Speaker Labels",
+                render_prompt("shared.heading_unresolved_speaker_labels"),
                 build_unresolved_speakers_prompt_section(request.unresolved_speakers),
             ),
             (
-                "# Recording Metadata",
+                render_prompt("shared.heading_recording_metadata"),
                 build_meeting_metadata_prompt_section(request.meeting_metadata),
             ),
-            ("# Glossary", build_glossary_prompt_section(request.glossary)),
             (
-                "# User Notes Context",
+                render_prompt("shared.heading_glossary"),
+                build_glossary_prompt_section(request.glossary),
+            ),
+            (
+                render_prompt("shared.heading_user_notes_context"),
                 build_user_notes_prompt_section(request.user_notes),
             ),
             (
-                "# Meeting Context",
+                render_prompt("shared.heading_meeting_context"),
                 build_meeting_context_prompt_section(request.meeting_context),
             ),
             (
-                "# Attached Documents",
+                render_prompt("shared.heading_attached_documents"),
                 build_documents_prompt_section(request.documents),
             ),
             # Carries its own heading.
@@ -314,12 +292,16 @@ def build_automatic_meeting_intelligence_prompt(
                     request.output_language_instruction
                 ),
             ),
-            ("# Required JSON Schema", AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA),
             (
-                "# Notes Markdown Requirements",
+                render_prompt("shared.heading_required_json_schema"),
+                # Literal backslash-n sequences demonstrate JSON string escaping.
+                render_prompt("notes.intelligence_schema"),
+            ),
+            (
+                render_prompt("shared.heading_notes_markdown_requirements"),
                 build_notes_body_spec(request.notes_sections),
             ),
-            ("# Transcript", request.resolved_transcript),
+            (render_prompt("shared.heading_transcript"), request.resolved_transcript),
         ]
     )
     return f"{body}\n"
@@ -368,20 +350,17 @@ def finalise_automatic_meeting_intelligence_result(
 
 def build_title_preference_instruction(prefer_short_titles: bool) -> str:
     if prefer_short_titles:
-        return (
-            "Prefer a short, punchy title of 3-5 words. Keep it concise while still "
-            "describing the meeting clearly."
-        )
+        return render_prompt("notes.title_short")
 
-    return "Provide a concise descriptive title of at most 12 words."
+    return render_prompt("notes.title_descriptive")
 
 
 def build_unresolved_speakers_prompt_section(unresolved_speakers: Sequence[str]) -> str:
     labels = [str(label).strip() for label in unresolved_speakers if str(label).strip()]
     if not labels:
-        return "No unresolved speaker labels remain. Return an empty object for `speaker_mapping`."
+        return render_prompt("speakers.no_unresolved")
 
-    lines = ["Only these diarization labels may appear in `speaker_mapping`:"]
+    lines = [render_prompt("speakers.unresolved_intro")]
     lines.extend(f"- {label}" for label in labels)
     return "\n".join(lines)
 

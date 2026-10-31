@@ -185,6 +185,8 @@ def _get_default_models():
 _default_models = _get_default_models()
 
 DEFAULT_SYSTEM_CONFIG = {
+    # Internal developer storage; only the gated prompt catalogue exposes it.
+    "prompt_overrides": {},
     "worker_url": "redis://localhost:6379/0",  # Default Redis URL for Celery worker
     "web_app_url": "https://localhost:14443",
     "enable_canonical_transcript_writes": True,

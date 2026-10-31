@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { getSettings, getUserMe, updateSettings } from "@/lib/api";
+import { getSettings, getSystemCapabilities, getUserMe, updateSettings } from "@/lib/api";
 import { validateProcessingTuning } from "@/lib/processingTuning";
 import { isAdministrator } from "@/lib/roles";
 import { isValidUrl } from "@/lib/validation";
@@ -116,6 +116,7 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperuser, setIsSuperuser] = useState(false);
+  const [developerMode, setDeveloperMode] = useState(false);
   const [role, setRole] = useState<UserRole | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [username, setUsername] = useState<string | null>(null);
@@ -180,6 +181,8 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
         setCachedUserTimeZone(settingsData.timezone);
         setForcePasswordChange(false);
         markAsSaved(settingsData);
+        const capabilities = await getSystemCapabilities().catch(() => ({ developer_mode: false }));
+        setDeveloperMode(capabilities.developer_mode === true);
       } catch (error) {
         console.error("Failed to load settings", error);
         markAsSaved({});
@@ -203,8 +206,8 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
   );
 
   const viewer = useMemo<SettingsViewer>(
-    () => ({ isAdmin, isSuperuser }),
-    [isAdmin, isSuperuser],
+    () => ({ isAdmin, isSuperuser, developerMode }),
+    [isAdmin, isSuperuser, developerMode],
   );
 
   const value = useMemo<SettingsContextValue>(() => {

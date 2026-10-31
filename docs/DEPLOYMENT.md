@@ -11,6 +11,8 @@ This is the operator reference for running Nojoin. For a first install, follow [
 
 ## Core Requirements
 
+The API and worker images bundle the shipped TOML prompt files and validate their registry during the image build; worker-io inherits them from the worker image. Prompt files are application assets, independent of the process working directory.
+
 - Docker Desktop or Docker Engine with Compose.
 - Disk space for recordings, derived files and models.
 - For a GPU on Linux, the NVIDIA driver and the NVIDIA Container Toolkit.
@@ -267,6 +269,12 @@ Put each comment on a line of its own. Compose strips a comment that follows a v
 | `WEB_APP_URL` | `https://localhost:14443` | The exact public browser origin. Used for invitation links, calendar OAuth callbacks and webhooks, the CORS allowlist and the trusted host list. |
 | `NOJOIN_TRUSTED_PROXIES` | `127.0.0.1,::1,nginx` | IPs, CIDR blocks or hostnames of proxies whose `X-Forwarded-For` is trusted when identifying clients for rate limiting. Add your edge proxy ([Trusted Proxy IPs](#trusted-proxy-ips-for-rate-limiting)). |
 | `NOJOIN_BIND_ADDRESS` | `127.0.0.1` | Host address the bundled proxy publishes ports `14141` and `14443` on ([Loopback Port Binding](#loopback-port-binding)). |
+
+### Developer Mode
+
+`NOJOIN_DEVELOPER_MODE=true` enables the administrator-only [prompt editor](USAGE.md#developer-prompts). It defaults to `false`. The shipped Compose file forwards it through the shared environment to the API and every worker lane; on an existing deployment, add `NOJOIN_DEVELOPER_MODE: ${NOJOIN_DEVELOPER_MODE:-false}` to `x-shared-app-environment` and recreate the API and workers after setting it in `.env`.
+
+Prompt overrides live in `data/config.json` and travel with configuration backups. Disabling the variable makes generation use shipped defaults and hides the editor, while keeping saved overrides. This is an environment gate: a value in `config.json` cannot enable it.
 
 ### Common Optional Values
 

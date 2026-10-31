@@ -1,5 +1,20 @@
-import type { LanguageRegistry, Settings } from "@/types";
+import type { LanguageRegistry, PromptCatalogueEntry, Settings } from "@/types";
 import api from "./client";
+
+export const getPrompts = async (): Promise<PromptCatalogueEntry[]> => {
+  const response = await api.get<PromptCatalogueEntry[]>("/settings/prompts");
+  return response.data;
+};
+
+export const savePrompt = async (id: string, text: string): Promise<PromptCatalogueEntry> => {
+  const response = await api.put<PromptCatalogueEntry>(`/settings/prompts/${encodeURIComponent(id)}`, { text });
+  return response.data;
+};
+
+export const restorePrompt = async (id: string): Promise<PromptCatalogueEntry> => {
+  const response = await api.delete<PromptCatalogueEntry>(`/settings/prompts/${encodeURIComponent(id)}`);
+  return response.data;
+};
 
 export const getSettings = async (): Promise<Settings> => {
   const response = await api.get<Settings>("/settings");

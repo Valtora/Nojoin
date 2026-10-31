@@ -28,12 +28,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session, col, select
 
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
+from backend.prompts import render_prompt
 from backend.utils.meeting_notes import (
-    DEFAULT_NOTES_SECTIONS,
     NOTES_SECTIONS_VERSION,
     AttachedDocument,
     MeetingMetadata,
     NotesPromptContext,
+    default_notes_sections,
     format_duration_for_prompt,
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
@@ -91,12 +92,12 @@ class ResolvedNotesTemplate:
         ``##`` heading" rule only ever encoded the built-in structure's own first
         line, so it cannot be applied to a structure the user wrote.
         """
-        return self.sections.strip() != DEFAULT_NOTES_SECTIONS.strip()
+        return self.sections.strip() != default_notes_sections().strip()
 
 
 def builtin_notes_template() -> ResolvedNotesTemplate:
     return ResolvedNotesTemplate(
-        sections=DEFAULT_NOTES_SECTIONS,
+        sections=default_notes_sections(),
         name=BUILTIN_TEMPLATE_NAME,
         template_id=None,
     )
@@ -465,7 +466,7 @@ def load_attached_documents(
             modes.add(getattr(parse_mode, "value", str(parse_mode)))
             if not (content or "").strip():
                 continue
-            label = f"Page {page_number}"
+            label = render_prompt("notes.document_page_label", number=str(page_number))
             if page_title:
                 label = f"{label}: {page_title}"
             sections.append(f"[{label}]\n{content.strip()}")
@@ -491,16 +492,10 @@ def load_attached_documents(
 def _describe_extraction(modes: set[str]) -> Optional[str]:
     """Phrase the highest tier that produced any of a document's pages."""
     if "VISUAL" in modes:
-        return (
-            "a vision model reading the rendered pages, so charts, diagrams and "
-            "images are described"
-        )
+        return render_prompt("notes.document_visual_origin")
     if "OCR" in modes:
-        return (
-            "local OCR of the page images, so wording is present but charts and "
-            "diagrams are not described"
-        )
-    return "the file's own text layer"
+        return render_prompt("notes.document_ocr_origin")
+    return render_prompt("notes.document_text_origin")
 
 
 def build_notes_prompt_context(  # noqa: PLR0913 - one argument per prompt input

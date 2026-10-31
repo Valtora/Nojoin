@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Dict, Generator, List, Optional, Sequence
 
+from backend.prompts import render_prompt
 from backend.utils.config_manager import config_manager
 from backend.utils.meeting_analysis import (
     MeetingAnalysisRequest,
@@ -413,8 +414,9 @@ class GeminiLLMBackend(LLMBackend):
             )
 
         def update_meeting_notes(content: str):
-            """Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes."""
             pass
+
+        update_meeting_notes.__doc__ = render_prompt("chat.notes_tool_description")
 
         tools = [update_meeting_notes] if notes_tool else None
 

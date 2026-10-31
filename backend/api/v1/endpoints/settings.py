@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
+from backend.api.v1.endpoints import prompts
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
@@ -67,6 +68,7 @@ from backend.utils.speaker_names.preferences import VOICEPRINT_LEARNING_CHOICES
 from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
+router.include_router(prompts.router, prefix="/prompts")
 logger = logging.getLogger(__name__)
 INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset(INSTALL_WIDE_AI_SETTING_KEYS)
 
@@ -579,6 +581,7 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
             else:
                 merged[key] = "***"
 
+    merged.pop("prompt_overrides", None)
     return merged
 
 
@@ -586,6 +589,7 @@ def _get_mutable_user_settings(user_settings: dict | None) -> dict[str, Any]:
     sanitized = strip_legacy_automatic_ai_settings(
         dict(user_settings) if user_settings else {}
     )
+    sanitized.pop("prompt_overrides", None)
     for key in INSTALL_WIDE_ONLY_USER_SETTING_KEYS | RETIRED_USER_SETTING_KEYS:
         sanitized.pop(key, None)
     return sanitized

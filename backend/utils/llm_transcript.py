@@ -23,6 +23,7 @@ from typing import Optional, Sequence
 
 from sqlalchemy.orm import Session
 
+from backend.prompts import render_prompt
 from backend.services.timeline_note_service import load_recording_timeline_notes
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.canonical_pipeline.constants import (
@@ -35,12 +36,6 @@ from backend.utils.meeting_notes import (
 )
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.timeline_notes import iter_timeline, render_note_line
-
-# Opens a transcript that carries notes, so the model reads them as the user's.
-NOTES_LEGEND = (
-    "Lines starting [Note …] are notes the user wrote at that point in the meeting, "
-    "not speech; the user is authoritative about what was said."
-)
 
 
 def _view_hides_unknown(segments: list[dict]) -> bool:
@@ -127,7 +122,7 @@ def render_transcript_for_llm(
     if not segments and not live:
         return None
     timeline = _chat_timeline(session, recording_id, segments, live=live)
-    lines = [NOTES_LEGEND] if timeline.has_notes else []
+    lines = [render_prompt("shared.notes_legend")] if timeline.has_notes else []
     lines.extend(timeline.opening)
     for block in timeline.blocks:
         lines.extend(block)
@@ -195,7 +190,7 @@ def render_transcript_excerpts_for_llm(
     carries_notes = bool(opening or tail) or any(
         len(timeline.blocks[index]) > 1 for index in chosen
     )
-    lines: list[str] = [NOTES_LEGEND] if carries_notes else []
+    lines: list[str] = [render_prompt("shared.notes_legend")] if carries_notes else []
     lines.extend(opening)
     previous = -1
     for index in sorted(chosen):

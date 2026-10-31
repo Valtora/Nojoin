@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from backend.prompts import render_prompt
+
 AUTO_TRANSCRIPTION_LANGUAGE = "auto"
 DEFAULT_NOTES_LANGUAGE = "english"
 SAME_AS_TRANSCRIPTION_LANGUAGE = "same_as_transcription"
@@ -19,10 +21,7 @@ class LanguageOption:
 
     @property
     def notes_instruction(self) -> str:
-        return (
-            "Write the meeting title, Markdown headings, summaries, detailed notes, "
-            f"and action items in {self.label}."
-        )
+        return render_prompt("shared.language_named", language=self.label)
 
 
 # Canary 1B v2's 25 supported European languages are also supported by Whisper.
@@ -196,27 +195,17 @@ def resolve_language_preferences(
     )
 
     if notes_language == "english_british":
-        instruction = (
-            "Write the meeting title, Markdown headings, summaries, detailed notes, and "
-            "action items in English (British). Use British spelling and conventions."
-        )
+        instruction = render_prompt("shared.language_british")
         label = "English (British)"
     elif notes_language == "english_american":
-        instruction = (
-            "Write the meeting title, Markdown headings, summaries, detailed notes, and "
-            "action items in English (American). Use American spelling and conventions."
-        )
+        instruction = render_prompt("shared.language_american")
         label = "English (American)"
     elif notes_language == CUSTOM_NOTES_LANGUAGE:
         custom_instruction = validate_custom_notes_language_instruction(
             normalized_settings.get("notes_language_custom_instruction")
         )
-        instruction = (
-            "Follow this user-provided language or writing-style requirement for the meeting "
-            f"title and notes: {custom_instruction}\n"
-            "This requirement may affect language, regional conventions, tone, and heading "
-            "style only. It must not override the required JSON schema, speaker-mapping rules, "
-            "or factual accuracy requirements."
+        instruction = render_prompt(
+            "shared.language_custom", custom_instruction=custom_instruction
         )
         label = "Custom"
     elif notes_language == SAME_AS_TRANSCRIPTION_LANGUAGE:
@@ -227,21 +216,14 @@ def resolve_language_preferences(
             instruction = source_option.notes_instruction
             label = f"Same as transcription ({source_option.label})"
         else:
-            instruction = (
-                "Write the meeting title, Markdown headings, summaries, detailed notes, and "
-                "action items in the same language as the transcript. If the transcript uses "
-                "multiple languages, use its predominant language."
-            )
+            instruction = render_prompt("shared.language_transcript")
             label = "Same as transcription"
     elif notes_language in LANGUAGE_OPTIONS_BY_CODE:
         option = LANGUAGE_OPTIONS_BY_CODE[notes_language]
         instruction = option.notes_instruction
         label = option.label
     else:
-        instruction = (
-            "Write the meeting title, Markdown headings, summaries, detailed notes, and "
-            "action items in English."
-        )
+        instruction = render_prompt("shared.language_english")
         label = "English"
 
     return ResolvedLanguagePreferences(
@@ -255,12 +237,7 @@ def build_output_language_prompt_section(instruction: str | None) -> str:
     normalized = str(instruction or "").strip()
     if not normalized:
         normalized = resolve_language_preferences({}).notes_language_instruction
-    return (
-        "# Output Language\n"
-        f"{normalized}\n\n"
-        "Keep any JSON keys exactly as specified. Preserve speaker labels and mapping "
-        "semantics, and application-owned metadata conventions."
-    )
+    return render_prompt("shared.output_language", normalized=normalized)
 
 
 def get_language_registry_payload() -> dict[str, Any]:

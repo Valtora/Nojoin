@@ -1714,6 +1714,20 @@ export interface AnalyticsAiExclusions {
   ambiguous_speaker_names: number;
 }
 
+export interface SystemCapabilities {
+  developer_mode: boolean;
+}
+
+export interface PromptCatalogueEntry {
+  id: string;
+  feature: string;
+  placeholders: string[];
+  required_literals: string[];
+  default_text: string;
+  override_text: string | null;
+  status: "default" | "overridden" | "default changed" | "invalid";
+}
+
 export interface AnalyticsAi {
   method_version: number;
   computed_at: string;

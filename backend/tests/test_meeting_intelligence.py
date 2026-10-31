@@ -13,7 +13,7 @@ from backend.utils.meeting_intelligence import (
     parse_automatic_meeting_intelligence_response,
 )
 from backend.utils.meeting_notes import (
-    NOTES_BODY_SPEC,
+    build_notes_body_spec,
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
 )
@@ -144,7 +144,7 @@ def test_automatic_meeting_intelligence_result_accepts_summary_first_notes() -> 
 
 def test_both_notes_prompts_embed_the_shared_notes_body_spec() -> None:
     # Drift guard: the unified meeting-intelligence prompt and the standalone
-    # regeneration prompt must both embed NOTES_BODY_SPEC verbatim so their note
+    # regeneration prompt must both embed the current body spec verbatim so their note
     # structure and fidelity rules can never diverge again.
     unified = build_automatic_meeting_intelligence_prompt(
         AutomaticMeetingIntelligenceRequest(
@@ -153,8 +153,8 @@ def test_both_notes_prompts_embed_the_shared_notes_body_spec() -> None:
         )
     )
 
-    assert NOTES_BODY_SPEC in unified
-    assert NOTES_BODY_SPEC in LLMBackend.build_notes_prompt(
+    assert build_notes_body_spec() in unified
+    assert build_notes_body_spec() in LLMBackend.build_notes_prompt(
         None, "SPEAKER_00: Hello.", {}
     )
 
@@ -163,7 +163,7 @@ def test_notes_body_spec_uses_the_best_practice_section_order() -> None:
     # Structure follows the approved best-practice layout: summary first, then
     # decisions and action items surfaced ahead of the per-topic detail.
     positions = [
-        NOTES_BODY_SPEC.index(marker)
+        build_notes_body_spec().index(marker)
         for marker in (
             "## Summary",
             "## Key Decisions",
@@ -173,39 +173,39 @@ def test_notes_body_spec_uses_the_best_practice_section_order() -> None:
         )
     ]
     assert positions == sorted(positions)
-    assert "Never invent facts" in NOTES_BODY_SPEC
+    assert "Never invent facts" in build_notes_body_spec()
     # Notes must begin at Summary; the app shows the meeting title separately.
-    assert "do not add a title heading" in NOTES_BODY_SPEC.lower()
+    assert "do not add a title heading" in build_notes_body_spec().lower()
 
 
 def test_notes_body_spec_prescribes_tables_for_decisions_and_actions() -> None:
     # Decisions and action items are tabular by nature, so the spec asks for
     # Markdown tables rather than lists. The editor and both document exporters
     # render these as real tables (issue #136).
-    decisions = NOTES_BODY_SPEC.index("## Key Decisions")
-    actions = NOTES_BODY_SPEC.index("## Action Items / Tasks")
-    detail = NOTES_BODY_SPEC.index("## Detailed Notes")
+    decisions = build_notes_body_spec().index("## Key Decisions")
+    actions = build_notes_body_spec().index("## Action Items / Tasks")
+    detail = build_notes_body_spec().index("## Detailed Notes")
 
-    assert "| Decision | Rationale |" in NOTES_BODY_SPEC[decisions:actions]
-    assert "| Action | Owner | Due |" in NOTES_BODY_SPEC[actions:detail]
+    assert "| Decision | Rationale |" in build_notes_body_spec()[decisions:actions]
+    assert "| Action | Owner | Due |" in build_notes_body_spec()[actions:detail]
     # Both tables need the delimiter row or they are not tables at all.
-    assert NOTES_BODY_SPEC.count("| --- |") >= 1
+    assert build_notes_body_spec().count("| --- |") >= 1
 
 
 def test_notes_body_spec_states_the_table_constraints() -> None:
     # These constraints keep generated tables inside what Markdown storage and
     # the DOCX and PDF exporters can carry: a merged cell or a real newline in a
     # cell would drop the table out of one surface or another.
-    assert "never exceed six columns" in NOTES_BODY_SPEC
-    assert "<br>" in NOTES_BODY_SPEC
-    assert "Never merge or split cells" in NOTES_BODY_SPEC
+    assert "never exceed six columns" in build_notes_body_spec()
+    assert "<br>" in build_notes_body_spec()
+    assert "Never merge or split cells" in build_notes_body_spec()
 
 
 def test_notes_body_spec_stays_safe_for_str_format() -> None:
     # Both embedding templates run str.format over the spec, so a stray brace
     # would raise at prompt-render time rather than in review.
-    assert "{" not in NOTES_BODY_SPEC
-    assert "}" not in NOTES_BODY_SPEC
+    assert "{" not in build_notes_body_spec()
+    assert "}" not in build_notes_body_spec()
 
 
 def test_rendered_unified_prompt_carries_the_new_structure() -> None:

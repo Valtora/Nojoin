@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any, Dict, Generator, List, Optional, Sequence
 
+from backend.prompts import render_prompt
 from backend.utils.chat_prompt import (
     anthropic_cached_system,
     build_chat_context,
@@ -549,13 +550,15 @@ class AnthropicLLMBackend(LLMBackend):
 
         tool_definition = {
             "name": "update_meeting_notes",
-            "description": "Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes.",
+            "description": render_prompt("chat.notes_tool_description"),
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "content": {
                         "type": "string",
-                        "description": "The full, updated Markdown text of the meeting notes.",
+                        "description": render_prompt(
+                            "chat.notes_tool_content_description"
+                        ),
                     }
                 },
                 "required": ["content"],

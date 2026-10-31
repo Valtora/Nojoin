@@ -195,6 +195,9 @@ WORKDIR /app
 
 COPY . .
 
+# worker-io inherits these prompt files and the same validation from this image.
+RUN python -c "from backend.prompts import load_registry; load_registry()"
+
 # Create the non-root appuser that the entrypoint drops to at runtime.
 # The Ubuntu 24.04-based PyTorch image ships a default user at UID 1000; remove
 # whatever occupies 1000 first so appuser keeps UID 1000 for mounted-volume

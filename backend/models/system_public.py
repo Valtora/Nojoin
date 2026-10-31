@@ -1,10 +1,14 @@
-"""Model-download response contract, mirrored in frontend/src/types/index.ts."""
+"""Public system and model-download response contracts."""
 
 from typing import Literal
 
 from pydantic import BaseModel
 
 ModelPreparationState = Literal["absent", "downloading", "ready", "failed"]
+
+
+class SystemCapabilities(BaseModel):
+    developer_mode: bool
 
 
 class ModelStatusInfo(BaseModel):
