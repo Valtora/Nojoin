@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-import regex
 
 from backend.utils.word_times import WORD_TIME_TOLERANCE_S, exceeds, falls_short
 
@@ -44,15 +43,53 @@ EDITED_LINE_SPANS = "edited_line_spans_ms"
 UNKNOWN = "UNKNOWN"
 # A word a person assigned, whose chosen speaker the final pass applies later.
 _MANUAL_OWNER = "\x00manual"
-# Trailing whitespace, closing brackets and closing quotes, then a terminal.
-_CLOSERS = regex.compile(r"[\s\p{Pe}\p{Pf}\p{Quotation_Mark}]+$")
-_TERMINAL = regex.compile(r"\p{Sentence_Terminal}$")
 
 
 def ends_sentence(token: str) -> bool:
-    """Whether a word ends with a Unicode ``Sentence_Terminal``, such as . ? ! 。 ؟ ।"""
-    stripped = _CLOSERS.sub("", token)
-    return bool(stripped) and _TERMINAL.search(stripped) is not None
+    """Whether a word ends with a Unicode ``Sentence_Terminal``, such as . ? ! 。 ؟ ।
+
+    Trailing whitespace, closing brackets and quotes are skipped first, so ``done.")`` ends one.
+    """
+    stripped = token.rstrip(_CLOSERS)
+    return bool(stripped) and stripped[-1] in SENTENCE_TERMINALS
+
+
+# --- Unicode tables -------------------------------------------------------------
+# Generated once from Unicode 18.0.0, with the regex package (2026.9.29), so they
+# don't follow the Python build's own Unicode version: every code point matching
+# ``\p{Sentence_Terminal}``, then the closers skipped before it, every code point
+# matching ``[\s\p{Pe}\p{Pf}\p{Quotation_Mark}]`` (whitespace, closing brackets,
+# final and other quotation marks). To regenerate, test each of chr(0)..chr(0x10FFFF)
+# against those two patterns and list the matches in order.
+SENTENCE_TERMINALS = frozenset(
+    (
+        "\u0021\u002e\u003f\u0589\u061d\u061e\u061f\u06d4\u0700\u0701\u0702\u07f9\u0837\u0839\u083d\u083e"
+        "\u0964\u0965\u104a\u104b\u1362\u1367\u1368\u166e\u1735\u1736\u17d4\u17d5\u1803\u1809\u1944\u1945"
+        "\u1aa8\u1aa9\u1aaa\u1aab\u1b4e\u1b4f\u1b5a\u1b5b\u1b5e\u1b5f\u1b7d\u1b7e\u1b7f\u1c3b\u1c3c\u1c7e"
+        "\u1c7f\u2024\u203c\u203d\u2047\u2048\u2049\u2cf9\u2cfa\u2cfb\u2e2e\u2e3c\u2e53\u2e54\u2e60\u2e61"
+        "\u3002\ua4ff\ua60e\ua60f\ua6f3\ua6f7\ua876\ua877\ua8ce\ua8cf\ua92f\ua9c8\ua9c9\uaa5d\uaa5e\uaa5f"
+        "\uaaf0\uaaf1\uabeb\ufe12\ufe15\ufe16\ufe52\ufe56\ufe57\uff01\uff0e\uff1f\uff61\U00010a56\U00010a57"
+        "\U00010f55\U00010f56\U00010f57\U00010f58\U00010f59\U00010f86\U00010f87\U00010f88\U00010f89\U00011047"
+        "\U00011048\U000110be\U000110bf\U000110c0\U000110c1\U00011141\U00011142\U00011143\U000111c5\U000111c6"
+        "\U000111cd\U000111de\U000111df\U00011238\U00011239\U0001123b\U0001123c\U000112a9\U000113d4\U000113d5"
+        "\U0001144b\U0001144c\U000115c2\U000115c3\U000115c9\U000115ca\U000115cb\U000115cc\U000115cd\U000115ce"
+        "\U000115cf\U000115d0\U000115d1\U000115d2\U000115d3\U000115d4\U000115d5\U000115d6\U000115d7\U00011641"
+        "\U00011642\U0001173c\U0001173d\U0001173e\U00011944\U00011946\U00011a42\U00011a43\U00011a9b\U00011a9c"
+        "\U00011c41\U00011c42\U00011ef7\U00011ef8\U00011f43\U00011f44\U00016a6e\U00016a6f\U00016af5\U00016b37"
+        "\U00016b38\U00016b44\U00016d6e\U00016d6f\U00016e98\U0001bc9f\U0001da88"
+    )
+)
+_CLOSERS = (
+    "\u0009\u000a\u000b\u000c\u000d\u0020\u0022\u0027\u0029\u005d\u007d\u0085\u00a0\u00ab\u00bb\u0f3b"
+    "\u0f3d\u1680\u169c\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2018\u2019"
+    "\u201a\u201b\u201c\u201d\u201e\u201f\u2028\u2029\u202f\u2039\u203a\u2046\u205f\u207e\u208e\u2309"
+    "\u230b\u232a\u2769\u276b\u276d\u276f\u2771\u2773\u2775\u27c6\u27e7\u27e9\u27eb\u27ed\u27ef\u2984"
+    "\u2986\u2988\u298a\u298c\u298e\u2990\u2992\u2994\u2996\u2998\u29d9\u29db\u29fd\u2e03\u2e05\u2e0a"
+    "\u2e0d\u2e1d\u2e21\u2e23\u2e25\u2e27\u2e29\u2e42\u2e56\u2e58\u2e5a\u2e5c\u2e63\u3000\u3009\u300b"
+    "\u300c\u300d\u300e\u300f\u3011\u3015\u3017\u3019\u301b\u301d\u301e\u301f\ufd3e\ufe18\ufe36\ufe38"
+    "\ufe3a\ufe3c\ufe3e\ufe40\ufe41\ufe42\ufe43\ufe44\ufe48\ufe5a\ufe5c\ufe5e\uff02\uff07\uff09\uff3d"
+    "\uff5d\uff60\uff62\uff63"
+)
 
 
 # --- Evidence -------------------------------------------------------------------
