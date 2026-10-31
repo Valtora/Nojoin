@@ -41,6 +41,12 @@ export interface SegmentUploaderOptions {
   /** The account the capture belongs to, kept with each stored segment. */
   ownerId?: number;
   initialSequence?: number;
+  /**
+   * After a resume that restored audio recorded before the pause: the first
+   * sequence of new audio, and the line break the resume stored, which that
+   * segment's upload moves to it (issue #815).
+   */
+  resumeMark?: { sequence: number; mark: number };
   uploadSegment?: typeof uploadRecordingSegment;
   onUploaded?: (sequence: number) => void;
   onStalled?: (error: Error) => void | Promise<void>;
@@ -75,6 +81,7 @@ export interface SegmentUploaderOptions {
 interface QueuedSegment {
   blob: Blob;
   durationSeconds: number;
+  resumeMark?: number;
 }
 
 export class SegmentUploader {
@@ -83,6 +90,8 @@ export class SegmentUploader {
   private readonly epoch: number;
 
   private readonly ownerId?: number;
+
+  private readonly resumeMark?: { sequence: number; mark: number };
 
   private readonly uploadSegmentFn: typeof uploadRecordingSegment;
 
@@ -128,6 +137,7 @@ export class SegmentUploader {
     this.recordingId = options.recordingId;
     this.epoch = options.epoch;
     this.ownerId = options.ownerId;
+    this.resumeMark = options.resumeMark;
     this.uploadSegmentFn = options.uploadSegment ?? uploadRecordingSegment;
     this.onUploaded = options.onUploaded;
     this.onStalled = options.onStalled;
@@ -171,8 +181,12 @@ export class SegmentUploader {
 
     // Segments are kept while the uploader is stalled so a later recover()
     // can retry them instead of dropping recorded audio.
-    this.pending.set(sequence, { blob, durationSeconds });
-    this.persist(sequence, blob, durationSeconds);
+    const segment: QueuedSegment = { blob, durationSeconds };
+    if (this.resumeMark?.sequence === sequence) {
+      segment.resumeMark = this.resumeMark.mark;
+    }
+    this.pending.set(sequence, segment);
+    this.persist(sequence, segment);
     this.notifyQueueChange();
     this.scheduleDrain();
   }
@@ -193,15 +207,17 @@ export class SegmentUploader {
       if (segment.sequence < this.nextExpectedSequence) {
         continue;
       }
-      this.pending.set(segment.sequence, {
+      const queued: QueuedSegment = {
         blob: segment.blob,
         durationSeconds: segment.durationSeconds,
-      });
+        ...(segment.resumeMark === undefined ? {} : { resumeMark: segment.resumeMark }),
+      };
+      this.pending.set(segment.sequence, queued);
       if (
         storedSegmentEpoch(segment) !== this.epoch ||
         (segment.ownerId === undefined && this.ownerId !== undefined)
       ) {
-        this.persist(segment.sequence, segment.blob, segment.durationSeconds);
+        this.persist(segment.sequence, queued);
       }
     }
     this.notifyQueueChange();
@@ -361,7 +377,7 @@ export class SegmentUploader {
   }
 
   /** Keeps a queued segment in the store under this uploader's epoch. */
-  private persist(sequence: number, blob: Blob, durationSeconds: number) {
+  private persist(sequence: number, segment: QueuedSegment) {
     if (!this.store) {
       return;
     }
@@ -371,10 +387,11 @@ export class SegmentUploader {
         .put({
           recordingId: this.recordingId,
           sequence,
-          blob,
-          durationSeconds,
+          blob: segment.blob,
+          durationSeconds: segment.durationSeconds,
           epoch: this.epoch,
           ...(this.ownerId === undefined ? {} : { ownerId: this.ownerId }),
+          ...(segment.resumeMark === undefined ? {} : { resumeMark: segment.resumeMark }),
         })
         .catch((error: unknown) => {
           console.warn("[capture] could not keep a queued segment in the browser", error);
@@ -411,6 +428,7 @@ export class SegmentUploader {
       try {
         await this.uploadSegmentFn(this.recordingId, sequence, segment.blob, {
           epoch: this.epoch,
+          ...(segment.resumeMark === undefined ? {} : { resumeMark: segment.resumeMark }),
         });
         return;
 

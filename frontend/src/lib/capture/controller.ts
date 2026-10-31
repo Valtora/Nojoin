@@ -988,11 +988,17 @@ export class CaptureController {
       );
       const lastRecordedSequence =
         restoredSegments.at(-1)?.sequence ?? resumeResponse.last_sequence;
+      const startSequence = lastRecordedSequence + 1;
       await this.activateRuntime({
         recordingId: targetRecordingId,
         epoch: resumeResponse.capture_epoch,
-        startSequence: lastRecordedSequence + 1,
+        startSequence,
         uploadFromSequence: resumeResponse.last_sequence + 1,
+        // The resume put its line break where the restored audio starts. The
+        // first new segment moves it to where recording resumed (issue #815).
+        resumeMark: restoredSegments.length
+          ? { sequence: startSequence, mark: resumeResponse.last_sequence + 1 }
+          : undefined,
         restoredSegments,
         sources,
         captureReport: sources.captureReport,
@@ -1066,9 +1072,12 @@ export class CaptureController {
       }
       assertMicrophoneResumeCurrent(isCurrent);
       // Keep this tab's epoch: resuming elsewhere must still refuse this holder.
+      // The queue from before the pause uploads after this, so the server is
+      // told where the new audio starts (issue #815).
+      const nextSequence = runtime.recorder.nextSegmentSequence;
       response = await retryAfterSignIn(() =>
         this.forCapture(recordingId, runtime.ownerId, () =>
-          resumeRecordingCapture(recordingId, { epoch: runtime.epoch }),
+          resumeRecordingCapture(recordingId, { epoch: runtime.epoch, nextSequence }),
         ),
       );
       // A stalled uploader retries its retained queue before new audio.
@@ -1768,6 +1777,8 @@ export class CaptureController {
     startSequence: number;
     /** First sequence the server is missing, when queued audio precedes new audio. */
     uploadFromSequence?: number;
+    /** The first new segment and the line break it moves, after restored audio. */
+    resumeMark?: { sequence: number; mark: number };
     restoredSegments?: StoredSegment[];
     sources: PickedCaptureSources;
     captureReport: CaptureSourceReportSnapshot;
@@ -1788,6 +1799,7 @@ export class CaptureController {
       epoch: options.epoch,
       ownerId,
       initialSequence: options.uploadFromSequence ?? options.startSequence,
+      resumeMark: options.resumeMark,
       store: this.segmentStore,
       checkCaptureGone: (error) => this.captureGoneError(options.recordingId, ownerId, error),
       onQueueChange: (uploadQueue) => {

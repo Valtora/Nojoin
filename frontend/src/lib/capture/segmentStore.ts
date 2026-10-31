@@ -33,6 +33,13 @@ export interface StoredSegment {
    * server answers 404 for both (issue #589).
    */
   ownerId?: number;
+  /**
+   * Set on the first segment of new audio after a resume that restored audio
+   * recorded before the pause: the line break that resume stored, which this
+   * segment moves to its own sequence when it uploads (issue #815). Kept here
+   * so a later page that sends it still moves the break.
+   */
+  resumeMark?: number;
 }
 
 export interface SegmentStore {

@@ -113,6 +113,14 @@ export class BrowserRecorder {
     return this.stateValue;
   }
 
+  /**
+   * The sequence the next segment is numbered with. While paused, where the
+   * audio recorded after a resume starts.
+   */
+  get nextSegmentSequence() {
+    return this.nextSequence;
+  }
+
   /** Timestamp of the most recent emitted segment, for coverage tracking. */
   get lastChunkEmittedAt() {
     return this.lastChunkAt;
