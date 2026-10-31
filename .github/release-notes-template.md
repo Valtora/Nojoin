@@ -60,7 +60,7 @@ docker compose up -d
 - Stop the stack before starting the new images. A 2.10.0 worker still running after the migration fails, because it reads the `transcripts.user_notes` column this release drops (#494).
 - `git pull` brings the bundled proxy's configuration, which now includes two new files, `nginx/hsts.conf` and `nginx/access-log.conf`. Stopping the stack recreates the nginx container, which it needs to read the new configuration. If an edge proxy in front of Nojoin already adds `Strict-Transport-Security`, remove one of the two, because a browser reads only the first (#493, #674).
 - A Canary install downloads the pinned Qwen3 forced aligner, about 1.8 GB, on `worker-cpu` at first start, and needs about 3.7 GB more worker RAM while it is loaded. Canary transcribes without word timings until it is ready (#735).
-- A CUDA install downloads the Nemotron diarisation model, 397 MB, after its first eligible recording, which keeps the existing speaker pass. Prepare it ahead in **Settings > AI providers > Advanced > Model downloads**. CPU workers, `speaker_engine` set to `classic` and recordings with **Max Speakers** set never use it (#725, #729).
+- A CUDA install downloads the Nemotron diarisation model, 397 MB, after its first eligible recording, which keeps the existing speaker pass. Prepare it ahead in **Settings > AI providers > Advanced > Model downloads**. CPU workers and `speaker_engine` set to `classic` never use it, and recordings with **Max Speakers** set use it for live labels but not in final processing (#725, #729).
 - Final processing of long recordings can take longer on a CPU host, because speaker separation now hears the whole recording. Voiceprint match scores may shift slightly. **Mute non-speech for speaker separation** in **Settings > Recording > Advanced** brings back the old behaviour (#658).
 - The example compose file now passes the four `NOJOIN_STALL_WATCHDOG_*` variables to `api` and `NOJOIN_STORAGE_HYGIENE` to every app service. A `docker-compose.yml` copied from an earlier example ignores those values in `.env` until you copy the lines across (#511, #533).
 - An empty `LLM_PROVIDER` now means the provider of the only API key set, and `gemini` otherwise. A `docker-compose.yml` copied from an earlier example turns an empty value into `gemini`, so change its line to `${LLM_PROVIDER:-}` to use the new rule. If the provider changes, choose a model in **Settings > AI providers** (#521, #728).
@@ -73,7 +73,7 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any blocking first-boot migration, longer startup, or manual step. Keep it to bullets. -->
 
-- Fourteen Alembic revisions run in order on the first API start.
+- Fifteen Alembic revisions run in order on the first API start.
   - `7c3e5a91d2f4` adds `recording_speakers.embedding_speech_seconds`, the speech a voiceprint was built from (#498).
   - `63005cac6492` turns each non-blank `transcripts.user_notes` into one note before the transcript, owned by the recording's owner, and drops the column (#494).
   - `7ff0bbdadad8` adds the table `recording_speaker_drift_refusals`, empty at first (#499).
@@ -88,6 +88,7 @@ Database migrations run automatically on the first API start after upgrading. Ba
   - `c4d81e6a2f90` adds `documents.note_id` and `documents.use_in_notes` for files on notes (#699).
   - `7bb9c74f9946` adds `timeline_notes.file_removed` (#738).
   - `f2a6e1d9c735` adds `transcripts.change_sequence` and `transcripts.settling_state` (#735).
+  - `53b4bc17207f` adds `recordings.first_processed_at` and fills it in for every recording that has finished processing, so Discard refuses them (#850).
 - `asr_word_end_padding_s` is retired. A stored value is ignored, and dropped from `config.json` on the next save (#473).
 - New install-wide keys in `data/config.json` are `live_speaker_labels` (`auto` or `off`) and `speaker_engine` (`auto` or `classic`), which have no settings page, and `live_text_settling` (`off`, `auto` or `always`) with `live_text_settling_k` (3) and `live_text_settling_window_s` (10). Without a stored value the three modes take `auto`, and a stored `off` stays off. `always` settles on a CPU worker too, at a high CPU and RAM cost. The `live_max_segment_s` default rises from 20 to 30 seconds (#725, #729, #735).
 - New per-user settings are `asr_word_length_cap_s` (0.4 s), `line_break_pause_s` (1 s), `vad_mute_transcription` (on), `vad_mute_diarization` (off), `confirm_suggested_names` (off) and `voiceprint_learning` (`confirmed`). Setting `voiceprint_learning` to `automatic` lets unconfirmed matches teach voiceprints again (#473, #658, #683, #735).
