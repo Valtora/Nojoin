@@ -40,15 +40,24 @@ export const reportRecordingCaptureSources = async (
  * capture; without one, it takes the capture over and is issued the next epoch.
  * `reclaimEpoch`, the epoch this tab held before its page reloaded, lets that
  * takeover go ahead while the server still holds the capture as uploading.
+ * `nextSequence`, the sequence the recorder numbers its new audio from, puts
+ * the resume's line break after audio from before the pause that this tab has
+ * not uploaded yet (issue #815).
  */
 export const resumeRecordingCapture = async (
   recordingId: RecordingId,
-  options: CaptureEpochOption & { reclaimEpoch?: number } = {},
+  options: CaptureEpochOption & { reclaimEpoch?: number; nextSequence?: number } = {},
 ): Promise<RecordingCaptureLifecycleResponse> => {
   const response = await api.post<RecordingCaptureLifecycleResponse>(
     `/recordings/${recordingId}/resume`,
     undefined,
-    { params: { epoch: options.epoch, reclaim_epoch: options.reclaimEpoch } },
+    {
+      params: {
+        epoch: options.epoch,
+        reclaim_epoch: options.reclaimEpoch,
+        next_sequence: options.nextSequence,
+      },
+    },
   );
   return response.data;
 };
@@ -124,11 +133,16 @@ const resolveRecordingSegmentExtension = (contentType: string | undefined) => {
   }
 };
 
+/**
+ * Uploads one segment. `resumeMark` goes with the first segment of new audio
+ * after a resume that restored audio recorded before the pause: the line break
+ * that resume stored, which the server moves to this segment (issue #815).
+ */
 export const uploadRecordingSegment = async (
   recordingId: RecordingId,
   sequence: number,
   blob: Blob,
-  options: CaptureEpochOption = {},
+  options: CaptureEpochOption & { resumeMark?: number } = {},
 ): Promise<{ status: string; segment: number }> => {
   const formData = new FormData();
   formData.append("file", blob, `${sequence}.${resolveRecordingSegmentExtension(blob.type)}`);
@@ -137,7 +151,7 @@ export const uploadRecordingSegment = async (
     `/recordings/${recordingId}/segment`,
     formData,
     {
-      params: { sequence, epoch: options.epoch },
+      params: { sequence, epoch: options.epoch, resume_mark: options.resumeMark },
       headers: {
         "Content-Type": "multipart/form-data",
       },

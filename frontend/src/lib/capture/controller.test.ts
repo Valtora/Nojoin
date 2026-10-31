@@ -1339,6 +1339,26 @@ describe("audio a closed tab recorded but never uploaded", () => {
     await vi.waitFor(async () => expect(await storedSequences(controller)).toEqual([5, 6]));
   });
 
+  it("moves the resume's line break to its first new segment (issue #815)", async () => {
+    const controller = await controllerWithStored([5, 6]);
+
+    await controller.resume("rec-1");
+
+    // The server put the break at 5, where the restored audio starts; new
+    // audio starts at 7, and its first segment says so.
+    const uploaderOptions = vi.mocked(createSegmentUploader).mock.calls[0][0];
+    expect(uploaderOptions.resumeMark).toEqual({ sequence: 7, mark: 5 });
+    expect(apiMocks.resumeRecordingCapture.mock.calls[0][1]?.nextSequence).toBeUndefined();
+  });
+
+  it("leaves the resume's break alone when it restored nothing", async () => {
+    const controller = await controllerWithStored([]);
+
+    await controller.resume("rec-1");
+
+    expect(vi.mocked(createSegmentUploader).mock.calls[0][0].resumeMark).toBeUndefined();
+  });
+
   it("uploads it before finalizing a stop with no live capture", async () => {
     const controller = await controllerWithStored([5, 6]);
     await offerRecovery(controller);
@@ -2049,6 +2069,20 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
     expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledTimes(1);
     expect(createSegmentUploader).toHaveBeenCalledTimes(1);
     expect(uploader.dispose).not.toHaveBeenCalled();
+  });
+
+  it("tells the server where its new audio starts, ahead of the audio it kept (issue #815)", async () => {
+    const { controller, uploaderOptions, recorder } = await startCapture();
+    await stallWithServerUnreachable(uploaderOptions);
+    // Segments up to 11 were recorded before the stall paused the recorder.
+    Object.defineProperty(recorder, "nextSegmentSequence", { value: 12 });
+
+    await expect(controller.resume()).resolves.toEqual({ recordingId: "rec-1", resumed: true });
+
+    expect(apiMocks.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", {
+      epoch: 0,
+      nextSequence: 12,
+    });
   });
 
   it("stays paused, still owing the pause, when resumed before the API is back", async () => {
