@@ -58,9 +58,6 @@ class _PipelineRunContext:
     # Set once the VAD stage picks the diarisation side's (16k mono) audio;
     # consumed by the speaker-assignment stage for voiceprints.
     diarization_audio_path: str | None = None
-    # (segment, track) of each turn the phantom filter confirmed as non-speech;
-    # the union file transcription reads keeps them muted (#678).
-    non_speech_turns: tuple = ()
     final_transcript_published: bool = False
     speaker_voiceprints: dict | None = None
 
