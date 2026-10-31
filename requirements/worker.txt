@@ -8,7 +8,7 @@ onnx-asr==0.12.0
 silero-vad==6.2.3
 numpy==2.4.6
 pandas==3.1.0
-openai>=3.39.0
+openai>=3.40.0
 anthropic>=2.3.0
 google-genai>=2.33.0
 watchdog==6.0.0
@@ -67,7 +67,7 @@ safetensors==0.8.0
 # Native Nemotron inference. No broad Transformers extras or NeMo dependency:
 # the immutable asset manifest and golden fixture pin this version together
 # (scripts/check_held_pins.py). Revalidate both before changing it.
-transformers==5.20.2
+transformers==5.21.0
 librosa==1.0.0
 soxr==1.1.0
 lazy-loader==0.6
