@@ -156,7 +156,7 @@ def _window_geometry() -> tuple[int, int]:
     )
 
 
-def _sequence_failed(temp_dir: Path | None, sequence: int) -> bool:
+def sequence_failed(temp_dir: Path | None, sequence: int) -> bool:
     """Whether a sequence will never get a chunk row during this capture."""
     if temp_dir is None:
         return False
@@ -167,7 +167,7 @@ def _sequence_failed(temp_dir: Path | None, sequence: int) -> bool:
 
 
 def _gap_is_passable(temp_dir: Path | None, first: int, last: int) -> bool:
-    return all(_sequence_failed(temp_dir, sequence) for sequence in range(first, last))
+    return all(sequence_failed(temp_dir, sequence) for sequence in range(first, last))
 
 
 def _load_cursor(
