@@ -262,6 +262,7 @@ def _resolve_live_engine_config(
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording
     from backend.models.user import User
+    from backend.utils.languages import apply_recording_language
     from backend.worker.tasks import resolve_llm_config
 
     session = get_sync_session()
@@ -275,7 +276,12 @@ def _resolve_live_engine_config(
                 if user and user.settings:
                     user_settings = user.settings
             if hasattr(session, "exec"):
-                merged_config = resolve_llm_config(session, user_settings).merged_config
+                # The recording's own language first, as the final pass reads
+                # it (#671), so a capture with one set never detects (#776).
+                merged_config = apply_recording_language(
+                    resolve_llm_config(session, user_settings).merged_config,
+                    recording,
+                )
             else:
                 merged_config = live_config
             merged_config.setdefault(
