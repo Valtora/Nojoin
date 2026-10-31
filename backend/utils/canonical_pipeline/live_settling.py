@@ -31,6 +31,12 @@ from backend.utils.transcript_settling import (
     publication_is_current,
 )
 
+from .live_settling_flags import (
+    flags_readable,
+    live_lines,
+    settled_frontier,
+    unmarked_frontier,
+)
 from .live_settling_projection import (
     SETTLING_KEY,
     Closing,
@@ -107,6 +113,8 @@ def load_live_settling_words(
 
 def live_settling_frontier(session: Session, *, recording_id: int) -> int:
     """Return the immutable audio frontier, including prior CPU whole-line output."""
+    if flags_readable(session):
+        return settled_frontier(live_lines(session, recording_id))
     payload = col(TranscriptUtterance.confidence_payload)
     return int(
         session.execute(
@@ -125,6 +133,8 @@ def live_settling_frontier(session: Session, *, recording_id: int) -> int:
 
 def legacy_live_frontier(session: Session, *, recording_id: int) -> int:
     """Keep prior whole-line CPU audio out of a resumed rolling CUDA decode."""
+    if flags_readable(session):
+        return unmarked_frontier(live_lines(session, recording_id))
     return int(
         session.execute(
             select(func.max(TranscriptUtterance.end_ms))

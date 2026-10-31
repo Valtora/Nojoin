@@ -18,7 +18,7 @@ import whisper
 from ...utils.config_manager import config_manager
 from ...utils.languages import resolve_transcription_language_code
 from ...utils.model_cache_paths import whisper_cache_root
-from .base import LANGUAGE_DETECTION_AUDIO, TranscriptionEngine
+from .base import CAPTURE_LANGUAGE, LANGUAGE_DETECTION_AUDIO, TranscriptionEngine
 from .errors import (
     TranscriptionError,
     is_task_interruption,
@@ -163,6 +163,10 @@ def _choose_language(
     one is.
     """
     language = resolve_transcription_language_code(config, engine)
+    capture_language = (config or {}).get(CAPTURE_LANGUAGE)
+    if not language and capture_language:
+        # The live capture's language is already known: no detection (#776).
+        return str(capture_language), None
     try:
         detection = _detect_language_on_speech(model, config)
     except Exception as e:  # noqa: BLE001 -- boundary: with a language set, detection only checks it

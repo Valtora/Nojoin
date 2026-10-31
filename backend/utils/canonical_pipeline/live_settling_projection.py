@@ -12,6 +12,7 @@ from sqlmodel import col, select
 from backend.models.live_settling_public import public_settling_fields
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.processing.browser_live_audio import source_channel_from_confidence_payload
+from backend.utils.db_batching import bind_batches
 from backend.utils.word_text import reconstruct_text_from_words
 
 from .constants import LIVE_SPEAKER_LABEL_PAYLOAD_KEY, _append_utterance_event
@@ -51,6 +52,10 @@ def live_rows(
     lock: bool = False,
 ) -> list[TranscriptUtterance]:
     """Read the mutable tail and immutable anchors still inside the audio window."""
+    from .live_settling_flags import flags_readable
+
+    if window_start_ms is not None and flags_readable(session):
+        return _windowed_rows(session, recording_id, window_start_ms, lock=lock)
     mutable = (
         col(TranscriptUtterance.confidence_payload)[SETTLING_KEY]["line_locked"]
         .as_boolean()
@@ -110,6 +115,32 @@ def live_rows(
         session.execute(statement).scalars().all(),
         key=lambda row: (row.start_ms, row.sort_key, row.id),
     )
+
+
+def _windowed_rows(
+    session: Session, recording_id: int, window_start_ms: int, *, lock: bool
+) -> list[TranscriptUtterance]:
+    """``live_rows`` for a window, selected on flags kept per row version (#776)."""
+    from .live_settling_flags import live_lines, windowed_line_ids
+
+    rows: list[TranscriptUtterance] = []
+    ids = windowed_line_ids(live_lines(session, recording_id), window_start_ms)
+    # Ascending ids, batch after batch, so locks are taken in id order.
+    for batch in bind_batches(ids):
+        statement = (
+            select(TranscriptUtterance)
+            .where(TranscriptUtterance.recording_id == recording_id)
+            .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
+            .where(TranscriptUtterance.source_kind == "live")
+            .where(col(TranscriptUtterance.id).in_(batch))
+            .order_by(col(TranscriptUtterance.id))
+        )
+        if lock:
+            statement = statement.with_for_update().execution_options(
+                populate_existing=True
+            )
+        rows.extend(session.execute(statement).scalars().all())
+    return sorted(rows, key=lambda row: (row.start_ms, row.sort_key, row.id))
 
 
 LeadSpeaker = Callable[[str | None], str | None]
