@@ -5,9 +5,7 @@ pytest==9.1.1
 # Matched stack. torch must move together with the pin in local.txt and
 # the pytorch/pytorch base image in docker/Dockerfile.worker, which also fixes
 # the worker's Python; scripts/check_held_pins.py fails CI if they drift apart.
-# torchaudio is not part of that lockstep. Its extensions are built against
-# torch's stable ABI, upstream supports 2.11 on every later torch, and nothing
-# has been released since, so it stays at 2.11.0 while torch moves. See "Held
-# Pins and Unfixable Advisories" in docs/DEVELOPMENT.md.
-torch==2.14.1
-torchaudio==2.11.0
+# torchaudio is not part of that lockstep; worker.txt pins it, since the worker
+# image installs it from there. See "Held Pins and Unfixable Advisories" in
+# docs/DEVELOPMENT.md.
+torch==2.15.0

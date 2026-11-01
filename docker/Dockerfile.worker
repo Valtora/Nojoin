@@ -1,6 +1,6 @@
 # --- Builder Stage ---
 # Pinned by digest for reproducible builds; Dependabot keeps the tag comment current.
-FROM pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime@sha256:3c0b174a1339193a5bcc4b37d737c9f5ca3c4782a2293d3888e4271367eddf44 AS builder
+FROM pytorch/pytorch:2.15.0-cuda13.2-cudnn9-runtime@sha256:924707fa828f821c9a82d987b405675df6369eee5ce368aece6757b025ffcde5 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -26,11 +26,12 @@ WORKDIR /app
 
 COPY requirements/ /app/requirements/
 
-# Create a virtual environment that inherits system-site-packages (to use torch/torchaudio)
+# Create a virtual environment that inherits system-site-packages (to use the base's torch)
 RUN python -m venv --system-site-packages /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Capture the system torch/torchaudio versions as pip constraints.
+# Capture the system torch version as a pip constraint, and torchaudio's when the
+# base ships one. The 2.15.0 base does not, so worker.txt's torchaudio pin installs.
 RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints.txt && \
     python -c "import torchaudio; print(f'torchaudio=={torchaudio.__version__}')" >> constraints.txt || true
 
@@ -64,7 +65,7 @@ RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
 RUN pip install --no-cache-dir triton
 
 # --- Runtime Stage ---
-FROM pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime@sha256:3c0b174a1339193a5bcc4b37d737c9f5ca3c4782a2293d3888e4271367eddf44 AS runtime
+FROM pytorch/pytorch:2.15.0-cuda13.2-cudnn9-runtime@sha256:924707fa828f821c9a82d987b405675df6369eee5ce368aece6757b025ffcde5 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1

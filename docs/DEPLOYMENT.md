@@ -42,9 +42,9 @@ The compose template is set up for GPU inference.
 
 ### GPU Requirements
 
-The worker image is built on CUDA 13.0, which needs:
+The worker image is built on CUDA 13.2, which needs:
 
-- **NVIDIA driver 580 or newer** on the host, Linux or Windows.
+- **NVIDIA driver 580 or newer** on the host, Linux or Windows. Every CUDA 13 release runs on a 580 driver, so the image does not need the newer driver that CUDA 13.2 itself shipped with.
 - **A Turing-generation GPU or later** (compute capability 7.5 or higher): GTX 16 and RTX 20 series and newer, including RTX 50 series. Maxwell, Pascal and Volta cards (GTX 900 and 10 series, TITAN V, Tesla P4, P40, P100 and V100) are not supported.
 
 Check both with:
