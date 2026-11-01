@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -244,3 +246,155 @@ def test_native_worker_failure_cleans_owned_pending_marker(
     finally:
         download_models_task.pop_request()
     assert control.pending_task() is None
+
+
+def _stamp_receipt_from_earlier_transformers() -> None:
+    """Leave the receipt as a 5.20.2 install wrote it, over the same files."""
+    from backend.utils import nemotron_manifest as manifest
+
+    earlier = dict(manifest.load_asset_manifest(), transformers_version="5.20.2")
+    canonical = json.dumps(earlier, sort_keys=True, separators=(",", ":"))
+    path = assets.nemotron_repo_path() / "nojoin-verification.json"
+    receipt = json.loads(path.read_text())
+    receipt["manifest_sha256"] = hashlib.sha256(canonical.encode()).hexdigest()
+    path.write_text(json.dumps(receipt))
+    assert assets.inspect_nemotron_model().state == "invalid"
+
+
+def _start_api(
+    monkeypatch: pytest.MonkeyPatch, settings: dict[str, str]
+) -> list[tuple[dict[str, Any] | None, str | None]]:
+    """Start the API, run the engine preparation it queues, return what follows.
+
+    Startup and the engine run must not hash Nemotron's files: only the queued
+    task on the CPU lane does.
+    """
+    from backend import main as backend_main
+    from backend.tests.test_first_run_pointer import _fake_session_maker
+    from backend.worker.tasks.system import download_models_task
+
+    sent: list[tuple[dict[str, Any] | None, str | None]] = []
+
+    def publish(name: str, args: Any = None, kwargs: Any = None, **options: Any):
+        sent.append((kwargs, options.get("queue")))
+        return SimpleNamespace(id=f"stub-task-{len(sent)}")
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("Startup hashed or prepared Nemotron instead of queueing it")
+
+    values = {"transcription_backend": "parakeet", **settings}
+
+    def setting(key: str, default: Any = None) -> Any:
+        return values.get(key, default)
+
+    monkeypatch.setattr(preparation.config_manager, "get", setting)
+    monkeypatch.setattr(preparation.celery_app, "send_task", publish)
+    monkeypatch.setattr(
+        backend_main, "async_session_maker", _fake_session_maker(object())
+    )
+    monkeypatch.setattr(download_models_task, "update_state", lambda **_: None)
+    for name in (
+        "_prepare_whisper_model",
+        "_prepare_pyannote_models",
+        "_prepare_onnx_asr_model",
+    ):
+        monkeypatch.setattr(preload_models, name, lambda *_args: None)
+    monkeypatch.setattr(preload_models, "_release_validation_caches", lambda: None)
+    monkeypatch.setattr(preload_models, "prepare_forced_aligner_model", forbidden)
+    prepare, file_matches = preload_models.prepare_nemotron_model, assets._file_matches
+    monkeypatch.setattr(preload_models, "prepare_nemotron_model", forbidden)
+    monkeypatch.setattr(assets, "_file_matches", forbidden)
+
+    asyncio.run(backend_main.queue_startup_model_preparation())
+    ((core, _queue),) = sent
+    assert core is not None and core["include_core"] is True
+    download_models_task.push_request(id="startup-core")
+    try:
+        download_models_task.run(**core)
+    finally:
+        download_models_task.pop_request()
+    monkeypatch.setattr(preload_models, "prepare_nemotron_model", prepare)
+    monkeypatch.setattr(assets, "_file_matches", file_matches)
+    return sent[1:]
+
+
+def _nemotron_requests(
+    queued: list[tuple[dict[str, Any] | None, str | None]],
+) -> list[tuple[dict[str, Any] | None, str | None]]:
+    native = preparation._PINNED_TASK_KWARGS["nemotron"]
+    return [entry for entry in queued if entry[0] == native]
+
+
+@pytest.mark.usefixtures("download_progress_in_memory")
+@pytest.mark.parametrize("backend", ["parakeet", "canary"])
+def test_startup_re_prepares_nemotron_from_an_earlier_transformers_once(
+    backend: str, native_assets: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.worker.tasks.system import download_models_task
+
+    snapshot, payloads = native_assets
+    local_files(snapshot, payloads)
+    assets.prepare_nemotron_model()
+    _stamp_receipt_from_earlier_transformers()
+
+    settings = {"transcription_backend": backend}
+    queued = _start_api(monkeypatch, settings)
+    assert _nemotron_requests(queued) == [
+        (preparation._PINNED_TASK_KWARGS["nemotron"], "cpu")
+    ]
+    task_id = control.pending_task()["task_id"]
+    # A restart before the CPU lane reaches it queues no second preparation.
+    assert _nemotron_requests(_start_api(monkeypatch, settings)) == []
+
+    def offline(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("Re-preparation downloaded files that were unchanged")
+
+    monkeypatch.setattr(assets, "download_asset", offline)
+    download_models_task.push_request(id=task_id)
+    try:
+        download_models_task.run(**preparation._PINNED_TASK_KWARGS["nemotron"])
+    finally:
+        download_models_task.pop_request()
+    assert assets.inspect_nemotron_model().state == "verified"
+    assert control.pending_task() is None
+    assert _nemotron_requests(_start_api(monkeypatch, settings)) == []
+
+
+@pytest.mark.usefixtures("download_progress_in_memory")
+def test_startup_leaves_a_current_nemotron_model_alone(
+    native_assets: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot, payloads = native_assets
+    local_files(snapshot, payloads)
+    assets.prepare_nemotron_model()
+    assert _start_api(monkeypatch, {}) == []
+    assert control.pending_task() is None
+
+
+@pytest.mark.usefixtures("download_progress_in_memory")
+@pytest.mark.parametrize(
+    "settings",
+    [{}, {"speaker_engine": "classic"}, {"processing_device": "cpu"}],
+    ids=["not_installed", "classic", "cpu"],
+)
+def test_startup_queues_no_nemotron_without_an_install_that_uses_it(
+    settings: dict[str, str], native_assets: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot, payloads = native_assets
+    if settings:
+        local_files(snapshot, payloads)
+        assets.prepare_nemotron_model()
+        _stamp_receipt_from_earlier_transformers()
+    assert _start_api(monkeypatch, settings) == []
+    assert control.pending_task() is None
+    if not settings:
+        # The check took no lock and wrote nothing to the model cache, and a
+        # repair request never turns into a first download.
+        assert not control._control_path("prepare.lock").exists()
+        assert (
+            preparation.request_pinned_preparation(
+                "nemotron", recording_id=None, repair_only=True
+            )
+            is None
+        )
+        assert not assets.nemotron_repo_path().exists()

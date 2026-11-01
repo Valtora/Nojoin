@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "transformers_version": "5.20.2",
-  "asset_manifest_sha256": "82cb1da687ecdd7378b13ad4585274d00b0f3022f32af0774b741452a8c8239c",
+  "transformers_version": "5.21.0",
+  "asset_manifest_sha256": "9be30db6956118115b664052ae795996132f85331a9f34f7e9457f058f73b181",
   "asset_revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
   "numerical_parity": "fails",
   "environment": {
@@ -190,7 +190,7 @@
     "schema_version": 1,
     "repository": "nvidia/Nemotron-3-Diarization",
     "revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
-    "transformers_version": "5.20.2",
+    "transformers_version": "5.21.0",
     "files": [
       {
         "filename": "config.json",
@@ -3142,5 +3142,115 @@
     "Live held-out study used NeMo; final held-out study used native HF with converted weights.",
     "Production safetensors tensor/config equality is recorded; production golden is separate.",
     "Retained 42 ms timings exclude production per-window CPU feature equivalence checks; no production 42 ms claim."
-  ]
+  ],
+  "requalification": {
+    "date": "2026-10-30",
+    "from_transformers_version": "5.20.2",
+    "to_transformers_version": "5.21.0",
+    "device": "NVIDIA GeForce RTX 4070 Ti (Ada, cc 8.9), driver 595.99.02, Torch 2.14.1+cu130, fp32/SDPA",
+    "re_run": {
+      "source_parity": {
+        "result": "identical under 5.20.2 and 5.21.0 apart from the stamped transformers_version fields (top level and the two model configs); 5.20.2 re-run reproduces the retained source-parity.json byte for byte",
+        "sha256_5.20.2_rerun": "01cdf4e34b28a5bfc4ef0419c406b6c3e5cd66ddb736bc8638d987f711e8d788",
+        "sha256_5.21.0": "b53f238ded72aadeb149e9db455b5e033bfee30f3bf51bee3cbd9235bab25232",
+        "tensors": 417,
+        "tensor_mismatches": 0,
+        "processor_output_cases_equal": 5,
+        "device": "cpu"
+      },
+      "native_replay": {
+        "streams": 10,
+        "skipped_streams": [],
+        "bit_identical_between_versions": true,
+        "bit_identical_to_retained_outputs": true,
+        "max_abs_diff": 0.0,
+        "activity_changes": 0,
+        "argmax_changes": 0,
+        "per_stream": [
+          {
+            "stream": "Array1-01_EN2002a",
+            "frames": 214270,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "Array1-01_ES2004d",
+            "frames": 222229,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "Array1-01_IS1009d",
+            "frames": 194466,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "Array1-01_TS3003d",
+            "frames": 261820,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "Mix-Headset_EN2002a",
+            "frames": 214270,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "Mix-Headset_ES2004d",
+            "frames": 222229,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "Mix-Headset_IS1009d",
+            "frames": 194450,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "Mix-Headset_TS3003d",
+            "frames": 261820,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "london",
+            "frames": 1089909,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          },
+          {
+            "stream": "lords",
+            "frames": 900000,
+            "max_abs_5_20_2_vs_5_21_0": 0.0,
+            "activity_changes": 0,
+            "argmax_changes": 0
+          }
+        ]
+      }
+    },
+    "not_re_run": "NeMo control and DER scoring stay historical: native outputs are unchanged, so those tables are unchanged.",
+    "scripts": {
+      "source_parity_requal.py": "e865e212330f6a46b69a616e6a6d65ff1903009845000159c7471a2a49451957 (.scratch/nemotron/source_parity.py, sha256 eac465db\u2026, with the study root fixed and the output path an argument)",
+      "replay_hf_requal.py": "0c3549a4361c3f8c1e24e1ff0ce1d7c830612a0ac201ed7fb69c82ec4e2f2061 (hf-parity/replay_hf.py, sha256 92f048ef\u2026, with the 5.20.2-only version assertion widened and the study path fixed)",
+      "retained_scripts_verified": "all hf-parity script hashes in original_input_and_script_hashes matched on disk; all ten input wavs matched PROVENANCE.json"
+    },
+    "commands": [
+      "python source_parity_requal.py <out.json>   (CPU; once under Transformers 5.20.2 and once under 5.21.0)",
+      "python -B replay_hf_requal.py --device cuda --tag <out dir>   (no --reference; once under each venv)",
+      "compare_replay.py: per-stream comparison of hf.npz between versions and against runs-corrected/"
+    ],
+    "source_parity_note": "The original source_parity block above is unchanged (5.20.2); the 5.21.0 result is recorded here, alongside it."
+  }
 }
