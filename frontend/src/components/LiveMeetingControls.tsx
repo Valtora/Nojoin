@@ -9,6 +9,7 @@ import { updateRecordingMaxSpeakers } from "@/lib/api";
 import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import DiscardRecordingDialog from "./recordings/DiscardRecordingDialog";
 
@@ -41,6 +42,12 @@ interface LiveMeetingControlsProps {
    * it, Resume needs this tab's live tracks.
    */
   onResumeOffer?: () => void;
+  /**
+   * The recording's stored speaker cap, from the recording page. The field
+   * starts on it and follows the page's copy, so a tab reloaded during the
+   * capture shows the cap the server holds rather than auto-detect.
+   */
+  maxSpeakers?: number | null;
 }
 
 // Below this the queue is ordinary upload latency, a segment or two.
@@ -69,6 +76,7 @@ export default function LiveMeetingControls({
   serverPaused,
   audioNow,
   onResumeOffer,
+  maxSpeakers: storedMaxSpeakers = null,
 }: LiveMeetingControlsProps) {
   const {
     cancel,
@@ -116,9 +124,12 @@ export default function LiveMeetingControls({
     ? observedMs === null ? null : observedMs / 1000
     : elapsedSeconds;
 
-  // Diarization runs at stop time, so the cap stays editable for the whole
-  // recording: whatever is set when capture ends is what gets applied.
-  const [maxSpeakers, setMaxSpeakers] = useState<number | null>(null);
+  // Only final processing reads the cap, once the capture stops, so it stays
+  // editable for the whole recording and the value set at stop is the one
+  // used. Live labels ignore it. A commit shows at once; the stored value
+  // takes over again whenever the page's copy of the recording changes.
+  const [maxSpeakers, setMaxSpeakers] = useState<number | null>(storedMaxSpeakers);
+  useOnDepsChange([storedMaxSpeakers], () => setMaxSpeakers(storedMaxSpeakers));
 
   const handleMaxSpeakersCommit = async (next: number | null) => {
     const previous = maxSpeakers;
