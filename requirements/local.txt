@@ -13,7 +13,7 @@ torchaudio==2.11.0
 
 # pytest is pinned here too (mirrors test.txt) so the documented GPU host setup
 # can run the suite directly.
-pytest==9.1.1
+pytest==9.2.0
 
 # Linting, formatting, and type-checking tooling (ruff, mypy, pre-commit).
 -r lint.txt
