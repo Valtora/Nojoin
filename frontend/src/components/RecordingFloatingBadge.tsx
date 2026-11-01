@@ -4,16 +4,15 @@ import { ButtonBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Pause, Play, Square, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { cn } from "@/lib/cn";
 import { useNotificationStore } from "@/lib/notificationStore";
 
+import DiscardRecordingDialog from "./recordings/DiscardRecordingDialog";
 import { TOUCH_TARGET_HEIGHT, TOUCH_TARGET_SQUARE } from "./ui/touchTarget";
-
-const DISCARD_CONFIRM_MESSAGE =
-  "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 function formatTime(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -54,6 +53,7 @@ export default function RecordingFloatingBadge() {
   } = useCapture();
   const elapsedSeconds = useCaptureState((state) => state.elapsedSeconds);
   const { addNotification } = useNotificationStore();
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
   const isRecording = status === "recording";
   const show =
@@ -99,9 +99,6 @@ export default function RecordingFloatingBadge() {
   };
 
   const handleDiscard = async () => {
-    if (!window.confirm(DISCARD_CONFIRM_MESSAGE)) {
-      return;
-    }
     try {
       await cancel();
     } catch (err: unknown) {
@@ -191,7 +188,7 @@ export default function RecordingFloatingBadge() {
 
         <ButtonBase
           type="button"
-          onClick={handleDiscard}
+          onClick={() => setConfirmingDiscard(true)}
           disabled={stopDisabled}
           className={cn(CONTROL, "text-contrast-helper hover:bg-status-danger-bg hover:text-status-danger-fg")}
           title="Discard recording"
@@ -200,6 +197,11 @@ export default function RecordingFloatingBadge() {
           <Trash2 className="h-4 w-4" />
         </ButtonBase>
       </div>
+      <DiscardRecordingDialog
+        isOpen={confirmingDiscard}
+        onClose={() => setConfirmingDiscard(false)}
+        onConfirm={() => void handleDiscard()}
+      />
     </SurfaceBase>
   );
 }

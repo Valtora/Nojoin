@@ -10,6 +10,8 @@ import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { useNotificationStore } from "@/lib/notificationStore";
 
+import DiscardRecordingDialog from "./recordings/DiscardRecordingDialog";
+
 interface LiveMeetingControlsProps {
   /**
    * `compact` is the rail's icon-only row, `full` the stacked card, and `bar`
@@ -43,9 +45,6 @@ interface LiveMeetingControlsProps {
 
 // Below this the queue is ordinary upload latency, a segment or two.
 const UPLOAD_BACKLOG_NOTICE_SECONDS = 30;
-
-const DISCARD_CONFIRM_MESSAGE =
-  "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 // Floored to whole seconds before anything is split out of it. The captured
 // figure comes from the server as a sum of segment durations in milliseconds,
@@ -157,10 +156,10 @@ export default function LiveMeetingControls({
     />
   );
 
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const askDiscard = () => setConfirmingDiscard(true);
+
   const handleDiscard = async () => {
-    if (!window.confirm(DISCARD_CONFIRM_MESSAGE)) {
-      return;
-    }
     try {
       await cancel();
     } catch (err: unknown) {
@@ -179,6 +178,13 @@ export default function LiveMeetingControls({
       setTimeout(onMeetingDiscard, 300);
     }
   };
+  const discardDialog = (
+    <DiscardRecordingDialog
+      isOpen={confirmingDiscard}
+      onClose={() => setConfirmingDiscard(false)}
+      onConfirm={() => void handleDiscard()}
+    />
+  );
 
   const sendCommand = async (command: "stop" | "pause" | "resume") => {
     try {
@@ -291,7 +297,7 @@ export default function LiveMeetingControls({
             data-ui-hover="status-danger"
             data-ui-border="full" chrome="action"
             type="button"
-            onClick={handleDiscard}
+            onClick={askDiscard}
             disabled={stopDisabled}
             className="rounded-xl border border-status-danger-border bg-surface-card p-2 text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
             title="Discard recording"
@@ -302,6 +308,7 @@ export default function LiveMeetingControls({
         </div>
         <CaptureNotices />
         {speakerCapField}
+        {discardDialog}
       </div>
     );
   }
@@ -380,7 +387,7 @@ export default function LiveMeetingControls({
               data-ui-hover="status-danger"
               data-ui-border="full" chrome="action"
               type="button"
-              onClick={handleDiscard}
+              onClick={askDiscard}
               disabled={stopDisabled}
               className={`${barButtonClass} border border-status-danger-border bg-surface-card text-status-danger-fg hover:bg-status-danger-bg`}
               title="Discard recording"
@@ -401,6 +408,7 @@ export default function LiveMeetingControls({
         </div>
 
         <CaptureNotices />
+        {discardDialog}
       </div>
     );
   }
@@ -470,7 +478,7 @@ export default function LiveMeetingControls({
           data-ui-hover="status-danger"
           data-ui-border="full" chrome="action"
           type="button"
-          onClick={handleDiscard}
+          onClick={askDiscard}
           disabled={stopDisabled}
           className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-3 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
           title="Discard recording"
@@ -482,6 +490,7 @@ export default function LiveMeetingControls({
 
       <CaptureNotices />
       {speakerCapField}
+      {discardDialog}
     </div>
   );
 }

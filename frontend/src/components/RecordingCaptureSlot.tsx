@@ -11,12 +11,10 @@ import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 import DocumentUploadModal from "./DocumentUploadModal";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
+import DiscardRecordingDialog from "./recordings/DiscardRecordingDialog";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import { ButtonBase } from "./ui/nativeBases";
 import { useResumeRecoveryOffer } from "./useResumeRecoveryOffer";
-
-const DISCARD_CONFIRM_MESSAGE =
-  "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 function formatClock(seconds: number) {
   const whole = Math.max(0, Math.floor(seconds));
@@ -66,6 +64,7 @@ export default function RecordingCaptureSlot({
   const actions = useRecordingActions();
   const resumeOffer = useResumeRecoveryOffer();
   const [isDiscarding, setIsDiscarding] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   // The live controls' own test for Stop: this tab's runtime holds the capture
   // (a failed stop's included), or this tab was reloaded during it and holds
@@ -100,7 +99,7 @@ export default function RecordingCaptureSlot({
     ? "Waiting for a worker to begin processing." : "Preparing your meeting transcript.");
 
   const discard = async () => {
-    if (isDiscarding || !window.confirm(DISCARD_CONFIRM_MESSAGE)) return;
+    if (isDiscarding) return;
     setIsDiscarding(true);
     await actions.discard(recording.id, {
       onSuccess: onDiscarded,
@@ -155,7 +154,7 @@ export default function RecordingCaptureSlot({
           {isPipeline && recording.discardable ? (
             <ButtonBase
               data-ui-fill="card" data-ui-hover="status-danger" data-ui-border="full" chrome="action"
-              type="button" onClick={discard} disabled={isDiscarding}
+              type="button" onClick={() => setConfirmingDiscard(true)} disabled={isDiscarding}
               className="ml-auto inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-status-danger-border bg-surface-card px-4 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
               title="Discard this recording and stop processing"
             >
@@ -182,6 +181,11 @@ export default function RecordingCaptureSlot({
           ) : null}
         </div>
       ) : null}
+      <DiscardRecordingDialog
+        isOpen={confirmingDiscard}
+        onClose={() => setConfirmingDiscard(false)}
+        onConfirm={() => void discard()}
+      />
       <DocumentUploadModal
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}

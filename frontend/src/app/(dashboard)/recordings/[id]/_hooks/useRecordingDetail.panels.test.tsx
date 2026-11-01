@@ -10,7 +10,7 @@ import { useRecordingDetail } from "./useRecordingDetail";
 // The real navigation store, which remembers the panel; the network is stubbed.
 const mocks = vi.hoisted(() => ({
   getRecording: vi.fn(), getTranscript: vi.fn(), notify: vi.fn(),
-  router: { push: vi.fn(), refresh: vi.fn() },
+  router: { push: vi.fn(), refresh: vi.fn() }, isMobile: false,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => mocks.router }));
 vi.mock("@/lib/api", async (importOriginal) => ({
@@ -29,7 +29,7 @@ vi.mock("@/lib/notes/useNoteOutbox", () => ({ useRecordingNotes: () => [] }));
 vi.mock("@/lib/notes/useNoteEdits", () => ({ useNoteEdits: () => ({}) }));
 vi.mock("@/components/recordings/_hooks/useRecordingActions", () => ({ useRecordingActions: () => ({}) }));
 vi.mock("@/components/ViewportDensityProvider", () => ({
-  useViewportDensity: () => ({ isCompact: false, isMobile: false }),
+  useViewportDensity: () => ({ isCompact: false, isMobile: mocks.isMobile }),
 }));
 
 const transcriptRow = (transcript_status: string) => ({
@@ -61,7 +61,8 @@ describe("recording page panels (#834)", () => {
     mocks.getTranscript.mockReset().mockResolvedValue({
       recording_id: "rec-1", revision: 1, speakers: [], tombstones: [], utterances: [],
     });
-    useNavigationStore.setState({ activePanel: "transcript" });
+    useNavigationStore.setState({ activePanel: "transcript", sideTab: "speakers" });
+    mocks.isMobile = false;
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
@@ -106,20 +107,49 @@ describe("recording page panels (#834)", () => {
     expect(result.current.activePanel).toBe("transcript");
   });
 
-  it("opens each panel the transcript tour describes, then puts back the one it found", async () => {
-    useNavigationStore.setState({ activePanel: "analytics" });
+  // Each step's title, with the main panel and the side column's tab it shows.
+  const takeTour = (result: { current: { activePanel: string } }) => transcriptSteps.map((step) => {
+    act(() => step.onHighlightStarted?.(undefined, step, {} as never));
+    return [step.popover?.title, result.current.activePanel, useNavigationStore.getState().sideTab];
+  });
+
+  it("opens each panel the transcript tour describes, then puts back the ones it found", async () => {
+    useNavigationStore.setState({ activePanel: "notes", sideTab: "captures" });
     const { result } = open(finished);
     await advance();
-    const shown: string[] = [];
-    for (const step of transcriptSteps) {
-      act(() => step.onHighlightStarted?.(undefined, step, {} as never));
-      shown.push(result.current.activePanel);
-    }
-    expect(shown).toEqual(["transcript", "transcript", "transcript", "notes", "documents", "documents", "documents"]);
+    expect(takeTour(result)).toEqual([
+      ["Transcript View", "transcript", "captures"],
+      ["Audio Controls", "transcript", "captures"],
+      ["AI Notes", "notes", "captures"],
+      ["Documents", "documents", "captures"],
+      ["Analytics", "analytics", "captures"],
+      // Desktop opens these in the side column, beside the panel last shown.
+      ["Speakers", "analytics", "speakers"],
+      ["My Notes", "analytics", "my-notes"],
+      ["Captures", "analytics", "captures"],
+      ["Meeting Edge", "analytics", "meeting-edge"],
+      ["Meeting Chat", "analytics", "meeting-edge"],
+      ["Cross-Meeting Context", "analytics", "meeting-edge"],
+    ]);
 
     act(() => restoreTourPanel());
-    expect(result.current.activePanel).toBe("analytics");
-    expect(remembered()).toBe("analytics");
+    expect(result.current.activePanel).toBe("notes");
+    expect(remembered()).toBe("notes");
+    expect(useNavigationStore.getState().sideTab).toBe("captures");
+  });
+
+  it("opens the side panels as tabs on a phone", async () => {
+    mocks.isMobile = true;
+    useNavigationStore.setState({ activePanel: "notes", sideTab: "captures" });
+    const { result } = open(finished);
+    await advance();
+    expect(takeTour(result).slice(5, 9).map(([, panel]) => panel)).toEqual(
+      ["speakers", "my-notes", "captures", "meeting-edge"],
+    );
+    expect(useNavigationStore.getState().sideTab).toBe("captures");
+
+    act(() => restoreTourPanel());
+    expect(result.current.activePanel).toBe("notes");
   });
 
   it("puts the panel back when the page goes in the middle of the tour", async () => {

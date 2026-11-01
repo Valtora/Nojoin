@@ -77,7 +77,7 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
    */
   isSpeakersFirstLine: boolean;
   hasPendingRemoteUpdate: boolean;
-  /** Revised in the last 15 s, as of the view's last render. */
+  /** Its text or speaker changed in the last 15 s, after the view first showed it. */
   isRecentlyUpdated: boolean;
   decorations: readonly TextDecoration[];
   /** The marks of the words selection notes are on. */

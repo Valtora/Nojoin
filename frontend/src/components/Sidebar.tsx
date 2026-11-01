@@ -56,6 +56,7 @@ import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { format, startOfMonth } from "date-fns";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
+import { DISCARD_RECORDING_MESSAGE, DISCARD_RECORDING_TITLE } from "./recordings/DiscardRecordingDialog";
 import BatchActionBar from "./BatchActionBar";
 import ReprocessDialog from "./ReprocessDialog";
 import { GlobalSpeaker } from "@/types";
@@ -653,9 +654,8 @@ export default function Sidebar() {
     confirmFocusRef.current = null;
     setConfirmModal({
       isOpen: true,
-      title: "Discard Recording",
-      message:
-        "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.",
+      title: DISCARD_RECORDING_TITLE,
+      message: DISCARD_RECORDING_MESSAGE,
       isDangerous: true,
       confirmText: "Discard",
       onConfirm: async () => {
@@ -1154,7 +1154,12 @@ export default function Sidebar() {
             {filteredRecordings.map((recording) => {
               const isActive = pathname === `/recordings/${recording.id}`;
               const startDate = parseServerTimestamp(recording.created_at);
-              const endDate = startDate
+              // A capture's length is known only once Stop has joined its
+              // audio, so until then the row shows when it started and no
+              // length, rather than 0s and an end time equal to the start.
+              const lengthPending = !recording.duration_seconds &&
+                recording.status !== RecordingStatus.PROCESSED;
+              const endDate = startDate && !lengthPending
                 ? new Date(startDate.getTime() + (recording.duration_seconds || 0) * 1000)
                 : null;
               const isRenaming = renamingId === recording.id;
@@ -1265,16 +1270,22 @@ export default function Sidebar() {
                             |
                           </span>
                           <span className="hidden whitespace-nowrap @min-[19rem]:inline">
-                            {startDate && endDate
-                              ? `${formatTime(startDate, userTimeZone)} - ${formatTime(endDate, userTimeZone)}`
-                              : "Time unavailable"}
+                            {!startDate
+                              ? "Time unavailable"
+                              : endDate
+                                ? `${formatTime(startDate, userTimeZone)} - ${formatTime(endDate, userTimeZone)}`
+                                : `Started ${formatTime(startDate, userTimeZone)}`}
                           </span>
-                          <span className="whitespace-nowrap text-contrast-icon-muted">
-                            |
-                          </span>
-                          <span className="whitespace-nowrap">
-                            {formatDurationString(recording.duration_seconds)}
-                          </span>
+                          {!lengthPending && (
+                            <>
+                              <span className="whitespace-nowrap text-contrast-icon-muted">
+                                |
+                              </span>
+                              <span className="whitespace-nowrap">
+                                {formatDurationString(recording.duration_seconds)}
+                              </span>
+                            </>
+                          )}
                         </div>
                         <RecordingAttentionBadge recordingId={recording.id} className="mt-2" />
                         {/* The open recording lists its own unsent notes. */}

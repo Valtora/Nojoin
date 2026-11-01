@@ -1,17 +1,26 @@
 import { DriveStep } from "driver.js";
 
-import type { ActivePanel } from "./store";
+import type { ActivePanel, SideTab } from "./store";
 
-/** The recording page's panels the transcript tour opens to describe them. */
-export type TourPanel = Extract<ActivePanel, "transcript" | "notes" | "documents">;
-const TOUR_PANELS: readonly TourPanel[] = ["transcript", "notes", "documents"];
+/**
+ * The recording page's panels the transcript tour opens to describe them. On
+ * a phone each is a tab; on desktop Speakers, My notes, Captures and Meeting
+ * Edge are the side column's tabs, and the page opens them there.
+ */
+export type TourPanel = ActivePanel;
+const TOUR_PANELS: readonly TourPanel[] = [
+  "transcript", "notes", "documents", "analytics", "speakers", "my-notes", "captures", "meeting-edge",
+];
 export const isTourPanel = (value: unknown): value is TourPanel =>
   (TOUR_PANELS as readonly unknown[]).includes(value);
+const SIDE_TABS: readonly SideTab[] = ["speakers", "my-notes", "captures", "meeting-edge"];
+export const isSideTab = (panel: TourPanel): panel is SideTab =>
+  (SIDE_TABS as readonly TourPanel[]).includes(panel);
 
 /** Asks the recording page to open one of its panels for a step. */
 export const TOUR_SWITCH_PANEL_EVENT = "tour:switch-panel";
 /**
- * Sent however the transcript tour ends, so the page puts back the panel the
+ * Sent however the transcript tour ends, so the page puts back the panels the
  * tour found. Left on the tour's last panel, every recording opened afterwards
  * would open on it too, a new capture included (#834).
  */
@@ -20,6 +29,12 @@ export const TOUR_RESTORE_PANEL_EVENT = "tour:restore-panel";
 const showPanel = (panel: TourPanel) => () => {
   window.dispatchEvent(new CustomEvent(TOUR_SWITCH_PANEL_EVENT, { detail: panel }));
 };
+
+/**
+ * A side panel's selector: its tab panel in the desktop side column, or its
+ * tab panel among a phone's tabs. Only one of them is ever on the page.
+ */
+const sidePanel = (tab: Exclude<SideTab, "speakers">) => `#side-panel-${tab}, #panel-${tab}`;
 export const restoreTourPanel = () => {
   window.dispatchEvent(new CustomEvent(TOUR_RESTORE_PANEL_EVENT));
 };
@@ -95,6 +110,8 @@ export const recordingsSteps: DriveStep[] = [
   }
 ];
 
+// A step whose element is not on the page when the tour starts is left out:
+// the side column collapsed, Meeting Edge turned off, or Chat on a phone.
 export const transcriptSteps: DriveStep[] = [
   {
     element: '#transcript-view',
@@ -114,14 +131,6 @@ export const transcriptSteps: DriveStep[] = [
     }
   },
   {
-    element: '#speaker-panel',
-    popover: {
-      title: 'Speakers',
-      description: 'Manage speakers here. You can rename them, merge them, or assign voiceprints for future recognition.',
-      side: 'left',
-    }
-  },
-  {
     element: '#meeting-notes',
     popover: {
       title: 'AI Notes',
@@ -131,13 +140,58 @@ export const transcriptSteps: DriveStep[] = [
     onHighlightStarted: showPanel('notes'),
   },
   {
-    element: '#tab-documents',
+    element: '#panel-documents',
     popover: {
       title: 'Documents',
       description: 'Upload PDF or text files relevant to this meeting. Nojoin will index them so you can ask questions about them in the chat.',
       side: 'right',
     },
     onHighlightStarted: showPanel('documents'),
+  },
+  {
+    element: '#panel-analytics',
+    popover: {
+      title: 'Analytics',
+      description: 'Who spoke and for how long, how the conversation moved between people, and where they talked over each other, all measured from the recording.',
+      side: 'right',
+    },
+    onHighlightStarted: showPanel('analytics'),
+  },
+  {
+    element: '#speaker-panel',
+    popover: {
+      title: 'Speakers',
+      description: 'Manage speakers here. You can rename them, merge them, or assign voiceprints for future recognition.',
+      side: 'left',
+    },
+    onHighlightStarted: showPanel('speakers'),
+  },
+  {
+    element: sidePanel('my-notes'),
+    popover: {
+      title: 'My Notes',
+      description: 'Every note you wrote during or after the meeting, in transcript order. Select one to find its place in the transcript, or use its pencil to edit it.',
+      side: 'left',
+    },
+    onHighlightStarted: showPanel('my-notes'),
+  },
+  {
+    element: sidePanel('captures'),
+    popover: {
+      title: 'Captures',
+      description: 'Stills of the shared screen and files added to your notes. Open one to view it or to choose whether the AI notes read it.',
+      side: 'left',
+    },
+    onHighlightStarted: showPanel('captures'),
+  },
+  {
+    element: sidePanel('meeting-edge'),
+    popover: {
+      title: 'Meeting Edge',
+      description: 'Live guidance while you record: questions to ask, points to raise and explanations of technical terms. What it suggested stays here afterwards.',
+      side: 'left',
+    },
+    onHighlightStarted: showPanel('meeting-edge'),
   },
   {
     element: '#meeting-chat',
