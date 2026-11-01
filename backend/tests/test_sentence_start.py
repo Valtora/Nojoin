@@ -3,13 +3,16 @@ and the final merge (``backend/processing/sentence_start.py``, #813)."""
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from backend.processing import sentence_start as ss
+from backend.processing.diarization_union import native_annotation
 from backend.processing.sentence_start import (
     EDITED_LINE_SPANS,
     RULES,
     Words,
+    activity_from_frames,
     activity_from_turns,
     certain,
     complete_sentence,
@@ -253,6 +256,56 @@ def test_certain_reads_a_zero_length_word_at_its_instant(t_from, moved):
     result = corrected(_words(tokens, ["L", "L", "T"], turns))
 
     assert result[1] == ("T" if moved else "L")
+
+
+def _frames(first: int, runs: dict[int, tuple[int, int]], count: int):
+    """Posteriors from ``first`` for ``count`` frames, channel k active over its run."""
+    posteriors = np.zeros((count, 2), np.float32)
+    for k, (start, stop) in runs.items():
+        posteriors[start - first : stop - first, k] = 1.0
+    return posteriors
+
+
+@pytest.mark.parametrize(
+    ("first", "runs", "so"),
+    [
+        # T starts at frame 35; "so" is a zero-length word at 350 ms.
+        (0, {0: (0, 35), 1: (35, 60)}, (0.35, 0.35)),
+        # Evidence retained from frame 35; "so" starts at 350 ms.
+        (35, {1: (35, 60)}, (0.35, 0.45)),
+    ],
+    ids=["run-start", "coverage-start"],
+)
+def test_native_activity_starting_exactly_at_a_word_counts(first, runs, so):
+    """Frame 35 is the same instant as a word at 350 ms (I1)."""
+    tokens = [(" done.", 0.0, 0.3), (" so", *so), (" we", 0.46, 0.55)]
+    activity = activity_from_frames(
+        _frames(first, runs, 60 - first), ["L", "T"], first, 60
+    )
+
+    result = corrected(_words(tokens, ["L", "L", "T"], [], activity=activity))
+
+    assert result == ["L", "T", "T"]
+
+
+def test_the_final_merge_reads_a_native_run_starting_exactly_at_a_word():
+    """The final pass reads native posteriors as 10 ms runs the same way: a
+    zero-length word at 350 ms belongs to the channel that starts at frame 35."""
+    probabilities = np.zeros((60, 8), np.float32)
+    probabilities[0:35, 0] = 1.0
+    probabilities[35:60, 1] = 1.0
+    tokens = [
+        (" It", 0.0, 0.1),
+        (" is", 0.1, 0.2),
+        (" done.", 0.2, 0.3),
+        *[(" so", 0.35, 0.35), (" we", 0.36, 0.45), (" go", 0.45, 0.55)],
+    ]
+
+    result = combine_transcription_diarization(
+        _whisper(tokens), native_annotation(probabilities)
+    )
+
+    assert _lines(result) == [("L0", "It is done."), ("L1", "so we go")]
 
 
 def test_activity_at_an_instant_counts_a_run_end_only_where_nothing_starts():

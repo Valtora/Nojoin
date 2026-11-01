@@ -169,7 +169,9 @@ def activity_from_frames(
 
     The final pass reads native posteriors the same way
     (``diarization_union.native_annotation``). Row 0 is frame ``first_frame``;
-    evidence covers the retained frames up to native completion.
+    evidence covers the retained frames up to native completion. Frames become
+    seconds by dividing by 100, so frame 35 is the same 0.35 as a word at 350 ms
+    (``35 * 0.01`` is a hair later and would miss a word starting there).
     """
     turns = []
     for k in range(min(posteriors.shape[1], len(labels))):
@@ -179,10 +181,14 @@ def activity_from_frames(
             np.flatnonzero(change == 1), np.flatnonzero(change == -1)
         ):
             turns.append(
-                ((start + first_frame) * 0.01, (stop + first_frame) * 0.01, labels[k])
+                (
+                    int(start + first_frame) / 100,
+                    int(stop + first_frame) / 100,
+                    labels[k],
+                )
             )
     covered = min(complete_frame, first_frame + len(posteriors))
-    return activity_from_turns(turns, coverage=(first_frame * 0.01, covered * 0.01))
+    return activity_from_turns(turns, coverage=(first_frame / 100, covered / 100))
 
 
 # --- Words and candidates --------------------------------------------------------
