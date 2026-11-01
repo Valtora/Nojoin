@@ -65,16 +65,16 @@ def final_merge_config(
     from backend.models.pipeline import TranscriptUtterance as Line
     from backend.processing.sentence_start import EDITED_LINE_SPANS
     from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
-    from backend.utils.canonical_pipeline.preservation import line_is_protected
 
-    # Only the fields the spans need (line_is_protected reads two of them).
+    # The payload's protection key alone, not the whole payload with its words;
+    # the test is line_is_protected's (canonical_pipeline/preservation.py).
     lines = session.exec(
         select(
             Line.start_ms,
             Line.end_ms,
             Line.manual_speaker_locked,
             Line.manual_text_locked,
-            Line.confidence_payload,
+            col(Line.confidence_payload)["human_protection"],
         )
         .where(Line.recording_id == recording_id)
         .where(col(Line.state).in_(ACTIVE_UTTERANCE_STATES))
@@ -82,9 +82,9 @@ def final_merge_config(
     return {
         **with_resume_boundaries(dict(config), transcript),
         EDITED_LINE_SPANS: sorted(
-            (line.start_ms, line.end_ms)
-            for line in lines
-            if line.manual_speaker_locked or line_is_protected(line)
+            (start_ms, end_ms)
+            for start_ms, end_ms, speaker_locked, text_locked, protection in lines
+            if speaker_locked or text_locked or protection
         ),
     }
 
