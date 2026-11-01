@@ -85,6 +85,12 @@ torchmetrics==1.9.0
 soundfile==0.14.0
 matplotlib==3.11.2
 pyannoteai-sdk==0.4.0
+# Imported by backend/processing/vad.py. The PyTorch base image has shipped no
+# torchaudio since 2.15.0, so the worker image installs this pin, and test.txt
+# and local.txt take it from here. It builds against torch's stable ABI and
+# declares torch>=2.11, so it moves only with a release of its own. 2.11.1 also
+# accepts a torch built on another CUDA 13 minor, which 2.11.0 refused.
+torchaudio==2.11.1
 # PyPI builds torchcodec against the CUDA of PyPI's torch. docker/Dockerfile.worker
 # swaps it for the CPU build of this version, which links no CUDA library.
 torchcodec==0.17.0

@@ -197,6 +197,28 @@ describe("AnalyticsView", () => {
     expect(screen.getByText(/3 speakers hold under 3%/)).toBeInTheDocument();
   });
 
+  it("says only what a count equal to the speaker limit shows", async () => {
+    // Reaching the limit does not show that anyone was merged (#871).
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        attribution_warning: {
+          reasons: [{ code: "speaker_cap_bound", max_speakers: 2, speaker_count: 2 }],
+        },
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "This meeting has as many speakers as its limit of 2. If more people spoke, their speech is counted under the ones shown.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/were merged/)).not.toBeInTheDocument();
+  });
+
   it("shows no warning for a reason code it has no wording for", async () => {
     // `high_overlap` was retired in #481; an older API could still send it.
     const retired = {

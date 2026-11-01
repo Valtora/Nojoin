@@ -92,7 +92,7 @@ class Hold:
 MATCHED_STACKS: tuple[MatchedStack, ...] = (
     MatchedStack(
         package="torch",
-        version="2.14.1",
+        version="2.15.0",
         rationale=(
             "The worker image takes torch from its pytorch/pytorch base, while "
             "CI and the GPU host setup install it from the requirements files. "
@@ -111,9 +111,9 @@ MATCHED_STACKS: tuple[MatchedStack, ...] = (
 # docs/DEVELOPMENT.md before adding one.
 HOLDS: tuple[Hold, ...] = ()
 
-# torch==2.14.1 --index-url https://...
+# torch==2.15.0 --index-url https://...
 PIN_RE_TEMPLATE = r"^{package}==([^\s;#]+)"
-# FROM pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime@sha256:...
+# FROM pytorch/pytorch:2.15.0-cuda13.2-cudnn9-runtime@sha256:...
 IMAGE_TAG_RE = re.compile(r"^FROM\s+pytorch/pytorch:([^\s@]+)", re.MULTILINE)
 
 
@@ -135,7 +135,7 @@ class Declaration:
 # The Python minor that every surface running backend/ must agree on.
 #
 # This is derived, not chosen. The worker's interpreter comes from the PyTorch
-# base image (the torch MatchedStack above), and the 2.14.1 image ships Python
+# base image (the torch MatchedStack above), and the 2.15.0 image ships Python
 # 3.12. The worker's Python therefore changes only when that base does, and
 # everything else has to match it rather than the other way round.
 #
@@ -267,7 +267,7 @@ def check_drift(stack: MatchedStack) -> list[str]:
             )
 
     for relative, line, package, version in pins:
-        # An image tag carries a suffix (2.14.1-cuda13.0-...), so compare the
+        # An image tag carries a suffix (2.15.0-cuda13.2-...), so compare the
         # leading version component rather than the whole string.
         actual = version.split("-", 1)[0] if package == "pytorch/pytorch" else version
         if actual != stack.version:

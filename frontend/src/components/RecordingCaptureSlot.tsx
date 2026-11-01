@@ -135,6 +135,7 @@ export default function RecordingCaptureSlot({
           onMeetingDiscard={onDiscarded}
           barTrailing={attachDocuments}
           onResumeOffer={() => void resumeOffer(recording.id)}
+          maxSpeakers={recording.max_speakers ?? null}
         />
       ) : (
         <div className="flex flex-wrap items-center gap-3">
