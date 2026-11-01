@@ -79,6 +79,9 @@ async def rename_recording(
 ) -> dict[str, Any]:
     """Rename a recording. Requires the mcp:write scope.
 
+    The new name counts as the user's choice, so the title Nojoin generates
+    when notes are written or the recording is reprocessed never replaces it.
+
     The response echoes updated_at and the transcript_revision cursor, so
     the write is self-verifying: an unchanged cursor confirms the rename
     touched metadata only.

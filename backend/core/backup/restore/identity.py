@@ -22,6 +22,7 @@ from backend.core.backup.paths import (
 from backend.core.backup.records import _restore_redacted_sensitive_data
 from backend.core.backup.restore import stages
 from backend.core.backup.restore.context import RowOutcome, _RowContext
+from backend.models.recording import is_default_meeting_name
 
 logger = logging.getLogger(__name__)
 
@@ -177,8 +178,27 @@ def _resolve_recordings_identity(ctx: "_RowContext") -> "RowOutcome":
     _normalise_recording_identifiers(ctx, meeting_uid, public_id)
 
     _clear_source_recording_state(ctx)
+    _settle_legacy_name_choice(ctx)
     _assign_recording_destination(ctx, audio_path)
     return RowOutcome.INSERT
+
+
+def _settle_legacy_name_choice(ctx: "_RowContext") -> None:
+    """Decide whose name an archive from before ``title_user_edited`` carries.
+
+    Such an archive cannot say which names the user chose, so each counts as
+    chosen unless it is a default name, as the upgrade decided for the
+    recordings an installation already held (issue #837). Without this the
+    model default would let a reprocess retitle every restored recording.
+    """
+    if "title_user_edited" in ctx.item_data or not hasattr(
+        ctx.model_cls, "title_user_edited"
+    ):
+        return
+    name = ctx.item_data.get("name")
+    ctx.item_data["title_user_edited"] = not (
+        isinstance(name, str) and is_default_meeting_name(name)
+    )
 
 
 def _clear_source_recording_state(ctx: "_RowContext") -> None:

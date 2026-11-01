@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -6,12 +7,14 @@ from uuid import uuid4
 from pydantic import field_validator
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
     Integer,
     String,
     event,
+    false,
     or_,
 )
 from sqlmodel import Field, Relationship, SQLModel, col
@@ -98,6 +101,15 @@ class Recording(BaseDBModel, table=True):
     __tablename__ = "recordings"  # pyright: ignore[reportAssignmentType]
 
     name: str
+    # The user chose this name: a rename, or a name given at import or at the
+    # start of a capture. Meeting intelligence then leaves the name alone and
+    # only an unchosen name takes the AI title (issue #837).
+    title_user_edited: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean, nullable=False, server_default=false(), default=False
+        ),
+    )
     public_id: str = Field(
         default_factory=generate_public_id,
         sa_column=Column(
@@ -401,6 +413,34 @@ class RecordingUpdate(SQLModel):
     @classmethod
     def _validate_transcription_language(cls, value: Optional[str]) -> Optional[str]:
         return None if value is None else validate_transcription_language(value)
+
+
+# The names generate_default_meeting_name gives a recording created without
+# one, such as "Sunday 1st Nov, Morning Meeting". Nobody chose such a name, so
+# where a recording predates title_user_edited (the upgrade that added it, a
+# restore of an older archive) it stays free to take the AI title, and any
+# other name counts as the user's. The migration carries its own copy.
+DEFAULT_MEETING_NAME_PATTERN = re.compile(
+    r"(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day [0-9]{1,2}(st|nd|rd|th) "
+    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec), "
+    r"((Early |Late )?(Morning|Afternoon|Evening)|(Late )?Night) Meeting"
+)
+
+
+def is_default_meeting_name(name: str) -> bool:
+    return DEFAULT_MEETING_NAME_PATTERN.fullmatch(name) is not None
+
+
+def chosen_recording_name(value: Optional[str]) -> Optional[str]:
+    """The name a caller gave a new recording, trimmed, or None when blank.
+
+    A recording created with a name keeps it as the user's choice
+    (``title_user_edited``); one created without is named automatically and
+    takes the AI title once its notes are generated (issue #837).
+    """
+    if value is None:
+        return None
+    return value.strip() or None
 
 
 class RecordingInitResponse(SQLModel):
