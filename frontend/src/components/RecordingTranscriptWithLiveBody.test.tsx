@@ -94,7 +94,8 @@ describe("RecordingTranscriptWithLiveBody shared-shell body", () => {
       detail: { recordingId: "rec-1" },
     })));
     expect(await screen.findByText("Agenda.pdf")).toBeInTheDocument();
-    expect(screen.getByText("Starting")).toBeInTheDocument();
+    // Drawn twice, in its column and under the name for a narrow panel; CSS shows one.
+    expect(screen.getAllByText("Starting")).toHaveLength(2);
     expect(getDocuments).toHaveBeenCalledTimes(2);
   });
 

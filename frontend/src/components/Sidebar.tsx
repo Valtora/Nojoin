@@ -61,7 +61,6 @@ import BatchActionBar from "./BatchActionBar";
 import ReprocessDialog from "./ReprocessDialog";
 import { GlobalSpeaker } from "@/types";
 import { useNavigationStore } from "@/lib/store";
-import { useNotificationStore } from "@/lib/notificationStore";
 import { createFuse } from "@/lib/searchUtils";
 import { getColorByKey } from "@/lib/constants";
 import { useViewportDensity } from "./ViewportDensityProvider";
@@ -139,7 +138,16 @@ const StatusIcon = ({ recording }: { recording: Recording }) => {
     case RecordingStatus.PAUSED:
       return <Pause className="w-3 h-3 text-status-warning-fg" />;
     case RecordingStatus.ERROR:
-      return <AlertCircle className="w-3 h-3 text-danger-text" />;
+      return (
+        <span
+          role="img"
+          aria-label="Processing failed"
+          className="cursor-help"
+          title="Processing failed. Open the recording to see why and retry."
+        >
+          <AlertCircle className="w-3 h-3 text-danger-text" />
+        </span>
+      );
     default:
       return <HelpCircle className="w-3 h-3 text-rail-fg-muted" />;
   }
@@ -148,7 +156,6 @@ const StatusIcon = ({ recording }: { recording: Recording }) => {
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { addNotification } = useNotificationStore();
   const { refreshPausedRecording } = useCapture();
   const actions = useRecordingActions();
   const unsentRecordings = useUnsentRecordings();
@@ -1382,20 +1389,14 @@ export default function Sidebar() {
             recordings.find((r) => r.id === reprocessRecordingId)
               ?.transcription_language ?? null
           }
+          // The list does not say whether a failed recording kept a
+          // transcript, so the dialog reads the recording to find out.
+          failed={
+            recordings.find((r) => r.id === reprocessRecordingId)?.status ===
+            RecordingStatus.ERROR
+          }
           isOpen={!!reprocessRecordingId}
           onClose={() => setReprocessRecordingId(null)}
-          onReprocessed={(updatedRecording) => {
-            addNotification({
-              message: "Recording reprocessing started.",
-              type: "success",
-            });
-            window.dispatchEvent(
-              new CustomEvent("recording-updated", {
-                detail: { id: updatedRecording.id },
-              }),
-            );
-            fetchRecordings();
-          }}
         />
       )}
       </div>
