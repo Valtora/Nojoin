@@ -65,9 +65,9 @@ export const resumeRecordingCapture = async (
 /**
  * Set or clear the speaker cap on an in-progress recording.
  *
- * Diarization does not run until capture stops, so this stays editable for the
- * whole recording and the value present at stop time is the one applied. Pass
- * null for auto-detect, which is the default.
+ * Only final processing reads it, once capture stops, so it stays editable for
+ * the whole recording and the value present at stop time is the one applied.
+ * Live labels ignore it. Pass null for auto-detect, which is the default.
  */
 export const updateRecordingMaxSpeakers = async (
   recordingId: RecordingId,

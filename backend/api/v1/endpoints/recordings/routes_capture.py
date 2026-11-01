@@ -977,11 +977,11 @@ async def update_max_speakers(
 ):
     """Set or clear the speaker cap for an in-progress recording.
 
-    Editable for as long as the recording accepts status updates, because
-    diarization does not run until the capture is stopped -- so the value
-    present when the user hits stop is the value that gets used. That is what
-    makes a late joiner survivable: the participant count can be corrected
-    after the meeting has already started.
+    Editable for as long as the recording accepts status updates. Only final
+    processing, which starts after the capture stops, reads the cap, so the
+    value present at stop is the one used and a late joiner can still be
+    counted. Live speaker labels run during the capture and ignore it: they
+    are a preview and can show more speakers than the cap (#871).
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
