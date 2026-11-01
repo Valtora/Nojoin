@@ -100,8 +100,13 @@ async def update_recording(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    if recording_update.name is not None:
+    if recording_update.name is not None and recording_update.name != recording.name:
         recording.name = recording_update.name
+        # A rename is the user's choice, which a later AI title must not
+        # replace (issue #837). MCP's rename_recording comes through here too.
+        # The same name again, as the rail sends when a rename closes with no
+        # edit, is no choice and changes nothing.
+        recording.title_user_edited = True
     if "transcription_language" in recording_update.model_fields_set:
         recording.transcription_language = recording_update.transcription_language
 

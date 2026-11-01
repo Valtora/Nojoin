@@ -45,6 +45,7 @@ SCHEMA_STATEMENTS = [
         created_at DATETIME,
         updated_at DATETIME,
         name VARCHAR,
+        title_user_edited BOOLEAN NOT NULL DEFAULT 0,
         public_id VARCHAR UNIQUE,
         meeting_uid VARCHAR,
         audio_path VARCHAR,
