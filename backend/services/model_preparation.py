@@ -7,6 +7,7 @@ from kombu.exceptions import KombuError
 
 from backend.celery_app import CPU_QUEUE, celery_app
 from backend.core.task_dispatch import dispatch_task
+from backend.services.model_status import nemotron_unused_reason
 from backend.utils import forced_aligner_model_utils as aligner_assets
 from backend.utils.config_manager import config_manager
 from backend.utils.download_progress import set_download_progress
@@ -83,15 +84,41 @@ def request_nemotron_preparation(*, recording_id: int | None) -> str | None:
     return request_pinned_preparation("nemotron", recording_id=recording_id)
 
 
+def request_stale_nemotron_preparation() -> str | None:
+    """Re-prepare an installed Nemotron model that no longer verifies.
+
+    An upgrade that changes the asset manifest, such as a new Transformers pin,
+    leaves the receipt naming the old identity, so live labels would cluster
+    until a final pass or Retry prepared it again. Engine preparation, which
+    the API queues at startup, calls this once the engine is ready. Nothing is
+    queued when the model was never prepared or the install leaves it unused.
+    Inspection reads the receipt and file metadata only; the queued task on
+    the CPU lane does the hashing.
+    """
+    if nemotron_unused_reason() is not None:
+        return None
+    try:
+        if inspect_nemotron_model().state != "invalid":
+            return None
+    except (OSError, NemotronModelError):
+        logger.warning("Could not inspect Nemotron; not re-preparing it")
+        return None
+    return request_pinned_preparation("nemotron", recording_id=None, repair_only=True)
+
+
 def request_pinned_preparation(
-    target: Literal["nemotron", "forced_aligner"], *, recording_id: int | None
+    target: Literal["nemotron", "forced_aligner"],
+    *,
+    recording_id: int | None,
+    repair_only: bool = False,
 ) -> str | None:
     """Best-effort first-use enqueue; never wait behind a transfer lock.
 
     Publishing has no retries and uses two-second connect/socket limits on a
     dedicated connection. It does not subscribe to the result backend. The
     pending marker keeps later requests from queueing a second transfer, and
-    a recent failure holds them off for FAILURE_BACKOFF.
+    a recent failure holds them off for FAILURE_BACKOFF. `repair_only` queues
+    only for a copy on disk that no longer verifies, never a first download.
     """
     if target == "nemotron":
         control, inspect = nemotron_control, inspect_nemotron_model
@@ -104,8 +131,10 @@ def request_pinned_preparation(
             if not acquired:
                 logger.info("%s preparation busy (recording=%s)", target, recording_id)
                 return None
+            state = inspect().state
             if (
-                inspect().state == "verified"
+                state == "verified"
+                or (repair_only and state != "invalid")
                 or control.pending_task()
                 or control.failed_recently()
             ):
