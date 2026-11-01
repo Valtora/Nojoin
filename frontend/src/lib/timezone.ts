@@ -182,6 +182,21 @@ export function formatTimeZoneLocale(
   return date.toLocaleString(locales, zoned);
 }
 
+/**
+ * A calendar day as the recordings list shows it, "31 Oct 2026", in
+ * `timeZone`. The same in every browser locale, so a date reads alike on
+ * every page.
+ */
+export function formatTimeZoneDay(value: Date | number, timeZone: string): string {
+  return formatTimeZoneLocale(
+    value,
+    timeZone,
+    "date",
+    { day: "numeric", month: "short", year: "numeric" },
+    "en-GB",
+  );
+}
+
 export function toTimeZoneDate(
   value: Date | string | number,
   timeZone: string,

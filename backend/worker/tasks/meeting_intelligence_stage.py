@@ -72,6 +72,21 @@ def _build_automatic_meeting_intelligence_transcript_impl(
     )
 
 
+def _apply_automatic_title(session, recording: Recording, title: str) -> None:
+    """Name the recording after the AI title unless its user chose a name.
+
+    The flag is read again under the row lock, which this transaction's write
+    of the name would take anyway: a rename made while the model was answering
+    has committed by then, or waits for this commit and lands after it. Either
+    way the user's name is the one left (issue #837).
+    """
+    session.refresh(
+        recording, attribute_names=["title_user_edited"], with_for_update=True
+    )
+    if not recording.title_user_edited:
+        recording.name = title
+
+
 def _apply_automatic_meeting_intelligence_result(
     session,
     recording: Recording,
@@ -134,7 +149,7 @@ def _apply_automatic_meeting_intelligence_result(
         reason="automatic_meeting_intelligence_omitted_by_llm",
     )
 
-    recording.name = result.title
+    _apply_automatic_title(session, recording, result.title)
     transcript.notes = result.notes_markdown
     transcript.notes_status = "completed"
     # Freshly generated notes reflect every READY document by definition.

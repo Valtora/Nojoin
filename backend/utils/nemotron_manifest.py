@@ -37,7 +37,7 @@ def _validate_manifest(manifest: dict[str, Any]) -> None:
         "schema_version": 1,
         "repository": REPOSITORY,
         "revision": REVISION,
-        "transformers_version": "5.20.2",
+        "transformers_version": "5.21.0",
     }
     if any(manifest[key] != value for key, value in expected.items()):
         raise ValueError("Unexpected manifest identity")

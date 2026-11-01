@@ -268,16 +268,18 @@ export default function ChatPanel({
       className="@container flex-1 min-w-0 bg-surface-inset h-full flex flex-col"
     >
       <SurfaceBase data-ui-fill="card" kind="pane" className="py-1 pl-3 pr-2 @min-[20rem]:pl-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-action-text" />
-          Chat
+        {/* A narrow column keeps the buttons: the title gives way first, and
+            Context drops its word under 18rem, as the side tabs drop theirs. */}
+        <h2 className="text-sm font-semibold text-foreground flex min-w-0 items-center gap-2">
+          <MessageSquare className="w-4 h-4 shrink-0 text-action-text" />
+          <span className="truncate">Chat</span>
         </h2>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {recordingId && (
             <ButtonBase
               id="chat-context-toggle"
               onClick={() => setShowTagFilter(!showTagFilter)}
-              // Its word is hidden on a phone, where the icon alone shows.
+              // Its word is hidden on a phone and in a narrow column, where the icon alone shows.
               aria-label={selectedTagIds.length > 0
                 ? `Context, ${selectedTagIds.length} tag${selectedTagIds.length === 1 ? "" : "s"} selected`
                 : "Context"}
@@ -289,7 +291,7 @@ export default function ChatPanel({
               }`}
             >
               <TagIcon aria-hidden="true" className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Context</span>
+              <span className="hidden sm:@min-[18rem]:inline">Context</span>
               {selectedTagIds.length > 0 && (
                 <span className="ml-0.5 bg-action-tint text-action-text text-[10px] px-1.5 rounded-pill">
                   {selectedTagIds.length}

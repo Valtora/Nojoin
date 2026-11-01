@@ -30,6 +30,10 @@ from backend.tests.test_live_settling_publication import (
     settling_engine as settling_engine,
 )
 from backend.utils.canonical_pipeline import live_settling_flags
+from backend.utils.canonical_pipeline.live_labels import (
+    LiveLabelDecision,
+    apply_live_speaker_labels,
+)
 from backend.utils.canonical_pipeline.live_settling import (
     legacy_live_frontier,
     live_settling_frontier,
@@ -136,7 +140,7 @@ def _both_ways(
     """What the kept flags select, and what the SQL selects."""
     import backend.utils.canonical_pipeline.live_settling as canonical
 
-    def read() -> tuple[list[int], int, int]:
+    def read() -> tuple[list[int], list[int], int, int]:
         return (
             [
                 row.id
@@ -144,6 +148,8 @@ def _both_ways(
                     session, recording_id, window_start_ms=window_start_ms
                 )
             ],
+            # The label step's read: every marked line still open (#880).
+            [row.id for row in live_rows(session, recording_id)],
             live_settling_frontier(session, recording_id=recording_id),
             legacy_live_frontier(session, recording_id=recording_id),
         )
@@ -196,6 +202,7 @@ def test_kept_flags_select_exactly_what_the_sql_selects(
             kept, sql = _both_ways(session, recording_id, window_start_ms, monkeypatch)
             assert kept == sql
             assert sql[0], "the window must select some lines"
+            assert sql[1], "some lines must still be open"
 
         # A changed line is read again, also when it changes twice in one
         # transaction (the same xmin, a new ctid).
@@ -302,4 +309,45 @@ def test_payloads_a_step_reads_do_not_grow_with_the_transcript(
     short, long = blocks_per_step(20), blocks_per_step(120)
 
     assert short > 0, "the lines' payloads must be stored out of line"
+    assert long <= short + 4, (short, long)
+
+
+def test_payloads_a_label_step_reads_do_not_grow_with_the_transcript(
+    one_connection: Any,
+) -> None:
+    """The label step reprojects the lines still open, not every line (#880)."""
+    engine, toast_blocks = one_connection
+
+    def label() -> None:
+        with Session(engine) as session:
+            apply_live_speaker_labels(
+                session,
+                recording_id=recording_id,
+                settled_ms=0,
+                decide=lambda _start, _end: LiveLabelDecision(
+                    "LIVE_PROVISIONAL_1", False, None
+                ),
+            )
+            session.commit()
+
+    def blocks_per_label_step(locked_lines: int) -> int:
+        nonlocal recording_id
+        recording_id = _seed(engine)
+        with Session(engine) as session:
+            session.add_all(_line(recording_id, index) for index in range(locked_lines))
+            session.commit()
+        end_ms = locked_lines * 10_000 + 20_000
+        # Labels after each step, as the live task runs them; the first run
+        # reads every line's flags once.
+        _step(engine, recording_id, 0, end_ms)
+        label()
+        _step(engine, recording_id, 1, end_ms + 2_000)
+        label()
+        before = toast_blocks()
+        label()
+        return toast_blocks() - before
+
+    recording_id = 0
+    short, long = blocks_per_label_step(20), blocks_per_label_step(120)
+
     assert long <= short + 4, (short, long)

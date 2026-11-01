@@ -131,6 +131,32 @@ describe("a note's file", () => {
     expect(setNoteFileUseInNotes).toHaveBeenCalledWith(RECORDING, "early", true);
   });
 
+  it("names a note on the whole meeting as My notes does, not by a time", async () => {
+    const head: TimelineNote = { ...note("head", 0, file({ title: "agenda.png" })), kind: "head", anchor_ms: null };
+    const tail: TimelineNote = {
+      ...note("tail", 0, file({ id: 9, title: "actions.pdf", is_image: false })),
+      kind: "tail",
+      anchor_ms: null,
+    };
+    render(
+      <NoteFilesProvider recordingId={RECORDING} notes={[head, tail]} noteEdits={noteEdits}>
+        <CapturesGallery recordingId={RECORDING} timelineNotes={[head, tail]} segments={[]} noteEdits={noteEdits} />
+      </NoteFilesProvider>,
+    );
+
+    const items = screen.getAllByTestId("capture-item");
+    expect(items.map((item) => within(item).getAllByRole("button")[1].textContent)).toEqual([
+      "Before the transcript",
+      "After the transcript",
+    ]);
+    expect(screen.getByRole("button", { name: "Show in the transcript: the note after the transcript" })).toBeInTheDocument();
+    expect(screen.queryByText("Meeting")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open agenda.png, on the note before the transcript" }));
+    const viewer = await screen.findByRole("dialog");
+    expect(within(viewer).getByRole("img")).toHaveAttribute("alt", "agenda.png, on the note before the transcript");
+    expect(viewer).toHaveTextContent("Note before the transcript: Note head");
+  });
+
   it("keeps Retry and Discard for a failed upload after Stop", async () => {
     const outbox = noteOutboxFor(RECORDING);
     server.uploadFailures.push(NO_ANSWER);
@@ -376,11 +402,11 @@ describe("a note's file", () => {
   });
 
   it.each([
-    ["Q3 Budget.XLSX", "head", "Remove this file and its note? The note on the meeting has only the file's name as its text, so it goes too."],
-    ["q3 budget.xlsx", "head", "Remove this file? Its note on the meeting stays, with its text."],
-    ["Q3 Budget", "head", "Remove this file? Its note on the meeting stays, with its text."],
-    ["Q3 Budget.XLSX, for Friday", "head", "Remove this file? Its note on the meeting stays, with its text."],
-    ["Screen capture", "head", "Remove this file? Its note on the meeting stays, with its text."],
+    ["Q3 Budget.XLSX", "head", "Remove this file and its note? The note before the transcript has only the file's name as its text, so it goes too."],
+    ["q3 budget.xlsx", "head", "Remove this file? Its note before the transcript stays, with its text."],
+    ["Q3 Budget", "head", "Remove this file? Its note before the transcript stays, with its text."],
+    ["Q3 Budget.XLSX, for Friday", "head", "Remove this file? Its note before the transcript stays, with its text."],
+    ["Screen capture", "head", "Remove this file? Its note before the transcript stays, with its text."],
   ] as const)("asks about a note reading %j by the exact file name", (body, kind, question) => {
     expect(removalQuestion({ kind, body }, { title: "Q3 Budget.XLSX", use_in_notes: false }, null)).toBe(
       `${question} This cannot be undone.`,

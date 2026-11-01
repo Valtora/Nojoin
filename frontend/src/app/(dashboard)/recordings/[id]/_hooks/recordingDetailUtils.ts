@@ -184,6 +184,24 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||
   JSON.stringify(polled.speakers) !== JSON.stringify(current.speakers);
 
+/** Narrower than this, the side column truncates its open tab's label and Chat wraps every few words. */
+const SIDE_COLUMN_OPENING_PX = 320;
+/** The most of the page the side column opens at, so the transcript keeps the larger part. */
+const SIDE_COLUMN_OPENING_MAX = 35;
+
+/**
+ * The share of the page, in percent, the desktop side column opens at: the
+ * density's usual share, raised on a narrow page until the column is 20rem
+ * wide, and never past 35%. Only a layout the panels have not saved yet opens
+ * at it; one already saved, or resized by hand, keeps its own (#841).
+ */
+export const sideColumnOpeningSize = (pageWidthPx: number, isCompact: boolean): number => {
+  const share = isCompact ? 22 : 25;
+  if (!(pageWidthPx > 0)) return share;
+  const fits = Math.ceil((SIDE_COLUMN_OPENING_PX / pageWidthPx) * 100);
+  return Math.min(Math.max(share, fits), SIDE_COLUMN_OPENING_MAX);
+};
+
 export const getAutoSpeakerReplacementName = (speakerName: string) => {
   const trimmedName = speakerName.trim();
   const nameParts = trimmedName.split(/\s+/).filter(Boolean);

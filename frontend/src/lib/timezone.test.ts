@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { withProcessTimeZone } from "@/test/processTimeZone";
 import {
+  formatTimeZoneDay,
   formatTimeZoneLocale,
   localDayRangeToUtc,
   setCachedUserTimeZone,
@@ -114,5 +115,15 @@ describe("subscribeUserTimeZone", () => {
     unsubscribe();
     setCachedUserTimeZone("Europe/Paris");
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("formatTimeZoneDay", () => {
+  withProcessTimeZone("America/New_York");
+
+  it("reads a day as the recordings list does, in the zone it is given", () => {
+    const instant = new Date("2026-10-27T02:30:00Z");
+    expect(formatTimeZoneDay(instant, "Asia/Tokyo")).toBe("27 Oct 2026");
+    expect(formatTimeZoneDay(instant.getTime(), "America/New_York")).toBe("26 Oct 2026");
   });
 });
