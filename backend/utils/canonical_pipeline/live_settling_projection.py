@@ -54,8 +54,8 @@ def live_rows(
     """Read the mutable tail and immutable anchors still inside the audio window."""
     from .live_settling_flags import flags_readable
 
-    if window_start_ms is not None and flags_readable(session):
-        return _windowed_rows(session, recording_id, window_start_ms, lock=lock)
+    if flags_readable(session):
+        return _rows_by_kept_flags(session, recording_id, window_start_ms, lock=lock)
     mutable = (
         col(TranscriptUtterance.confidence_payload)[SETTLING_KEY]["line_locked"]
         .as_boolean()
@@ -117,14 +117,19 @@ def live_rows(
     )
 
 
-def _windowed_rows(
-    session: Session, recording_id: int, window_start_ms: int, *, lock: bool
+def _rows_by_kept_flags(
+    session: Session, recording_id: int, window_start_ms: int | None, *, lock: bool
 ) -> list[TranscriptUtterance]:
-    """``live_rows`` for a window, selected on flags kept per row version (#776)."""
-    from .live_settling_flags import live_lines, windowed_line_ids
+    """``live_rows``, selected on flags kept per row version (#776, #880)."""
+    from .live_settling_flags import live_lines, unlocked_line_ids, windowed_line_ids
 
     rows: list[TranscriptUtterance] = []
-    ids = windowed_line_ids(live_lines(session, recording_id), window_start_ms)
+    lines = live_lines(session, recording_id)
+    ids = (
+        unlocked_line_ids(lines)
+        if window_start_ms is None
+        else windowed_line_ids(lines, window_start_ms)
+    )
     # Ascending ids, batch after batch, so locks are taken in id order.
     for batch in bind_batches(ids):
         statement = (

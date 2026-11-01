@@ -5,8 +5,10 @@ compresses and stores out of line once the line holds a few words. Testing the
 flags in SQL decompressed every live line of the capture, several times per
 query, on every 2 s step, so a step cost more the longer the meeting ran.
 
-Here a step first reads each live line's id, end and row version (``xmin`` and
-``ctid``), which never touches a payload. Flags are read only for lines that
+The settling step's snapshot and publication read the window's lines this way,
+and each live label step reads every line still open (#880). Each first reads
+the live lines' ids, ends and row versions (``xmin`` and ``ctid``), which never
+touches a payload. Flags are read only for lines that
 are new or changed since this process last read them, and the selections the
 SQL made are then made over those flags. A row version never changes once
 written, so a flag read for it stays true for as long as the version is
@@ -14,10 +16,10 @@ current, whichever process wrote the row: the results are the queries' own.
 The flags are read with the queries' own SQL expressions, so their values
 convert as they did.
 
-Under the Transcript fence, where publication runs, no other writer commits
-between the two reads. Outside it, where the step's snapshot runs, a commit
-can land between them as it could between that snapshot's separate queries;
-publication revalidates under the fence either way.
+Under the Transcript fence, where publication and labels run, no other writer
+commits between the two reads. Outside it, where the step's snapshot runs, a
+commit can land between them as it could between that snapshot's separate
+queries; publication revalidates under the fence either way.
 
 Other databases (the SQLite test suite) keep the original queries.
 """
@@ -156,6 +158,16 @@ def windowed_line_ids(lines: Sequence[LiveLine], window_start_ms: int) -> list[i
             or line.end_ms >= window_start_ms
             or (anchor is not None and line.id == anchor[1])
         )
+    ]
+
+
+def unlocked_line_ids(lines: Sequence[LiveLine]) -> list[int]:
+    """The ids ``live_rows`` selects without a window, in id order.
+
+    Every marked line not yet locked as a whole, whatever its age.
+    """
+    return [
+        line.id for line in lines if line.version == 1 and line.line_locked is not True
     ]
 
 
