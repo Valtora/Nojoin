@@ -330,8 +330,21 @@ class _StoryBuilder:
 
     def flowables(self, blocks: Sequence[Block]) -> list[Flowable]:
         story: list[Flowable] = []
+        # Where the heading that introduces the next chart starts in the story,
+        # while only paragraphs have followed it.
+        lead_in: int | None = None
         for block in blocks:
-            story.extend(self._renderers[type(block)](block))
+            rendered = self._renderers[type(block)](block)
+            if isinstance(block, ChartBlock) and lead_in is not None:
+                # The heading and lines that introduce a chart share its page,
+                # so a heading never ends a page whose chart is on the next.
+                rendered = [KeepTogether(story[lead_in:] + rendered)]
+                del story[lead_in:]
+            if isinstance(block, Heading):
+                lead_in = len(story)
+            elif not isinstance(block, Paragraph):
+                lead_in = None
+            story.extend(rendered)
         return story
 
     def _para(self, spans: Inline, style: ParagraphStyle) -> RLParagraph:

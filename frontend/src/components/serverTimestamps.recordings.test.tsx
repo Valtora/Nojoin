@@ -66,8 +66,9 @@ describe.each([
 
   it("shows the recording info clock at the UTC instant returned without a zone", async () => {
     render(<RecordingInfoModal isOpen onClose={vi.fn()} recording={recording("info", event.starts_at)} />);
-    const expected = eventInstant.toLocaleString(undefined, { timeZone: settingZone });
-    expect(await screen.findByText(expected)).toBeInTheDocument();
+    // As the rest of the app writes a day, in any browser locale.
+    const expected = { "Asia/Tokyo": "27 Oct 2026, 11:30", "America/New_York": "26 Oct 2026, 22:30" };
+    expect(await screen.findByText(expected[settingZone as keyof typeof expected])).toBeInTheDocument();
   });
 
   it("shows the linked calendar event at its UTC instant", () => {

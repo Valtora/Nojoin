@@ -114,6 +114,6 @@ describe("recording detail current metadata and capabilities", () => {
     expect(result.current.canPlayback).toBe(true);
     expect(result.current.canExport).toBe(true);
     await result.current.handleExport({ kind: "audio" });
-    expect(mocks.exportAudio).toHaveBeenCalledWith("rec-1", "Meeting");
+    expect(mocks.exportAudio).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1", name: "Meeting" }));
   });
 });

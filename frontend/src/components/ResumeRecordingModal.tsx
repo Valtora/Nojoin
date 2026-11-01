@@ -20,6 +20,11 @@ interface ResumeRecordingModalProps {
   onStop: () => void;
   /** Closes the dialog and leaves the recording as it is. */
   onDismiss: () => void;
+  /**
+   * Shown on the recording's own page, on opening or reloading it, rather
+   * than for a Start Meeting or Import Audio it holds up.
+   */
+  onItsPage?: boolean;
 }
 
 export default function ResumeRecordingModal({
@@ -31,6 +36,7 @@ export default function ResumeRecordingModal({
   onCancel,
   onStop,
   onDismiss,
+  onItsPage = false,
 }: ResumeRecordingModalProps) {
   if (!recording) {
     return null;
@@ -96,7 +102,9 @@ export default function ResumeRecordingModal({
             {interrupted ? "Recording interrupted" : "Recording paused"}
           </p>
           <h2 className="mt-2 text-xl font-semibold text-foreground">
-            Choose what to do before starting anything new
+            {onItsPage
+              ? "Choose what to do with this recording"
+              : "Choose what to do before starting anything new"}
           </h2>
         </div>
       </div>
