@@ -16,6 +16,7 @@ from typing import Any
 
 from backend.models.pipeline import TranscriptUtterance
 from backend.processing.sentence_start import (
+    UNKNOWN,
     NativeActivity,
     Words,
     corrected,
@@ -88,7 +89,7 @@ def correct_sentence_starts(
         start = len(lane.words)
         context = _context_row(fixed, words[lo:hi], live.resume_boundaries_ms)
         if context is not None:
-            stored = context.speaker_label or "UNKNOWN"
+            stored = context.speaker_label or UNKNOWN
             for word in row_words(context):
                 if context.manual_text_locked or context.manual_speaker_locked:
                     lane.manual.add(len(lane.words))
@@ -96,7 +97,7 @@ def correct_sentence_starts(
                 lane.add(word, _decided(word, decide, stored), stored, None)
         for i in range(lo, hi):
             decision = decisions[i]
-            raw = "UNKNOWN" if decision.diarisation_pending else decision.speaker
+            raw = UNKNOWN if decision.diarisation_pending else decision.speaker
             if words[i].get("id") in locked_ids:
                 lane.locked.add(len(lane.words))
                 raw = _decided(words[i], decide, raw)
@@ -116,7 +117,7 @@ def _decided(word: dict[str, Any], decide: DecideSpeaker, fallback: str) -> str:
     if start is None or end is None:
         return fallback
     decision = decide(int(start), max(int(start) + 1, int(end)))
-    return "UNKNOWN" if decision.diarisation_pending else decision.speaker
+    return UNKNOWN if decision.diarisation_pending else decision.speaker
 
 
 def _region_keys(words: Sequence[dict[str, Any]], cuts: Sequence[int]) -> list[int]:

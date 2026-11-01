@@ -10,8 +10,10 @@ of a candidate no rule vetoes to T, all or nothing.
 
 Each rule is one small function with the ``Rule`` signature, and its settings
 are the constants below, so a rule can be dropped from ``RULES`` or retuned
-without touching the others. Rules read only the input labels, never another
-rule's verdict or a move already made, and candidates never overlap.
+without touching the others. Rules read only the pass's input (the diariser's
+labels and, live, what each word shows and which words are locked or edited),
+never another rule's verdict or a move already made, and candidates never
+overlap.
 
 The final pass runs this inside each word-level merge, after flip smoothing
 (``correct_word_assignments``); the live lane runs it on the words the native
@@ -36,8 +38,6 @@ MAX_TAIL_WORDS = 8
 # keep_turn: the least of L's turn that must stay, in seconds. Consolidation
 # folds a shorter line away (``consolidate_diarized_transcript`` min_duration_s).
 MIN_REMAINDER_S = 0.1
-# certain: a tail word needs more than this much of T's activity, in seconds.
-NEXT_SPEAKER_MIN_ACTIVITY_S = 0.0
 # Config key of the spans (ms) of lines a person edited, for the final pass.
 EDITED_LINE_SPANS = "edited_line_spans_ms"
 
@@ -61,7 +61,8 @@ def ends_sentence(token: str) -> bool:
 # ``\p{Sentence_Terminal}``, then the closers skipped before it, every code point
 # matching ``[\s\p{Pe}\p{Pf}\p{Quotation_Mark}]`` (whitespace, closing brackets,
 # final and other quotation marks). To regenerate, test each of chr(0)..chr(0x10FFFF)
-# against those two patterns and list the matches in order.
+# against those two patterns and list the matches in order:
+# ``scripts/generate_sentence_terminals.py`` does that, and ``--check`` compares.
 SENTENCE_TERMINALS = frozenset(
     (
         "\u0021\u002e\u003f\u0589\u061d\u061e\u061f\u06d4\u0700\u0701\u0702\u07f9\u0837\u0839\u083d\u083e"
@@ -342,9 +343,7 @@ def certain(c: Candidate, words: Words) -> bool:
         if not words.activity.available(start, end):
             return True
         if end > start:
-            heard = words.activity.overlap(c.T, start, end) > (
-                NEXT_SPEAKER_MIN_ACTIVITY_S + WORD_TIME_TOLERANCE_S
-            )
+            heard = words.activity.overlap(c.T, start, end) > WORD_TIME_TOLERANCE_S
         else:
             heard = words.activity.at(c.T, start)
         if not heard:
