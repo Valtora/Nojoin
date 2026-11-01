@@ -14,18 +14,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-import numpy as np
-
 from backend.models.pipeline import TranscriptUtterance
 from backend.processing.sentence_start import (
-    Activity,
+    NativeActivity,
     Words,
-    activity_from_frames,
     corrected,
     ends_sentence,
     split_regions,
 )
-from backend.utils.live_speaker_labels import live_speaker_label
 
 from .live_labels import LiveLabelDecision
 from .live_settling_projection import (
@@ -35,33 +31,6 @@ from .live_settling_projection import (
     speaker_locked_word_ids,
     stored_speakers,
 )
-
-
-@dataclass(frozen=True)
-class NativeActivity:
-    """Native speaker activity, and the last instant (ms) of natively decided
-    words; None when the native route decides every word."""
-
-    activity: Activity
-    native_until_ms: int | None
-
-
-def native_activity(
-    posteriors: np.ndarray,
-    first_frame: int,
-    complete_frame: int,
-    *,
-    native: bool,
-    switched: bool,
-) -> NativeActivity | None:
-    """Activity from retained native posteriors; None on a classic capture."""
-    if not native and not switched:
-        return None
-    labels = [live_speaker_label(k + 1) for k in range(posteriors.shape[1])]
-    return NativeActivity(
-        activity_from_frames(posteriors, labels, first_frame, complete_frame),
-        None if native else complete_frame * 10,
-    )
 
 
 @dataclass(frozen=True)

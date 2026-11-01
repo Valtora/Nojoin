@@ -46,7 +46,7 @@ from .constants import (
 from .segmentation import _speaker_state_for_utterance
 
 if TYPE_CHECKING:
-    from .live_sentence_start import NativeActivity
+    from backend.processing.sentence_start import NativeActivity
 
 LIVE_SPEAKER_LABEL_EVENT = "live_speaker_label"
 

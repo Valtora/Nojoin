@@ -13,6 +13,7 @@ from sqlmodel import Session
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.processing.live_diarization.evidence import SpeakerEvidence
 from backend.processing.live_diarization.lines import LabelTimeline
+from backend.processing.sentence_start import native_activity
 from backend.tests.test_live_settling_pending import _enable_speakers
 from backend.tests.test_live_settling_publication import (
     _request,
@@ -30,7 +31,6 @@ from backend.utils.canonical_pipeline.live_labels import (
 from backend.utils.canonical_pipeline.live_sentence_start import (
     LivePass,
     correct_sentence_starts,
-    native_activity,
 )
 from backend.utils.canonical_pipeline.live_settling import publish_live_settling
 

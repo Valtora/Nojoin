@@ -9,11 +9,8 @@ from zipfile import BadZipFile
 
 import numpy as np
 
+from backend.processing.sentence_start import NativeActivity, native_activity
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
-from backend.utils.canonical_pipeline.live_sentence_start import (
-    NativeActivity,
-    native_activity,
-)
 from backend.utils.live_speaker_labels import live_speaker_label
 
 from .engine import LiveLabelConfig

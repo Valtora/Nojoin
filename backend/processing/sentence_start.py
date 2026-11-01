@@ -27,6 +27,7 @@ from typing import Any
 
 import numpy as np
 
+from backend.utils.live_speaker_labels import live_speaker_label
 from backend.utils.word_times import WORD_TIME_TOLERANCE_S, exceeds, falls_short
 
 # --- Settings, one place for every rule ---------------------------------------
@@ -189,6 +190,33 @@ def activity_from_frames(
             )
     covered = min(complete_frame, first_frame + len(posteriors))
     return activity_from_turns(turns, coverage=(first_frame / 100, covered / 100))
+
+
+@dataclass(frozen=True)
+class NativeActivity:
+    """Native speaker activity, and the last instant (ms) of natively decided
+    words; None when the native route decides every word."""
+
+    activity: Activity
+    native_until_ms: int | None
+
+
+def native_activity(
+    posteriors: np.ndarray,
+    first_frame: int,
+    complete_frame: int,
+    *,
+    native: bool,
+    switched: bool,
+) -> NativeActivity | None:
+    """Activity from retained native posteriors; None on a classic capture."""
+    if not native and not switched:
+        return None
+    labels = [live_speaker_label(k + 1) for k in range(posteriors.shape[1])]
+    return NativeActivity(
+        activity_from_frames(posteriors, labels, first_frame, complete_frame),
+        None if native else complete_frame * 10,
+    )
 
 
 # --- Words and candidates --------------------------------------------------------

@@ -22,12 +22,12 @@ from pathlib import Path
 from typing import Any
 
 from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.processing.sentence_start import native_activity
 from backend.utils.canonical_pipeline.live_labels import (
     LiveLabelDecision,
     LiveLabelWrite,
     apply_live_speaker_labels,
 )
-from backend.utils.canonical_pipeline.live_sentence_start import native_activity
 from backend.utils.config_manager import config_manager
 from backend.utils.transcript_settling import (
     CapturePublicationToken,

@@ -15,6 +15,7 @@ from backend.processing.processing_tuning import (
     line_break_pause_exceeded,
     resolve_tuning,
 )
+from backend.processing.sentence_start import NativeActivity
 from backend.utils.capture_resume import capture_interval, load_resume_boundaries
 from backend.utils.config_manager import config_manager
 from backend.utils.live_word_settling import (
@@ -31,7 +32,7 @@ from backend.utils.transcript_settling import (
     publication_is_current,
 )
 
-from .live_sentence_start import LivePass, NativeActivity, correct_sentence_starts
+from .live_sentence_start import LivePass, correct_sentence_starts
 from .live_settling_flags import (
     flags_readable,
     live_lines,
