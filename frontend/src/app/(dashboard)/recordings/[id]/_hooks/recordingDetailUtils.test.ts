@@ -14,6 +14,7 @@ import {
   notFoundMeans,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
+  sideColumnOpeningSize,
 } from "./recordingDetailUtils";
 
 const recordingWith = (overrides: Partial<Recording>) =>
@@ -215,5 +216,29 @@ describe("which in-flight recordings have live lines to read (#835)", () => {
 
   it("notices the transcript's status move on a poll", () => {
     expect(hasPolledRecordingChanged(withTranscript("pending"), withTranscript("completed"))).toBe(true);
+  });
+});
+
+describe("sideColumnOpeningSize", () => {
+  it("keeps the density's share where it is already wide enough", () => {
+    expect(sideColumnOpeningSize(1_600, true)).toBe(22);
+    expect(sideColumnOpeningSize(1_600, false)).toBe(25);
+  });
+
+  // A 1440 px window less the nav and the recordings list leaves about 900 px,
+  // where 22% left the column about 200 px wide (#841).
+  it("opens a narrow page's column 20rem wide", () => {
+    expect(sideColumnOpeningSize(1_100, true)).toBe(30);
+    expect((1_100 * 30) / 100).toBeGreaterThanOrEqual(320);
+  });
+
+  it("never gives the column more than 35% of the page", () => {
+    expect(sideColumnOpeningSize(912, true)).toBe(35);
+    expect(sideColumnOpeningSize(700, false)).toBe(35);
+  });
+
+  it("falls back to the share before the page is measured", () => {
+    expect(sideColumnOpeningSize(0, true)).toBe(22);
+    expect(sideColumnOpeningSize(Number.NaN, false)).toBe(25);
   });
 });

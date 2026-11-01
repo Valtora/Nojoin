@@ -170,6 +170,12 @@ SPEAKERS_ROUTE_CONTRACT = [
         "LiveSpeakerNamesRead",
     ),
     (
+        "/recordings/{recording_id}/live/{label}/merge",
+        ("POST",),
+        "merge_live_speaker",
+        "LiveSpeakerNamesRead",
+    ),
+    (
         "/recordings/{recording_id}/merge",
         ("POST",),
         "merge_recording_speakers",

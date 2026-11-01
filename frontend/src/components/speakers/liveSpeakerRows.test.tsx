@@ -30,6 +30,9 @@ describe("live speaker rows", () => {
     expect(screen.queryByText("No speakers detected.")).toBeNull();
     expect(screen.queryByRole("button", { name: "Confirm Alex" })).toBeNull();
     fireEvent.click(menuItem("Alex", "Change identity"));
+    // People are found by typing, not listed.
+    expect(screen.queryByRole("button", { name: "Robin" })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search or add..."), { target: { value: "rob" } });
     fireEvent.click(screen.getByRole("button", { name: "Robin" }));
     await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Robin", false));
     expect(mocks.promote).not.toHaveBeenCalled();
@@ -71,6 +74,7 @@ describe("live speaker rows", () => {
     const ordinary = { ...anchor, settling_required: false };
     render(<SpeakerPanel {...props()} segments={[ordinary]} globalSpeakers={[person(9, "Robin")]} />);
     fireEvent.click(menuItem("Alex", "Change identity"));
+    fireEvent.change(screen.getByPlaceholderText("Search or add..."), { target: { value: "Robin" } });
     fireEvent.click(screen.getByRole("button", { name: "Robin" }));
     await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Robin", false));
     fireEvent.click(menuItem("Alex", "Add to People"));

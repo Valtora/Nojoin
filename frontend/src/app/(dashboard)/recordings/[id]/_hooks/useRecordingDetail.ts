@@ -178,6 +178,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     !!recording && (isLiveCaptureInProgress(recording) || localCaptureActive),
     rememberedPanel,
     rememberPanel,
+    isMobile,
   );
   const canPlayback = !!recording && !isInFlightRecording && !localCaptureActive;
   const canExport = canPlayback;

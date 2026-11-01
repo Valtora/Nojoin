@@ -171,6 +171,20 @@ describe("PCM recorder", () => {
     expect(chunks.reduce((sum, chunk) => sum + chunk.durationSeconds, 0)).toBeCloseTo(4, 2);
   });
 
+  it("says where the audio recorded after a resume starts (issue #815)", async () => {
+    const recorder = createRecorder({ startSequence: 3 });
+    recorder.start();
+    expect(recorder.nextSegmentSequence).toBe(3);
+    source.render(INPUT_RATE * 5);
+    expect(recorder.nextSegmentSequence).toBe(5);
+
+    await recorder.pause();
+
+    // The pause emitted the last second as 5, so the resumed audio starts at 6.
+    expect(chunks.map((chunk) => chunk.sequence)).toEqual([3, 4, 5]);
+    expect(recorder.nextSegmentSequence).toBe(6);
+  });
+
   it("drops the unfinished segment when stopped without a tail", async () => {
     const recorder = createRecorder();
     recorder.start();

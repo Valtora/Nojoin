@@ -13,7 +13,7 @@ from backend.processing.delivery_descriptors import (
     MIN_UTTERANCES_PER_SPEAKER,
 )
 from backend.utils.canonical_pipeline.core import build_transcript_segments_for_read
-from backend.utils.speaker_names.live import live_speaker_names
+from backend.utils.speaker_names.live import live_speaker_groups, live_speaker_names
 
 from .metrics import (
     UtteranceRow,
@@ -134,6 +134,30 @@ def _continue_pending_speakers(
     return continued
 
 
+def _merge_live_speakers(
+    segments: list[dict[str, Any]], groups: dict[str, str]
+) -> list[dict[str, Any]]:
+    """A live label the user merged counts as the label it joined, as the transcript shows it."""
+    if not groups:
+        return segments
+    merged = []
+    for segment in segments:
+        speaker = groups.get(str(segment.get("speaker")), segment.get("speaker"))
+        overlaps = segment.get("overlapping_speakers") or []
+        if speaker != segment.get("speaker") or any(str(o) in groups for o in overlaps):
+            segment = {
+                **segment,
+                "speaker": speaker,
+                "overlapping_speakers": [
+                    label
+                    for label in dict.fromkeys(groups.get(str(o), o) for o in overlaps)
+                    if label != speaker
+                ],
+            }
+        merged.append(segment)
+    return merged
+
+
 def _resolve_projection_speakers(
     segments: list[dict[str, Any]], directory: dict[str, dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -182,7 +206,10 @@ def compute_live_recording_analytics(
         else []
     )
     segments = _continue_pending_speakers(
-        _resolve_projection_speakers(segments, directory)
+        _merge_live_speakers(
+            _resolve_projection_speakers(segments, directory),
+            live_speaker_groups(session, recording.id),
+        )
     )
     rows = [
         UtteranceRow(

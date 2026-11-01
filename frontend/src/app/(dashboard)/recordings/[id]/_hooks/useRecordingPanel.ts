@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ActivePanel } from "@/lib/store";
-import { isTourPanel, TOUR_RESTORE_PANEL_EVENT, TOUR_SWITCH_PANEL_EVENT } from "@/lib/tour-config";
+import { useNavigationStore, type ActivePanel, type SideTab } from "@/lib/store";
+import { isSideTab, isTourPanel, TOUR_RESTORE_PANEL_EVENT, TOUR_SWITCH_PANEL_EVENT } from "@/lib/tour-config";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 /**
@@ -16,6 +16,7 @@ export function useRecordingPanel(
   capturing: boolean,
   rememberedPanel: ActivePanel,
   rememberPanel: (panel: ActivePanel) => void,
+  isMobile = false,
 ) {
   const [transcriptFirstId, setTranscriptFirstId] = useState(capturing ? recordingId : null);
   useOnDepsChange([recordingId, capturing], () => {
@@ -28,33 +29,42 @@ export function useRecordingPanel(
     rememberPanel(panel);
   }, [rememberPanel]);
 
-  useTourPanels(activePanel, setActivePanel);
+  useTourPanels(activePanel, setActivePanel, isMobile);
   return { activePanel, setActivePanel };
 }
 
 /**
- * Opens each panel the transcript tour asks for, and puts back the panel the
- * tour found once it ends, or when the page goes while it runs.
+ * Opens each panel the transcript tour asks for, and puts back the panels the
+ * tour found once it ends, or when the page goes while it runs. On desktop
+ * Speakers, My notes, Captures and Meeting Edge open in the side column, so
+ * its tab is put back as well as the main one.
  */
-function useTourPanels(activePanel: ActivePanel, setActivePanel: (panel: ActivePanel) => void) {
-  const activePanelRef = useRef(activePanel);
+function useTourPanels(
+  activePanel: ActivePanel,
+  setActivePanel: (panel: ActivePanel) => void,
+  isMobile: boolean,
+) {
+  const setSideTab = useNavigationStore((state) => state.setSideTab);
+  const latestRef = useRef({ activePanel, isMobile });
   useEffect(() => {
-    activePanelRef.current = activePanel;
-  }, [activePanel]);
+    latestRef.current = { activePanel, isMobile };
+  }, [activePanel, isMobile]);
 
   useEffect(() => {
-    let found: ActivePanel | null = null;
+    let found: { panel: ActivePanel; sideTab: SideTab } | null = null;
     const restore = () => {
       if (found === null) return;
-      const panel = found;
+      const { panel, sideTab } = found;
       found = null;
       setActivePanel(panel);
+      setSideTab(sideTab);
     };
     const show = (event: Event) => {
       const panel = (event as CustomEvent<unknown>).detail;
       if (!isTourPanel(panel)) return;
-      found ??= activePanelRef.current;
-      setActivePanel(panel);
+      found ??= { panel: latestRef.current.activePanel, sideTab: useNavigationStore.getState().sideTab };
+      if (isSideTab(panel) && !latestRef.current.isMobile) setSideTab(panel);
+      else setActivePanel(panel);
     };
     window.addEventListener(TOUR_SWITCH_PANEL_EVENT, show);
     window.addEventListener(TOUR_RESTORE_PANEL_EVENT, restore);
@@ -64,5 +74,5 @@ function useTourPanels(activePanel: ActivePanel, setActivePanel: (panel: ActiveP
       // The page can go before the tour's own end reaches it.
       restore();
     };
-  }, [setActivePanel]);
+  }, [setActivePanel, setSideTab]);
 }

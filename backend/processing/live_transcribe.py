@@ -2,7 +2,6 @@
 
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -29,6 +28,7 @@ from backend.processing.live_audio_buffer import (
     stage_live_audio,
 )
 from backend.processing.live_diarization.setting import live_speaker_labels_requested
+from backend.processing.live_gap import GapSkip, find_gap_skip
 from backend.processing.live_limits import (
     DEFAULT_FORCED_MAX,
     DEFAULT_MAX_SEGMENT_S,
@@ -76,8 +76,6 @@ from backend.utils.transcript_settling import capture_publication_token
 TRAIL_EPS = 0.20
 _BUFFER_FILENAME = "buffer.wav"
 _CONTEXT_FILENAME = "context.wav"
-# Later chunks (about 10 s of 2 s chunks) that let the lane skip a missing one.
-LIVE_GAP_SKIP_CHUNKS = 5
 
 
 def _record_live_sequence_outcome_metric(
@@ -108,36 +106,19 @@ def _record_live_sequence_outcome_metric(
     )
 
 
-def _first_chunk_past_gap(temp_dir: Path, next_expected: int) -> int | None:
-    """The first chunk after a missing head, once enough later chunks wait.
+def _report_gap_skip(recording_id: int, gap: GapSkip | None) -> None:
+    """Report a skip once the run that made it has saved the lane state.
 
-    A chunk that never arrives (an upload that kept failing, a corrupt segment)
-    would otherwise hold the lane for the rest of the capture. The final pass
-    still includes one that arrives late.
+    A rejected run saves nothing, so the next one makes the same skip again.
     """
-    later = sorted(
-        int(path.stem)
-        for path in temp_dir.glob("*.wav")
-        if path.stem.isdigit() and int(path.stem) > next_expected
-    )
-    return later[0] if len(later) >= LIVE_GAP_SKIP_CHUNKS else None
-
-
-def _record_gap_skipped(
-    recording_id: int, state: dict, next_expected: int, resume_at: int
-) -> None:
-    skipped = list(range(next_expected, resume_at))
-    for missing in skipped:
-        _record_live_sequence_outcome(
-            state, sequence=missing, outcome="skipped", reason="gap_skipped"
+    if gap is not None:
+        _record_live_sequence_outcome_metric(
+            recording_id=recording_id,
+            sequence=gap.first,
+            outcome="skipped",
+            reason="gap_skipped",
+            extra_payload=gap.metric_payload(),
         )
-    _record_live_sequence_outcome_metric(
-        recording_id=recording_id,
-        sequence=next_expected,
-        outcome="skipped",
-        reason="gap_skipped",
-        extra_payload={"skipped": skipped, "next_expected": resume_at},
-    )
 
 
 def _write_live_state_best_effort(live_dir, state: dict) -> None:
@@ -281,6 +262,7 @@ def _resolve_live_engine_config(
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording
     from backend.models.user import User
+    from backend.utils.languages import apply_recording_language
     from backend.worker.tasks import resolve_llm_config
 
     session = get_sync_session()
@@ -294,7 +276,12 @@ def _resolve_live_engine_config(
                 if user and user.settings:
                     user_settings = user.settings
             if hasattr(session, "exec"):
-                merged_config = resolve_llm_config(session, user_settings).merged_config
+                # The recording's own language first, as the final pass reads
+                # it (#671), so a capture with one set never detects (#776).
+                merged_config = apply_recording_language(
+                    resolve_llm_config(session, user_settings).merged_config,
+                    recording,
+                )
             else:
                 merged_config = live_config
             merged_config.setdefault(
@@ -381,6 +368,8 @@ def _transcribe_live_regions(
     engine via transcribe_audio) stay inside this worker-only helper so module
     import time stays light.
     """
+    import tempfile
+
     import torch
 
     from backend.processing.transcribe import (
@@ -427,7 +416,9 @@ def _transcribe_live_regions(
         region_start_ms = int(round((combined_abs_start + sp["start"]) * 1000.0))
         region_end_ms = int(round((combined_abs_start + sp["end"]) * 1000.0))
 
-        clip_path = str(live_dir / "clip.wav")
+        # Outside the capture's folder, which a Discard removes during the call.
+        clip_fd, clip_path = tempfile.mkstemp(prefix="nojoin-live-", suffix=".wav")
+        os.close(clip_fd)
         try:
             from backend.processing.vad import silero_vad
 
@@ -680,10 +671,10 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
     head_missing = (
         sequence > next_expected and not (temp_dir / f"{next_expected}.wav").exists()
     )
-    resume_at = _first_chunk_past_gap(temp_dir, next_expected) if head_missing else None
-    if resume_at is not None:
-        _record_gap_skipped(recording_id, state, next_expected, resume_at)
-        next_expected = state["next_expected"] = resume_at
+    gap = find_gap_skip(temp_dir, next_expected) if head_missing else None
+    if gap is not None:
+        gap.record(state)
+        next_expected = state["next_expected"] = gap.resume_at
     elif head_missing:
         _record_live_sequence_outcome(
             state,
@@ -930,6 +921,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         state["buffer_abs_start"] = new_abs_start
         state["buffer_len_s"] = combined_len - cut_point
         write_live_state(live_dir, state)
+        _report_gap_skip(recording_id, gap)
         labels_ready = True
         _record_live_sequence_outcome_metric(
             recording_id=recording_id,
@@ -956,6 +948,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         # Non-fatal: log and move on. Finalize transcribes the whole recording,
         # so the failed run's audio still reaches the final transcript.
         record_live_run_failure(live_run, exc, state)
+        _report_gap_skip(recording_id, gap)
     finally:
         try:  # labels remain independent of failed/skipped settling ASR
             if (

@@ -12,17 +12,25 @@ vi.mock("@/lib/notificationStore", () => ({
 const NOW = Date.parse("2026-10-30T09:00:00Z");
 
 // Lines stamped a millisecond apart, as one bulk write of a long transcript
-// stamps them (a backfill, a reprocess, a find and replace).
-const burst = (count: number, firstStamp: number): TranscriptSegment[] =>
+// stamps them (a find and replace across it, a speaker merge).
+const burst = (count: number, firstStamp: number, wording = "of the meeting"): TranscriptSegment[] =>
   Array.from({ length: count }, (_, index) => ({
     id: `line-${index}`,
     revision: 1,
     speaker: index % 2 ? "B" : "A",
     start: index * 2,
     end: index * 2 + 1.5,
-    text: `Line ${index} of the meeting.`,
+    text: `Line ${index} ${wording}.`,
     updated_at: new Date(firstStamp + index).toISOString(),
   }));
+
+// "Revised" marks a change made after the view first showed the lines, so the
+// view first shows them as an hour-old write left them.
+const renderBurst = (count: number, firstStamp: number) => {
+  const view = render(<TranscriptView {...viewProps(burst(count, NOW - 3_600_000, "as first written"))} />);
+  view.rerender(<TranscriptView {...viewProps(burst(count, firstStamp))} />);
+  return view;
+};
 
 describe("Revised badges after a bulk write", () => {
   afterEach(() => {
@@ -41,7 +49,7 @@ describe("Revised badges after a bulk write", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const lines = 600;
 
-    render(<TranscriptView {...viewProps(burst(lines, NOW - 15_000 + 1))} />);
+    renderBurst(lines, NOW - 15_000 + 1);
 
     const logged = errors.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
     expect(logged).not.toMatch(/Maximum update depth|getSnapshot should be cached/);
@@ -53,7 +61,7 @@ describe("Revised badges after a bulk write", () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     vi.setSystemTime(NOW);
     // Stamped over 300 ms, the first line's badge 1 s from expiry.
-    render(<TranscriptView {...viewProps(burst(300, NOW - 14_000))} />);
+    renderBurst(300, NOW - 14_000);
     expect(screen.getAllByText("Revised")).toHaveLength(300);
     expect(vi.getTimerCount()).toBe(1);
 

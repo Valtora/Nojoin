@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
@@ -226,7 +226,6 @@ describe("LiveMeetingControls", () => {
       captureState.status = "paused";
       // A recovery offer for a different recording is not permission for this ID.
       captureState.pausedRecording = { id: "rec-other" };
-      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
       render(<LiveMeetingControls size={size} />);
 
       const stopButton = screen.getByTitle("Stop recording");
@@ -237,8 +236,7 @@ describe("LiveMeetingControls", () => {
       fireEvent.click(discardButton);
       expect(stop).not.toHaveBeenCalled();
       expect(cancel).not.toHaveBeenCalled();
-      expect(confirm).not.toHaveBeenCalled();
-      confirm.mockRestore();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     },
   );
 
@@ -248,7 +246,6 @@ describe("LiveMeetingControls", () => {
       captureState.status = "paused";
       captureState.ownedRecordingId = kind === "owner after a failed stop" ? "rec-1" : null;
       captureState.pausedRecording = kind === "authorised recovery" ? { id: "rec-1" } : null;
-      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
       stop.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
       cancel.mockResolvedValue(undefined);
       render(<LiveMeetingControls size="bar" />);
@@ -259,8 +256,32 @@ describe("LiveMeetingControls", () => {
       fireEvent.click(screen.getByTitle("Stop recording"));
       await waitFor(() => expect(stop).toHaveBeenCalledOnce());
       fireEvent.click(screen.getByTitle("Discard recording"));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
       await waitFor(() => expect(cancel).toHaveBeenCalledOnce());
-      confirm.mockRestore();
+    },
+  );
+
+  it.each(["compact", "full", "bar"] as const)(
+    "%s asks in the app's own dialog before it discards (#841)", async (size) => {
+      cancel.mockResolvedValue(undefined);
+      const nativeConfirm = vi.spyOn(window, "confirm");
+      const onMeetingDiscard = vi.fn();
+      render(<LiveMeetingControls size={size} onMeetingDiscard={onMeetingDiscard} />);
+
+      fireEvent.click(screen.getByTitle("Discard recording"));
+      const dialog = await screen.findByRole("dialog", { name: "Discard Recording" });
+      expect(dialog).toHaveTextContent(
+        "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.",
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(cancel).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTitle("Discard recording"));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
+      await waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+      expect(nativeConfirm).not.toHaveBeenCalled();
+      nativeConfirm.mockRestore();
     },
   );
 });

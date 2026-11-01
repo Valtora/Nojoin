@@ -139,6 +139,7 @@ describe("speaker row controls", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     expect(screen.queryByRole("button", { name: "This utterance" })).toBeNull();
     expect(screen.getByText("Whole speaker in this recording")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Search or add..."), { target: { value: "Robin" } });
     fireEvent.click(screen.getByRole("button", { name: "Robin" }));
     await waitFor(() => expect(props.onRefresh).toHaveBeenCalled());
     expect(updateSpeaker.mock.calls).toEqual([["r1", "A", "Robin"], ["r1", "A2", "Robin"]]);

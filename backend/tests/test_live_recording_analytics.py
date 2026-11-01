@@ -137,6 +137,48 @@ def test_live_pending_tail_counts_under_the_previous_speaker(
     assert talk_time["label:UNKNOWN"]["speech_ms"] == 2_000
 
 
+def test_a_merged_live_label_counts_as_the_label_it_joined(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import backend.utils.canonical_pipeline.core as core
+    from backend.models.speaker_name_event import SpeakerNameEvent
+
+    session.add(
+        SpeakerNameEvent(
+            recording_id=1,
+            kind="merge",
+            name="Speaker 1",
+            source="user",
+            authority=40,
+            surface="live",
+            anchor_start_ms=4_000,
+            anchor_end_ms=6_000,
+            anchor_label="LIVE_PROVISIONAL_3",
+            evidence={"into_label": "LIVE_PROVISIONAL_1"},
+        )
+    )
+    session.commit()
+    line = {"text": "one two", "provisional": True}
+    monkeypatch.setattr(
+        core,
+        "serialize_canonical_utterances",
+        lambda *args: [
+            {**line, "speaker": "LIVE_PROVISIONAL_1", "start": 0.0, "end": 4.0},
+            {
+                **line,
+                "speaker": "LIVE_PROVISIONAL_3",
+                "start": 4.0,
+                "end": 6.0,
+                "overlapping_speakers": ["LIVE_PROVISIONAL_1", "LIVE_PROVISIONAL_2"],
+            },
+            {**line, "speaker": "LIVE_PROVISIONAL_2", "start": 6.0, "end": 7.0},
+        ],
+    )
+    talk_time = _live(session)["metrics"]["talk_time"]
+    assert talk_time["label:LIVE_PROVISIONAL_1"]["speech_ms"] == 6_000
+    assert "label:LIVE_PROVISIONAL_3" not in talk_time
+
+
 @pytest.mark.parametrize(
     ("cleo_start_ms", "cleo_end_ms", "ana_share", "cleo_share"),
     [(15_000, 20_000, 0.75, 0.25), (10_000, 20_000, 0.6, 0.4)],

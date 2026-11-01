@@ -127,7 +127,9 @@ export default function TranscriptSection({
   const lineActions = useMemo(() => transcriptLineActions((message) =>
     addNotification({ type: "error", message })), [addNotification]);
   const applyLiveNames = liveTranscript?.applyLiveSpeakerNames ?? IGNORE_LIVE_NAMES;
-  const liveNaming = useLiveSpeakerNaming(recording.id, applyLiveNames);
+  const liveNaming = useLiveSpeakerNaming(
+    recording.id, applyLiveNames, undefined, liveTranscript?.applyLiveSpeakerMerges,
+  );
   const activeCapture = isLiveCaptureInProgress(recording);
   // Terminal metadata can precede the replacement read; an open editor can
   // defer its old row even after that read. Wait for the displayed replacement.
@@ -213,9 +215,10 @@ export default function TranscriptSection({
     onNoteOnLine: activeCapture ? noteOnLine : undefined,
     onNoteAtTime: activeCapture ? noteAtTime : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,
+    onMergeLiveSpeaker: activeCapture ? liveNaming.mergeLiveSpeaker : undefined,
     loadPeopleNames: liveNaming.loadPeopleNames,
   }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveBehind, liveLineHandlers, activeCapture,
-    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.loadPeopleNames]);
+    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.mergeLiveSpeaker, liveNaming.loadPeopleNames]);
   const discardNote = useCallback(
     (key: string) => {
       outbox.discard(key);

@@ -7,7 +7,7 @@ import { lineIsSettling } from "@/lib/transcript/settling";
 
 interface TranscriptLineBadgesProps {
   segment: TranscriptSegment;
-  /** Revised recently, and not open in an editor. */
+  /** Changed recently while on screen, and not open in an editor. */
   showRevised: boolean;
   hasPendingRemoteUpdate: boolean;
 }
