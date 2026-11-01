@@ -8,12 +8,12 @@ import { FileText } from "lucide-react";
 import { documentPreviewUrl } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { shownNotes } from "@/lib/notes/noteOutbox";
-import { formatTimelineMs, placeTimelineNotes, type NotePlacement } from "@/lib/notes/placement";
+import { placeTimelineNotes, type NotePlacement } from "@/lib/notes/placement";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 import { selectSavedNotes, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { RecordingId, TimelineNote, TranscriptSegment } from "@/types";
 
-import { noteFileTimeMs, useOpenNoteFile } from "./NoteFiles";
+import { noteFileTimeMs, noteFileWhere, useOpenNoteFile } from "./NoteFiles";
 import { scrollTranscriptToNote } from "./transcriptJump";
 
 interface CapturesGalleryProps {
@@ -58,14 +58,17 @@ export default function CapturesGallery({
     const file = note.attachment;
     if (!file) return null;
     const atMs = noteFileTimeMs(note);
-    const time = atMs === null ? "Meeting" : formatTimelineMs(atMs);
+    // A note on the whole meeting has no time, so it says where it sits, as My
+    // notes does, on its own line above the note's text.
+    const { label, place } = noteFileWhere(note, atMs);
+    const timed = atMs !== null;
     return (
       <li key={note.id} data-testid="capture-item" className="min-w-0">
         <ButtonBase
           data-ui-fill="inset"
           type="button"
           onClick={(event) => open?.(note.id, event.currentTarget)}
-          aria-label={`Open ${file.title}, on the note at ${time}`}
+          aria-label={`Open ${file.title}, on the note ${place}`}
           className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-md border border-surface-border bg-surface-inset outline-none transition-colors hover:border-action-border focus-visible:ring-2 focus-visible:ring-action"
         >
           {file.is_image ? (
@@ -83,19 +86,22 @@ export default function CapturesGallery({
             </span>
           )}
         </ButtonBase>
-        <div className="mt-1 flex min-w-0 items-baseline gap-2">
+        <div className={cn("mt-1 flex min-w-0", timed ? "items-baseline gap-2" : "flex-col items-start")}>
           <ButtonBase
             type="button"
             onClick={() => {
               onShowTranscript?.();
               scrollTranscriptToNote(note.id, afterIndex);
             }}
-            aria-label={`Show the note at ${time} in the transcript`}
-            className="shrink-0 rounded-sm font-mono text-xs tabular-nums text-action-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-action"
+            aria-label={`Show in the transcript: the note ${place}`}
+            className={cn(
+              "rounded-sm text-xs text-action-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-action",
+              timed ? "shrink-0 font-mono tabular-nums" : "max-w-full truncate",
+            )}
           >
-            {time}
+            {label}
           </ButtonBase>
-          <span className="min-w-0 truncate text-xs text-contrast-helper">
+          <span className="min-w-0 max-w-full truncate text-xs text-contrast-helper">
             {file.use_in_notes ? "In notes · " : ""}
             {note.body}
           </span>

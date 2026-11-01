@@ -24,6 +24,7 @@ import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import {
   SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_CONTROL_COLUMN_WIDE,
   SETTINGS_CONTROL_END,
   SETTINGS_INPUT_CLASS,
   SETTINGS_SELECT_CLASS,
@@ -223,11 +224,16 @@ export default function GeneralSettings({
           <SettingsRow
             label="Timezone"
             description={`This browser reports ${browserTimeZone}. Times show in the timezone chosen here and are stored in UTC, so they stay put if you travel.`}
+            controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
           >
                 <Popover className="relative block">
                   {({ open, close }) => (
                     <>
                       <Popover.Button
+                        // A field like the selects beside it, so every style draws it as one.
+                        data-ui-fill="control"
+                        data-ui-border="full"
+                        data-ui-field="custom"
                         aria-label={`Timezone: ${selectedTimeZone}`}
                         className={`${SETTINGS_SELECT_CLASS} flex items-center justify-between gap-3 text-left`}
                       >
@@ -344,6 +350,7 @@ export default function GeneralSettings({
         >
           <SettingsRow
             label="Language"
+            controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
           >
             <SelectBase
               data-ui-fill="control"

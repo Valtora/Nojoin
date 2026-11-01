@@ -50,7 +50,7 @@ import {
 } from "./recordings/recordingListActions";
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import MonthCalendar from "./MonthCalendar";
-import { formatTimeZoneLocale, localDayRangeToUtc } from "@/lib/timezone";
+import { formatTimeZoneDay, formatTimeZoneLocale, localDayRangeToUtc } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { format, startOfMonth } from "date-fns";
@@ -94,13 +94,7 @@ const formatDurationString = (seconds?: number) => {
 const formatDate = (dateString: string, timeZone: string) => {
   const date = parseServerTimestamp(dateString);
   if (!date) return "Unknown date";
-  return formatTimeZoneLocale(
-    date,
-    timeZone,
-    "date",
-    { day: "numeric", month: "short", year: "numeric" },
-    "en-GB",
-  );
+  return formatTimeZoneDay(date, timeZone);
 };
 
 const formatTime = (date: Date, timeZone: string) => {

@@ -22,7 +22,7 @@ import { getErrorMessage } from "@/lib/errors";
 import ConfirmationModal from "./ConfirmationModal";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
-import { formatTimeZoneLocale } from "@/lib/timezone";
+import { formatTimeZoneDay } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 
 interface DocumentsViewProps {
@@ -33,7 +33,7 @@ const POLL_INTERVAL_MS = 2000;
 
 const formatDocumentDate = (createdAt: string, timeZone: string): string => {
   const date = parseServerTimestamp(createdAt);
-  return date ? formatTimeZoneLocale(date, timeZone, "date") : "Unknown date";
+  return date ? formatTimeZoneDay(date, timeZone) : "Unknown date";
 };
 
 const formatBytes = (bytes?: number | null): string => {

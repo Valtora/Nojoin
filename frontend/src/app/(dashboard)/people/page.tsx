@@ -37,6 +37,8 @@ export default function PeoplePage() {
 
   // Mobile tag-filter drawer (inline pane on desktop)
   const [isTagDrawerOpen, setIsTagDrawerOpen] = useState(false);
+  // Tells the tag sidebar to reload after a tag is made in the person dialog.
+  const [tagsRevision, setTagsRevision] = useState(0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<GlobalSpeaker | null>(
@@ -291,6 +293,7 @@ export default function PeoplePage() {
         selectedTagIds={selectedTagIds}
         onToggleTag={handleToggleTag}
         onClearFilters={() => setSelectedTagIds([])}
+        tagsRevision={tagsRevision}
         mobileOpen={isTagDrawerOpen}
         onMobileClose={() => setIsTagDrawerOpen(false)}
       />
@@ -406,6 +409,7 @@ export default function PeoplePage() {
         onDelete={handleOptimisticDelete}
         onVoiceprintDeleted={handleVoiceprintDeleted}
         onVoiceprintLockChanged={handleVoiceprintLockChanged}
+        onTagCreated={() => setTagsRevision((revision) => revision + 1)}
       />
 
       {personToRecalibrate && (
