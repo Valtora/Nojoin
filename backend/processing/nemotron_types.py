@@ -11,7 +11,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
-NEMOTRON_TRANSFORMERS_VERSION = "5.20.2"
+NEMOTRON_TRANSFORMERS_VERSION = "5.21.0"
 
 
 class NemotronStateError(RuntimeError):
