@@ -2,8 +2,9 @@
 
 A cap used to skip Nemotron altogether. Now a capped recording prepares and
 runs it as an uncapped one does, and ``choose_capped_speakers`` keeps the
-union only if its speaker count is within the cap. Community-1 runs a second
-time, with the cap, only when the uncapped run does not already fit.
+union only if its speaker count is within the cap, counted after the phantom
+filter when its raw labels are over it. Community-1 runs a second time, with
+the cap, only when the uncapped run does not already fit.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from pyannote.core import Annotation, Segment
 
 from backend.processing import final_diarization as final
-from backend.processing import nemotron_model
+from backend.processing import nemotron_model, phantom_filter
 from backend.processing.speaker_cap import normalize_speaker_cap
 from backend.tests.nemotron_asset_helpers import local_files
 from backend.tests.nemotron_asset_helpers import native_assets as native_assets
@@ -32,6 +33,7 @@ from backend.utils import nemotron_model_utils as assets
 pytestmark = pytest.mark.usefixtures("stub_celery_dispatch")
 
 inspect_local_assets = assets.inspect_nemotron_model
+REAL_FILTER = phantom_filter.filter_phantom_speakers
 
 SECONDS = 4
 FRAMES = SECONDS * 100 + 1
@@ -70,6 +72,25 @@ def capped(lane: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> SimpleName
     )
     monkeypatch.setattr(
         final, "_read_audio", lambda path: np.zeros(SECONDS * 16000, np.float32)
+    )
+    # The phantom filter needs the embedding model, so it is faked: it merges
+    # the labels in ``lane.phantoms`` into their targets, as the real filter
+    # merges or reassigns a brief cluster, and records how it was called.
+    lane.phantoms = {}
+    lane.filter_calls = []
+    lane.filter_failure = None
+
+    def filter_phantom_speakers(
+        diarization: Annotation, audio_path: str, config: dict | None = None
+    ) -> Annotation:
+        lane.calls.append("phantom_filter")
+        lane.filter_calls.append((audio_path, config))
+        if lane.filter_failure is not None:
+            raise lane.filter_failure
+        return diarization.rename_labels(mapping=lane.phantoms)
+
+    monkeypatch.setattr(
+        phantom_filter, "filter_phantom_speakers", filter_phantom_speakers
     )
     return lane
 
@@ -148,8 +169,103 @@ def test_union_and_community_over_the_cap_run_community_with_it(
         "cuda:1",
         "infer",
         "clear",
+        "phantom_filter",
         "community:2",
     ]
+
+
+def test_union_over_the_cap_is_kept_when_the_phantom_filter_brings_it_within(
+    capped: SimpleNamespace,
+) -> None:
+    # Nemotron hears a third voice; the filter would merge it into the second.
+    _native(capped, 3)
+    capped.phantoms = {"N:L2": "N:L1"}
+    result, status = _run(capped, cap=2)
+    # Kept unfiltered: the pipeline runs the filter on it next, as for any result.
+    assert result is not None and result.labels() == ["N:L0", "N:L1", "N:L2"]
+    assert status["route"] == "union"
+    assert status["reason"] == "union_within_cap"
+    assert status["union_speakers"] == 3
+    assert status["union_speakers_filtered"] == 2
+    assert capped.filter_calls == [("meeting.wav", {"processing_device": "cuda:1"})]
+    # After Nemotron's release, and with no second community-1 run.
+    assert capped.calls == [
+        "community:None",
+        "release",
+        "cuda:1",
+        "infer",
+        "clear",
+        "phantom_filter",
+    ]
+
+
+def test_union_still_over_the_cap_after_the_filter_falls_back(
+    capped: SimpleNamespace,
+) -> None:
+    capped.community = _speakers(3)
+    _native(capped, 4)
+    capped.phantoms = {"N:L3": "N:L2"}
+    result, status = _run(capped, cap=2)
+    assert result is capped.capped
+    assert status["route"] == "community_capped"
+    assert status["reason"] == "union_over_cap"
+    assert status["union_speakers"] == 4
+    assert status["union_speakers_filtered"] == 3
+    assert capped.calls[-2:] == ["phantom_filter", "community:2"]
+
+
+def test_a_union_within_the_cap_is_not_filtered_to_count_it(
+    capped: SimpleNamespace,
+) -> None:
+    _native(capped, 2)
+    _, status = _run(capped, cap=2)
+    assert status["route"] == "union"
+    assert "union_speakers_filtered" not in status
+    assert capped.filter_calls == []
+
+
+def test_a_failed_filter_leaves_the_raw_count(
+    capped: SimpleNamespace, caplog: pytest.LogCaptureFixture
+) -> None:
+    _native(capped, 3)
+    capped.phantoms = {"N:L2": "N:L1"}
+    capped.filter_failure = RuntimeError("embedding model unavailable")
+    with caplog.at_level(logging.WARNING, logger=final.__name__):
+        result, status = _run(capped, cap=2)
+    assert result is capped.community
+    assert status["route"] == "community_capped"
+    assert status["union_speakers_filtered"] is None
+    assert "using its raw count: RuntimeError" in caplog.text
+
+
+def test_an_interrupted_filter_runs_nothing_more(capped: SimpleNamespace) -> None:
+    _native(capped, 3)
+    capped.filter_failure = SoftTimeLimitExceeded()
+    with pytest.raises(SoftTimeLimitExceeded):
+        _run(capped, cap=2)
+    assert capped.calls[-1] == "phantom_filter"
+
+
+@pytest.mark.parametrize("setting", ["phantom_max_duration_s", "phantom_max_segments"])
+def test_with_the_filter_off_in_settings_the_raw_count_decides(
+    capped: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, setting: str
+) -> None:
+    # The real filter, as the pipeline runs it: a zero ceiling turns it off
+    # before any model loads, so the union keeps its raw labels.
+    monkeypatch.setattr(phantom_filter, "filter_phantom_speakers", REAL_FILTER)
+    capped.community = _speakers(3)
+    _native(capped, 3)
+    status: dict[str, Any] = {}
+    result = final.diarize_final_audio(
+        "meeting.wav",
+        config={"processing_device": "cuda:1", setting: 0},
+        max_speakers=2,
+        status=status,
+    )
+    assert result is capped.capped
+    assert status["union_speakers"] == 3
+    assert status["union_speakers_filtered"] == 3
+    assert status["route"] == "community_capped"
 
 
 def test_a_cap_above_the_union_count_is_the_uncapped_result(
@@ -275,9 +391,9 @@ def test_choice_is_logged_with_counts_only(
     lines = [r.getMessage() for r in caplog.records if "Capped final" in r.getMessage()]
     assert lines == [
         "Capped final speakers for recording 42: route=community_capped "
-        "reason=union_over_cap cap=2 union_speakers=3 community_speakers=3 "
-        "community_reused=False speakers=2 native_route=union "
-        "native_reason=channel_7_inactive"
+        "reason=union_over_cap cap=2 union_speakers=3 union_speakers_filtered=3 "
+        "community_speakers=3 community_reused=False speakers=2 "
+        "native_route=union native_reason=channel_7_inactive"
     ]
 
 

@@ -270,11 +270,14 @@ def choose_capped_speakers(  # noqa: PLR0913 - the pass's inputs and its status
     """Keep the union when it fits the cap, otherwise community-1 with the cap.
 
     ``candidate`` is what the native pass returned for the uncapped
-    ``community``, and ``status`` holds its route. The union's speaker count is
-    its number of distinct labels: each Nemotron channel with any frame above
-    0.5, plus each community-1 speaker that shares no time with Nemotron's
-    speech. It is counted before phantom filtering and the merge pass, which
-    only remove or merge speakers, so a union within the cap stays within it.
+    ``community``, and ``status`` holds its route. The union's raw speaker
+    count is its number of distinct labels: each Nemotron channel with any
+    frame above 0.5, plus each community-1 speaker that shares no time with
+    Nemotron's speech. When that is over the cap, the union is counted again
+    after the phantom filter, as the pipeline applies it to the kept result
+    next (``_union_speakers_after_filter``), and that count decides. The union
+    is kept unfiltered, so the pipeline's own run of the filter still records
+    which turns it found were not speech (#678).
 
     Community-1 with the cap is the uncapped run when that already fits:
     pyannote applies ``max_speakers`` only when it finds more speakers than
@@ -292,7 +295,13 @@ def choose_capped_speakers(  # noqa: PLR0913 - the pass's inputs and its status
         union_speakers=union_speakers,
         community_speakers=community_speakers,
     )
-    if union_speakers is not None and union_speakers <= cap:
+    counted = union_speakers
+    if union_speakers is not None and union_speakers > cap:
+        filtered = _union_speakers_after_filter(candidate, audio_path, config)
+        status["union_speakers_filtered"] = filtered
+        if filtered is not None:
+            counted = filtered
+    if counted is not None and counted <= cap:
         status.update(route="union", reason="union_within_cap")
         result: Annotation | None = candidate
     else:
@@ -312,6 +321,31 @@ def choose_capped_speakers(  # noqa: PLR0913 - the pass's inputs and its status
     return result
 
 
+def _union_speakers_after_filter(
+    union: Annotation, audio_path: str, config: dict | None
+) -> int | None:
+    """The union's speaker count after the phantom filter the pipeline runs.
+
+    The same filter, settings and audio as ``run_phantom_filter``. With the
+    filter off in settings it returns the union unchanged, so this is the raw
+    count. None when the filter fails, as the pipeline then keeps the
+    unfiltered result and the raw count stands.
+    """
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    try:
+        return len(filter_phantom_speakers(union, audio_path, config=config).labels())
+    except Exception as exc:  # noqa: BLE001 -- boundary: a failed filter leaves the raw count, as the pipeline then keeps the unfiltered result
+        if is_task_interruption(exc) or isinstance(exc, CancelledError):
+            raise
+        logger.warning(
+            "Phantom filter failed while counting the union's speakers; "
+            "using its raw count: %s",
+            type(exc).__name__,
+        )
+        return None
+
+
 def _log_capped(status: dict, recording_id: int | None) -> None:
     """One line per capped recording, counts only, for comparing runs."""
     fields = (
@@ -319,6 +353,7 @@ def _log_capped(status: dict, recording_id: int | None) -> None:
         "reason",
         "cap",
         "union_speakers",
+        "union_speakers_filtered",
         "community_speakers",
         "community_reused",
         "speakers",
