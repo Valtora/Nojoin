@@ -30,6 +30,10 @@ from typing import Any
 import numpy as np
 
 from backend.utils.live_speaker_labels import live_speaker_label
+from backend.utils.sentence_start_settings import (
+    SENTENCE_START_CORRECTION_KEY,
+    correction_enabled,
+)
 from backend.utils.word_times import WORD_TIME_TOLERANCE_S, exceeds, falls_short
 
 # --- Settings, one place for every rule ---------------------------------------
@@ -42,15 +46,6 @@ MIN_REMAINDER_S = 0.1
 EDITED_LINE_SPANS = "edited_line_spans_ms"
 
 UNKNOWN = "UNKNOWN"
-# The install-wide switch (config.json; admin-only, like live speaker labels).
-SENTENCE_START_CORRECTION_KEY = "sentence_start_correction"
-
-
-def correction_enabled(setting: object) -> bool:
-    """Whether the ``sentence_start_correction`` setting leaves the correction
-    on. It is on unless set to False; off, both passes are as without it."""
-    return setting is not False
-
 
 # A word a person assigned, whose chosen speaker the final pass applies later.
 _MANUAL_OWNER = "\x00manual"

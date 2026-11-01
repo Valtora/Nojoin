@@ -15,11 +15,7 @@ from backend.processing.processing_tuning import (
     line_break_pause_exceeded,
     resolve_tuning,
 )
-from backend.processing.sentence_start import (
-    SENTENCE_START_CORRECTION_KEY,
-    NativeActivity,
-    correction_enabled,
-)
+from backend.processing.sentence_start import NativeActivity
 from backend.utils.capture_resume import capture_interval, load_resume_boundaries
 from backend.utils.config_manager import config_manager
 from backend.utils.live_word_settling import (
@@ -27,6 +23,10 @@ from backend.utils.live_word_settling import (
     expire_word_state,
     reconcile_word_state,
     word_signature,
+)
+from backend.utils.sentence_start_settings import (
+    SENTENCE_START_CORRECTION_KEY,
+    correction_enabled,
 )
 from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import (

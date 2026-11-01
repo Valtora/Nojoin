@@ -143,12 +143,12 @@ from backend.utils.config_manager import (
     get_cors_origin_list,
     get_trusted_host_list,
     get_trusted_web_origin,
-    is_mcp_enabled,
 )
 from backend.utils.deployment_warnings import (
     FIRST_RUN_PASSWORD_PLACEHOLDER,
     log_deployment_warnings,
 )
+from backend.utils.mcp_flags import is_mcp_enabled
 from backend.utils.primary_owner import get_primary_owner_async
 from backend.utils.rate_limit import warn_unresolvable_trusted_proxies
 from backend.utils.stall_watchdog import start_stall_watchdog

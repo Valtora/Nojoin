@@ -42,11 +42,9 @@ from backend.mcp_server.auth import (
     get_current_mcp_user,
 )
 from backend.mcp_server.tool_logging import logged_tool
-from backend.utils.config_manager import (
-    get_trusted_web_origin,
-    is_mcp_anonymous_discovery_enabled,
-)
+from backend.utils.config_manager import get_trusted_web_origin
 from backend.utils.generation_claim import reported_generation_status
+from backend.utils.mcp_flags import is_mcp_anonymous_discovery_enabled
 
 logger = logging.getLogger(__name__)
 

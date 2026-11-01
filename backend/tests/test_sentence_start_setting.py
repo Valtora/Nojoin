@@ -11,7 +11,6 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 import backend.utils.transcript_utils as transcript_utils
-from backend.processing.sentence_start import SENTENCE_START_CORRECTION_KEY
 from backend.tests.postgres_setup import fresh_schema
 from backend.tests.test_install_wide_transcription_settings import (
     _call_settings,
@@ -38,6 +37,7 @@ from backend.tests.test_transcript_utils import FakeDiarization
 from backend.utils.canonical_pipeline.live_labels import apply_live_speaker_labels
 from backend.utils.canonical_pipeline.live_settling import publish_live_settling
 from backend.utils.config_manager import ConfigManager, config_manager
+from backend.utils.sentence_start_settings import SENTENCE_START_CORRECTION_KEY
 from backend.utils.transcript_utils import combine_transcription_diarization
 
 KEY = SENTENCE_START_CORRECTION_KEY
