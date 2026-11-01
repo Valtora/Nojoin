@@ -25,11 +25,22 @@ def _flags() -> tuple[bool, bool]:
     return torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
 
 
-def _set_flags(monkeypatch: pytest.MonkeyPatch, prior: tuple[bool, bool]) -> None:
+def _set_flags(prior: tuple[bool, bool]) -> None:
     import torch
 
-    monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", prior[0])
-    monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", prior[1])
+    torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = prior
+
+
+@pytest.fixture(autouse=True)
+def _restore_flags() -> Iterator[None]:
+    """Put the TF32 flags back after each test.
+
+    They are set by hand: torch serves cuBLAS's allow_tf32 through
+    ``__getattr__``, which monkeypatch cannot restore from pytest 9.2.
+    """
+    prior = _flags()
+    yield
+    _set_flags(prior)
 
 
 @pytest.mark.parametrize("prior", PRIOR_FLAGS)
@@ -44,7 +55,7 @@ def test_inference_precision_is_local_on_success_and_failure(
     import torch
     from transformers.feature_extraction_utils import BatchFeature
 
-    _set_flags(monkeypatch, prior)
+    _set_flags(prior)
     calls: list[str] = []
 
     def processor(audio: np.ndarray, **options: Any) -> Any:
@@ -189,7 +200,7 @@ def test_loading_precision_covers_constructor_and_acceptance_then_restores(
     prior: tuple[bool, bool],
     stage: str,
 ) -> None:
-    _set_flags(monkeypatch, prior)
+    _set_flags(prior)
     calls: list[str] = []
     original = constructor_spies.model_class.from_pretrained
 

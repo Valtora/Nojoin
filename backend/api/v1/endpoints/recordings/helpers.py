@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import shutil
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -63,6 +63,7 @@ from backend.utils.reprocess_publication import (
 )
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
+from backend.utils.timezones import get_timezone
 from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import durable_settling_state
 
@@ -889,8 +890,20 @@ def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
         )
 
 
-def generate_default_meeting_name() -> str:
-    now = datetime.now()
+def generate_default_meeting_name(
+    timezone_name: str, *, now: datetime | None = None
+) -> str:
+    """The name a meeting gets when nobody gave it one, such as
+    "Sunday 1st Nov, Night Meeting".
+
+    The day and the time of day are the owner's: pass their zone from
+    ``get_user_timezone_name``, which falls back to ``DEFAULT_TIMEZONE`` and
+    then UTC. The container's clock runs in UTC, so its local time would name
+    an evening meeting in Tokyo as an afternoon one, and near midnight give
+    it the wrong day (issue #886). ``now`` is naive UTC, as the schema stores
+    times, and defaults to the current time.
+    """
+    now = (now or utc_now()).replace(tzinfo=UTC).astimezone(get_timezone(timezone_name))
     day_name = now.strftime("%A")
     day_num = now.day
     suffix = get_ordinal_suffix(day_num)
