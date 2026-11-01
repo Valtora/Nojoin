@@ -318,6 +318,36 @@ def test_ollama_generate_meeting_intelligence_repairs_contract_failure() -> None
     assert "Return a corrected response" in repair_prompt
 
 
+def test_ollama_meeting_intelligence_keeps_notes_when_a_label_was_not_offered() -> None:
+    calls: list[dict] = []
+    answer = json.dumps(
+        {
+            "speaker_mapping": {"SPEAKER_00": "Alex", "SPEAKER_04": "Sam"},
+            "title": "Launch Readiness Review",
+            "notes_markdown": "## Summary\nAll teams are ready.",
+        }
+    )
+
+    class FakeRequests:
+        def post(self, url: str, json: dict, timeout: int, allow_redirects: bool):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
+            calls.append(json)
+            return _FakeOllamaResponse(answer)
+
+    backend = object.__new__(OllamaLLMBackend)
+    backend.model = "gemma4:latest"
+    backend.api_url = "http://ollama.local"
+    backend.requests = FakeRequests()
+
+    result = backend.generate_meeting_intelligence(_sample_request(), timeout=30)
+
+    # One call: the stray label is dropped, not sent back for a repair.
+    assert len(calls) == 1
+    assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
+    assert result.title == "Launch Readiness Review"
+
+
 def test_ollama_chat_options_pins_num_ctx_floor_when_unconfigured() -> None:
     # Without num_ctx Ollama defaults to 2048 and silently truncates meeting-
     # length prompts, so an unconfigured backend must still send the safe floor.

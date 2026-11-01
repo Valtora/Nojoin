@@ -285,4 +285,23 @@ describe("PersonModal new tag", () => {
       "Clients",
     );
   });
+
+  it("tells the page about a tag it made, before the person is saved", async () => {
+    const made = { id: 9, name: "Clients", color: "orange" };
+    createPeopleTag.mockResolvedValue(made);
+    const onTagCreated = vi.fn();
+    const onSave = vi.fn();
+    render(
+      <PersonModal person={null} isOpen onClose={vi.fn()} onSave={onSave} onTagCreated={onTagCreated} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New Tag" }));
+    fireEvent.change(screen.getByPlaceholderText("New tag name..."), {
+      target: { value: "Clients" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onTagCreated).toHaveBeenCalledWith(made));
+    expect(onSave).not.toHaveBeenCalled();
+  });
 });
