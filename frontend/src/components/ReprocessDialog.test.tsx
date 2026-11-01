@@ -5,8 +5,9 @@ import type { LanguageRegistry, Recording } from "@/types";
 
 import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 
+const addNotification = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification: vi.fn() }),
+  useNotificationStore: () => ({ addNotification }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -40,7 +41,6 @@ const openDialog = async (currentTranscriptionLanguage: string | null) => {
       recordingId="rec-1"
       isOpen
       onClose={vi.fn()}
-      onReprocessed={vi.fn()}
       currentTranscriptionLanguage={currentTranscriptionLanguage}
     />,
   );
@@ -76,7 +76,6 @@ describe("ReprocessDialog language", () => {
     const props = {
       recordingId: "rec-1",
       onClose: vi.fn(),
-      onReprocessed: vi.fn(),
     };
     const { rerender } = renderWithProviders(
       <ReprocessDialog {...props} isOpen currentTranscriptionLanguage={null} />,
@@ -115,7 +114,7 @@ describe("ReprocessDialog language", () => {
 });
 
 describe("ReprocessDialog Whisper model size", () => {
-  const props = { recordingId: "rec-1", onClose: vi.fn(), onReprocessed: vi.fn() };
+  const props = { recordingId: "rec-1", onClose: vi.fn() };
 
   const modelSize = () =>
     screen.getByLabelText("Whisper Model Size") as HTMLSelectElement;
@@ -158,5 +157,54 @@ describe("ReprocessDialog Whisper model size", () => {
     expect(modelSize().value).toBe("turbo");
     expect(await submit()).toMatchObject({ whisper_model_size: "turbo" });
     quiet.mockRestore();
+  });
+});
+
+describe("ReprocessDialog for a failed recording", () => {
+  const props = { recordingId: "rec-1", isOpen: true, onClose: vi.fn() };
+  const REPLACES = /replaces the current transcript/;
+
+  beforeEach(() => {
+    vi.mocked(getLanguageOptions).mockResolvedValue(registry);
+    vi.mocked(reprocessRecording).mockResolvedValue({ id: "rec-1" } as Recording);
+  });
+
+  it("offers a retry, with nothing to warn about when no transcript is shown", async () => {
+    renderWithProviders(<ReprocessDialog {...props} failed />);
+
+    expect(await screen.findByRole("dialog", { name: "Retry processing" })).toBeInTheDocument();
+    expect(screen.queryByText("Reprocess at higher quality")).toBeNull();
+    expect(screen.queryByText(REPLACES)).toBeNull();
+    expect(screen.getByText(/Processing runs again on this recording's audio/)).toBeInTheDocument();
+  });
+
+  it("still warns when a transcript from an earlier run would be replaced", async () => {
+    renderWithProviders(<ReprocessDialog {...props} failed hasTranscript />);
+
+    expect(await screen.findByText(REPLACES)).toBeInTheDocument();
+  });
+
+  it("keeps the warning for a finished recording", async () => {
+    renderWithProviders(<ReprocessDialog {...props} />);
+
+    expect(await screen.findByRole("dialog", { name: "Reprocess at higher quality" })).toBeInTheDocument();
+    expect(screen.getByText(REPLACES)).toBeInTheDocument();
+  });
+
+  it("sends the same request, then announces the retry for the rail and the page", async () => {
+    const updated = vi.fn();
+    window.addEventListener("recording-updated", updated);
+    renderWithProviders(<ReprocessDialog {...props} failed />);
+    await screen.findByLabelText("Language");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await vi.waitFor(() => expect(props.onClose).toHaveBeenCalled());
+    expect(reprocessRecording).toHaveBeenCalledWith("rec-1", expect.objectContaining({
+      transcription_backend: "whisper",
+    }));
+    expect(addNotification).toHaveBeenCalledWith({ type: "success", message: "Processing started again." });
+    expect((updated.mock.calls[0][0] as CustomEvent).detail).toEqual({ id: "rec-1" });
+    window.removeEventListener("recording-updated", updated);
   });
 });

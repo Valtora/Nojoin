@@ -47,6 +47,19 @@ describe("exportAudio", () => {
     expect(await saved.text()).toBe(audio);
   });
 
+  it("names the file for the recording's day first, as the document exports are", async () => {
+    streamAnswers(200, "ID3-AUDIO", "audio/mpeg");
+    const saved: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download);
+    });
+
+    await exportAudio("rec-1", "Weekly sync: Q4/plan", "20261101");
+    await exportAudio("rec-1", "Weekly sync");
+
+    expect(saved).toEqual(["20261101_Weekly sync Q4plan.mp3", "Weekly sync.mp3"]);
+  });
+
   it("refuses a 206, which carries only part of the audio", async () => {
     streamAnswers(206, "ID3-FIRST-CHUNK", "audio/mpeg");
 

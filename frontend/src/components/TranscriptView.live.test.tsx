@@ -192,6 +192,20 @@ describe("LiveTranscriptPanel", () => {
     expect(line).not.toHaveAttribute("aria-describedby");
   });
 
+  it("stops saying lines settle once the capture has stopped", () => {
+    render(
+      <LiveTranscriptPanel
+        segments={[buildSegment({ id: "a", text: "Settled words", settling_required: true, locked: true })]}
+        hasLoaded
+        capturing={false}
+      />,
+    );
+
+    expect(screen.queryByText(/Lines settle as the conversation continues/)).not.toBeInTheDocument();
+    expect(screen.getByText("The full transcript is being made. Your corrections are kept."))
+      .toBeInTheDocument();
+  });
+
   it("keeps unmarked lines free of settling descriptions", () => {
     renderPanel([
       buildSegment({ id: "a", speaker: "LIVE_PROVISIONAL_1", locked: false }),

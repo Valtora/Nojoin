@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  act,
   fireEvent,
   renderWithProviders,
   screen,
@@ -165,9 +166,9 @@ vi.mock("./RecordingInfoModal", () => ({
   default: () => null,
 }));
 
-let lastMenuItems: { label: string }[] = [];
+let lastMenuItems: { label: string; onClick?: () => void }[] = [];
 vi.mock("./ContextMenu", () => ({
-  default: ({ items }: { items: { label: string }[] }) => {
+  default: ({ items }: { items: { label: string; onClick?: () => void }[] }) => {
     lastMenuItems = items;
     return <div data-testid="sidebar-context-menu" />;
   },
@@ -175,6 +176,14 @@ vi.mock("./ContextMenu", () => ({
 
 vi.mock("./ConfirmationModal", () => ({
   default: () => null,
+}));
+
+let reprocessDialogProps: { failed?: boolean } | null = null;
+vi.mock("./ReprocessDialog", () => ({
+  default: (props: { failed?: boolean }) => {
+    reprocessDialogProps = props;
+    return null;
+  },
 }));
 
 vi.mock("./BatchActionBar", () => ({
@@ -344,6 +353,20 @@ describe("Sidebar", () => {
 
     expect(await screen.findByTestId("sidebar-context-menu")).toBeInTheDocument();
     expect(lastMenuItems.map((item) => item.label)).toEqual(expected);
+  });
+
+  it("labels a failed recording and retries it as a failure, not a reprocess", async () => {
+    getRecordings.mockResolvedValue([{ ...recording, status: RecordingStatus.ERROR }]);
+    reprocessDialogProps = null;
+    renderWithProviders(<Sidebar />);
+
+    const failedIcon = await screen.findByRole("img", { name: "Processing failed" });
+    expect(failedIcon).toHaveAttribute("title", expect.stringMatching(/^Processing failed/));
+    fireEvent.contextMenu(screen.getByRole("heading", { name: "Latest meeting" }));
+    await screen.findByTestId("sidebar-context-menu");
+    act(() => lastMenuItems.find((item) => item.label === "Retry Processing")?.onClick?.());
+
+    expect(reprocessDialogProps).toMatchObject({ failed: true });
   });
 
   it("follows the pointer while resizing and animates only collapse and expand (#747)", async () => {

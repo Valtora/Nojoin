@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
-import { RefreshCw, AlertTriangle } from "lucide-react";
+import { RefreshCw, AlertTriangle, Info } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
@@ -10,7 +10,7 @@ import SpeakerCapField from "@/components/SpeakerCapField";
 import RecordingLanguageField from "@/components/RecordingLanguageField";
 import { getSettings, reprocessRecording } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { Recording, RecordingId, ReprocessRequest } from "@/types";
+import { RecordingId, ReprocessRequest } from "@/types";
 
 type TranscriptionBackend = "whisper" | "parakeet" | "canary";
 
@@ -32,22 +32,41 @@ interface ReprocessDialogProps {
   recordingId: RecordingId;
   isOpen: boolean;
   onClose: () => void;
-  onReprocessed: (updatedRecording: Recording) => void;
   defaultBackend?: TranscriptionBackend;
   /** The recording's current speaker cap, so the field opens showing it. */
   currentMaxSpeakers?: number | null;
   /** The recording's language (null: the owner's setting), so the field opens showing it. */
   currentTranscriptionLanguage?: string | null;
+  /**
+   * The recording failed, so this retries it rather than reprocessing a
+   * finished meeting at another quality.
+   */
+  failed?: boolean;
+  /**
+   * A failed recording still shows a transcript from an earlier run, such as
+   * the one a failed reprocess kept, which a retry replaces. A finished
+   * recording always has one.
+   */
+  hasTranscript?: boolean;
 }
+
+const REPLACES_WARNING =
+  "Reprocessing replaces the current transcript, speaker labels and meeting " +
+  "notes for this recording. Any manual edits to those will be lost. Manual " +
+  "processing notes, tags and documents are kept.";
+const RETRY_NOTE =
+  "Processing runs again on this recording's audio. Your own notes, tags and " +
+  "documents are kept.";
 
 export default function ReprocessDialog({
   recordingId,
   isOpen,
   onClose,
-  onReprocessed,
   defaultBackend = "whisper",
   currentMaxSpeakers = null,
   currentTranscriptionLanguage = null,
+  failed = false,
+  hasTranscript = !failed,
 }: ReprocessDialogProps) {
   const [backend, setBackend] = useState<TranscriptionBackend>(defaultBackend);
   // The size picked in this dialog; null follows the install's (issue #839).
@@ -127,7 +146,14 @@ export default function ReprocessDialog({
 
     try {
       const updatedRecording = await reprocessRecording(recordingId, body);
-      onReprocessed(updatedRecording);
+      addNotification({
+        message: failed ? "Processing started again." : "Recording reprocessing started.",
+        type: "success",
+      });
+      // The rail and the recording's page refresh on this.
+      window.dispatchEvent(
+        new CustomEvent("recording-updated", { detail: { id: updatedRecording.id } }),
+      );
       onClose();
 
         } catch (err: unknown) {
@@ -152,7 +178,7 @@ export default function ReprocessDialog({
       // so the dialog stops accepting a dismissal while the request is away.
       dismissible={!isSubmitting}
       size="sm"
-      title="Reprocess at higher quality"
+      title={failed ? "Retry processing" : "Reprocess at higher quality"}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
@@ -165,7 +191,9 @@ export default function ReprocessDialog({
             loading={isSubmitting}
             iconLeft={<RefreshCw aria-hidden="true" className="w-4 h-4" />}
           >
-            {isSubmitting ? "Reprocessing..." : "Reprocess"}
+            {failed
+              ? isSubmitting ? "Retrying..." : "Retry"
+              : isSubmitting ? "Reprocessing..." : "Reprocess"}
           </Button>
         </>
       }
@@ -229,15 +257,19 @@ export default function ReprocessDialog({
           idPrefix="reprocess-speaker-cap"
         />
 
-        {/* Destructive warning */}
-        <div className="flex gap-3 rounded-lg border border-status-warning-border bg-status-warning-bg p-4">
-          <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-status-warning-fg" />
-          <p className="text-sm text-status-warning-fg">
-            Reprocessing replaces the current transcript, speaker labels and
-            meeting notes for this recording. Any manual edits to those will
-            be lost. Manual processing notes, tags and documents are kept.
-          </p>
-        </div>
+        {/* Destructive only when there is a transcript to replace: a failed
+            recording usually has none. */}
+        {hasTranscript ? (
+          <div className="flex gap-3 rounded-lg border border-status-warning-border bg-status-warning-bg p-4">
+            <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-status-warning-fg" />
+            <p className="text-sm text-status-warning-fg">{REPLACES_WARNING}</p>
+          </div>
+        ) : (
+          <div className="flex gap-3 rounded-lg border border-status-info-border bg-status-info-bg p-4">
+            <Info aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-status-info-fg" />
+            <p className="text-sm text-status-info-fg">{RETRY_NOTE}</p>
+          </div>
+        )}
       </div>
     </Modal>
   );
