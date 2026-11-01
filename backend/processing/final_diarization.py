@@ -13,6 +13,7 @@ import numpy as np
 
 from backend.processing.engines.errors import is_task_interruption
 from backend.processing.nemotron_types import NemotronStateError, validate_probabilities
+from backend.processing.speaker_cap import normalize_speaker_cap
 from backend.utils.config_manager import config_manager
 
 if TYPE_CHECKING:
@@ -74,6 +75,38 @@ def release_final_native() -> None:
         logger.exception("Could not fully release final native speaker memory")
 
 
+def _engine_selection() -> str:
+    selection = str(config_manager.get("speaker_engine", "auto") or "auto")
+    if selection not in {"auto", "classic"}:
+        logger.warning("Invalid speaker_engine value; using auto")
+        selection = "auto"
+    return selection
+
+
+def _asset_state() -> str | None:
+    """Nemotron's asset state, or None when it cannot be read.
+
+    None sends a capped recording down the native route, whose own inspection
+    then records the failure as it does for an uncapped one.
+    """
+    from backend.utils.nemotron_model_utils import inspect_nemotron_model
+
+    try:
+        return inspect_nemotron_model().state
+    except Exception as exc:
+        if is_task_interruption(exc) or isinstance(exc, CancelledError):
+            raise
+        return None
+
+
+def _request_preparation(state: str, status: dict, recording_id: int | None) -> None:
+    """Queue first-use preparation; this recording keeps community speakers."""
+    from backend.services.model_preparation import request_nemotron_preparation
+
+    status.update(route="ineligible", reason=f"assets_{state}")
+    request_nemotron_preparation(recording_id=recording_id)
+
+
 def _read_audio(audio_path: str) -> np.ndarray:
     import soundfile as sf
 
@@ -103,10 +136,7 @@ def _native_pass(
 
         resolution = inspect_nemotron_model()
         if resolution.state != "verified":
-            status.update(route="ineligible", reason=f"assets_{resolution.state}")
-            from backend.services.model_preparation import request_nemotron_preparation
-
-            request_nemotron_preparation(recording_id=recording_id)
+            _request_preparation(resolution.state, status, recording_id)
             return community
         _release_community()
         audio = _read_audio(audio_path)
@@ -152,20 +182,23 @@ def diarize_final_audio(
     status: dict | None = None,
     recording_id: int | None = None,
 ) -> Annotation | None:
-    """Return today's annotation unchanged when native cannot safely improve it."""
+    """Return today's annotation unchanged when native cannot safely improve it.
+
+    A recording with a speaker cap goes through ``_diarize_capped`` instead. An
+    out-of-range cap is no cap, as ``diarize_audio`` treats it.
+    """
     from backend.processing.diarize import diarize_audio
 
     outcome = status if status is not None else {}
+    cap = normalize_speaker_cap(max_speakers)
+    if cap is not None:
+        return _diarize_capped(audio_path, config, cap, outcome, recording_id)
     outcome.update(route="ineligible", reason="community_empty")
     community = diarize_audio(audio_path, config=config, max_speakers=max_speakers)
     if community is None or not community:
         return community
-    selection = str(config_manager.get("speaker_engine", "auto") or "auto")
-    if selection not in {"auto", "classic"}:
-        logger.warning("Invalid speaker_engine value; using auto")
-        selection = "auto"
-    if selection == "classic" or max_speakers is not None:
-        outcome["reason"] = "classic" if selection == "classic" else "speaker_cap"
+    if _engine_selection() == "classic":
+        outcome["reason"] = "classic"
         return community
     device = _effective_device(config)
     if not device.startswith("cuda"):
@@ -175,3 +208,125 @@ def diarize_final_audio(
         return _native_pass(audio_path, community, device, outcome, recording_id)
     finally:
         release_final_native()
+
+
+def _diarize_capped(
+    audio_path: str,
+    config: dict | None,
+    cap: int,
+    outcome: dict,
+    recording_id: int | None,
+) -> Annotation | None:
+    """Final speakers for a recording with a speaker cap (#871).
+
+    Nemotron is prepared and run as for an uncapped recording, over an uncapped
+    community-1 result, and ``choose_capped_speakers`` keeps the union only if
+    it fits the cap. Where no union can be made (classic, CPU, assets not yet
+    verified), community-1 runs once, with the cap.
+    """
+    from backend.processing.diarize import diarize_audio
+
+    outcome.update(route="ineligible", reason="community_empty", cap=cap)
+    device = "" if _engine_selection() == "classic" else _effective_device(config)
+    state = _asset_state() if device.startswith("cuda") else None
+    if not device.startswith("cuda") or state not in (None, "verified"):
+        community = diarize_audio(audio_path, config=config, max_speakers=cap)
+        if community is None or not community:
+            return community
+        if state is None:
+            outcome["reason"] = "cpu" if device else "classic"
+        else:
+            try:
+                _request_preparation(state, outcome, recording_id)
+            except Exception as exc:
+                if is_task_interruption(exc) or isinstance(exc, CancelledError):
+                    raise
+                logger.exception("Could not request Nemotron preparation")
+        outcome["speakers"] = len(community.labels())
+        _log_capped(outcome, recording_id)
+        return community
+
+    community = diarize_audio(audio_path, config=config)
+    if community is None or not community:
+        return community
+    try:
+        candidate = _native_pass(audio_path, community, device, outcome, recording_id)
+    finally:
+        release_final_native()
+    return choose_capped_speakers(
+        audio_path, config, cap, community, candidate, outcome, recording_id
+    )
+
+
+def choose_capped_speakers(  # noqa: PLR0913 - the pass's inputs and its status
+    audio_path: str,
+    config: dict | None,
+    cap: int,
+    community: Annotation,
+    candidate: Annotation,
+    status: dict,
+    recording_id: int | None = None,
+) -> Annotation | None:
+    """Keep the union when it fits the cap, otherwise community-1 with the cap.
+
+    ``candidate`` is what the native pass returned for the uncapped
+    ``community``, and ``status`` holds its route. The union's speaker count is
+    its number of distinct labels: each Nemotron channel with any frame above
+    0.5, plus each community-1 speaker that shares no time with Nemotron's
+    speech. It is counted before phantom filtering and the merge pass, which
+    only remove or merge speakers, so a union within the cap stays within it.
+
+    Community-1 with the cap is the uncapped run when that already fits:
+    pyannote applies ``max_speakers`` only when it finds more speakers than
+    that, so a second run would return the same speakers. Otherwise community-1
+    runs again with the cap, after Nemotron has been released.
+    """
+    from backend.processing.diarize import diarize_audio
+
+    union_speakers = len(candidate.labels()) if status.get("route") == "union" else None
+    community_speakers = len(community.labels())
+    status.update(
+        native_route=status.get("route"),
+        native_reason=status.get("reason"),
+        cap=cap,
+        union_speakers=union_speakers,
+        community_speakers=community_speakers,
+    )
+    if union_speakers is not None and union_speakers <= cap:
+        status.update(route="union", reason="union_within_cap")
+        result: Annotation | None = candidate
+    else:
+        reused = community_speakers <= cap
+        status.update(
+            route="community_capped",
+            reason="union_unavailable" if union_speakers is None else "union_over_cap",
+            community_reused=reused,
+        )
+        result = (
+            community
+            if reused
+            else diarize_audio(audio_path, config=config, max_speakers=cap)
+        )
+    status["speakers"] = len(result.labels()) if result is not None else None
+    _log_capped(status, recording_id)
+    return result
+
+
+def _log_capped(status: dict, recording_id: int | None) -> None:
+    """One line per capped recording, counts only, for comparing runs."""
+    fields = (
+        "route",
+        "reason",
+        "cap",
+        "union_speakers",
+        "community_speakers",
+        "community_reused",
+        "speakers",
+        "native_route",
+        "native_reason",
+    )
+    logger.info(
+        "Capped final speakers for recording %s: %s",
+        recording_id,
+        " ".join(f"{key}={status[key]}" for key in fields if key in status),
+    )

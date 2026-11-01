@@ -268,15 +268,15 @@ Once a person has a voiceprint, a speaker you link later is blended in only if i
 
 ### Limiting The Number Of Speakers
 
-Speaker detection is automatic. If a long meeting comes back with more speakers than there were people, usually because someone's audio changed partway through, set **Max Speakers** (1 to 50) for that recording. Leave it empty to auto-detect.
+Speaker detection is automatic. If a meeting comes back with more speakers than there were people, usually because someone's audio changed partway through, set **Max Speakers** (1 to 50) for that recording. Leave it empty to auto-detect. The limit applies to final processing, not to live labels.
 
-On CUDA installations with the automatic speaker engine prepared, final processing can combine two speaker passes. This applies to imports and reprocessing too, independently of live labels. It can separate speakers better, but can also mistake more noise for speech. Setting **Max Speakers** uses community-1 with your speaker limit. An administrator can select the classic engine for both live and final processing ([deployment settings](DEPLOYMENT.md#live-speaker-labels)).
+On CUDA installations with the automatic speaker engine prepared, final processing can combine two speaker passes. This applies to imports and reprocessing too, independently of live labels. It can separate speakers better, but can also mistake more noise for speech. With **Max Speakers** set, Nojoin keeps the combined result when it found no more speakers than your limit, and otherwise uses community-1 limited to it. An administrator can select the classic engine for both live and final processing ([deployment settings](DEPLOYMENT.md#live-speaker-labels)).
 
-- **Live recording**: the field sits with the recording controls and stays editable throughout. The value when you press **Stop** is the one used, so raise it before stopping if someone joined unannounced.
+- **Live recording**: the field sits with the recording controls and stays editable throughout. The value when you press **Stop** is the one used, so raise it before stopping if someone joined unannounced. Live speaker labels are a preview and ignore the limit, so they can show more speakers than it until processing replaces them.
 - **Import**: set it in the import dialog.
 - **Reprocess**: **Retry Processing** accepts a new value. It rebuilds the transcript too, which clears names you set by hand on that recording.
 
-It is an upper bound: 4 for a three-person meeting still returns 3. A value below the real number of people merges people together, so when in doubt, guess high or leave it empty.
+It is an upper bound: 4 for a three-person meeting still returns 3. Set it to the number of people who spoke, or a little above if you are unsure, since a lower value merges people together. If you don't know, leave it empty.
 
 ### Tuning Speech Detection And Speaker Separation
 
@@ -370,7 +370,7 @@ Every claim about a person carries a quote you can play back. An item the model 
 
 Every figure belongs to a speaker, so it is only as good as the speaker separation. When one person is split into two, their share is split too, and the number looks normal.
 
-The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting that reached its **Max Speakers** limit, or unnamed speakers. Its **Review speakers** opens the speaker panel, in the side column or the **Speakers** tab on a phone, and moves focus to the speaker list, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
+The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting with as many speakers as its **Max Speakers** limit, or unnamed speakers. Its **Review speakers** opens the speaker panel, in the side column or the **Speakers** tab on a phone, and moves focus to the speaker list, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
 
 ### Attaching Documents
 

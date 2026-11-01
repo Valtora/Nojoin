@@ -103,6 +103,15 @@ describe("RecordingCaptureSlot", () => {
     await waitFor(() => expect(pause).toHaveBeenCalledTimes(1));
   });
 
+  // A reloaded tab read auto-detect while the server held a cap (#871).
+  it("shows the speaker cap the recording holds", () => {
+    ownCapture();
+    render(<RecordingCaptureSlot recording={recording({
+      status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING, max_speakers: 4,
+    })} />);
+    expect(screen.getByLabelText(/max speakers/i)).toHaveValue(4);
+  });
+
   it("never exposes another recording's waveform or transport", () => {
     ownCapture();
     render(<RecordingCaptureSlot recording={recording({ id: "rec-2", status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING })} />);

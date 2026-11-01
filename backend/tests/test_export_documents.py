@@ -242,7 +242,10 @@ def test_the_attribution_warning_uses_the_tabs_wording() -> None:
     text = _txt(meeting_parts(analytics=analytics), ["analytics"])
 
     assert "These figures depend on who Nojoin thinks was speaking" in text
-    assert "This meeting reached its speaker limit of 6." in text
+    assert (
+        "This meeting has as many speakers as its limit of 6. If more people "
+        "spoke, their speech is counted under the ones shown."
+    ) in text
     assert "Not everyone has been named yet: Anna." in text
 
 

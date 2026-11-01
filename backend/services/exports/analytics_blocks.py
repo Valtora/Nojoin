@@ -89,8 +89,9 @@ def _describe_reason(
         )
     if code == "speaker_cap_bound":
         return (
-            f"This meeting reached its speaker limit of {reason.get('max_speakers')}. "
-            "Speakers beyond the limit were merged into the ones shown."
+            "This meeting has as many speakers as its limit of "
+            f"{reason.get('max_speakers')}. If more people spoke, their speech is "
+            "counted under the ones shown."
         )
     if code == "unnamed_speakers":
         return f"Not everyone has been named yet: {_names(reason.get('speaker_keys'), speakers)}."
