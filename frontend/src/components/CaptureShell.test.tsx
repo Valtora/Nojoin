@@ -13,20 +13,24 @@ const guardState = {
   hasPausedRecording: false,
 };
 
+let pathname = "/";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush }),
+  usePathname: () => pathname,
 }));
 
 vi.mock("@/lib/capture/usePausedRecordingGuard", () => ({
   usePausedRecordingGuard: () => guardState,
 }));
 
+let captureStatus = "idle";
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel,
     controller: { getState: () => ({ error: null }) },
     resume,
     runtimeActive: false,
+    status: captureStatus,
     stop,
     support: { supported: true, mode: "shared_audio" },
   }),
@@ -60,6 +64,8 @@ describe("CaptureShell", () => {
     cancel.mockReset();
     guardState.pausedRecording = interrupted;
     guardState.hasPausedRecording = true;
+    captureStatus = "idle";
+    pathname = "/";
   });
 
   it("explains an interrupted capture rather than calling it paused", () => {
@@ -110,5 +116,27 @@ describe("CaptureShell", () => {
 
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/recordings/rec-lost"));
     expect(resume).toHaveBeenCalledWith("rec-lost");
+  });
+
+  it("asks what to do before anything new, except on the recording's own page", () => {
+    const { rerender } = render(<CaptureShell><div /></CaptureShell>);
+    expect(screen.getByRole("heading", { name: "Choose what to do before starting anything new" }))
+      .toBeInTheDocument();
+
+    pathname = "/recordings/rec-lost";
+    rerender(<CaptureShell><div /></CaptureShell>);
+    expect(screen.getByRole("heading", { name: "Choose what to do with this recording" }))
+      .toBeInTheDocument();
+  });
+
+  it("stays shut over a Resume this tab started from the page, and opens if it fails", () => {
+    // The recording's own Resume, after a reload, while the share picker is open.
+    captureStatus = "starting";
+    const { rerender } = render(<CaptureShell><div /></CaptureShell>);
+    expect(screen.queryByRole("button", { name: "Resume recording" })).not.toBeInTheDocument();
+
+    captureStatus = "error";
+    rerender(<CaptureShell><div /></CaptureShell>);
+    expect(screen.getByRole("button", { name: "Resume recording" })).toBeEnabled();
   });
 });

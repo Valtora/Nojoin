@@ -24,7 +24,9 @@ import { getErrorDetail, getErrorStatus } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
-import { LanguageNotice, RecordingId } from "@/types";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneDate, getBrowserTimeZone, getUserTimeZone } from "@/lib/timezone";
+import { LanguageNotice, Recording, RecordingId } from "@/types";
 
 import {
   NOTHING_TO_UNDO,
@@ -154,9 +156,9 @@ export interface RecordingActions extends TranscriptRecordingActions {
     tagName: string,
     callbacks?: RecordingListActionCallbacks,
   ) => Promise<void>;
+  /** Saves the audio as `<day>_<name>.mp3`, the day in the reader's zone. */
   exportAudio: (
-    id: RecordingId,
-    name: string,
+    recording: Pick<Recording, "id" | "name" | "created_at">,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
   /** Sets the recording's language without reprocessing ("Keep English"). */
@@ -423,9 +425,15 @@ export function useRecordingActions(): RecordingActions {
             ),
         }),
 
-      exportAudio: async (id, name, callbacks) => {
+      exportAudio: async (recording, callbacks) => {
         try {
-          await exportAudio(id, name);
+          const created = parseServerTimestamp(recording.created_at);
+          const timeZone = await getUserTimeZone().catch(getBrowserTimeZone);
+          await exportAudio(
+            recording.id,
+            recording.name,
+            created ? formatTimeZoneDate(created, timeZone, "yyyyMMdd") : undefined,
+          );
           callbacks?.onSuccess?.();
         } catch (e: unknown) {
           console.error("Failed to export audio", e);

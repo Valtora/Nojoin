@@ -307,7 +307,9 @@ export default function RecordingMainContent({
           role="tablist"
           aria-label="Meeting panels"
           data-ui-reading="pane"
-          className={`${isMobile ? "flex overflow-x-auto" : "grid grid-cols-4"} border-b-2 border-surface-border`}
+          // The scroll padding is the hints' width: a tab scrolled into view
+          // stops clear of the arrow over either edge.
+          className={`${isMobile ? "flex overflow-x-auto scroll-px-8" : "grid grid-cols-4"} border-b-2 border-surface-border`}
         >
           {tabs.map(({ panel, label }) => (
             <ButtonBase

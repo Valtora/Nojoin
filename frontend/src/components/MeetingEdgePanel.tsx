@@ -311,7 +311,10 @@ function MeetingEdgePanel({
           <div className="density-surface-panel border border-dashed border-action-border bg-surface-inset px-4 py-5 text-sm leading-6 text-contrast-helper">
             {status === "updating"
               ? "Meeting Edge is building the first guidance pass from the live meeting."
-              : "Meeting Edge will start suggesting questions and overlooked points once the meeting has enough signal."}
+              // Read-only once the capture has ended: no more passes are coming.
+              : readOnly
+                ? "Meeting Edge made no suggestions during this meeting."
+                : "Meeting Edge will start suggesting questions and overlooked points once the meeting has enough signal."}
           </div>
         )}
 

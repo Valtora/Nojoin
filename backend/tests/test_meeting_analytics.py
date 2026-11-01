@@ -9,6 +9,8 @@ moved.
 
 from __future__ import annotations
 
+import pytest
+
 from backend.services.meeting_analytics.constants import (
     LATENCY_COLLAR_MS,
     LATENCY_LAPSE_MS,
@@ -349,7 +351,7 @@ class TestAttributionWarning:
 
         assert warning is None
 
-    def test_a_bound_speaker_cap_is_disclosed(self):
+    def test_a_count_equal_to_the_cap_is_disclosed(self):
         metrics = compute_deterministic_metrics(
             [row("rs:0", 0, 30_000), row("rs:1", 30_000, 60_000)],
             duration_ms=60_000,
@@ -359,8 +361,26 @@ class TestAttributionWarning:
             metrics=metrics, speakers=self._speakers(2), max_speakers=2
         )
 
-        codes = {reason["code"] for reason in warning["reasons"]}
-        assert "speaker_cap_bound" in codes
+        assert warning == {
+            "reasons": [
+                {"code": "speaker_cap_bound", "max_speakers": 2, "speaker_count": 2}
+            ]
+        }
+
+    @pytest.mark.parametrize("max_speakers", [1, 3])
+    def test_a_count_off_the_cap_says_nothing_about_it(self, max_speakers):
+        # Below the cap, it did not limit anyone. Above it, the speakers came
+        # from an edit or live labels, which the cap does not bound (#871).
+        metrics = compute_deterministic_metrics(
+            [row("rs:0", 0, 30_000), row("rs:1", 30_000, 60_000)],
+            duration_ms=60_000,
+        )
+
+        warning = build_attribution_warning(
+            metrics=metrics, speakers=self._speakers(2), max_speakers=max_speakers
+        )
+
+        assert warning is None
 
     def test_unnamed_speakers_are_disclosed(self):
         metrics = compute_deterministic_metrics(
@@ -466,7 +486,7 @@ class TestUnattributedLines:
         assert {(t["from_speaker"], t["to_speaker"]) for t in transitions} == {
             ("rs:1", "rs:2")
         }
-        # Two speakers against a cap of two, all named: nothing to warn about.
+        # Two speakers against a cap of two, all named: only the cap to note.
         reasons = (analytics["attribution_warning"] or {}).get("reasons", [])
         assert {r["code"] for r in reasons} == {"speaker_cap_bound"}
 

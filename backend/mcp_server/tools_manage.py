@@ -260,6 +260,7 @@ async def reprocess_recording(
     recording_id: str,
     transcription_backend: str,
     max_speakers: Optional[int] = None,
+    clear_max_speakers: bool = False,
 ) -> dict[str, Any]:
     """Re-run the full processing pipeline for a recording.
 
@@ -275,8 +276,12 @@ async def reprocess_recording(
         transcription_backend: The ASR backend to use, matching the
             deployment's configured engines (for example "whisper",
             "parakeet", or "canary").
-        max_speakers: Optional upper bound on diarised speakers; omit to
-            auto-detect.
+        max_speakers: Upper bound on the speakers final processing keeps,
+            1 to 50, saved on the recording for later runs too. Omit to
+            keep the recording's current limit: none unless one was set
+            at import, during capture or by an earlier reprocess.
+        clear_max_speakers: True removes the recording's limit, so the
+            speakers are detected automatically. Not with max_speakers.
     """
     from backend.api.v1.endpoints.recordings.routes_actions import (
         ReprocessRequest,
@@ -289,8 +294,15 @@ async def reprocess_recording(
     user = get_current_mcp_user()
     _require_write_scope("reprocessing recordings")
 
+    if clear_max_speakers and max_speakers is not None:
+        raise ToolError("Pass max_speakers or clear_max_speakers, not both.")
+
+    # The route keeps the stored limit when max_speakers is absent and clears
+    # it on an explicit null, so only a requested change is passed on.
     body_kwargs: dict[str, Any] = {"transcription_backend": transcription_backend}
-    if max_speakers is not None:
+    if clear_max_speakers:
+        body_kwargs["max_speakers"] = None
+    elif max_speakers is not None:
         body_kwargs["max_speakers"] = max_speakers
 
     async with async_session_maker() as db:

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { renderWithProviders, screen } from "@/test/renderWithProviders";
+import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 import {
   RecordingStatus,
   type Recording,
@@ -10,6 +10,13 @@ import {
 
 vi.mock("@/components/TranscriptView", () => ({
   default: () => <div data-testid="transcript-view" />,
+}));
+// The retry dialog's own reads; nothing is sent in these tests.
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getSettings: vi.fn().mockResolvedValue({}),
+  getLanguageOptions: vi.fn().mockReturnValue(new Promise(() => {})),
+  reprocessRecording: vi.fn(),
 }));
 
 import TranscriptSection from "@/test/TranscriptSectionWithEdits";
@@ -80,9 +87,40 @@ describe("TranscriptSection transcription failure", () => {
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Transcription failed");
     expect(alert).toHaveTextContent(OOM_MESSAGE);
-    expect(alert).toHaveTextContent("Retry Processing");
+    expect(alert).not.toHaveTextContent(/recordings list/);
     expect(screen.queryByText(NOT_YET)).not.toBeInTheDocument();
     expect(screen.queryByText(NO_SPEECH)).not.toBeInTheDocument();
+  });
+
+  it("retries from the recording's own page, as a retry rather than a reprocess", async () => {
+    renderSection(failedRecording());
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry processing" }));
+
+    expect(await screen.findByRole("dialog", { name: "Retry processing" })).toBeInTheDocument();
+    expect(screen.queryByText(/replaces the current transcript/)).not.toBeInTheDocument();
+  });
+
+  it("warns that a retry replaces a transcript still shown from an earlier run", async () => {
+    const kept = { start: 0, end: 1, speaker: "SPEAKER_00", text: "kept" } as TranscriptSegment;
+    renderSection(failedRecording(), [kept]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry processing" }));
+
+    expect(await screen.findByText(/replaces the current transcript/)).toBeInTheDocument();
+  });
+
+  it("reports a failure at a later step with the step it stopped at", () => {
+    renderSection({
+      ...recordingWith({ transcript_status: "pending" }, RecordingStatus.ERROR),
+      processing_step: "System Error: diarisation stopped",
+    } as Recording);
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Processing failed");
+    expect(alert).toHaveTextContent("System Error: diarisation stopped");
+    expect(screen.getByRole("button", { name: "Retry processing" })).toBeInTheDocument();
+    expect(screen.queryByText(NOT_YET)).not.toBeInTheDocument();
   });
 
   it("keeps the provisional transcript visible under the failure notice", () => {
