@@ -327,6 +327,11 @@ describe("SpeakerPanel", () => {
           "Voiceprint not updated: this speaker sounds too unlike Alice's saved voiceprint. Check that the name is right.",
       }),
     );
+    // The page is People everywhere, so the toast says so too.
+    expect(addNotification).toHaveBeenCalledWith({
+      type: "success",
+      message: "Speaker added to People.",
+    });
   });
 
   it("deletes a speaker after confirmation", async () => {

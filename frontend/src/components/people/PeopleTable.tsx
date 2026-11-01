@@ -20,6 +20,12 @@ interface PeopleTableProps {
   onSplit?: (person: GlobalSpeaker) => void;
 }
 
+/** The phone card's meeting count, where the table has a Meetings column. */
+const meetingCount = (count: number | undefined): string => {
+  if (!count) return "No meetings";
+  return `${count} meeting${count === 1 ? "" : "s"}`;
+};
+
 export function PeopleTable({
   people,
   isLoading,
@@ -376,7 +382,7 @@ export function PeopleTable({
 
             <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-7">
               <span className="inline-flex items-center rounded-pill bg-surface-inset px-2.5 py-0.5 text-xs font-medium text-contrast-helper">
-                {person.recording_count || 0} meetings
+                {meetingCount(person.recording_count)}
               </span>
               {person.tags?.map((tag) => {
                 const color = getColorByKey(tag.color || "gray");

@@ -36,6 +36,8 @@ interface PeopleTagSidebarProps {
   onToggleTag: (tagId: number) => void;
   onClearFilters: () => void;
   onTagsUpdated?: (tags: PeopleTag[]) => void;
+  /** Bumped when a tag is made outside the sidebar, such as in Add Person, so the list reloads. */
+  tagsRevision?: number;
   /** Mobile drawer state. On desktop the pane is always inline. */
   mobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -51,6 +53,7 @@ export function PeopleTagSidebar({
   onToggleTag,
   onClearFilters,
   onTagsUpdated,
+  tagsRevision = 0,
   mobileOpen = false,
   onMobileClose,
 }: PeopleTagSidebarProps) {
@@ -82,7 +85,7 @@ export function PeopleTagSidebar({
 
   useEffect(() => {
     fetchTags();
-  }, [fetchTags]);
+  }, [fetchTags, tagsRevision]);
 
   // Build tree
   const tagTree = useMemo(() => {

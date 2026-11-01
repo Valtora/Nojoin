@@ -40,6 +40,8 @@ interface PersonModalProps {
   onVoiceprintDeleted?: (id: number) => void;
   /** The lock was changed and saved; the dialog stays open with its edits. */
   onVoiceprintLockChanged?: (id: number, locked: boolean) => void;
+  /** A tag was made with New Tag. It exists already, whether or not the person is saved. */
+  onTagCreated?: (tag: PeopleTag) => void;
 }
 
 export function PersonModal({
@@ -50,6 +52,7 @@ export function PersonModal({
   onDelete,
   onVoiceprintDeleted,
   onVoiceprintLockChanged,
+  onTagCreated,
 }: PersonModalProps) {
   const { addNotification } = useNotificationStore();
   const [formData, setFormData] = useState<
@@ -116,6 +119,7 @@ export function PersonModal({
     try {
       const newTag = await createPeopleTag(newTagName.trim());
       setAllTags((prev) => [...prev, newTag]);
+      onTagCreated?.(newTag);
       setFormData((prev) => ({
         ...prev,
         tag_ids: [...prev.tag_ids, newTag.id],

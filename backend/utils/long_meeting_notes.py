@@ -39,6 +39,7 @@ from backend.utils.meeting_intelligence import (
     MeetingIntelligenceContractError,
     build_title_preference_instruction,
     finalise_automatic_meeting_intelligence_result,
+    keep_offered_speaker_labels,
 )
 from backend.utils.meeting_notes import (
     MeetingEventContext,
@@ -892,10 +893,9 @@ def generate_meeting_intelligence_in_parts(
     run.disputed = names.disputed
     title, notes, chosen = run.combine(drafts, _title_and_notes_reader(request))
     result = AutomaticMeetingIntelligenceResult(
-        speaker_mapping=names.settle(chosen),
+        speaker_mapping=keep_offered_speaker_labels(names.settle(chosen), request),
         title=title,
         notes_markdown=notes,
         require_section_heading=not request.uses_custom_notes_sections,
     )
-    result.validate_for_request(request)
     return finalise_automatic_meeting_intelligence_result(result)

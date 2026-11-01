@@ -62,6 +62,23 @@ export const noteFileTimeMs = (note: Pick<TimelineNote, "kind" | "anchor_ms" | "
       ? (note.start_ms ?? 0)
       : null;
 
+/**
+ * Where a note sits, as My notes and the transcript name it: its time, or
+ * "Before the transcript" and "After the transcript" for a note on the whole
+ * meeting. `place` reads inside a sentence ("at 01:05", "before the transcript").
+ */
+export const noteFileWhere = (
+  note: Pick<TimelineNote, "kind">,
+  atMs: number | null,
+): { label: string; place: string } => {
+  if (atMs !== null) {
+    const time = formatTimelineMs(atMs);
+    return { label: time, place: `at ${time}` };
+  }
+  const label = note.kind === "tail" ? "After the transcript" : "Before the transcript";
+  return { label, place: label.toLowerCase() };
+};
+
 type NoteText = Pick<TimelineNote, "kind" | "body">;
 
 /** A capture's point note whose text is still only "Screen capture". */
@@ -84,7 +101,7 @@ export const removalQuestion = (
   file: Pick<NoteAttachment, "title" | "use_in_notes">,
   atMs: number | null,
 ): string => {
-  const place = atMs === null ? "on the meeting" : `at ${formatTimelineMs(atMs)}`;
+  const { place } = noteFileWhere(note, atMs);
   return [
     isUncaptionedCapture(note)
       ? `Remove this file and its note? The note ${place} has only the automatic text “${CAPTURE_NOTE_BODY}”, so it goes too.`
@@ -484,7 +501,7 @@ function NoteFileViewer({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={documentFileUrl(file.id)}
-              alt={`${file.title}, on the note ${atMs === null ? "on the meeting" : `at ${formatTimelineMs(atMs)}`}`}
+              alt={`${file.title}, on the note ${noteFileWhere(note, atMs).place}`}
               className="max-h-[60dvh] w-auto max-w-full object-contain"
             />
           </SurfaceBase>
@@ -496,7 +513,7 @@ function NoteFileViewer({
         )}
         <p className="whitespace-pre-wrap break-words text-sm text-foreground">
           <span className="font-semibold">
-            {atMs === null ? "Note on the meeting" : `Note at ${formatTimelineMs(atMs)}`}:
+            Note {noteFileWhere(note, atMs).place}:
           </span>{" "}
           {note.body}
         </p>

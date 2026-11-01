@@ -52,6 +52,26 @@ describe("PeopleTagSidebar", () => {
     vi.restoreAllMocks();
   });
 
+  it("reloads its tags when the page says one was made elsewhere", async () => {
+    const props = {
+      selectedTagIds: [],
+      onToggleTag: vi.fn(),
+      onClearFilters: vi.fn(),
+    };
+    const { rerender } = render(<PeopleTagSidebar {...props} tagsRevision={0} />);
+    await screen.findByText("Clients");
+    expect(screen.queryByText("Partners")).toBeNull();
+
+    getPeopleTags.mockResolvedValue([
+      ...TAGS,
+      { id: 3, name: "Partners", color: "green" } as PeopleTag,
+    ]);
+    rerender(<PeopleTagSidebar {...props} tagsRevision={1} />);
+
+    expect(await screen.findByText("Partners")).toBeInTheDocument();
+    expect(getPeopleTags).toHaveBeenCalledTimes(2);
+  });
+
   it("says why a rename was refused and keeps the name typed", async () => {
     updatePeopleTag.mockRejectedValue(
       httpError(400, "Tag with this name already exists"),
