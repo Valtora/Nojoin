@@ -154,11 +154,12 @@ def locked_line_before(
     """The newest locked live line starting at or before the first of ``rows``.
 
     Streamed newest first: the line just before them usually qualifies, so a
-    long meeting's older lines are never read.
+    long meeting's older lines are never read. On PostgreSQL the kept flags
+    (#776) pick the line, so only its payload is read.
     """
     if not rows:
         return None
-    with session.execute(
+    before = (
         select(TranscriptUtterance)
         .where(TranscriptUtterance.recording_id == recording_id)
         .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
@@ -170,8 +171,26 @@ def locked_line_before(
             col(TranscriptUtterance.id).desc(),
         )
         .execution_options(yield_per=8)
-    ) as lines:
-        return next((line for line in lines.scalars() if line_is_locked(line)), None)
+    )
+    from .live_settling_flags import flags_readable, live_lines
+
+    if not flags_readable(session):
+        with session.execute(before) as lines:
+            return next(
+                (line for line in lines.scalars() if line_is_locked(line)), None
+            )
+    locked = {
+        line.id
+        for line in live_lines(session, recording_id)
+        if line.line_locked is True
+    }
+    with session.execute(before.with_only_columns(TranscriptUtterance.id)) as ids:
+        line_id = next((row_id for row_id in ids.scalars() if row_id in locked), None)
+    if line_id is None:
+        return None
+    return session.execute(
+        select(TranscriptUtterance).where(col(TranscriptUtterance.id) == line_id)
+    ).scalar_one()
 
 
 LeadSpeaker = Callable[[str | None], str | None]
