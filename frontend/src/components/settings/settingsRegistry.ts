@@ -534,6 +534,18 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["live", "settling", "window", "seconds"],
   },
   {
+    id: "transcription-sentence-start",
+    label: "Reply starts",
+    description: "Give the first words of a reply to the person replying when the speaker model hears them late.",
+    category: "transcription",
+    access: "admin",
+    scope: "everyone",
+    advanced: "can-degrade",
+    settingsKeys: ["sentence_start_correction"],
+    defaultValue: true,
+    keywords: ["reply", "speaker", "sentence", "start", "interjection", "labels", "live", "diarisation"],
+  },
+  {
     id: "transcription-engine",
     label: "Transcription engine",
     description: "The speech-to-text engine used for every recording on this installation.",

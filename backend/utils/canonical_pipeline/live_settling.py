@@ -15,7 +15,11 @@ from backend.processing.processing_tuning import (
     line_break_pause_exceeded,
     resolve_tuning,
 )
-from backend.processing.sentence_start import NativeActivity
+from backend.processing.sentence_start import (
+    SENTENCE_START_CORRECTION_KEY,
+    NativeActivity,
+    correction_enabled,
+)
 from backend.utils.capture_resume import capture_interval, load_resume_boundaries
 from backend.utils.config_manager import config_manager
 from backend.utils.live_word_settling import (
@@ -96,6 +100,13 @@ class _Projection:
     metadata: dict[str, Any] | None = None
     decode_id: str | None = None
     silence_start_ms: int | None = None
+
+
+def _correcting(activity: NativeActivity | None) -> NativeActivity | None:
+    """``activity`` while the sentence-start correction is switched on, else
+    None: a pass without native activity runs as before the correction."""
+    on = correction_enabled(config_manager.get(SENTENCE_START_CORRECTION_KEY))
+    return activity if on else None
 
 
 def settling_enabled(transcript: Transcript | None) -> bool:
@@ -465,7 +476,7 @@ def publish_live_settling(
             rows,
             decide_speaker,
             metadata=metadata,
-            activity=activity,
+            activity=_correcting(activity),
             decode_id=request.decode_id,
             silence_start_ms=_confirmed_silence(request, state),
         ),
@@ -563,6 +574,7 @@ def project_live_settling_speakers(
     activity: NativeActivity | None = None,
 ) -> tuple[SettlingPublicationResult, int, float | None]:
     """Repartition marked mutable lines per word, independent of the legacy cursor."""
+    activity = _correcting(activity)
     rows = live_rows(session, transcript.recording_id, lock=True)
     # This read leaves out locked lines; the one before the open lines may hold
     # the sentence end that starts their first speaker change.

@@ -153,6 +153,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     # Not an AI setting: listed for the same admin-only, install-wide handling.
     EXPORT_BRANDING_KEY,
     "live_speaker_labels",
+    "sentence_start_correction",
     *LIVE_SETTLING_KEYS,
     "speaker_engine",
     *TRANSCRIPTION_SETTING_KEYS,
@@ -205,6 +206,7 @@ DEFAULT_SYSTEM_CONFIG = {
     # No cap unless an administrator sets one.
     AI_ANALYSIS_DAILY_LIMIT_KEY: None,
     EXPORT_BRANDING_KEY: True,
+    "sentence_start_correction": True,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,
     "live_max_segment_s": DEFAULT_MAX_SEGMENT_S,
@@ -625,6 +627,7 @@ class ConfigManager:
             "telemetry_enabled",
             "telemetry_notice_acknowledged",
             EXPORT_BRANDING_KEY,
+            "sentence_start_correction",
         }:
             return isinstance(value, bool)
         if key in {"live_context_window_s", "live_forced_max_s", "live_max_segment_s"}:

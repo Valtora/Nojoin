@@ -394,6 +394,8 @@ An existing `config.json` without `live_speaker_labels` inherits `auto`; a store
 
 Any other value is off. Workers re-read `config.json` before each task, so changing the master switch reaches the next live segment. Turning labels on after a capture has begun uses clustering if the earlier audio is unavailable to the label engine.
 
+`sentence_start_correction` (`true` by default, also under **Settings > Transcription > Advanced** as **Reply starts**) moves the first words of a reply from the previous speaker to the person replying, in live labels and in processed transcripts ([ADMIN.md](ADMIN.md#transcription)). `false` turns it off; a configuration without the key keeps it on.
+
 The install-wide `speaker_engine` key selects the speaker engine independently of that master switch:
 
 - `auto`, the default: use verified Nemotron on CUDA, with clustering running alongside it. Missing assets, model failure or two seconds of activity on each of its eight channels switch live labels to clustering for the rest of the capture. Settled labels and manual assignments stay authoritative; matching earlier voices is best-effort. Final processing runs community-1, releases it, then runs offline Nemotron. If Nemotron ever uses its eighth speaker channel, keep community-1; otherwise combine native turns with community speech outside them. Setting **Max Speakers** keeps community-1.

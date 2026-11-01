@@ -42,6 +42,16 @@ MIN_REMAINDER_S = 0.1
 EDITED_LINE_SPANS = "edited_line_spans_ms"
 
 UNKNOWN = "UNKNOWN"
+# The install-wide switch (config.json; admin-only, like live speaker labels).
+SENTENCE_START_CORRECTION_KEY = "sentence_start_correction"
+
+
+def correction_enabled(setting: object) -> bool:
+    """Whether the ``sentence_start_correction`` setting leaves the correction
+    on. It is on unless set to False; off, both passes are as without it."""
+    return setting is not False
+
+
 # A word a person assigned, whose chosen speaker the final pass applies later.
 _MANUAL_OWNER = "\x00manual"
 
@@ -378,9 +388,13 @@ def correct_word_assignments(
     ``groups`` are the merge's timed anchors with the untimed words attached to
     each; ``speaker_turns`` is its diarisation annotation; ``config`` supplies
     the capture resume cuts and the edited-line spans, and ``pause_s`` is the
-    owner's resolved line-break pause.
+    owner's resolved line-break pause. Nothing changes when the
+    ``sentence_start_correction`` setting is off.
     """
     from backend.utils.capture_resume import RESUME_BOUNDARIES
+
+    if not correction_enabled((config or {}).get(SENTENCE_START_CORRECTION_KEY)):
+        return
 
     anchors = [item["word"] for item in assignments]
     starts = [float(word["start"]) for word in anchors]

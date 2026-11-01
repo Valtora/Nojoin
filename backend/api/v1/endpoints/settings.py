@@ -98,6 +98,8 @@ class SettingsUpdate(BaseModel):
     enable_live_transcription: Optional[bool] = None
     # Install-wide, admin-only; selection is frozen when capture labels start.
     live_speaker_labels: Optional[str] = None
+    # Install-wide, admin-only: reply starts go to the speaker who says them.
+    sentence_start_correction: Optional[bool] = None
     live_text_settling: Optional[Literal["off", "auto", "always"]] = None
     live_text_settling_k: Optional[int] = Field(default=None, strict=True, ge=1, le=10)
     live_text_settling_window_s: Optional[float] = Field(
