@@ -9,7 +9,10 @@ from typing import Callable
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.services.model_preparation import request_pinned_preparation
+from backend.services.model_preparation import (
+    request_pinned_preparation,
+    request_stale_nemotron_preparation,
+)
 from backend.utils.config_manager import config_manager
 from backend.utils.download_progress import (
     clear_download_progress,
@@ -550,6 +553,10 @@ def download_models(
             )
             _prepare_onnx_asr_model(onnx_model_id)
 
+        # A Nemotron copy prepared under an earlier manifest reads as invalid
+        # after an upgrade. Re-queue it on the CPU lane, as the aligner below
+        # is, so live labels do not wait for a final pass or Retry to repair it.
+        request_stale_nemotron_preparation()
         if engine_has_native_word_timestamps(transcription_backend) or not (
             _hand_off_aligner()
         ):
