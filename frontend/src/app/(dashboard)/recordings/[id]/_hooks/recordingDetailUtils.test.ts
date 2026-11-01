@@ -80,6 +80,15 @@ describe("polling a recording with no audio and no proxy", () => {
   });
 });
 
+describe("noticing a change to the speaker cap in a poll", () => {
+  it("takes a new cap, which the live Max Speakers field shows", () => {
+    const before = recordingWith({ max_speakers: 3 });
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: 3 }))).toBe(false);
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: 4 }))).toBe(true);
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: null }))).toBe(true);
+  });
+});
+
 describe("noticing a change to the notes in a poll", () => {
   it("sees a new notes list signature, which the page then fetches the list for", () => {
     const before = recordingWith({ timeline_notes_list_signature: "1:aaaa" });

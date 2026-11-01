@@ -174,6 +174,9 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   !!polled.discardable !== !!current.discardable ||
   polled.has_proxy !== current.has_proxy ||
   polled.has_audio !== current.has_audio ||
+  // The live Max Speakers field follows it, so a cap set here or in another
+  // tab survives the field remounting (#871).
+  polled.max_speakers !== current.max_speakers ||
   // Whether the live feed has anything to read (hasInFlightTranscriptFeed).
   polled.transcript?.transcript_status !== current.transcript?.transcript_status ||
   polled.transcript?.settling_required !== current.transcript?.settling_required ||
