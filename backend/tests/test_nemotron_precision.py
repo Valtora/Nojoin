@@ -13,7 +13,6 @@ import pytest
 
 from backend.processing import nemotron_model as runtime_module
 from backend.processing.nemotron_model import NemotronRuntime
-from backend.processing.nemotron_types import NEMOTRON_TRANSFORMERS_VERSION
 from backend.tests.nemotron_asset_helpers import native_assets as native_assets
 from backend.tests.test_nemotron_loader import constructor_spies as constructor_spies
 
@@ -213,11 +212,7 @@ def test_loading_precision_covers_constructor_and_acceptance_then_restores(
     monkeypatch.setattr(runtime_module, "check_streaming_frontend", acceptance)
     expectation = nullcontext() if stage == "success" else pytest.raises(RuntimeError)
     with expectation:
-        runtime_module._build_runtime(
-            constructor_spies.path,
-            "cuda:0",
-            {"transformers_version": NEMOTRON_TRANSFORMERS_VERSION},
-        )
+        runtime_module._build_runtime(constructor_spies.path, "cuda:0")
     assert calls == (
         ["constructor"] if stage == "constructor" else ["constructor", "frontend"]
     )

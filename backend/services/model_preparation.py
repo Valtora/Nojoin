@@ -87,8 +87,8 @@ def request_nemotron_preparation(*, recording_id: int | None) -> str | None:
 def request_stale_nemotron_preparation() -> str | None:
     """Re-prepare an installed Nemotron model that no longer verifies.
 
-    An upgrade that changes the asset manifest, such as a new Transformers pin,
-    leaves the receipt naming the old identity, so live labels would cluster
+    An upgrade that changes the asset manifest, such as a new checkpoint
+    revision, leaves the receipt naming the old identity, so live labels would cluster
     until a final pass or Retry prepared it again. Engine preparation, which
     the API queues at startup, calls this once the engine is ready. Nothing is
     queued when the model was never prepared or the install leaves it unused.

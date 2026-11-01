@@ -155,9 +155,8 @@ def test_loader_verifies_before_build_and_once_for_shared_runtime(
         "verify_nemotron_model",
         lambda path: calls.append("verify"),
     )
-    monkeypatch.setattr(runtime_module.assets, "load_asset_manifest", lambda: {})
 
-    def build(path: Path, device: str, manifest: dict[str, Any]) -> Any:
+    def build(path: Path, device: str) -> Any:
         assert calls[-1] == "verify"
         calls.append("build")
         return object()

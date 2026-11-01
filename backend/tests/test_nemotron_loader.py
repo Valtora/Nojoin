@@ -1,9 +1,8 @@
-"""The loader must constrain the native constructors and reject version/config drift."""
+"""The loader must constrain the native constructors and reject config drift."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -11,7 +10,6 @@ import pytest
 
 from backend.processing import nemotron_model as runtime_module
 from backend.processing.nemotron_frontend import CudaFrontend
-from backend.processing.nemotron_types import NEMOTRON_TRANSFORMERS_VERSION
 from backend.tests.nemotron_asset_helpers import local_files
 from backend.tests.nemotron_asset_helpers import native_assets as native_assets
 
@@ -112,11 +110,7 @@ def test_native_constructors_are_local_safetensors_fp32_sdpa_and_processors_inde
 ) -> None:
     import torch
 
-    runtime = runtime_module._build_runtime(
-        constructor_spies.path,
-        "cuda:3",
-        {"transformers_version": NEMOTRON_TRANSFORMERS_VERSION},
-    )
+    runtime = runtime_module._build_runtime(constructor_spies.path, "cuda:3")
     assert constructor_spies.calls == [
         (
             "model",
@@ -144,29 +138,19 @@ def test_native_constructors_are_local_safetensors_fp32_sdpa_and_processors_inde
     assert torch.backends.cudnn.allow_tf32 is False
 
 
-def test_wrong_manifest_version_rejects_before_constructors(
-    constructor_spies: Any,
-) -> None:
-    with pytest.raises(runtime_module.assets.NemotronModelError, match="version"):
-        runtime_module._build_runtime(
-            Path("/managed"), "cuda", {"transformers_version": "5.19.0"}
-        )
-    assert constructor_spies.calls == []
-
-
-def test_wrong_installed_version_rejects_before_constructors(
+def test_another_installed_transformers_loads_under_its_own_runtime_fingerprint(
     constructor_spies: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import transformers
 
+    evaluated = runtime_module._build_runtime(constructor_spies.path, "cuda")
     monkeypatch.setattr(transformers, "__version__", "5.99.0")
-    with pytest.raises(runtime_module.assets.NemotronModelError, match="version"):
-        runtime_module._build_runtime(
-            Path("/managed"),
-            "cuda",
-            {"transformers_version": NEMOTRON_TRANSFORMERS_VERSION},
-        )
-    assert constructor_spies.calls == []
+    other = runtime_module._build_runtime(constructor_spies.path, "cuda")
+    assert [call[0] for call in constructor_spies.calls] == ["model", "model"]
+    # Same prepared files, so a saved native cache is refused only by the
+    # runtime fingerprint, never by asset verification.
+    assert other.asset_fingerprint == evaluated.asset_fingerprint
+    assert other.runtime_fingerprint != evaluated.runtime_fingerprint
 
 
 def test_changed_feature_geometry_rejected_before_model(
@@ -177,11 +161,7 @@ def test_changed_feature_geometry_rejected_before_model(
     config["feature_extractor"]["n_fft"] = 400
     config_path.write_text(json.dumps(config))
     with pytest.raises(runtime_module.assets.NemotronModelError, match="n_fft"):
-        runtime_module._build_runtime(
-            constructor_spies.path,
-            "cuda",
-            {"transformers_version": NEMOTRON_TRANSFORMERS_VERSION},
-        )
+        runtime_module._build_runtime(constructor_spies.path, "cuda")
     assert not [call for call in constructor_spies.calls if call[0] == "model"]
 
 
@@ -196,11 +176,7 @@ def test_unexpected_native_model_class_is_rejected(
         ),
     )
     with pytest.raises(runtime_module.assets.NemotronModelError, match="model class"):
-        runtime_module._build_runtime(
-            constructor_spies.path,
-            "cuda",
-            {"transformers_version": NEMOTRON_TRANSFORMERS_VERSION},
-        )
+        runtime_module._build_runtime(constructor_spies.path, "cuda")
 
 
 @pytest.mark.parametrize("failing_probe", range(1, 7))
