@@ -135,10 +135,18 @@ RUN apt-get update && \
 # never runs the system pip either (the venv has its own), and from 26.2 it ships
 # an SBOM of its vendored urllib3, msgpack and setuptools, whose fixable HIGH
 # CVEs the image scan reports like installed packages.
+#
+# Before pip goes, add cuRAND at the version of the CUDA toolkit the base ships.
+# onnxruntime-gpu's CUDA provider links libcurand.so.10, and torch stopped
+# depending on cuRAND in 2.15.0, so the base no longer carries it. Without it
+# every ONNX Runtime session falls back to the CPU.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
     --root-user-action=ignore --upgrade pillow==13.0.0 urllib3==2.8.0 fsspec==2026.9.0 \
     filelock==4.2.1 dnspython==2.9.0 \
     "certifi>=2026.10.19" && \
+    /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
+    --root-user-action=ignore \
+    "cuda-toolkit[curand]==$(/usr/bin/python3 -c 'import importlib.metadata as m; print(m.version("cuda-toolkit"))')" && \
     /usr/bin/python3 -m pip uninstall -y --break-system-packages \
     --root-user-action=ignore uv pip && \
     ! test -e /usr/local/bin/uv && ! test -e /usr/local/bin/uvx
@@ -149,7 +157,7 @@ RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
 # ctypes-preloads its own wheel libraries with RTLD_GLOBAL, but onnxruntime-gpu does
 # not: libonnxruntime_providers_cuda.so is linked against cuDNN 9's split
 # sub-libraries (libcudnn_adv, _ops, _cnn, _graph, _heuristic, _engines_*), which
-# torch never preloads, plus libcublasLt. Without this the loader cannot resolve
+# torch never preloads, plus libcublasLt and libcurand. Without this the loader cannot resolve
 # them, the CUDA execution provider is silently dropped, and Canary/Parakeet ASR and
 # text embeddings run on CPU while torch still reports CUDA as available.
 #
@@ -167,7 +175,8 @@ RUN /usr/bin/python3 -c \
       > /etc/ld.so.conf.d/nvidia-cuda-wheels.conf && \
     ldconfig && \
     ldconfig -p | grep -q libcudnn_adv.so.9 && \
-    ldconfig -p | grep -q libcublasLt.so.13
+    ldconfig -p | grep -q libcublasLt.so.13 && \
+    ldconfig -p | grep -q libcurand.so.10
 
 COPY --from=builder /opt/venv /opt/venv
 
