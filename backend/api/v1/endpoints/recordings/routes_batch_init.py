@@ -14,6 +14,7 @@ from backend.models.recording import (
     Recording,
     RecordingInitResponse,
     RecordingStatus,
+    chosen_recording_name,
 )
 from backend.models.transcript import Transcript
 from backend.models.user import User
@@ -222,6 +223,10 @@ async def init_upload(
     unique_filename = f"{uuid4()}.wav"
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
 
+    # A name given here is the user's, which the AI title does not replace
+    # (issue #837). The web app sends none, so its captures take the AI title.
+    name = chosen_recording_name(name)
+    name_chosen = name is not None
     if not name:
         name = recordings_module.generate_default_meeting_name(
             get_user_timezone_name(current_user.settings)
@@ -229,6 +234,7 @@ async def init_upload(
 
     recording = Recording(
         name=name,
+        title_user_edited=name_chosen,
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
         # A live capture declares itself here rather than leaving client_status

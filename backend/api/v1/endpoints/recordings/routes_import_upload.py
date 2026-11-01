@@ -18,7 +18,12 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
-from backend.models.recording import ClientStatus, Recording, RecordingStatus
+from backend.models.recording import (
+    ClientStatus,
+    Recording,
+    RecordingStatus,
+    chosen_recording_name,
+)
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.user import User
 from backend.processing.speaker_cap import (
@@ -99,7 +104,14 @@ class ImportOptions:
     limit and so a new import-time option only has to be added in one place.
     """
 
-    name: Optional[str] = Query(None, description="Custom name for the recording")
+    # Trimmed, and None when blank. A name given here is the user's choice, so
+    # the AI title does not replace it (issue #837). Omit it to name the
+    # recording after the file, which the AI title then replaces.
+    name: Annotated[
+        Optional[str],
+        Query(description="Custom name for the recording"),
+        AfterValidator(chosen_recording_name),
+    ] = None
     recorded_at: Optional[datetime] = Query(
         None, description="Original recording timestamp"
     )
@@ -184,6 +196,7 @@ async def import_audio(
 
     recording = Recording(
         name=recording_name,
+        title_user_edited=options.name is not None,
         proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
         file_size_bytes=file_stats.st_size,
@@ -249,6 +262,7 @@ async def init_chunked_import(
 
     recording = Recording(
         name=recording_name,
+        title_user_edited=options.name is not None,
         proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,

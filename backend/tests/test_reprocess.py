@@ -26,6 +26,7 @@ CREATE TABLE recordings (
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     name VARCHAR(255) NOT NULL,
+    title_user_edited BOOLEAN NOT NULL DEFAULT 0,
     public_id VARCHAR(36) NOT NULL,
     meeting_uid VARCHAR(36) NOT NULL,
     audio_path VARCHAR(1024) NOT NULL,

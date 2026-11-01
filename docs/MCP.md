@@ -90,7 +90,7 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `get_person` | `mcp:read` | One person, with the meetings they appear in. |
 | `list_calendar_events` | `mcp:read` | Your synced calendar events, for linking recordings to meetings. |
 | `list_tasks` | `mcp:read` | Your tasks. |
-| `rename_recording` | `mcp:write` | Rename a recording. |
+| `rename_recording` | `mcp:write` | Rename a recording. The name counts as the user's, so a generated title never replaces it. |
 | `tag_recording` / `untag_recording` | `mcp:write` | Add a tag to a recording, creating the tag if needed, or remove one. |
 | `archive_recording` / `restore_recording` | `mcp:write` | Archive a recording, or bring it back from the archive or the bin. |
 | `trash_recording` | `mcp:write` | Move a recording to the bin. |

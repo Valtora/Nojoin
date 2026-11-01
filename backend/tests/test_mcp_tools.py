@@ -143,6 +143,7 @@ SCHEMA_STATEMENTS = [
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
         name VARCHAR(255) NOT NULL,
+        title_user_edited BOOLEAN NOT NULL DEFAULT 0,
         public_id VARCHAR(36) NOT NULL,
         meeting_uid VARCHAR(36),
         audio_path VARCHAR(1024) NOT NULL,
@@ -1912,6 +1913,15 @@ async def test_recording_lifecycle_tools_roundtrip(
     # transcript cursor does not.
     assert renamed["updated_at"]
     assert renamed["transcript_revision"] == 0
+    # A rename through the connector is the user's choice too, so the AI
+    # title will not replace it (#837).
+    async with session_maker() as session:
+        chosen = (
+            await session.execute(
+                text("SELECT title_user_edited FROM recordings WHERE id = 1")
+            )
+        ).scalar_one()
+    assert bool(chosen) is True
 
     tagged = await tag_recording("rec-1", "Planning")
     assert tagged["tag"]["name"] == "Planning"
