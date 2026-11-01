@@ -149,6 +149,8 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
     # the audio actually lives, rather than at a .opus file that was never written.
     assert recordings[0]["audio_path"] == "recordings/quarterly-planning.wav"
     assert recordings[0]["proxy_path"] is None
+    # Whose name it is travels with the archive (#837).
+    assert recordings[0]["title_user_edited"] is False
     assert calendar_connections[0]["access_token"] == "google-access-token"
     assert calendar_connections[0]["refresh_token"] == "google-refresh-token"
     assert user_tasks[0]["title"] == "Follow up with supplier"
@@ -229,6 +231,9 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
     )
     assert restored_recording.meeting_uid == "meeting-uid-round-trip"
     assert restored_recording.audio_path.endswith("quarterly-planning.wav")
+    # The archive's answer, not the rule for older archives, which would count
+    # "Quarterly planning" as the user's (#837).
+    assert restored_recording.title_user_edited is False
     assert restored_source.user_colour == "emerald"
     assert restored_source.is_selected is True
     assert restored_source.sync_cursor == "cursor-123"
@@ -1988,6 +1993,9 @@ async def test_legacy_format_archive_still_restores_completely(
     assert recording.file_size_bytes == len(b"LEGACY-OPUS-AUDIO")
     # Restored un-classified so the cutover machinery backfills it like any legacy row.
     assert recording.pipeline_generation is None
+    # The archive predates title_user_edited, so its name counts as the user's,
+    # as the upgrade decided for recordings already installed (#837).
+    assert recording.title_user_edited is True
 
     await target_context.async_engine.dispose()
 
