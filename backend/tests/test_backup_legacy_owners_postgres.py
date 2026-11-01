@@ -62,6 +62,7 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("documents", "use_in_notes"): "BOOLEAN NOT NULL DEFAULT false",
     ("timeline_notes", "file_removed"): "BOOLEAN NOT NULL DEFAULT false",
     ("recordings", "first_processed_at"): "TIMESTAMP",
+    ("recordings", "title_user_edited"): "BOOLEAN NOT NULL DEFAULT false",
 }
 
 

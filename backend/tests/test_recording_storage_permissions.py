@@ -29,6 +29,7 @@ CREATE TABLE recordings (
     max_speakers INTEGER,
     id INTEGER PRIMARY KEY, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
     name VARCHAR(255) NOT NULL, public_id VARCHAR(36) NOT NULL, meeting_uid VARCHAR(36) NOT NULL,
+    title_user_edited BOOLEAN NOT NULL DEFAULT 0,
     audio_path VARCHAR(1024) NOT NULL, proxy_path VARCHAR(1024), celery_task_id VARCHAR(255),
     duration_seconds FLOAT, file_size_bytes INTEGER, status VARCHAR(32) NOT NULL,
     client_status VARCHAR(32), upload_progress INTEGER NOT NULL, processing_progress INTEGER NOT NULL,

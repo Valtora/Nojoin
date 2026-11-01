@@ -117,9 +117,11 @@ describe("ImportAudioHost", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Import Audio" }));
 
     await screen.findByText(/Audio imported successfully/);
+    // Nobody typed a name, so none is sent and the server names the
+    // recording after the file, free to take the AI title (#837).
     expect(importAudio).toHaveBeenCalledWith(
       expect.objectContaining({ name: "standup.wav" }),
-      expect.objectContaining({ name: "standup" }),
+      expect.objectContaining({ name: undefined }),
     );
     expect(onRecordingUpdated).not.toHaveBeenCalled();
 
