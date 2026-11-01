@@ -923,7 +923,7 @@ describe("RecordingPage (detail)", () => {
         message: expect.stringMatching(/audio is not available/),
       });
     });
-    expect(exportAudio).toHaveBeenCalledWith("rec-1", "Quarterly sync");
+    expect(exportAudio).toHaveBeenCalledWith("rec-1", "Quarterly sync", expect.stringMatching(/^\d{8}$/));
   });
 
   it("passes the dialog's choice to leave the reader's notes out on to the export", async () => {

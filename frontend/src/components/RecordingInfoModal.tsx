@@ -6,7 +6,7 @@ import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingInfo } from "@/types";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
-import { formatTimeZoneLocale } from "@/lib/timezone";
+import { formatTimeZoneDayTime } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import { liveCaptureLabel } from "./ui/Badge";
 import Button from "./ui/Button";
@@ -102,7 +102,7 @@ export default function RecordingInfoModal({
             <div>
               <span className="block text-xs text-contrast-helper">Created At</span>
               <span className="text-contrast-muted">
-                {createdAt ? formatTimeZoneLocale(createdAt, timeZone) : "Unknown date"}
+                {createdAt ? formatTimeZoneDayTime(createdAt, timeZone) : "Unknown date"}
               </span>
             </div>
             <div>

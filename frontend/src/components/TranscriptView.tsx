@@ -492,9 +492,13 @@ export default function TranscriptView({
       />
 
       {live && segments.length > 0 ? <p className="px-4 py-2 text-xs text-contrast-helper">
-        {segments.some((segment) => segment.settling_required)
-          ? "Lines settle as the conversation continues. Your corrections are kept."
-          : "Provisional. Corrected when the recording is processed."}
+        {!segments.some((segment) => segment.settling_required)
+          ? "Provisional. Corrected when the recording is processed."
+          // Once capture ends nothing settles any more: processing makes the
+          // final transcript from the audio.
+          : live.capturing
+            ? "Lines settle as the conversation continues. Your corrections are kept."
+            : "The full transcript is being made. Your corrections are kept."}
       </p> : null}
       {live?.liveBehind && !live.isPaused ? <p role="status" className="px-4 py-2 text-sm text-contrast-helper">
         Live transcript is behind the recording. Nothing is lost: the full transcript is made after the meeting ends.
