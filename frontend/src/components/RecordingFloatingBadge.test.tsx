@@ -10,6 +10,7 @@ import RecordingFloatingBadge from "./RecordingFloatingBadge";
 
 const addNotification = vi.fn();
 const resume = vi.fn();
+const cancel = vi.fn();
 const navigation = vi.hoisted(() => ({ pathname: "/recordings" }));
 
 vi.mock("next/navigation", () => ({
@@ -19,7 +20,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
-    cancel: vi.fn(),
+    cancel: (...args: unknown[]) => cancel(...args),
     controller: { getState: () => ({ error: null }) },
     pause: vi.fn(),
     resume: (...args: unknown[]) => resume(...args),
@@ -40,7 +41,28 @@ describe("RecordingFloatingBadge", () => {
   beforeEach(() => {
     addNotification.mockReset();
     resume.mockReset();
+    cancel.mockReset().mockResolvedValue(undefined);
     navigation.pathname = "/recordings";
+  });
+
+  it("asks in the app's own dialog before it discards (#841)", async () => {
+    const nativeConfirm = vi.spyOn(window, "confirm");
+    render(<RecordingFloatingBadge />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard recording" }));
+    const dialog = await screen.findByRole("dialog", { name: "Discard Recording" });
+    expect(dialog).toHaveTextContent(
+      "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(cancel).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard recording" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+    expect(nativeConfirm).not.toHaveBeenCalled();
+    nativeConfirm.mockRestore();
   });
 
   it("is a bar in the page's flow, not a card floating over it", () => {

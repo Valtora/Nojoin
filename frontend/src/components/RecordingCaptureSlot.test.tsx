@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import RecordingCaptureSlot from "./RecordingCaptureSlot";
@@ -170,21 +170,29 @@ describe("RecordingCaptureSlot", () => {
   });
 
   it("shows processing step, progress, ETA and confirmed shared discard", async () => {
-    const confirmed = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const nativeConfirm = vi.spyOn(window, "confirm");
     const onDiscarded = vi.fn();
     render(<RecordingCaptureSlot recording={recording({ processing_step: "Identifying speakers", processing_eta_seconds: 63 })} onDiscarded={onDiscarded} />);
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40");
     expect(screen.getByText("Identifying speakers")).toBeInTheDocument();
     expect(screen.getByText("1m 3s remaining")).toBeInTheDocument();
+    // Discard asks in the app's own dialog, never the browser's (#841).
     fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+    const dialog = await screen.findByRole("dialog", { name: "Discard Recording" });
+    expect(dialog).toHaveTextContent(
+      "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(discard).not.toHaveBeenCalled();
-    confirmed.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(discard).toHaveBeenCalledWith("rec-1", {
       onSuccess: onDiscarded, onError: expect.any(Function),
     }));
     expect(screen.getByRole("button", { name: "Discard Recording" })).toBeDisabled();
     expect(cancel).not.toHaveBeenCalled();
+    expect(nativeConfirm).not.toHaveBeenCalled();
   });
 
   it.each([RecordingStatus.QUEUED, RecordingStatus.PROCESSING])(
@@ -204,12 +212,16 @@ describe("RecordingCaptureSlot", () => {
   });
 
   it("allows another discard attempt after the shared action reports failure", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     discard.mockImplementation(async (_id: string, options: { onError: () => void }) => options.onError());
     render(<RecordingCaptureSlot recording={recording()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+    const confirmDiscard = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
+    };
+    await confirmDiscard();
     await waitFor(() => expect(screen.getByRole("button", { name: "Discard Recording" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await confirmDiscard();
     await waitFor(() => expect(discard).toHaveBeenCalledTimes(2));
   });
 

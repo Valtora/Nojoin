@@ -18,13 +18,13 @@ import { liveTextActivityMark } from "@/components/transcript/liveTranscriptPres
 import ExportModal from "@/components/ExportModal";
 import { RecordingTranscriptTour } from "@/components/TourGuide";
 import { RecordingStatus } from "@/types";
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
-import { getAutoSpeakerReplacementName } from "./_hooks/recordingDetailUtils";
+import { getAutoSpeakerReplacementName, sideColumnOpeningSize } from "./_hooks/recordingDetailUtils";
 import RecordingMainContent from "./_components/RecordingMainContent";
 import RecordingSideColumn, { RecordingSideRail } from "./_components/RecordingSideColumn";
 
@@ -44,6 +44,12 @@ export default function RecordingPage({ params }: PageProps) {
   const isChatPanelCollapsed = useNavigationStore(
     (state) => state.isChatPanelCollapsed,
   );
+  // The desktop columns' width, read once they mount and before they paint,
+  // so the side column opens at a width that suits the page.
+  const [columnsWidth, setColumnsWidth] = useState<number | null>(null);
+  const measureColumns = useCallback((node: HTMLDivElement | null) => {
+    if (node) setColumnsWidth(node.getBoundingClientRect().width);
+  }, []);
 
   const {
     recording,
@@ -136,6 +142,7 @@ export default function RecordingPage({ params }: PageProps) {
   // produced, not while a finished one's notes or speakers are regenerated.
   const transcriptInProgress = showCaptureSlot && recording.transcript?.transcript_status !== "completed";
   const sideColumnCollapsed = isSpeakerPanelCollapsed && isChatPanelCollapsed;
+  const sideColumnSize = sideColumnOpeningSize(columnsWidth ?? 0, isCompact);
 
   // Renaming a speaker propagates into the generated notes (shared by the
   // desktop side panel and the mobile Speakers tab).
@@ -330,14 +337,14 @@ export default function RecordingPage({ params }: PageProps) {
             )}
           </SurfaceBase>
         ) : (
-          <div className="flex h-full flex-1 min-w-0">
-            <PanelGroup
+          <div ref={measureColumns} className="flex h-full flex-1 min-w-0">
+            {columnsWidth !== null && <PanelGroup
               data-ui-resize-group="horizontal"
               direction="horizontal"
               autoSaveId={`recording-layout-persistence-${isCompact ? "compact" : "comfortable"}`}
               className="h-full flex-1 min-w-0"
             >
-              <Panel id="recording-main" order={1} defaultSize={isCompact ? 78 : 75} minSize={30}>
+              <Panel id="recording-main" order={1} defaultSize={100 - sideColumnSize} minSize={30}>
                 {mainContent}
               </Panel>
 
@@ -355,7 +362,7 @@ export default function RecordingPage({ params }: PageProps) {
                   <Panel
                     id="recording-side"
                     order={2}
-                    defaultSize={isCompact ? 22 : 25}
+                    defaultSize={sideColumnSize}
                     minSize={18}
                   >
                     <RecordingSideColumn
@@ -385,7 +392,7 @@ export default function RecordingPage({ params }: PageProps) {
                   </Panel>
                 </>
               )}
-            </PanelGroup>
+            </PanelGroup>}
 
             {sideColumnCollapsed && <RecordingSideRail showMeetingEdge={showMeetingEdge} />}
           </div>
