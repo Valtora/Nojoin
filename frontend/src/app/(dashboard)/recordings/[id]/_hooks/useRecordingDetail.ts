@@ -922,7 +922,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     if (!recording) return;
     if (selection.kind === "audio") {
       // Reports its own failures, with what went wrong.
-      await recordingActions.exportAudio(recording.id, recording.name);
+      await recordingActions.exportAudio(recording);
       return;
     }
     try {

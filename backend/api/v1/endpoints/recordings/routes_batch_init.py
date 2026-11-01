@@ -24,6 +24,7 @@ from backend.utils.document_storage import (
 )
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
+from backend.utils.timezones import get_user_timezone_name
 from backend.utils.transcript_settling import new_capture_settling_state
 
 from .helpers import lock_recording_for_delete, revoke_recording_task
@@ -227,7 +228,9 @@ async def init_upload(
     name = chosen_recording_name(name)
     name_chosen = name is not None
     if not name:
-        name = recordings_module.generate_default_meeting_name()
+        name = recordings_module.generate_default_meeting_name(
+            get_user_timezone_name(current_user.settings)
+        )
 
     recording = Recording(
         name=name,

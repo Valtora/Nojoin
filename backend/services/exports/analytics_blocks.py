@@ -388,9 +388,7 @@ def overlap_blocks(analytics: Mapping[str, Any]) -> tuple[Block, ...]:
         )
     blocks.extend(
         _note(
-            "Detected from the audio itself, so it works even though the transcript writes "
-            "speech down one line at a time. The figure is a floor: detection misses some "
-            "overlap and never invents any.",
+            "The figure is a floor: detection misses some overlap and never invents any.",
             "Talking over each other is not the same as interrupting. It includes agreement, "
             "encouragement and finishing each other's sentences, so Nojoin reports where it "
             "happened and does not guess who did it to whom.",

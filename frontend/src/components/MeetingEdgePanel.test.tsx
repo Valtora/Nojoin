@@ -44,6 +44,15 @@ describe("MeetingEdgePanel", () => {
     expect(screen.getByText("Saved")).toBeVisible();
   });
 
+  it("says a finished meeting got no suggestions rather than promising them", () => {
+    const { rerender } = render(<MeetingEdgePanel onSaveFocus={vi.fn()} />);
+    expect(screen.getByText(/will start suggesting questions/)).toBeVisible();
+
+    rerender(<MeetingEdgePanel onSaveFocus={vi.fn()} readOnly />);
+    expect(screen.queryByText(/will start suggesting questions/)).toBeNull();
+    expect(screen.getByText("Meeting Edge made no suggestions during this meeting.")).toBeVisible();
+  });
+
   it("blocks blur saves during the read-only commit before passive effects run", async () => {
     const onSaveFocus = vi.fn().mockResolvedValue(undefined);
     function Transition({ readOnly }: { readOnly: boolean }) {
