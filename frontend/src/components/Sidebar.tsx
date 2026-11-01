@@ -1390,7 +1390,7 @@ export default function Sidebar() {
               ?.transcription_language ?? null
           }
           // The list does not say whether a failed recording kept a
-          // transcript; its own page does, and warns when it did.
+          // transcript, so the dialog reads the recording to find out.
           failed={
             recordings.find((r) => r.id === reprocessRecordingId)?.status ===
             RecordingStatus.ERROR

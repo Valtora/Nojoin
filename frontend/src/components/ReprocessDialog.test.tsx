@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getLanguageOptions, getSettings, reprocessRecording } from "@/lib/api";
+import { getLanguageOptions, getRecording, getSettings, reprocessRecording } from "@/lib/api";
 import type { LanguageRegistry, Recording } from "@/types";
 
-import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
+import { act, fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 
 const addNotification = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/notificationStore", () => ({
@@ -12,6 +12,7 @@ vi.mock("@/lib/notificationStore", () => ({
 
 vi.mock("@/lib/api", () => ({
   getLanguageOptions: vi.fn(),
+  getRecording: vi.fn(),
   getSettings: vi.fn(),
   reprocessRecording: vi.fn(),
 }));
@@ -167,10 +168,11 @@ describe("ReprocessDialog for a failed recording", () => {
   beforeEach(() => {
     vi.mocked(getLanguageOptions).mockResolvedValue(registry);
     vi.mocked(reprocessRecording).mockResolvedValue({ id: "rec-1" } as Recording);
+    vi.mocked(getRecording).mockResolvedValue({ id: "rec-1", transcript: { segments: [] } } as unknown as Recording);
   });
 
   it("offers a retry, with nothing to warn about when no transcript is shown", async () => {
-    renderWithProviders(<ReprocessDialog {...props} failed />);
+    renderWithProviders(<ReprocessDialog {...props} failed hasTranscript={false} />);
 
     expect(await screen.findByRole("dialog", { name: "Retry processing" })).toBeInTheDocument();
     expect(screen.queryByText("Reprocess at higher quality")).toBeNull();
@@ -182,6 +184,36 @@ describe("ReprocessDialog for a failed recording", () => {
     renderWithProviders(<ReprocessDialog {...props} failed hasTranscript />);
 
     expect(await screen.findByText(REPLACES)).toBeInTheDocument();
+  });
+
+  it("finds out for itself, as the rail needs, and warns until it knows", async () => {
+    let answer: (recording: Recording) => void = () => {};
+    vi.mocked(getRecording).mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    renderWithProviders(<ReprocessDialog {...props} failed />);
+
+    expect(await screen.findByText(REPLACES)).toBeInTheDocument();
+    await act(async () => answer({ id: "rec-1", transcript: { segments: [], text: "" } } as unknown as Recording));
+    expect(screen.queryByText(REPLACES)).toBeNull();
+    expect(screen.getByText(/Processing runs again on this recording's audio/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a failed reprocess kept the transcript", { previous_publication_available: true }],
+    ["lines are left from a run", { transcript: { segments: [{ start: 0, end: 1, speaker: "A", text: "Hi" }] } }],
+    ["the recording cannot be read", null],
+  ])("warns from the rail when %s", async (_, read) => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    if (read === null) {
+      vi.mocked(getRecording).mockRejectedValue(new Error("offline"));
+    } else {
+      vi.mocked(getRecording).mockResolvedValue({ id: "rec-1", ...read } as unknown as Recording);
+    }
+    renderWithProviders(<ReprocessDialog {...props} failed />);
+
+    await vi.waitFor(() => expect(getRecording).toHaveBeenCalledWith("rec-1"));
+    await act(async () => {});
+    expect(screen.getByText(REPLACES)).toBeInTheDocument();
+    quiet.mockRestore();
   });
 
   it("keeps the warning for a finished recording", async () => {

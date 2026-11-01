@@ -20,6 +20,7 @@ const routerPush = vi.fn();
 const routerReplace = vi.fn();
 const addNotification = vi.fn();
 const getRecordings = vi.fn();
+const getRecording = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTags = vi.fn();
 const getRecordingsCalendar = vi.fn();
@@ -76,6 +77,11 @@ vi.mock("@/lib/api", () => ({
   getTags: (...args: unknown[]) => getTags(...args),
   discardRecordingCapture: vi.fn(),
   getRecordingsCalendar: (...args: unknown[]) => getRecordingsCalendar(...args),
+  // The retry dialog's reads.
+  getRecording: (...args: unknown[]) => getRecording(...args),
+  getSettings: vi.fn(async () => ({})),
+  getLanguageOptions: vi.fn(() => new Promise(() => {})),
+  reprocessRecording: vi.fn(),
 }));
 
 vi.mock("@/lib/notes/useNoteOutbox", () => ({
@@ -178,14 +184,6 @@ vi.mock("./ConfirmationModal", () => ({
   default: () => null,
 }));
 
-let reprocessDialogProps: { failed?: boolean } | null = null;
-vi.mock("./ReprocessDialog", () => ({
-  default: (props: { failed?: boolean }) => {
-    reprocessDialogProps = props;
-    return null;
-  },
-}));
-
 vi.mock("./BatchActionBar", () => ({
   default: () => null,
 }));
@@ -231,6 +229,7 @@ describe("Sidebar", () => {
     useImportAudioStore.setState({ isImportAudioOpen: false });
 
     getRecordings.mockResolvedValue([recording]);
+    getRecording.mockReset();
     getGlobalSpeakers.mockResolvedValue([]);
     getTags.mockResolvedValue([]);
     getRecordingsCalendar.mockResolvedValue({
@@ -355,18 +354,41 @@ describe("Sidebar", () => {
     expect(lastMenuItems.map((item) => item.label)).toEqual(expected);
   });
 
-  it("labels a failed recording and retries it as a failure, not a reprocess", async () => {
+  const REPLACES = /replaces the current transcript/;
+  const retryFromTheRail = async (read: Partial<Recording>) => {
+    const failed = { ...recording, status: RecordingStatus.ERROR };
+    getRecordings.mockResolvedValue([failed]);
+    getRecording.mockResolvedValue({ ...failed, ...read });
+    renderWithProviders(<Sidebar />);
+    fireEvent.contextMenu(await screen.findByRole("heading", { name: "Latest meeting" }));
+    await screen.findByTestId("sidebar-context-menu");
+    act(() => lastMenuItems.find((item) => item.label === "Retry Processing")?.onClick?.());
+    return screen.findByRole("dialog", { name: "Retry processing" });
+  };
+
+  it("labels a failed recording's icon as the queued and processing ones are", async () => {
     getRecordings.mockResolvedValue([{ ...recording, status: RecordingStatus.ERROR }]);
-    reprocessDialogProps = null;
     renderWithProviders(<Sidebar />);
 
     const failedIcon = await screen.findByRole("img", { name: "Processing failed" });
     expect(failedIcon).toHaveAttribute("title", expect.stringMatching(/^Processing failed/));
-    fireEvent.contextMenu(screen.getByRole("heading", { name: "Latest meeting" }));
-    await screen.findByTestId("sidebar-context-menu");
-    act(() => lastMenuItems.find((item) => item.label === "Retry Processing")?.onClick?.());
+  });
 
-    expect(reprocessDialogProps).toMatchObject({ failed: true });
+  it("warns on a retry from the rail when a failed reprocess kept the transcript", async () => {
+    await retryFromTheRail({
+      previous_publication_available: true,
+      transcript: { segments: [{ start: 0, end: 1, speaker: "SPEAKER_00", text: "Edited line" }] },
+    } as unknown as Partial<Recording>);
+
+    expect(await screen.findByText(REPLACES)).toBeInTheDocument();
+    expect(getRecording).toHaveBeenCalledWith("rec-1");
+  });
+
+  it("drops the warning on a retry from the rail once it knows nothing would be replaced", async () => {
+    await retryFromTheRail({ transcript: { segments: [], text: "" } } as unknown as Partial<Recording>);
+
+    expect(await screen.findByText(/Processing runs again on this recording's audio/)).toBeInTheDocument();
+    expect(screen.queryByText(REPLACES)).not.toBeInTheDocument();
   });
 
   it("follows the pointer while resizing and animates only collapse and expand (#747)", async () => {

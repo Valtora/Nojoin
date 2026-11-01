@@ -8,9 +8,9 @@ import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 import SpeakerCapField from "@/components/SpeakerCapField";
 import RecordingLanguageField from "@/components/RecordingLanguageField";
-import { getSettings, reprocessRecording } from "@/lib/api";
+import { getRecording, getSettings, reprocessRecording } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { RecordingId, ReprocessRequest } from "@/types";
+import { Recording, RecordingId, ReprocessRequest } from "@/types";
 
 type TranscriptionBackend = "whisper" | "parakeet" | "canary";
 
@@ -45,10 +45,18 @@ interface ReprocessDialogProps {
   /**
    * A failed recording still shows a transcript from an earlier run, such as
    * the one a failed reprocess kept, which a retry replaces. A finished
-   * recording always has one.
+   * recording always has one. Left out for a failed recording, as the rail
+   * does, the dialog reads the recording to find out, and warns until it
+   * knows there is none.
    */
   hasTranscript?: boolean;
 }
+
+/** What a retry would replace: a retained publication, or lines and text left from a run. */
+const showsTranscript = (recording: Recording): boolean =>
+  recording.previous_publication_available === true ||
+  (recording.transcript?.segments?.length ?? 0) > 0 ||
+  Boolean(recording.transcript?.text?.trim());
 
 const REPLACES_WARNING =
   "Reprocessing replaces the current transcript, speaker labels and meeting " +
@@ -66,7 +74,7 @@ export default function ReprocessDialog({
   currentMaxSpeakers = null,
   currentTranscriptionLanguage = null,
   failed = false,
-  hasTranscript = !failed,
+  hasTranscript,
 }: ReprocessDialogProps) {
   const [backend, setBackend] = useState<TranscriptionBackend>(defaultBackend);
   // The size picked in this dialog; null follows the install's (issue #839).
@@ -79,7 +87,10 @@ export default function ReprocessDialog({
     currentTranscriptionLanguage,
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  // What the read below found; null until it answers.
+  const [readTranscript, setReadTranscript] = useState<boolean | null>(null);
   const { addNotification } = useNotificationStore();
+  const readsTranscript = failed && hasTranscript === undefined;
 
   useOnDepsChange(
     [isOpen, defaultBackend, currentMaxSpeakers, currentTranscriptionLanguage],
@@ -93,6 +104,26 @@ export default function ReprocessDialog({
       }
     },
   );
+
+  useOnDepsChange([isOpen, recordingId], () => setReadTranscript(null));
+
+  useEffect(() => {
+    if (!isOpen || !readsTranscript) return;
+    let active = true;
+    getRecording(recordingId)
+      .then((recording) => {
+        if (active) setReadTranscript(showsTranscript(recording));
+      })
+      .catch((error: unknown) => {
+        console.error(error);
+        // Unknown, so the warning stays.
+        if (active) setReadTranscript(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, readsTranscript, recordingId]);
+  const warnsOfReplacing = !failed || (hasTranscript ?? readTranscript ?? true);
 
   // Read on every open, so a size an administrator changed since shows.
   useEffect(() => {
@@ -259,7 +290,7 @@ export default function ReprocessDialog({
 
         {/* Destructive only when there is a transcript to replace: a failed
             recording usually has none. */}
-        {hasTranscript ? (
+        {warnsOfReplacing ? (
           <div className="flex gap-3 rounded-lg border border-status-warning-border bg-status-warning-bg p-4">
             <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-status-warning-fg" />
             <p className="text-sm text-status-warning-fg">{REPLACES_WARNING}</p>
