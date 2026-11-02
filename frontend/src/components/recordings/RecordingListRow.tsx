@@ -20,6 +20,7 @@ import { TOUCH_TARGET_SQUARE } from "@/components/ui/touchTarget";
 import { Badge } from "@/components/ui/Badge";
 import RecordingAttentionBadge from "@/components/RecordingAttentionBadge";
 import { cn } from "@/lib/cn";
+import { isImeComposing } from "@/lib/imeComposition";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { formatTimeZoneDay, formatTimeZoneLocale } from "@/lib/timezone";
 import { RecordingStatus, type Recording, type RecordingId } from "@/types";
@@ -184,6 +185,7 @@ function RecordingListRow({
             onChange={(e) => actions.onRenameChange(e.target.value)}
             onBlur={() => actions.onRenameSubmit(recording.id)}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if (e.key === "Enter") actions.onRenameSubmit(recording.id);
               if (e.key === "Escape") {
                 e.stopPropagation();

@@ -13,6 +13,7 @@ import type { ViewType } from "@/lib/store";
 import Sidebar from "./Sidebar";
 import ImportAudioHost from "./importAudio/ImportAudioHost";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
+import { pressWhileComposing } from "@/test/composition";
 import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 import { activeTransitions, animatesWidth } from "@/test/widthTransition";
 
@@ -504,6 +505,24 @@ describe("Sidebar", () => {
         { id: "rec-1", name: "Latest meeting" },
       ]);
       expect(addNotification).toHaveBeenCalledWith({ type: "error", message: "Failed to rename recording." });
+    });
+
+    it("leaves the Enter and Escape of an input method's composition to the card's name", async () => {
+      renderWithProviders(<Sidebar />);
+      fireEvent.contextMenu(await screen.findByRole("heading", { name: "Latest meeting" }));
+      act(() => lastMenuItems.find((item) => item.label === "Rename")?.onClick?.());
+      const input = screen.getByDisplayValue("Latest meeting");
+      fireEvent.change(input, { target: { value: "きゃく" } });
+
+      pressWhileComposing(input, "Enter");
+      pressWhileComposing(input, "Escape");
+      expect(renameRecording).not.toHaveBeenCalled();
+      expect(screen.getByDisplayValue("きゃく")).toBe(input);
+
+      fireEvent.keyDown(input, { key: "Enter" });
+      await waitFor(() => {
+        expect(renameRecording).toHaveBeenCalledExactlyOnceWith("rec-1", "きゃく");
+      });
     });
   });
 
