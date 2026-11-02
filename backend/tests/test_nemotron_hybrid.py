@@ -12,6 +12,7 @@ import pytest
 from backend.processing.live_diarization import evidence
 from backend.processing.live_diarization.engine import Piece
 from backend.processing.live_diarization.hybrid import HybridLiveState
+from backend.processing.live_diarization.lines import LabelTimeline
 from backend.processing.live_diarization.nemotron import NemotronStream
 from backend.processing.live_diarization.state import new_engine
 from backend.processing.live_diarization.step import CONFIG
@@ -298,8 +299,11 @@ def test_both_native_label_paths_read_the_same_frames_for_a_float_rounded_word(
     rows[104116, 1] = 0.9
     engine = hybrid(tmp_path)
     engine.accept_blocks([ProbabilityBlock(0, rows, 104200 * 160)])
+    empty = np.zeros(0)
     snapshot = evidence.SpeakerEvidence(
-        timeline=None,  # type: ignore[arg-type]
+        timeline=LabelTimeline(
+            empty, empty, empty.astype(np.int64), empty.astype(bool), 0.0
+        ),
         posteriors=rows,
         posterior_first_frame=0,
         native_complete_frame=104200,
