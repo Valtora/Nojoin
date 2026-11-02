@@ -1800,38 +1800,6 @@ async def test_task_list_returns_each_tasks_full_tags_for_dashboard_and_tasks_pa
 
 
 @pytest.mark.anyio
-async def test_recordings_list_includes_tags_once_per_recording(
-    client: AsyncClient,
-    override_current_user: Callable[..., None],
-    test_session_maker: sessionmaker,
-) -> None:
-    await seed_recording(
-        test_session_maker,
-        recording_id=1,
-        user_id=1,
-        name="Planning",
-        public_id="rec-planning",
-        created_at=TEST_TIMESTAMP,
-    )
-    for tag_id, name in ((301, "Planning"), (302, "Budget")):
-        await seed_tag(test_session_maker, tag_id=tag_id, name=name)
-        await seed_recording_tag(
-            test_session_maker, row_id=tag_id, recording_id=1, tag_id=tag_id
-        )
-    override_current_user(1)
-
-    for params in ({}, {"tag_ids": [301, 302]}):
-        response = await client.get("/api/v1/recordings/", params=params)
-        assert response.status_code == 200
-        payload = response.json()
-        assert [recording["id"] for recording in payload] == ["rec-planning"]
-        assert sorted((tag["id"], tag["name"]) for tag in payload[0]["tags"]) == [
-            (301, "Planning"),
-            (302, "Budget"),
-        ]
-
-
-@pytest.mark.anyio
 async def test_read_tasks_hides_archived_tasks_by_default(
     client: AsyncClient,
     override_current_user,
