@@ -72,6 +72,7 @@ import { useStableCallback } from "./transcript/_hooks/useStableCallback";
 import RecordingListFooter from "./recordings/RecordingListFooter";
 import { RECORDINGS_PAGE_SIZE } from "./recordings/recordingListPages";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { isImeComposing } from "@/lib/imeComposition";
 
 interface RowMenuItem {
   label: string;
@@ -601,6 +602,14 @@ export default function Sidebar() {
     }
   };
 
+  /** Escape empties a search box that holds text; focus stays in the box. */
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Escape" || !searchQuery || isImeComposing(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSearchQuery("");
+  };
+
   const getContextMenuItems = (recording: Recording) => {
     const items: RowMenuItem[] = [];
 
@@ -841,11 +850,11 @@ export default function Sidebar() {
         </div>
       )}
       {!isCollapsed && (
-      // `relative` keeps absolutely positioned descendants, such as the batch
-      // bar's sr-only status line, inside this scroller. Without it their
-      // containing block is the aside, and the full list's height leaks out
-      // as scrollable overflow on the app shell.
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col">
+      {/* The head (meeting controls, search, filters and Select all) stays
+          put while the cards scroll beneath it. It gives way, and scrolls on
+          its own, only when open filters would leave the cards too little room. */}
+      <div className="min-h-0 shrink overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
           <MeetingControls
@@ -900,6 +909,7 @@ export default function Sidebar() {
                 aria-label="Search recordings"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 className="w-full pl-9 pr-9 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
               />
               <ButtonBase
@@ -1084,6 +1094,32 @@ export default function Sidebar() {
         )}
       </div>
 
+      {recordings.length > 0 && (
+        // Escape here, as in the list, clears the selection.
+        <div onKeyDown={handleListKeyDown} className="pb-2">
+          <label className="flex w-fit cursor-pointer items-center gap-2 px-5 pt-2 text-xs text-rail-fg-muted pointer-coarse:min-h-[44px] pointer-coarse:pt-0">
+            <InputBase
+              type="checkbox"
+              aria-controls="recordings-list"
+              checked={selection.headerState === "all"}
+              ref={(input) => {
+                if (input) input.indeterminate = selection.headerState === "some";
+              }}
+              onChange={selection.toggleAll}
+              className="h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            />
+            Select all
+          </label>
+        </div>
+      )}
+      </div>
+
+      {/* Only the cards scroll. `relative` keeps absolutely positioned
+          descendants, such as the batch bar's sr-only status line, inside
+          this scroller. Without it their containing block is the aside, and
+          the full list's height leaks out as scrollable overflow on the app
+          shell. */}
+      <div ref={scrollRef} className="relative min-h-32 flex-1 basis-0 overflow-y-auto">
       {/* Recording List */}
       {recordings.length === 0 && (
         <div className="text-center p-4 m-2 text-rail-fg-muted text-sm">
@@ -1125,19 +1161,6 @@ export default function Sidebar() {
       {recordings.length > 0 && (
         // Escape anywhere in the list, header checkbox included, clears the selection.
         <div onKeyDown={handleListKeyDown}>
-          <label className="flex w-fit cursor-pointer items-center gap-2 px-5 pt-2 text-xs text-rail-fg-muted pointer-coarse:min-h-[44px] pointer-coarse:pt-0">
-            <InputBase
-              type="checkbox"
-              aria-controls="recordings-list"
-              checked={selection.headerState === "all"}
-              ref={(input) => {
-                if (input) input.indeterminate = selection.headerState === "some";
-              }}
-              onChange={selection.toggleAll}
-              className="h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-            />
-            Select all
-          </label>
           <ul
             id="recordings-list"
             ref={listRef}
@@ -1251,6 +1274,7 @@ export default function Sidebar() {
           onClose={() => setReprocessRecordingId(null)}
         />
       )}
+      </div>
       </div>
       )}
 

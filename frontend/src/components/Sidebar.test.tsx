@@ -860,6 +860,69 @@ describe("Sidebar", () => {
       expect(searched).toEqual(["budget"]);
     });
 
+    it("scrolls only the cards: the head, Select all included, sits outside the scroller", async () => {
+      // Loading more watches the end of the list against the list's scroller.
+      const roots: (Element | Document | null | undefined)[] = [];
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          constructor(_callback: unknown, options?: IntersectionObserverInit) {
+            roots.push(options?.root);
+          }
+          observe = vi.fn();
+          disconnect = vi.fn();
+        },
+      );
+      try {
+        serveLibrary();
+        renderWithProviders(<Sidebar />);
+        await screen.findByRole("heading", { name: "Meeting 49" });
+        await waitFor(() => expect(roots.length).toBeGreaterThan(0));
+
+        const scroller = roots.at(-1);
+        expect(scroller).toBeInstanceOf(HTMLElement);
+        const inScroller = (element: HTMLElement) => (scroller as HTMLElement).contains(element);
+        expect(inScroller(screen.getByRole("list", { name: "Recordings list" }))).toBe(true);
+        expect(inScroller(screen.getByRole("textbox", { name: "Search recordings" }))).toBe(false);
+        expect(inScroller(screen.getByRole("checkbox", { name: "Select all" }))).toBe(false);
+        for (const start of screen.getAllByRole("button", { name: "Start Meeting" })) {
+          expect(inScroller(start)).toBe(false);
+        }
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("clears the search with Escape, keeps focus, and leaves a composition's Escape alone", async () => {
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Latest meeting" });
+      const search = screen.getByRole("textbox", { name: "Search recordings" });
+      search.focus();
+      fireEvent.change(search, { target: { value: "budget" } });
+      await waitFor(() =>
+        expect(getRecordings).toHaveBeenLastCalledWith(expect.objectContaining({ q: "budget" })),
+      );
+
+      pressWhileComposing(search, "Escape");
+      expect(search).toHaveValue("budget");
+
+      // The Escape that clears the box goes no further, so a page-wide
+      // Escape (a tour, a dialog) does not act on it too.
+      const pageEscapes = vi.fn();
+      window.addEventListener("keydown", pageEscapes);
+      expect(fireEvent.keyDown(search, { key: "Escape" })).toBe(false);
+      window.removeEventListener("keydown", pageEscapes);
+      expect(pageEscapes).not.toHaveBeenCalled();
+      expect(search).toHaveValue("");
+      expect(search).toHaveFocus();
+      await waitFor(() =>
+        expect(getRecordings).toHaveBeenLastCalledWith(expect.not.objectContaining({ q: expect.anything() })),
+      );
+
+      // An empty box leaves Escape to whatever else listens for it.
+      expect(fireEvent.keyDown(search, { key: "Escape" })).toBe(true);
+    });
+
     it("loads older recordings from the end of the list and says when there are none", async () => {
       serveLibrary();
       renderWithProviders(<Sidebar />);
