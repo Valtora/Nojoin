@@ -93,10 +93,7 @@ async def list_global_speakers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    List all global speakers (People) with filtering.
-    """
-    # Count distinct owned meetings, including a person with several labels once.
+    """List all global speakers (People), each with their distinct owned meetings."""
     counts = person_meeting_counts(current_user.id)
     query = (
         select(
