@@ -43,6 +43,7 @@ from backend.tests.test_live_speaker_naming_api import (
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
     SpeakerInferenceSuggestion,
+    SpeakerSuggestionContractError,
     load_transcript_speaker_suggestions,
     parse_speaker_inference_response,
 )
@@ -551,18 +552,27 @@ async def test_an_ai_name_is_placed_only_by_a_single_timed_span(
     assert read["live_speaker_suggestion_starts"] == starts
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError(
+            "Ollama API error (speaker suggestions): Read timed out. (read timeout=90)"
+        ),
+        # A CLI subscription's unreadable answer.
+        SpeakerSuggestionContractError("timed out waiting for a readable answer"),
+    ],
+    ids=["provider-timeout", "unreadable-answer"],
+)
 async def test_a_failed_ask_gives_up_quietly_until_the_next_window(
     client: AsyncClient,
     session_maker: Any,
     llm: FakeLLM,
-    fake_single_flight: Any,
     caplog: pytest.LogCaptureFixture,
+    error: Exception,
 ) -> None:
     await _seed_owner(session_maker, AI_SETTINGS)
     await _say_at(session_maker, 9500, "Hello, I'm Alex.")
-    llm.error = RuntimeError(
-        "Ollama API error (speaker suggestions): Read timed out. (read timeout=90)"
-    )
+    llm.error = error
 
     with caplog.at_level(logging.INFO, logger=live_naming_stage.__name__):
         await _refresh(session_maker, llm)
@@ -573,7 +583,6 @@ async def test_a_failed_ask_gives_up_quietly_until_the_next_window(
         for record in caplog.records
         if record.name == live_naming_stage.__name__
     ] == [("WARNING", True)]
-    assert f"{KEY_PREFIX}live-naming-ask:1" not in fake_single_flight.keys
     # The rule's proposal stands.
     read = await _read(client)
     assert read["live_speaker_suggestions"] == {ONE: "Alex"}
@@ -585,7 +594,8 @@ async def test_a_failed_ask_gives_up_quietly_until_the_next_window(
     await _refresh(session_maker, llm)
     assert llm.asks == [[ONE]]
 
-    # Another minute of speech is the next window, and it asks again.
+    # Another minute of speech is the next window, and it asks again: the
+    # failed ask released its slot.
     await _talk_until(session_maker, 90_000)
     await _refresh(session_maker, llm)
     assert llm.asks == [[ONE], [ONE]]

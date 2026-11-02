@@ -130,10 +130,12 @@ def _ask(session: Any, recording_id: int) -> None:
             meeting_context=meeting_context,
             eligible_labels=labels,
         )
-    except RuntimeError as exc:
-        # Every provider raises a timeout, an HTTP error or an unreadable
-        # answer as a RuntimeError. The ask is already recorded, so the next
-        # window (a newer introduction or another minute of speech) asks again.
+    except (RuntimeError, ValueError) as exc:
+        # Providers raise a timeout, an HTTP error or an unreadable answer as
+        # a RuntimeError; OpenAI's wrong model and a CLI subscription's
+        # unreadable answer are ValueErrors. The ask is already recorded, so
+        # the next window (a newer introduction or another minute of speech)
+        # asks again.
         logger.warning(
             "Live naming ask for recording %s gave up: %s", recording_id, exc
         )
