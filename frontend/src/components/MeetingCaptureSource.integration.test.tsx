@@ -66,6 +66,7 @@ vi.mock("@/lib/capture/waveform", () => ({
 }));
 vi.mock("./LiveMeetingControls", () => ({
   default: () => <div data-testid="live-controls" />,
+  CaptureNotices: () => null,
 }));
 
 const DESKTOP_CHROME =
@@ -137,12 +138,18 @@ const startFromTheButton = async () => {
   expect(capture.status).toBe("recording");
 };
 
-/** Pauses and reloads the tab; the new page finds the paused recording. */
+/**
+ * Pauses and reloads the tab, then opens the recording, whose page offers the
+ * paused recording (a passive check only badges it).
+ */
 const pauseAndReload = async (tab: ReturnType<typeof openTab>) => {
   await act(() => capture.pause());
   api.getUnfinishedCaptures.mockResolvedValue([PAUSED]);
   tab.unmount();
   const reloaded = openTab();
+  await act(async () => {
+    await capture.refreshPausedRecording({ recordingId: "rec-1" });
+  });
   await waitFor(() => expect(capture.pausedRecording?.id).toBe("rec-1"));
   return reloaded;
 };
