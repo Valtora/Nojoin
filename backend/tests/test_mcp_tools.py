@@ -2398,7 +2398,7 @@ async def test_list_recordings_match_field_hint(
         await session.commit()
 
     by_query = {}
-    for query in ("Weekly", "Dealflow", "Guest", "quarterly"):
+    for query in ("Weekly", "Dealflow", "Guest", "quarterly", " weekly\t sync\n"):
         results = await list_recordings(query=query)
         assert [r["id"] for r in results] == [public_id], query
         by_query[query] = results[0]["match_field"]
@@ -2408,10 +2408,15 @@ async def test_list_recordings_match_field_hint(
         "Dealflow": "tag",
         "Guest": "speaker",  # display name carries the searched value
         "quarterly": "content",  # only the transcript text contains it
+        # The search collapses whitespace runs, and the hint tests that term.
+        " weekly\t sync\n": "name",
     }
 
     unqueried = await list_recordings()
     assert "match_field" not in unqueried[0]
+    # A blank query searches nothing, so there is nothing to hint at.
+    blank = await list_recordings(query="  \t ")
+    assert "match_field" not in blank[0]
 
 
 @pytest.mark.anyio

@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
@@ -134,6 +134,23 @@ describe("useDashboardRecordings", () => {
 
     await waitFor(() => expect(result.current.processing).toHaveLength(0));
     expect(result.current.recent).toHaveLength(1);
+  });
+
+  it("applies a rename in place rather than fetching the library again", async () => {
+    getRecordings.mockResolvedValue([
+      recording({ id: "1", created_at: "2026-07-01T10:00:00Z", name: "Weekly check-in" }),
+      recording({ id: "2", created_at: "2026-07-02T10:00:00Z", name: "Budget review" }),
+    ]);
+
+    const { result } = renderHook(() => useDashboardRecordings());
+    await waitFor(() => expect(result.current.recent).toHaveLength(2));
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: "1", name: "Team check-in" } }));
+    });
+
+    expect(result.current.recent.map((r) => r.name)).toEqual(["Budget review", "Team check-in"]);
+    expect(getRecordings).toHaveBeenCalledTimes(1);
   });
 
   it("hides itself rather than throwing when the fetch fails", async () => {
