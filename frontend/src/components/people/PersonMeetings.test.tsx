@@ -64,6 +64,39 @@ describe("person meeting history", () => {
     expect(months[1].querySelector('[style]')).toHaveStyle({ width: "50%" });
   });
 
+  it("shows a quiet month as an empty slot, across a year boundary", async () => {
+    vi.mocked(getPersonMeetings).mockResolvedValue({
+      ...history(),
+      talk_time_by_month: [
+        { month: "2026-02", talk_time_seconds: 60 },
+        { month: "2025-11", talk_time_seconds: 120 },
+      ],
+    });
+    render(<PersonMeetings personId={7} />);
+    const list = await screen.findByRole("list", { name: "Monthly talk time" });
+    const months = within(list).getAllByRole("listitem");
+    expect(months.map((month) => month.textContent)).toEqual([
+      "Feb 20261m 0s", "Jan 2026No meetings", "Dec 2025No meetings", "Nov 20252m 0s",
+    ]);
+    expect(months[1].querySelector("[style]")).toBeNull();
+    expect(months[2].querySelector("[style]")).toBeNull();
+    expect(months[3].querySelector("[style]")).toHaveStyle({ width: "100%" });
+  });
+
+  it("keeps the meeting list in its own scroll region, apart from the monthly bars", async () => {
+    vi.mocked(getPersonMeetings).mockResolvedValue(history());
+    render(<PersonMeetings personId={7} />);
+    const meetings = await screen.findByRole("region", { name: "Latest 50 meetings" });
+    const bars = screen.getByRole("region", { name: "Talk time by month" });
+    expect(meetings.contains(bars)).toBe(false);
+    expect(bars.contains(meetings)).toBe(false);
+    expect(within(meetings).getAllByRole("link")).toHaveLength(50);
+    expect(within(bars).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(bars).getByRole("list", { name: "Monthly talk time" })).toBeInTheDocument();
+    // Nothing in the bars takes focus, so the region itself must, or the keyboard cannot scroll it.
+    expect(bars).toHaveAttribute("tabindex", "0");
+  });
+
   it("explains an empty history without inventing dates or zero-valued figures", async () => {
     vi.mocked(getPersonMeetings).mockResolvedValue(empty);
     render(<PersonMeetings personId={7} />);

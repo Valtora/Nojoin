@@ -173,7 +173,7 @@ export function PeopleTable({
                       <div>
                         <div className="font-medium text-foreground flex items-center gap-1.5">
                           <ButtonBase type="button" onClick={() => onEdit(person)}
-                            className="text-left hover:text-action-text hover:underline"
+                            className="rounded-md text-left hover:text-action-text hover:underline focus-visible:outline-2 focus-visible:outline-focus-ring"
                             aria-label={`Details for ${person.name}`}>
                             {person.name}
                           </ButtonBase>
@@ -338,7 +338,7 @@ export function PeopleTable({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 font-medium text-foreground">
                   <ButtonBase type="button" onClick={() => onEdit(person)}
-                    className="truncate text-left hover:text-action-text hover:underline"
+                    className="truncate rounded-md text-left hover:text-action-text hover:underline focus-visible:outline-2 focus-visible:outline-focus-ring"
                     aria-label={`Details for ${person.name}`}>
                     {person.name}
                   </ButtonBase>

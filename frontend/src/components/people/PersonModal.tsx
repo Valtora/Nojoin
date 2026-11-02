@@ -346,7 +346,7 @@ interface TagNode extends PeopleTag {
       onClose={onClose}
       size="lg"
       className="max-h-[90dvh]"
-      title={person ? "Edit Person" : "Add Person"}
+      title={person ? "Person Details" : "Add Person"}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
