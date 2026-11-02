@@ -15,7 +15,7 @@ No contributor agreement is required. By opening a pull request you agree that y
 Help is especially welcome with:
 
 - **Bug reports** with reproduction steps (see [Reporting Issues](#reporting-issues)).
-- **Platform testing:** shared-audio capture in Chrome on Windows, Linux and macOS and in other Chromium-family browsers, microphone-only capture in Chrome on Android and iOS, and the unsupported-browser message in Firefox, Safari and other mobile browsers.
+- **Platform testing:** shared-audio and microphone-only capture in Chrome on Windows, Linux and macOS and in other Chromium-family browsers, and microphone-only capture in Firefox and Safari on desktop and in browsers on Android and iOS.
 - **Code and documentation** fixes and improvements.
 
 ## Development Setup

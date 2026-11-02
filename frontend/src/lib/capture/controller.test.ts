@@ -155,19 +155,10 @@ const sharedMocks = vi.hoisted(() => ({
   readPausedCaptureContext: vi.fn(() => null as unknown),
 }));
 
-vi.mock("./shared", () => ({
+vi.mock("./shared", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./shared")>()),
   clearPausedCaptureContext: vi.fn(),
-  DEFAULT_CAPTURE_LEVELS: { system: 0, microphone: 0, mixed: 0 },
-  readCaptureSettings: vi.fn(() => ({
-    microphoneDeviceId: null,
-    microphoneGain: 1,
-    systemGain: 1,
-    echoCancellation: true,
-    noiseSuppression: false,
-    autoGainControl: true,
-  })),
   readPausedCaptureContext: sharedMocks.readPausedCaptureContext,
-  writeCaptureSettings: vi.fn(),
   writePausedCaptureContext: vi.fn(),
 }));
 
@@ -524,7 +515,9 @@ describe("capture controller", () => {
       mode: "microphone_only",
       microphoneDeviceId: null,
       settings: {
+        startMode: "shared_audio",
         microphoneDeviceId: null,
+        releaseMicrophoneOnPause: false,
         microphoneGain: 1,
         systemGain: 1,
         echoCancellation: true,
@@ -540,6 +533,19 @@ describe("capture controller", () => {
       captureReport: sources.captureReport,
       elapsedSeconds: 0,
     });
+  });
+
+  it("remembers the Start source through the controller when microphone settings change", async () => {
+    const controller = new CaptureController();
+    controller.updateSettings({ startMode: "microphone_only" });
+    controller.updateSettings({ microphoneDeviceId: "usb-mic" });
+
+    const reloaded = new CaptureController();
+    expect(reloaded.getState().settings).toMatchObject({
+      startMode: "microphone_only", microphoneDeviceId: "usb-mic",
+    });
+    await controller.destroy();
+    await reloaded.destroy();
   });
 
   it("silently rolls back when the display picker is cancelled", async () => {

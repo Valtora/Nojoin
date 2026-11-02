@@ -73,11 +73,13 @@ import {
   type CaptureSourceReportSnapshot,
 } from "./sourceReport";
 import {
+  AudioNotStartedError,
   CaptureResumeSupersededError,
   clearPausedCaptureContext,
   DEFAULT_CAPTURE_LEVELS,
   type CaptureCoverageCause,
   type CaptureCoverageWarning,
+  type CaptureMode,
   type CaptureSettings,
   type CaptureState,
   type CaptureStopStage,
@@ -205,6 +207,14 @@ const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 2_000;
 
 const AUDIO_CONTEXT_NOT_RUNNING_MESSAGE =
   "The browser has not restarted audio capture, so the recording is still paused. End any call or other app using audio, return to this tab, then choose Resume again.";
+
+/** Start's words when the browser does not start audio for a new capture (issue #924). */
+const AUDIO_NOT_STARTED_MESSAGE =
+  "The browser did not start audio, so the meeting was not started. Select Start Meeting to try again. If it keeps happening, check that this device can play sound, or use another browser.";
+
+/** The same for a Resume after a reload, which leaves the recording paused. */
+const AUDIO_NOT_STARTED_ON_RESUME_MESSAGE =
+  "The browser did not start audio, so the recording is still paused. Choose Resume to try again. If it keeps happening, check that this device can play sound, or choose Stop and process to keep what was recorded.";
 
 /**
  * Coverage thresholds. Both must be exceeded, so the ordinary few seconds of
@@ -397,21 +407,16 @@ const formatCaptureError = (error: unknown) => {
   return error ? String(error) : "The browser capture flow failed unexpectedly.";
 };
 
-const formatUnsupportedMessage = (reason: CaptureState["support"]["reason"]) => {
-  switch (reason) {
-    case "firefox":
-      return "Recording capture is not supported in Firefox. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.";
-    case "safari":
-      return "Recording capture is not supported in Safari. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.";
-    case "mobile":
-      return "Recording capture is not supported on mobile browsers.";
-    default:
-      return "This browser does not support the capture APIs required for recording.";
-  }
-};
+const UNSUPPORTED_MESSAGE =
+  "This browser does not support the capture APIs required for recording.";
 
-const resolveCaptureMode = (support: CaptureState["support"]) =>
-  support.mode ?? "shared_audio";
+// A browser that cannot share audio records its microphone; desktop Chromium
+// uses the source chosen at Start.
+const resolveCaptureMode = (
+  support: CaptureState["support"],
+  settings: CaptureSettings,
+): CaptureMode =>
+  support.mode === "microphone_only" ? "microphone_only" : settings.startMode;
 
 export class CaptureController {
   private state: CaptureState;
@@ -726,9 +731,10 @@ export class CaptureController {
       // state error before the caller's catch looks for it: the caller alone
       // reports this one.
       this.setState({ status: "error" });
-      throw new Error(formatUnsupportedMessage(support.reason));
+      throw new Error(UNSUPPORTED_MESSAGE);
     }
 
+    const mode = resolveCaptureMode(support, this.state.settings);
     this.setState({ status: "starting", error: null });
 
     let initResponse;
@@ -773,7 +779,7 @@ export class CaptureController {
     let sources: PickedCaptureSources | null = null;
     try {
       sources = await pickCaptureSource({
-        mode: resolveCaptureMode(support),
+        mode,
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });
@@ -830,11 +836,14 @@ export class CaptureController {
       sources?.release();
       const cancelledByUser =
         error instanceof PickSourceError && error.code === "display_cancelled";
+      const audioNotStarted = error instanceof AudioNotStartedError;
       // Fenced with the init epoch: a picker left open long enough for the
       // reservation to stall may have seen another device take it over.
       await discardRecordingCapture(
         initResponse.id,
-        cancelledByUser ? "display_picker_cancelled" : undefined,
+        cancelledByUser
+          ? "display_picker_cancelled"
+          : audioNotStarted ? "audio_not_started" : undefined,
         { epoch: initResponse.capture_epoch },
       ).catch(() => {});
 
@@ -850,14 +859,15 @@ export class CaptureController {
         return null;
       }
 
+      const message = audioNotStarted ? AUDIO_NOT_STARTED_MESSAGE : formatCaptureError(error);
       this.setState({
         status: "error",
-        error: formatCaptureError(error),
+        error: message,
         recordingId: null,
         lastSequence: -1,
         elapsedSeconds: 0,
       });
-      throw error;
+      throw audioNotStarted ? new AudioNotStartedError(message, { cause: error }) : error;
     }
   };
 
@@ -949,7 +959,7 @@ export class CaptureController {
       // state error before the caller's catch looks for it: the caller alone
       // reports this one.
       this.setState({ status: "error" });
-      throw new Error(formatUnsupportedMessage(support.reason));
+      throw new Error(UNSUPPORTED_MESSAGE);
     }
 
     this.setState({
@@ -967,7 +977,7 @@ export class CaptureController {
 
     try {
       sources = await pickCaptureSource({
-        mode: resolveCaptureMode(support),
+        mode: resolveCaptureMode(support, this.state.settings),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });
@@ -1050,14 +1060,15 @@ export class CaptureController {
         const epoch = resumeResponse.capture_epoch;
         await pauseRecordingCapture(targetRecordingId, { epoch }).catch(() => {});
       }
-      this.setState({
-        status: "error",
-        error: formatCaptureError(error),
-      });
+      const audioNotStarted = error instanceof AudioNotStartedError;
+      const message = audioNotStarted ? AUDIO_NOT_STARTED_ON_RESUME_MESSAGE : formatCaptureError(error);
+      this.setState({ status: "error", error: message });
       // A stalled capture whose own tab came back is refused, and is no longer
       // the user's to decide about here.
       await this.refreshPausedRecording().catch(() => {});
-      throw error;
+      // By now the page may have shown and cleared the state's error, and the
+      // caller then shows the thrown one, so it carries the same words.
+      throw audioNotStarted ? new AudioNotStartedError(message, { cause: error }) : error;
     }
   };
 
