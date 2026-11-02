@@ -23,7 +23,6 @@ import Workspace from "./Workspace";
 import {
   createUserTask,
   deleteUserTask,
-  getRecordings,
   getTags,
   getUserTasks,
   updateUserTask,
@@ -33,9 +32,11 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { formatTimeZoneLocale } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
-import type { Recording, RecordingId, Tag, UserTask } from "@/types";
+import type { Tag, UserTask } from "@/types";
 import TaskDeadlineModal from "./ui/TaskDeadlineModal";
+import TaskRecordingPicker, { type TaskRecordingChoice } from "./TaskRecordingPicker";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+import RecordingAttentionBadge from "./RecordingAttentionBadge";
 
 type TaskView = "open" | "completed" | "archived";
 
@@ -44,7 +45,7 @@ interface TaskDraft {
   body: string;
   dueAt: string;
   tagIds: number[];
-  recordingIds: RecordingId[];
+  recordings: TaskRecordingChoice[];
 }
 
 const EMPTY_DRAFT: TaskDraft = {
@@ -52,7 +53,7 @@ const EMPTY_DRAFT: TaskDraft = {
   body: "",
   dueAt: "",
   tagIds: [],
-  recordingIds: [],
+  recordings: [],
 };
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -90,8 +91,8 @@ function getTaskTagIds(task: UserTask): number[] {
   return task.tags?.map((tag) => tag.id) ?? [];
 }
 
-function getTaskRecordingIds(task: UserTask): RecordingId[] {
-  return task.linked_recordings?.map((recording) => recording.id) ?? [];
+function getTaskRecordings(task: UserTask): TaskRecordingChoice[] {
+  return task.linked_recordings ?? [];
 }
 
 function sortTasks(tasks: UserTask[]): UserTask[] {
@@ -163,56 +164,6 @@ function TagSelector({
   );
 }
 
-function RecordingSelector({
-  recordings,
-  selectedIds,
-  onChange,
-}: {
-  recordings: Recording[];
-  selectedIds: RecordingId[];
-  onChange: (ids: RecordingId[]) => void;
-}) {
-  const selected = new Set(selectedIds);
-
-  if (recordings.length === 0) {
-    return (
-      <p className="rounded-2xl border border-dashed border-control-border px-4 py-3 text-sm text-contrast-helper">
-        No recordings available to link yet.
-      </p>
-    );
-  }
-
-  return (
-    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-surface-border bg-surface-card p-2">
-      {recordings.map((recording) => {
-        const isSelected = selected.has(recording.id);
-
-        return (
-          <ButtonBase
-            key={recording.id}
-            type="button"
-            onClick={() => {
-              onChange(
-                isSelected
-                  ? selectedIds.filter((id) => id !== recording.id)
-                  : [...selectedIds, recording.id],
-              );
-            }}
-            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors ${
-              isSelected
-                ? "bg-action-tint text-action-text"
-                : "text-contrast-muted hover:bg-surface-inset"
-            }`}
-          >
-            <FileAudio className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{recording.name}</span>
-          </ButtonBase>
-        );
-      })}
-    </SurfaceBase>
-  );
-}
-
 function DeadlinePickerButton({
   value,
   timeZone,
@@ -251,7 +202,6 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
   const timeZone = useUserTimeZone();
   const [tasks, setTasks] = useState<UserTask[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [recordings, setRecordings] = useState<Recording[]>([]);
   const [view, setView] = useState<TaskView>("open");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -270,16 +220,14 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
 
     const load = async () => {
       try {
-        const [taskData, tagData, recordingData] = await Promise.all([
+        const [taskData, tagData] = await Promise.all([
           getUserTasks("all"),
           getTags(),
-          getRecordings({ include_archived: true }),
         ]);
         if (!cancelled) {
           const target = taskData.find((task) => task.id === initialTaskId);
           setTasks(sortTasks(taskData));
           setTags(tagData);
-          setRecordings(recordingData.filter((recording) => !recording.is_deleted));
           setView(target?.archived_at ? "archived" : target?.completed_at ? "completed" : "open");
         }
       } catch (error: unknown) {
@@ -354,7 +302,7 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
         body: draft.body.trim() || null,
         due_at: draft.dueAt ? new Date(draft.dueAt).toISOString() : null,
         tag_ids: draft.tagIds,
-        recording_ids: draft.recordingIds,
+        recording_ids: draft.recordings.map((recording) => recording.id),
       });
       setTasks((currentTasks) => sortTasks([...currentTasks, createdTask]));
       setDraft(EMPTY_DRAFT);
@@ -415,7 +363,7 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
       body: task.body ?? "",
       dueAt: task.due_at ?? "",
       tagIds: getTaskTagIds(task),
-      recordingIds: getTaskRecordingIds(task),
+      recordings: getTaskRecordings(task),
     });
   };
 
@@ -438,7 +386,7 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
         body: editDraft.body.trim() || null,
         due_at: editDraft.dueAt ? new Date(editDraft.dueAt).toISOString() : null,
         tag_ids: editDraft.tagIds,
-        recording_ids: editDraft.recordingIds,
+        recording_ids: editDraft.recordings.map((recording) => recording.id),
       },
       "Task updated.",
     );
@@ -569,11 +517,11 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
                   setDraft((current) => ({ ...current, tagIds }))
                 }
               />
-              <RecordingSelector
-                recordings={recordings}
-                selectedIds={draft.recordingIds}
-                onChange={(recordingIds) =>
-                  setDraft((current) => ({ ...current, recordingIds }))
+              <TaskRecordingPicker
+                selected={draft.recordings}
+                timeZone={timeZone}
+                onChange={(recordings) =>
+                  setDraft((current) => ({ ...current, recordings }))
                 }
               />
               <div className="mt-auto flex gap-2">
@@ -677,13 +625,13 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
                           setEditDraft((current) => ({ ...current, tagIds }))
                         }
                       />
-                      <RecordingSelector
-                        recordings={recordings}
-                        selectedIds={editDraft.recordingIds}
-                        onChange={(recordingIds) =>
+                      <TaskRecordingPicker
+                        selected={editDraft.recordings}
+                        timeZone={timeZone}
+                        onChange={(recordings) =>
                           setEditDraft((current) => ({
                             ...current,
-                            recordingIds,
+                            recordings,
                           }))
                         }
                       />
@@ -763,10 +711,11 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
                           <Link
                             key={recording.id}
                             href={`/recordings/${recording.id}`}
-                            className="inline-flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
+                            className="inline-flex flex-wrap items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
                           >
                             <FileAudio className="h-3.5 w-3.5" />
                             {recording.name}
+                            <RecordingAttentionBadge recordingId={recording.id} />
                           </Link>
                         ))}
                       </div>

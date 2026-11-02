@@ -121,9 +121,8 @@ export default function OverlapPanel({
       )}
       <Note label="What this figure does and does not say">
         <p>
-          Detected from the audio itself, so it works even though the transcript
-          writes speech down one line at a time. The figure is a floor:
-          detection misses some overlap and never invents any.
+          The figure is a floor: detection misses some overlap and never
+          invents any.
         </p>
         <p>
           Talking over each other is not the same as interrupting &mdash; it

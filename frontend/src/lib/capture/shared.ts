@@ -42,6 +42,12 @@ export interface PausedCaptureContext {
   recordingId: RecordingId;
   lastSequence: number;
   persistedAt: number;
+  /**
+   * The capture epoch this tab held when its page unloaded mid-capture. In
+   * per-tab storage, so only this tab after a reload, or a duplicate of it,
+   * can take the capture back without waiting for it to stall (issue #778).
+   */
+  epoch?: number;
 }
 
 export interface FinalizeRetryProgress {
@@ -108,7 +114,15 @@ export interface CaptureState {
   elapsedSeconds: number;
   recordingId: RecordingId | null;
   pausedRecording: Recording | null;
+  /** Lock-free captures needing a decision, independently of an open dialog. */
+  attentionRecordings: Recording[];
   runtimeActive: boolean;
+  /**
+   * The recording this tab's runtime captures, as `getOwnedRecordingId()`
+   * returns it. Carried in the state so a change of ownership re-renders
+   * consumers: the React Compiler caches a call on the stable controller.
+   */
+  ownedRecordingId: RecordingId | null;
   settings: CaptureSettings;
   finalizeRetry: FinalizeRetryProgress | null;
   stopStage: CaptureStopStage | null;
@@ -281,6 +295,7 @@ export const readPausedCaptureContext = (): PausedCaptureContext | null => {
       recordingId: parsed.recordingId,
       lastSequence: parsed.lastSequence,
       persistedAt: parsed.persistedAt,
+      ...(typeof parsed.epoch === "number" ? { epoch: parsed.epoch } : {}),
     };
   } catch {
     return null;

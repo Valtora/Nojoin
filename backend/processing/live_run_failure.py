@@ -126,6 +126,41 @@ def _next_timeline(live_run: LiveRun, state: dict) -> tuple[float, float]:
     return end_of_failed_run(live_run, state, chunk_durations_ms)
 
 
+def capture_discarded(recording_id: int) -> bool:
+    """Whether the recording is gone, as after a Discard during the run.
+
+    Discard deletes the row and then removes the capture's temporary folder, so
+    a run in flight fails to write its clip, carry or state. That failure is
+    expected. An error reading the database counts as the recording being there,
+    so a real failure is still reported.
+    """
+    from backend.core.db import get_sync_session
+    from backend.models.recording import Recording
+
+    session = get_sync_session()
+    try:
+        return session.get(Recording, recording_id) is None
+    except SQLAlchemyError:
+        return False
+    finally:
+        session.close()
+
+
+def _stop_for_discard(live_run: LiveRun) -> None:
+    logger.info(
+        "Live run %s of recording %s stopped: the recording was discarded",
+        live_run.run,
+        live_run.recording_id,
+    )
+    lt._record_live_sequence_outcome_metric(
+        recording_id=live_run.recording_id,
+        sequence=live_run.sequence,
+        outcome="skipped",
+        reason="recording_discarded",
+        run=live_run.run,
+    )
+
+
 def _remove_spent_audio(live_run: LiveRun) -> None:
     """Remove the spent buffer and the run-up that no longer precedes anything."""
     for path in (live_run.buffer_path, live_run.context_path):
@@ -165,6 +200,9 @@ def _save_advance(live_run: LiveRun, state: dict) -> None:
     try:
         lt.write_live_state(live_run.live_dir, state)
     except OSError:
+        if capture_discarded(live_run.recording_id):
+            _stop_for_discard(live_run)
+            return
         logger.error(
             "Could not save the live state after failed run %s of recording %s",
             run,
@@ -182,9 +220,13 @@ def record_live_run_failure(live_run: LiveRun, exc: Exception, state: dict) -> N
     Non-fatal by contract: records the failure metric, marks the drained
     sequences ``failed``, advances next_expected so the lane keeps moving, and
     moves the timeline past the run's audio. Finalize transcribes the whole
-    recording, so the run's audio still reaches the final transcript.
+    recording, so the run's audio still reaches the final transcript. A run
+    whose recording was discarded under it stops at INFO and saves nothing.
     """
     recording_id, sequence, run = live_run.recording_id, live_run.sequence, live_run.run
+    if capture_discarded(recording_id):
+        _stop_for_discard(live_run)
+        return
     record_pipeline_metric(
         stage="live_run_failed",
         recording_id=recording_id,

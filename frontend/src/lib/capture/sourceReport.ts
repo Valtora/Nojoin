@@ -124,6 +124,16 @@ export const listAvailableMicrophones = async (
     }));
 };
 
+/**
+ * Whether a listing of microphone ids can show that a chosen microphone is gone.
+ * Until the page has microphone permission a browser may list placeholders with
+ * blank ids (Media Capture and Streams, section 9.2.1: empty strings for
+ * deviceId, label and groupId), which prove nothing, so the exact request has to
+ * decide instead. A listing with no microphones at all is trusted.
+ */
+export const isTrustedMicrophoneListing = (deviceIds: readonly string[]) =>
+  deviceIds.length === 0 || deviceIds.some((deviceId) => deviceId !== "");
+
 export const buildCaptureSourceReportPayload = (
   snapshot: CaptureSourceReportSnapshot,
   options: {

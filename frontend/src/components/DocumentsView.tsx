@@ -2,7 +2,7 @@
 
 import { ButtonBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   FileText,
   Upload,
@@ -19,10 +19,14 @@ import { downloadDocument, reparseDocument } from "@/lib/api/documents";
 import DocumentUploadModal from "./DocumentUploadModal";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
+import {
+  claimDocumentFailureNotice,
+  forgetDocumentFailureNotices,
+} from "@/lib/documentFailureNotices";
 import ConfirmationModal from "./ConfirmationModal";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
-import { formatTimeZoneLocale } from "@/lib/timezone";
+import { formatTimeZoneDay } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 
 interface DocumentsViewProps {
@@ -33,7 +37,7 @@ const POLL_INTERVAL_MS = 2000;
 
 const formatDocumentDate = (createdAt: string, timeZone: string): string => {
   const date = parseServerTimestamp(createdAt);
-  return date ? formatTimeZoneLocale(date, timeZone, "date") : "Unknown date";
+  return date ? formatTimeZoneDay(date, timeZone) : "Unknown date";
 };
 
 const formatBytes = (bytes?: number | null): string => {
@@ -53,6 +57,9 @@ const formatOf = (title: string): string => {
   const dot = title.lastIndexOf(".");
   return dot !== -1 ? title.slice(dot + 1).toUpperCase() : "—";
 };
+
+/** A column the table shows only when it is at least 40rem wide. */
+const WIDE_ONLY = "hidden @min-[40rem]:table-cell";
 
 const isBusy = (doc: Document) =>
   doc.status === "PENDING" || doc.status === "PROCESSING";
@@ -157,7 +164,6 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
   const [reparsingId, setReparsingId] = useState<number | null>(null);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const { addNotification } = useNotificationStore();
-  const notifiedDocumentErrorsRef = useRef<Set<string>>(new Set());
 
   const fetchDocuments = useCallback(async () => {
     try {
@@ -199,22 +205,19 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
     return () => clearInterval(interval);
   }, [documents, recordingId]);
 
+  // Once per document and message in this browser, not on every visit: the
+  // table keeps marking it Failed.
   useEffect(() => {
     documents.forEach((document) => {
-      if (!document.error_message) {
-        return;
+      if (
+        document.error_message &&
+        claimDocumentFailureNotice(document.id, document.error_message)
+      ) {
+        addNotification({
+          type: "error",
+          message: `${document.title}: ${document.error_message}`,
+        });
       }
-
-      const signature = `${document.id}:${document.error_message}`;
-      if (notifiedDocumentErrorsRef.current.has(signature)) {
-        return;
-      }
-
-      notifiedDocumentErrorsRef.current.add(signature);
-      addNotification({
-        type: "error",
-        message: `${document.title}: ${document.error_message}`,
-      });
     });
   }, [addNotification, documents]);
 
@@ -250,13 +253,8 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       setDocuments((prev) =>
         prev.map((d) => (d.id === updated.id ? updated : d)),
       );
-      // Clear the recorded error so a repeat failure notifies again rather
-      // than being swallowed as already-seen.
-      notifiedDocumentErrorsRef.current.forEach((signature) => {
-        if (signature.startsWith(`${target.id}:`)) {
-          notifiedDocumentErrorsRef.current.delete(signature);
-        }
-      });
+      // A repeat failure is news after Parse again, so it is announced.
+      forgetDocumentFailureNotices(target.id);
       addNotification({
         type: "success",
         message: `Parsing "${target.title}" again with visual analysis.`,
@@ -345,25 +343,26 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             </ButtonBase>
           </div>
         ) : (
-          // Wide content scrolls inside its own container so the panel never
-          // scrolls horizontally as a whole.
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[38rem] border-collapse text-left">
+          // Under 40rem, as on a phone, Format, Size, Pages and Status move
+          // under the name, so the actions stay in view and the name has room
+          // to wrap rather than hiding both behind a sideways scroll.
+          <div className="@container overflow-x-auto">
+            <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b border-surface-border text-xs font-semibold uppercase tracking-wider text-contrast-helper">
                   <th scope="col" className="px-4 py-2.5 font-semibold">
                     Name
                   </th>
-                  <th scope="col" className="w-[4.5rem] px-2 py-2.5 font-semibold">
+                  <th scope="col" className={`w-[4.5rem] px-2 py-2.5 font-semibold ${WIDE_ONLY}`}>
                     Format
                   </th>
-                  <th scope="col" className="w-20 px-2 py-2.5 font-semibold">
+                  <th scope="col" className={`w-20 px-2 py-2.5 font-semibold ${WIDE_ONLY}`}>
                     Size
                   </th>
-                  <th scope="col" className="w-16 px-2 py-2.5 font-semibold">
+                  <th scope="col" className={`w-16 px-2 py-2.5 font-semibold ${WIDE_ONLY}`}>
                     Pages
                   </th>
-                  <th scope="col" className="w-44 px-2 py-2.5 font-semibold">
+                  <th scope="col" className={`w-44 px-2 py-2.5 font-semibold ${WIDE_ONLY}`}>
                     Status
                   </th>
                   <th scope="col" className="w-28 px-2 py-2.5">
@@ -379,27 +378,34 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                   >
                     <td className="max-w-0 px-4 py-3">
                       <p
-                        className="truncate text-sm font-medium text-foreground"
+                        className="truncate text-sm font-medium text-foreground @max-[40rem]:line-clamp-2 @max-[40rem]:whitespace-normal @max-[40rem]:wrap-anywhere"
                         title={doc.title}
                       >
                         {doc.title}
                       </p>
                       <p className="mt-0.5 text-xs text-contrast-helper">
                         {formatDocumentDate(doc.created_at, timeZone)}
+                        <span className="@min-[40rem]:hidden">
+                          {` · ${formatOf(doc.title)} · ${formatBytes(doc.file_size_bytes)}`}
+                          {doc.page_count ? ` · ${doc.page_count} ${doc.page_count === 1 ? "page" : "pages"}` : null}
+                        </span>
                       </p>
+                      <div className="mt-1.5 @min-[40rem]:hidden">
+                        <StatusCell doc={doc} />
+                      </div>
                     </td>
-                    <td className="px-2 py-3">
+                    <td className={`px-2 py-3 ${WIDE_ONLY}`}>
                       <span className="inline-block rounded bg-surface-inset px-1.5 py-0.5 font-mono text-[11px] font-medium text-contrast-helper">
                         {formatOf(doc.title)}
                       </span>
                     </td>
-                    <td className="px-2 py-3 text-sm tabular-nums text-contrast-helper">
+                    <td className={`px-2 py-3 text-sm tabular-nums text-contrast-helper ${WIDE_ONLY}`}>
                       {formatBytes(doc.file_size_bytes)}
                     </td>
-                    <td className="px-2 py-3 text-sm tabular-nums text-contrast-helper">
+                    <td className={`px-2 py-3 text-sm tabular-nums text-contrast-helper ${WIDE_ONLY}`}>
                       {doc.page_count ?? "—"}
                     </td>
-                    <td className="px-2 py-3">
+                    <td className={`px-2 py-3 ${WIDE_ONLY}`}>
                       <StatusCell doc={doc} />
                     </td>
                     <td className="px-2 py-3">

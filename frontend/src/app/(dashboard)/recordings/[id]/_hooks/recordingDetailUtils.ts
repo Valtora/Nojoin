@@ -1,3 +1,4 @@
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { Recording, RecordingStatus, TimelineNote, TranscriptSegment } from "@/types";
 import type {
   RollingSpeakerCorrectionHistory,
@@ -12,6 +13,24 @@ export const isRecordingInFlight = (recording: Recording | null | undefined) =>
   recording?.status === RecordingStatus.UPLOADING ||
   recording?.status === RecordingStatus.PROCESSING ||
   recording?.status === RecordingStatus.QUEUED;
+
+/**
+ * Whether an in-flight recording has lines for the live feed to read: a
+ * capture's, from its start until its transcript publishes, or a finished
+ * transcript that a later step (speaker inference, notes) runs over. An import
+ * has no transcript until processing makes one, and the utterances read
+ * answers 404 until then; a reprocess resets its transcript to pending. Neither
+ * has lines before its run publishes (#835).
+ *
+ * Only capture start creates a transcript as "processing"
+ * (`routes_batch_init.py`), and only a finished run sets "completed".
+ * A settled meeting's reprocess keeps its settled lines, flagged by the server's `settling_required`.
+ */
+export const hasInFlightTranscriptFeed = (recording: Recording | null | undefined) =>
+  isLiveCaptureInProgress(recording) ||
+  recording?.transcript?.transcript_status === "processing" ||
+  recording?.transcript?.transcript_status === "completed" ||
+  recording?.transcript?.settling_required === true;
 
 // Processed, with audio a proxy can be made from, and no proxy yet.
 const isWaitingForProxy = (recording: Recording) =>
@@ -152,14 +171,51 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.processing_eta_seconds !== current.processing_eta_seconds ||
   polled.processing_eta_learning !== current.processing_eta_learning ||
   polled.processing_eta_sample_size !== current.processing_eta_sample_size ||
+  !!polled.discardable !== !!current.discardable ||
   polled.has_proxy !== current.has_proxy ||
   polled.has_audio !== current.has_audio ||
+  // The live Max Speakers field follows it, so a cap set here or in another
+  // tab survives the field remounting (#871).
+  polled.max_speakers !== current.max_speakers ||
+  // Whether the live feed has anything to read (hasInFlightTranscriptFeed).
+  polled.transcript?.transcript_status !== current.transcript?.transcript_status ||
+  polled.transcript?.settling_required !== current.transcript?.settling_required ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||
   // Changes with the notes list, which the page then fetches.
   polled.timeline_notes_list_signature !== current.timeline_notes_list_signature ||
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||
   JSON.stringify(polled.speakers) !== JSON.stringify(current.speakers);
+
+/**
+ * `read` carrying the transcript change counter of `shown`, the page's copy of
+ * the same recording. The page's counter is the one its transcript has caught
+ * up with, and the idle poll loads the transcript once the server's moves past
+ * it, so a read stored without loading the transcript keeps the page's.
+ */
+export const keepTranscriptCounter = (read: Recording, shown: Recording | null): Recording =>
+  read.transcript && shown?.id === read.id &&
+  read.transcript.change_sequence !== shown.transcript?.change_sequence
+    ? { ...read, transcript: { ...read.transcript, change_sequence: shown.transcript?.change_sequence } }
+    : read;
+
+/** Narrower than this, the side column truncates its open tab's label and Chat wraps every few words. */
+const SIDE_COLUMN_OPENING_PX = 320;
+/** The most of the page the side column opens at, so the transcript keeps the larger part. */
+const SIDE_COLUMN_OPENING_MAX = 35;
+
+/**
+ * The share of the page, in percent, the desktop side column opens at: the
+ * density's usual share, raised on a narrow page until the column is 20rem
+ * wide, and never past 35%. Only a layout the panels have not saved yet opens
+ * at it; one already saved, or resized by hand, keeps its own (#841).
+ */
+export const sideColumnOpeningSize = (pageWidthPx: number, isCompact: boolean): number => {
+  const share = isCompact ? 22 : 25;
+  if (!(pageWidthPx > 0)) return share;
+  const fits = Math.ceil((SIDE_COLUMN_OPENING_PX / pageWidthPx) * 100);
+  return Math.min(Math.max(share, fits), SIDE_COLUMN_OPENING_MAX);
+};
 
 export const getAutoSpeakerReplacementName = (speakerName: string) => {
   const trimmedName = speakerName.trim();

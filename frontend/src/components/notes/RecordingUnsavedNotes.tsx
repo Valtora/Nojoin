@@ -11,7 +11,7 @@ import {
   type OutboxKind,
 } from "@/lib/notes/noteOutbox";
 import { formatTimelineMs } from "@/lib/notes/placement";
-import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import { selectRecovery, selectUnsentNotes, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { RecordingId } from "@/types";
 
 import Button from "../ui/Button";
@@ -67,7 +67,7 @@ export default function RecordingUnsavedNotes({
   composerOwnsDraft = false,
   className = "",
 }: RecordingUnsavedNotesProps) {
-  const { outbox, snapshot } = useNoteOutbox(recordingId);
+  const { outbox, snapshot } = useNoteOutbox(recordingId, composerOwnsDraft ? selectRecovery : selectUnsentNotes);
   const [draftError, setDraftError] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const entries = useMemo(

@@ -14,6 +14,17 @@ import {
 } from "./transcriptSegments";
 
 describe("transcriptSegments", () => {
+  it.each([0, 1])("keeps capture interval %s through full and delta reads", (captureInterval) => {
+    const utterance = { id: "tail", revision: 1, start: 1, end: 2, text: "Resumed speech",
+      speaker: "UNKNOWN", capture_interval: captureInterval };
+    expect(transcriptSegmentFromUtterance(utterance).capture_interval).toBe(captureInterval);
+    const previous = [{ ...utterance, capture_interval: undefined }];
+    const updated = mergeTranscriptUtteranceDelta(previous, [{ ...utterance, revision: 2 }], []);
+    expect(updated[0].capture_interval).toBe(captureInterval);
+    expect(transcriptSegmentFromUtterance({ ...utterance, capture_interval: undefined }))
+      .not.toHaveProperty("capture_interval");
+  });
+
   it("keeps pending coverage through full and delta reads, including a coverage-only update", () => {
     const utterance = { id: "tail", revision: 1, start: 1, end: 2, text: "Still unassigned",
       speaker: "UNKNOWN", diarisation_pending: true };

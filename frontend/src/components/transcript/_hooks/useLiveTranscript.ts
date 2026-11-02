@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { getTranscriptUtterances } from "@/lib/api/transcript";
@@ -43,6 +43,20 @@ export const LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS = 10;
  */
 export const LIVE_TRANSCRIPT_READ_TIMEOUT_MS = 15_000;
 
+/**
+ * How long the lane must read as caught up, from the first read that finds it
+ * so, before the behind notice clears (issue #812). The lane writes
+ * `live/state.json` only when a run ends, so for runs of length T the lag a
+ * read measures swings between about T and 2T and stays under the 20 s
+ * threshold only for the first 20 s less T after each run ends. Holding on for
+ * longer than the slowest run that can raise the notice outlasts that window,
+ * so the notice holds steady instead of re-announcing and shifting the
+ * transcript every run. Time rather than a count of reads, since a refresh
+ * adds reads between polls. The cost is that it can stay up to about 20 s
+ * after the lane catches up.
+ */
+export const LIVE_BEHIND_CLEAR_MS = 20_000;
+
 export interface LiveTranscript {
   speakers: readonly RecordingSpeaker[];
   refresh: () => void;
@@ -53,6 +67,18 @@ export interface LiveTranscript {
   liveSpeakerNames: Readonly<Record<string, string>>;
   /** Shows the names a rename answered with, ahead of the next read. */
   applyLiveSpeakerNames: (names: Record<string, string>) => void;
+  /**
+   * Live label -> the live label the user merged it into. `segments` already
+   * read a merged label's lines as the label it joined.
+   */
+  liveSpeakerMerges?: Readonly<Record<string, string>>;
+  /** Shows the merges a merge answered with, ahead of the next read. */
+  applyLiveSpeakerMerges?: (merges: Record<string, string>) => void;
+  /**
+   * A read said live transcription is behind the uploads, and the reads since
+   * have not found it caught up for {@link LIVE_BEHIND_CLEAR_MS}.
+   */
+  liveBehind?: boolean;
 }
 
 const NO_NAMES: Readonly<Record<string, string>> = {};
@@ -102,7 +128,10 @@ export function useLiveTranscript(
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [speakers, setSpeakers] = useState<RecordingSpeaker[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [liveBehind, setLiveBehind] = useState(false);
   const [liveSpeakerNames, setLiveSpeakerNames] =
+    useState<Readonly<Record<string, string>>>(NO_NAMES);
+  const [liveSpeakerMerges, setLiveSpeakerMerges] =
     useState<Readonly<Record<string, string>>>(NO_NAMES);
   const stateRef = useRef<LocalTranscriptState | null>(null);
 
@@ -112,7 +141,9 @@ export function useLiveTranscript(
     if (!recordingId || enabled) {
       setSegments([]);
       setHasLoaded(false);
+      setLiveBehind(false);
       setLiveSpeakerNames(NO_NAMES);
+      setLiveSpeakerMerges(NO_NAMES);
       setSpeakers([]);
     }
   });
@@ -124,6 +155,8 @@ export function useLiveTranscript(
 
     let cancelled = false;
     stateRef.current = null;
+    // When the first of the reads in a row that found the lane caught up came.
+    let caughtUpSince: number | null = null;
 
     const sync = async (mode: "full" | "delta") => {
       const current = stateRef.current;
@@ -169,6 +202,17 @@ export function useLiveTranscript(
       setLiveSpeakerNames((previous) =>
         sameOrNext(previous, delta.live_speaker_names),
       );
+      setLiveSpeakerMerges((previous) =>
+        sameOrNext(previous, delta.live_speaker_merges),
+      );
+      if (delta.live_behind === true) {
+        caughtUpSince = null;
+        setLiveBehind(true);
+      } else {
+        const now = Date.now();
+        caughtUpSince ??= now;
+        if (now - caughtUpSince >= LIVE_BEHIND_CLEAR_MS) setLiveBehind(false);
+      }
       setHasLoaded(true);
     };
 
@@ -221,6 +265,55 @@ export function useLiveTranscript(
     [],
   );
 
+  const applyLiveSpeakerMerges = useCallback(
+    (merges: Record<string, string>) =>
+      setLiveSpeakerMerges((previous) => sameOrNext(previous, merges)),
+    [],
+  );
+
+  // A merge rewrites no line, so each read's lines are shown under the label
+  // their speaker was merged into: one speaker in the lines, the panel and
+  // the colours. Each shown line is kept per source line until the merges
+  // change: lines redraw by identity, and a poll must redraw only the lines
+  // it changed, not every line under a merged label.
+  const remapped = useMemo(
+    () => ({ merges: liveSpeakerMerges, lines: new WeakMap<TranscriptSegment, TranscriptSegment>() }),
+    [liveSpeakerMerges],
+  );
+  const shown = useMemo(
+    () => (Object.keys(remapped.merges).length === 0 ? segments
+      : segments.map((segment) => showMerged(segment, remapped.merges, remapped.lines))),
+    [segments, remapped],
+  );
+
   const refresh = useCallback(() => refreshRef.current?.(), []);
-  return { segments, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames, refresh };
+  return {
+    segments: shown, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames,
+    liveSpeakerMerges, applyLiveSpeakerMerges, refresh, liveBehind,
+  };
+}
+
+/** A line under the label its speaker was merged into; the same object for the same line. */
+function showMerged(
+  segment: TranscriptSegment,
+  merges: Readonly<Record<string, string>>,
+  shown: WeakMap<TranscriptSegment, TranscriptSegment>,
+): TranscriptSegment {
+  const kept = shown.get(segment);
+  if (kept) return kept;
+  const into = merges[segment.speaker];
+  const overlaps = segment.overlapping_speakers;
+  const remapsOverlaps = !!overlaps?.length && (!!into || overlaps.some((label) => label in merges));
+  if (!into && !remapsOverlaps) return segment;
+  const speaker = into ?? segment.speaker;
+  const line = {
+    ...segment,
+    speaker,
+    ...(remapsOverlaps ? {
+      overlapping_speakers: [...new Set(overlaps!.map((label) => merges[label] ?? label))]
+        .filter((label) => label !== speaker),
+    } : {}),
+  };
+  shown.set(segment, line);
+  return line;
 }

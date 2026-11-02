@@ -24,7 +24,9 @@ import { getErrorDetail, getErrorStatus } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
-import { LanguageNotice, RecordingId } from "@/types";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneDate, getBrowserTimeZone, getUserTimeZone } from "@/lib/timezone";
+import { LanguageNotice, Recording, RecordingId } from "@/types";
 
 import {
   NOTHING_TO_UNDO,
@@ -41,8 +43,8 @@ import {
 /**
  * Shared action model for the per-recording actions used by the sidebar list
  * (`Sidebar.tsx`), the header's capture slot (`RecordingCaptureSlot.tsx`) and the
- * recording page (`useRecordingDetail.ts`, for the audio export, and
- * `LanguageNoticeBanner.tsx`, for the language notice's answers).
+ * recording page (`useRecordingDetail.ts`, for the audio export and the title's
+ * rename, and `LanguageNoticeBanner.tsx`, for the language notice's answers).
  *
  * DEVELOPMENT.md requires these surfaces to stay behaviourally synchronised,
  * and this hook is the single source of truth for that behaviour.
@@ -154,9 +156,9 @@ export interface RecordingActions extends TranscriptRecordingActions {
     tagName: string,
     callbacks?: RecordingListActionCallbacks,
   ) => Promise<void>;
+  /** Saves the audio as `<day>_<name>.mp3`, the day in the reader's zone. */
   exportAudio: (
-    id: RecordingId,
-    name: string,
+    recording: Pick<Recording, "id" | "name" | "created_at">,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
   /** Sets the recording's language without reprocessing ("Keep English"). */
@@ -212,9 +214,9 @@ export function useRecordingActions(): RecordingActions {
   const { addNotification } = useNotificationStore();
   const {
     cancel: cancelCapture,
-    recordingId: captureRecordingId,
+    ownedRecordingId,
     pausedRecording,
-    runtimeActive,
+    attentionRecordings,
   } = useCapture();
 
   return useMemo<RecordingActions>(() => {
@@ -300,7 +302,7 @@ export function useRecordingActions(): RecordingActions {
         } catch (e: unknown) {
           console.error("Failed to infer speakers", e);
           addNotification({
-            message: "Failed to infer speakers.",
+            message: getErrorDetail(e) ?? "Failed to infer speakers.",
             type: "error",
           });
           callbacks?.onError?.();
@@ -316,9 +318,10 @@ export function useRecordingActions(): RecordingActions {
           // the row while the client kept recording to a missing recording or
           // stayed blocked behind a stale paused lock. For a queued/processing
           // recording, or one owned by another tab, a plain discard is correct.
-          const ownsLiveCapture =
-            runtimeActive && captureRecordingId === id;
-          const ownsPausedCapture = pausedRecording?.id === id;
+          // Includes a failed stop's retained runtime, whose media is released.
+          const ownsLiveCapture = ownedRecordingId === id;
+          const ownsPausedCapture = pausedRecording?.id === id ||
+            attentionRecordings.some((recording) => recording.id === id);
           if (ownsLiveCapture || ownsPausedCapture) {
             // The controller announces the removal itself once the capture is
             // torn down, so this branch must not announce it a second time.
@@ -337,7 +340,7 @@ export function useRecordingActions(): RecordingActions {
         } catch (e: unknown) {
           console.error("Failed to discard recording", e);
           addNotification({
-            message: "Failed to discard recording.",
+            message: getErrorDetail(e) ?? "Failed to discard recording.",
             type: "error",
           });
           callbacks?.onError?.();
@@ -422,9 +425,15 @@ export function useRecordingActions(): RecordingActions {
             ),
         }),
 
-      exportAudio: async (id, name, callbacks) => {
+      exportAudio: async (recording, callbacks) => {
         try {
-          await exportAudio(id, name);
+          const created = parseServerTimestamp(recording.created_at);
+          const timeZone = await getUserTimeZone().catch(getBrowserTimeZone);
+          await exportAudio(
+            recording.id,
+            recording.name,
+            created ? formatTimeZoneDate(created, timeZone, "yyyyMMdd") : undefined,
+          );
           callbacks?.onSuccess?.();
         } catch (e: unknown) {
           console.error("Failed to export audio", e);
@@ -475,8 +484,8 @@ export function useRecordingActions(): RecordingActions {
   }, [
     addNotification,
     cancelCapture,
-    captureRecordingId,
+    ownedRecordingId,
     pausedRecording,
-    runtimeActive,
+    attentionRecordings,
   ]);
 }

@@ -69,16 +69,20 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
     recordingId: localCaptureId,
+    // The tab capturing: its runtime holds the capture.
+    ownedRecordingId: localCaptureId,
     pausedRecording: null,
     runtimeActive: false,
     status: localCaptureStatus,
     stop: vi.fn(),
-    uploadQueue: { seconds: 0 },
   }),
+  useCaptureState: (select: (state: { elapsedSeconds: number; uploadQueue: { segments: number; seconds: number } }) => unknown) =>
+    select({ elapsedSeconds: 0, uploadQueue: { segments: 0, seconds: 0 } }),
 }));
 
 const setSideTab = vi.fn();
 const setSpeakerPanelCollapsed = vi.fn();
+const setSpeakerReviewPending = vi.fn();
 
 vi.mock("@/lib/store", () => ({
   useNavigationStore: (select?: (state: Record<string, unknown>) => unknown) => {
@@ -93,6 +97,8 @@ vi.mock("@/lib/store", () => ({
       setChatPanelCollapsed: vi.fn(),
       sideTab,
       setSideTab,
+      speakerReviewPending: false,
+      setSpeakerReviewPending,
     };
     return select ? select(state) : state;
   },
@@ -347,6 +353,7 @@ describe("RecordingPage (detail)", () => {
     setActivePanel.mockReset();
     setSideTab.mockReset().mockImplementation((value: string) => { sideTab = value; });
     setSpeakerPanelCollapsed.mockReset().mockImplementation((value: boolean) => { speakerPanelCollapsed = value; });
+    setSpeakerReviewPending.mockReset();
     exportAudio.mockReset();
     exportContent.mockReset().mockResolvedValue(undefined);
     getRecording.mockReset();
@@ -527,7 +534,8 @@ describe("RecordingPage (detail)", () => {
     getSettings.mockResolvedValue({ enable_meeting_edge: false, meeting_edge_context_level: 2 });
     const tablist = await openTabs(360);
     await waitFor(() => expect(tabLabels(tablist)).not.toContain("Meeting Edge"));
-    expect(setActivePanel).toHaveBeenCalledWith("transcript");
+    // An effect falls back to the transcript, and can run after the tab goes.
+    await waitFor(() => expect(setActivePanel).toHaveBeenCalledWith("transcript"));
   });
 
   it("offers Meeting Edge only once settings say it is on, keeping a remembered tab", async () => {
@@ -845,21 +853,121 @@ describe("RecordingPage (detail)", () => {
     });
   });
 
-  it("renames the recording through the title editor and refreshes the route", async () => {
-    renderPage();
-
-    const heading = await screen.findByRole("heading", { name: /Quarterly sync/ });
-    fireEvent.click(heading);
-
-    const input = screen.getByDisplayValue("Quarterly sync");
-    fireEvent.change(input, { target: { value: "Renamed sync" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    await waitFor(() => {
-      expect(renameRecording).toHaveBeenCalledWith("rec-1", "Renamed sync");
+  describe("renaming from the title", () => {
+    let announced: unknown[] = [];
+    const listen = (event: Event) => announced.push((event as CustomEvent).detail);
+    beforeEach(() => {
+      announced = [];
+      window.addEventListener("recording-updated", listen);
     });
-    expect(routerRefresh).toHaveBeenCalled();
+    afterEach(() => window.removeEventListener("recording-updated", listen));
+
+    // The page's own reads are done once the transcript has loaded.
+    const openTitle = async () => {
+      const heading = await screen.findByRole("heading", { name: /Quarterly sync/ });
+      await waitFor(() => expect(getTranscriptUtterances).toHaveBeenCalled());
+      await act(async () => {});
+      return heading;
+    };
+    const rename = (value: string) => {
+      const input = screen.getByDisplayValue("Quarterly sync");
+      fireEvent.change(input, { target: { value } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    };
+
+    it("shows the new name and tells the lists before the save answers, then reads nothing again", async () => {
+      let finishRename!: () => void;
+      renameRecording.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRename = resolve; }));
+      renderPage();
+      const heading = await openTitle();
+      const reads = getRecording.mock.calls.length;
+      const transcriptReads = getTranscriptUtterances.mock.calls.length;
+
+      fireEvent.click(heading);
+      rename("  Renamed sync ");
+
+      expect(screen.getByRole("heading", { name: /Renamed sync/ })).toBeInTheDocument();
+      expect(renameRecording).toHaveBeenCalledExactlyOnceWith("rec-1", "Renamed sync");
+      expect(announced).toEqual([{ id: "rec-1", name: "Renamed sync" }]);
+
+      await act(async () => finishRename());
+      expect(screen.getByRole("heading", { name: /Renamed sync/ })).toBeInTheDocument();
+      expect(getRecording).toHaveBeenCalledTimes(reads);
+      expect(getTranscriptUtterances).toHaveBeenCalledTimes(transcriptReads);
+      expect(routerRefresh).not.toHaveBeenCalled();
+      expect(addNotification).not.toHaveBeenCalled();
+    });
+
+    it("puts the old name back on the page and in the lists when the save fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      let failRename!: (error: Error) => void;
+      renameRecording.mockImplementationOnce(() => new Promise<void>((_, reject) => { failRename = reject; }));
+      renderPage();
+      fireEvent.click(await openTitle());
+      rename("Renamed sync");
+      expect(screen.getByRole("heading", { name: /Renamed sync/ })).toBeInTheDocument();
+
+      await act(async () => failRename(new Error("offline")));
+
+      expect(screen.getByRole("heading", { name: /Quarterly sync/ })).toBeInTheDocument();
+      expect(addNotification).toHaveBeenCalledWith({ type: "error", message: "Failed to rename recording." });
+      expect(announced).toEqual([
+        { id: "rec-1", name: "Renamed sync" },
+        { id: "rec-1", name: "Quarterly sync" },
+      ]);
+      // The field opens on the name the recording has.
+      fireEvent.click(screen.getByRole("heading", { name: /Quarterly sync/ }));
+      expect(screen.getByDisplayValue("Quarterly sync")).toBeInTheDocument();
+    });
+
+    it("reads nothing again when the field opens and closes unchanged", async () => {
+      renderPage();
+      const heading = await openTitle();
+      const reads = [getRecording, getGlobalSpeakers, getSettings].map((read) => read.mock.calls.length);
+
+      fireEvent.click(heading);
+      fireEvent.keyDown(screen.getByDisplayValue("Quarterly sync"), { key: "Escape" });
+      fireEvent.click(await screen.findByRole("heading", { name: /Quarterly sync/ }));
+      fireEvent.keyDown(screen.getByDisplayValue("Quarterly sync"), { key: "Enter" });
+      await act(async () => {});
+
+      expect(screen.getByRole("heading", { name: /Quarterly sync/ })).toBeInTheDocument();
+      expect([getRecording, getGlobalSpeakers, getSettings].map((read) => read.mock.calls.length)).toEqual(reads);
+      expect(renameRecording).not.toHaveBeenCalled();
+      expect(announced).toEqual([]);
+    });
+
+    it("takes a rename made in the recordings list", async () => {
+      renderPage();
+      await openTitle();
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: "rec-1", name: "Named in the list" } }));
+      });
+
+      expect(screen.getByRole("heading", { name: /Named in the list/ })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("heading", { name: /Named in the list/ }));
+      expect(screen.getByDisplayValue("Named in the list")).toBeInTheDocument();
+    });
   });
+
+  it.each(["recording-tag-editor", "linked-event-panel"])(
+    "reads the recording alone after a %s change, not its transcript",
+    async (action) => {
+      renderPage();
+      await screen.findByRole("heading", { name: /Quarterly sync/ });
+      await waitFor(() => expect(getTranscriptUtterances).toHaveBeenCalled());
+      await act(async () => {});
+      const reads = getRecording.mock.calls.length;
+      const transcriptReads = getTranscriptUtterances.mock.calls.length;
+
+      fireEvent.click(screen.getByTestId(action));
+
+      await waitFor(() => expect(getRecording).toHaveBeenCalledTimes(reads + 1));
+      await act(async () => {});
+      expect(getTranscriptUtterances).toHaveBeenCalledTimes(transcriptReads);
+    },
+  );
 
   it("says when renaming a speaker in the transcript did not save a voiceprint", async () => {
     updateSpeaker.mockResolvedValue([
@@ -1017,7 +1125,7 @@ describe("RecordingPage (detail)", () => {
         message: expect.stringMatching(/audio is not available/),
       });
     });
-    expect(exportAudio).toHaveBeenCalledWith("rec-1", "Quarterly sync");
+    expect(exportAudio).toHaveBeenCalledWith("rec-1", "Quarterly sync", expect.stringMatching(/^\d{8}$/));
   });
 
   it("passes the dialog's choice to leave the reader's notes out on to the export", async () => {
@@ -1060,6 +1168,25 @@ describe("RecordingPage (detail)", () => {
     const transcript = await screen.findByTestId("transcript-view");
     expect(screen.queryByRole("button", { name: "Open Meeting Chat" })).toBeNull();
     expect(clearanceAncestors(transcript)).toHaveLength(0);
+    expect(clearanceAncestors(transcript, "--floating-action-inline-clearance")).toHaveLength(0);
+  });
+
+  // The note box sits under the transcript in every state, level with the
+  // phone's floating chat button, so its Add note button was under it. Its
+  // region turns the page's inline clearance into right padding.
+  it("keeps the note box clear of the phone chat button", async () => {
+    vi.stubGlobal("innerWidth", 390);
+    vi.stubGlobal("innerHeight", 844);
+    renderPage();
+
+    expect(
+      await screen.findByRole("button", { name: "Open Meeting Chat" }),
+    ).toBeInTheDocument();
+    const region = await screen.findByTestId("note-box-region");
+    expect(region).toContainElement(screen.getByRole("button", { name: "Add note" }));
+    expect(region.className).toMatch(/\bpr-clear-floating-\d/);
+    expect(region.className).toMatch(/\bpb-\d/);
+    expect(clearanceAncestors(region, "--floating-action-inline-clearance")).toHaveLength(1);
   });
 
   // On a phone the speaker panel opens in the tab area, so it has a tab of its
@@ -1255,6 +1382,20 @@ describe("RecordingPage (detail)", () => {
 
     expect(setSideTab).toHaveBeenCalledWith("speakers");
     expect(setSpeakerPanelCollapsed).toHaveBeenCalledWith(false);
+    // The list then takes focus, so the link shows it did something even
+    // where Speakers was already the open tab.
+    expect(setSpeakerReviewPending).toHaveBeenCalledWith(true);
+    expect(setActivePanel).not.toHaveBeenCalledWith("speakers");
+  });
+
+  it("opens the Speakers tab from Analytics' link on a phone", async () => {
+    await openTabs(360);
+
+    fireEvent.click(screen.getByRole("button", { name: "Review speakers" }));
+
+    expect(setActivePanel).toHaveBeenCalledWith("speakers");
+    expect(setSpeakerReviewPending).toHaveBeenCalledWith(true);
+    expect(setSideTab).not.toHaveBeenCalled();
   });
 
   it.each([360, 1440])("matches the real Meeting panels tablist to Depth pane elevation at %i px", async (width) => {
@@ -1380,10 +1521,10 @@ async function openTabs(width: number): Promise<HTMLElement> {
 const tabLabels = (tablist: HTMLElement) =>
   within(tablist).getAllByRole("tab").map((tab) => tab.textContent);
 
-function clearanceAncestors(element: HTMLElement): HTMLElement[] {
+function clearanceAncestors(element: HTMLElement, variable = "--floating-action-clearance"): HTMLElement[] {
   const found: HTMLElement[] = [];
   for (let node: HTMLElement | null = element; node; node = node.parentElement) {
-    if (/\[--floating-action-clearance:/.test(node.className)) found.push(node);
+    if (node.className.includes(`[${variable}:`)) found.push(node);
   }
   return found;
 }

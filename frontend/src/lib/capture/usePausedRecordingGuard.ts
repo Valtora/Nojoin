@@ -13,29 +13,29 @@ export function usePausedRecordingGuard() {
   // The modal stays shut until the recovery pass has run, so an interruption
   // that is about to be cleared automatically never flashes a decision at the
   // user on the way past.
-  const [recovered, setRecovered] = useState(false);
+  const [recoveredId, setRecoveredId] = useState<string | null>(null);
+  const offeredId = pausedRecording?.id ?? null;
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
-      const paused = await refreshPausedRecording().catch(() => null);
-      if (paused) {
-        await discardEmptyInterruptedRecording().catch(() => {});
-      }
+      await refreshPausedRecording().catch(() => null);
+      if (cancelled) return;
+      await discardEmptyInterruptedRecording().catch(() => {});
       if (!cancelled) {
-        setRecovered(true);
+        setRecoveredId(offeredId);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [discardEmptyInterruptedRecording, refreshPausedRecording]);
+  }, [discardEmptyInterruptedRecording, refreshPausedRecording, offeredId]);
 
   return {
     pausedRecording,
-    hasPausedRecording: recovered && Boolean(pausedRecording),
+    hasPausedRecording: Boolean(pausedRecording) && recoveredId === offeredId,
     refreshPausedRecording,
   };
 }

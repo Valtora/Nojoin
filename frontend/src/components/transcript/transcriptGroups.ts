@@ -16,6 +16,10 @@ export interface TranscriptGroup {
   items: IndexedTranscriptSegment[];
 }
 
+/** Old reads and captures with no resume cuts share the initial interval. */
+export const sameCaptureInterval = (left: TranscriptSegment, right: TranscriptSegment): boolean =>
+  (left.capture_interval ?? 0) === (right.capture_interval ?? 0);
+
 /**
  * Separates the line keys the view joins into one string per group (the
  * lines playback is in, the lines revised lately), so a group compares them
@@ -91,7 +95,7 @@ export function buildTranscriptGroups(
       const isTimeOverlap = item.segment.start < currentGroup.end;
       const previous = currentGroup.items[currentGroup.items.length - 1];
 
-      if (!breakAfter.has(previous.index) && isTimeOverlap) {
+      if (!breakAfter.has(previous.index) && isTimeOverlap && sameCaptureInterval(previous.segment, item.segment)) {
         currentGroup.items.push(item);
         currentGroup.end = Math.max(currentGroup.end, item.segment.end);
         involvedSet.forEach((spk) => currentGroup!.involved.add(spk));

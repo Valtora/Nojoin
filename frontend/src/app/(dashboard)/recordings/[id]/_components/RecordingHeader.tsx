@@ -11,6 +11,7 @@ import AudioPlayer from "@/components/AudioPlayer";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
 import FitText from "@/components/ui/FitText";
+import { isImeComposing } from "@/lib/imeComposition";
 import { Recording, RecordingStatus } from "@/types";
 
 interface RecordingHeaderProps {
@@ -72,7 +73,7 @@ export default function RecordingHeader({
   );
 
   return (
-    <header data-ui-fill="card" data-ui="surface" data-ui-surface="pane" className={`sticky top-0 z-[var(--z-sticky)] shrink-0 border-b border-surface-border bg-surface-card ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]" : "space-y-3 p-4 md:p-5"}`}>
+    <header data-ui-fill="card" data-ui="surface" data-ui-surface="pane" className={`sticky top-0 z-[var(--z-sticky)] shrink-0 border-b border-surface-border bg-surface-card ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(var(--page-safe-top,env(safe-area-inset-top))+0.75rem)]" : "space-y-3 p-4 md:p-5"}`}>
       {isMobile ? (
         <>
           {/* Back and actions are inline app-bar controls. A fixed overlay
@@ -125,6 +126,7 @@ export default function RecordingHeader({
                   onChange={(e) => setTitleValue(e.target.value)}
                   onBlur={onTitleSubmit}
                   onKeyDown={(e) => {
+                    if (isImeComposing(e)) return;
                     if (e.key === "Enter") onTitleSubmit();
                     if (e.key === "Escape") {
                       setIsEditingTitle(false);
@@ -149,7 +151,7 @@ export default function RecordingHeader({
           </div>
 
           {isMobileHeaderActionsOpen && (
-            <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float" className="fixed right-4 top-[calc(env(safe-area-inset-top)+4rem)] z-[var(--z-dropdown)] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-surface-float-border bg-surface-float p-2.5 shadow-float">
+            <SurfaceBase data-ui-fill="float" data-ui-border="full" kind="float" className="fixed right-4 top-[calc(var(--page-safe-top,env(safe-area-inset-top))+4rem+var(--capture-bar-h,0px))] z-[var(--z-dropdown)] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-surface-float-border bg-surface-float p-2.5 shadow-float">
               {renderMobileHeaderActions()}
             </SurfaceBase>
           )}
@@ -164,6 +166,7 @@ export default function RecordingHeader({
                 onChange={(e) => setTitleValue(e.target.value)}
                 onBlur={onTitleSubmit}
                 onKeyDown={(e) => {
+                  if (isImeComposing(e)) return;
                   if (e.key === "Enter") onTitleSubmit();
                   if (e.key === "Escape") {
                     setIsEditingTitle(false);

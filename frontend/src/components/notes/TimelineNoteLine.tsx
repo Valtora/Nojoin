@@ -10,7 +10,7 @@ import Button from "../ui/Button";
 import IconButton from "../ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
-import { NoteFile } from "./NoteFiles";
+import { NoteFile, useNoteUpload } from "./NoteFiles";
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
 /** Moving a saved point note between transcript lines. */
@@ -80,6 +80,7 @@ export default function TimelineNoteLine({
   attachment = null,
 }: TimelineNoteLineProps) {
   const lineRef = useRef<HTMLDivElement>(null);
+  const { upload } = useNoteUpload(noteId);
   const where = placementLabel?.toLowerCase() ?? `at ${timeLabel}`;
   const name = `${where}, “${noteSnippet(body)}”`;
   return (
@@ -143,7 +144,7 @@ export default function TimelineNoteLine({
           <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
             {body}
           </p>
-          <NoteFile noteId={noteId} attachment={attachment} />
+          {attachment || upload ? <NoteFile noteId={noteId} attachment={attachment} /> : null}
           {move?.refusal ? (
             <p data-testid="timeline-note-move-refused" className="mt-1 text-xs text-status-danger-fg">
               {move.refusal}

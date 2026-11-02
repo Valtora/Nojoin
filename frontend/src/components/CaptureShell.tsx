@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { usePausedRecordingGuard } from "@/lib/capture/usePausedRecordingGuard";
@@ -10,6 +10,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 
 import ResumeRecordingModal from "./ResumeRecordingModal";
 import SessionSignInDialog from "./SessionSignInDialog";
+import { useResumeRecoveryOffer } from "./useResumeRecoveryOffer";
 
 interface CaptureShellProps {
   children: React.ReactNode;
@@ -17,14 +18,23 @@ interface CaptureShellProps {
 
 export default function CaptureShell({ children }: CaptureShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { pausedRecording, hasPausedRecording } = usePausedRecordingGuard();
-  const { cancel, controller, resume, runtimeActive, stop } = useCapture();
+  const {
+    cancel, controller, dismissRecoveryOffer, runtimeActive, status, stop, support,
+  } = useCapture();
+  const resumeOffer = useResumeRecoveryOffer();
   const [busyAction, setBusyAction] = useState<
     "resume" | "cancel" | "stop" | null
   >(null);
   const { addNotification } = useNotificationStore();
 
-  const modalOpen = hasPausedRecording && !runtimeActive;
+  // Not over a Resume or Start this tab is already running from elsewhere on
+  // the page, such as the recording's own Resume: the choice is made, and the
+  // dialog would ask for it again over the share picker (#887). Its own
+  // Resume keeps it open, showing the wait.
+  const ownCaptureStarting = status === "starting" && busyAction === null;
+  const modalOpen = hasPausedRecording && !runtimeActive && !ownCaptureStarting;
 
   const handleResume = async () => {
     if (!pausedRecording) {
@@ -33,19 +43,7 @@ export default function CaptureShell({ children }: CaptureShellProps) {
 
     setBusyAction("resume");
     try {
-      await resume(pausedRecording.id);
-      router.push(`/recordings/${pausedRecording.id}`);
-
-        } catch (resumeError: unknown) {
-      if (!controller.getState().error) {
-        addNotification({
-          type: "error",
-          message: getErrorMessage(
-            resumeError,
-            "Failed to resume the paused recording.",
-          ),
-        });
-      }
+      await resumeOffer(pausedRecording.id);
     } finally {
       setBusyAction(null);
     }
@@ -91,13 +89,17 @@ export default function CaptureShell({ children }: CaptureShellProps) {
       router.push("/recordings");
 
         } catch (cancelError: unknown) {
-      addNotification({
-        type: "error",
-        message: getErrorMessage(
-          cancelError,
-          "Failed to discard the paused recording.",
-        ),
-      });
+      // A refusal the controller already reports, such as a capture carried
+      // on elsewhere since the dialog opened, is not reported twice.
+      if (!controller.getState().error) {
+        addNotification({
+          type: "error",
+          message: getErrorMessage(
+            cancelError,
+            "Failed to discard the paused recording.",
+          ),
+        });
+      }
     } finally {
       setBusyAction(null);
     }
@@ -109,10 +111,13 @@ export default function CaptureShell({ children }: CaptureShellProps) {
       <ResumeRecordingModal
         isOpen={modalOpen}
         recording={pausedRecording}
+        onItsPage={pausedRecording !== null && pathname === `/recordings/${pausedRecording.id}`}
         busyAction={busyAction}
+        support={support}
         onResume={handleResume}
         onCancel={handleCancel}
         onStop={handleStop}
+        onDismiss={dismissRecoveryOffer}
       />
       <SessionSignInDialog />
     </>

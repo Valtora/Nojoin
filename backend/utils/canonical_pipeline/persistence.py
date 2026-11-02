@@ -1,5 +1,7 @@
 """Canonical utterance replacement and compatibility segment writes."""
 
+from collections.abc import Collection
+
 from backend.utils.transcript_change import change_sequence_bump
 
 from .assignment import _resolve_recording_speaker_for_value, _state_for_segment
@@ -243,7 +245,16 @@ def apply_compatibility_segment_replace(
     *,
     recording_id: int,
     segments: Sequence[dict[str, Any]],
+    text_edit_ids: Collection[str] = (),
 ) -> list[TranscriptUtterance]:
+    """Write a whole-transcript segment list onto the canonical lines.
+
+    A line whose text a person locked keeps that text, so a stale snapshot,
+    such as the one a speaker change sends back, never undoes an edit.
+    ``text_edit_ids`` names the lines whose incoming text is the person's own
+    edit, such as a find and replace (issue #842): their text goes through
+    the lock, and they stay locked against later passes.
+    """
     transcript = _load_transcript(session, recording_id, lock=True)
     if transcript is None:
         return []
@@ -274,10 +285,13 @@ def apply_compatibility_segment_replace(
             }
             old_text_locked = bool(utterance.manual_text_locked)
             old_speaker_locked = bool(utterance.manual_speaker_locked)
+            keeps_locked_text = (
+                old_text_locked and utterance.public_id not in text_edit_ids
+            )
             effective_segment = dict(segment)
             effective_segment["text"] = (
                 utterance.text
-                if old_text_locked
+                if keeps_locked_text
                 else str(segment.get("text", "") or "")
             )
             effective_segment["text_manually_edited"] = old_text_locked or bool(
@@ -285,7 +299,7 @@ def apply_compatibility_segment_replace(
             )
             effective_segment["text_edit_source"] = (
                 utterance.text_last_edit_source
-                if old_text_locked
+                if keeps_locked_text
                 else segment.get("text_edit_source")
             )
 

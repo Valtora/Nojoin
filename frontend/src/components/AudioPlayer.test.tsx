@@ -72,3 +72,80 @@ describe("a recording whose audio fails to load", () => {
     expect(screen.queryByText(/imported with no audio/)).not.toBeInTheDocument();
   });
 });
+
+describe("the sample meeting", () => {
+  it("says it has no audio, not that it was imported without any", () => {
+    renderPlayer(recordingWith({ name: "Welcome to Nojoin" }));
+
+    expect(screen.getByText("This sample meeting has no audio")).toBeInTheDocument();
+    expect(screen.queryByText(/imported/)).not.toBeInTheDocument();
+  });
+});
+
+describe("accessible names (issue #840)", () => {
+  const renderPlayable = (compact: boolean) => {
+    const audioRef = { current: null as HTMLAudioElement | null };
+    const view = renderWithProviders(
+      <AudioPlayer
+        recording={recordingWith({ has_proxy: true, has_audio: true })}
+        audioRef={audioRef}
+        currentTime={0}
+        onTimeUpdate={vi.fn()}
+        compact={compact}
+      />,
+    );
+    return { ...view, audioRef };
+  };
+
+  it.each([false, true])("names every control of a playable player (compact: %s)", (compact) => {
+    const { audioRef, rerender } = renderPlayable(compact);
+
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mute" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Playback speed 1x" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Seek" })).toHaveAttribute("aria-valuetext", "00:00 of 01:00");
+    for (const button of screen.getAllByRole("button")) {
+      expect(button).toHaveAccessibleName();
+    }
+
+    fireEvent.play(audioRef.current as HTMLAudioElement);
+    rerender(
+      <AudioPlayer
+        recording={recordingWith({ has_proxy: true, has_audio: true })}
+        audioRef={audioRef}
+        currentTime={0}
+        onTimeUpdate={vi.fn()}
+        compact={compact}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+    expect(screen.getByRole("button", { name: "Unmute" })).toBeInTheDocument();
+  });
+
+  it("names the full player's volume slider", () => {
+    renderPlayable(false);
+
+    expect(screen.getByRole("slider", { name: "Volume" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["the sample meeting", { name: "Welcome to Nojoin" }],
+    ["a recording being processed", { has_audio: true }],
+    ["a recording without audio", { has_audio: false }],
+  ])("keeps the mock controls of %s out of reach", (_, overrides) => {
+    for (const compact of [false, true]) {
+      const { unmount } = renderWithProviders(
+        <AudioPlayer
+          recording={recordingWith(overrides)}
+          audioRef={{ current: null }}
+          currentTime={0}
+          onTimeUpdate={vi.fn()}
+          compact={compact}
+        />,
+      );
+      expect(screen.queryAllByRole("button")).toHaveLength(0);
+      unmount();
+    }
+  });
+});

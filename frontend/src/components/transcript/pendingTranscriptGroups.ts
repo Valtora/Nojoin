@@ -1,5 +1,5 @@
 import type { TranscriptSegment } from "@/types";
-import type { IndexedTranscriptSegment, TranscriptGroup } from "./transcriptGroups";
+import { sameCaptureInterval, type IndexedTranscriptSegment, type TranscriptGroup } from "./transcriptGroups";
 
 /** Only explicit absent-coverage evidence permits a display-only continuation. */
 export const isDiarisationPending = (segment: TranscriptSegment) =>
@@ -21,6 +21,7 @@ export function appendPendingTranscriptGroups(
     const first = group.items[0];
     const last = previous?.items[previous.items.length - 1];
     const canAppend = previous && last && group.items.length === 1 && isDiarisationPending(first.segment) &&
+      sameCaptureInterval(last.segment, first.segment) &&
       (last.segment.source_channel ?? null) === (first.segment.source_channel ?? null) &&
       !noteBreaks.has(last.index) && !blockedIds.has(first.segmentId);
     if (canAppend) {
@@ -38,6 +39,7 @@ export function pendingTranscriptRuns(items: readonly IndexedTranscriptSegment[]
     const previous = runs[runs.length - 1];
     const last = previous?.[previous.length - 1];
     if (last && isDiarisationPending(item.segment) &&
+      sameCaptureInterval(last.segment, item.segment) &&
       (last.segment.source_channel ?? null) === (item.segment.source_channel ?? null)) previous.push(item);
     else runs.push([item]);
   }
