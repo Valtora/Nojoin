@@ -173,7 +173,7 @@ Changing the transcription model downloads nothing by itself. **Settings > Trans
 
 After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation.
 
-`worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Its schedule file is `data/celerybeat-schedule`, so the cadence survives restarts. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
+`worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Beat records each job's last run in `data/celerybeat-schedule.json`, the `-s` path plus `.json`, and replaces the whole file after every task it sends, so the cadence survives restarts, even when Docker has to kill a busy `worker-io`. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
 
 ### Forced Aligner Assets
 
@@ -646,6 +646,10 @@ If your `docker-compose.yml` has its own `build:` directives, run `docker compos
 ### Version Notes
 
 These run on the first start after the upgrade and need no action unless a note says so.
+
+#### Upgrading From Before 3.1.0
+
+- **Beat schedule kept in a JSON file (#917).** Celery Beat on `worker-io` now keeps its schedule in `data/celerybeat-schedule.json`. It used to be a Berkeley DB file, `data/celerybeat-schedule.db`, which a `worker-io` killed at the end of `docker stop`'s grace period could leave unreadable; beat then deleted it and every periodic job waited a full interval again. The first start carries each job's last run over from the old file and deletes it. If the old file is unreadable, every interval starts again this once, and the `worker-io` log says so. The `-s /app/data/celerybeat-schedule` argument in `docker-compose.yml` stays as it is. A downgrade ignores the JSON file and starts a new schedule.
 
 #### Upgrading From Before 3.0.0
 
