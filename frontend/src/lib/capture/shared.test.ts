@@ -85,6 +85,7 @@ describe("noise suppression migration for settings saved before it defaulted off
     const settings = readCaptureSettings();
 
     expect(settings).toEqual({
+      startMode: "shared_audio",
       microphoneDeviceId: "mic-1",
       releaseMicrophoneOnPause: false,
       microphoneGain: 1.4,
@@ -127,6 +128,7 @@ describe("noise suppression migration for settings saved before it defaulted off
 
   it("gives the defaults and saves nothing when nothing was saved", () => {
     expect(readCaptureSettings()).toEqual({
+      startMode: "shared_audio",
       microphoneDeviceId: null,
       releaseMicrophoneOnPause: false,
       microphoneGain: 1,

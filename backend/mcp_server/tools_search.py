@@ -7,6 +7,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
+from backend.api.params import RowId
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import _parse_iso_datetime, mcp_tool
 from backend.utils.live_speaker_labels import render_indexed_transcript_for_llm
@@ -22,7 +23,7 @@ async def search_context(  # noqa: PLR0913 - each parameter is a documented tool
     limit: int = 10,
     sources: Literal["all", "transcripts", "documents"] = "all",
     recording_ids: Optional[list[str]] = None,
-    tag_ids: Optional[list[int]] = None,
+    tag_ids: Optional[list[RowId]] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> dict[str, Any]:
