@@ -68,7 +68,8 @@ describe("Tasks tag filters", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear All" }));
     await screen.findByRole("heading", { name: "Unlabelled task" });
     expect(useNavigationStore.getState().selectedTagIds).toEqual([]);
-    expect(api.getRecordings).toHaveBeenCalledTimes(1);
+    // The link picker loads recordings only when opened, so filtering never does.
+    expect(api.getRecordings).not.toHaveBeenCalled();
   });
 
   it("retains the filter across status views and explains empty results", async () => {
