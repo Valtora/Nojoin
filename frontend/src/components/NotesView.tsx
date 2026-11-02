@@ -5,6 +5,7 @@ import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useState, useEffect, useRef } from "react";
 
 import { DEMO_MODE } from "@/lib/demo";
+import { isImeComposing } from "@/lib/imeComposition";
 import {
   Search,
   ArrowRightLeft,
@@ -567,7 +568,7 @@ export default function NotesView({
                 value={findText}
                 onChange={(e) => setFindText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && !isImeComposing(e)) {
                     if (e.shiftKey) prevMatch();
                     else nextMatch();
                   }

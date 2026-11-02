@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { getCliOAuthStatus } from "@/lib/api/cliOauth";
 import { AiAvailability, resolveAiAvailability } from "@/lib/aiAvailability";
+import { isImeComposing } from "@/lib/imeComposition";
 import { isAdministrator } from "@/lib/roles";
 import { ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
 import Link from "next/link";
@@ -450,7 +451,7 @@ export default function ChatPanel({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
                 e.preventDefault();
                 handleSend();
               }

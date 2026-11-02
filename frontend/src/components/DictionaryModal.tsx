@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useHydrated } from "@/lib/useHydrated";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
+import { isImeComposing } from "@/lib/imeComposition";
 import { Search, Plus, Pencil, Trash2, BookOpen } from "lucide-react";
 import { spellCheckService } from "@/lib/spellCheckService";
 
@@ -141,6 +142,7 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
               value={newWord}
               onChange={(e) => setNewWord(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === "Enter") handleAdd();
                 if (e.key === "Escape") { setIsAdding(false); setNewWord(""); }
               }}
@@ -190,6 +192,7 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
                       onKeyDown={(e) => {
+                        if (isImeComposing(e)) return;
                         if (e.key === "Enter") handleEditSave();
                         if (e.key === "Escape") setEditingWord(null);
                       }}

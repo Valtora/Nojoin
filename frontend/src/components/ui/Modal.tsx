@@ -5,6 +5,7 @@ import { Dialog, Transition, TransitionChild } from "@headlessui/react";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { isImeComposing } from "@/lib/imeComposition";
 import IconButton from "./IconButton";
 
 export type ModalSize = "sm" | "md" | "lg" | "xl";
@@ -105,6 +106,12 @@ export default function Modal({
                   SIZES[size],
                   className,
                 )}
+                // Headless UI closes the dialog on any Escape that reaches the
+                // window. One that cancels an input method's composition in a
+                // field here is the field's, and closing would lose what was typed.
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && isImeComposing(event)) event.stopPropagation();
+                }}
               >
                 {(title || !hideCloseButton) && (
                   <div data-ui="modal-header" className="flex items-start justify-between gap-4 border-b border-surface-divider px-5 py-4">

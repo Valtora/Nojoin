@@ -12,6 +12,7 @@ import {
   Undo2,
 } from "lucide-react";
 
+import { isImeComposing } from "@/lib/imeComposition";
 import Button from "../ui/Button";
 import IconButton from "../ui/IconButton";
 import { TOUCH_TARGET_HEIGHT, TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
@@ -242,7 +243,7 @@ export default function TranscriptToolbar({
                 value={findText}
                 onChange={(e) => setFindText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && !isImeComposing(e)) {
                     if (e.shiftKey) prevMatch();
                     else nextMatch();
                   }

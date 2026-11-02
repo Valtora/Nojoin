@@ -7,6 +7,7 @@ import {
   updateUserTask,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
+import { isImeComposing } from "@/lib/imeComposition";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import { UserTask } from "@/types";
@@ -243,6 +244,10 @@ export function useDashboardTasks() {
   const handleEditingKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>,
   ) => {
+    if (isImeComposing(event)) {
+      return;
+    }
+
     if (event.key === "Enter") {
       event.preventDefault();
       void commitEditingTask();
@@ -315,7 +320,7 @@ export function useDashboardTasks() {
   const handleComposerKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>,
   ) => {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && !isImeComposing(event)) {
       event.preventDefault();
       handleCloseComposer();
     }
