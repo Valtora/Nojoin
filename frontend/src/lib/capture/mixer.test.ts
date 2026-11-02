@@ -2,8 +2,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { AUDIO_START_TIMEOUT_MS } from "./audioStart";
 import {
-  AUDIO_START_TIMEOUT_MS,
   computeAutomaticGainTarget,
   createCaptureMixer as createRealCaptureMixer,
   mixToMonoAmplitude,
