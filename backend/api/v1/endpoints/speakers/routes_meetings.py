@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import RowId
 from backend.models.speaker import GlobalSpeaker
 from backend.models.speaker_public import PersonMeetingsRead
 from backend.models.user import User
@@ -16,7 +17,7 @@ from .router import router
 
 @router.get("/{speaker_id}/meetings", response_model=PersonMeetingsRead)
 async def get_person_meetings(
-    speaker_id: int,
+    speaker_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PersonMeetingsRead:
