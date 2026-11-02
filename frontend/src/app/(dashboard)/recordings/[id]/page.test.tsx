@@ -433,7 +433,8 @@ describe("RecordingPage (detail)", () => {
     getSettings.mockResolvedValue({ enable_meeting_edge: false, meeting_edge_context_level: 2 });
     const tablist = await openTabs(360);
     await waitFor(() => expect(tabLabels(tablist)).not.toContain("Meeting Edge"));
-    expect(setActivePanel).toHaveBeenCalledWith("transcript");
+    // An effect falls back to the transcript, and can run after the tab goes.
+    await waitFor(() => expect(setActivePanel).toHaveBeenCalledWith("transcript"));
   });
 
   it("offers Meeting Edge only once settings say it is on, keeping a remembered tab", async () => {
