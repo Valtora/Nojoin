@@ -285,6 +285,10 @@ celery_app.conf.update(
     # as worker-parse does because one document can be arbitrarily large. Beat
     # is forked by the main process, not the pool, so the schedule is unaffected.
     worker_max_tasks_per_child=500,
+    # Beat's schedule in a JSON file replaced atomically, in place of Celery's
+    # shelve: the worker image's dbm is Berkeley DB, whose file a killed beat
+    # leaves unreadable, and Celery then resets every interval (#917).
+    beat_scheduler="backend.utils.beat_schedule_store:JsonFileScheduler",
     beat_schedule={
         "cleanup-temp-recordings-every-24h": {
             "task": "backend.worker.tasks.cleanup_temp_recordings",
