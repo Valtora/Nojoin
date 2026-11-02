@@ -28,11 +28,15 @@ const meter = vi.hoisted(() => {
   };
 });
 
+// A shared tab or screen has a picture track; a microphone-only capture has none.
+const sharedPicture = vi.hoisted(() => ({ track: {} as MediaStreamTrack | null }));
+
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     controller: meter.controller,
     runtimeActive: true,
     support: { supported: true, mode: "shared_audio" },
+    displayVideoTrack: () => sharedPicture.track,
   }),
 }));
 
@@ -52,6 +56,7 @@ function renderWaveform(liveTextMark: string | null = null) {
 
 afterEach(() => {
   vi.useRealTimers();
+  sharedPicture.track = {} as MediaStreamTrack;
 });
 
 describe("LiveAudioWaveform", () => {
@@ -100,5 +105,19 @@ describe("LiveAudioWaveform", () => {
     vi.setSystemTime(new Date("2026-10-29T10:00:30Z"));
     act(() => meter.sample(level(3)));
     expect(screen.queryByText("Audio has been quiet for a bit")).toBeNull();
+  });
+
+  it("gives microphone advice for a desktop capture with no shared picture", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+    sharedPicture.track = null;
+    renderWaveform();
+
+    vi.setSystemTime(new Date("2026-01-01T12:00:21Z"));
+    act(() => meter.sample(level(1)));
+
+    expect(screen.getByText("Audio has been quiet for a bit")).toBeTruthy();
+    expect(screen.getByText(/keep the microphone near the speaker/)).toBeTruthy();
+    expect(screen.queryByText(/browser share picker/)).toBeNull();
   });
 });

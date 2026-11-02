@@ -78,6 +78,7 @@ import {
   DEFAULT_CAPTURE_LEVELS,
   type CaptureCoverageCause,
   type CaptureCoverageWarning,
+  type CaptureMode,
   type CaptureSettings,
   type CaptureState,
   type CaptureStopStage,
@@ -397,21 +398,16 @@ const formatCaptureError = (error: unknown) => {
   return error ? String(error) : "The browser capture flow failed unexpectedly.";
 };
 
-const formatUnsupportedMessage = (reason: CaptureState["support"]["reason"]) => {
-  switch (reason) {
-    case "firefox":
-      return "Recording capture is not supported in Firefox. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.";
-    case "safari":
-      return "Recording capture is not supported in Safari. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.";
-    case "mobile":
-      return "Recording capture is not supported on mobile browsers.";
-    default:
-      return "This browser does not support the capture APIs required for recording.";
-  }
-};
+const UNSUPPORTED_MESSAGE =
+  "This browser does not support the capture APIs required for recording.";
 
-const resolveCaptureMode = (support: CaptureState["support"]) =>
-  support.mode ?? "shared_audio";
+// A browser that cannot share audio records its microphone; desktop Chromium
+// uses the source chosen at Start.
+const resolveCaptureMode = (
+  support: CaptureState["support"],
+  settings: CaptureSettings,
+): CaptureMode =>
+  support.mode === "microphone_only" ? "microphone_only" : settings.startMode;
 
 export class CaptureController {
   private state: CaptureState;
@@ -726,9 +722,10 @@ export class CaptureController {
       // state error before the caller's catch looks for it: the caller alone
       // reports this one.
       this.setState({ status: "error" });
-      throw new Error(formatUnsupportedMessage(support.reason));
+      throw new Error(UNSUPPORTED_MESSAGE);
     }
 
+    const mode = resolveCaptureMode(support, this.state.settings);
     this.setState({ status: "starting", error: null });
 
     let initResponse;
@@ -773,7 +770,7 @@ export class CaptureController {
     let sources: PickedCaptureSources | null = null;
     try {
       sources = await pickCaptureSource({
-        mode: resolveCaptureMode(support),
+        mode,
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });
@@ -949,7 +946,7 @@ export class CaptureController {
       // state error before the caller's catch looks for it: the caller alone
       // reports this one.
       this.setState({ status: "error" });
-      throw new Error(formatUnsupportedMessage(support.reason));
+      throw new Error(UNSUPPORTED_MESSAGE);
     }
 
     this.setState({
@@ -967,7 +964,7 @@ export class CaptureController {
 
     try {
       sources = await pickCaptureSource({
-        mode: resolveCaptureMode(support),
+        mode: resolveCaptureMode(support, this.state.settings),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });

@@ -14,6 +14,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import { CaptureNotices } from "./LiveMeetingControls";
+import MeetingCaptureModeSelect from "./MeetingCaptureModeSelect";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
 
@@ -53,6 +54,7 @@ export default function MeetingControls({
     finalizeRetry,
     pausedRecording,
     runtimeActive,
+    settings,
     start,
     status,
     stopStage,
@@ -68,6 +70,7 @@ export default function MeetingControls({
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
   const microphoneOnly = support.supported && support.mode === "microphone_only";
+  const canChooseMode = support.supported && support.mode === "shared_audio";
 
   // Naming the stage keeps a slow stop legible instead of looking hung.
   const stopStageLabel = !stopStage
@@ -103,7 +106,7 @@ export default function MeetingControls({
             buttonMode: "wait",
             buttonDisabled: true,
             buttonTooltip:
-              "Use Chrome on desktop for browser capture, or Chrome on Android/iOS for microphone-only capture.",
+              "Open Nojoin in a current version of Chrome, Edge, Firefox or Safari to record.",
           }
         : hasPausedBlock
           ? pausedRecording && isCaptureInterrupted(pausedRecording)
@@ -157,9 +160,15 @@ export default function MeetingControls({
               buttonMode: "start",
               buttonDisabled: false,
               buttonTooltip: microphoneOnly
-                ? "Start a phone microphone recording."
-                : "Start a new meeting recording.",
+                ? "Start a microphone-only recording."
+                : settings.startMode === "microphone_only"
+                  ? "Start a microphone-only recording without sharing a tab or screen."
+                  : "Start a new meeting recording.",
             };
+
+  const modeSelect = canChooseMode ? (
+    <MeetingCaptureModeSelect disabled={meetingSurfaceState.buttonDisabled} />
+  ) : null;
 
   const sendStart = async () => {
     try {
@@ -222,21 +231,25 @@ export default function MeetingControls({
   if (variant === "rail") {
     if (liveStatus) return liveStatus;
     return (
-      <IconButton
-        size="sm"
-        icon={<Mic aria-hidden="true" />}
-        onClick={handlePrimaryAction}
-        disabled={meetingSurfaceState.buttonDisabled}
-        title={meetingSurfaceState.buttonTooltip}
-        aria-label={meetingSurfaceState.buttonLabel}
-        className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
-      />
+      <div className="flex flex-col items-center gap-1">
+        <IconButton
+          size="sm"
+          icon={<Mic aria-hidden="true" />}
+          onClick={handlePrimaryAction}
+          disabled={meetingSurfaceState.buttonDisabled}
+          title={meetingSurfaceState.buttonTooltip}
+          aria-label={meetingSurfaceState.buttonLabel}
+          className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
+        />
+        {modeSelect}
+      </div>
     );
   }
 
   if (variant === "compact") {
     if (liveStatus) return liveStatus;
     return (
+      <div className="flex items-center gap-2">
       <Button
         variant="primary"
         iconLeft={<Mic aria-hidden="true" className="h-4 w-4 shrink-0" />}
@@ -248,6 +261,8 @@ export default function MeetingControls({
       >
         Start
       </Button>
+      {modeSelect}
+      </div>
     );
   }
 
@@ -261,14 +276,14 @@ export default function MeetingControls({
           </div>
 
           {unsupported ? (
-            <CaptureUnsupportedNotice reason={support.reason} />
+            <CaptureUnsupportedNotice />
           ) : null}
 
           {microphoneOnly ? (
             <div className="rounded-2xl border border-status-info-border bg-status-info-bg px-4 py-3 text-sm text-status-info-fg">
-              <p className="font-medium">Phone microphone recording</p>
+              <p className="font-medium">Microphone-only recording</p>
               <p className="mt-1 leading-5 opacity-90">
-                Mobile Chrome records the phone microphone only. Keep this tab open and the phone awake.
+                This browser records your microphone only, not audio from other tabs or apps. Keep this tab open and the device awake.
               </p>
             </div>
           ) : null}
@@ -296,6 +311,11 @@ export default function MeetingControls({
                 <Mic className="h-[1.15em] w-[1.15em] shrink-0" />
                 {meetingSurfaceState.buttonLabel}
               </ButtonBase>
+              {canChooseMode ? (
+                <div className="mt-3">
+                  <MeetingCaptureModeSelect labelled disabled={meetingSurfaceState.buttonDisabled} />
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="space-y-3">
@@ -313,13 +333,13 @@ export default function MeetingControls({
       <div className="w-full">
         {unsupported ? (
           <div className="mb-2">
-            <CaptureUnsupportedNotice reason={support.reason} compact />
+            <CaptureUnsupportedNotice compact />
           </div>
         ) : null}
 
         {microphoneOnly ? (
           <div className="mb-2 rounded-lg border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-fg">
-            Phone microphone only. Keep this tab open.
+            Microphone only, not other tabs or apps. Keep this tab open.
           </div>
         ) : null}
 
@@ -332,7 +352,7 @@ export default function MeetingControls({
             <div
               className={
                 meetingSurfaceState.buttonMode === "start"
-                  ? "min-w-fit grow basis-0 whitespace-nowrap"
+                  ? "flex min-w-fit grow basis-0 items-center gap-2 whitespace-nowrap"
                   : "basis-full"
               }
             >
@@ -350,6 +370,7 @@ export default function MeetingControls({
                 <Mic className="h-4 w-4" />
                 {meetingSurfaceState.buttonLabel}
               </ButtonBase>
+              {modeSelect}
             </div>
             {pairedAction ? (
               <div className="flex min-w-fit grow basis-0">{pairedAction}</div>

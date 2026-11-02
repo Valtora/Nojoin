@@ -259,7 +259,9 @@ describe("the recovery dialog in a browser that cannot capture", () => {
 
     const resume = await screen.findByRole("button", { name: "Resume recording" });
     expect(resume).toBeDisabled();
-    expect(screen.getAllByText(/not available in Firefox/)).toHaveLength(1);
+    // Firefox records the microphone, but not without an AudioWorklet, which
+    // this environment lacks.
+    expect(screen.getAllByText(/does not expose the capture APIs/)).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Discard recording" })).toBeEnabled();
     fireEvent.click(resume);
     fireEvent.click(screen.getByRole("button", { name: "Stop and process" }));
