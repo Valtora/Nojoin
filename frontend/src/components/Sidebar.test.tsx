@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   act,
@@ -24,6 +24,7 @@ const getRecording = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTags = vi.fn();
 const getRecordingsCalendar = vi.fn();
+const renameRecording = vi.fn();
 const refreshPausedRecording = async () => null;
 const start = vi.fn();
 
@@ -66,7 +67,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api", () => ({
   getRecordings: (...args: unknown[]) => getRecordings(...args),
-  renameRecording: vi.fn(),
+  renameRecording: (...args: unknown[]) => renameRecording(...args),
   retryProcessing: vi.fn(),
   inferSpeakers: vi.fn(),
   getGlobalSpeakers: (...args: unknown[]) => getGlobalSpeakers(...args),
@@ -127,10 +128,14 @@ vi.mock("@/lib/timezone", async (importOriginal) => {
   };
 });
 
+// One array, as the store keeps: a new one on every render would re-read the
+// list on every render.
+const noTagIds: number[] = [];
+
 vi.mock("@/lib/store", () => ({
   useNavigationStore: () => ({
     currentView,
-    selectedTagIds: [],
+    selectedTagIds: noTagIds,
     toggleTagFilter: vi.fn(),
     clearTagFilters: vi.fn(),
     selectedRecordingIds,
@@ -230,6 +235,7 @@ describe("Sidebar", () => {
 
     getRecordings.mockResolvedValue([recording]);
     getRecording.mockReset();
+    renameRecording.mockReset().mockResolvedValue(undefined);
     getGlobalSpeakers.mockResolvedValue([]);
     getTags.mockResolvedValue([]);
     getRecordingsCalendar.mockResolvedValue({
@@ -431,6 +437,76 @@ describe("Sidebar", () => {
 
     await waitFor(() => {
       expect(getRecordings.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    });
+  });
+
+  it("applies a rename made elsewhere in place, without reading the list again", async () => {
+    renderWithProviders(<Sidebar />);
+
+    await screen.findByRole("heading", { name: "Latest meeting" });
+    const callsAfterMount = getRecordings.mock.calls.length;
+
+    act(() => {
+      fireEvent(window, new CustomEvent("recording-updated", { detail: { id: "rec-1", name: "Renamed on its page" } }));
+    });
+
+    expect(screen.getByRole("heading", { name: "Renamed on its page" })).toBeInTheDocument();
+    await act(async () => {});
+    expect(getRecordings).toHaveBeenCalledTimes(callsAfterMount);
+  });
+
+  describe("renaming from the row menu", () => {
+    let announced: unknown[] = [];
+    const listen = (event: Event) => announced.push((event as CustomEvent).detail);
+    beforeEach(() => {
+      announced = [];
+      window.addEventListener("recording-updated", listen);
+    });
+    afterEach(() => {
+      window.removeEventListener("recording-updated", listen);
+      vi.restoreAllMocks();
+    });
+
+    const renameTo = async (name: string) => {
+      fireEvent.contextMenu(await screen.findByRole("heading", { name: "Latest meeting" }));
+      act(() => lastMenuItems.find((item) => item.label === "Rename")?.onClick?.());
+      const input = screen.getByDisplayValue("Latest meeting");
+      fireEvent.change(input, { target: { value: name } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    };
+
+    it("shows the name at once and tells the open recording", async () => {
+      let finishRename!: () => void;
+      renameRecording.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRename = resolve; }));
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Latest meeting" });
+      const callsAfterMount = getRecordings.mock.calls.length;
+
+      await renameTo("Planning review");
+
+      expect(screen.getByRole("heading", { name: "Planning review" })).toBeInTheDocument();
+      expect(announced).toEqual([{ id: "rec-1", name: "Planning review" }]);
+      await act(async () => finishRename());
+      expect(renameRecording).toHaveBeenCalledExactlyOnceWith("rec-1", "Planning review");
+      expect(getRecordings).toHaveBeenCalledTimes(callsAfterMount);
+    });
+
+    it("puts the old name back everywhere when the save fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      let failRename!: (error: Error) => void;
+      renameRecording.mockImplementationOnce(() => new Promise<void>((_, reject) => { failRename = reject; }));
+      renderWithProviders(<Sidebar />);
+
+      await renameTo("Planning review");
+      expect(screen.getByRole("heading", { name: "Planning review" })).toBeInTheDocument();
+      await act(async () => failRename(new Error("offline")));
+
+      expect(await screen.findByRole("heading", { name: "Latest meeting" })).toBeInTheDocument();
+      expect(announced).toEqual([
+        { id: "rec-1", name: "Planning review" },
+        { id: "rec-1", name: "Latest meeting" },
+      ]);
+      expect(addNotification).toHaveBeenCalledWith({ type: "error", message: "Failed to rename recording." });
     });
   });
 

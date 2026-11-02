@@ -48,7 +48,13 @@ import {
   permanentDeleteConfirmation,
   type ListActionId,
 } from "./recordings/recordingListActions";
-import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
+import {
+  RECORDING_UPDATED_EVENT,
+  dispatchRecordingRenamed,
+  recordingRenameOf,
+  subscribeRecordingRemoved,
+  withRecordingName,
+} from "@/lib/recordingEvents";
 import MonthCalendar from "./MonthCalendar";
 import { formatTimeZoneDay, formatTimeZoneLocale, localDayRangeToUtc } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
@@ -406,13 +412,20 @@ export default function Sidebar() {
     getGlobalSpeakers().then(setGlobalSpeakers).catch(console.error);
   }, []);
 
-  // Listen for recording-updated events
+  // A rename is applied in place. Anything else, or a tag change, re-reads the list.
   useEffect(() => {
-    const handleUpdate = () => fetchRecordings();
-    window.addEventListener("recording-updated", handleUpdate);
+    const handleUpdate = (event: Event) => {
+      const rename = recordingRenameOf(event);
+      if (rename) {
+        setRecordings((prev) => withRecordingName(prev, rename));
+        return;
+      }
+      void fetchRecordings();
+    };
+    window.addEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
     window.addEventListener("tags-updated", handleUpdate);
     return () => {
-      window.removeEventListener("recording-updated", handleUpdate);
+      window.removeEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
       window.removeEventListener("tags-updated", handleUpdate);
     };
   }, [fetchRecordings]);
@@ -624,19 +637,19 @@ export default function Sidebar() {
   const handleRenameSubmit = async (id: RecordingId) => {
     if (!renameValue.trim()) return;
 
-    setRecordings((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, name: renameValue } : r)),
-    );
+    const previousName = recordings.find((r) => r.id === id)?.name;
     setRenamingId(null);
 
-    // Dispatch event for optimistic update elsewhere
-    window.dispatchEvent(
-      new CustomEvent("recording-updated", {
-        detail: { id, name: renameValue },
-      }),
-    );
+    // This list, the open recording and the dashboard take the name now, and
+    // a refusal puts the old one back in each.
+    dispatchRecordingRenamed(id, renameValue);
 
-    await actions.rename(id, renameValue, { onError: fetchRecordings });
+    await actions.rename(id, renameValue, {
+      onError: () => {
+        if (previousName !== undefined) dispatchRecordingRenamed(id, previousName);
+        void fetchRecordings();
+      },
+    });
   };
 
   const handleInferSpeakers = async (id: RecordingId) => {
