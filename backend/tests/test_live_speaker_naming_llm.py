@@ -9,6 +9,7 @@ the LLM backend, Celery dispatch and Redis are replaced.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import pytest
@@ -68,10 +69,14 @@ class FakeLLM:
         self.asks: list[list[str]] = []
         self.dispatched = dispatched
         self.ran = 0
+        # Raised instead of answering, as a provider raises a failed call.
+        self.error: Exception | None = None
 
     def infer_speaker_suggestions(self, transcript: str, **kwargs: Any) -> Any:
         labels = list(kwargs["eligible_labels"])
         self.asks.append(labels)
+        if self.error is not None:
+            raise self.error
         reply = {
             "suggestions": [
                 {
@@ -483,3 +488,53 @@ async def test_an_ask_queued_before_suggestions_were_turned_off_asks_nothing(
 
     assert llm.asks == []
     assert (await _read(client))["live_speaker_suggestions"] == {}
+
+
+async def _say_at(session_maker: Any, start_ms: int, words: str) -> None:
+    await _sql(
+        session_maker,
+        "UPDATE transcript_utterances SET text = :words WHERE start_ms = :start",
+        words=words,
+        start=start_ms,
+    )
+
+
+async def test_a_failed_ask_gives_up_quietly_until_the_next_window(
+    client: AsyncClient,
+    session_maker: Any,
+    llm: FakeLLM,
+    fake_single_flight: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _say_at(session_maker, 9500, "Hello, I'm Alex.")
+    llm.error = RuntimeError(
+        "Ollama API error (speaker suggestions): Read timed out. (read timeout=90)"
+    )
+
+    with caplog.at_level(logging.INFO, logger=live_naming_stage.__name__):
+        await _refresh(session_maker, llm)
+
+    assert llm.asks == [[ONE]]
+    assert [
+        (record.levelname, "timed out" in record.getMessage())
+        for record in caplog.records
+        if record.name == live_naming_stage.__name__
+    ] == [("WARNING", True)]
+    assert f"{KEY_PREFIX}live-naming-ask:1" not in fake_single_flight.keys
+    # The rule's proposal stands.
+    read = await _read(client)
+    assert read["live_speaker_suggestions"] == {ONE: "Alex"}
+    assert read["live_speaker_suggestion_sources"] == {ONE: "heuristic"}
+
+    # No retry within the same window, however many checks run.
+    llm.error = None
+    llm.names = {ONE: "Priya Raman"}
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE]]
+
+    # Another minute of speech is the next window, and it asks again.
+    await _talk_until(session_maker, 90_000)
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE], [ONE]]
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Priya Raman"}

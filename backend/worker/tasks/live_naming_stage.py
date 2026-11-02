@@ -14,7 +14,8 @@ queued and a check already queued does nothing.
 The check runs the self-introduction rule, then queues an AI ask when a label
 is due one (``refresh_live_speaker_suggestions``) and a provider is set up.
 The ask's slot is held until the ask ends, so a second is never queued while
-one is in flight. The model is not told what the rule heard: it gets the
+one is in flight. An ask that times out or fails gives up with a warning; it
+was recorded before the call, so the label's next window asks again. The model is not told what the rule heard: it gets the
 finalisation speaker-suggestion prompt over the due labels' lines and their
 neighbours, and may leave a label out when it is unsure.
 """
@@ -121,13 +122,22 @@ def _ask(session: Any, recording_id: int) -> None:
     if marked is None:
         return
     labels, segments, meeting_context = marked
-    result = _llm_backend_from_config(config).infer_speaker_suggestions(
-        _ask_transcript(segments, labels),
-        timeout=MEETING_EDGE_TIMEOUT_SECONDS,
-        user_notes=user_notes,
-        meeting_context=meeting_context,
-        eligible_labels=labels,
-    )
+    try:
+        result = _llm_backend_from_config(config).infer_speaker_suggestions(
+            _ask_transcript(segments, labels),
+            timeout=MEETING_EDGE_TIMEOUT_SECONDS,
+            user_notes=user_notes,
+            meeting_context=meeting_context,
+            eligible_labels=labels,
+        )
+    except RuntimeError as exc:
+        # Every provider raises a timeout, an HTTP error or an unreadable
+        # answer as a RuntimeError. The ask is already recorded, so the next
+        # window (a newer introduction or another minute of speech) asks again.
+        logger.warning(
+            "Live naming ask for recording %s gave up: %s", recording_id, exc
+        )
+        return
     added = store_live_llm_suggestions(
         session, recording_id, result, provider=config.provider
     )
