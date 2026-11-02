@@ -287,7 +287,15 @@ function sameLineShared(previous: TranscriptGroupProps, next: TranscriptGroupPro
     if (key === "live" && left.live && right.live) {
       const liveKeys = Object.keys(right.live) as (keyof LiveTranscriptPresentation)[];
       return liveKeys.length === Object.keys(left.live).length &&
-        liveKeys.every((liveKey) => Object.is(left.live![liveKey], right.live![liveKey]));
+        liveKeys.every((liveKey) => liveKey === "liveSpeakerSuggestions" || liveKey === "liveSpeakerSuggestionSources"
+          // Only a speaker's latest line offers a proposal, so a proposal
+          // redraws that line's group alone.
+          ? next.group.items.every(({ segmentId }) => {
+            const line = right.liveLines?.get(segmentId);
+            const label = line?.speakersLatestLine ? line.speakerLabel : null;
+            return !label || left.live![liveKey]?.[label] === right.live![liveKey]?.[label];
+          })
+          : Object.is(left.live![liveKey], right.live![liveKey]));
     }
     return Object.is(left[key], right[key]);
   });

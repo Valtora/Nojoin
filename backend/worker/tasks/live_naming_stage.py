@@ -106,6 +106,12 @@ def ask_live_speaker_names_task(self, recording_id: int) -> None:
 
 
 def _ask(session: Any, recording_id: int) -> None:
+    recording = session.get(Recording, recording_id)
+    # The owner may have turned suggestions off since the check queued this.
+    if recording is None or not live_name_suggestions_enabled(
+        owner_settings(session, recording.user_id)
+    ):
+        return
     config = _live_llm_config(session, recording_id)
     if config is None:
         return

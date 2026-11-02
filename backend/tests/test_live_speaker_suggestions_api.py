@@ -12,7 +12,6 @@ from backend.models.transcript import Transcript
 from backend.tests.live_naming_fixtures import ONE, TWO
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
-    RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
     TAGS_SCHEMA,
 )
@@ -207,7 +206,6 @@ async def test_after_stop_the_transcript_read_drops_pending_live_proposals(
         # The further tables the recording detail read joins.
         for schema in (
             DOCUMENTS_SCHEMA,
-            RECORDING_AUDIO_CHUNKS_SCHEMA,
             TAGS_SCHEMA,
             RECORDING_TAGS_SCHEMA,
         ):
@@ -260,4 +258,29 @@ async def test_a_merged_speakers_introduction_names_the_speaker_it_joined(
         for item in await _review(session_maker)
         if item.get("origin") == "live_self_introduction"
     }
-    assert review == {ONE: "superseded", TWO: "accepted"}
+    # The merge moved the proposal onto the label joined; it is the one answered.
+    assert review == {TWO: "accepted"}
+
+
+@pytest.mark.parametrize("joined_has_one", [False, True])
+async def test_a_paused_merge_moves_a_pending_proposal_to_the_label_joined(
+    client: AsyncClient, session_maker: Any, joined_has_one: bool
+) -> None:
+    await _seed_proposals(session_maker)
+    if not joined_has_one:
+        assert (await _dismiss(client, TWO)).status_code == 200
+    async with session_maker() as db:
+        await db.execute(text("UPDATE recordings SET status = 'PAUSED'"))
+        await db.commit()
+
+    merged = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/live/{ONE}/merge",
+        json={"into_label": TWO},
+    )
+    assert merged.status_code == 200, merged.text
+
+    # No naming check runs while paused: the read alone shows the move.
+    read = (await client.get(f"/api/v1/transcripts/{REC}/utterances")).json()
+    assert read["live_speaker_suggestions"] == {
+        TWO: "Blair" if joined_has_one else "Alex"
+    }

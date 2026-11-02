@@ -23,7 +23,6 @@ from backend.models.transcript import Transcript
 from backend.tests.live_naming_fixtures import ONE, TWO
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
-    RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
     TAGS_SCHEMA,
     USERS_SCHEMA,
@@ -375,7 +374,6 @@ async def test_the_finished_transcript_read_leaves_out_ask_records(
         # The further tables the recording detail read joins.
         for schema in (
             DOCUMENTS_SCHEMA,
-            RECORDING_AUDIO_CHUNKS_SCHEMA,
             TAGS_SCHEMA,
             RECORDING_TAGS_SCHEMA,
         ):
@@ -462,4 +460,26 @@ async def test_with_live_suggestions_off_a_check_proposes_and_asks_nothing(
     await _refresh(session_maker, llm)
 
     assert llm.dispatched == []
+    assert (await _read(client))["live_speaker_suggestions"] == {}
+
+
+async def test_an_ask_queued_before_suggestions_were_turned_off_asks_nothing(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    llm.names = {ONE: "Priya Raman"}
+    await _talk_until(session_maker, 64_000)
+    await _run_task(session_maker, live_naming_stage.refresh_live_speaker_names_task)
+    assert [name for name, _, _ in llm.dispatched] == [
+        live_naming_stage.LIVE_NAMING_ASK_TASK
+    ]
+
+    await _sql(
+        session_maker,
+        "UPDATE users SET settings = :settings",
+        settings=json.dumps({**AI_SETTINGS, "suggest_live_speaker_names": False}),
+    )
+    await _run_task(session_maker, live_naming_stage.ask_live_speaker_names_task)
+
+    assert llm.asks == []
     assert (await _read(client))["live_speaker_suggestions"] == {}

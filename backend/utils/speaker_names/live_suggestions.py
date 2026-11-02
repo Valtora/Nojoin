@@ -159,6 +159,31 @@ def _pending_live_entries(
     }
 
 
+def follow_live_merge(transcript: Transcript, label: str, into: str) -> None:
+    """A merged label's pending proposal moves to the label it joined.
+
+    The live read shows a group under the label it joined, so a proposal left
+    on the merged label would vanish until the next naming check, and a
+    paused capture runs none. One the joined label already has stands.
+    """
+    pending = _pending_live_entries(transcript)
+    if label not in pending:
+        return
+    if into in pending:
+        resolve_pending_transcript_speaker_suggestion(
+            transcript,
+            diarization_label=label,
+            resolution=SPEAKER_SUGGESTION_STATUS_SUPERSEDED,
+            reason="live_speaker_merged",
+        )
+        return
+    moved = pending[label]
+    transcript.speaker_name_suggestions = [
+        {**item, "diarization_label": into} if item == moved else item
+        for item in load_transcript_speaker_suggestions(transcript)
+    ]
+
+
 def _retire_stale_proposals(
     transcript: Transcript,
     suggestions: list[dict[str, Any]],

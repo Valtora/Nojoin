@@ -152,3 +152,24 @@ it("changing the last live line executes only the overlap indicators whose overl
     expect(screen.getAllByRole("button", { name: "Overlap" })).toHaveLength(42);
   } finally { await counter.stop(); }
 });
+
+it("a new live name proposal executes only its speaker's latest line", async () => {
+  const counter = await renderCounter();
+  try {
+    const live = segments.map((segment, i) => ({
+      ...segment, provisional: true, speaker: i % 2 ? "LIVE_PROVISIONAL_2" : "LIVE_PROVISIONAL_1",
+    }));
+    const props = viewProps(live);
+    const handlers = { onRenameLiveSpeaker: vi.fn(), onDismissLiveSpeakerSuggestion: vi.fn() };
+    const { rerender } = render(<TranscriptView {...props} live={{ hasLoaded: true, ...handlers,
+      liveSpeakerSuggestions: {}, liveSpeakerSuggestionSources: {} }} />);
+    await counter.take();
+
+    rerender(<TranscriptView {...props} live={{ hasLoaded: true, ...handlers,
+      liveSpeakerSuggestions: { LIVE_PROVISIONAL_1: "Alex" },
+      liveSpeakerSuggestionSources: { LIVE_PROVISIONAL_1: "heuristic" } }} />);
+    const proposed = await counter.take();
+    expect(proposed("components/transcript/TranscriptLine.tsx", "TranscriptLine")).toBe(1);
+    expect(screen.getAllByText("Alex?")).toHaveLength(1);
+  } finally { await counter.stop(); }
+});

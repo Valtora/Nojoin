@@ -48,7 +48,10 @@ from backend.utils.speaker_names.live import (
     record_live_speaker_merge,
     record_live_speaker_name,
 )
-from backend.utils.speaker_names.live_suggestions import live_speaker_suggestions
+from backend.utils.speaker_names.live_suggestions import (
+    follow_live_merge,
+    live_speaker_suggestions,
+)
 from backend.utils.transcript_settling import (
     load_capture_publication,
     publication_is_current,
@@ -248,6 +251,12 @@ async def merge_live_speaker(
         )
         if event is None:
             return LIVE_SPEAKER_NOT_FOUND_DETAIL
+        follow_live_merge(
+            transcript,
+            str(event.anchor_label),
+            str((event.evidence or {}).get("into_label")),
+        )
+        sync_session.add(transcript)
         metric = {
             "event_id": event.id,
             "label": event.anchor_label,
