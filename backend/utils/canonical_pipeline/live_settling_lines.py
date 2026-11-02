@@ -28,6 +28,7 @@ class Partition:
     boundary_locked: bool = False
     closed_at_ms: int | None = None
     diarisation_pending: bool = False
+    capture_interval: int | None = None
 
 
 @dataclass(frozen=True)

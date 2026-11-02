@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -191,7 +192,28 @@ def test_any_combination_of_sections_comes_back_in_the_fixed_order(api) -> None:
     body = response.text
     assert body.index("MEETING NOTES") < body.index("TRANSCRIPT")
     assert "[00:00] Peter: Let us begin." in body
-    assert 'FullExport.txt"' in response.headers["content-disposition"]
+    assert 'NotesAndTranscript.txt"' in response.headers["content-disposition"]
+
+
+def test_a_file_is_named_for_its_sections_and_dated_in_the_readers_zone() -> None:
+    # 20:30 UTC on 31 October is already 1 November in Tokyo.
+    recording = Recording(
+        name="Weekly Sync",
+        audio_path="/tmp/weekly-sync.wav",
+        created_at=datetime(2026, 10, 31, 20, 30),
+    )
+
+    def name(sections: tuple[str, ...], zone: str = "UTC") -> str:
+        return routes_export._filename(recording, sections, "pdf", zone)
+
+    assert name(("notes",)) == "20261031_Weekly Sync_Notes.pdf"
+    assert name(("analytics", "transcript")) == (
+        "20261031_Weekly Sync_AnalyticsAndTranscript.pdf"
+    )
+    assert name(("notes", "analytics", "transcript")) == (
+        "20261031_Weekly Sync_FullExport.pdf"
+    )
+    assert name(("transcript",), "Asia/Tokyo") == "20261101_Weekly Sync_Transcript.pdf"
 
 
 def test_the_legacy_content_type_still_works(api) -> None:

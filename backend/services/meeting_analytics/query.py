@@ -127,7 +127,9 @@ def _describe_unlisted_key(
         return {
             "speaker_key": speaker_key,
             "public_id": None,
-            "name": live_name or live_speaker_display_name(label) or label,
+            "name": live_name
+            or live_speaker_display_name(label)
+            or ("Unattributed" if label == UNKNOWN_SPEAKER else label),
             "diarization_label": label,
             "color": None,
             "global_speaker_id": None,

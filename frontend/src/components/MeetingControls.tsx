@@ -7,13 +7,14 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
-import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
+import { isCaptureInterrupted } from "@/lib/capture/recovery";
 import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { RecordingStatus } from "@/types";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
-import LiveMeetingControls from "./LiveMeetingControls";
+import { CaptureNotices } from "./LiveMeetingControls";
+import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
 
 type MeetingControlsProps =
@@ -22,13 +23,13 @@ type MeetingControlsProps =
       variant?: "sidebar";
       /**
        * A second "add a recording" action, laid out beside Start Meeting and
-       * under the live controls while a meeting runs.
+       * under the capture's status while a meeting runs.
        */
       pairedAction?: ReactNode;
     }
   | {
       onMeetingEnd?: () => void;
-      variant: "dashboard" | "rail";
+      variant: "dashboard" | "rail" | "compact";
       pairedAction?: never;
     };
 
@@ -56,14 +57,14 @@ export default function MeetingControls({
     status,
     stopStage,
     support,
-    uploadQueue,
   } = useCapture();
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
 
   const { addNotification } = useNotificationStore();
   const router = useRouter();
   const hasLiveRecording =
     runtimeActive && (status === "recording" || status === "paused");
-  const hasPausedBlock = Boolean(pausedRecording && !runtimeActive);
+  const hasPausedBlock = Boolean(pausedRecording && (!runtimeActive || status === "error"));
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
   const microphoneOnly = support.supported && support.mode === "microphone_only";
@@ -105,20 +106,22 @@ export default function MeetingControls({
               "Use Chrome on desktop for browser capture, or Chrome on Android/iOS for microphone-only capture.",
           }
         : hasPausedBlock
-          ? pausedRecording?.status === RecordingStatus.UPLOADING
+          ? pausedRecording && isCaptureInterrupted(pausedRecording)
             ? {
                 buttonLabel: "Interrupted recording needs attention",
                 buttonMode: "wait",
                 buttonDisabled: true,
-                buttonTooltip:
-                  "Resume, stop or discard the interrupted recording in the dialog before starting anything new.",
+                buttonTooltip: runtimeActive
+                  ? "Stop or discard the current recording from its page before starting anything new."
+                  : "Resume, stop or discard the interrupted recording in the dialog before starting anything new.",
               }
             : {
                 buttonLabel: "Paused recording needs attention",
                 buttonMode: "wait",
                 buttonDisabled: true,
-                buttonTooltip:
-                  "Resume or discard the paused recording in the modal before starting anything new.",
+                buttonTooltip: runtimeActive
+                  ? "Stop or discard the current recording from its page before starting anything new."
+                  : "Resume or discard the paused recording in the modal before starting anything new.",
               }
           : isBusy
             ? {
@@ -192,7 +195,32 @@ export default function MeetingControls({
     }
   };
 
+  // While this tab captures, the capture's controls are on its page and in the
+  // floating badge; here it is only named, with its upload and coverage
+  // notices, so there is one set of buttons. The time is shown with those
+  // controls, and this is no live region: they already announce the state.
+  const isRail = variant === "rail";
+  const liveLabel = status === "paused" ? "Paused" : "Recording";
+  const liveStatus = hasLiveRecording ? (
+    <div
+      data-testid="capture-status"
+      title={isRail ? liveLabel : undefined}
+      className={`flex items-center rounded-xl border border-status-danger-border bg-status-danger-bg text-status-danger-fg ${
+        isRail ? "h-10 w-10 justify-center" : "gap-2 px-3 py-2"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`inline-block h-2 w-2 shrink-0 rounded-full bg-danger ${status === "recording" ? "animate-pulse" : ""}`}
+      />
+      <span className={isRail ? "sr-only" : "text-xs font-semibold uppercase tracking-[0.14em]"}>
+        {liveLabel}
+      </span>
+    </div>
+  ) : null;
+
   if (variant === "rail") {
+    if (liveStatus) return liveStatus;
     return (
       <IconButton
         size="sm"
@@ -203,6 +231,23 @@ export default function MeetingControls({
         aria-label={meetingSurfaceState.buttonLabel}
         className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
       />
+    );
+  }
+
+  if (variant === "compact") {
+    if (liveStatus) return liveStatus;
+    return (
+      <Button
+        variant="primary"
+        iconLeft={<Mic aria-hidden="true" className="h-4 w-4 shrink-0" />}
+        onClick={handlePrimaryAction}
+        disabled={meetingSurfaceState.buttonDisabled}
+        title={meetingSurfaceState.buttonTooltip}
+        aria-label={meetingSurfaceState.buttonLabel}
+        className="rounded-md px-3 disabled:bg-action-tint disabled:text-action-tint-fg disabled:opacity-100"
+      >
+        Start
+      </Button>
     );
   }
 
@@ -253,7 +298,10 @@ export default function MeetingControls({
               </ButtonBase>
             </div>
           ) : (
-            <LiveMeetingControls size="full" onMeetingEnd={onMeetingEnd} />
+            <div className="space-y-3">
+              {liveStatus}
+              <CaptureNotices />
+            </div>
           )}
         </div>
       </SurfaceBase>
@@ -309,7 +357,10 @@ export default function MeetingControls({
           </div>
         ) : (
           <>
-            <LiveMeetingControls size="compact" onMeetingEnd={onMeetingEnd} />
+            <div className="space-y-2">
+              {liveStatus}
+              <CaptureNotices />
+            </div>
             {pairedAction ? <div className="mt-2 flex">{pairedAction}</div> : null}
           </>
         )}

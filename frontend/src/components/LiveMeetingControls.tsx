@@ -2,13 +2,16 @@
 
 import { ButtonBase } from '@/components/ui/nativeBases';
 import { AlertTriangle, CloudUpload, Pause, Play, Square, Trash2, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
 import { updateRecordingMaxSpeakers } from "@/lib/api";
-import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { CaptureResumeSupersededError } from "@/lib/capture/shared";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
+
+import DiscardRecordingDialog from "./recordings/DiscardRecordingDialog";
 
 interface LiveMeetingControlsProps {
   /**
@@ -22,13 +25,33 @@ interface LiveMeetingControlsProps {
   onMeetingDiscard?: () => void;
   /** Extra controls for the `bar` variant, placed before the speaker cap. */
   barTrailing?: ReactNode;
+  /**
+   * Whether the server has this recording paused, from the recording page.
+   * Another tab or device may be capturing it, and this tab's own capture
+   * state, idle, would read "Paused 00:00" whatever the recording is doing.
+   */
+  serverPaused?: boolean;
+  /**
+   * Where the capture is on its audio timeline, in ms, as the page's audio
+   * clock reads it from the server. The clock of a tab that is not capturing.
+   */
+  audioNow?: () => number | null;
+  /**
+   * The recovery dialog's Resume, for the `bar` variant of a tab that holds
+   * this recording's recovery offer but no runtime, as after a reload. Without
+   * it, Resume needs this tab's live tracks.
+   */
+  onResumeOffer?: () => void;
+  /**
+   * The recording's stored speaker cap, from the recording page. The field
+   * starts on it and follows the page's copy, so a tab reloaded during the
+   * capture shows the cap the server holds rather than auto-detect.
+   */
+  maxSpeakers?: number | null;
 }
 
 // Below this the queue is ordinary upload latency, a segment or two.
 const UPLOAD_BACKLOG_NOTICE_SECONDS = 30;
-
-const DISCARD_CONFIRM_MESSAGE =
-  "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 // Floored to whole seconds before anything is split out of it. The captured
 // figure comes from the server as a sum of segment durations in milliseconds,
@@ -50,34 +73,63 @@ export default function LiveMeetingControls({
   onMeetingEnd,
   onMeetingDiscard,
   barTrailing,
+  serverPaused,
+  audioNow,
+  onResumeOffer,
+  maxSpeakers: storedMaxSpeakers = null,
 }: LiveMeetingControlsProps) {
   const {
     cancel,
     controller,
-    coverageWarning,
-    dismissCoverageWarning,
-    elapsedSeconds,
     pause,
     recordingId,
+    ownedRecordingId,
+    pausedRecording,
     resume,
     runtimeActive,
     status,
     stop,
     stopStage,
-    uploadQueue,
   } = useCapture();
+  const elapsedSeconds = useCaptureState((state) => state.elapsedSeconds);
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
 
   const { addNotification } = useNotificationStore();
   const isRecording = status === "recording";
-  // Pause and resume need live browser tracks. Stop and discard do not: a
-  // recording whose runtime was torn down must still be finishable, or it is
-  // stranded in PAUSED with no route to processing (issue #166).
+  // A conflict's ID is not ownership. A retained runtime can retry a failed
+  // stop, and an eligible recovery offer can finish without browser tracks.
   const transportDisabled = !runtimeActive || status === "finalizing";
-  const stopDisabled = status === "finalizing" || !recordingId;
+  const canControl = Boolean(recordingId &&
+    (ownedRecordingId === recordingId || pausedRecording?.id === recordingId));
+  const stopDisabled = status === "finalizing" || !canControl;
+  // An offer is resumed as the dialog does it, sharing again, so it needs no tracks.
+  const resumesOffer = Boolean(onResumeOffer && !runtimeActive && recordingId &&
+    pausedRecording?.id === recordingId);
+  const barResumeDisabled = resumesOffer ? status === "finalizing" : transportDisabled;
+  // Any tab can open the recording page; only one captures. The others show
+  // the server's state, "Live" rather than "Recording" since nothing records
+  // here, and the server's audio timeline, which every device reads alike and
+  // which stands still while paused, rather than this tab's idle 00:00.
+  const capturedElsewhere = !canControl && serverPaused !== undefined;
+  const showsRecording = capturedElsewhere ? !serverPaused : isRecording;
+  // The timer's state change both re-renders and carries the reading: a bare
+  // call during render is one the React Compiler may cache.
+  const [observedMs, setObservedMs] = useState(() => audioNow?.() ?? null);
+  useEffect(() => {
+    if (!capturedElsewhere || !audioNow) return;
+    const timer = setInterval(() => setObservedMs(audioNow()), 1000);
+    return () => clearInterval(timer);
+  }, [capturedElsewhere, audioNow]);
+  const clockSeconds = capturedElsewhere
+    ? observedMs === null ? null : observedMs / 1000
+    : elapsedSeconds;
 
-  // Diarization runs at stop time, so the cap stays editable for the whole
-  // recording: whatever is set when capture ends is what gets applied.
-  const [maxSpeakers, setMaxSpeakers] = useState<number | null>(null);
+  // Only final processing reads the cap, once the capture stops, so it stays
+  // editable for the whole recording and the value set at stop is the one
+  // used. Live labels ignore it. A commit shows at once; the stored value
+  // takes over again whenever the page's copy of the recording changes.
+  const [maxSpeakers, setMaxSpeakers] = useState<number | null>(storedMaxSpeakers);
+  useOnDepsChange([storedMaxSpeakers], () => setMaxSpeakers(storedMaxSpeakers));
 
   const handleMaxSpeakersCommit = async (next: number | null) => {
     const previous = maxSpeakers;
@@ -115,10 +167,10 @@ export default function LiveMeetingControls({
     />
   );
 
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const askDiscard = () => setConfirmingDiscard(true);
+
   const handleDiscard = async () => {
-    if (!window.confirm(DISCARD_CONFIRM_MESSAGE)) {
-      return;
-    }
     try {
       await cancel();
     } catch (err: unknown) {
@@ -137,6 +189,13 @@ export default function LiveMeetingControls({
       setTimeout(onMeetingDiscard, 300);
     }
   };
+  const discardDialog = (
+    <DiscardRecordingDialog
+      isOpen={confirmingDiscard}
+      onClose={() => setConfirmingDiscard(false)}
+      onConfirm={() => void handleDiscard()}
+    />
+  );
 
   const sendCommand = async (command: "stop" | "pause" | "resume") => {
     try {
@@ -182,10 +241,279 @@ export default function LiveMeetingControls({
     ? stopStage === "flushing-uploads" && uploadQueue.segments > 0
       ? "Uploading"
       : "Finishing"
-    : isRecording
-      ? "Recording"
-      : "Paused";
+    : !showsRecording
+      ? "Paused"
+      : capturedElsewhere
+        ? "Live"
+        : "Recording";
 
+  if (size === "compact") {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="flex flex-1 items-center gap-2 rounded-xl border border-status-danger-border bg-status-danger-bg px-3 py-2 text-status-danger-fg">
+            <span
+              className={`inline-block h-2 w-2 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
+            />
+            <span className="text-xs font-semibold uppercase tracking-[0.14em]">
+              {statusLabel}
+            </span>
+            {clockSeconds === null ? null : (
+              <span className="ml-auto font-mono text-sm font-semibold text-foreground">
+                {formatTime(clockSeconds)}
+              </span>
+            )}
+          </div>
+          {isRecording ? (
+            <ButtonBase
+              data-ui-fill="card"
+              data-ui-border="full" chrome="action"
+              type="button"
+              onClick={() => sendCommand("pause")}
+              disabled={transportDisabled}
+              className="rounded-xl border border-control-border bg-surface-card p-2 text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:cursor-not-allowed disabled:opacity-50"
+              title="Pause recording"
+              aria-label="Pause recording"
+            >
+              <Pause className="h-4 w-4" />
+            </ButtonBase>
+          ) : (
+            <ButtonBase
+              data-ui-fill="card"
+              data-ui-border="full" chrome="action"
+              type="button"
+              onClick={() => sendCommand("resume")}
+              disabled={transportDisabled}
+              className="rounded-xl border border-control-border bg-surface-card p-2 text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:cursor-not-allowed disabled:opacity-50"
+              title="Resume recording"
+              aria-label="Resume recording"
+            >
+              <Play className="h-4 w-4" />
+            </ButtonBase>
+          )}
+          <ButtonBase
+            data-ui-fill="status-danger"
+            data-ui-hover="status-danger" chrome="action"
+            type="button"
+            onClick={handleStop}
+            disabled={stopDisabled}
+            className="rounded-xl bg-status-danger-bg p-2 text-foreground transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
+            title="Stop recording"
+            aria-label="Stop recording"
+          >
+            <Square className="h-4 w-4 fill-current" />
+          </ButtonBase>
+          <ButtonBase
+            data-ui-fill="card"
+            data-ui-hover="status-danger"
+            data-ui-border="full" chrome="action"
+            type="button"
+            onClick={askDiscard}
+            disabled={stopDisabled}
+            className="rounded-xl border border-status-danger-border bg-surface-card p-2 text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
+            title="Discard recording"
+            aria-label="Discard recording"
+          >
+            <Trash2 className="h-4 w-4" />
+          </ButtonBase>
+        </div>
+        <CaptureNotices />
+        {speakerCapField}
+        {discardDialog}
+      </div>
+    );
+  }
+
+  if (size === "bar") {
+    // The transport shares the row's slack rather than sitting at its intrinsic
+    // width, capped so the buttons never grow absurdly wide.
+    const barButtonClass =
+      "inline-flex h-10 min-w-[7rem] flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <div className="density-surface-panel flex shrink-0 items-center gap-3 bg-status-danger-bg px-3 py-1.5 text-status-danger-fg">
+            <span
+              className={`h-2.5 w-2.5 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
+            />
+            <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+              {statusLabel}
+            </span>
+            {clockSeconds === null ? null : (
+              <span className="font-mono text-xl font-semibold tabular-nums text-foreground">
+                {formatTime(clockSeconds)}
+              </span>
+            )}
+          </div>
+
+          {/* The floor stops the transport being squeezed beside the clock,
+              but never reaches past the card: a 360px phone leaves it about
+              17rem (#538). */}
+          <div className="flex min-w-[min(18rem,100%)] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
+            {/* Nothing to pause or resume here while another tab records it. */}
+            {capturedElsewhere && showsRecording ? null : isRecording ? (
+              <ButtonBase
+                data-ui-fill="card"
+                data-ui-border="full" chrome="action"
+                type="button"
+                onClick={() => sendCommand("pause")}
+                disabled={transportDisabled}
+                className={`${barButtonClass} border border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text`}
+                title="Pause recording"
+              >
+                <Pause className="h-4 w-4" />
+                Pause
+              </ButtonBase>
+            ) : (
+              <ButtonBase
+                data-ui-fill="card"
+                data-ui-border="full" chrome="action"
+                type="button"
+                onClick={resumesOffer ? onResumeOffer : () => sendCommand("resume")}
+                disabled={barResumeDisabled}
+                className={`${barButtonClass} border border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text`}
+                title="Resume recording"
+              >
+                <Play className="h-4 w-4" />
+                Resume
+              </ButtonBase>
+            )}
+
+            <ButtonBase
+              data-ui-fill="status-danger"
+              data-ui-hover="status-danger" chrome="action"
+              type="button"
+              onClick={handleStop}
+              disabled={stopDisabled}
+              className={`${barButtonClass} bg-status-danger-bg text-foreground hover:bg-status-danger-bg`}
+              title="Stop recording"
+            >
+              <Square className="h-4 w-4 fill-current" />
+              Stop
+            </ButtonBase>
+
+            <ButtonBase
+              data-ui-fill="card"
+              data-ui-hover="status-danger"
+              data-ui-border="full" chrome="action"
+              type="button"
+              onClick={askDiscard}
+              disabled={stopDisabled}
+              className={`${barButtonClass} border border-status-danger-border bg-surface-card text-status-danger-fg hover:bg-status-danger-bg`}
+              title="Discard recording"
+            >
+              <Trash2 className="h-4 w-4" />
+              Discard
+            </ButtonBase>
+          </div>
+
+          {/* Attach Docs and the speaker cap together are wider than the card
+              on a phone (#538), so they wrap. The row places this group by its
+              full width, so it moves to a line of its own before its contents
+              wrap. */}
+          <div className="flex flex-wrap items-center gap-3">
+            {barTrailing}
+            {speakerCapField}
+          </div>
+        </div>
+
+        <CaptureNotices />
+        {discardDialog}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="density-surface-panel flex items-center justify-between gap-4 border border-status-danger-border bg-status-danger-bg px-4 py-4 text-status-danger-fg">
+        <div className="flex items-center gap-3">
+          <div
+            className={`h-2.5 w-2.5 rounded-full bg-danger ${showsRecording ? "animate-pulse" : ""}`}
+          />
+          <span className="text-sm font-semibold uppercase tracking-[0.16em]">
+            {statusLabel}
+          </span>
+        </div>
+        {clockSeconds === null ? null : (
+          <span className="font-mono text-3xl font-semibold text-foreground">
+            {formatTime(clockSeconds)}
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {isRecording ? (
+          <ButtonBase
+            data-ui-fill="card"
+            data-ui-border="full" chrome="action"
+            type="button"
+            onClick={() => sendCommand("pause")}
+            disabled={transportDisabled}
+            className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-control-border bg-surface-card px-4 py-3 text-sm font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:cursor-not-allowed disabled:opacity-50"
+            title="Pause recording"
+          >
+            <Pause className="h-4 w-4" />
+            Pause
+          </ButtonBase>
+        ) : (
+          <ButtonBase
+            data-ui-fill="card"
+            data-ui-border="full" chrome="action"
+            type="button"
+            onClick={() => sendCommand("resume")}
+            disabled={transportDisabled}
+            className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-control-border bg-surface-card px-4 py-3 text-sm font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:cursor-not-allowed disabled:opacity-50"
+            title="Resume recording"
+          >
+            <Play className="h-4 w-4" />
+            Resume
+          </ButtonBase>
+        )}
+
+        <ButtonBase
+          data-ui-fill="status-danger"
+          data-ui-hover="status-danger" chrome="action"
+          type="button"
+          onClick={handleStop}
+          disabled={stopDisabled}
+          className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-status-danger-bg px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
+          title="Stop recording"
+        >
+          <Square className="h-4 w-4 fill-current" />
+          Stop
+        </ButtonBase>
+
+        <ButtonBase
+          data-ui-fill="card"
+          data-ui-hover="status-danger"
+          data-ui-border="full" chrome="action"
+          type="button"
+          onClick={askDiscard}
+          disabled={stopDisabled}
+          className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-3 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
+          title="Discard recording"
+        >
+          <Trash2 className="h-4 w-4" />
+          Discard
+        </ButtonBase>
+      </div>
+
+      <CaptureNotices />
+      {speakerCapField}
+      {discardDialog}
+    </div>
+  );
+}
+
+/**
+ * The upload backlog and capture coverage notices of a running capture, shown
+ * with its controls and, while it runs, under the recordings list's status.
+ */
+export function CaptureNotices() {
+  const { coverageWarning, dismissCoverageWarning, status } = useCapture();
+  const uploadQueue = useCaptureState((state) => state.uploadQueue);
+  const isFinalizing = status === "finalizing";
   const showUploadBacklog = isFinalizing
     ? uploadQueue.segments > 0
     : uploadQueue.seconds >= UPLOAD_BACKLOG_NOTICE_SECONDS;
@@ -257,254 +585,10 @@ export default function LiveMeetingControls({
     </div>
   ) : null;
 
-  if (size === "compact") {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="flex flex-1 items-center gap-2 rounded-xl border border-status-danger-border bg-status-danger-bg px-3 py-2 text-status-danger-fg">
-            <span
-              className={`inline-block h-2 w-2 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
-            />
-            <span className="text-xs font-semibold uppercase tracking-[0.14em]">
-              {statusLabel}
-            </span>
-            <span className="ml-auto font-mono text-sm font-semibold text-foreground">
-              {formatTime(elapsedSeconds)}
-            </span>
-          </div>
-          {isRecording ? (
-            <ButtonBase
-              data-ui-fill="card"
-              data-ui-border="full" chrome="action"
-              type="button"
-              onClick={() => sendCommand("pause")}
-              disabled={transportDisabled}
-              className="rounded-xl border border-control-border bg-surface-card p-2 text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:cursor-not-allowed disabled:opacity-50"
-              title="Pause recording"
-              aria-label="Pause recording"
-            >
-              <Pause className="h-4 w-4" />
-            </ButtonBase>
-          ) : (
-            <ButtonBase
-              data-ui-fill="card"
-              data-ui-border="full" chrome="action"
-              type="button"
-              onClick={() => sendCommand("resume")}
-              disabled={transportDisabled}
-              className="rounded-xl border border-control-border bg-surface-card p-2 text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:cursor-not-allowed disabled:opacity-50"
-              title="Resume recording"
-              aria-label="Resume recording"
-            >
-              <Play className="h-4 w-4" />
-            </ButtonBase>
-          )}
-          <ButtonBase
-            data-ui-fill="status-danger"
-            data-ui-hover="status-danger" chrome="action"
-            type="button"
-            onClick={handleStop}
-            disabled={stopDisabled}
-            className="rounded-xl bg-status-danger-bg p-2 text-foreground transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
-            title="Stop recording"
-            aria-label="Stop recording"
-          >
-            <Square className="h-4 w-4 fill-current" />
-          </ButtonBase>
-          <ButtonBase
-            data-ui-fill="card"
-            data-ui-hover="status-danger"
-            data-ui-border="full" chrome="action"
-            type="button"
-            onClick={handleDiscard}
-            disabled={stopDisabled}
-            className="rounded-xl border border-status-danger-border bg-surface-card p-2 text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
-            title="Discard recording"
-            aria-label="Discard recording"
-          >
-            <Trash2 className="h-4 w-4" />
-          </ButtonBase>
-        </div>
-        {coverageBadge}
-        {uploadBacklogNotice}
-        {speakerCapField}
-      </div>
-    );
-  }
-
-  if (size === "bar") {
-    // The transport shares the row's slack rather than sitting at its intrinsic
-    // width, capped so the buttons never grow absurdly wide.
-    const barButtonClass =
-      "inline-flex h-10 min-w-[7rem] flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
-
-    return (
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <div className="density-surface-panel flex shrink-0 items-center gap-3 bg-status-danger-bg px-3 py-1.5 text-status-danger-fg">
-            <span
-              className={`h-2.5 w-2.5 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
-            />
-            <span className="text-xs font-semibold uppercase tracking-[0.16em]">
-              {statusLabel}
-            </span>
-            <span className="font-mono text-xl font-semibold tabular-nums text-foreground">
-              {formatTime(elapsedSeconds)}
-            </span>
-          </div>
-
-          {/* The floor stops the transport being squeezed beside the clock,
-              but never reaches past the card: a 360px phone leaves it about
-              17rem (#538). */}
-          <div className="flex min-w-[min(18rem,100%)] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
-            {isRecording ? (
-              <ButtonBase
-                data-ui-fill="card"
-                data-ui-border="full" chrome="action"
-                type="button"
-                onClick={() => sendCommand("pause")}
-                disabled={transportDisabled}
-                className={`${barButtonClass} border border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text`}
-                title="Pause recording"
-              >
-                <Pause className="h-4 w-4" />
-                Pause
-              </ButtonBase>
-            ) : (
-              <ButtonBase
-                data-ui-fill="card"
-                data-ui-border="full" chrome="action"
-                type="button"
-                onClick={() => sendCommand("resume")}
-                disabled={transportDisabled}
-                className={`${barButtonClass} border border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text`}
-                title="Resume recording"
-              >
-                <Play className="h-4 w-4" />
-                Resume
-              </ButtonBase>
-            )}
-
-            <ButtonBase
-              data-ui-fill="status-danger"
-              data-ui-hover="status-danger" chrome="action"
-              type="button"
-              onClick={handleStop}
-              disabled={stopDisabled}
-              className={`${barButtonClass} bg-status-danger-bg text-foreground hover:bg-status-danger-bg`}
-              title="Stop recording"
-            >
-              <Square className="h-4 w-4 fill-current" />
-              Stop
-            </ButtonBase>
-
-            <ButtonBase
-              data-ui-fill="card"
-              data-ui-hover="status-danger"
-              data-ui-border="full" chrome="action"
-              type="button"
-              onClick={handleDiscard}
-              disabled={stopDisabled}
-              className={`${barButtonClass} border border-status-danger-border bg-surface-card text-status-danger-fg hover:bg-status-danger-bg`}
-              title="Discard recording"
-            >
-              <Trash2 className="h-4 w-4" />
-              Discard
-            </ButtonBase>
-          </div>
-
-          {/* Attach Docs and the speaker cap together are wider than the card
-              on a phone (#538), so they wrap. The row places this group by its
-              full width, so it moves to a line of its own before its contents
-              wrap. */}
-          <div className="flex flex-wrap items-center gap-3">
-            {barTrailing}
-            {speakerCapField}
-          </div>
-        </div>
-
-        {coverageBadge}
-        {uploadBacklogNotice}
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-3">
-      <div className="density-surface-panel flex items-center justify-between gap-4 border border-status-danger-border bg-status-danger-bg px-4 py-4 text-status-danger-fg">
-        <div className="flex items-center gap-3">
-          <div
-            className={`h-2.5 w-2.5 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
-          />
-          <span className="text-sm font-semibold uppercase tracking-[0.16em]">
-            {statusLabel}
-          </span>
-        </div>
-        <span className="font-mono text-3xl font-semibold text-foreground">
-          {formatTime(elapsedSeconds)}
-        </span>
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-        {isRecording ? (
-          <ButtonBase
-            data-ui-fill="card"
-            data-ui-border="full" chrome="action"
-            type="button"
-            onClick={() => sendCommand("pause")}
-            disabled={transportDisabled}
-            className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-control-border bg-surface-card px-4 py-3 text-sm font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:cursor-not-allowed disabled:opacity-50"
-            title="Pause recording"
-          >
-            <Pause className="h-4 w-4" />
-            Pause
-          </ButtonBase>
-        ) : (
-          <ButtonBase
-            data-ui-fill="card"
-            data-ui-border="full" chrome="action"
-            type="button"
-            onClick={() => sendCommand("resume")}
-            disabled={transportDisabled}
-            className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-control-border bg-surface-card px-4 py-3 text-sm font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:cursor-not-allowed disabled:opacity-50"
-            title="Resume recording"
-          >
-            <Play className="h-4 w-4" />
-            Resume
-          </ButtonBase>
-        )}
-
-        <ButtonBase
-          data-ui-fill="status-danger"
-          data-ui-hover="status-danger" chrome="action"
-          type="button"
-          onClick={handleStop}
-          disabled={stopDisabled}
-          className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-status-danger-bg px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
-          title="Stop recording"
-        >
-          <Square className="h-4 w-4 fill-current" />
-          Stop
-        </ButtonBase>
-
-        <ButtonBase
-          data-ui-fill="card"
-          data-ui-hover="status-danger"
-          data-ui-border="full" chrome="action"
-          type="button"
-          onClick={handleDiscard}
-          disabled={stopDisabled}
-          className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-3 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
-          title="Discard recording"
-        >
-          <Trash2 className="h-4 w-4" />
-          Discard
-        </ButtonBase>
-      </div>
-
+    <>
       {coverageBadge}
       {uploadBacklogNotice}
-      {speakerCapField}
-    </div>
+    </>
   );
 }

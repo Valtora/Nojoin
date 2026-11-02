@@ -155,11 +155,16 @@ export default function AudioPlayer({
     recording.status !== RecordingStatus.UPLOADING &&
     !isDemo &&
     !audioMissing;
+  const silent = isMuted || volume === 0;
+  const playLabel = isPlaying ? "Pause" : "Play";
+  const muteLabel = silent ? "Unmute" : "Mute";
   const shellClassName = compact
     ? "w-full rounded-2xl border border-control-border bg-surface-card px-3 py-2.5 shadow-card"
     : "w-full bg-surface-card border border-control-border rounded-lg p-2 md:p-2.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-card";
+  // The mock controls under an unavailable player's notice are a picture:
+  // out of the tab order and the accessibility tree (issue #840).
   const compactMockContent = (
-    <div className="flex flex-col gap-2 opacity-30 pointer-events-none filter blur-[1px]">
+    <div inert aria-hidden="true" className="flex flex-col gap-2 opacity-30 pointer-events-none filter blur-[1px]">
       <div className="flex items-center justify-between gap-3">
         <ButtonBase data-ui-fill="card" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-card text-foreground shadow-card">
           <Play className="ml-0.5 h-5 w-5 fill-current" />
@@ -194,7 +199,7 @@ export default function AudioPlayer({
         </SurfaceBase>
 
         {compact ? compactMockContent : (
-        <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
+        <div inert aria-hidden="true" className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
           {/* Mock Play Button */}
           <ButtonBase data-ui-fill="card" className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
             <Play className="w-5 h-5 fill-current ml-0.5" />
@@ -227,7 +232,7 @@ export default function AudioPlayer({
           <span className={`flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 font-medium text-action-tint-fg ${compact ? "text-xs" : "text-sm"}`}>
             <VolumeX className="w-4 h-4" />
             {isDemo
-              ? "This meeting was imported with no audio"
+              ? "This sample meeting has no audio"
               : audioMissing
                 ? "This recording's audio is not available"
                 : "This recording's audio could not be loaded"}
@@ -236,7 +241,7 @@ export default function AudioPlayer({
 
         {/* Disabled UI underneath for visual context */}
         {compact ? compactMockContent : (
-        <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
+        <div inert aria-hidden="true" className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
           {/* Mock Play Button */}
           <ButtonBase data-ui-fill="card" className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
             <Play className="w-5 h-5 fill-current ml-0.5" />
@@ -285,24 +290,27 @@ export default function AudioPlayer({
               data-ui-fill="action"
               data-ui-hover="action-hover" chrome="action"
               onClick={togglePlay}
+              aria-label={playLabel}
+              title={playLabel}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-action text-action-on shadow-card transition-colors hover:bg-action-hover"
             >
               {isPlaying ? (
-                <Pause className="h-5 w-5 fill-current" />
+                <Pause aria-hidden="true" className="h-5 w-5 fill-current" />
               ) : (
-                <Play className="ml-0.5 h-5 w-5 fill-current" />
+                <Play aria-hidden="true" className="ml-0.5 h-5 w-5 fill-current" />
               )}
             </ButtonBase>
 
             <ButtonBase
               onClick={toggleMute}
+              aria-label={muteLabel}
               className="shrink-0 text-contrast-helper hover:text-contrast-muted"
-              title={isMuted || volume === 0 ? "Unmute" : "Mute"}
+              title={muteLabel}
             >
-              {isMuted || volume === 0 ? (
-                <VolumeX className="h-5 w-5" />
+              {silent ? (
+                <VolumeX aria-hidden="true" className="h-5 w-5" />
               ) : (
-                <Volume2 className="h-5 w-5" />
+                <Volume2 aria-hidden="true" className="h-5 w-5" />
               )}
             </ButtonBase>
           </div>
@@ -316,6 +324,8 @@ export default function AudioPlayer({
                 max={duration || 100}
                 value={Math.min(currentTime, duration || 100)}
                 onChange={handleSeek}
+                aria-label="Seek"
+                aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
                 className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-surface-inset accent-action"
               />
               <span className="w-9 shrink-0 text-right">{formatTime(duration)}</span>
@@ -323,6 +333,7 @@ export default function AudioPlayer({
                 onClick={changePlaybackRate}
                 className="w-8 shrink-0 text-right text-xs font-bold text-contrast-helper hover:text-action-text"
                 title="Playback Speed"
+                aria-label={`Playback speed ${playbackRate}x`}
               >
                 {playbackRate}x
               </ButtonBase>
@@ -336,12 +347,14 @@ export default function AudioPlayer({
             data-ui-fill="action"
             data-ui-hover="action-hover" chrome="action"
             onClick={togglePlay}
+            aria-label={playLabel}
+            title={playLabel}
             className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-action text-action-on hover:bg-action-hover transition-colors shadow-card shrink-0 order-1"
           >
             {isPlaying ? (
-              <Pause className="w-5 h-5 fill-current" />
+              <Pause aria-hidden="true" className="w-5 h-5 fill-current" />
             ) : (
-              <Play className="w-5 h-5 fill-current ml-0.5" />
+              <Play aria-hidden="true" className="w-5 h-5 fill-current ml-0.5" />
             )}
           </ButtonBase>
 
@@ -358,6 +371,8 @@ export default function AudioPlayer({
                 max={duration || 100}
                 value={Math.min(currentTime, duration || 100)}
                 onChange={handleSeek}
+                aria-label="Seek"
+                aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
                 className="w-full h-2.5 bg-surface-inset rounded-full appearance-none cursor-pointer accent-action"
               />
             </div>
@@ -370,6 +385,7 @@ export default function AudioPlayer({
               onClick={changePlaybackRate}
               className="text-xs font-bold text-contrast-helper hover:text-action-text w-8 text-center"
               title="Playback Speed"
+              aria-label={`Playback speed ${playbackRate}x`}
             >
               {playbackRate}x
             </ButtonBase>
@@ -378,12 +394,14 @@ export default function AudioPlayer({
             <div className="flex items-center gap-2 group relative">
               <ButtonBase
                 onClick={toggleMute}
+                aria-label={muteLabel}
+                title={muteLabel}
                 className="text-contrast-helper hover:text-contrast-muted"
               >
-                {isMuted || volume === 0 ? (
-                  <VolumeX className="w-5 h-5" />
+                {silent ? (
+                  <VolumeX aria-hidden="true" className="w-5 h-5" />
                 ) : (
-                  <Volume2 className="w-5 h-5" />
+                  <Volume2 aria-hidden="true" className="w-5 h-5" />
                 )}
               </ButtonBase>
               <div className="w-0 overflow-hidden group-hover:w-20 transition-all duration-300 ease-in-out">
@@ -394,6 +412,7 @@ export default function AudioPlayer({
                   step={0.1}
                   value={isMuted ? 0 : volume}
                   onChange={handleVolumeChange}
+                  aria-label="Volume"
                   className="w-20 h-1 bg-surface-inset rounded-lg appearance-none cursor-pointer accent-control-border"
                 />
               </div>

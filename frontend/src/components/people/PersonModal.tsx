@@ -18,6 +18,7 @@ import { GlobalSpeaker, PeopleTag } from "@/types";
 import ColorPicker from "@/components/ColorPicker";
 import { getPeopleTags, createPeopleTag } from "@/lib/api";
 import { getColorByKey } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import {
   getGlobalSpeakers,
   mergeSpeakers,
@@ -41,6 +42,8 @@ interface PersonModalProps {
   onVoiceprintDeleted?: (id: number) => void;
   /** The lock was changed and saved; the dialog stays open with its edits. */
   onVoiceprintLockChanged?: (id: number, locked: boolean) => void;
+  /** A tag was made with New Tag. It exists already, whether or not the person is saved. */
+  onTagCreated?: (tag: PeopleTag) => void;
 }
 
 export function PersonModal({
@@ -51,6 +54,7 @@ export function PersonModal({
   onDelete,
   onVoiceprintDeleted,
   onVoiceprintLockChanged,
+  onTagCreated,
 }: PersonModalProps) {
   const { addNotification } = useNotificationStore();
   const [formData, setFormData] = useState<
@@ -117,6 +121,7 @@ export function PersonModal({
     try {
       const newTag = await createPeopleTag(newTagName.trim());
       setAllTags((prev) => [...prev, newTag]);
+      onTagCreated?.(newTag);
       setFormData((prev) => ({
         ...prev,
         tag_ids: [...prev.tag_ids, newTag.id],
@@ -728,7 +733,7 @@ interface TagNode extends PeopleTag {
                     placeholder="New tag name..."
                     className="flex-1 px-3 py-1.5 text-sm rounded-md border border-control-border bg-control-bg outline-none"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
+                      if (e.key === "Enter" && !isImeComposing(e)) {
                         e.preventDefault();
                         handleCreateTag(e);
                       }

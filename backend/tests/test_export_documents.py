@@ -14,9 +14,11 @@ from zipfile import ZipFile
 
 import pdfplumber
 from docx import Document
+from reportlab.platypus import KeepTogether
 
 from backend.models.timeline_note import TimelineNote
 from backend.services.exports import build_document, render, theme
+from backend.services.exports.analytics_blocks import overlap_blocks
 from backend.services.exports.charts import Scene, TextShape
 from backend.services.exports.delivery_readings import (
     build_delivery_readings,
@@ -33,6 +35,7 @@ from backend.services.exports.formatting import (
 from backend.services.exports.markdown_blocks import realign_markdown_tables
 from backend.services.exports.paint import paint_png
 from backend.services.exports.render_docx import xml_safe
+from backend.services.exports.render_pdf import ChartFlowable, _StoryBuilder, _Styles
 from backend.services.exports.speaker_colors import (
     analytics_speaker_colors,
     parse_client_colors,
@@ -242,7 +245,10 @@ def test_the_attribution_warning_uses_the_tabs_wording() -> None:
     text = _txt(meeting_parts(analytics=analytics), ["analytics"])
 
     assert "These figures depend on who Nojoin thinks was speaking" in text
-    assert "This meeting reached its speaker limit of 6." in text
+    assert (
+        "This meeting has as many speakers as its limit of 6. If more people "
+        "spoke, their speech is counted under the ones shown."
+    ) in text
     assert "Not everyone has been named yet: Anna." in text
 
 
@@ -270,6 +276,53 @@ def test_charts_render_in_pdf_and_docx() -> None:
     assert "Peter" in pdf_text and "60%" in pdf_text
     # Three charts plus the logo in the two headers.
     assert len(images) >= 4
+
+
+def test_a_pdf_chart_takes_its_heading_and_introduction_to_its_page() -> None:
+    story = _StoryBuilder(_Styles(theme.BRAND)).flowables(
+        overlap_blocks(analytics_payload())
+    )
+
+    # The heading, the hint, the summary and the chart move as one, so the
+    # heading never ends a page with its chart on the next.
+    kept = story[0]
+    assert isinstance(kept, KeepTogether)
+    contents = kept._content
+    assert contents[0].getPlainText() == "Talking over each other"
+    assert "People spoke over each other" in contents[2].getPlainText()
+    assert any(isinstance(flowable, ChartFlowable) for flowable in contents)
+    # The closing notes are not held to the chart's page.
+    assert all(not isinstance(flowable, KeepTogether) for flowable in story[1:])
+
+
+def test_a_docx_chart_keeps_its_heading_and_introduction_with_it() -> None:
+    payload = render(build_document(meeting_parts(), ["analytics"]), "docx")
+    paragraphs = Document(BytesIO(payload)).paragraphs
+    start = next(
+        index
+        for index, paragraph in enumerate(paragraphs)
+        if paragraph.text == "Talking over each other"
+    )
+    chart = next(
+        index
+        for index in range(start, len(paragraphs))
+        if paragraphs[index]._p.xpath(".//pic:pic")
+    )
+
+    assert chart - start == 3
+    assert all(
+        paragraph.paragraph_format.keep_with_next
+        for paragraph in paragraphs[start:chart]
+    )
+    assert not paragraphs[chart + 1].paragraph_format.keep_with_next
+
+
+def test_the_overlap_and_ai_explanations_say_each_thing_once() -> None:
+    text = _txt(sections=["analytics"])
+
+    assert text.count("writes speech down one line at a time") == 1
+    assert "Read from the transcript by AI" not in text
+    assert "Taken from the transcript, with quotes you can check." in text
 
 
 # -- characters Word cannot hold -------------------------------------------------------

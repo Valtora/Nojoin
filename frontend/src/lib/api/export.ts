@@ -19,9 +19,26 @@ export type ExportSelection =
     }
   | { kind: "audio" };
 
+/**
+ * The audio's file name: the recording's day first, `20261031_Weekly sync.mp3`,
+ * as the document exports name theirs. `recordedOn` is that day as yyyyMMdd in
+ * the reader's zone; without it the name starts with the recording's name.
+ */
+const audioExportFilename = (
+  recordingId: RecordingId,
+  recordingName: string,
+  recordedOn?: string,
+): string => {
+  // Close to what the server keeps in a document export's name.
+  const sanitizedName = recordingName.replace(/[^a-zA-Z0-9 \-_.]/g, "").trim();
+  const name = sanitizedName || `recording_${recordingId}`;
+  return `${recordedOn ? `${recordedOn}_` : ""}${name}.mp3`;
+};
+
 export const exportAudio = async (
   recordingId: RecordingId,
   recordingName: string,
+  recordedOn?: string,
 ): Promise<void> => {
   try {
     const response = await api.get(`/recordings/${recordingId}/stream`, {
@@ -37,11 +54,7 @@ export const exportAudio = async (
     const link = document.createElement("a");
     link.href = url;
 
-    // Sanitize filename similar to backend
-    const sanitizedName = recordingName.replace(/[^a-zA-Z0-9 \-_.]/g, "").trim();
-    const filename = `${sanitizedName || `recording_${recordingId}`}.mp3`;
-
-    link.setAttribute("download", filename);
+    link.setAttribute("download", audioExportFilename(recordingId, recordingName, recordedOn));
     document.body.appendChild(link);
     link.click();
     link.remove();

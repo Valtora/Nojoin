@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SpeakerPanel from "./SpeakerPanel";
+import { useNavigationStore } from "@/lib/store";
+import { pressWhileComposing } from "@/test/composition";
 import { matchesStyleDeclaration } from "@/test/styleMarkerContracts";
 import type {
   GlobalSpeaker,
@@ -145,10 +147,24 @@ describe("SpeakerPanel", () => {
     const { onPlaySegment } = renderPanel({ disablePlayback: true, currentTime: 1, isPlaying: true, onPause });
     const preview = screen.getByTitle("Pause");
     expect(preview).toBeDisabled();
+    // Disabled buttons look it, rather than keeping their enabled colours.
+    expect(preview.className).toContain("disabled:opacity-60");
     fireEvent.click(preview);
     expect(screen.queryByTitle("Next Snippet")).not.toBeInTheDocument();
     expect(onPause).not.toHaveBeenCalled();
     expect(onPlaySegment).not.toHaveBeenCalled();
+  });
+
+  it("shows Preview Voice and Change identity as disabled when they are", () => {
+    renderPanel({ disablePlayback: true, disableEditing: true });
+    const [preview] = screen.getAllByTitle("Preview Voice");
+    expect(preview).toBeDisabled();
+    expect(preview.className).toContain("disabled:opacity-60");
+    expect(preview.className).toContain("disabled:cursor-not-allowed");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Alice" }));
+    const change = screen.getByRole("menuitem", { name: "Change identity" });
+    expect(change).toHaveAttribute("aria-disabled", "true");
+    expect(change).toHaveAccessibleDescription("Speakers can be changed once processing finishes.");
   });
 
   beforeEach(() => {
@@ -171,6 +187,31 @@ describe("SpeakerPanel", () => {
         dark ? "--depth-fill-base" : "--depth-light-fill", "var(--surface-inset)", appearance))
         .toBe(style === "depth");
     }
+  });
+
+  it("takes focus with its ring for Analytics' Review speakers, until focus moves on", () => {
+    renderPanel();
+    const panel = screen.getByRole("complementary", { name: "Speakers" });
+    expect(panel).not.toHaveAttribute("data-reviewing");
+
+    act(() => useNavigationStore.getState().setSpeakerReviewPending(true));
+
+    expect(panel).toHaveFocus();
+    expect(panel).toHaveAttribute("data-reviewing", "true");
+    expect(panel.className).toContain("data-reviewing:ring-2");
+    expect(useNavigationStore.getState().speakerReviewPending).toBe(false);
+
+    act(() => panel.blur());
+    expect(panel).not.toHaveAttribute("data-reviewing");
+  });
+
+  it("takes the review when it mounts for it, as a collapsed side column does", () => {
+    act(() => useNavigationStore.getState().setSpeakerReviewPending(true));
+    renderPanel();
+    const panel = screen.getByRole("complementary", { name: "Speakers" });
+    expect(panel).toHaveFocus();
+    expect(panel).toHaveAttribute("data-reviewing", "true");
+    expect(useNavigationStore.getState().speakerReviewPending).toBe(false);
   });
 
   it("groups speakers into rows by display name", () => {
@@ -223,6 +264,30 @@ describe("SpeakerPanel", () => {
       expect(updateSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00", "Alicia");
     });
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it("leaves the Enter and Escape of an input method's composition to the rename", async () => {
+    updateSpeaker.mockClear();
+    renderPanel({
+      speakers: [
+        buildSpeaker({ diarization_label: "SPEAKER_00", local_name: "Alice" }),
+      ],
+      segments: [buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 })],
+    });
+
+    fireEvent.doubleClick(screen.getByText("Alice"));
+    const input = screen.getByDisplayValue("Alice");
+    fireEvent.change(input, { target: { value: "アリス" } });
+    pressWhileComposing(input, "Enter");
+    pressWhileComposing(input, "Escape");
+    await act(async () => {});
+    expect(updateSpeaker).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("アリス")).toBe(input);
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(updateSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00", "アリス");
+    });
   });
 
   it("says when a rename left the person without a voiceprint, and why", async () => {
@@ -287,6 +352,11 @@ describe("SpeakerPanel", () => {
           "Voiceprint not updated: this speaker sounds too unlike Alice's saved voiceprint. Check that the name is right.",
       }),
     );
+    // The page is People everywhere, so the toast says so too.
+    expect(addNotification).toHaveBeenCalledWith({
+      type: "success",
+      message: "Speaker added to People.",
+    });
   });
 
   it("deletes a speaker after confirmation", async () => {

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PersonModal } from "./PersonModal";
+import { pressWhileComposing } from "@/test/composition";
 import { httpError } from "@/test/httpErrors";
 import type { GlobalSpeaker } from "@/types";
 import { getPersonMeetings } from "@/lib/api";
@@ -307,5 +308,39 @@ describe("PersonModal new tag", () => {
     expect(screen.getByPlaceholderText("New tag name...")).toHaveValue(
       "Clients",
     );
+  });
+
+  it("adds a tag on Enter, but not on the Enter of an input method's composition", async () => {
+    createPeopleTag.mockResolvedValue({ id: 9, name: "きゃく", color: "orange" });
+    render(modal(dana(false, false)));
+
+    fireEvent.click(screen.getByRole("button", { name: "New Tag" }));
+    const field = screen.getByPlaceholderText("New tag name...");
+    fireEvent.change(field, { target: { value: "きゃく" } });
+    pressWhileComposing(field, "Enter");
+    await act(async () => {});
+    expect(createPeopleTag).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(createPeopleTag).toHaveBeenCalledWith("きゃく"));
+  });
+
+  it("tells the page about a tag it made, before the person is saved", async () => {
+    const made = { id: 9, name: "Clients", color: "orange" };
+    createPeopleTag.mockResolvedValue(made);
+    const onTagCreated = vi.fn();
+    const onSave = vi.fn();
+    render(
+      <PersonModal person={null} isOpen onClose={vi.fn()} onSave={onSave} onTagCreated={onTagCreated} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "New Tag" }));
+    fireEvent.change(screen.getByPlaceholderText("New tag name..."), {
+      target: { value: "Clients" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onTagCreated).toHaveBeenCalledWith(made));
+    expect(onSave).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,7 @@ from backend.processing.processing_tuning import (
     line_break_pause_exceeded,
     resolve_tuning,
 )
+from backend.utils.capture_resume import capture_interval, load_resume_boundaries
 from backend.utils.config_manager import config_manager
 from backend.utils.live_word_settling import (
     close_word_state,
@@ -30,6 +31,12 @@ from backend.utils.transcript_settling import (
     publication_is_current,
 )
 
+from .live_settling_flags import (
+    flags_readable,
+    live_lines,
+    settled_frontier,
+    unmarked_frontier,
+)
 from .live_settling_projection import (
     SETTLING_KEY,
     Closing,
@@ -42,6 +49,7 @@ from .live_settling_projection import (
     partition_words,
     row_words,
     word_decisions,
+    word_extent,
     write_partitions,
 )
 
@@ -105,6 +113,8 @@ def load_live_settling_words(
 
 def live_settling_frontier(session: Session, *, recording_id: int) -> int:
     """Return the immutable audio frontier, including prior CPU whole-line output."""
+    if flags_readable(session):
+        return settled_frontier(live_lines(session, recording_id))
     payload = col(TranscriptUtterance.confidence_payload)
     return int(
         session.execute(
@@ -123,6 +133,8 @@ def live_settling_frontier(session: Session, *, recording_id: int) -> int:
 
 def legacy_live_frontier(session: Session, *, recording_id: int) -> int:
     """Keep prior whole-line CPU audio out of a resumed rolling CUDA decode."""
+    if flags_readable(session):
+        return unmarked_frontier(live_lines(session, recording_id))
     return int(
         session.execute(
             select(func.max(TranscriptUtterance.end_ms))
@@ -165,21 +177,33 @@ def _signature(word: dict[str, Any]) -> str:
     return word_signature(str(word.get("word") or ""))
 
 
+def _first_positions(current: list[dict[str, Any]]) -> dict[Any, int]:
+    """Each word ID's first position in the revision, built once per step."""
+    positions: dict[Any, int] = {}
+    for index, word in enumerate(current):
+        positions.setdefault(word.get("id"), index)
+    return positions
+
+
 def _still_ends_line(
-    current: list[dict[str, Any]], terminal: dict[str, Any], point: int | None
+    current: list[dict[str, Any]],
+    positions: dict[Any, int],
+    terminal: dict[str, Any],
+    point: int | None,
 ) -> bool:
     """Whether the revision holds the line's last word, unchanged and still last.
 
     A word recovered after it but before the confirmed end belongs to the line.
     """
-    for index, word in enumerate(current):
-        if word.get("id") == terminal.get("id"):
-            following = current[index + 1] if index + 1 < len(current) else None
-            start = following.get("start_ms") if following else None
-            return _signature(word) == _signature(terminal) and not (
-                start is not None and point is not None and start < point
-            )
-    return False
+    index = positions.get(terminal.get("id"))
+    if index is None:
+        return False
+    word = current[index]
+    following = current[index + 1] if index + 1 < len(current) else None
+    start = following.get("start_ms") if following else None
+    return _signature(word) == _signature(terminal) and not (
+        start is not None and point is not None and start < point
+    )
 
 
 def _line_boundaries(
@@ -195,7 +219,8 @@ def _line_boundaries(
     or followed by recovered speech), the end stays a time cutoff instead.
     """
     closed_ends: dict[str, int | None] = {}
-    cutoffs: set[int] = set()
+    cutoffs: set[int] = set(state.get("resume_boundaries_ms", []))
+    positions = _first_positions(current)
     for row in rows:
         stored = (row.confidence_payload or {}).get(SETTLING_KEY, {})
         if (
@@ -205,7 +230,7 @@ def _line_boundaries(
             continue
         point = stored.get("closed_at_ms", row.end_ms)
         words = row_words(row)
-        if words and _still_ends_line(current, words[-1], point):
+        if words and _still_ends_line(current, positions, words[-1], point):
             closed_ends[words[-1]["id"]] = point
         elif point is not None:
             cutoffs.add(point)
@@ -246,13 +271,34 @@ def _project(
         speaker_enabled=speaker_enabled,
         closing=context.closing,
     )
+    resume_boundaries = load_resume_boundaries(session, transcript)
     partitions = partition_words(
         words,
         decisions,
         closing=context.closing is not None,
         barriers=[row.start_ms for row in rows if not mutable_row(row)],
-        boundaries=_line_boundaries(mutable, state, context.silence_start_ms, words),
+        boundaries=_line_boundaries(
+            mutable,
+            {
+                **state,
+                "resume_boundaries_ms": resume_boundaries,
+            },
+            context.silence_start_ms,
+            words,
+        ),
     )
+    for partition in partitions:
+        extent = next(
+            (
+                extent
+                for word in partition.words
+                if (extent := word_extent(word)) is not None
+            ),
+            None,
+        )
+        partition.capture_interval = (
+            capture_interval(extent[0], resume_boundaries) if extent else None
+        )
     tombstones, ids, changed = write_partitions(
         session,
         PartitionWrite(

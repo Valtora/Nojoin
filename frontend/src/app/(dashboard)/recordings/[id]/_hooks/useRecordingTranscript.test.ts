@@ -19,6 +19,11 @@ const recording = (overrides: Partial<Recording> = {}): Recording => ({
   client_status: ClientStatus.RECORDING, has_audio: true, speakers: [],
   upload_progress: 10, processing_progress: 0, is_archived: false, is_deleted: false, ...overrides,
 });
+// The transcript a detail read carries: a capture's is "processing" from its start.
+const transcriptRow = (transcript_status: string) => ({
+  id: 1, recording_id: "rec-1", created_at: "2026-10-27T10:00:00Z", updated_at: "2026-10-27T10:00:00Z",
+  segments: [], transcript_status,
+});
 const snapshot = (text = "Live", recordingId = "rec-1"): TranscriptUtteranceList => ({
   recording_id: recordingId, revision: 4, speakers: [], tombstones: [],
   live_speaker_names: { LIVE_1: text },
@@ -56,7 +61,10 @@ describe("recording transcript handoff", () => {
     const refresh = result.current.liveTranscript.refresh;
     for (const status of [RecordingStatus.PAUSED, RecordingStatus.UPLOADING, RecordingStatus.QUEUED,
       RecordingStatus.PROCESSING]) {
-      rerender({ value: recording({ status, client_status: ClientStatus.IDLE }), localActive: false });
+      rerender({
+        value: recording({ status, client_status: ClientStatus.IDLE, transcript: transcriptRow("processing") }),
+        localActive: false,
+      });
       await advance(3_000);
       expect(mocks.live).toHaveBeenLastCalledWith("rec-1", 4, expect.any(AbortSignal));
       expect(result.current.transcriptSegments[0].text).toBe("Live");
@@ -190,5 +198,78 @@ describe("recording transcript handoff", () => {
     expect(result.current.transcriptSegments).toEqual([]);
     await act(async () => next.resolve(snapshot("Next meeting", "rec-2")));
     expect(result.current.transcriptSegments[0].text).toBe("Next meeting");
+  });
+});
+
+describe("in-flight recordings with no live lines (#835)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mocks.live.mockReset().mockResolvedValue(snapshot());
+    mocks.settled.mockReset().mockResolvedValue(snapshot("Final"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it.each([
+    ["an import uploading", RecordingStatus.UPLOADING, undefined, undefined],
+    ["an import queued", RecordingStatus.QUEUED, ClientStatus.IDLE, undefined],
+    ["an import processing", RecordingStatus.PROCESSING, ClientStatus.IDLE, undefined],
+    ["an import once its run makes a transcript", RecordingStatus.PROCESSING, ClientStatus.IDLE, "pending"],
+    ["a reprocess", RecordingStatus.QUEUED, ClientStatus.IDLE, "pending"],
+  ])("never reads the live feed for %s", async (_, status, clientStatus, transcriptStatus) => {
+    const { result } = mount(recording({
+      status, client_status: clientStatus,
+      transcript: transcriptStatus ? transcriptRow(transcriptStatus) : undefined,
+    }));
+    await advance(10_000);
+    expect(mocks.live).not.toHaveBeenCalled();
+    expect(mocks.settled).not.toHaveBeenCalled();
+    expect(result.current.usesInFlightTranscript).toBe(false);
+    expect(result.current.transcriptSegments).toEqual([]);
+  });
+
+  it("reads an import's transcript once it publishes, without the feed", async () => {
+    const queued = recording({ status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE });
+    const { result, rerender } = mount(queued);
+    await advance(3_000);
+    rerender({
+      value: { ...queued, status: RecordingStatus.PROCESSED, transcript: transcriptRow("completed") },
+      localActive: false,
+    });
+    await advance(6_000);
+    expect(mocks.live).not.toHaveBeenCalled();
+    expect(result.current.usesInFlightTranscript).toBe(false);
+    expect(result.current.transcriptIsAuthoritative).toBe(true);
+    expect(result.current.transcriptSegments[0].text).toBe("Final");
+  });
+
+  it("keeps reading a finished transcript that a later step runs over", async () => {
+    const { result } = mount(recording({
+      status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE, transcript: transcriptRow("completed"),
+    }));
+    await advance();
+    expect(mocks.live).toHaveBeenCalledWith("rec-1", undefined, expect.any(AbortSignal));
+    expect(result.current.usesInFlightTranscript).toBe(true);
+    expect(result.current.transcriptSegments[0].text).toBe("Live");
+  });
+
+  it("does not carry a watched capture's feed into a later reprocess", async () => {
+    const { result, rerender } = mount();
+    await advance();
+    const capture = recording({ status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE,
+      transcript: transcriptRow("processing") });
+    rerender({ value: capture, localActive: false });
+    await advance(3_000);
+    rerender({
+      value: { ...capture, status: RecordingStatus.PROCESSED, transcript: transcriptRow("completed") },
+      localActive: false,
+    });
+    await advance();
+    expect(result.current.transcriptSegments[0].text).toBe("Final");
+    const liveReads = mocks.live.mock.calls.length;
+    rerender({ value: { ...capture, status: RecordingStatus.QUEUED, transcript: transcriptRow("pending") }, localActive: false });
+    await advance(10_000);
+    expect(mocks.live).toHaveBeenCalledTimes(liveReads);
+    expect(result.current.usesInFlightTranscript).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { ButtonBase } from '@/components/ui/nativeBases';
-import { type ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { ChevronDown, StickyNote } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -16,15 +16,15 @@ interface CollapsedLineNotesProps<Note extends { id: string }> {
   /** Notes needing recovery or holding an editor stay visible. */
   isFoldable: (note: Note) => boolean;
   open: boolean;
-  onToggle: () => void;
+  onToggle: (lineId: string) => void;
+  lineId: string;
   gapIndex: number;
   saving: boolean;
   renderNote: (note: Note) => ReactNode;
   /**
    * The line's time, for the chip's name: "2 notes on the line at 01:05".
-   * Read only for a chip, so a line without notes formats nothing.
    */
-  lineTime: () => string;
+  lineTime: string;
   /** The element the chip's row is: an `li` among the live view's lines. */
   as?: "div" | "li";
   /** Width of the time column, matching the transcript it sits in. */
@@ -40,11 +40,12 @@ interface CollapsedLineNotesProps<Note extends { id: string }> {
  * remain visible. The reader owns expansion by line identity, so regrouping
  * overlapping transcript lines does not discard an explicit choice.
  */
-export default function CollapsedLineNotes<Note extends { id: string }>({
+function CollapsedLineNotes<Note extends { id: string }>({
   notes,
   isFoldable,
   open,
   onToggle,
+  lineId,
   gapIndex,
   saving,
   renderNote,
@@ -58,7 +59,7 @@ export default function CollapsedLineNotes<Note extends { id: string }>({
   if (folded < 2) return <>{notes.map(renderNote)}</>;
 
   const count = `${folded} notes`;
-  const time = lineTime();
+  const time = lineTime;
   return (
     <>
       <Row className={cn("flex gap-3", className)} data-testid="line-notes-chip" data-note-gap={gapIndex}>
@@ -71,7 +72,7 @@ export default function CollapsedLineNotes<Note extends { id: string }>({
             type="button"
             aria-expanded={open}
             aria-label={`${count} on the line at ${time}${saving ? ", saving" : ""}`}
-            onClick={onToggle}
+            onClick={() => onToggle(lineId)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-pill px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text outline-none hover:text-action-text-hover focus-visible:ring-2 focus-visible:ring-action",
               TOUCH_TARGET_HEIGHT,
@@ -91,3 +92,5 @@ export default function CollapsedLineNotes<Note extends { id: string }>({
     </>
   );
 }
+
+export default memo(CollapsedLineNotes) as typeof CollapsedLineNotes;

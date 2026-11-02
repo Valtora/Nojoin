@@ -11,9 +11,8 @@ from collections.abc import Iterator
 from typing import Any
 
 from backend.models.chat import ChatMessage
-from backend.models.recording import IN_FLIGHT_TRANSCRIPT_STATUSES
 from backend.services.chat_relay import ChatStreamPublisher, friendly_chat_error
-from backend.services.live_chat import stream_live_chat
+from backend.services.live_chat import chat_transcript_in_progress, stream_live_chat
 from backend.utils.chat_prompt import ChatTranscript
 
 from .constants import *  # noqa: F401,F403 - shared task imports (celery_app, models, resolvers)
@@ -65,9 +64,10 @@ def meeting_chat_task(
                 recording_id=recording.id,
             )
 
+        # The same rule as the API's own chat path (routes_chat.py).
         chunks = (
             stream_live_chat(ask, recording.id)
-            if recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
+            if chat_transcript_in_progress(recording.status, transcript)
             else ask(None)
         )
         for chunk in chunks:

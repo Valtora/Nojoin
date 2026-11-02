@@ -251,6 +251,9 @@ def test_cli_live_overflow_uses_current_names_notes_and_persists_once(
     _insert_note(engine, "point", "Current user note.", anchor_ms=2500)
     with engine.begin() as connection:
         connection.execute(text("UPDATE recordings SET status='PROCESSING' WHERE id=1"))
+        connection.execute(
+            text("UPDATE transcripts SET transcript_status='processing'")
+        )
 
     class Backend(LLMBackend):
         def __init__(self) -> None:
@@ -289,3 +292,52 @@ def test_cli_live_overflow_uses_current_names_notes_and_persists_once(
     assert [(row.role, row.content) for row in rows] == [
         ("assistant", "Answer." + footer)
     ]
+
+
+@pytest.mark.parametrize(
+    ("transcript_status", "live"), [("processing", True), ("completed", False)]
+)
+def test_cli_chat_reads_a_finished_transcript_whole_as_the_api_does(
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    transcript_status: str,
+    live: bool,
+) -> None:
+    """Regenerating notes holds the recording PROCESSING over a finished transcript."""
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE chat_messages (id INTEGER PRIMARY KEY, created_at DATETIME NOT NULL, "
+                "updated_at DATETIME NOT NULL, recording_id INTEGER NOT NULL, user_id INTEGER NOT NULL, "
+                "role VARCHAR NOT NULL, content TEXT NOT NULL)"
+            )
+        )
+    _insert_transcript(engine, [])
+    _insert_speaker(engine, "SPEAKER_00", local_name="Mira")
+    _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "The decision stands.")
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE recordings SET status='PROCESSING' WHERE id=1"))
+        connection.execute(
+            text("UPDATE transcripts SET transcript_status=:status"),
+            {"status": transcript_status},
+        )
+    received: list[object] = []
+
+    class Backend(LLMBackend):
+        def ask_question_streaming(self, **kwargs: Any) -> Iterator[str]:
+            received.append(kwargs["diarized_transcript"])
+            yield "Answer."
+
+    _wire(monkeypatch, engine, Backend())
+    tasks.meeting_chat_task.run(RECORDING_ID, "What was decided?", [])
+
+    tokens = [
+        value for kind, value in _FakePublisher.instances[0].events if kind == "tok"
+    ]
+    if live:
+        assert isinstance(received[0], LiveChatTranscript)
+        assert tokens[0] == "Answer." and "transcript so far" in tokens[1]
+    else:
+        # The ordinary answer: the backend reads the whole transcript itself.
+        assert received == [None]
+        assert tokens == ["Answer."]

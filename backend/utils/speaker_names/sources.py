@@ -28,6 +28,9 @@ AUTHORITY: dict[str, int] = {
 
 KIND_NAME = "name"
 KIND_DISMISS = "dismiss"
+# One live label merged into another during a capture: the row's anchor_label
+# is the label merged, and evidence["into_label"] the label it joined.
+KIND_MERGE = "merge"
 
 # Sources whose events the final pass derives again on every run.
 MACHINE_SOURCES = frozenset(

@@ -77,9 +77,8 @@ describe("side-panel jumps into the live transcript", () => {
     const item = surface === "notes"
       ? screen.getAllByTestId("my-note")[0]
       : screen.getByTestId("capture-item");
-    fireEvent.click(within(item).getByRole("button", {
-      name: surface === "notes" ? /^Show in the transcript/ : /^Show the note at/,
-    }));
+    // My notes and Captures name the jump alike.
+    fireEvent.click(within(item).getByRole("button", { name: /^Show in the transcript/ }));
 
     expect(onShowTranscript).toHaveBeenCalledTimes(1);
     // Distinct geometry proves a shown note beats the preceding transcript row.

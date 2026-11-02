@@ -128,7 +128,7 @@ async def confirm_speaker_name(
 ):
     """Confirm a pending name: the user's rename to the name it shows."""
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
     speaker = await _pending_speaker(db, recording, diarization_label)
     name, source = shown_name(speaker), speaker.name_source
     # Before the rename, which would otherwise mark it superseded.
@@ -162,7 +162,7 @@ async def dismiss_speaker_name(
 ):
     """Dismiss an unconfirmed name ("Not Alex"); put back "Speaker N"."""
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
     speaker = await _pending_speaker(
         db, recording, diarization_label, allow_unlocked_voiceprint=True
     )

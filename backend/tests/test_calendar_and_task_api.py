@@ -409,6 +409,7 @@ async def seed_recording(
     created_at: datetime,
     duration_seconds: float | None = None,
     status: str = "PROCESSED",
+    client_status: str | None = None,
     calendar_event_id: int | None = None,
     is_archived: bool = False,
     is_deleted: bool = False,
@@ -452,7 +453,7 @@ async def seed_recording(
             :duration_seconds,
             NULL,
             :status,
-            NULL,
+            :client_status,
             0,
             100,
             NULL,
@@ -474,6 +475,7 @@ async def seed_recording(
             "audio_path": f"/audio/{recording_id}.wav",
             "duration_seconds": duration_seconds,
             "status": status,
+            "client_status": client_status,
             "is_archived": is_archived,
             "is_deleted": is_deleted,
             "user_id": user_id,
@@ -1152,6 +1154,7 @@ async def test_calendar_dashboard_includes_unlinked_recordings_and_deduplicates_
             "ends_at": "2026-04-18T13:30:00Z",
             "duration_seconds": 1800.0,
             "status": "PROCESSED",
+            "client_status": None,
             "speaker_names": [
                 "Alex Morgan",
                 "Blair Chen",
@@ -1176,6 +1179,7 @@ async def test_calendar_dashboard_includes_unlinked_recordings_and_deduplicates_
             "ends_at": "2026-04-18T10:00:00Z",
             "duration_seconds": 3300.0,
             "status": "PROCESSED",
+            "client_status": None,
             "speaker_names": [],
             "tags": [],
         }
@@ -1218,10 +1222,54 @@ async def test_calendar_dashboard_surfaces_recordings_without_calendar_connectio
             "ends_at": "2026-04-07T12:45:00Z",
             "duration_seconds": 2700.0,
             "status": "PROCESSED",
+            "client_status": None,
             "speaker_names": [],
             "tags": [],
         }
     ]
+
+
+@pytest.mark.anyio
+async def test_calendar_dashboard_tells_a_running_capture_from_a_finishing_upload(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_recording(
+        test_session_maker,
+        recording_id=702,
+        user_id=1,
+        name="Meeting in progress",
+        public_id="recording-702",
+        created_at=datetime(2026, 4, 8, 12, 0, 0),
+        status="UPLOADING",
+        client_status="RECORDING",
+    )
+    await seed_recording(
+        test_session_maker,
+        recording_id=703,
+        user_id=1,
+        name="Upload finishing",
+        public_id="recording-703",
+        created_at=datetime(2026, 4, 8, 14, 0, 0),
+        status="UPLOADING",
+        client_status="UPLOADING",
+    )
+    override_current_user(1)
+
+    response = await client.get(
+        "/api/v1/calendar/dashboard",
+        params={"month": "2026-04", "timezone": "UTC"},
+    )
+
+    assert response.status_code == 200
+    assert {
+        item["id"]: (item["status"], item["client_status"])
+        for item in response.json()["recording_items"]
+    } == {
+        "recording-702": ("UPLOADING", "RECORDING"),
+        "recording-703": ("UPLOADING", "UPLOADING"),
+    }
 
 
 @pytest.mark.anyio

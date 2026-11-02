@@ -11,11 +11,13 @@ import logging
 
 from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.generation_claim import claim_generation
+from backend.utils.live_speaker_labels import speaker_prompt_name
 from backend.utils.meeting_notes import append_user_notes_section
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.utils.transcript_change import change_sequence_bump
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
+from backend.worker.tasks.side_runs import claim_heartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -31,25 +33,20 @@ def _build_automatic_meeting_intelligence_transcript_impl(
     timeline_notes: RecordingTimelineNotes,
 ) -> str:
     """The transcript for the unified prompt, with the body notes on their own lines."""
-    unresolved_labels = set(unresolved_speakers)
+    prompt_speaker_map = dict(speaker_map)
+    # Keep inferable diarisation labels intact for the speaker_mapping contract.
+    prompt_speaker_map.update((label, label) for label in unresolved_speakers)
 
     def format_line(seg: dict) -> str:
         speaker_label = str(seg.get("speaker", "Unknown"))
-        display_name = (
-            speaker_label
-            if speaker_label in unresolved_labels
-            else speaker_display_name(speaker_label, speaker_map)
-        )
+        display_name = speaker_prompt_name(speaker_label, prompt_speaker_map)
 
         overlapping_names = []
         for overlapping_label in seg.get("overlapping_speakers", []):
             normalized_label = str(overlapping_label)
-            if normalized_label in unresolved_labels:
-                overlapping_names.append(normalized_label)
-            else:
-                overlapping_names.append(
-                    speaker_display_name(normalized_label, speaker_map)
-                )
+            overlapping_names.append(
+                speaker_prompt_name(normalized_label, prompt_speaker_map)
+            )
 
         overlapping_suffix = (
             f" (with {', '.join(overlapping_names)})" if overlapping_names else ""
@@ -73,6 +70,21 @@ def _build_automatic_meeting_intelligence_transcript_impl(
         author_names=timeline_notes.author_names,
         format_time=lambda ms: _format_recording_timestamp(ms / 1000),
     )
+
+
+def _apply_automatic_title(session, recording: Recording, title: str) -> None:
+    """Name the recording after the AI title unless its user chose a name.
+
+    The flag is read again under the row lock, which this transaction's write
+    of the name would take anyway: a rename made while the model was answering
+    has committed by then, or waits for this commit and lands after it. Either
+    way the user's name is the one left (issue #837).
+    """
+    session.refresh(
+        recording, attribute_names=["title_user_edited"], with_for_update=True
+    )
+    if not recording.title_user_edited:
+        recording.name = title
 
 
 def _apply_automatic_meeting_intelligence_result(
@@ -137,7 +149,7 @@ def _apply_automatic_meeting_intelligence_result(
         reason="automatic_meeting_intelligence_omitted_by_llm",
     )
 
-    recording.name = result.title
+    _apply_automatic_title(session, recording, result.title)
     transcript.notes = result.notes_markdown
     transcript.notes_status = "completed"
     # Freshly generated notes reflect every READY document by definition.
@@ -165,7 +177,6 @@ def _apply_automatic_meeting_intelligence_result(
         },
         log=logger,
     )
-    update_recording_status(session, recording.id)
 
 
 def _run_automatic_meeting_intelligence_stage_impl(
@@ -302,33 +313,37 @@ def _run_automatic_meeting_intelligence_stage_impl(
         recording.processing_progress = AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS
         session.add(recording)
 
-    transcript.notes_status = "generating"
+    # The notes claim is the stage's own. The recording's status belongs to the
+    # pipeline when this runs inline, and to nothing once it is deferred: the
+    # pipeline has already finished it (issue #828).
+    claim_generation(transcript, "notes_status")
     transcript.set_notes_error_message(None)
     session.add(transcript)
     session.commit()
-    update_recording_status(session, recording.id)
 
     try:
         llm = _llm_backend_from_config(llm_config)
-        try:
-            result = llm.generate_meeting_intelligence(
-                request,
-                timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
-            )
-        except ContextWindowExceededError as overflow:
-            # Reached only when the secondary provider, if any, also failed on
-            # the whole meeting. See backend.utils.long_meeting_notes.
-            logger.info(
-                "Recording %s is too long for one call; generating its notes "
-                "in parts: %s",
-                recording.id,
-                overflow,
-            )
-            result = llm.generate_meeting_intelligence_in_parts(
-                request,
-                overflow=overflow,
-                timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
-            )
+        assert recording.id is not None
+        with claim_heartbeat(recording.id, "notes_status"):
+            try:
+                result = llm.generate_meeting_intelligence(
+                    request,
+                    timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
+                )
+            except ContextWindowExceededError as overflow:
+                # Reached only when the secondary provider, if any, also failed
+                # on the whole meeting. See backend.utils.long_meeting_notes.
+                logger.info(
+                    "Recording %s is too long for one call; generating its notes "
+                    "in parts: %s",
+                    recording.id,
+                    overflow,
+                )
+                result = llm.generate_meeting_intelligence_in_parts(
+                    request,
+                    overflow=overflow,
+                    timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
+                )
         result = dataclasses.replace(
             result,
             notes_markdown=append_user_notes_section(

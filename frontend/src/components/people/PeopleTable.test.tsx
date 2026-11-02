@@ -43,3 +43,17 @@ describe("people card fill contract", () => {
     expect(fillMarkerViolations(baseElement)).toEqual([]);
   });
 });
+
+describe("people card meeting count", () => {
+  it.each([
+    [undefined, "No meetings"],
+    [0, "No meetings"],
+    [1, "1 meeting"],
+    [3, "3 meetings"],
+  ])("reads %s as %j", (count, label) => {
+    render(<PeopleTable people={[{ ...person, recording_count: count }]} isLoading={false}
+      selectedIds={new Set()} onToggleSelection={vi.fn()} onSelectAll={vi.fn()}
+      onEdit={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.getByText(label)).toBeInTheDocument();
+  });
+});
