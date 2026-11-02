@@ -1,6 +1,7 @@
 """Native Qwen extraction reaches actual model logits for arbitrary clip lengths."""
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +11,7 @@ import pytest
 from backend.processing import forced_aligner_native as native
 
 
-@pytest.fixture
-def native_processor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+def _load_native_processor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     from tokenizers import Tokenizer
     from tokenizers.models import WordLevel
     from transformers import (
@@ -40,6 +40,24 @@ def native_processor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     assert path.read_text() == original
     assert type(mapped.feature_extractor).__name__ == "Qwen3ASRFeatureExtractor"
     return mapped
+
+
+@pytest.fixture
+def native_processor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    return _load_native_processor(tmp_path, monkeypatch)
+
+
+def test_processor_loads_under_another_installed_transformers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from transformers import Qwen3ASRProcessor
+
+    # The lazy module replaces itself on its first concrete import; patch the
+    # module that import left in place, which the loader then reads.
+    transformers = sys.modules["transformers"]
+    assert transformers.Qwen3ASRProcessor is Qwen3ASRProcessor
+    monkeypatch.setattr(transformers, "__version__", "5.99.0")
+    _load_native_processor(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("duration", [29.6, 15.2, 1.7, 60.0])

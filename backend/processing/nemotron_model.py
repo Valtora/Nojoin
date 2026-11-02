@@ -21,7 +21,6 @@ import numpy as np
 
 from backend.processing.nemotron_frontend import CudaFrontend, check_streaming_frontend
 from backend.processing.nemotron_types import (
-    NEMOTRON_TRANSFORMERS_VERSION,
     NativeWindowResult,
     NemotronGeometry,
     NemotronStateError,
@@ -152,11 +151,15 @@ def _check_model(model: Any, torch: Any) -> None:
         )
 
 
-def _fingerprint(asset_digest: str, torch_version: str) -> str:
+def _fingerprint(
+    asset_digest: str, torch_version: str, transformers_version: str
+) -> str:
+    """Identify the running implementation; a saved native cache resumes only
+    under the same one, since cache storage can change between releases."""
     data = {
         "assets": asset_digest,
         "geometry": asdict(NemotronGeometry()),
-        "transformers": NEMOTRON_TRANSFORMERS_VERSION,
+        "transformers": transformers_version,
         "torch": torch_version,
         "precision": "float32",
         "attention": "sdpa",
@@ -355,22 +358,13 @@ def _build_processors(path: Path) -> list[Any]:
     return processors
 
 
-def _build_runtime(
-    path: Path, device: str, manifest: dict[str, Any]
-) -> NemotronRuntime:
+def _build_runtime(path: Path, device: str) -> NemotronRuntime:
     import torch
     import transformers
     from transformers.models.nemotron3_diarization.modeling_nemotron3_diarization import (
         Nemotron3DiarizationForAudioFrameClassification,
     )
 
-    if (
-        transformers.__version__ != NEMOTRON_TRANSFORMERS_VERSION
-        or manifest["transformers_version"] != transformers.__version__
-    ):
-        raise assets.NemotronModelError(
-            "Nemotron requires the exact evaluated Transformers version"
-        )
     processors = _build_processors(path)
     options = dict(local_files_only=True, trust_remote_code=False)
     with _nemotron_precision():
@@ -405,7 +399,7 @@ def _build_runtime(
         processors[2],
         device,
         digest,
-        _fingerprint(digest, torch.__version__),
+        _fingerprint(digest, torch.__version__, transformers.__version__),
     )
 
 
@@ -429,9 +423,7 @@ def load_nemotron_model(*, device: str) -> NemotronRuntime:
                     "Nemotron needs prepared verified local model assets"
                 )
             assets.verify_nemotron_model(resolution.path)
-            _RUNTIMES[device] = _build_runtime(
-                resolution.path, device, assets.load_asset_manifest()
-            )
+            _RUNTIMES[device] = _build_runtime(resolution.path, device)
         return _RUNTIMES[device]
 
 
