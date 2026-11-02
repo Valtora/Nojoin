@@ -14,6 +14,7 @@ import { useRecordingListPages } from "@/components/recordings/_hooks/useRecordi
 import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { isImeComposing } from "@/lib/imeComposition";
 import { formatTimeZoneDay } from "@/lib/timezone";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "@/lib/useDebouncedValue";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
@@ -51,6 +52,7 @@ interface TaskRecordingPickerProps {
  *
  * Keyboard: the arrow keys move through the results from the search box and
  * Enter links or unlinks the highlighted one, without submitting the form.
+ * None of them act while an input method is composing.
  */
 export default function TaskRecordingPicker({
   selected,
@@ -119,6 +121,8 @@ export default function TaskRecordingPicker({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // These keys choose or cancel a candidate while an input method composes.
+    if (isImeComposing(event)) return;
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();

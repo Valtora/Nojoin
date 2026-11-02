@@ -11,6 +11,7 @@ import AudioPlayer from "@/components/AudioPlayer";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
 import FitText from "@/components/ui/FitText";
+import { isImeComposing } from "@/lib/imeComposition";
 import { Recording, RecordingStatus } from "@/types";
 
 interface RecordingHeaderProps {
@@ -125,6 +126,7 @@ export default function RecordingHeader({
                   onChange={(e) => setTitleValue(e.target.value)}
                   onBlur={onTitleSubmit}
                   onKeyDown={(e) => {
+                    if (isImeComposing(e)) return;
                     if (e.key === "Enter") onTitleSubmit();
                     if (e.key === "Escape") {
                       setIsEditingTitle(false);
@@ -164,6 +166,7 @@ export default function RecordingHeader({
                 onChange={(e) => setTitleValue(e.target.value)}
                 onBlur={onTitleSubmit}
                 onKeyDown={(e) => {
+                  if (isImeComposing(e)) return;
                   if (e.key === "Enter") onTitleSubmit();
                   if (e.key === "Escape") {
                     setIsEditingTitle(false);

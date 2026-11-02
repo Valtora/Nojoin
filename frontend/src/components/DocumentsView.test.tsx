@@ -33,7 +33,11 @@ const failed: Document = {
 const failureNotices = () =>
   mocks.addNotification.mock.calls.filter(([notice]) => notice.message === "Agenda.pdf: The file is damaged.");
 
-/** Opens the Documents view as each visit to the recording does, then leaves. */
+/**
+ * Opens the Documents view as each visit to the recording does, then leaves.
+ * React runs a render's pending effects before unmounting it, so the visit's
+ * notice, if any, is counted even when it had not run when the row appeared.
+ */
 const visit = async () => {
   const view = render(<DocumentsView recordingId="rec-1" />);
   await screen.findByText("Agenda.pdf");
@@ -59,7 +63,8 @@ describe("DocumentsView failure notices", () => {
     mocks.reparseDocument.mockResolvedValue({ ...failed, status: "PENDING", error_message: undefined });
     const view = render(<DocumentsView recordingId="rec-1" />);
     await screen.findByText("Agenda.pdf");
-    expect(failureNotices()).toHaveLength(1);
+    // The notice comes from an effect, which can run after the row renders.
+    await waitFor(() => expect(failureNotices()).toHaveLength(1));
 
     fireEvent.click(screen.getByTitle("Parse again with visual analysis"));
     // Announced once the failure has been forgotten.

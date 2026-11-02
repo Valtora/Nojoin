@@ -4,6 +4,7 @@ import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases
 import { memo, useId, useMemo, useRef } from "react";
 
 import { getColorByKey } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import { segmentEndMs, segmentStartMs } from "@/lib/notes/placement";
 import {
@@ -219,6 +220,7 @@ function TranscriptLine({
             onChange={(e) => editor.setValue(e.target.value)}
             onBlur={editor.handleSpeakerRenameSubmit}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if (e.key === "Enter") editor.handleSpeakerRenameSubmit();
               if (e.key === "Escape") editor.cancelSpeakerRename();
             }}

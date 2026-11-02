@@ -218,6 +218,13 @@ describe("transcript toolbar", () => {
     expect(document.querySelector('[aria-live="polite"]')).toBe(region);
     expect(region).toHaveTextContent("1 of 2");
 
+    // Not on the Enter that ends an input method's composition, flagged or as
+    // Safari's keyCode 229. One at a time: two presses would wrap back to 1.
+    fireEvent.keyDown(findField(), { key: "Enter", isComposing: true });
+    expect(region).toHaveTextContent("1 of 2");
+    fireEvent.keyDown(findField(), { key: "Enter", keyCode: 229 });
+    expect(region).toHaveTextContent("1 of 2");
+
     fireEvent.keyDown(findField(), { key: "Enter" });
     expect(region).toHaveTextContent("2 of 2");
   });

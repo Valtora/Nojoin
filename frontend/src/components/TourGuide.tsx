@@ -8,6 +8,16 @@ import '@/app/driver-theme.css';
 import { useNavigationStore } from '@/lib/store';
 import { dashboardSteps, recordingsSteps, restoreTourPanel, transcriptSteps } from '@/lib/tour-config';
 import { getUserMe } from '@/lib/api';
+import { whenNotTyping } from '@/lib/whenNotTyping';
+
+// A tour opens this long after its page does.
+const TOUR_DELAY_MS = 1500;
+// A tour held back while someone types opens once focus has left the field
+// and nothing has been pressed or clicked for this long. It is longer than the
+// pause people take to choose their next action (about 1.35 s in the
+// keystroke-level model), so a tour does not land on the click or key that
+// follows leaving a field, such as a click back into it.
+const TOUR_IDLE_MS = 1500;
 
 function useTourUserId(enabled = true) {
   const [userId, setUserId] = useState<number | null>(null);
@@ -32,9 +42,20 @@ function useScheduledTour(
 ) {
   useEffect(() => {
     if (!enabled) return;
-    let cancelled = false;
     let activeDriver: Driver | null = null;
-    const timer = setTimeout(() => {
+    // Ends the tour once. Only a person closing it marks it seen: a route or
+    // state change leaves it for a later visit.
+    const end = (seen: boolean) => {
+      const ending = activeDriver;
+      if (!ending) return;
+      activeDriver = null;
+      ending.destroy();
+      onEnd?.();
+      if (seen) onSeen();
+    };
+    // driver.js takes focus, so a tour waits while someone types (#918). Its
+    // steps are read when it opens, since the page may have changed by then.
+    const cancelOpen = whenNotTyping(() => {
       const validSteps = steps.filter(step =>
         typeof step.element !== 'string' || document.querySelector(step.element),
       );
@@ -46,18 +67,16 @@ function useScheduledTour(
         nextBtnText: 'Next',
         prevBtnText: 'Previous',
         doneBtnText: 'Done',
-        onDestroyed: () => {
-          onEnd?.();
-          // Route/state cleanup must leave the tour available for a later visit.
-          if (!cancelled) onSeen();
-        },
+        // Escape, the close button, the overlay and Done all arrive here.
+        // driver.js skips onDestroyed when a tour closes in the 400 ms a step
+        // takes to animate in, so the end can't wait for it (#915).
+        onDestroyStarted: () => end(true),
       });
       activeDriver.drive();
-    }, 1500);
+    }, TOUR_DELAY_MS, TOUR_IDLE_MS);
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      activeDriver?.destroy();
+      cancelOpen();
+      end(false);
     };
   }, [enabled, onEnd, onSeen, scope, steps]);
 }

@@ -61,6 +61,7 @@ from .capture_settling import (
     move_resume_break,
     seal_live_settling,
 )
+from .helpers import revoke_task_of_recording
 from .router import router
 
 logger = logging.getLogger(__name__)
@@ -895,6 +896,7 @@ async def discard_upload(
         )
 
     task_id = recording.celery_task_id
+    public_id = recording.public_id
 
     # Attached documents go with the row by FK cascade, so read their paths
     # first. The lock taken above holds back any document insert until the
@@ -919,11 +921,7 @@ async def discard_upload(
     await db.commit()
     # Broker contact can stall. Release the publication fence first, then stop
     # the snapshotted task before removing its files.
-    if task_id:
-        try:
-            recordings_module.celery_app.control.revoke(task_id, terminate=True)
-        except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
-            pass
+    await revoke_task_of_recording(task_id, public_id)
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
 

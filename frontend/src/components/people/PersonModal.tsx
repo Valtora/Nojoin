@@ -18,6 +18,7 @@ import { GlobalSpeaker, PeopleTag } from "@/types";
 import ColorPicker from "@/components/ColorPicker";
 import { getPeopleTags, createPeopleTag } from "@/lib/api";
 import { getColorByKey } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import {
   getGlobalSpeakers,
   mergeSpeakers,
@@ -730,7 +731,7 @@ interface TagNode extends PeopleTag {
                     placeholder="New tag name..."
                     className="flex-1 px-3 py-1.5 text-sm rounded-md border border-control-border bg-control-bg outline-none"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
+                      if (e.key === "Enter" && !isImeComposing(e)) {
                         e.preventDefault();
                         handleCreateTag(e);
                       }

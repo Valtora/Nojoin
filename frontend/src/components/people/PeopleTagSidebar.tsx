@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { PeopleTag } from "@/types";
 import { DEFAULT_TAG_COLORS } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import { notifyRequestError } from "@/lib/notifyRequestError";
 import {
   getPeopleTags,
@@ -303,6 +304,7 @@ export function PeopleTagSidebar({
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (isImeComposing(e)) return;
                   if (e.key === "Enter") handleAddTag(newTagName);
                   else if (e.key === "Escape") setIsAddingRoot(false);
                 }}
@@ -470,6 +472,7 @@ function TagNode({
               onChange={(e) => setEditValue(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === "Enter") onEditSave(tag.id, editValue);
                 else if (e.key === "Escape") onEditCancel();
               }}
@@ -570,6 +573,7 @@ function TagNode({
             value={subValue}
             onChange={(e) => setSubValue(e.target.value)}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if (e.key === "Enter") void saveSubTag();
               else if (e.key === "Escape") onAddSubStart(null);
             }}
