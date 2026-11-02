@@ -73,6 +73,7 @@ import {
   type CaptureSourceReportSnapshot,
 } from "./sourceReport";
 import {
+  AudioNotStartedError,
   CaptureResumeSupersededError,
   clearPausedCaptureContext,
   DEFAULT_CAPTURE_LEVELS,
@@ -206,6 +207,14 @@ const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 2_000;
 
 const AUDIO_CONTEXT_NOT_RUNNING_MESSAGE =
   "The browser has not restarted audio capture, so the recording is still paused. End any call or other app using audio, return to this tab, then choose Resume again.";
+
+/** Start's words when the browser does not start audio for a new capture (issue #924). */
+const AUDIO_NOT_STARTED_MESSAGE =
+  "The browser did not start audio, so the meeting was not started. Select Start Meeting to try again. If it keeps happening, check that this device can play sound, or use another browser.";
+
+/** The same for a Resume after a reload, which leaves the recording paused. */
+const AUDIO_NOT_STARTED_ON_RESUME_MESSAGE =
+  "The browser did not start audio, so the recording is still paused. Choose Resume to try again. If it keeps happening, check that this device can play sound, or choose Stop and process to keep what was recorded.";
 
 /**
  * Coverage thresholds. Both must be exceeded, so the ordinary few seconds of
@@ -827,11 +836,14 @@ export class CaptureController {
       sources?.release();
       const cancelledByUser =
         error instanceof PickSourceError && error.code === "display_cancelled";
+      const audioNotStarted = error instanceof AudioNotStartedError;
       // Fenced with the init epoch: a picker left open long enough for the
       // reservation to stall may have seen another device take it over.
       await discardRecordingCapture(
         initResponse.id,
-        cancelledByUser ? "display_picker_cancelled" : undefined,
+        cancelledByUser
+          ? "display_picker_cancelled"
+          : audioNotStarted ? "audio_not_started" : undefined,
         { epoch: initResponse.capture_epoch },
       ).catch(() => {});
 
@@ -847,14 +859,15 @@ export class CaptureController {
         return null;
       }
 
+      const message = audioNotStarted ? AUDIO_NOT_STARTED_MESSAGE : formatCaptureError(error);
       this.setState({
         status: "error",
-        error: formatCaptureError(error),
+        error: message,
         recordingId: null,
         lastSequence: -1,
         elapsedSeconds: 0,
       });
-      throw error;
+      throw audioNotStarted ? new AudioNotStartedError(message, { cause: error }) : error;
     }
   };
 
@@ -1047,14 +1060,15 @@ export class CaptureController {
         const epoch = resumeResponse.capture_epoch;
         await pauseRecordingCapture(targetRecordingId, { epoch }).catch(() => {});
       }
-      this.setState({
-        status: "error",
-        error: formatCaptureError(error),
-      });
+      const audioNotStarted = error instanceof AudioNotStartedError;
+      const message = audioNotStarted ? AUDIO_NOT_STARTED_ON_RESUME_MESSAGE : formatCaptureError(error);
+      this.setState({ status: "error", error: message });
       // A stalled capture whose own tab came back is refused, and is no longer
       // the user's to decide about here.
       await this.refreshPausedRecording().catch(() => {});
-      throw error;
+      // By now the page may have shown and cleared the state's error, and the
+      // caller then shows the thrown one, so it carries the same words.
+      throw audioNotStarted ? new AudioNotStartedError(message, { cause: error }) : error;
     }
   };
 

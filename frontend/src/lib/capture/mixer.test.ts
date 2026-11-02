@@ -3,12 +3,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  AUDIO_START_TIMEOUT_MS,
   computeAutomaticGainTarget,
   createCaptureMixer as createRealCaptureMixer,
   mixToMonoAmplitude,
   type CreateCaptureMixerOptions,
 } from "./mixer";
 import { PCM_TAP_MODULE_URL, PCM_TAP_PROCESSOR_NAME } from "./pcm/tapSource";
+import { AudioNotStartedError } from "./shared";
 
 class FakeAudioNode {
   connections: FakeAudioNode[] = [];
@@ -249,6 +251,69 @@ describe("capture mixer", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("a new context the browser does not start (issue #924)", () => {
+    it("gives up after the time limit and closes the context", async () => {
+      vi.useFakeTimers();
+      try {
+        const context = new FakeAudioContext();
+        // Headless Firefox: resume() stays pending and the context suspended.
+        context.resume = () => new Promise<void>(() => {});
+
+        let settled = false;
+        const creating = createCaptureMixer({
+          microphoneStream: {} as MediaStream,
+          audioContextFactory: () => context as unknown as AudioContext,
+        }).finally(() => { settled = true; });
+        const failure = creating.catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(AUDIO_START_TIMEOUT_MS - 1);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(await failure).toBeInstanceOf(AudioNotStartedError);
+        expect(context.closed).toBe(true);
+        // Nothing of the graph was built on a context that never ran.
+        expect(context.loadedModules).toEqual([]);
+        expect(context.sources).toEqual([]);
+        expect(context.tapNodes).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("gives up at once when the browser refuses to resume it", async () => {
+      const context = new FakeAudioContext();
+      context.resume = () => Promise.reject(new DOMException("blocked", "NotAllowedError"));
+
+      await expect(createCaptureMixer({
+        microphoneStream: {} as MediaStream,
+        audioContextFactory: () => context as unknown as AudioContext,
+      })).rejects.toBeInstanceOf(AudioNotStartedError);
+      expect(context.closed).toBe(true);
+    });
+
+    it("waits for one that starts a few seconds late", async () => {
+      vi.useFakeTimers();
+      try {
+        const context = new FakeAudioContext();
+        context.resume = () => new Promise<void>((resolve) => {
+          setTimeout(() => { context.state = "running"; resolve(); }, 4_000);
+        });
+
+        const creating = createCaptureMixer({
+          microphoneStream: {} as MediaStream,
+          audioContextFactory: () => context as unknown as AudioContext,
+        });
+        await vi.advanceTimersByTimeAsync(4_000);
+
+        await expect(creating).resolves.toMatchObject({ context });
+        expect(context.loadedModules).toEqual([PCM_TAP_MODULE_URL]);
+        expect(context.closed).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it("can dispose a mixer after its microphone was detached", async () => {

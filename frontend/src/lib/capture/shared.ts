@@ -160,6 +160,14 @@ export class CaptureResumeSupersededError extends Error {
   }
 }
 
+/** The browser did not start audio for a new capture (`AUDIO_START_TIMEOUT_MS` in the mixer). */
+export class AudioNotStartedError extends Error {
+  constructor(message = "The browser did not start audio for the recording.", options?: ErrorOptions) {
+    super(message, options);
+    this.name = "AudioNotStartedError";
+  }
+}
+
 export interface GuardedExitRequest {
   reason: "pagehide" | "beforeunload" | "route-change";
   useBeacon: boolean;

@@ -119,7 +119,7 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any change to supported browsers/OSes or capture behaviour. Default below. -->
 
-- Supported browsers, operating systems and audio sources are unchanged. Recording needs Chrome or another Chromium browser on desktop, or Chrome on Android or iOS for the microphone alone, and Firefox and Safari still cannot record.
+- Supported browsers, operating systems and audio sources are unchanged. Chrome on Windows, Linux and macOS, and other Chromium-family browsers on Windows and Linux, record shared audio with the microphone or the microphone only, and other Chromium-family browsers on macOS are best-effort. Firefox, Safari and mobile browsers record the microphone only.
 - Capture asks the browser for echo cancellation and auto gain, with noise suppression off unless you turn it on under **Settings > Recording > Advanced** (#711).
 - Stop releases the microphone before the upload, and **Release the microphone while paused** frees it during a pause. Shared tab or screen audio is never released, and the release is untested on iOS (#518, #755).
 - Start can use a saved microphone that the browser lists without an id, as Chrome does after **Allow this time** and a restart (#809).
