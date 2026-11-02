@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import PageLimit, PageOffset, RowId
 from backend.models.invitation import Invitation
 from backend.models.user import User, UserRole
 from backend.utils.config_manager import get_trusted_web_origin
@@ -93,8 +94,8 @@ async def create_invitation(
 
 @router.get("/", response_model=List[InvitationRead])
 async def read_invitations(
-    skip: int = 0,
-    limit: int = 100,
+    skip: PageOffset = 0,
+    limit: PageLimit = 100,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Any:
@@ -131,7 +132,7 @@ async def read_invitations(
 async def revoke_invitation(
     *,
     db: AsyncSession = Depends(get_db),
-    id: int,
+    id: RowId,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
@@ -162,7 +163,7 @@ async def revoke_invitation(
 async def delete_invitation(
     *,
     db: AsyncSession = Depends(get_db),
-    id: int,
+    id: RowId,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """

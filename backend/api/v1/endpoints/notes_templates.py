@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import RowId
 from backend.core.task_dispatch import dispatch_task
 from backend.models.notes_template import (
     NotesTemplate,
@@ -264,7 +265,7 @@ async def create_notes_template(
 
 @router.put("/{template_id}")
 async def update_notes_template(
-    template_id: int,
+    template_id: RowId,
     payload: NotesTemplateUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -309,7 +310,7 @@ async def update_notes_template(
 
 @router.post("/{template_id}/reset")
 async def reset_notes_template(
-    template_id: int,
+    template_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -334,7 +335,7 @@ async def reset_notes_template(
 
 @router.post("/{template_id}/copy")
 async def copy_notes_template(
-    template_id: int,
+    template_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -370,7 +371,7 @@ async def copy_notes_template(
 
 @router.delete("/{template_id}")
 async def delete_notes_template(
-    template_id: int,
+    template_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
