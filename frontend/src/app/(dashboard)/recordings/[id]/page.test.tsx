@@ -409,7 +409,10 @@ describe("RecordingPage (detail)", () => {
       getUserTasks.mockResolvedValue([linkedTask]);
       renderPage();
 
-      expect(await screen.findByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true");
+      const tab = await screen.findByRole("tab", { name: "Tasks" });
+      // A capture on a phone opens on Transcript whatever tab was remembered (#848).
+      if (status === RecordingStatus.PAUSED && width === 390) fireEvent.click(tab);
+      expect(tab).toHaveAttribute("aria-selected", "true");
       expect(screen.getByRole("checkbox", { name: "Mark Send the meeting follow-up complete" })).toBeVisible();
       expect(screen.getByRole("link", { name: linkedTask.title })).toHaveAttribute("href", "/tasks?task=7");
     },
