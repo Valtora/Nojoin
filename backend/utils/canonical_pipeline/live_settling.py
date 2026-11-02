@@ -177,21 +177,33 @@ def _signature(word: dict[str, Any]) -> str:
     return word_signature(str(word.get("word") or ""))
 
 
+def _first_positions(current: list[dict[str, Any]]) -> dict[Any, int]:
+    """Each word ID's first position in the revision, built once per step."""
+    positions: dict[Any, int] = {}
+    for index, word in enumerate(current):
+        positions.setdefault(word.get("id"), index)
+    return positions
+
+
 def _still_ends_line(
-    current: list[dict[str, Any]], terminal: dict[str, Any], point: int | None
+    current: list[dict[str, Any]],
+    positions: dict[Any, int],
+    terminal: dict[str, Any],
+    point: int | None,
 ) -> bool:
     """Whether the revision holds the line's last word, unchanged and still last.
 
     A word recovered after it but before the confirmed end belongs to the line.
     """
-    for index, word in enumerate(current):
-        if word.get("id") == terminal.get("id"):
-            following = current[index + 1] if index + 1 < len(current) else None
-            start = following.get("start_ms") if following else None
-            return _signature(word) == _signature(terminal) and not (
-                start is not None and point is not None and start < point
-            )
-    return False
+    index = positions.get(terminal.get("id"))
+    if index is None:
+        return False
+    word = current[index]
+    following = current[index + 1] if index + 1 < len(current) else None
+    start = following.get("start_ms") if following else None
+    return _signature(word) == _signature(terminal) and not (
+        start is not None and point is not None and start < point
+    )
 
 
 def _line_boundaries(
@@ -208,6 +220,7 @@ def _line_boundaries(
     """
     closed_ends: dict[str, int | None] = {}
     cutoffs: set[int] = set(state.get("resume_boundaries_ms", []))
+    positions = _first_positions(current)
     for row in rows:
         stored = (row.confidence_payload or {}).get(SETTLING_KEY, {})
         if (
@@ -217,7 +230,7 @@ def _line_boundaries(
             continue
         point = stored.get("closed_at_ms", row.end_ms)
         words = row_words(row)
-        if words and _still_ends_line(current, words[-1], point):
+        if words and _still_ends_line(current, positions, words[-1], point):
             closed_ends[words[-1]["id"]] = point
         elif point is not None:
             cutoffs.add(point)
