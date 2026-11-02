@@ -42,7 +42,6 @@ TEST_TABLE_NAMES = [
     "calendar_events",
     "calendar_push_channels",
     "recordings",
-    "transcripts",
     "global_speakers",
     "recording_speakers",
     "tags",

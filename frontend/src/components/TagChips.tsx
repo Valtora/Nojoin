@@ -14,9 +14,12 @@ export default function TagChips({
   if (tags.length === 0) return null;
   const visible = limit === undefined ? tags : tags.slice(0, limit);
   const hidden = tags.slice(visible.length);
+  const hiddenNames = hidden.map((tag) => tag.name).join(", ");
 
+  // Chips wrap rather than shrink, so a narrow column never squeezes a short
+  // name down to its dot; only a name wider than the row is truncated.
   return (
-    <span className={`flex min-w-0 items-center gap-1.5 ${limit === undefined ? "flex-wrap" : ""} ${className}`}>
+    <span className={`flex min-w-0 flex-wrap items-center gap-1.5 ${className}`}>
       {visible.map((tag) => {
         const colour = getColorByKey(tag.color || "orange");
         return (
@@ -33,8 +36,8 @@ export default function TagChips({
       {hidden.length > 0 && (
         <span
           className="shrink-0 text-xs text-contrast-helper"
-          title={hidden.map((tag) => tag.name).join(", ")}
-          aria-label={`${hidden.length} more tags: ${hidden.map((tag) => tag.name).join(", ")}`}
+          title={hiddenNames}
+          aria-label={`${hidden.length} more ${hidden.length === 1 ? "tag" : "tags"}: ${hiddenNames}`}
         >
           +{hidden.length}
         </span>

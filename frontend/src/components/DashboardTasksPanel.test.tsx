@@ -154,7 +154,19 @@ describe("DashboardTasksPanel", () => {
 
     expect(await screen.findByText("Planning")).toBeInTheDocument();
     expect(screen.getByText("Product")).toBeInTheDocument();
-    expect(screen.queryByLabelText(/more tags:/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/more tags?:/)).not.toBeInTheDocument();
+  });
+
+  it("names a single hidden tag in the singular", async () => {
+    getUserTasks.mockResolvedValue([makeTask({
+      tags: ["Planning", "Product", "Research"].map((name, id) => ({
+        id, name, created_at: "2026-06-01T00:00:00Z", updated_at: "2026-06-01T00:00:00Z",
+      })),
+    })]);
+
+    renderWithProviders(<DashboardTasksPanel />);
+
+    expect(await screen.findByLabelText("1 more tag: Research")).toHaveTextContent("+1");
   });
 
   it("refreshes task chips after a tag is renamed or deleted", async () => {
