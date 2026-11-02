@@ -41,6 +41,8 @@ Create, rename, complete, reopen, archive and delete tasks, and give them deadli
 
 The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Create Task** button. A task has a title, a body, a deadline, linked recordings and tags, using the same tags as recordings. **Archive** hides a task and **Restore** brings it back. **Delete** is permanent.
 
+To link a recording, use **Search all recordings** in the task's form. Before you type, it lists your newest recordings, archived ones included, and **Load more recordings** adds older ones. Once you pause typing, it searches your whole library by title, tags, speaker names and transcript text, as the recordings list's search does. Click a recording to link or unlink it, or move to it with the arrow keys and press Enter. Linked recordings stay above the search box whatever it shows, each with a button to unlink it. Recordings in the bin cannot be linked.
+
 ## Recordings List
 
 **Recordings** in the navigation lists your meetings, with **Archived** and **Deleted** views beside it.
