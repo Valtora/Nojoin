@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Mic } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/Badge";
+import TagChips from "@/components/TagChips";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { formatTimeZoneDate } from "@/lib/timezone";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
@@ -65,6 +66,7 @@ export default function RecentRecordingsCard({
                     ) : "Unknown date"}
                     {duration ? ` · ${duration}` : ""}
                   </span>
+                  <TagChips tags={recording.tags} limit={2} className="mt-1.5" />
                 </span>
                 {/* A processed recording carries no badge: ready is the normal
                     state, so a badge here means something went wrong. */}
