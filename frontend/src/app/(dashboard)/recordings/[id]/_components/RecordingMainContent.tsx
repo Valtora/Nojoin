@@ -83,6 +83,8 @@ interface RecordingMainContentProps {
   onRenameSpeaker: (label: string, newName: string) => void | boolean | Promise<void | boolean>;
   onColorChange: (speakerLabel: string, colorKey: string) => void;
   onRefresh: () => void;
+  /** After a change to the recording alone, such as its tags or calendar link. */
+  onRefreshMetadata: () => void;
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
@@ -199,6 +201,7 @@ export default function RecordingMainContent({
   onResume,
   onRenameSpeaker,
   onRefresh,
+  onRefreshMetadata,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
@@ -279,7 +282,7 @@ export default function RecordingMainContent({
         isMobileHeaderActionsOpen={isMobileHeaderActionsOpen}
         currentTime={currentTime}
         audioRef={audioRef}
-        onRefresh={onRefresh}
+        onRefresh={onRefreshMetadata}
         setTitleValue={setTitleValue}
         setIsEditingTitle={setIsEditingTitle}
         onTitleSubmit={onTitleSubmit}

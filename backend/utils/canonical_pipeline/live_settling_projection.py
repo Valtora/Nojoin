@@ -516,10 +516,10 @@ def _partition_rows(
         {owners[word_id] for word_id in words if word_id in owners}
         for words in incoming
     ]
-    destinations = [
-        {index for index, sources in enumerate(contributors) if row_index in sources}
-        for row_index in range(len(rows))
-    ]
+    destinations: list[set[int]] = [set() for _ in rows]
+    for index, sources in enumerate(contributors):
+        for source in sources:
+            destinations[source].add(index)
     for index, sources in enumerate(contributors):
         if matches[index] is not None or len(sources) != 1:
             continue

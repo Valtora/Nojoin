@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { pressWhileComposing } from "@/test/composition";
 import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
 import type { RecordingSpeaker } from "@/types";
 
@@ -172,6 +173,7 @@ describe("SpeakerAssignmentPopover", () => {
 
   it("never offers a name this meeting has or a placeholder, and Enter takes the match", () => {
     const onSelect = vi.fn();
+    const onClose = vi.fn();
     const targetElement = createTargetElement();
 
     render(
@@ -188,7 +190,7 @@ describe("SpeakerAssignmentPopover", () => {
         currentSpeakerLabel="SPEAKER_00"
         currentSpeakerName="Alice Example"
         onSelect={onSelect}
-        onClose={() => {}}
+        onClose={onClose}
         speakerColors={{}}
         targetElement={targetElement}
       />,
@@ -227,9 +229,15 @@ describe("SpeakerAssignmentPopover", () => {
       name: "Bo", diarizationLabel: "SPEAKER_02", scope: "utterance_only",
     });
 
-    // A new name is still offered, and Enter creates it.
+    // A new name is still offered, and Enter creates it, but not the Enter
+    // or Escape of an input method's composition.
     type("  Dana Sample ");
     expect(screen.getByRole("button", { name: /Create local "Dana Sample"/i })).toBeInTheDocument();
+    onSelect.mockClear();
+    pressWhileComposing(input, "Enter");
+    pressWhileComposing(input, "Escape");
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onSelect).toHaveBeenLastCalledWith({ name: "Dana Sample", scope: "utterance_only" });
 

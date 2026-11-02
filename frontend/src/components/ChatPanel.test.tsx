@@ -9,6 +9,7 @@ import {
   type User,
 } from "@/types";
 import ChatPanel from "./ChatPanel";
+import { pressWhileComposing } from "@/test/composition";
 import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 
 const getSettings = vi.fn();
@@ -113,6 +114,20 @@ describe("ChatPanel provisional context", () => {
     act(() => (streamChatMessage.mock.calls[0][2] as (token: string) => void)("Current answer."));
     expect(screen.getByText("Current answer.")).toBeInTheDocument();
     expect(screen.getByText("Earlier answer.")).toBeInTheDocument();
+  });
+
+  it("never sends on an Enter that belongs to an input method's composition", async () => {
+    render(<ChatPanel />);
+    await waitFor(() => expect(screen.queryByText("Loading chat history...")).not.toBeInTheDocument());
+    const input = screen.getByPlaceholderText("Ask a question...");
+    fireEvent.change(input, { target: { value: "だれが話した" } });
+
+    pressWhileComposing(input, "Enter");
+    expect(streamChatMessage).not.toHaveBeenCalled();
+    expect(input).toHaveValue("だれが話した");
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(streamChatMessage).toHaveBeenCalledTimes(1);
   });
 
   it("names its Send and Context buttons (issue #840)", async () => {

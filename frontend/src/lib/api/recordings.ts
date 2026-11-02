@@ -10,6 +10,11 @@ import { discardRecordingCapture } from "./capture";
 import api, { API_BASE_URL } from "./client";
 
 export interface RecordingFilters {
+  /** Rows to pass over, for the next page of the list. */
+  skip?: number;
+  /** Rows in this page. The server's default is 100. */
+  limit?: number;
+  /** Matches titles, tags, speaker names and transcript text, on the server. */
   q?: string;
   start_date?: string;
   end_date?: string;
@@ -27,6 +32,8 @@ export const getRecordings = async (
   const params = new URLSearchParams();
 
   if (filters) {
+    if (filters.skip) params.append("skip", filters.skip.toString());
+    if (filters.limit) params.append("limit", filters.limit.toString());
     if (filters.q) params.append("q", filters.q);
     if (filters.start_date) params.append("start_date", filters.start_date);
     if (filters.end_date) params.append("end_date", filters.end_date);
