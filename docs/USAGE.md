@@ -41,6 +41,8 @@ Create, rename, complete, reopen, archive and delete tasks, and give them deadli
 
 The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Create Task** button. A task has a title, a body, a deadline, linked recordings and tags, using the same tags as recordings. **Archive** hides a task and **Restore** brings it back. **Delete** is permanent.
 
+To link a recording, use **Search all recordings** in the task's form. Before you type, it lists your newest recordings, archived ones included, and **Load more recordings** adds older ones. Once you pause typing, it searches your whole library by title, tags, speaker names and transcript text, as the recordings list's search does. Click a recording to link or unlink it, or move to it with the arrow keys and press Enter. Linked recordings stay above the search box whatever it shows, each with a button to unlink it. Recordings in the bin cannot be linked.
+
 ## Recordings List
 
 **Recordings** in the navigation lists your meetings, with **Archived** and **Deleted** views beside it.
@@ -50,7 +52,9 @@ On a phone or a window narrower than 1024 px, **Start** beside **Import** in the
 On desktop, **Collapse recordings list** leaves a narrow rail. In **Recordings**, its microphone button starts a meeting and **Import Audio** imports a file, and each is unavailable whenever its full-size button is. While this tab records or pauses a meeting, the recordings list (expanded or collapsed) and the dashboard's **Meet Now** card show only its state. Use the recording's own controls or the floating recording badge to pause, resume, stop or discard; **Start Meeting** returns after capture ends. In **Archived** and **Deleted**, the archive and bin icons label the view. **Expand recordings list** brings the list back.
 
 - Each recording shows its date, its start and end times and its length. A meeting still recording or paused, or still uploading after **Stop**, shows when it started instead, since its length is known only once all its audio is in.
-- **Search...** above the list matches meeting titles, tags and speaker names. Its filter button adds a date filter (a range, after or before) and a speaker filter.
+- A tagged recording shows its tags as coloured dots down its left edge, in the order they were added. Up to three show as dots; with more, two dots and a count of the rest, such as **+3**. Point at the dots to see the tags' names, which a screen reader reads with the recording's name.
+- The list shows your newest 50 recordings and loads the next 50 as you scroll near its end, or when you choose **Load more recordings** below the last one. **No older recordings.** marks the end. Search and filter results load the same way.
+- **Search...** above the list searches your whole library: meeting titles, tags, the names speakers show under and the words of each transcript, including a phrase that runs from one line into the next. It searches once you pause typing, and a spinner in the box shows while it does. Its filter button adds a date filter (a range, after or before) and a speaker filter, which apply together with the search.
 - **Tags** in the navigation hold your tags, which can nest. Select a tag to filter the list by it, drag a tag onto another to nest it, and right-click one to rename, add a sub-tag, promote or delete it. Tag a single meeting from its header. When a new tag, sub-tag, rename or move is refused, for example a name you already use or a tag dropped onto its own sub-tag, a notification gives the reason, and a refused name stays typed so you can correct it. In a meeting's header or the batch bar, typing a name you already use adds that tag instead of creating another.
 - Right-click a recording, or choose the **⋯** button at its right, for **Rename**, **Retry Speaker Inference**, **Retry Processing**, **Show Recording Info**, **Archive** and **Move to Bin**. **Retry Speaker Inference** is there once a recording has finished processing. An unfinished recording offers **Discard Recording** in place of **Retry Processing**, and a finished one whose notes are regenerating or that is being reprocessed offers neither. In **Archived** the menu has **Unarchive** and **Move to Bin**, and in **Deleted** it has **Restore** and **Delete Permanently**. The **⋯** button shows when you point at the recording or tab to it, and always on a touch screen, where pressing and holding a recording selects it instead. In the menu, the arrow keys move and Escape closes it.
 - When its notes are generated, a meeting takes the title the AI gives it as its name, unless you named it yourself. A name you give with **Rename** or by editing the title on the meeting's page, or type at **Import Audio**, stays through processing and **Retry Processing**. The upgrade that brought this counts every meeting you already had as named by you, except one still called by a default name such as **Sunday 1st Nov, Morning Meeting**.
@@ -61,7 +65,7 @@ On desktop, **Collapse recordings list** leaves a narrow rail. In **Recordings**
 
 The **Recordings**, **Archived** and **Deleted** views select the same way.
 
-- Each recording has a checkbox, shown when you point at the recording or tab to it and on every recording once one is selected. On a touch screen, press and hold a recording to select it. **Select all** above the list selects every recording shown, and shows a partial tick when only some are.
+- Each recording has a checkbox, shown when you point at the recording or tab to it and on every recording once one is selected. On a touch screen, press and hold a recording to select it. **Select all** above the list selects every recording loaded so far, and shows a partial tick when only some are. To include older recordings, scroll down to load them first.
 - While anything is selected, clicking a recording selects or clears it instead of opening it. Ctrl-click (Cmd-click on a Mac) does the same at any time, and Shift-click selects every recording from the last one you selected or cleared. From the keyboard, Space selects or clears the focused recording, Shift+Space extends the selection to it, and Escape clears the selection.
 - The selection only holds recordings shown in the list, so a search or filter that hides a recording, or an action from its own menu that moves it, takes it out of the selection.
 - The batch bar under the list acts on the selection: **Tag**, **Archive** and **Move to Bin** in **Recordings**, **Tag**, **Unarchive** and **Move to Bin** in **Archived**, and **Restore** and **Delete Permanently** in **Deleted**. **Delete Permanently** deletes only recordings still in the bin.
@@ -79,6 +83,8 @@ The **People** page is your speaker library: the people Nojoin can recognise acr
 ## Live Recording
 
 **Start Meeting** on the dashboard begins a recording. Desktop Chromium browsers record the shared tab, window or screen audio together with your microphone, and Chrome on Android and iOS records the phone microphone only. [CAPTURE.md](CAPTURE.md) covers supported browsers, choosing what to share, and the **Pause**, **Resume**, **Stop** and **Discard** controls.
+
+A meeting started without a name is named for its day and time of day in your timezone ([Settings](#settings)), such as **Sunday 1st Nov, Night Meeting**. Rename it at any time.
 
 Each **Resume** starts a new transcript line, even when you continue the same sentence. The break remains after processing; time spent paused is excluded from the recording's timeline.
 
@@ -165,7 +171,7 @@ A still holds whatever the shared screen showed, faces included. Nojoin reads th
 
 The **Meeting Edge** tab offers live guidance under **Questions to Ask**, **Points to Raise** and **Technical Context**. Guidance displays bold, italic and inline code formatting. It works from the recent transcript, your notes, the linked calendar event and the [glossary](#glossary). While recording or paused, write a goal in **Guide Meeting Edge** to steer it. The **Technical Context** slider, on the recording page or in **Settings > Notes and live assistance**, sets whether it explains fewer or more terms. An update already running can finish during a pause; guidance can also continue through uploading, queued and processing.
 
-Stored guidance, questions, tracked-term history and your focus remain readable after capture ends, including on processed recordings and those in error. The focus and recording-specific context slider become read-only, and a pending focus autosave is cancelled. An old guidance error is no longer shown once capture ends, and is cleared when the recording finishes processing; stored guidance and focus stay. Guidance errors produce a notification only while recording or paused.
+Stored guidance, questions, tracked-term history and your focus remain readable after capture ends, including on processed recordings and those in error. A meeting that ended before Meeting Edge suggested anything says so. The focus and recording-specific context slider become read-only, and a pending focus autosave is cancelled. An old guidance error is no longer shown once capture ends, and is cleared when the recording finishes processing; stored guidance and focus stay. Guidance errors produce a notification only while recording or paused.
 
 An administrator can turn Meeting Edge off for the installation, or give it its own model, in **Settings > AI providers**. Turning it off stops new guidance work and hides the tab, except on recordings that already have guidance, where it stays available with its history and focus.
 
@@ -179,9 +185,9 @@ Nojoin accepts WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA and OPUS, and the m
 
 ### Retry Processing
 
-**Retry Processing**, in a recording's right-click menu in the recordings list, opens **Reprocess at higher quality**. Choose the transcription engine for this recording (Whisper, Parakeet or Canary), the Whisper model size if you chose Whisper (it starts on the size your installation uses), the recording's **Language**, and optionally a new **Max Speakers**. While an ordinary completed recording is reprocessed, its previous transcript and speakers stay readable, including after a reload, with the finalising indicator and editing disabled. A successful pass replaces them together; a failed pass leaves the previous result available and marks the recording **Error**, and a failed transcription shows its reason above the previous transcript. Speaker labels and identities are resolved afresh for the new pass. Its generated notes, title and Meeting Edge, including your focus, stay until their own regeneration replaces them. The new title becomes the meeting's name only if you have not named it yourself ([Recordings List](#recordings-list)). Name suggestions go when the new transcript arrives, because they named the previous speakers. A notes failure leaves the new transcript in place. On recordings that used word settling, accepted corrections, splits and names keep their existing protection through final processing and reprocessing. Your own notes, tags and documents are kept.
+**Retry Processing**, in a recording's right-click menu in the recordings list, opens **Reprocess at higher quality**. On a recording that failed it opens **Retry processing** instead, and so does **Retry processing** under the reason on the recording's **Transcript** tab. Only a failed recording that still shows a transcript from an earlier run, such as one a failed reprocess kept, warns that the retry replaces it. Choose the transcription engine for this recording (Whisper, Parakeet or Canary), the Whisper model size if you chose Whisper (it starts on the size your installation uses), the recording's **Language**, and optionally a new **Max Speakers**. While an ordinary completed recording is reprocessed, its previous transcript and speakers stay readable, including after a reload, with the finalising indicator and editing disabled. A successful pass replaces them together; a failed pass leaves the previous result available and marks the recording **Error**, and a failed transcription shows its reason above the previous transcript. Speaker labels and identities are resolved afresh for the new pass. Its generated notes, title and Meeting Edge, including your focus, stay until their own regeneration replaces them. The new title becomes the meeting's name only if you have not named it yourself ([Recordings List](#recordings-list)). Name suggestions go when the new transcript arrives, because they named the previous speakers. A notes failure leaves the new transcript in place. On recordings that used word settling, accepted corrections, splits and names keep their existing protection through final processing and reprocessing. Your own notes, tags and documents are kept.
 
-If transcription fails, the recording is marked **Error**, a notification says so, and the transcript tab shows the reason. When the GPU or the server ran out of memory, free some memory or retry with a smaller model. Notes cannot be generated until the recording is reprocessed. A meeting in which nobody spoke finishes normally, and its transcript tab says no speech was detected.
+If transcription fails, the recording is marked **Error**, a notification says so, and the transcript tab shows the reason with **Retry processing**. A recording that failed at another step shows **Processing failed** and the step it stopped at. When the GPU or the server ran out of memory, free some memory or retry with a smaller model. Notes cannot be generated until the recording is reprocessed. A meeting in which nobody spoke finishes normally, and its transcript tab says no speech was detected.
 
 ## Transcript And Playback
 
@@ -217,6 +223,8 @@ A recording made by a much older version can refuse transcript and speaker edits
 ### Exporting A Meeting
 
 **Export** opens a dialog. Tick any of **Meeting notes**, **Analytics** and **Transcript**, which the file always lists in that order, and choose **PDF (.pdf)**, **Word (.docx)** or **Text (.txt)**. **Export audio** saves the recording's audio as MP3 instead. It is unavailable when the recording has no audio, for example after a restore from a backup taken without it, and asks you to try again shortly while the playable copy is still being prepared.
+
+A file is named for the meeting's day in your timezone, its name and what it holds: `20261031_Weekly sync_FullExport.pdf` for all three parts, `20261031_Weekly sync_NotesAndTranscript.pdf` for two, `20261031_Weekly sync_Notes.pdf` for one, and `20261031_Weekly sync.mp3` for the audio.
 
 - **PDF and Word files** open on a Nojoin letterhead with the meeting title, its date in your timezone, its length, and who spoke. Later pages carry the title in a running header, and every page has a footer with the page count. Word files embed their typeface, so they look the same on any computer.
 - **Analytics** are laid out as on the Analytics tab, with each section's explanation printed beneath it. A part not yet measured or analysed says so and names the button that runs it: exporting never starts a measurement or uses AI quota. Analytics can be exported once processing has finished.
@@ -269,15 +277,15 @@ Once a person has a voiceprint, a speaker you link later is blended in only if i
 
 ### Limiting The Number Of Speakers
 
-Speaker detection is automatic. If a long meeting comes back with more speakers than there were people, usually because someone's audio changed partway through, set **Max Speakers** (1 to 50) for that recording. Leave it empty to auto-detect.
+Speaker detection is automatic. If a meeting comes back with more speakers than there were people, usually because someone's audio changed partway through, set **Max Speakers** (1 to 50) for that recording. Leave it empty to auto-detect. The limit applies to final processing, not to live labels.
 
-On CUDA installations with the automatic speaker engine prepared, final processing can combine two speaker passes. This applies to imports and reprocessing too, independently of live labels. It can separate speakers better, but can also mistake more noise for speech. Setting **Max Speakers** uses community-1 with your speaker limit. An administrator can select the classic engine for both live and final processing ([deployment settings](DEPLOYMENT.md#live-speaker-labels)).
+On CUDA installations with the automatic speaker engine prepared, final processing can combine two speaker passes. This applies to imports and reprocessing too, independently of live labels. It can separate speakers better, but can also mistake more noise for speech. With **Max Speakers** set, Nojoin keeps the combined result when it found no more speakers than your limit, and otherwise uses community-1 limited to it. An administrator can select the classic engine for both live and final processing ([deployment settings](DEPLOYMENT.md#live-speaker-labels)).
 
-- **Live recording**: the field sits with the recording controls and stays editable throughout. The value when you press **Stop** is the one used, so raise it before stopping if someone joined unannounced.
+- **Live recording**: the field sits with the recording controls and stays editable throughout. The value when you press **Stop** is the one used, so raise it before stopping if someone joined unannounced. Live speaker labels are a preview and ignore the limit, so they can show more speakers than it until processing replaces them.
 - **Import**: set it in the import dialog.
 - **Reprocess**: **Retry Processing** accepts a new value. It rebuilds the transcript too, which clears names you set by hand on that recording.
 
-It is an upper bound: 4 for a three-person meeting still returns 3. A value below the real number of people merges people together, so when in doubt, guess high or leave it empty.
+It is an upper bound: 4 for a three-person meeting still returns 3. Set it to the number of people who spoke, or a little above if you are unsure, since a lower value merges people together. If you don't know, leave it empty.
 
 ### Tuning Speech Detection And Speaker Separation
 
@@ -371,7 +379,7 @@ Every claim about a person carries a quote you can play back. An item the model 
 
 Every figure belongs to a speaker, so it is only as good as the speaker separation. When one person is split into two, their share is split too, and the number looks normal.
 
-The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting that reached its **Max Speakers** limit, or unnamed speakers. Its **Review speakers** opens the speaker panel, in the side column or the **Speakers** tab on a phone, and moves focus to the speaker list, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
+The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting with as many speakers as its **Max Speakers** limit, or unnamed speakers. Its **Review speakers** opens the speaker panel, in the side column or the **Speakers** tab on a phone, and moves focus to the speaker list, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
 
 ### Attaching Documents
 
@@ -443,7 +451,7 @@ Most settings belong to your account. One marked **This browser** is kept in the
 
 For Canary, administrators can prepare the **Qwen3 forced aligner** in **Settings > AI providers > Advanced > Model downloads**. It supplies word timings for live and processed transcripts. Preparing Canary downloads it too, including the preparation the server runs when it starts after an upgrade. If it is still missing when Canary transcribes, it downloads then, and Canary's transcripts have no word timings until it is ready. These downloads run in the background and don't hold up live transcription. Whisper and Parakeet already supply word timings. See [Forced Aligner Assets](DEPLOYMENT.md#forced-aligner-assets) for storage and CPU requirements.
 
-**Settings > Appearance > Date and time** sets the timezone Nojoin shows dates and times in, and reads the date you give an imported recording in. It can differ from your computer's timezone. Until you choose one it is UTC, or the timezone your administrator set with `DEFAULT_TIMEZONE`. System logs show UTC, as `docker logs` does, and a date with no time of day, such as a subscription's last-used date, is shown as it is.
+**Settings > Appearance > Date and time** sets the timezone Nojoin shows dates and times in, names new meetings and exported files in, and reads the date you give an imported recording in. It can differ from your computer's timezone. Until you choose one it is UTC, or the timezone your administrator set with `DEFAULT_TIMEZONE`. System logs show UTC, as `docker logs` does, and a date with no time of day, such as a subscription's last-used date, is shown as it is.
 
 ### Language Preferences
 
@@ -493,6 +501,6 @@ When a newer release is out, owners and administrators get a persistent notifica
 
 - For capture problems, such as missing remote participants, a missing microphone or an unsupported browser, see [CAPTURE.md](CAPTURE.md#troubleshooting).
 - A paused or interrupted recording blocks new capture until you resume it, stop and process it, or discard it.
-- A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry Processing**; the account that set up Nojoin can check the logs in **Settings > System and logs**.
+- A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry processing** there, or **Retry Processing** in the recordings list; the account that set up Nojoin can check the logs in **Settings > System and logs**.
 - If Nojoin restarts while notes, **Analyse meeting** or **Measure delivery** are running, that output shows **Generation did not finish. Try again.** within 15 minutes; run it again. A meeting left processing by **Retry Speaker Inference** returns as soon as Nojoin's workers are back, or within 20 minutes.
 - For calendar sync problems, see [CALENDAR.md](CALENDAR.md#troubleshooting).

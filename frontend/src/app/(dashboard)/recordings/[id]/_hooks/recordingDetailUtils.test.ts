@@ -9,6 +9,7 @@ import {
   AUDIO_RECHECK_WINDOW_MS,
   hasInFlightTranscriptFeed,
   hasPolledRecordingChanged,
+  keepTranscriptCounter,
   noteFilesBeingRead,
   pollFailureMeansRemoved,
   notFoundMeans,
@@ -77,6 +78,15 @@ describe("polling a recording with no audio and no proxy", () => {
     expect(hasPolledRecordingChanged(before, { ...before, has_audio: true })).toBe(
       true,
     );
+  });
+});
+
+describe("noticing a change to the speaker cap in a poll", () => {
+  it("takes a new cap, which the live Max Speakers field shows", () => {
+    const before = recordingWith({ max_speakers: 3 });
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: 3 }))).toBe(false);
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: 4 }))).toBe(true);
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: null }))).toBe(true);
   });
 });
 
@@ -240,5 +250,29 @@ describe("sideColumnOpeningSize", () => {
   it("falls back to the share before the page is measured", () => {
     expect(sideColumnOpeningSize(0, true)).toBe(22);
     expect(sideColumnOpeningSize(Number.NaN, false)).toBe(25);
+  });
+});
+
+describe("keeping the page's transcript change counter", () => {
+  const withCounter = (changeSequence: number | undefined, overrides: Partial<Recording> = {}) =>
+    recordingWith({ transcript: { change_sequence: changeSequence, notes: "Read" } as Recording["transcript"], ...overrides });
+
+  it("keeps the counter the page has caught up with, and the rest of the read", () => {
+    const kept = keepTranscriptCounter(withCounter(4, { name: "Renamed" }), withCounter(2));
+    expect(kept.transcript?.change_sequence).toBe(2);
+    expect(kept.transcript?.notes).toBe("Read");
+    expect(kept.name).toBe("Renamed");
+  });
+
+  it("keeps a missing counter, so the next check loads the transcript", () => {
+    expect(keepTranscriptCounter(withCounter(1), recordingWith({}))
+      .transcript?.change_sequence).toBeUndefined();
+  });
+
+  it("returns the read as it is when the counter has not moved, the recording differs or nothing is shown", () => {
+    const read = withCounter(3);
+    expect(keepTranscriptCounter(read, withCounter(3))).toBe(read);
+    expect(keepTranscriptCounter(read, withCounter(1, { id: "rec-2" }))).toBe(read);
+    expect(keepTranscriptCounter(read, null)).toBe(read);
   });
 });

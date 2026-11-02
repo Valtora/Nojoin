@@ -186,24 +186,38 @@ describe("SpeakerCapField stepper", () => {
 
 describe("SpeakerCapField inline layout", () => {
   it("keeps the hint available without occupying a line", () => {
+    render(<SpeakerCapField value={null} onCommit={vi.fn()} layout="inline" />);
+
+    const hint = screen.getByText(/leave empty to auto-detect/i);
+    expect(hint).toHaveClass("sr-only");
+    expect(screen.getByLabelText(/max speakers/i)).toBeInTheDocument();
+  });
+
+  // The live labels ignore the cap, and the field is where the user sets it
+  // during a capture, so the explanation is text there, not a tooltip (#871).
+  it("shows the capture hint beneath the field, not only as a tooltip", () => {
     render(
       <SpeakerCapField value={null} onCommit={vi.fn()} layout="inline" liveHint />,
     );
 
-    const hint = screen.getByText(/applied when you stop/i);
-    expect(hint).toHaveClass("sr-only");
-    expect(screen.getByLabelText(/max speakers/i)).toBeInTheDocument();
+    const hint = screen.getByText(
+      "Applied when you stop. Live labels are a preview and can show more speakers than this.",
+    );
+    expect(hint).not.toHaveClass("sr-only");
+    expect(screen.getByLabelText(/max speakers/i)).toHaveAttribute(
+      "aria-describedby",
+      hint.id,
+    );
+    expect(screen.queryByTitle(/applied when you stop/i)).not.toBeInTheDocument();
   });
 
   // jsdom has no layout. In a 390px toolbar the icon alone wrapped onto a
   // third line, under the label (#538).
   it("wraps the hint icon with the stepper, not on its own", () => {
-    render(
-      <SpeakerCapField value={null} onCommit={vi.fn()} layout="inline" liveHint />,
-    );
+    render(<SpeakerCapField value={null} onCommit={vi.fn()} layout="inline" />);
 
     const increase = screen.getByRole("button", { name: "Increase speaker limit" });
-    const icon = screen.getByTitle(/applied when you stop/i);
+    const icon = screen.getByTitle(/leave empty to auto-detect/i);
     const unit = increase.parentElement?.parentElement;
     expect(unit?.contains(icon)).toBe(true);
     expect(unit?.contains(screen.getByText("Max Speakers"))).toBe(false);

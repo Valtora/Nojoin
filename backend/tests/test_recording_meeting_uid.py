@@ -14,6 +14,7 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.user import User
 from backend.services.recording_identity_service import ensure_recording_meeting_uids
+from backend.tests.sqlite_schemas import RECORDING_TAGS_SCHEMA, TAGS_SCHEMA
 
 TEST_TIMESTAMP = datetime(2026, 4, 12, 12, 0, 0)
 RECORDINGS_SCHEMA = """
@@ -159,7 +160,9 @@ async def test_session_maker() -> sessionmaker:
     session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as connection:
-        await connection.execute(text(RECORDINGS_SCHEMA))
+        # The list reads each page's tags as well as its recordings.
+        for schema in (RECORDINGS_SCHEMA, RECORDING_TAGS_SCHEMA, TAGS_SCHEMA):
+            await connection.execute(text(schema))
 
     try:
         yield session_maker

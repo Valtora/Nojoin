@@ -39,6 +39,7 @@ _LOGGABLE_ARG_NAMES = frozenset(
         "sources",
         "transcription_backend",
         "max_speakers",
+        "clear_max_speakers",
         "only_this_utterance",
         "completed",
         "archived",

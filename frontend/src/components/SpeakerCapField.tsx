@@ -30,7 +30,11 @@ interface SpeakerCapFieldProps {
    * the entire workspace for a two-character value.
    */
   layout?: "stacked" | "inline";
-  /** Set when the field is shown during an active capture. */
+  /**
+   * Set when the field is shown during an active capture. Its hint is then
+   * shown beneath the field in either layout, not left to a tooltip, because
+   * it explains why the live labels can show more speakers than the cap.
+   */
   liveHint?: boolean;
   idPrefix?: string;
 }
@@ -123,7 +127,7 @@ export default function SpeakerCapField({
   const hintText = invalid
     ? `Enter a whole number between ${MIN_SPEAKER_CAP} and ${MAX_SPEAKER_CAP}, or leave empty for auto-detect.`
     : liveHint
-      ? "Leave empty to auto-detect. Applied when you stop, so you can change it if someone joins late."
+      ? "Applied when you stop. Live labels are a preview and can show more speakers than this."
       : "Leave empty to auto-detect. Set this only if the meeting is split into more speakers than there were people.";
 
   const canDecrement = !disabled && steppedSpeakerCap(value, -1) !== undefined;
@@ -208,6 +212,7 @@ export default function SpeakerCapField({
   );
 
   if (inline) {
+    const hintShown = invalid || liveHint;
     return (
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <label
@@ -222,8 +227,9 @@ export default function SpeakerCapField({
         <div className="flex items-center gap-2">
           {stepper}
           {/* The rail's copy of this control drops the hint icon, which would
-              wrap onto a row of its own there. The workspace toolbar keeps it. */}
-          {compact ? null : (
+              wrap onto a row of its own there, and a hint already shown
+              beneath needs no icon. */}
+          {compact || hintShown ? null : (
             <span
               className="text-contrast-icon-muted"
               title={hintText}
@@ -233,14 +239,18 @@ export default function SpeakerCapField({
             </span>
           )}
         </div>
-        {/* Present for screen readers and for the invalid case, where a tooltip
-            alone would leave a rejected entry unexplained. */}
+        {/* Present for screen readers, and shown for a rejected entry and
+            during a capture, where a tooltip alone would leave the reader
+            without it. Its own width does not count, so it wraps to the
+            field's rather than widening the toolbar. */}
         <p
           id={hintId}
           className={
             invalid
-              ? "w-full text-right text-[11px] leading-snug text-status-danger-fg"
-              : "sr-only"
+              ? "w-full text-right text-[11px] leading-snug text-status-danger-fg [contain:inline-size]"
+              : hintShown
+                ? "w-full text-[11px] leading-snug text-contrast-helper [contain:inline-size]"
+                : "sr-only"
           }
         >
           {hintText}

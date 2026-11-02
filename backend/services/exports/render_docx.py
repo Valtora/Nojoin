@@ -248,7 +248,7 @@ class _BodyWriter:
     def __init__(self, doc: Any, accent: str) -> None:
         self.doc = doc
         self.accent = accent
-        self._renderers: dict[type, Callable[[Any, Any], None]] = {
+        self._renderers: dict[type, Callable[[Any, Any], Any]] = {
             Heading: self._heading,
             Paragraph: self._paragraph,
             ListBlock: self._list,
@@ -263,8 +263,22 @@ class _BodyWriter:
         }
 
     def write(self, container: Any, blocks: Sequence[Block]) -> None:
+        # The heading that introduces the next chart, and the paragraphs after
+        # it, while only paragraphs have followed it.
+        lead_in: list[Any] | None = None
         for block in blocks:
-            self._renderers[type(block)](container, block)
+            added = self._renderers[type(block)](container, block)
+            if isinstance(block, Heading):
+                lead_in = [added]
+            elif isinstance(block, Paragraph) and lead_in is not None:
+                lead_in.append(added)
+            else:
+                if isinstance(block, ChartBlock) and lead_in:
+                    # Word keeps the heading and lines that introduce a
+                    # chart on the chart's page.
+                    for paragraph in lead_in:
+                        paragraph.paragraph_format.keep_with_next = True
+                lead_in = None
 
     def section_title(self, title: str) -> None:
         paragraph = self.doc.add_heading(title, level=1)
@@ -272,12 +286,13 @@ class _BodyWriter:
             paragraph, "bottom", size=12, color=self.accent, space=3
         )
 
-    def _heading(self, container: Any, block: Heading) -> None:
+    def _heading(self, container: Any, block: Heading) -> Any:
         level = min(block.level + 1, _MAX_HEADING_LEVEL)
         paragraph = container.add_paragraph(style=f"Heading {level}")
         add_spans(paragraph, block.text)
+        return paragraph
 
-    def _paragraph(self, container: Any, block: Paragraph) -> None:
+    def _paragraph(self, container: Any, block: Paragraph) -> Any:
         tone = {
             "muted": (9.0, theme.HELPER),
             "small": (8.0, theme.FAINT),
@@ -287,6 +302,7 @@ class _BodyWriter:
             style="Quote" if block.tone == "quote" else None
         )
         add_spans(paragraph, block.text, size=tone[0], color=tone[1])
+        return paragraph
 
     def _list(self, container: Any, block: ListBlock) -> None:
         numbering: dict[int, int | None] = {}

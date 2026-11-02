@@ -37,6 +37,7 @@ from backend.utils.languages import validate_transcription_language
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.stored_paths import require_recording_path
 from backend.utils.time import utc_now
+from backend.utils.timezones import get_user_timezone_name
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_LEGACY_RECORDING,
     stream_and_validate_upload,
@@ -189,7 +190,9 @@ async def import_audio(
     else:
         recording_name = os.path.splitext(file.filename)[0] if file.filename else ""
         if not recording_name or recording_name == "blob":
-            recording_name = generate_default_meeting_name()
+            recording_name = generate_default_meeting_name(
+                get_user_timezone_name(current_user.settings)
+            )
 
     recording = Recording(
         name=recording_name,
@@ -253,7 +256,9 @@ async def init_chunked_import(
     else:
         recording_name = os.path.splitext(filename)[0]
         if not recording_name:
-            recording_name = generate_default_meeting_name()
+            recording_name = generate_default_meeting_name(
+                get_user_timezone_name(current_user.settings)
+            )
 
     recording = Recording(
         name=recording_name,
@@ -559,7 +564,9 @@ async def upload_recording(
 
     name = os.path.splitext(file.filename)[0]
     if name == "blob":  # Common default name from blobs
-        name = generate_default_meeting_name()
+        name = generate_default_meeting_name(
+            get_user_timezone_name(current_user.settings)
+        )
 
     recording = Recording(
         name=name,

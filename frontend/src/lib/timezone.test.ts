@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { withProcessTimeZone } from "@/test/processTimeZone";
 import {
   formatTimeZoneDay,
+  formatTimeZoneDayTime,
   formatTimeZoneLocale,
   localDayRangeToUtc,
   setCachedUserTimeZone,
@@ -125,5 +126,15 @@ describe("formatTimeZoneDay", () => {
     const instant = new Date("2026-10-27T02:30:00Z");
     expect(formatTimeZoneDay(instant, "Asia/Tokyo")).toBe("27 Oct 2026");
     expect(formatTimeZoneDay(instant.getTime(), "America/New_York")).toBe("26 Oct 2026");
+  });
+});
+
+describe("formatTimeZoneDayTime", () => {
+  withProcessTimeZone("America/New_York");
+
+  it("adds a 24-hour time in the same zone, whatever the browser's locale", () => {
+    const instant = new Date("2026-11-01T12:24:00Z");
+    expect(formatTimeZoneDayTime(instant, "Asia/Tokyo")).toBe("1 Nov 2026, 21:24");
+    expect(formatTimeZoneDayTime(instant, "America/New_York")).toBe("1 Nov 2026, 07:24");
   });
 });

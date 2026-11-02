@@ -174,6 +174,9 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   !!polled.discardable !== !!current.discardable ||
   polled.has_proxy !== current.has_proxy ||
   polled.has_audio !== current.has_audio ||
+  // The live Max Speakers field follows it, so a cap set here or in another
+  // tab survives the field remounting (#871).
+  polled.max_speakers !== current.max_speakers ||
   // Whether the live feed has anything to read (hasInFlightTranscriptFeed).
   polled.transcript?.transcript_status !== current.transcript?.transcript_status ||
   polled.transcript?.settling_required !== current.transcript?.settling_required ||
@@ -183,6 +186,18 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.timeline_notes_list_signature !== current.timeline_notes_list_signature ||
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||
   JSON.stringify(polled.speakers) !== JSON.stringify(current.speakers);
+
+/**
+ * `read` carrying the transcript change counter of `shown`, the page's copy of
+ * the same recording. The page's counter is the one its transcript has caught
+ * up with, and the idle poll loads the transcript once the server's moves past
+ * it, so a read stored without loading the transcript keeps the page's.
+ */
+export const keepTranscriptCounter = (read: Recording, shown: Recording | null): Recording =>
+  read.transcript && shown?.id === read.id &&
+  read.transcript.change_sequence !== shown.transcript?.change_sequence
+    ? { ...read, transcript: { ...read.transcript, change_sequence: shown.transcript?.change_sequence } }
+    : read;
 
 /** Narrower than this, the side column truncates its open tab's label and Chat wraps every few words. */
 const SIDE_COLUMN_OPENING_PX = 320;

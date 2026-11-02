@@ -336,6 +336,39 @@ describe("LiveMeetingControls speaker cap", () => {
     );
   });
 
+  // A tab reloaded during the capture read auto-detect while the server held
+  // a cap, and its "+" wrote 2 over it (#871).
+  it("shows the stored cap after a reload and steps from it", async () => {
+    updateRecordingMaxSpeakers.mockResolvedValue({});
+    render(<LiveMeetingControls size="bar" maxSpeakers={5} />);
+
+    const input = screen.getByLabelText(/max speakers/i) as HTMLInputElement;
+    expect(input.value).toBe("5");
+
+    fireEvent.click(screen.getByRole("button", { name: /increase speaker limit/i }));
+    await waitFor(() =>
+      expect(updateRecordingMaxSpeakers).toHaveBeenCalledWith("rec-1", 6),
+    );
+  });
+
+  it("follows the stored cap when the recording refreshes", () => {
+    const { rerender } = render(<LiveMeetingControls size="bar" maxSpeakers={null} />);
+    const input = screen.getByLabelText(/max speakers/i) as HTMLInputElement;
+    expect(input.value).toBe("");
+
+    // Another tab set it; this page's poll brings it in.
+    rerender(<LiveMeetingControls size="bar" maxSpeakers={3} />);
+    expect(input.value).toBe("3");
+    expect(updateRecordingMaxSpeakers).not.toHaveBeenCalled();
+  });
+
+  it("says the live labels can exceed the cap, in text", () => {
+    render(<LiveMeetingControls size="bar" />);
+    expect(
+      screen.getByText(/live labels are a preview and can show more speakers/i),
+    ).not.toHaveClass("sr-only");
+  });
+
   it("rolls the field back and toasts when the update fails", async () => {
     updateRecordingMaxSpeakers.mockRejectedValue(new Error("Network down"));
     render(<LiveMeetingControls size="full" />);
