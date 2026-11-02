@@ -55,6 +55,7 @@ files = [
     "backend/utils/storage_hygiene_report.py",
     "backend/utils/storage_hygiene_scan.py",
     "backend/storage_hygiene.py",
+    "backend/utils/beat_schedule_store.py",
     "backend/core/backup/restore/legacy_owners.py",
     "backend/services/recording_search.py",
     "backend/services/exports",
