@@ -170,3 +170,42 @@ def test_exact_bound_partial_alignment_keeps_unplaced_edges(
             (4, 4),
         ]
         assert all(lines[i]["words"][0]["start_ms"] is None for i in (0, 2))
+
+
+def test_an_untimed_word_inside_a_line_stays_in_its_review_past_an_overlapping_line() -> (
+    None
+):
+    from backend.models.pipeline import TranscriptUtterance
+    from backend.utils.canonical_pipeline.preservation import preserve_human_segments
+
+    def line(public_id: str, start_ms: int, end_ms: int) -> TranscriptUtterance:
+        return TranscriptUtterance(
+            id=int(start_ms / 1000) + 1,
+            public_id=public_id,
+            recording_id=1,
+            sort_key=f"{start_ms:09d}",
+            start_ms=start_ms,
+            end_ms=end_ms,
+            text=f"Corrected {public_id}",
+            speaker_label="SPEAKER_00",
+            source_kind="live",
+            state=TranscriptUtteranceState.STABLE,
+            revision=2,
+            manual_text_locked=True,
+        )
+
+    # B (2-4 s) overlaps A (0-10 s) and ends between the two timed words.
+    final = {
+        "start": 0.5,
+        "end": 6.0,
+        "speaker": "SPEAKER_00",
+        "text": "first middle last",
+        "words": [_word("first", 0.5, 1.5), _word("middle"), _word("last", 5.0, 6.0)],
+    }
+    result = preserve_human_segments(
+        [line("A", 0, 10000), line("B", 2000, 4000)], [final]
+    )
+
+    assert [segment.get("id") for segment in result] == ["A", "B"]
+    review = result[0]["confidence_payload"]["final_review"]["text"]
+    assert review == "first middle last"

@@ -183,9 +183,14 @@ def _untimed_owner(
     before: tuple[int | None, int] | None,
     after: tuple[int | None, int] | None,
 ) -> tuple[int | None, int]:
-    """Only agreeing timed neighbours can place unknown words in a review."""
-    if before is not None and before == after:
-        return before
+    """Only agreeing timed neighbours can place unknown words in a review.
+
+    They agree on the protected line, not on how many lines have ended: an
+    overlapping line ending inside the line changes only the latter.
+    """
+    if before is not None and after is not None and before[0] is not None:
+        if before[0] == after[0]:
+            return before
     for neighbour in (before, after):
         if neighbour is not None and neighbour[0] is None:
             return neighbour
