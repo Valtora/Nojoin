@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
+from backend.api.params import PageOffset, RowId
 from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import _require_write_scope, mcp_tool
@@ -109,7 +110,7 @@ def _compact_person(person: Any) -> dict[str, Any]:
 async def list_people(
     query: Optional[str] = None,
     limit: int = 50,
-    skip: int = 0,
+    skip: PageOffset = 0,
 ) -> list[dict[str, Any]]:
     """List the user's People library (saved people), sorted by name.
 
@@ -144,7 +145,7 @@ async def list_people(
 
 
 @mcp_tool()
-async def get_person(person_id: int) -> dict[str, Any]:
+async def get_person(person_id: RowId) -> dict[str, Any]:
     """Get one person from the People library, with the meetings they are in.
 
     Args:

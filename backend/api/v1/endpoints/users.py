@@ -9,6 +9,7 @@ from sqlmodel import select
 
 from backend.api.deps import get_current_active_superuser, get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
+from backend.api.params import PageLimit, PageOffset, RowId
 from backend.core.security import hash_user_password, verify_password
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
@@ -232,8 +233,8 @@ async def register_user(
 
 @router.get("", response_model=UserList)
 async def read_users_root(
-    skip: int = 0,
-    limit: int = 100,
+    skip: PageOffset = 0,
+    limit: PageLimit = 100,
     search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -253,8 +254,8 @@ async def read_users_root(
 
 @router.get("/", response_model=UserList)
 async def read_users(
-    skip: int = 0,
-    limit: int = 100,
+    skip: PageOffset = 0,
+    limit: PageLimit = 100,
     search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -331,7 +332,7 @@ async def create_user(
 async def delete_user(
     *,
     db: AsyncSession = Depends(get_db),
-    user_id: int,
+    user_id: RowId,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
@@ -412,7 +413,7 @@ async def delete_user(
 async def update_user_role(
     *,
     db: AsyncSession = Depends(get_db),
-    user_id: int,
+    user_id: RowId,
     role: str = Body(..., embed=True),
     current_user: User = Depends(get_current_user),
 ) -> Any:
@@ -511,7 +512,7 @@ async def update_password_me(
 async def update_user(
     *,
     db: AsyncSession = Depends(get_db),
-    user_id: int,
+    user_id: RowId,
     user_in: UserUpdate,
     current_user: User = Depends(get_current_active_superuser),
 ) -> Any:
@@ -598,7 +599,7 @@ async def revoke_my_sessions(
 async def revoke_user_sessions(
     *,
     db: AsyncSession = Depends(get_db),
-    user_id: int,
+    user_id: RowId,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """

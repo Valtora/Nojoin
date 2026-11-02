@@ -49,6 +49,7 @@ files = [
     "backend/core/db.py",
     "backend/api/deps.py",
     "backend/api/error_handling.py",
+    "backend/api/params.py",
     "backend/utils/upload_limit.py",
     "backend/utils/storage_hygiene.py",
     "backend/utils/storage_hygiene_breaker.py",
