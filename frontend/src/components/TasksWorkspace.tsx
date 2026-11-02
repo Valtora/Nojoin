@@ -228,7 +228,8 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
           const target = taskData.find((task) => task.id === initialTaskId);
           setTasks(sortTasks(taskData));
           setTags(tagData);
-          setView(target?.archived_at ? "archived" : target?.completed_at ? "completed" : "open");
+          // Only a linked task picks the view; otherwise keep any view chosen while loading.
+          if (target) setView(target.archived_at ? "archived" : target.completed_at ? "completed" : "open");
         }
       } catch (error: unknown) {
         if (!cancelled) {

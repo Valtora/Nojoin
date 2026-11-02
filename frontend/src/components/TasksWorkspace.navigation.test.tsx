@@ -71,6 +71,18 @@ describe("task links", () => {
     expect(screen.queryByRole("heading", { name: "Completed meeting follow-up" })).not.toBeInTheDocument();
   });
 
+  it("keeps a view chosen while tasks are still loading", async () => {
+    let resolveTasks: (value: UserTask[]) => void = () => {};
+    api.getUserTasks.mockReturnValue(new Promise<UserTask[]>((resolve) => { resolveTasks = resolve; }));
+    render(<TasksWorkspace />);
+
+    fireEvent.click(screen.getByRole("button", { name: "completed" }));
+    resolveTasks(tasks);
+
+    expect(await screen.findByRole("heading", { name: "Completed meeting follow-up" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Unrelated open task" })).not.toBeInTheDocument();
+  });
+
   it("passes a numeric task query from the server page into navigation", async () => {
     render(await TasksPage({ searchParams: Promise.resolve({ task: "8" }) }));
     expect(await screen.findByRole("heading", { name: "Archived meeting follow-up" })).toBeInTheDocument();
