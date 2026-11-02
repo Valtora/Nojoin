@@ -31,6 +31,16 @@ LIKE_ESCAPE = "\\"
 PHRASE_PREFILTER_WORDS = 3
 
 
+def search_term(query: str) -> str:
+    """``query`` with each run of whitespace made one space, none at the ends.
+
+    A settling capture's lines are joined with one space and the pipeline
+    spaces a transcript's words singly, so a tab, a line break or two spaces
+    between words would otherwise keep a phrase from ever matching.
+    """
+    return " ".join(query.split())
+
+
 def like_pattern(term: str) -> str:
     """``term`` as a substring pattern, its own ``%`` and ``_`` taken literally."""
     escaped = (
@@ -89,16 +99,25 @@ def _canonical_text_contains(term: str) -> ColumnElement[bool]:
     """Whether a settling capture's lines hold ``term``.
 
     The lines are joined with a space, so a match that crosses from one line
-    into the next takes in that space. A term without whitespace can only
-    match within one line, which an EXISTS over the lines answers without
-    building the joined text. A phrase is looked for in the joined text only
-    when no single line holds it and each of its longest words is on a line.
+    into the next takes in that space. A single word can only match within
+    one line, which an EXISTS over the lines answers without building the
+    joined text. A phrase is looked for in the joined text only when no
+    single line holds it and each of its longest words is on a line.
+
+    Whether to look across lines turns on the number of words, not the number
+    of different words: "yes yes" can end one line and start the next. The
+    prefilter takes each word once, in the order typed, so words of equal
+    length are picked the same way in every process, which a set's order
+    is not.
     """
     whole = _active_line_contains(term)
-    words = sorted(set(term.split()), key=len, reverse=True)
+    words = term.split()
     if len(words) < 2:
         return whole
-    prefilter = [_active_line_contains(word) for word in words[:PHRASE_PREFILTER_WORDS]]
+    longest = sorted(dict.fromkeys(words), key=len, reverse=True)
+    prefilter = [
+        _active_line_contains(word) for word in longest[:PHRASE_PREFILTER_WORDS]
+    ]
     return or_(whole, and_(*prefilter, _joined_lines_contain(term)))
 
 
@@ -150,10 +169,11 @@ def _tag_name_contains(term: str) -> ColumnElement[bool]:
 def recording_search_condition(query: str) -> ColumnElement[bool] | None:
     """Meetings whose title, tags, speaker names or transcript hold ``query``.
 
-    Case-insensitive substring matching. ``None`` for a blank query. The
-    cheap tests come first, as Postgres stops at the first that holds.
+    Case-insensitive substring matching of ``search_term(query)``. ``None``
+    for a blank query. The cheap tests come first, as Postgres stops at the
+    first that holds.
     """
-    term = query.strip()
+    term = search_term(query)
     if not term:
         return None
     return or_(
