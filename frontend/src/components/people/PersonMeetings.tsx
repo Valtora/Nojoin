@@ -63,7 +63,7 @@ function MeetingHistory({ data, timeZone }: { data: PersonMeetingsRead; timeZone
     </dl>
     {/* Each part scrolls on its own, so a long run of months never pushes the meetings out of view, and
         both stay bounded so a long history never pushes the contact form out of reach. */}
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {data.talk_time_by_month.length > 0 && <MonthlyTalkTime months={data.talk_time_by_month} />}
       <div className={data.talk_time_by_month.length > 0 ? undefined : "md:col-span-2"}>
         <h4 id={meetingsHeading} className="text-sm font-medium text-foreground">
@@ -73,7 +73,7 @@ function MeetingHistory({ data, timeZone }: { data: PersonMeetingsRead; timeZone
           <ul className="divide-y divide-surface-border">
             {data.meetings.map((meeting) => <li key={meeting.recording_id}>
               <Link href={`/recordings/${meeting.recording_id}`}
-                className="block rounded-md py-2 focus-visible:outline-2 focus-visible:outline-focus-ring">
+                className="block rounded-md px-1 py-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring">
                 <span className="block truncate text-sm font-medium text-action-text hover:underline">
                   {meeting.title}
                 </span>
