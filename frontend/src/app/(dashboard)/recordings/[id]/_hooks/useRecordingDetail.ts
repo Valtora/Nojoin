@@ -11,7 +11,6 @@ import {
   updateTranscriptSegmentText,
   updateTranscriptUtteranceText,
   findAndReplace,
-  renameRecording,
   getGlobalSpeakers,
   updateSpeakerColor,
   generateNotes,
@@ -26,7 +25,12 @@ import {
 } from "@/lib/meetingEdgeContext";
 import { getErrorDetail, getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
 import { notesErrorDetail } from "@/lib/transcriptErrors";
-import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
+import {
+  RECORDING_UPDATED_EVENT,
+  dispatchRecordingRenamed,
+  recordingRenameOf,
+  subscribeRecordingRemoved,
+} from "@/lib/recordingEvents";
 import {
   Recording,
   TranscriptSegment,
@@ -60,6 +64,7 @@ import { useRecordingActions } from "@/components/recordings/_hooks/useRecording
 
 import {
   cloneTranscriptSegments,
+  getAutoSpeakerReplacementName,
   hasPolledRecordingChanged,
   isAudioUnavailable,
   isRecordingInFlight,
@@ -135,6 +140,14 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // Title Editing State
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState("");
+  // Read wherever a newer name arrives, so the field keeps what is being
+  // typed. A ref, so opening or closing the field reads nothing again.
+  const isEditingTitleRef = useRef(isEditingTitle);
+  useEffect(() => {
+    isEditingTitleRef.current = isEditingTitle;
+  }, [isEditingTitle]);
+  // Numbers the title saves, so a late answer to an earlier one cannot undo a later one.
+  const titleSaveRef = useRef(0);
 
   // Speaker Colors State
   const [speakerColors, setSpeakerColors] = useState<Record<string, string>>(
@@ -233,8 +246,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
           setMeetingEdgeContextLevel(clampMeetingEdgeContextLevel(settingsData.meeting_edge_context_level));
         }
       });
-      // Only set title if not editing, or on first load
-      if (!isEditingTitle) {
+      if (!isEditingTitleRef.current) {
         setTitleValue(recData.name);
       }
       return recData;
@@ -257,7 +269,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     } finally {
       if (metadataReader.isActive()) setLoading(false);
     }
-  }, [addNotification, metadataReader, params, isEditingTitle, router, recordingNotFound]);
+  }, [addNotification, metadataReader, params, router, recordingNotFound]);
 
   const refreshRecordingView = useCallback(async () => {
     const refreshedRecording = await fetchRecording();
@@ -271,6 +283,20 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       console.error("Failed to refresh transcript state:", e);
     });
   }, [fetchRecording, syncTranscriptState, refreshInFlightTranscript, hasRetainedPublication]);
+
+  // Tags and the calendar link change the recording but not its transcript,
+  // so one read of the recording is enough after them.
+  const refreshRecordingMetadata = useCallback(async () => {
+    try {
+      const { id } = await params;
+      const updated = await metadataReader.read(id);
+      if (!updated) return;
+      setRecording(updated);
+      if (!isEditingTitleRef.current) setTitleValue(updated.name);
+    } catch (e: unknown) {
+      console.error("Failed to refresh recording:", e);
+    }
+  }, [metadataReader, params]);
 
   useEffect(() => {
     fetchRecording();
@@ -352,7 +378,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         idleEtagRef.current = polled.etag;
         if (transcriptMoved || hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
-          if (!isEditingTitle) setTitleValue(data.name);
+          if (!isEditingTitleRef.current) setTitleValue(data.name);
         }
 
             } catch (e: unknown) {
@@ -372,30 +398,30 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, audioClock, metadataReader, recordingNotFound, filesBeingRead,
+  }, [params, recording, audioClock, metadataReader, recordingNotFound, filesBeingRead,
     syncTranscriptState]);
 
-  // Listen for recording updates (e.g. from Sidebar retry or rename)
+  // Updates announced for this recording, by this page or elsewhere: a rename
+  // (this page's title, the rail's menu) is applied as it is, and anything
+  // else, such as a retry or a speaker inference, reads the recording again.
   useEffect(() => {
-    const handleUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (recording && customEvent.detail?.id === recording.id) {
-        if (customEvent.detail.name) {
-          // Optimistic update
-          setRecording((prev) =>
-            prev ? { ...prev, name: customEvent.detail.name } : null,
-          );
-          if (!isEditingTitle) setTitleValue(customEvent.detail.name);
-        } else {
-          // Force refresh for other updates (like status change or speaker inference)
-          refreshRecordingView().catch(console.error);
-        }
+    const handleUpdate = (event: Event) => {
+      if (!recording) return;
+      const rename = recordingRenameOf(event);
+      if (rename) {
+        if (rename.id !== recording.id) return;
+        setRecording((prev) =>
+          prev && prev.id === rename.id && prev.name !== rename.name ? { ...prev, name: rename.name } : prev,
+        );
+        if (!isEditingTitleRef.current) setTitleValue(rename.name);
+      } else if ((event as CustomEvent<{ id?: string } | null>).detail?.id === recording.id) {
+        refreshRecordingView().catch(console.error);
       }
     };
 
-    window.addEventListener("recording-updated", handleUpdate);
-    return () => window.removeEventListener("recording-updated", handleUpdate);
-  }, [recording, isEditingTitle, refreshRecordingView]);
+    window.addEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
+    return () => window.removeEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
+  }, [recording, refreshRecordingView]);
 
   // Discarding the open recording deletes it, so this page has nothing left to
   // show. Leaving centrally means every discard surface gets the redirect.
@@ -738,30 +764,42 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     }
   };
 
-  const handleTitleSubmit = async () => {
-    if (!recording || !titleValue.trim()) {
-      setIsEditingTitle(false);
-      setTitleValue(recording?.name || "");
-      return;
-    }
-
-    if (titleValue.trim() === recording.name) {
-      setIsEditingTitle(false);
-      return;
-    }
-
+  // A speaker renamed or merged in the speaker panel takes its new name into
+  // the notes. The panel reads the recording and its transcript again straight
+  // after, so this asks only for the replacement, rather than reading both
+  // first as the find-and-replace bar does.
+  const handleSpeakerRenamed = async (oldName: string, newName: string) => {
+    if (!recording?.transcript?.notes) return;
     try {
-      await renameRecording(recording.id, titleValue.trim());
-      const updated = await metadataReader.read(recording.id);
-      if (!updated) return;
-      setRecording(updated);
-      setIsEditingTitle(false);
-      router.refresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to rename recording:", e);
-      addNotification({ type: "error", message: "Failed to rename recording." });
+      await findAndReplace(recording.id, oldName, getAutoSpeakerReplacementName(newName), {
+        caseSensitive: true,
+      });
+    } catch (error: unknown) {
+      console.error("Failed to find and replace:", error);
+      addNotification({ type: "error", message: getErrorDetail(error) ?? "Failed to find and replace." });
     }
+  };
+
+  const handleTitleSubmit = () => {
+    setIsEditingTitle(false);
+    if (!recording) return;
+    const { id, name: previousName } = recording;
+    const name = titleValue.trim();
+    if (!name || name === previousName) {
+      setTitleValue(previousName);
+      return;
+    }
+
+    const save = ++titleSaveRef.current;
+    const announce = (value: string) => {
+      if (save === titleSaveRef.current) dispatchRecordingRenamed(id, value);
+    };
+    setTitleValue(name);
+    // The page's own listener above applies it with the rail and the
+    // dashboard, now rather than after the save, and a refusal (which the
+    // shared action reports) puts the old name back in all of them.
+    announce(name);
+    void recordingActions.rename(id, name, { onError: () => announce(previousName) });
   };
 
   const handleColorChange = async (speakerLabel: string, colorKey: string) => {
@@ -1017,6 +1055,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     // Handlers
     fetchRecording,
     refreshRecordingView,
+    refreshRecordingMetadata,
     handleTimeUpdate,
     handlePlaySegment,
     handlePause,
@@ -1027,6 +1066,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     handleUpdateSegmentSpeaker,
     handleUpdateSegmentText,
     handleGlobalFindAndReplace,
+    handleSpeakerRenamed,
     handleTitleSubmit,
     handleColorChange,
     handleGenerateNotes,

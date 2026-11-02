@@ -43,8 +43,8 @@ import {
 /**
  * Shared action model for the per-recording actions used by the sidebar list
  * (`Sidebar.tsx`), the header's capture slot (`RecordingCaptureSlot.tsx`) and the
- * recording page (`useRecordingDetail.ts`, for the audio export, and
- * `LanguageNoticeBanner.tsx`, for the language notice's answers).
+ * recording page (`useRecordingDetail.ts`, for the audio export and the title's
+ * rename, and `LanguageNoticeBanner.tsx`, for the language notice's answers).
  *
  * DEVELOPMENT.md requires these surfaces to stay behaviourally synchronised,
  * and this hook is the single source of truth for that behaviour.

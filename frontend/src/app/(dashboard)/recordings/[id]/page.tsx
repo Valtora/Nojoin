@@ -24,7 +24,7 @@ import { useCapture } from "@/lib/capture/CaptureProvider";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
-import { getAutoSpeakerReplacementName, sideColumnOpeningSize } from "./_hooks/recordingDetailUtils";
+import { sideColumnOpeningSize } from "./_hooks/recordingDetailUtils";
 import RecordingMainContent from "./_components/RecordingMainContent";
 import RecordingSideColumn, { RecordingSideRail } from "./_components/RecordingSideColumn";
 
@@ -102,6 +102,7 @@ export default function RecordingPage({ params }: PageProps) {
     navigateToRecordings,
     fetchRecording,
     refreshRecordingView,
+    refreshRecordingMetadata,
     refreshPeople,
     handleTimeUpdate,
     handlePlaySegment,
@@ -113,6 +114,7 @@ export default function RecordingPage({ params }: PageProps) {
     handleUpdateSegmentSpeaker,
     handleUpdateSegmentText,
     handleGlobalFindAndReplace,
+    handleSpeakerRenamed,
     handleTitleSubmit,
     handleColorChange,
     handleGenerateNotes,
@@ -143,18 +145,6 @@ export default function RecordingPage({ params }: PageProps) {
   const transcriptInProgress = showCaptureSlot && recording.transcript?.transcript_status !== "completed";
   const sideColumnCollapsed = isSpeakerPanelCollapsed && isChatPanelCollapsed;
   const sideColumnSize = sideColumnOpeningSize(columnsWidth ?? 0, isCompact);
-
-  // Renaming a speaker propagates into the generated notes (shared by the
-  // desktop side panel and the mobile Speakers tab).
-  const handleSpeakerRenamed = async (oldName: string, newName: string) => {
-    if (recording?.transcript?.notes) {
-      await handleGlobalFindAndReplace(
-        oldName,
-        getAutoSpeakerReplacementName(newName),
-        { caseSensitive: true },
-      );
-    }
-  };
 
   const speakersContent = <RecordingSpeakers
     recording={recording}
@@ -253,6 +243,7 @@ export default function RecordingPage({ params }: PageProps) {
       onRenameSpeaker={handleRenameSpeaker}
       onColorChange={handleColorChange}
       onRefresh={refreshRecordingView}
+      onRefreshMetadata={refreshRecordingMetadata}
       onSpeakerRenamed={handleSpeakerRenamed}
       onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
       onUpdateSegmentText={handleUpdateSegmentText}
