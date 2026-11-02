@@ -170,11 +170,12 @@ describe("tag dots on the meeting cards", () => {
     expect(getRecordings.mock.calls.length).toBe(calls);
   });
 
-  it("finds a meeting by one of its tags in the list's search", async () => {
-    getRecordings.mockResolvedValue([
-      meeting("board", "Board review", [CLIENTS, HIRING]),
-      meeting("standup", "Daily standup", [BOARD]),
-    ]);
+  it("searches tag names on the server and shows the dots of what it finds", async () => {
+    const board = meeting("board", "Board review", [CLIENTS, HIRING]);
+    // The server matches the tag's name (backend/services/recording_search.py).
+    getRecordings.mockImplementation(async (filters?: { q?: string }) =>
+      filters?.q === "Hiring" ? [board] : [board, meeting("standup", "Daily standup", [BOARD])],
+    );
     renderWithProviders(<Sidebar />);
     await card("Daily standup");
 
@@ -183,7 +184,9 @@ describe("tag dots on the meeting cards", () => {
     await waitFor(() =>
       expect(screen.queryByRole("heading", { name: "Daily standup" })).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("heading", { name: "Board review" })).toBeInTheDocument();
+    expect(getRecordings).toHaveBeenLastCalledWith(expect.objectContaining({ q: "Hiring" }));
+    const found = await card("Board review");
+    expect(within(found).getByRole("img", { name: "Tags: Clients, Hiring" })).toBeInTheDocument();
   });
 
   it("keeps the gutter open on every card while any meeting in the list is tagged", async () => {

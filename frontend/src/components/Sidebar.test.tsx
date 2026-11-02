@@ -131,11 +131,12 @@ vi.mock("@/lib/timezone", async (importOriginal) => {
 // One array, as the store keeps: a new one on every render would re-read the
 // list on every render.
 const noTagIds: number[] = [];
+let selectedTagIds = noTagIds;
 
 vi.mock("@/lib/store", () => ({
   useNavigationStore: () => ({
     currentView,
-    selectedTagIds: noTagIds,
+    selectedTagIds,
     toggleTagFilter: vi.fn(),
     clearTagFilters: vi.fn(),
     selectedRecordingIds,
@@ -154,14 +155,6 @@ vi.mock("@/lib/store", () => ({
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: (selector?: (state: { addNotification: typeof addNotification }) => unknown) =>
     selector ? selector({ addNotification }) : { addNotification },
-}));
-
-vi.mock("@/lib/searchUtils", () => ({
-  createFuse: (items: Recording[]) => ({
-    search: (query: string) => items
-      .filter((item) => item.name.toLowerCase().includes(query.toLowerCase()))
-      .map((item) => ({ item })),
-  }),
 }));
 
 vi.mock("./LiveMeetingControls", async (importOriginal) => ({
@@ -231,6 +224,7 @@ describe("Sidebar", () => {
     setRecordingsSidebarWidth.mockClear();
     toggleRecordingsSidebarCollapse.mockClear();
     sweptLists.length = 0;
+    selectedTagIds = noTagIds;
     useImportAudioStore.setState({ isImportAudioOpen: false });
 
     getRecordings.mockResolvedValue([recording]);
@@ -251,7 +245,10 @@ describe("Sidebar", () => {
       pathname = "/recordings/rec-1";
       const paused = { ...recording, status: RecordingStatus.PAUSED };
       const held = { ...paused, id: "held", name: "Held in another tab" };
-      getRecordings.mockResolvedValue([paused, held]);
+      // The server answers the search.
+      getRecordings.mockImplementation(async (filters?: { q?: string }) =>
+        filters?.q === "Latest" ? [paused] : [paused, held],
+      );
       attentionRecordings = [paused];
       renderWithProviders(<Sidebar />);
 
@@ -635,8 +632,8 @@ describe("Sidebar", () => {
       importButtons().find((button) => button.textContent === "Import Audio")!;
     const phoneImport = () =>
       importButtons().find((button) => button.textContent === "Import");
-    const emptyState = () =>
-      screen.getByText("No recordings found.").parentElement as HTMLElement;
+    const emptyState = async () =>
+      (await screen.findByText("No recordings found.")).parentElement as HTMLElement;
 
     it("pairs a labelled Import Audio with Start Meeting and opens the dialog", async () => {
       renderList();
@@ -752,13 +749,13 @@ describe("Sidebar", () => {
       renderList();
 
       fireEvent.click(
-        await within(emptyState()).findByRole("button", { name: "Import Audio" }),
+        await within(await emptyState()).findByRole("button", { name: "Import Audio" }),
       );
 
       expect(await screen.findByTestId("import-modal")).toBeInTheDocument();
     });
 
-    it("keeps the empty-list button back until the first fetch lands", async () => {
+    it("says it is loading, with no empty-list button, until the first fetch lands", async () => {
       let resolveRecordings: (value: Recording[]) => void = () => {};
       getRecordings.mockReturnValue(
         new Promise<Recording[]>((resolve) => {
@@ -767,29 +764,147 @@ describe("Sidebar", () => {
       );
       renderList();
 
-      expect(
-        within(emptyState()).queryByRole("button", { name: "Import Audio" }),
-      ).not.toBeInTheDocument();
+      expect(screen.getByText("Loading recordings...")).toBeInTheDocument();
+      expect(screen.queryByText("No recordings found.")).not.toBeInTheDocument();
+      expect(importButtons()).toHaveLength(2);
 
       resolveRecordings([]);
 
       expect(
-        await within(emptyState()).findByRole("button", { name: "Import Audio" }),
+        await within(await emptyState()).findByRole("button", { name: "Import Audio" }),
       ).toBeInTheDocument();
+      expect(screen.queryByText("Loading recordings...")).not.toBeInTheDocument();
     });
 
-    it("offers no empty-list button when a search is what emptied the list", async () => {
+    it("says nothing matches, with no empty-list button, when a search is what emptied the list", async () => {
       getRecordings.mockResolvedValue([]);
       renderList();
-      await within(emptyState()).findByRole("button", { name: "Import Audio" });
+      await within(await emptyState()).findByRole("button", { name: "Import Audio" });
 
       fireEvent.change(screen.getByPlaceholderText("Search..."), {
         target: { value: "budget" },
       });
 
+      expect(screen.getByText("No recordings match.")).toBeInTheDocument();
+      expect(importButtons()).toHaveLength(2);
+      await waitFor(() =>
+        expect(getRecordings).toHaveBeenLastCalledWith(
+          expect.objectContaining({ q: "budget", skip: 0, limit: 50 }),
+        ),
+      );
+      expect(screen.queryByText("No recordings found.")).not.toBeInTheDocument();
+    });
+
+    it("offers to try again when the list cannot be read", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      getRecordings.mockRejectedValueOnce(new Error("offline"));
+      renderList();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+      expect(await screen.findByRole("heading", { name: "Latest meeting" })).toBeInTheDocument();
+    });
+  });
+
+  describe("paging and search (issues #900 and #901)", () => {
+    /** A made-up library, newest first, served a window at a time. */
+    const library = Array.from({ length: 60 }, (_, n) => ({
+      ...recording,
+      id: `rec-${n}`,
+      name: `Meeting ${n}`,
+      created_at: new Date(Date.UTC(2026, 4, 25, 12) - n * 3_600_000).toISOString(),
+    }));
+    const serveLibrary = () =>
+      getRecordings.mockImplementation(async (filters: { skip?: number; limit?: number } = {}) =>
+        library.slice(filters.skip ?? 0, (filters.skip ?? 0) + (filters.limit ?? 100)),
+      );
+
+    it("searches on the server once typing pauses, with the filters", async () => {
+      const tags = [3];
+      selectedTagIds = tags;
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      const search = screen.getByRole("textbox", { name: "Search recordings" });
+      for (const value of ["b", "bu", "budget"]) {
+        fireEvent.change(search, { target: { value } });
+      }
+
+      await waitFor(() =>
+        expect(getRecordings).toHaveBeenLastCalledWith(
+          expect.objectContaining({ q: "budget", tag_ids: tags, skip: 0, limit: 50 }),
+        ),
+      );
+      const searched = getRecordings.mock.calls
+        .map(([filters]) => (filters as { q?: string }).q)
+        .filter(Boolean);
+      expect(searched).toEqual(["budget"]);
+    });
+
+    it("loads older recordings from the end of the list and says when there are none", async () => {
+      serveLibrary();
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Meeting 49" });
+      expect(screen.queryByRole("heading", { name: "Meeting 50" })).not.toBeInTheDocument();
+      expect(screen.queryByText("No older recordings.")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Load more recordings" }));
+
+      expect(await screen.findByRole("heading", { name: "Meeting 59" })).toBeInTheDocument();
+      expect(getRecordings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ skip: 49, limit: 51 }),
+      );
+      expect(screen.getAllByRole("heading", { name: /^Meeting \d+$/ })).toHaveLength(60);
+      expect(screen.getByText("No older recordings.")).toBeInTheDocument();
+      expect(screen.getByText("10 more recordings loaded")).toBeInTheDocument();
       expect(
-        within(emptyState()).queryByRole("button", { name: "Import Audio" }),
+        screen.queryByRole("button", { name: "Load more recordings" }),
       ).not.toBeInTheDocument();
+    });
+
+    it("moves keyboard focus from the button to the first recording it loaded", async () => {
+      serveLibrary();
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Meeting 49" });
+
+      const button = screen.getByRole("button", { name: "Load more recordings" });
+      button.focus();
+      fireEvent.click(button);
+
+      const first = (await screen.findByRole("heading", { name: "Meeting 50" })).closest("a");
+      await waitFor(() => expect(first).toHaveFocus());
+    });
+
+    it("keeps a rename made in place across the pages it has loaded", async () => {
+      serveLibrary();
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Meeting 49" });
+      fireEvent.click(screen.getByRole("button", { name: "Load more recordings" }));
+      await screen.findByRole("heading", { name: "Meeting 59" });
+      const calls = getRecordings.mock.calls.length;
+
+      act(() => {
+        fireEvent(window, new CustomEvent("recording-updated", { detail: { id: "rec-55", name: "Renamed old meeting" } }));
+      });
+
+      expect(screen.getByRole("heading", { name: "Renamed old meeting" })).toBeInTheDocument();
+      expect(screen.getAllByRole("heading", { name: /meeting/i })).toHaveLength(60);
+      expect(getRecordings).toHaveBeenCalledTimes(calls);
+    });
+
+    it("re-reads every loaded page when a recording changes elsewhere", async () => {
+      serveLibrary();
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Meeting 49" });
+      fireEvent.click(screen.getByRole("button", { name: "Load more recordings" }));
+      await screen.findByRole("heading", { name: "Meeting 59" });
+
+      fireEvent(window, new CustomEvent("recording-updated", { detail: {} }));
+
+      await waitFor(() =>
+        expect(getRecordings).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 0, limit: 100 })),
+      );
+      expect(screen.getAllByRole("heading", { name: /^Meeting \d+$/ })).toHaveLength(60);
     });
   });
 });
