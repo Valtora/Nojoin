@@ -58,6 +58,7 @@ files = [
     "backend/core/backup/restore/legacy_owners.py",
     "backend/services/exports",
     "backend/services/calendar_service/provider_errors.py",
+    "backend/services/recording_tag_reads.py",
     # API-facing schema and ORM models (public/cross-module surface).
     "backend/models/base.py",
     "backend/models/recording.py",

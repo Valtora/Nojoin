@@ -36,6 +36,7 @@ from backend.services.calendar_link_service import (
     CANDIDATE_WINDOW_PADDING,
     score_event_match,
 )
+from backend.services.recording_tag_reads import load_tags_by_recording
 from backend.services.timeline_note_service import (
     load_timeline_notes_list_signature_async,
 )
@@ -222,11 +223,16 @@ async def list_recordings(
 
     result = await db.execute(query)
     recordings = result.scalars().all()
+    # Every tag the meeting carries, not only those a tag filter matched.
+    tags_by_recording = await load_tags_by_recording(
+        db, [recording.id for recording in recordings]
+    )
     return [
         serialize_recording(
             recording,
             has_proxy=_recording_has_proxy(recording),
             has_audio=_recording_has_audio(recording),
+            tags_override=tags_by_recording.get(recording.id, []),
         )
         for recording in recordings
     ]
