@@ -57,30 +57,64 @@ describe("capture feature detection", () => {
     ).toEqual({ supported: true, mode: "shared_audio" });
   });
 
+  // Real browsers expose getDisplayMedia on desktop, but only Chromium's share
+  // carries audio, so these record the microphone rather than being refused.
   it.each([
     {
-      name: "Firefox",
-      environment: {
-        userAgent:
-          "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
-        mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        audioWorkletNodeCtor,
-      },
-      expected: { supported: false, reason: "firefox" },
+      name: "Firefox on Linux",
+      userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
+      displayMedia: true,
     },
     {
-      name: "Safari",
-      environment: {
-        userAgent:
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-        mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        audioWorkletNodeCtor,
-      },
-      expected: { supported: false, reason: "safari" },
+      name: "Firefox on Windows",
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+      displayMedia: true,
     },
     {
-      name: "unsupported mobile browser",
-      environment: {
+      name: "Firefox on macOS",
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:131.0) Gecko/20100101 Firefox/131.0",
+      displayMedia: true,
+    },
+    {
+      name: "Safari on macOS",
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+      displayMedia: true,
+    },
+    {
+      name: "Firefox on Android",
+      userAgent: "Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0",
+      displayMedia: false,
+    },
+    {
+      name: "Safari on iPhone",
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+      displayMedia: false,
+    },
+    {
+      name: "Firefox on iPhone",
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/131.0 Mobile/15E148 Safari/605.1.15",
+      displayMedia: false,
+    },
+  ])("records only the microphone in $name", ({ userAgent, displayMedia: hasDisplayMedia }) => {
+    expect(
+      detectCaptureSupport({
+        userAgent,
+        mediaDevices: hasDisplayMedia
+          ? { getDisplayMedia: displayMedia, getUserMedia: userMedia }
+          : { getUserMedia: userMedia },
+        audioWorkletNodeCtor,
+      }),
+    ).toEqual({ supported: true, mode: "microphone_only" });
+  });
+
+  it("records only the microphone in a mobile Chromium browser other than Chrome", () => {
+    expect(
+      detectCaptureSupport({
         userAgent:
           "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) EdgA/136.0.0.0 Mobile Safari/537.36",
         userAgentData: {
@@ -90,11 +124,31 @@ describe("capture feature detection", () => {
         },
         mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
         audioWorkletNodeCtor,
+      }),
+    ).toEqual({ supported: true, mode: "microphone_only" });
+  });
+
+  it.each([
+    {
+      name: "Firefox without the capture worklet",
+      environment: {
+        userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
+        mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
+        audioWorkletNodeCtor: null,
       },
-      expected: { supported: false, reason: "mobile" },
     },
     {
-      name: "unknown unsupported browser",
+      // A plain-HTTP origin hides navigator.mediaDevices altogether.
+      name: "Safari on an insecure origin",
+      environment: {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+        mediaDevices: undefined,
+        audioWorkletNodeCtor,
+      },
+    },
+    {
+      name: "a browser without microphone access",
       environment: {
         userAgent: "CustomBrowser/1.0",
         userAgentData: {
@@ -105,10 +159,9 @@ describe("capture feature detection", () => {
         mediaDevices: {},
         audioWorkletNodeCtor,
       },
-      expected: { supported: false, reason: "unknown" },
     },
-  ])("tags $name as unsupported", ({ environment, expected }) => {
-    expect(detectCaptureSupport(environment)).toEqual(expected);
+  ])("refuses $name", ({ environment }) => {
+    expect(detectCaptureSupport(environment)).toEqual({ supported: false });
   });
 
   it("detects Chrome Android as microphone-only capture", () => {
@@ -153,6 +206,6 @@ describe("capture feature detection", () => {
         mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
         audioWorkletNodeCtor: null,
       }),
-    ).toEqual({ supported: false, reason: "unknown" });
+    ).toEqual({ supported: false });
   });
 });

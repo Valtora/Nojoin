@@ -28,6 +28,8 @@ export const captureShortcutLabel = (): string =>
 export interface CaptureActions {
   /** Whether this tab holds the shared screen, so the Capture button is offered. */
   canCaptureScreen: boolean;
+  /** This desktop tab owns the recording, but has no shared picture to capture. */
+  screenCaptureHint: string | null;
   /** A capture is being taken. */
   busy: boolean;
   /** Takes a still of the shared screen at the recording's time now. */
@@ -49,7 +51,7 @@ export function useCaptureActions(
   readAudioNow: () => number,
   onFrame: (file: File, atMs: number) => string | null,
 ): CaptureActions {
-  const { runtimeActive, displayVideoTrack } = useCapture();
+  const { runtimeActive, recordingId: activeRecordingId, displayVideoTrack, support } = useCapture();
   const canCaptureScreen =
     runtimeActive && typeof displayVideoTrack === "function"
       ? displayVideoTrack(recordingId) !== null
@@ -95,5 +97,10 @@ export function useCaptureActions(
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [canCaptureScreen, captureScreen]);
 
-  return { canCaptureScreen, busy, captureScreen, message };
+  // Only a browser that can share a tab or screen gets the hint.
+  const screenCaptureHint = runtimeActive && activeRecordingId === recordingId && !canCaptureScreen
+    && support.supported && support.mode === "shared_audio"
+    ? "Screen captures need a shared tab, window or screen."
+    : null;
+  return { canCaptureScreen, screenCaptureHint, busy, captureScreen, message };
 }

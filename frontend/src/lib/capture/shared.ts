@@ -1,16 +1,9 @@
 import type { Recording, RecordingId } from "@/types";
 
-export type CaptureUnsupportedReason =
-  | "firefox"
-  | "safari"
-  | "mobile"
-  | "unknown";
-
 export type CaptureMode = "shared_audio" | "microphone_only";
 
 export interface CaptureSupport {
   supported: boolean;
-  reason?: CaptureUnsupportedReason;
   mode?: CaptureMode;
 }
 
@@ -29,6 +22,7 @@ export interface CaptureLevels {
 }
 
 export interface CaptureSettings {
+  startMode: CaptureMode;
   microphoneDeviceId: string | null;
   releaseMicrophoneOnPause: boolean;
   microphoneGain: number;
@@ -177,7 +171,10 @@ export const DEFAULT_CAPTURE_LEVELS: CaptureLevels = {
   mixed: 0,
 };
 
+export const DEFAULT_CAPTURE_MODE: CaptureMode = "shared_audio";
+
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
+  startMode: DEFAULT_CAPTURE_MODE,
   microphoneDeviceId: null,
   releaseMicrophoneOnPause: false,
   microphoneGain: 1,
@@ -211,6 +208,10 @@ export const readCaptureSettings = (): CaptureSettings => {
       version?: unknown;
     };
     const settings: CaptureSettings = {
+      startMode:
+        parsed.startMode === "microphone_only" || parsed.startMode === "shared_audio"
+          ? parsed.startMode
+          : DEFAULT_CAPTURE_MODE,
       microphoneDeviceId:
         typeof parsed.microphoneDeviceId === "string"
           ? parsed.microphoneDeviceId

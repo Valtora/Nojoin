@@ -31,7 +31,7 @@ export default function RecordingNoteComposer({ recording, segments, audioClock,
     outbox.submit({ kind: "point", body: CAPTURE_NOTE_BODY, anchorMs: atMs }, { file }), [outbox]);
   const capture = useCaptureActions(recording.id, readAudioNow, onFrame);
 
-  return <LiveNoteComposer
+  return <><LiveNoteComposer
     captureActive={activeCapture}
     readAudioNow={readAudioNow}
     onSubmit={(note) => outbox.submit(note, { clearDraft: true })}
@@ -45,5 +45,9 @@ export default function RecordingNoteComposer({ recording, segments, audioClock,
     capturing={capture.busy}
     captureShortcut={captureShortcutLabel()}
     captureMessage={capture.message}
-  />;
+  />
+    {capture.screenCaptureHint ? (
+      <p className="mt-1 text-xs text-contrast-helper">{capture.screenCaptureHint}</p>
+    ) : null}
+  </>;
 }

@@ -190,7 +190,7 @@ export default function CaptureSettings() {
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setPreviewError(
-        "This browser cannot open a microphone preview. Use Chrome or another supported Chromium browser.",
+        "This browser cannot open a microphone preview. Use a current version of Chrome, Edge, Firefox or Safari.",
       );
       setPreviewEnabled(false);
       return;
@@ -351,8 +351,8 @@ export default function CaptureSettings() {
       title="Input"
       description={
         microphoneOnly
-          ? "The phone microphone used for mobile recording. Nojoin balances levels while recording."
-          : "The microphone added to shared audio. Nojoin balances system and microphone levels while recording."
+          ? "The microphone used for recording. This browser records it without shared audio. Nojoin balances levels while recording."
+          : "The microphone used for recording, on its own or alongside shared audio. Nojoin balances levels while recording."
       }
       headerAside={
         <ButtonBase
@@ -388,8 +388,8 @@ export default function CaptureSettings() {
         label="Microphone"
         description={
           microphoneOnly
-            ? "Recorded directly on mobile Chrome."
-            : "Mixed with shared tab or system audio during capture."
+            ? "Recorded on its own: this browser cannot share tab or system audio."
+            : "Recorded on its own or with shared tab or system audio, as chosen at Start."
         }
       >
         <SelectBase
