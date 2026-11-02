@@ -88,7 +88,7 @@ export interface PersonMeetingRead {
 }
 
 export interface PersonTalkMonthRead {
-  /** Calendar month in UTC, formatted YYYY-MM. */
+  /** Calendar month in the user's time-zone setting, formatted YYYY-MM. */
   month: string;
   talk_time_seconds: number;
 }
