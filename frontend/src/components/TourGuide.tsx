@@ -8,6 +8,16 @@ import '@/app/driver-theme.css';
 import { useNavigationStore } from '@/lib/store';
 import { dashboardSteps, recordingsSteps, restoreTourPanel, transcriptSteps } from '@/lib/tour-config';
 import { getUserMe } from '@/lib/api';
+import { whenNotTyping } from '@/lib/whenNotTyping';
+
+// A tour opens this long after its page does.
+const TOUR_DELAY_MS = 1500;
+// A tour held back while someone types opens once focus has left the field
+// and nothing has been pressed or clicked for this long. It is longer than the
+// pause people take to choose their next action (about 1.35 s in the
+// keystroke-level model), so a tour does not land on the click or key that
+// follows leaving a field, such as a click back into it.
+const TOUR_IDLE_MS = 1500;
 
 function useTourUserId(enabled = true) {
   const [userId, setUserId] = useState<number | null>(null);
@@ -43,7 +53,9 @@ function useScheduledTour(
       onEnd?.();
       if (seen) onSeen();
     };
-    const timer = setTimeout(() => {
+    // driver.js takes focus, so a tour waits while someone types (#918). Its
+    // steps are read when it opens, since the page may have changed by then.
+    const cancelOpen = whenNotTyping(() => {
       const validSteps = steps.filter(step =>
         typeof step.element !== 'string' || document.querySelector(step.element),
       );
@@ -61,9 +73,9 @@ function useScheduledTour(
         onDestroyStarted: () => end(true),
       });
       activeDriver.drive();
-    }, 1500);
+    }, TOUR_DELAY_MS, TOUR_IDLE_MS);
     return () => {
-      clearTimeout(timer);
+      cancelOpen();
       end(false);
     };
   }, [enabled, onEnd, onSeen, scope, steps]);
