@@ -71,10 +71,12 @@ def test_production_loader_golden_and_resumed_native_checkpoints(
 ) -> None:
     from backend.processing.live_diarization.nemotron import NemotronStream
     from backend.processing.nemotron_types import NativeWindowResult
+    from backend.utils.nemotron_manifest import REVISION
 
     info = manifest()
-    assert verified_runtime.asset_fingerprint == info["asset_manifest_sha256"]
-    assert verified_runtime.runtime_fingerprint == info["runtime"]["fingerprint"]
+    # Outputs are compared, not runtime identity: the golden must come from the
+    # same checkpoint, but another Transformers or Torch release may run it.
+    assert info["asset_revision"] == REVISION
     schedule = json.loads((DIRECTORY / "window_schedule.json").read_text())
     tolerance = info["repeat_gate"]["tolerances"]
     with np.load(DIRECTORY / "native_packets.npz", allow_pickle=False) as stored:

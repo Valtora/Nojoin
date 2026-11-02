@@ -248,11 +248,12 @@ def test_native_worker_failure_cleans_owned_pending_marker(
     assert control.pending_task() is None
 
 
-def _stamp_receipt_from_earlier_transformers() -> None:
-    """Leave the receipt as a 5.20.2 install wrote it, over the same files."""
+def _stamp_receipt_from_an_earlier_manifest() -> None:
+    """Leave the receipt as an install whose manifest still named a Transformers
+    version wrote it, over the same files."""
     from backend.utils import nemotron_manifest as manifest
 
-    earlier = dict(manifest.load_asset_manifest(), transformers_version="5.20.2")
+    earlier = dict(manifest.load_asset_manifest(), transformers_version="5.21.0")
     canonical = json.dumps(earlier, sort_keys=True, separators=(",", ":"))
     path = assets.nemotron_repo_path() / "nojoin-verification.json"
     receipt = json.loads(path.read_text())
@@ -327,7 +328,7 @@ def _nemotron_requests(
 
 @pytest.mark.usefixtures("download_progress_in_memory")
 @pytest.mark.parametrize("backend", ["parakeet", "canary"])
-def test_startup_re_prepares_nemotron_from_an_earlier_transformers_once(
+def test_startup_re_prepares_nemotron_from_an_earlier_manifest_once(
     backend: str, native_assets: tuple, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from backend.worker.tasks.system import download_models_task
@@ -335,7 +336,7 @@ def test_startup_re_prepares_nemotron_from_an_earlier_transformers_once(
     snapshot, payloads = native_assets
     local_files(snapshot, payloads)
     assets.prepare_nemotron_model()
-    _stamp_receipt_from_earlier_transformers()
+    _stamp_receipt_from_an_earlier_manifest()
 
     settings = {"transcription_backend": backend}
     queued = _start_api(monkeypatch, settings)
@@ -384,7 +385,7 @@ def test_startup_queues_no_nemotron_without_an_install_that_uses_it(
     if settings:
         local_files(snapshot, payloads)
         assets.prepare_nemotron_model()
-        _stamp_receipt_from_earlier_transformers()
+        _stamp_receipt_from_an_earlier_manifest()
     assert _start_api(monkeypatch, settings) == []
     assert control.pending_task() is None
     if not settings:
