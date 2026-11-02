@@ -18,7 +18,8 @@ export default function TopBar() {
   }
 
   return (
-    <header className="z-[var(--z-sticky)] flex shrink-0 items-center gap-3 border-b border-rail-border bg-rail px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 lg:hidden">
+    // The capture bar above it, when it shows, has already cleared the inset.
+    <header className="z-[var(--z-sticky)] flex shrink-0 items-center gap-3 border-b border-rail-border bg-rail px-3 pt-[calc(var(--page-safe-top,env(safe-area-inset-top))+0.5rem)] pb-2 lg:hidden">
       <IconButton
         onClick={toggleMobileNav}
         variant="secondary"

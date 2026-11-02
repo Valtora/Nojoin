@@ -25,7 +25,11 @@ from backend.utils.canonical_pipeline.live_compatibility import (
     prepare_live_compatibility_mutation,
 )
 from backend.utils.config_manager import config_manager
-from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.live_speaker_labels import speaker_prompt_name
+from backend.utils.reprocess_publication import (
+    REPROCESS_RUNNING_MESSAGE,
+    reprocess_replacement_running,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,13 +89,25 @@ def _canonical_transcript_writes_enabled() -> bool:
     return bool(config_manager.get("enable_canonical_transcript_writes", True))
 
 
+def _refuse_while_reprocess_runs(transcript: Transcript | None) -> None:
+    """Refuse an edit the running reprocess would delete when it publishes.
+
+    The pass replaces the retained lines, speakers and edit history in one
+    transaction, so an edit accepted now would answer 200 and then vanish.
+    """
+    if reprocess_replacement_running(transcript):
+        raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
+
+
 async def _prepare_live_transcript_mutation(
     db: AsyncSession, recording_id: int
 ) -> bool:
+    transcript = await _get_recording_transcript(db, recording_id)
+    _refuse_while_reprocess_runs(transcript)
     if not _canonical_transcript_writes_enabled():
         from backend.utils.canonical_pipeline.guards import settling_required
 
-        if not settling_required(await _get_recording_transcript(db, recording_id)):
+        if not settling_required(transcript):
             return False
     return await db.run_sync(prepare_live_compatibility_mutation, recording_id)
 
@@ -203,6 +219,13 @@ class TranscriptUtteranceListRead(BaseModel):
     # Live label -> the name the user gave it during capture. Sent whole on every
     # read, delta or not: naming a live speaker changes no utterance.
     live_speaker_names: dict[str, str] = {}
+    # Live label -> the live label the user merged it into, whole on every read
+    # for the same reason: a merge changes no utterance.
+    live_speaker_merges: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    # The live lane is behind a running capture's uploads.
+    live_behind: bool = Field(default=False, exclude_if=lambda value: value is False)
     live_speaker_suggestions: dict[str, str] = {}
     # Label -> where its proposal came from: "heuristic" (a self-introduction)
     # or "llm" (the AI provider), as a speaker's name_source says it.
@@ -244,11 +267,11 @@ def _build_speaker_map(speakers) -> dict:
 
 
 def _format_transcript_text(segments, speaker_map: dict) -> str:
-    """Format transcript segments as text."""
+    """Format transcript segments as text for the MCP transcript tool's LLM clients."""
     lines = []
     for seg in segments:
         speaker_label = seg.get("speaker", "Unknown")
-        speaker_name = speaker_display_name(speaker_label, speaker_map)
+        speaker_name = speaker_prompt_name(speaker_label, speaker_map)
         start = seg.get("start", 0)
         minutes = int(start // 60)
         seconds = int(start % 60)
@@ -281,6 +304,12 @@ def _get_recording_speaker_display_name(recording_speaker: RecordingSpeaker) -> 
 import re2
 
 
+def _mark_replaced_text(segment: dict, text: str) -> None:
+    segment["text"] = text
+    segment["text_manually_edited"] = True
+    segment["text_edit_source"] = "api"
+
+
 def _apply_find_replace(
     transcript: Transcript,
     find_text: str,
@@ -290,7 +319,10 @@ def _apply_find_replace(
 ) -> int:
     """
     Apply find and replace to both transcript segments and notes.
-    Returns the number of segment replacements made.
+
+    Returns the number of lines whose text changed. Each is marked as the
+    person's own edit from the web app, which locks it against later passes;
+    a match the replacement leaves as it was is neither counted nor marked.
     """
     if len(find_text) > 1000:
         raise HTTPException(
@@ -306,8 +338,7 @@ def _apply_find_replace(
             if find_text in segment["text"]:
                 new_text = segment["text"].replace(find_text, replace_text)
                 if new_text != segment["text"]:
-                    segment["text"] = new_text
-                    segment["text_manually_edited"] = True
+                    _mark_replaced_text(segment, new_text)
                     total_segment_replacements += 1
 
         if transcript.notes and find_text in transcript.notes:
@@ -334,10 +365,9 @@ def _apply_find_replace(
             raise HTTPException(status_code=400, detail="Invalid regular expression")
 
         for segment in transcript.segments:
-            new_text, count = regex.subn(replace_text, segment["text"])
-            if count > 0:
-                segment["text"] = new_text
-                segment["text_manually_edited"] = True
+            new_text = regex.sub(replace_text, segment["text"])
+            if new_text != segment["text"]:
+                _mark_replaced_text(segment, new_text)
                 total_segment_replacements += 1
 
         if transcript.notes:

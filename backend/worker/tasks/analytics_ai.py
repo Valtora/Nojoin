@@ -25,6 +25,7 @@ from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.processing.pipeline_metrics import pipeline_metric_timer
 from backend.utils.analytics_payload import AI_KEY, merge_analytics_payload
+from backend.utils.generation_claim import claim_generation
 from backend.utils.meeting_analysis import (
     MEETING_ANALYSIS_METHOD_VERSION,
     MeetingAnalysisRequest,
@@ -33,6 +34,7 @@ from backend.utils.meeting_analysis import (
     serialize_meeting_analysis_result,
 )
 from backend.utils.time import utc_now
+from backend.worker.tasks.side_runs import claim_heartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +238,12 @@ def compute_meeting_analysis_task(recording_id: int) -> dict[str, Any]:
             return {"status": "skipped", "reason": "no_attributed_speech"}
 
         watermark = get_canonical_transcript_revision(session, recording_id)
-        _set_ai_status(session, recording_id, AI_STATUS_GENERATING, None)
+        # A claim of its own, renewed while the model works, which a run lost
+        # with its worker gives up once it expires (generation_claim, #828).
+        claim_generation(transcript, "analytics_ai_status")
+        transcript.analytics_ai_error_message = None
+        session.add(transcript)
+        session.commit()
 
         try:
             request = MeetingAnalysisRequest(
@@ -251,10 +258,11 @@ def compute_meeting_analysis_task(recording_id: int) -> dict[str, Any]:
                 payload={"speaker_count": inputs["speaker_count"]},
                 log=logger,
             ) as metric:
-                result = backend.generate_meeting_analysis(
-                    request,
-                    timeout=MEETING_ANALYSIS_TIMEOUT_SECONDS,
-                )
+                with claim_heartbeat(recording_id, "analytics_ai_status"):
+                    result = backend.generate_meeting_analysis(
+                        request,
+                        timeout=MEETING_ANALYSIS_TIMEOUT_SECONDS,
+                    )
                 metric["payload"].update(
                     {
                         "topics": len(result.topics),

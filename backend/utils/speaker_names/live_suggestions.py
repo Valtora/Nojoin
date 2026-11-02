@@ -4,7 +4,8 @@ A proposal comes from the self-introduction rule or from asking the AI
 provider (``backend.worker.tasks.live_naming_stage``); a label has at most one
 pending at a time. Proposals are not naming acts: only the live rename route
 writes the user's anchored event. A dismissed label stays dismissed for the
-rest of the capture.
+rest of the capture. A label merged into another is read as the label it
+joined, so a group has one proposal and its members' introductions count.
 """
 
 from collections.abc import Mapping, Sequence
@@ -41,7 +42,7 @@ from backend.utils.transcript_settling import (
     publication_is_current,
 )
 
-from .live import live_speaker_names
+from .live import live_speaker_groups, live_speaker_names
 from .sources import suggestion_source
 
 LIVE_SUGGESTION_ORIGIN = "live_self_introduction"
@@ -129,7 +130,12 @@ def has_unnamed_live_labels(session: Any, transcript: Transcript) -> bool:
         .where(col(TranscriptUtterance.state).in_(ACTIVE_UTTERANCE_STATES))
         .distinct()
     ).scalars()
-    labels = {str(label) for label in heard if live_speaker_display_name(label)}
+    groups = live_speaker_groups(session, transcript.recording_id)
+    labels = {
+        groups.get(str(label), str(label))
+        for label in heard
+        if live_speaker_display_name(label)
+    }
     return bool(labels and _unanswered_labels(session, transcript, labels))
 
 
@@ -339,9 +345,15 @@ def _live_evidence(
     transcript, recording = load_capture_publication(session, recording_id, lock=lock)
     if transcript is None or not publication_is_current(recording, transcript, None):
         return None
-    segments = build_transcript_segments_for_read(
-        session, recording_id, transcript=transcript
-    )
+    groups = live_speaker_groups(session, recording_id)
+    segments = [
+        {**segment, "speaker": groups[segment["speaker"]]}
+        if segment.get("speaker") in groups
+        else segment
+        for segment in build_transcript_segments_for_read(
+            session, recording_id, transcript=transcript
+        )
+    ]
     event = (
         session.get(CalendarEvent, recording.calendar_event_id)
         if recording.calendar_event_id is not None

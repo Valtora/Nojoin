@@ -43,9 +43,9 @@ def test_app(monkeypatch):
     app.dependency_overrides[get_current_active_superuser] = mock_superuser
     app.dependency_overrides[get_current_active_superuser_ws] = mock_superuser
 
-    # Monkeypatch docker client in system endpoint
+    # Serve the mock through the endpoint's Docker client getter
     mock_docker = MockDockerClient()
-    monkeypatch.setattr(system, "client", mock_docker)
+    monkeypatch.setattr(system, "get_docker_client", lambda: mock_docker)
 
     return app
 

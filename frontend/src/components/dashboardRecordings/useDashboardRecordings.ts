@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getRecordings } from "@/lib/api";
-import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
+import {
+  RECORDING_UPDATED_EVENT,
+  recordingRenameOf,
+  subscribeRecordingRemoved,
+  withRecordingName,
+} from "@/lib/recordingEvents";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { Recording, RecordingStatus } from "@/types";
 
@@ -72,15 +78,23 @@ export function useDashboardRecordings(): DashboardRecordings {
   useEffect(() => {
     void load();
 
-    const handleUpdate = () => void load();
-    window.addEventListener("recording-updated", handleUpdate);
+    // A rename carries the new name, so it needs no re-fetch.
+    const handleUpdate = (event: Event) => {
+      const rename = recordingRenameOf(event);
+      if (rename) {
+        setRecordings((prev) => withRecordingName(prev, rename));
+        return;
+      }
+      void load();
+    };
+    window.addEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
     // A discard is explicit and irreversible, so the row goes now rather than
     // after the re-fetch a generic update would need.
     const unsubscribeRemoved = subscribeRecordingRemoved((id) => {
       setRecordings((prev) => prev.filter((recording) => recording.id !== id));
     });
     return () => {
-      window.removeEventListener("recording-updated", handleUpdate);
+      window.removeEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
       unsubscribeRemoved();
     };
   }, [load]);
@@ -89,7 +103,10 @@ export function useDashboardRecordings(): DashboardRecordings {
 
   return {
     recent: sorted.slice(0, RECENT_LIMIT),
-    processing: sorted.filter((recording) => IN_FLIGHT.has(recording.status)),
+    // A capture in progress is UPLOADING too, but it is live, not processing;
+    // an import sending its bytes stays.
+    processing: sorted.filter((recording) =>
+      IN_FLIGHT.has(recording.status) && !isLiveCaptureInProgress(recording)),
     loading,
   };
 }

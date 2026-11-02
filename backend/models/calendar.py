@@ -421,6 +421,8 @@ class CalendarDashboardRecordingRead(SQLModel):
     ends_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
     status: str
+    # Tells a capture in progress, which is UPLOADING too, from a finishing upload.
+    client_status: Optional[str] = None
     speaker_names: List[str] = Field(default_factory=list)
     tags: List[CalendarDashboardTagRead] = Field(default_factory=list)
 

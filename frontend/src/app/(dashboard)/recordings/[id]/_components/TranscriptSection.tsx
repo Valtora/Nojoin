@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 
+import ReprocessDialog from "@/components/ReprocessDialog";
 import TranscriptView from "@/components/TranscriptView";
+import Button from "@/components/ui/Button";
 import type { LiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
 import type { LiveTranscriptPresentation } from "@/components/transcript/liveTranscriptPresentation";
 import type { LiveLineHandlers } from "@/components/transcript/LiveLineEditor";
@@ -16,7 +18,7 @@ import { ClientStatus } from "@/types";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, shownNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
-import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import { selectNoteList, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import { useSpeakerNameReview } from "@/lib/useSpeakerNameReview";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -127,20 +129,28 @@ export default function TranscriptSection({
   const lineActions = useMemo(() => transcriptLineActions((message) =>
     addNotification({ type: "error", message })), [addNotification]);
   const applyLiveNames = liveTranscript?.applyLiveSpeakerNames ?? IGNORE_LIVE_NAMES;
-  const liveNaming = useLiveSpeakerNaming(recording.id, applyLiveNames, liveTranscript?.refresh,
-    liveTranscript?.applyLiveSpeakerSuggestions);
+  const liveNaming = useLiveSpeakerNaming(
+    recording.id, applyLiveNames, liveTranscript?.refresh, liveTranscript?.applyLiveSpeakerMerges,
+    liveTranscript?.applyLiveSpeakerSuggestions,
+  );
   const activeCapture = isLiveCaptureInProgress(recording);
   // Terminal metadata can precede the replacement read; an open editor can
   // defer its old row even after that read. Wait for the displayed replacement.
   const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
     hasRetainedPublication;
   const readOnly = (isRecordingInFlight(recording) || awaitingPublication) && !activeCapture;
-  // A finished recording keeps its finished presentation while a reprocess
-  // reads the feed; capture keeps its live one through processing until handoff.
-  const [presentFeed, setPresentFeed] = useState(usesLiveFeed);
-  useOnDepsChange([usesLiveFeed, readOnly], () => {
+  const transcriptStatus = recording.transcript?.transcript_status;
+  // The live presentation is a capture's own run: recording, paused, or
+  // processing what it heard (only capture start makes a "processing"
+  // transcript). It holds until the finished transcript takes over. A later
+  // run over a finished transcript (notes, speaker inference, a settled
+  // meeting's reprocess) reads the feed in the finished presentation, opened
+  // during the run or before it, and through its publication.
+  const captureRun = activeCapture || transcriptStatus === "processing";
+  const [presentFeed, setPresentFeed] = useState(usesLiveFeed && captureRun);
+  useOnDepsChange([usesLiveFeed, captureRun], () => {
     if (!usesLiveFeed) setPresentFeed(false);
-    else if (!readOnly) setPresentFeed(true);
+    else if (captureRun) setPresentFeed(true);
   });
   // The one handler guard: a control drawn before the view turned read-only
   // can still be used. Refresh follows the selected reader after a write.
@@ -149,12 +159,11 @@ export default function TranscriptSection({
   const reviewSpeakerName = async (label: string, name: string, decision: SpeakerNameDecision) => {
     if (!readOnly) await nameReview.review({ labels: [label], name }, decision);
   };
-  const transcriptStatus = recording.transcript?.transcript_status;
   // The listed notes and those saved from this page since, less any it
   // discarded: the outbox outlives the live view, and its notes land here.
   // A note added here from a line's menu shows on its line while it saves;
   // the others still on their way are listed above the transcript.
-  const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id);
+  const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id, selectNoteList);
   // Edits, moves and deletes made here or in My notes show at once: a finished
   // recording's list is not fetched again.
   const { apply: applyEdits, edit: editNote, remove: removeNote, move: moveNote } = noteEdits;
@@ -203,17 +212,19 @@ export default function TranscriptSection({
   }, [recordingId, refreshSelectedReader, readOnly, lineActions]);
   const paused = recording.status === RecordingStatus.PAUSED || recording.client_status === ClientStatus.PAUSED;
   const hasLoaded = liveTranscript?.hasLoaded ?? false;
+  const liveBehind = activeCapture && (liveTranscript?.liveBehind ?? false);
   const live = useMemo<LiveTranscriptPresentation | undefined>(() => usesLiveFeed && presentFeed ? ({
-    hasLoaded, isPaused: paused, lineHandlers: liveLineHandlers,
+    hasLoaded, capturing: activeCapture, isPaused: paused, liveBehind, lineHandlers: liveLineHandlers,
     onNoteOnLine: activeCapture ? noteOnLine : undefined,
     onNoteAtTime: activeCapture ? noteAtTime : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,
+    onMergeLiveSpeaker: activeCapture ? liveNaming.mergeLiveSpeaker : undefined,
     liveSpeakerSuggestions: activeCapture ? liveTranscript?.liveSpeakerSuggestions : undefined,
     liveSpeakerSuggestionSources: liveTranscript?.liveSpeakerSuggestionSources,
     onDismissLiveSpeakerSuggestion: activeCapture ? liveNaming.dismissLiveSpeakerSuggestion : undefined,
     loadPeopleNames: liveNaming.loadPeopleNames,
-  }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveLineHandlers, activeCapture,
-    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.loadPeopleNames,
+  }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveBehind, liveLineHandlers, activeCapture,
+    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.mergeLiveSpeaker, liveNaming.loadPeopleNames,
     liveTranscript?.liveSpeakerSuggestions, liveTranscript?.liveSpeakerSuggestionSources,
     liveNaming.dismissLiveSpeakerSuggestion]);
   const discardNote = useCallback(
@@ -232,14 +243,22 @@ export default function TranscriptSection({
     },
     [removeNote, focusSection],
   );
-  // A failed transcription is reported, never shown as an empty transcript,
-  // which would let a crashed ASR run pass for a silent meeting.
-  // Only while the recording is in ERROR: a retry or speaker-inference run
-  // moves it back to processing, and the old failure no longer applies then.
-  const transcriptionError =
-    transcriptStatus === "error" && recording.status === RecordingStatus.ERROR
-      ? recording.transcript?.error_message || "Transcription failed."
-      : null;
+  // A failure is reported, never shown as an empty transcript, which would let
+  // a crashed run pass for a silent meeting: a failed transcription with its
+  // reason, any other with the step it stopped at. Only while the recording
+  // is in ERROR: a retry or speaker-inference run moves it back to
+  // processing, and the old failure no longer applies then.
+  const failure = recording.status === RecordingStatus.ERROR
+    ? transcriptStatus === "error"
+      ? { title: "Transcription failed", reason: recording.transcript?.error_message || "Transcription failed." }
+      : { title: "Processing failed", reason: recording.processing_step || "Processing stopped before it finished." }
+    : null;
+  const [retrying, setRetrying] = useState(false);
+  // A retry started elsewhere ends the failure: the dialog does not come
+  // back with the next one.
+  useOnDepsChange([failure === null], () => {
+    if (failure === null) setRetrying(false);
+  });
   // An in-flight recording's polls carry no transcript, so a retained one
   // first paints from its utterances read.
   const loadingRetained = hasRetainedPublication && !transcriptIsAuthoritative;
@@ -254,22 +273,37 @@ export default function TranscriptSection({
       aria-labelledby="tab-transcript"
       className={`absolute inset-0 flex flex-col outline-none ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
-      {transcriptionError ? (
+      {failure ? (
         <div
           role="alert"
           className="m-4 flex shrink-0 items-start gap-3 rounded-lg border border-status-danger-border bg-status-danger-bg p-4 text-sm text-status-danger-fg"
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <div className="space-y-1">
-            <p className="font-semibold">Transcription failed</p>
-            <p>{transcriptionError}</p>
-            <p>
-              Use <strong>Retry Processing</strong> from this recording&apos;s
-              menu in the recordings list to try again.
-            </p>
+          <div className="min-w-0 space-y-1">
+            <p className="font-semibold">{failure.title}</p>
+            <p className="wrap-anywhere">{failure.reason}</p>
+            <Button
+              size="sm"
+              className="mt-2"
+              iconLeft={<RefreshCw aria-hidden="true" className="h-4 w-4" />}
+              onClick={() => setRetrying(true)}
+            >
+              Retry processing
+            </Button>
           </div>
         </div>
       ) : null}
+      <ReprocessDialog
+        recordingId={recording.id}
+        isOpen={retrying && failure !== null}
+        onClose={() => setRetrying(false)}
+        currentMaxSpeakers={recording.max_speakers ?? null}
+        currentTranscriptionLanguage={recording.transcription_language ?? null}
+        failed
+        // A failed reprocess keeps the transcript it would have replaced,
+        // and a retry replaces it.
+        hasTranscript={transcriptSegments.length > 0 || Boolean(recording.transcript?.text)}
+      />
       {/* A note from the live note box that never saved, or text left in it,
           outlives processing: listed here until saved or discarded. */}
       <RecordingUnsavedNotes
@@ -288,7 +322,7 @@ export default function TranscriptSection({
           <TranscriptView
             live={live}
             readOnly={readOnly}
-            emptyStateTitle={transcriptionError ? "" : transcriptStatus === "completed"
+            emptyStateTitle={failure ? "" : transcriptStatus === "completed"
               ? "No speech was detected in this recording." : waitingText}
             recordingId={recording.id}
             segments={transcriptSegments}
@@ -334,14 +368,14 @@ export default function TranscriptSection({
                   {recording.transcript.text.replace(/[\[\]]/g, "")}
                 </p>
               </div>
-              {transcriptionError ? null : (
+              {failure ? null : (
                 <p className="text-sm text-contrast-helper">
                   The audio file was processed, but no speech segments were
                   generated.
                 </p>
               )}
             </>
-          ) : transcriptionError ? null : transcriptStatus === "completed" ? (
+          ) : failure ? null : transcriptStatus === "completed" ? (
             // Transcription finished and heard nothing: a result, not a wait.
             <p className="text-contrast-helper italic">
               No speech was detected in this recording.
@@ -353,7 +387,12 @@ export default function TranscriptSection({
           )}
         </div>
       )}
-      {inFlightContent ? <div className="max-h-[50%] shrink-0 overflow-y-auto">{inFlightContent}</div> : null}
+      {/* Inset like the transcript above it, so the box's focus rings are not
+          clipped, and clear of the phone's floating chat button. */}
+      {inFlightContent ? <div data-testid="note-box-region"
+        className="max-h-[50%] shrink-0 overflow-y-auto pb-2 pl-2 pr-clear-floating-2 md:pl-4 md:pr-clear-floating-4">
+        {inFlightContent}
+      </div> : null}
     </div>
   );
 }

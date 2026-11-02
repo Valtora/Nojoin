@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { PeopleTag } from "@/types";
 import { DEFAULT_TAG_COLORS } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import { notifyRequestError } from "@/lib/notifyRequestError";
 import {
   getPeopleTags,
@@ -36,6 +37,8 @@ interface PeopleTagSidebarProps {
   onToggleTag: (tagId: number) => void;
   onClearFilters: () => void;
   onTagsUpdated?: (tags: PeopleTag[]) => void;
+  /** Bumped when a tag is made outside the sidebar, such as in Add Person, so the list reloads. */
+  tagsRevision?: number;
   /** Mobile drawer state. On desktop the pane is always inline. */
   mobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -51,6 +54,7 @@ export function PeopleTagSidebar({
   onToggleTag,
   onClearFilters,
   onTagsUpdated,
+  tagsRevision = 0,
   mobileOpen = false,
   onMobileClose,
 }: PeopleTagSidebarProps) {
@@ -82,7 +86,7 @@ export function PeopleTagSidebar({
 
   useEffect(() => {
     fetchTags();
-  }, [fetchTags]);
+  }, [fetchTags, tagsRevision]);
 
   // Build tree
   const tagTree = useMemo(() => {
@@ -300,6 +304,7 @@ export function PeopleTagSidebar({
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (isImeComposing(e)) return;
                   if (e.key === "Enter") handleAddTag(newTagName);
                   else if (e.key === "Escape") setIsAddingRoot(false);
                 }}
@@ -467,6 +472,7 @@ function TagNode({
               onChange={(e) => setEditValue(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === "Enter") onEditSave(tag.id, editValue);
                 else if (e.key === "Escape") onEditCancel();
               }}
@@ -567,6 +573,7 @@ function TagNode({
             value={subValue}
             onChange={(e) => setSubValue(e.target.value)}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if (e.key === "Enter") void saveSubTag();
               else if (e.key === "Escape") onAddSubStart(null);
             }}

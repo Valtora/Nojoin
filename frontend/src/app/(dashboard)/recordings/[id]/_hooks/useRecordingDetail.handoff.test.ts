@@ -108,12 +108,12 @@ describe("recording detail current metadata and capabilities", () => {
 
   it("keeps settled playback and export available while another recording captures", async () => {
     const { result } = renderHook(() => useRecordingDetail({
-      params, capture: { recordingId: "another", status: "recording" },
+      params, capture: { ownedRecordingId: "another", status: "recording" },
     }));
     await advance();
     expect(result.current.canPlayback).toBe(true);
     expect(result.current.canExport).toBe(true);
     await result.current.handleExport({ kind: "audio" });
-    expect(mocks.exportAudio).toHaveBeenCalledWith("rec-1", "Meeting");
+    expect(mocks.exportAudio).toHaveBeenCalledWith(expect.objectContaining({ id: "rec-1", name: "Meeting" }));
   });
 });

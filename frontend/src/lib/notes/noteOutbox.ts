@@ -396,9 +396,9 @@ export class NoteOutbox {
   private readonly uploads = new Map<string, Upload>();
   private notice: OutboxNotice | null = null;
   private snapshot: OutboxSnapshot = {
-    entries: [],
-    saved: [],
-    discarded: new Set(),
+    entries: this.entries,
+    saved: this.saved,
+    discarded: this.discardedIds,
     draft: EMPTY_DRAFT,
     draftFile: null,
     uploads: new Map(),
@@ -540,8 +540,8 @@ export class NoteOutbox {
       entries.length !== this.entries.length || saved.length !== this.saved.length;
     // A note listed since its create's answer was lost has saved: its file goes.
     const landed = this.entries.filter((entry) => this.listed.has(entry.id));
-    this.entries = entries;
-    this.saved = saved;
+    if (entries.length !== this.entries.length) this.entries = entries;
+    if (saved.length !== this.saved.length) this.saved = saved;
     for (const entry of landed) void this.upload(entry.key);
     // A failed file whose note was listed and is gone has nothing to go to.
     for (const [key, upload] of this.uploads) {
@@ -797,18 +797,24 @@ export class NoteOutbox {
   }
 
   private publish(): void {
+    const uploads = new Map(
+      [...this.uploads].map(([key, { noteId, file, place, status, error }]) => {
+        const previous = this.snapshot.uploads.get(noteId);
+        const upload = previous && previous.key === key && previous.fileName === file.name &&
+          previous.place === place && previous.status === status && previous.error === error
+          ? previous : { key, fileName: file.name, place, status, error };
+        return [noteId, upload] as const;
+      }),
+    );
+    const sameUploads = uploads.size === this.snapshot.uploads.size &&
+      [...uploads].every(([id, upload]) => this.snapshot.uploads.get(id) === upload);
     this.snapshot = {
       entries: this.entries,
       saved: this.saved,
       discarded: this.discardedIds,
       draft: this.draft,
       draftFile: this.draftFile,
-      uploads: new Map(
-        [...this.uploads].map(([key, { noteId, file, place, status, error }]) => [
-          noteId,
-          { key, fileName: file.name, place, status, error },
-        ]),
-      ),
+      uploads: sameUploads ? this.snapshot.uploads : uploads,
       notice: this.notice,
     };
     for (const listener of this.listeners) listener();

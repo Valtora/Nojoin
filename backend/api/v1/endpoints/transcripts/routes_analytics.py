@@ -22,6 +22,11 @@ from backend.utils.canonical_pipeline import (
     ensure_canonical_backfill,
     get_canonical_transcript_revision,
 )
+from backend.utils.generation_claim import (
+    generation_active,
+    reported_generation_error,
+    reported_generation_status,
+)
 from backend.utils.rate_limit import RATE_LIMIT_KEY_PREFIX, claim_once
 
 from .helpers import _get_owned_recording, _get_recording_transcript
@@ -141,7 +146,10 @@ async def _auto_remeasure_delivery(recording, transcript, user, stale: bool) -> 
     from queueing the same run on every read before the worker has marked the
     transcript as generating.
     """
-    if not stale or transcript.analytics_status in ("generating", "error"):
+    status = reported_generation_status(
+        transcript.analytics_status, transcript.updated_at
+    )
+    if not stale or status in ("generating", "error"):
         return False
     if not is_auto_remeasure_delivery_enabled(user.settings):
         return False
@@ -197,12 +205,25 @@ async def read_recording_analytics(db: AsyncSession, recording, transcript) -> d
         "metrics": analytics["metrics"],
         "attribution_warning": analytics["attribution_warning"],
         "delivery": delivery,
-        "delivery_status": transcript.analytics_status,
-        "delivery_error_message": transcript.analytics_error_message,
+        # A claim lost with its worker reads as failed (issue #828).
+        "delivery_status": reported_generation_status(
+            transcript.analytics_status, transcript.updated_at
+        ),
+        "delivery_error_message": reported_generation_error(
+            transcript.analytics_status,
+            transcript.updated_at,
+            transcript.analytics_error_message,
+        ),
         "delivery_stale": _is_stale(delivery, payload.get("event_watermark"), revision),
         "ai": ai,
-        "ai_status": transcript.analytics_ai_status,
-        "ai_error_message": transcript.analytics_ai_error_message,
+        "ai_status": reported_generation_status(
+            transcript.analytics_ai_status, transcript.updated_at
+        ),
+        "ai_error_message": reported_generation_error(
+            transcript.analytics_ai_status,
+            transcript.updated_at,
+            transcript.analytics_ai_error_message,
+        ),
         # Each tier carries its own watermark, so editing the transcript after
         # measuring delivery but before analysing does not mark the analysis
         # stale as well.
@@ -282,7 +303,7 @@ async def generate_recording_analytics(
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    if transcript.analytics_status == "generating":
+    if generation_active(transcript.analytics_status, transcript.updated_at):
         raise HTTPException(
             status_code=409, detail="Delivery analytics are already being measured"
         )
@@ -339,7 +360,7 @@ async def generate_recording_ai_analytics(
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    if transcript.analytics_ai_status == "generating":
+    if generation_active(transcript.analytics_ai_status, transcript.updated_at):
         raise HTTPException(
             status_code=409, detail="This meeting is already being analysed"
         )

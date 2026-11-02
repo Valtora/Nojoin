@@ -396,9 +396,10 @@ class GeminiLLMBackend(LLMBackend):
         recording_id: str = None,
     ) -> Generator[Any, None, None]:
         diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
+        notes_tool = self._offers_notes_tool(diarized_transcript)
 
         prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript, notes_tool=True
+            user_question, meeting_notes, diarized_transcript, notes_tool=notes_tool
         )
 
         contents = []
@@ -415,7 +416,7 @@ class GeminiLLMBackend(LLMBackend):
             """Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes."""
             pass
 
-        tools = [update_meeting_notes]
+        tools = [update_meeting_notes] if notes_tool else None
 
         try:
             # Automatic function calling is disabled to allow manual handling and event streaming.

@@ -1,10 +1,22 @@
+import re
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import field_validator
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, or_
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    event,
+    false,
+    or_,
+)
 from sqlmodel import Field, Relationship, SQLModel, col
 
 from backend.utils.languages import validate_transcription_language
@@ -60,6 +72,23 @@ IN_FLIGHT_TRANSCRIPT_STATUSES = frozenset(
 )
 
 
+# The step a finished meeting shows while Retry Speaker Inference holds it.
+SPEAKER_INFERENCE_STEP = "Inferring speakers..."
+
+
+def is_side_run_hold(recording: "Recording") -> bool:
+    """A finished meeting held in PROCESSING by a run over it, not by the pipeline.
+
+    The pipeline clears processing_completed_at when it marks a recording
+    PROCESSING, so one still carrying it was put there by something else:
+    Retry Speaker Inference, or a notes run from an earlier release (#828).
+    """
+    return recording.status == RecordingStatus.PROCESSING and (
+        recording.processing_completed_at is not None
+        or recording.processing_step == SPEAKER_INFERENCE_STEP
+    )
+
+
 def generate_meeting_uid() -> str:
     return str(uuid4())
 
@@ -72,6 +101,15 @@ class Recording(BaseDBModel, table=True):
     __tablename__ = "recordings"  # pyright: ignore[reportAssignmentType]
 
     name: str
+    # The user chose this name: a rename, or a name given at import or at the
+    # start of a capture. Meeting intelligence then leaves the name alone and
+    # only an unchosen name takes the AI title (issue #837).
+    title_user_edited: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean, nullable=False, server_default=false(), default=False
+        ),
+    )
     public_id: str = Field(
         default_factory=generate_public_id,
         sa_column=Column(
@@ -104,6 +142,11 @@ class Recording(BaseDBModel, table=True):
     processing_step: Optional[str] = Field(default=None)
     processing_started_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     processing_completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    # When the recording first reached PROCESSED, stamped on that flush and
+    # never cleared. processing_completed_at is an ETA timing that a reprocess
+    # or a failed run clears, so it cannot say whether the meeting ever finished;
+    # this can, and Discard refuses a recording that has it (issue #833).
+    first_processed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     pipeline_generation: Optional[str] = Field(
         default=RecordingPipelineGeneration.UNIFIED.value,
         sa_column=Column(String(32), nullable=True, index=True),
@@ -167,6 +210,52 @@ class Recording(BaseDBModel, table=True):
     context_chunks: List["ContextChunk"] = Relationship(
         back_populates="recording",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+@event.listens_for(Recording, "before_insert")
+@event.listens_for(Recording, "before_update")
+def _stamp_first_processed(mapper: Any, connection: Any, target: Recording) -> None:
+    """Remember that the meeting finished, whichever writer made it PROCESSED.
+
+    Every ORM path to PROCESSED (the status manager, the no-speech pass, speaker
+    inference, a restore, the sample meeting) flushes through here, so none of
+    them has to remember to stamp it.
+    """
+    if target.status == RecordingStatus.PROCESSED and target.first_processed_at is None:
+        target.first_processed_at = utc_now()
+
+
+# What Discard may delete outright: a capture, an import or a first pass that
+# has not finished. Statuses only; recording_is_discardable adds the rest.
+DISCARDABLE_STATUSES = frozenset(
+    {
+        RecordingStatus.UPLOADING,
+        RecordingStatus.PAUSED,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }
+)
+
+
+FINISHED_MEETING_DISCARD_DETAIL = (
+    "This meeting has finished processing, so Discard cannot delete it. "
+    "Move it to the bin instead."
+)
+
+
+def recording_is_discardable(recording: "Recording") -> bool:
+    """Whether Discard may delete this recording, its audio and transcript.
+
+    Discard gives up on a meeting whose capture or first processing never
+    finished. A meeting that has been PROCESSED once stays finished while its
+    speakers are inferred again or it is reprocessed, each of which shows it
+    as QUEUED or PROCESSING, so status alone cannot say (issue #833). Such a
+    meeting goes to the bin instead, where it can be restored.
+    """
+    return (
+        recording.status in DISCARDABLE_STATUSES
+        and recording.first_processed_at is None
     )
 
 
@@ -324,6 +413,34 @@ class RecordingUpdate(SQLModel):
     @classmethod
     def _validate_transcription_language(cls, value: Optional[str]) -> Optional[str]:
         return None if value is None else validate_transcription_language(value)
+
+
+# The names generate_default_meeting_name gives a recording created without
+# one, such as "Sunday 1st Nov, Morning Meeting". Nobody chose such a name, so
+# where a recording predates title_user_edited (the upgrade that added it, a
+# restore of an older archive) it stays free to take the AI title, and any
+# other name counts as the user's. The migration carries its own copy.
+DEFAULT_MEETING_NAME_PATTERN = re.compile(
+    r"(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day [0-9]{1,2}(st|nd|rd|th) "
+    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec), "
+    r"((Early |Late )?(Morning|Afternoon|Evening)|(Late )?Night) Meeting"
+)
+
+
+def is_default_meeting_name(name: str) -> bool:
+    return DEFAULT_MEETING_NAME_PATTERN.fullmatch(name) is not None
+
+
+def chosen_recording_name(value: Optional[str]) -> Optional[str]:
+    """The name a caller gave a new recording, trimmed, or None when blank.
+
+    A recording created with a name keeps it as the user's choice
+    (``title_user_edited``); one created without is named automatically and
+    takes the AI title once its notes are generated (issue #837).
+    """
+    if value is None:
+        return None
+    return value.strip() or None
 
 
 class RecordingInitResponse(SQLModel):

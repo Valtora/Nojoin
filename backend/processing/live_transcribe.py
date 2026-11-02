@@ -28,6 +28,7 @@ from backend.processing.live_audio_buffer import (
     stage_live_audio,
 )
 from backend.processing.live_diarization.setting import live_speaker_labels_requested
+from backend.processing.live_gap import GapSkip, find_gap_skip
 from backend.processing.live_limits import (
     DEFAULT_FORCED_MAX,
     DEFAULT_MAX_SEGMENT_S,
@@ -67,6 +68,7 @@ from backend.processing.processing_tuning import (
 )
 from backend.utils.asr_config import build_asr_config_hash, get_transcription_model_name
 from backend.utils.audio_windows import infer_resume_state_from_manifests
+from backend.utils.capture_resume import load_resume_boundaries, split_resume_regions
 from backend.utils.config_manager import config_manager
 from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.transcript_settling import capture_publication_token
@@ -103,6 +105,21 @@ def _record_live_sequence_outcome_metric(
         status="error" if outcome == "failed" else outcome,
         log=logger,
     )
+
+
+def _report_gap_skip(recording_id: int, gap: GapSkip | None) -> None:
+    """Report a skip once the run that made it has saved the lane state.
+
+    A rejected run saves nothing, so the next one makes the same skip again.
+    """
+    if gap is not None:
+        _record_live_sequence_outcome_metric(
+            recording_id=recording_id,
+            sequence=gap.first,
+            outcome="skipped",
+            reason="gap_skipped",
+            extra_payload=gap.metric_payload(),
+        )
 
 
 def _write_live_state_best_effort(live_dir, state: dict) -> None:
@@ -246,6 +263,7 @@ def _resolve_live_engine_config(
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording
     from backend.models.user import User
+    from backend.utils.languages import apply_recording_language
     from backend.worker.tasks import resolve_llm_config
 
     session = get_sync_session()
@@ -259,7 +277,12 @@ def _resolve_live_engine_config(
                 if user and user.settings:
                     user_settings = user.settings
             if hasattr(session, "exec"):
-                merged_config = resolve_llm_config(session, user_settings).merged_config
+                # The recording's own language first, as the final pass reads
+                # it (#671), so a capture with one set never detects (#776).
+                merged_config = apply_recording_language(
+                    resolve_llm_config(session, user_settings).merged_config,
+                    recording,
+                )
             else:
                 merged_config = live_config
             merged_config.setdefault(
@@ -346,6 +369,8 @@ def _transcribe_live_regions(
     engine via transcribe_audio) stay inside this worker-only helper so module
     import time stays light.
     """
+    import tempfile
+
     import torch
 
     from backend.processing.transcribe import (
@@ -392,7 +417,9 @@ def _transcribe_live_regions(
         region_start_ms = int(round((combined_abs_start + sp["start"]) * 1000.0))
         region_end_ms = int(round((combined_abs_start + sp["end"]) * 1000.0))
 
-        clip_path = str(live_dir / "clip.wav")
+        # Outside the capture's folder, which a Discard removes during the call.
+        clip_fd, clip_path = tempfile.mkstemp(prefix="nojoin-live-", suffix=".wav")
+        os.close(clip_fd)
         try:
             from backend.processing.vad import silero_vad
 
@@ -565,6 +592,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             settling_state.get("eligible")
             and settling_state.get("policy", {}).get("enabled") is not False
         )
+        resume_boundaries = load_resume_boundaries(session, recording.transcript)
     finally:
         session.close()
 
@@ -646,8 +674,15 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             extra_payload={"next_expected": next_expected},
         )
         return
-    if sequence > next_expected and not (temp_dir / f"{next_expected}.wav").exists():
-        # Only a missing head is a gap; lifecycle rejection can retain it.
+    # Only a missing head is a gap; lifecycle rejection can retain it.
+    head_missing = (
+        sequence > next_expected and not (temp_dir / f"{next_expected}.wav").exists()
+    )
+    gap = find_gap_skip(temp_dir, next_expected) if head_missing else None
+    if gap is not None:
+        gap.record(state)
+        next_expected = state["next_expected"] = gap.resume_at
+    elif head_missing:
         _record_live_sequence_outcome(
             state,
             sequence=sequence,
@@ -775,6 +810,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             forced_max_s=float(live_config["forced_max_s"]),
             max_segment_s=float(live_config["max_segment_s"]),
         )
+        complete = split_resume_regions(complete, combined_abs_start, resume_boundaries)
         record_pipeline_metric(
             stage="live_vad_classified",
             recording_id=recording_id,
@@ -894,6 +930,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         state["buffer_abs_start"] = new_abs_start
         state["buffer_len_s"] = combined_len - cut_point
         write_live_state(live_dir, state)
+        _report_gap_skip(recording_id, gap)
         labels_ready = True
         _record_live_sequence_outcome_metric(
             recording_id=recording_id,
@@ -920,6 +957,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         # Non-fatal: log and move on. Finalize transcribes the whole recording,
         # so the failed run's audio still reaches the final transcript.
         record_live_run_failure(live_run, exc, state)
+        _report_gap_skip(recording_id, gap)
     finally:
         try:  # labels remain independent of failed/skipped settling ASR
             if (

@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
+import { isImeComposing } from "@/lib/imeComposition";
 import type { SpeakerNameSource } from "@/types";
 import LiveSpeakerSuggestion from "./LiveSpeakerSuggestion";
 
@@ -155,6 +156,7 @@ export default function LiveSpeakerChip({
           onChange={(event) => setDraft({ ...draft, text: event.target.value })}
           onBlur={() => void save()}
           onKeyDown={(event) => {
+            if (isImeComposing(event)) return;
             if (event.key === "Enter") {
               event.preventDefault();
               refocusRef.current = true;

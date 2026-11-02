@@ -119,7 +119,7 @@ async def apply_recording_speaker_update(
         logger.error(f"Recording {recording_id} not found")
         raise HTTPException(status_code=404, detail="Recording not found")
 
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(GlobalSpeaker).where(
         GlobalSpeaker.name == update.global_speaker_name,
@@ -390,7 +390,7 @@ async def promote_speaker_to_global(
     Promote a recording speaker to the global speaker library.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
@@ -536,7 +536,7 @@ async def merge_recording_speakers(
     Merge two speakers in a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     if merge_data.source_speaker_label == merge_data.target_speaker_label:
         raise HTTPException(status_code=400, detail="Cannot merge speaker into itself")
@@ -635,7 +635,7 @@ async def unmerge_merged_recording_speaker(
     assigned by hand stay where they are.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
     if not (
         _canonical_transcript_writes_enabled()
         and speakers_module.recording_ready_for_canonical_backfill(recording.status)
@@ -676,7 +676,7 @@ async def delete_recording_speaker(
     Remove a speaker from a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(statement)
@@ -745,7 +745,7 @@ async def update_speaker_color(
     Update the color for a speaker within a single recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     stmt = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
@@ -782,7 +782,7 @@ async def split_local_speaker(
     Split a LOCAL speaker in a specific recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
+    await _require_recording_speaker_mutations_supported(db, recording)
 
     stmt = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,

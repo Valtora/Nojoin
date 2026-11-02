@@ -2,7 +2,9 @@
 
 import { useCallback, useRef } from "react";
 
-import { dismissLiveSpeakerSuggestion, getGlobalSpeakers, nameLiveSpeaker } from "@/lib/api/speakers";
+import {
+  dismissLiveSpeakerSuggestion, getGlobalSpeakers, mergeLiveSpeaker, nameLiveSpeaker,
+} from "@/lib/api/speakers";
 import { getErrorDetail } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import type { RecordingId } from "@/types";
@@ -10,6 +12,9 @@ import type { RecordingId } from "@/types";
 export interface LiveSpeakerNaming {
   /** Names live speaker `label`; a failure is reported, never thrown. */
   renameLiveSpeaker: (label: string, name: string, createPerson?: boolean) => Promise<boolean>;
+  /** Merges live speaker `label` into `intoLabel`; a failure is reported, never thrown. */
+  mergeLiveSpeaker: (label: string, intoLabel: string) => Promise<boolean>;
+  /** Dismisses the pending name for `label`; a failure is reported, never thrown. */
   dismissLiveSpeakerSuggestion: (label: string) => Promise<boolean>;
   /** People's names, read once on the first rename and kept. */
   loadPeopleNames: () => Promise<readonly string[]>;
@@ -25,6 +30,7 @@ export function useLiveSpeakerNaming(
   recordingId: RecordingId,
   applyNames: (names: Record<string, string>) => void,
   onAccepted?: () => Promise<void> | void,
+  applyMerges?: (merges: Record<string, string>) => void,
   applySuggestions?: (suggestions: Record<string, string>) => void,
 ): LiveSpeakerNaming {
   const { addNotification } = useNotificationStore();
@@ -49,6 +55,27 @@ export function useLiveSpeakerNaming(
       }
     },
     [recordingId, applyNames, addNotification, onAccepted],
+  );
+
+  const mergeLive = useCallback(
+    async (label: string, intoLabel: string) => {
+      try {
+        const answer = await mergeLiveSpeaker(recordingId, label, intoLabel);
+        applyNames(answer.live_speaker_names);
+        applyMerges?.(answer.live_speaker_merges ?? {});
+        try { await onAccepted?.(); }
+        catch (error) { console.error("Failed to refresh after merging live speakers", error); }
+        return true;
+      } catch (error) {
+        console.error("Failed to merge the live speakers", error);
+        addNotification({
+          type: "error",
+          message: getErrorDetail(error) ?? "Failed to merge the speakers.",
+        });
+        return false;
+      }
+    },
+    [recordingId, applyNames, applyMerges, addNotification, onAccepted],
   );
 
   const loadPeopleNames = useCallback(() => {
@@ -79,5 +106,8 @@ export function useLiveSpeakerNaming(
     }
   }, [recordingId, applyNames, applySuggestions, onAccepted, addNotification]);
 
-  return { renameLiveSpeaker, dismissLiveSpeakerSuggestion: dismissSuggestion, loadPeopleNames };
+  return {
+    renameLiveSpeaker, mergeLiveSpeaker: mergeLive,
+    dismissLiveSpeakerSuggestion: dismissSuggestion, loadPeopleNames,
+  };
 }

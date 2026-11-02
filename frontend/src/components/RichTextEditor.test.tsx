@@ -154,3 +154,17 @@ describe("Tiptap extensions", () => {
     warn.mockRestore();
   });
 });
+
+describe("RichTextEditor accessible name (issue #856)", () => {
+  it("names the editor Meeting notes and says when it takes no input", async () => {
+    const view = render(<RichTextEditor content="Book the room." editable={false} onChange={vi.fn()} />);
+
+    const editor = await screen.findByRole("textbox", { name: "Meeting notes" });
+    expect(editor).toHaveAttribute("aria-readonly", "true");
+
+    view.rerender(<RichTextEditor content="Book the room." editable onChange={vi.fn()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Meeting notes" })).toHaveAttribute("aria-readonly", "false"),
+    );
+  });
+});

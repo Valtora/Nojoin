@@ -83,6 +83,8 @@ interface RecordingMainContentProps {
   onRenameSpeaker: (label: string, newName: string) => void | boolean | Promise<void | boolean>;
   onColorChange: (speakerLabel: string, colorKey: string) => void;
   onRefresh: () => void;
+  /** After a change to the recording alone, such as its tags or calendar link. */
+  onRefreshMetadata: () => void;
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
@@ -199,6 +201,7 @@ export default function RecordingMainContent({
   onResume,
   onRenameSpeaker,
   onRefresh,
+  onRefreshMetadata,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
@@ -218,6 +221,7 @@ export default function RecordingMainContent({
     (state) => state.setSpeakerPanelCollapsed,
   );
   const setSideTab = useNavigationStore((state) => state.setSideTab);
+  const setSpeakerReviewPending = useNavigationStore((state) => state.setSpeakerReviewPending);
   const tablistRef = useRef<HTMLDivElement>(null);
   const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
   const tabs = !isMobile ? TABS
@@ -278,7 +282,7 @@ export default function RecordingMainContent({
         isMobileHeaderActionsOpen={isMobileHeaderActionsOpen}
         currentTime={currentTime}
         audioRef={audioRef}
-        onRefresh={onRefresh}
+        onRefresh={onRefreshMetadata}
         setTitleValue={setTitleValue}
         setIsEditingTitle={setIsEditingTitle}
         onTitleSubmit={onTitleSubmit}
@@ -306,7 +310,9 @@ export default function RecordingMainContent({
           role="tablist"
           aria-label="Meeting panels"
           data-ui-reading="pane"
-          className={`${isMobile ? "flex overflow-x-auto" : "grid grid-cols-4"} border-b-2 border-surface-border`}
+          // The scroll padding is the hints' width: a tab scrolled into view
+          // stops clear of the arrow over either edge.
+          className={`${isMobile ? "flex overflow-x-auto scroll-px-8" : "grid grid-cols-4"} border-b-2 border-surface-border`}
         >
           {tabs.map(({ panel, label }) => (
             <ButtonBase
@@ -393,15 +399,18 @@ export default function RecordingMainContent({
           speakerColors={speakerColors}
           onPlaySegment={canPlayback ? (startMs) => onPlaySegment(startMs / 1000) : undefined}
           // Two routes to one panel: mobile switches to it, desktop reveals it
-          // in the side column, which may have been collapsed away.
-          onReviewSpeakers={
-            isMobile
-              ? () => setActivePanel("speakers")
-              : () => {
-                  setSideTab("speakers");
-                  setSpeakerPanelCollapsed(false);
-                }
-          }
+          // in the side column, which may have been collapsed away. Either
+          // way the speaker list then takes focus, so the link visibly does
+          // something when the list was already open, as it is by default.
+          onReviewSpeakers={() => {
+            if (isMobile) {
+              setActivePanel("speakers");
+            } else {
+              setSideTab("speakers");
+              setSpeakerPanelCollapsed(false);
+            }
+            setSpeakerReviewPending(true);
+          }}
         />
 
         {isMobile && (

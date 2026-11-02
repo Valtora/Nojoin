@@ -86,25 +86,62 @@ def test_parse_automatic_meeting_intelligence_response_rejects_malformed_json() 
         raise AssertionError("Expected MeetingIntelligenceContractError")
 
 
-def test_parse_automatic_meeting_intelligence_response_rejects_unknown_labels() -> None:
+def test_parse_automatic_meeting_intelligence_response_drops_labels_not_offered(
+    caplog,
+) -> None:
+    # A weaker model can name a speaker the transcript already names, or make a
+    # label up. That entry is dropped; the title, the notes and the offered
+    # label's name still stand.
     request = AutomaticMeetingIntelligenceRequest(
         resolved_transcript="[00:00 - 00:05] Speaker 1: Status update.",
         unresolved_speakers=("SPEAKER_00",),
     )
     response = json.dumps(
         {
-            "speaker_mapping": {"SPEAKER_01": "Jordan"},
+            "speaker_mapping": {
+                "SPEAKER_00": "Alex",
+                "SPEAKER_01": "Jordan",
+                "SPEAKER_07": "Robin",
+            },
             "title": "Launch Readiness Review",
-            "notes_markdown": "# Meeting Notes\n\n## Summary\nAll teams are ready.",
+            "notes_markdown": "## Summary\nSPEAKER_00 and SPEAKER_01 are ready.",
         }
     )
 
-    try:
-        parse_automatic_meeting_intelligence_response(response, request=request)
-    except MeetingIntelligenceContractError as exc:
-        assert "not unresolved" in str(exc)
-    else:
-        raise AssertionError("Expected MeetingIntelligenceContractError")
+    with caplog.at_level("WARNING", logger="backend.utils.meeting_intelligence"):
+        result = parse_automatic_meeting_intelligence_response(
+            response, request=request
+        )
+
+    assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
+    assert result.title == "Launch Readiness Review"
+    assert "Ignored 2 speaker_mapping entries" in caplog.text
+    # The log carries the count, never a name the model gave.
+    assert "Jordan" not in caplog.text
+    finalised = finalise_automatic_meeting_intelligence_result(result)
+    # Only the offered label is named in the notes; the other is left as written.
+    assert finalised.notes_markdown == "## Summary\nAlex and SPEAKER_01 are ready."
+
+
+def test_parse_automatic_meeting_intelligence_response_with_only_unoffered_labels() -> (
+    None
+):
+    request = AutomaticMeetingIntelligenceRequest(
+        resolved_transcript="[00:00 - 00:05] Alex: Status update.",
+        unresolved_speakers=(),
+    )
+    response = json.dumps(
+        {
+            "speaker_mapping": {"SPEAKER_00": "Jordan"},
+            "title": "Launch Readiness Review",
+            "notes_markdown": "## Summary\nAll teams are ready.",
+        }
+    )
+
+    result = parse_automatic_meeting_intelligence_response(response, request=request)
+
+    assert result.speaker_mapping == {}
+    assert result.notes_markdown == "## Summary\nAll teams are ready."
 
 
 def test_automatic_meeting_intelligence_request_rejects_duplicate_labels() -> None:

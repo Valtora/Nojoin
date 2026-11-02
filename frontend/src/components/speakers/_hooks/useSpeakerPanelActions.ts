@@ -98,7 +98,7 @@ export interface SpeakerPanelActions {
 /**
  * Owns the speaker mutation state and handlers for {@link SpeakerPanel}:
  * rename, merge, delete, split, voiceprint extraction, promotion to the
- * global library, and confirming or dismissing suggested names, along with
+ * People library, and confirming or dismissing suggested names, along with
  * their notifications and the `recording-updated` dispatch.
  *
  * The caller supplies `closeContextMenu` so the menu-driven actions clear the
@@ -291,7 +291,7 @@ export function useSpeakerPanelActions(
       onRefresh();
       addNotification({
         type: "success",
-        message: "Speaker added to Global Library.",
+        message: "Speaker added to People.",
       });
       for (const message of libraryVoiceprintNotices([promoted])) {
         addNotification({ type: "info", message });
@@ -300,10 +300,7 @@ export function useSpeakerPanelActions(
       console.error("Failed to promote speaker", e);
       addNotification({
         type: "error",
-        message: getErrorMessage(
-          e,
-          "Failed to promote speaker to global library.",
-        ),
+        message: getErrorMessage(e, "Failed to add the speaker to People."),
       });
     } finally {
       setIsSubmitting(false);

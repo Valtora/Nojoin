@@ -40,6 +40,10 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const mounted = useHydrated();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [meetingName, setMeetingName] = useState('');
+  // Whether the user typed the name. Only a typed name is sent, as the user's
+  // choice that the AI title must not replace (issue #837). The file's name,
+  // filled in until then, is what the server names the recording without one.
+  const [meetingNameTyped, setMeetingNameTyped] = useState(false);
   const [recordedAt, setRecordedAt] = useState<Date | null>(null);
   const timeZone = useUserTimeZone();
   // null means auto-detect, the default.
@@ -58,6 +62,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const resetState = useCallback(() => {
     setSelectedFile(null);
     setMeetingName('');
+    setMeetingNameTyped(false);
     setRecordedAt(null);
     setMaxSpeakers(null);
     setLanguage(null);
@@ -105,9 +110,9 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     setSelectedFile(file);
     setUploadState('idle');
 
-    // Auto-fill meeting name from filename (without extension)
+    // Fill in the file's name (without extension) until the user types one.
     const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
-    if (!meetingName) {
+    if (!meetingNameTyped) {
       setMeetingName(nameWithoutExt);
     }
   };
@@ -157,7 +162,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
 
     try {
       await importAudio(selectedFile, {
-        name: meetingName || undefined,
+        name: meetingNameTyped ? meetingName.trim() : undefined,
         recordedAt: recordedAt || undefined,
         maxSpeakers,
         transcriptionLanguage: language,
@@ -329,7 +334,11 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                 </span>
               }
               value={meetingName}
-              onChange={(e) => setMeetingName(e.target.value)}
+              onChange={(e) => {
+                setMeetingName(e.target.value);
+                // Emptying the field hands the name back to the file.
+                setMeetingNameTyped(e.target.value.trim() !== '');
+              }}
               placeholder="Enter a custom name..."
               disabled={uploadState === 'uploading'}
             />

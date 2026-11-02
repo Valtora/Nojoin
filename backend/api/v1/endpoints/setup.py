@@ -305,6 +305,7 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
         return f"{key[:3]}...{key[-4:]}"
 
     from backend.preload_models import check_model_status
+    from backend.utils import telemetry
     from backend.utils.config_manager import async_get_system_api_keys
 
     system_keys = await async_get_system_api_keys(db)
@@ -345,6 +346,11 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
         "selected_model": config_manager.get(selected_model_key),
         "pyannote_models_ready": pyannote_models_ready,
         "bundled_pyannote_models_ready": bundled_pyannote_models_ready,
+        # What NOJOIN_TELEMETRY_ENABLED pins telemetry to, or None when it
+        # leaves the choice to the wizard. The wizard shows a pinned value
+        # read-only, as Settings > Privacy does, since the box could not
+        # change what is sent.
+        "telemetry_pinned": telemetry.env_override(),
     }
 
 

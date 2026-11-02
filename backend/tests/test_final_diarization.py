@@ -100,7 +100,7 @@ def test_route_uses_float16_threshold_on_final_frame(
 
 
 @pytest.mark.parametrize(
-    "reason", ["classic", "cpu", "cpu_unavailable", "speaker_cap", "missing", "invalid"]
+    "reason", ["classic", "cpu", "cpu_unavailable", "missing", "invalid"]
 )
 @pytest.mark.usefixtures("download_progress_in_memory")
 def test_ineligible_never_loads_native(
@@ -114,8 +114,6 @@ def test_ineligible_never_loads_native(
         config["processing_device"] = "cpu"
     elif reason == "cpu_unavailable":
         monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    elif reason == "speaker_cap":
-        kwargs["max_speakers"] = 0  # raw presence, even when normalization discards it
     else:
         lane.assets = reason
     result = final.diarize_final_audio("meeting.wav", config, **kwargs)

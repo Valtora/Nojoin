@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from collections.abc import Mapping
 from typing import Any, Dict, Tuple
 
@@ -26,6 +27,45 @@ torch.set_num_threads(_torch_threads)
 del _torch_threads
 
 logger = logging.getLogger(__name__)
+
+# One Silero model per device, loaded on first use and kept for the life of the
+# worker process (#776). The live lane runs VAD on every 2 s chunk, and loading
+# the model took longer than running it there. get_speech_timestamps resets the
+# model's state before each input, so a reused model finds the same speech.
+_VAD_MODELS: dict[str, Any] = {}
+# The model carries recurrent state from one 32 ms window to the next, so two
+# threads must never run it at once. The lock covers the first load as well.
+_VAD_LOCK = threading.Lock()
+
+
+def _cached_vad_model(device: torch.device) -> Any:
+    """The model on ``device``, loading it once. A failed load caches nothing."""
+    key = str(device)
+    model = _VAD_MODELS.get(key)
+    if model is None:
+        model = silero_vad.load_silero_vad()
+        if hasattr(model, "to"):
+            model.to(device)
+        _VAD_MODELS[key] = model
+        logger.info(f"[VAD] Model loaded successfully on {device}")
+    return model
+
+
+def _vad_model(device: torch.device) -> tuple[Any, torch.device]:
+    """The model to run and the device it runs on. Hold ``_VAD_LOCK``.
+
+    A GPU load that fails falls back to the CPU for this call only, and the
+    next call tries the GPU again, as a load on every call used to.
+    """
+    try:
+        return _cached_vad_model(device), device
+    except Exception as e:
+        logger.error(f"[VAD] Failed to load model on {device}: {e}")
+        if device.type != "cuda":
+            raise
+        logger.warning("[VAD] Attempting fallback to CPU")
+        cpu = torch.device("cpu")
+        return _cached_vad_model(cpu), cpu
 
 
 def safe_read_audio(
@@ -138,7 +178,6 @@ def mute_non_speech_segments(
             f"[VAD] Audio duration: {total_duration_s:.2f}s ({total_samples:,} samples at {sampling_rate}Hz)"
         )
 
-        logger.info("[VAD] Loading Silero VAD model...")
         from backend.utils.config_manager import config_manager
 
         device_str = config_manager.get("processing_device", "auto")
@@ -159,34 +198,22 @@ def mute_non_speech_segments(
                     "[VAD] Configured for CUDA but not available, falling back to CPU"
                 )
 
-        try:
-            model = silero_vad.load_silero_vad()
-            model.to(device)
-            logger.info(f"[VAD] Model loaded successfully on {device}")
-        except Exception as e:
-            logger.error(f"[VAD] Failed to load model on {device}: {e}")
-            if device.type == "cuda":
-                logger.warning("[VAD] Attempting fallback to CPU")
-                device = torch.device("cpu")
-                model = silero_vad.load_silero_vad()
-                model.to(device)
-                logger.info("[VAD] Model loaded successfully on CPU (fallback)")
-            else:
-                raise e
+        with _VAD_LOCK:
+            model, device = _vad_model(device)
 
-        logger.info("[VAD] Running speech detection...")
+            logger.info("[VAD] Running speech detection...")
 
-        wav_tensor = torch.from_numpy(wav_np).to(device)
+            wav_tensor = torch.from_numpy(wav_np).to(device)
 
-        speech_timestamps = silero_vad.get_speech_timestamps(
-            wav_tensor,
-            model,
-            sampling_rate=sampling_rate,
-            threshold=threshold,
-            window_size_samples=window_size_samples,
-            min_speech_duration_ms=min_speech_duration_ms,
-            min_silence_duration_ms=min_silence_duration_ms,
-        )
+            speech_timestamps = silero_vad.get_speech_timestamps(
+                wav_tensor,
+                model,
+                sampling_rate=sampling_rate,
+                threshold=threshold,
+                window_size_samples=window_size_samples,
+                min_speech_duration_ms=min_speech_duration_ms,
+                min_silence_duration_ms=min_silence_duration_ms,
+            )
 
         vad_metrics = _calculate_vad_metrics(
             speech_timestamps, total_duration_s, sampling_rate
@@ -448,23 +475,6 @@ def detect_speech_segments(
                 "[VAD] Configured for CUDA but not available, falling back to CPU"
             )
 
-    try:
-        model = silero_vad.load_silero_vad()
-        if hasattr(model, "to"):
-            model.to(device)
-        logger.info(f"[VAD] Model loaded successfully on {device}")
-    except Exception as e:
-        logger.error(f"[VAD] Failed to load model on {device}: {e}")
-        if device.type == "cuda":
-            logger.warning("[VAD] Attempting fallback to CPU")
-            device = torch.device("cpu")
-            model = silero_vad.load_silero_vad()
-            if hasattr(model, "to"):
-                model.to(device)
-            logger.info("[VAD] Model loaded successfully on CPU (fallback)")
-        else:
-            raise e
-
     if isinstance(audio, (str, Path)):
         tensor = safe_read_audio(str(audio), sampling_rate=sample_rate)
     else:
@@ -472,7 +482,6 @@ def detect_speech_segments(
 
     if not isinstance(tensor, torch.Tensor):
         tensor = torch.from_numpy(np.array(tensor))
-    tensor = tensor.to(device)
 
     # Merge VAD parameters from settings, falling back to sensible defaults.
     vad_config = get_vad_config_from_settings(config)
@@ -483,16 +492,18 @@ def detect_speech_segments(
     if speech_pad_ms is None:
         speech_pad_ms = vad_config.get("speech_pad_ms", 30)
 
-    timestamps = silero_vad.get_speech_timestamps(
-        tensor,
-        model,
-        sampling_rate=sample_rate,
-        return_seconds=True,
-        threshold=threshold,
-        min_speech_duration_ms=min_speech_duration_ms,
-        min_silence_duration_ms=min_silence_duration_ms,
-        speech_pad_ms=speech_pad_ms,
-    )
+    with _VAD_LOCK:
+        model, device = _vad_model(device)
+        timestamps = silero_vad.get_speech_timestamps(
+            tensor.to(device),
+            model,
+            sampling_rate=sample_rate,
+            return_seconds=True,
+            threshold=threshold,
+            min_speech_duration_ms=min_speech_duration_ms,
+            min_silence_duration_ms=min_silence_duration_ms,
+            speech_pad_ms=speech_pad_ms,
+        )
 
     # Normalise the dict shape and coerce to float seconds.
     return [

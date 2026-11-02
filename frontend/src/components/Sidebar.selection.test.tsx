@@ -77,9 +77,12 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     cancel: vi.fn(),
     recordingId: null,
     pausedRecording: null,
+    attentionRecordings: [],
     runtimeActive: false,
+    refreshPausedRecording,
   }),
 }));
+const refreshPausedRecording = async () => null;
 vi.mock("@/lib/timezone", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/timezone")>();
   return {
@@ -88,15 +91,6 @@ vi.mock("@/lib/timezone", async (importOriginal) => {
     localDayRangeToUtc: () => ({ startISO: "", endISO: "" }),
   };
 });
-// Search matches on the name, so a query hides the rows it does not name.
-vi.mock("@/lib/searchUtils", () => ({
-  createFuse: (items: Recording[]) => ({
-    search: (query: string) =>
-      items
-        .filter((item) => item.name.toLowerCase().includes(query.toLowerCase()))
-        .map((item) => ({ item })),
-  }),
-}));
 vi.mock("./MeetingControls", () => ({ default: () => null }));
 vi.mock("./MonthCalendar", () => ({ default: () => null }));
 vi.mock("./RecordingInfoModal", () => ({ default: () => null }));
@@ -291,6 +285,10 @@ describe("recordings list selection", () => {
 
   it("drops rows a search hides from the selection, and does not bring them back", async () => {
     await showList("recordings", [ALPHA, BRAVO]);
+    // The server answers the search.
+    api.getRecordings.mockImplementation(async (filters?: { q?: string }) =>
+      filters?.q === "alpha" ? [ALPHA] : [ALPHA, BRAVO],
+    );
     fireEvent.click(checkbox("Alpha review"));
     fireEvent.click(checkbox("Bravo planning"));
 

@@ -222,3 +222,42 @@ async def test_after_stop_the_transcript_read_drops_pending_live_proposals(
         (item["diarization_label"], item["status"])
         for item in response.json()["transcript"]["speaker_name_suggestions"]
     ] == [(ONE, "rejected")]
+
+
+async def test_a_merged_speakers_introduction_names_the_speaker_it_joined(
+    client: AsyncClient, session_maker: Any
+) -> None:
+    await _seed(session_maker)
+    async with session_maker() as db:
+        await db.execute(
+            text(
+                "UPDATE transcript_utterances SET text = "
+                "CASE speaker_label WHEN :one THEN :alex ELSE :other END"
+            ),
+            {"one": ONE, "alex": "I'm Alex.", "other": "Thanks, carry on."},
+        )
+        await db.commit()
+    await _refresh(session_maker)
+    merged = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/live/{ONE}/merge",
+        json={"into_label": TWO},
+    )
+    assert merged.status_code == 200, merged.text
+
+    await _refresh(session_maker)
+    read = (await client.get(f"/api/v1/transcripts/{REC}/utterances")).json()
+    # The group's proposal sits on the label it joined, which its lines show.
+    assert read["live_speaker_suggestions"] == {TWO: "Alex"}
+
+    # Naming a merged label names its group and answers the group's proposal.
+    response = await _name(client, ONE, "Alex")
+    assert response.status_code == 200, response.text
+    await _refresh(session_maker)
+    read = (await client.get(f"/api/v1/transcripts/{REC}/utterances")).json()
+    assert read["live_speaker_suggestions"] == {}
+    review = {
+        item["diarization_label"]: item["status"]
+        for item in await _review(session_maker)
+        if item.get("origin") == "live_self_introduction"
+    }
+    assert review == {ONE: "superseded", TWO: "accepted"}

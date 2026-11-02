@@ -15,12 +15,14 @@ from backend.api.error_handling import sanitized_http_exception
 from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import (
+    FINISHED_MEETING_DISCARD_DETAIL,
     CaptureSourceReportCreate,
     ClientStatus,
     Recording,
     RecordingCaptureLifecycleResponse,
     RecordingStatus,
     capture_looks_stalled,
+    recording_is_discardable,
 )
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.transcript import Transcript
@@ -35,6 +37,7 @@ from backend.utils.browser_capture_audio import (
     BROWSER_FLAC_SEGMENT_SUFFIX,
     BrowserAudioFormatError,
 )
+from backend.utils.capture_resume import mark_capture_resume, persist_resume_boundaries
 from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
@@ -47,11 +50,18 @@ from backend.utils.time import utc_now
 from backend.utils.transcript_settling import update_capture_settling_state
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
+from .capture_queries import (
+    ResumeNextSequence,
+    SegmentResumeMark,
+    capture_epoch_query,
+)
 from .capture_settling import (
     close_live_words,
     lock_capture_publication,
+    move_resume_break,
     seal_live_settling,
 )
+from .helpers import revoke_task_of_recording
 from .router import router
 
 logger = logging.getLogger(__name__)
@@ -139,18 +149,6 @@ def _record_finalize_capture_metrics(
         )
 
 
-def _capture_epoch_query(action: str):
-    return Query(
-        None,
-        ge=0,
-        description=(
-            f"The capture epoch of the tab sending the {action}, from init or "
-            "resume. One from before a resume elsewhere is refused with 409 "
-            "capture_superseded. Omitted, the request is not checked."
-        ),
-    )
-
-
 def _serialize_capture_track(track_payload):
     if track_payload is None:
         return None
@@ -167,7 +165,7 @@ def _serialize_capture_track(track_payload):
 @router.post("/{recording_id}/pause", response_model=RecordingCaptureLifecycleResponse)
 async def pause_upload(
     recording_id: str,
-    epoch: Optional[int] = _capture_epoch_query("pause"),
+    epoch: Optional[int] = capture_epoch_query("pause"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -237,6 +235,17 @@ async def resume_upload(
             "the capture over and is issued the next epoch."
         ),
     ),
+    reclaim_epoch: Optional[int] = Query(
+        None,
+        ge=0,
+        description=(
+            "With no epoch: the capture epoch the tab held before its page "
+            "reloaded. A capture still uploading under that epoch is taken over "
+            "at once, without waiting for it to stall. Any other value changes "
+            "nothing."
+        ),
+    ),
+    next_sequence: ResumeNextSequence = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -253,6 +262,10 @@ async def resume_upload(
     that held it cannot overwrite what the new one records (issue #570). The
     tab holding the current epoch resumes without taking over, whether the
     server holds its capture paused or still uploading.
+
+    A reloaded tab sends the epoch it held as ``reclaim_epoch`` and takes its
+    capture over straight away, so its old page's late requests are refused
+    (issue #778).
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
@@ -267,11 +280,15 @@ async def resume_upload(
         if (getattr(transcript, "settling_state", None) or {}).get("phase") != "live":
             await close_live_words(db, transcript, recording.id)
     else:
-        resumed_after_stall = _ensure_capture_can_be_taken_over(recording)
+        resumed_after_stall = _ensure_capture_can_be_taken_over(
+            recording, reclaim_epoch
+        )
         await close_live_words(db, transcript, recording.id)
         recording.capture_epoch += 1
 
     stalled_last_activity = recording.last_activity_at
+    last_sequence = recordings_module._get_last_uploaded_sequence(recording.id)
+    mark_capture_resume(transcript, max(last_sequence + 1, next_sequence or 0))
     recording.status = RecordingStatus.UPLOADING
     update_capture_settling_state(
         transcript, capture_epoch=recording.capture_epoch, sealed=False, phase="live"
@@ -311,23 +328,33 @@ async def resume_upload(
     return RecordingCaptureLifecycleResponse(
         recording_id=recording.public_id,
         status=recording.status,
-        last_sequence=recordings_module._get_last_uploaded_sequence(recording.id),
+        last_sequence=last_sequence,
         capture_epoch=recording.capture_epoch,
     )
 
 
-def _ensure_capture_can_be_taken_over(recording: Recording) -> bool:
+def _ensure_capture_can_be_taken_over(
+    recording: Recording, reclaim_epoch: int | None
+) -> bool:
     """Refuse to take over a capture that is still uploading.
+
+    Unless the caller held the current epoch before its page reloaded: the
+    page that was uploading it is gone.
 
     Returns whether the capture is taken over because it stalled rather than
     because it was paused.
     """
     resumed_after_stall = capture_looks_stalled(recording)
-    if recording.status != RecordingStatus.PAUSED and not resumed_after_stall:
-        still_capturing = (
-            recording.status == RecordingStatus.UPLOADING
-            and recording.client_status == ClientStatus.RECORDING
-        )
+    still_capturing = (
+        recording.status == RecordingStatus.UPLOADING
+        and recording.client_status == ClientStatus.RECORDING
+    )
+    reclaimed = still_capturing and reclaim_epoch == recording.capture_epoch
+    if (
+        recording.status != RecordingStatus.PAUSED
+        and not resumed_after_stall
+        and not reclaimed
+    ):
         raise HTTPException(
             status_code=409,
             detail=(
@@ -430,7 +457,8 @@ async def upload_segment(
     request: Request,
     recording_id: str,
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
-    epoch: Optional[int] = _capture_epoch_query("segment"),
+    epoch: Optional[int] = capture_epoch_query("segment"),
+    resume_mark: SegmentResumeMark = None,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
@@ -468,6 +496,8 @@ async def upload_segment(
             await recordings_module._lock_capture(db, recording)
             recordings_module._ensure_capture_epoch(recording, epoch)
             recordings_module._ensure_recording_accepts_uploads(recording)
+            if resume_mark is not None:
+                await move_resume_break(db, recording, resume_mark, sequence)
             os.replace(staging_path, segment_path)
             file_size = segment_path.stat().st_size
             live_ready = await _store_uploaded_segment(
@@ -619,7 +649,7 @@ async def finalize_upload(
             "the capture coverage metric."
         ),
     ),
-    epoch: Optional[int] = _capture_epoch_query("stop"),
+    epoch: Optional[int] = capture_epoch_query("stop"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -637,7 +667,7 @@ async def finalize_upload(
     recordings_module._ensure_recording_can_finalize_upload(recording)
     # Before the chunk and window rows: a live publisher holds Transcript and
     # then marks windows processed, so taking it later could deadlock.
-    await seal_live_settling(db, recording)
+    transcript = await seal_live_settling(db, recording)
 
     await recordings_module._sync_recording_audio_chunks_from_directory(
         db,
@@ -694,6 +724,8 @@ async def finalize_upload(
             status_code=409,
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
+
+    persist_resume_boundaries(transcript, chunk_rows)
 
     final_audio_path = recordings_module._browser_master_output_path(recording)
 
@@ -798,7 +830,7 @@ async def discard_upload(
     reason: Optional[str] = Query(
         None, description="Optional client-provided discard reason"
     ),
-    epoch: Optional[int] = _capture_epoch_query("discard"),
+    epoch: Optional[int] = capture_epoch_query("discard"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -811,6 +843,9 @@ async def discard_upload(
     pipeline is actively running (``PROCESSING``). Whatever stage it is at, the
     backend revokes any running Celery task, removes every on-disk artefact, and
     deletes the recording row so no manual cancel-then-delete is required.
+
+    A meeting that has finished once is refused whatever its status shows; it
+    goes to the bin instead (``recording_is_discardable``).
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
@@ -820,7 +855,7 @@ async def discard_upload(
     await lock_capture_publication(db, recording)
     await db.refresh(recording, with_for_update=True)
     # A tab whose capture continued elsewhere must not delete it from under the
-    # tab running it. The list and the dialogs discard without an epoch.
+    # tab running it, nor may a recovery dialog left open while it was taken over.
     recordings_module._ensure_capture_epoch(recording, epoch)
     # Nor may a tab delete its capture once it has been stopped, which a stop
     # from a dialog does without issuing an epoch: the meeting is being
@@ -833,13 +868,12 @@ async def discard_upload(
             status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL
         )
 
-    discardable_states = {
-        RecordingStatus.UPLOADING,
-        RecordingStatus.PAUSED,
-        RecordingStatus.QUEUED,
-        RecordingStatus.PROCESSING,
-    }
-    if recording.status not in discardable_states:
+    if not recording_is_discardable(recording):
+        # A meeting that has finished once is told to use the bin whatever its
+        # status shows, so a Discard sent just as processing ends gets that
+        # answer rather than a refusal of a recording not in flight.
+        if recording.first_processed_at is not None:
+            raise HTTPException(status_code=409, detail=FINISHED_MEETING_DISCARD_DETAIL)
         raise HTTPException(
             status_code=400,
             detail="Only in-flight or processing recordings can be discarded",
@@ -862,6 +896,7 @@ async def discard_upload(
         )
 
     task_id = recording.celery_task_id
+    public_id = recording.public_id
 
     # Attached documents go with the row by FK cascade, so read their paths
     # first. The lock taken above holds back any document insert until the
@@ -886,11 +921,7 @@ async def discard_upload(
     await db.commit()
     # Broker contact can stall. Release the publication fence first, then stop
     # the snapshotted task before removing its files.
-    if task_id:
-        try:
-            recordings_module.celery_app.control.revoke(task_id, terminate=True)
-        except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
-            pass
+    await revoke_task_of_recording(task_id, public_id)
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
 
@@ -944,11 +975,11 @@ async def update_max_speakers(
 ):
     """Set or clear the speaker cap for an in-progress recording.
 
-    Editable for as long as the recording accepts status updates, because
-    diarization does not run until the capture is stopped -- so the value
-    present when the user hits stop is the value that gets used. That is what
-    makes a late joiner survivable: the participant count can be corrected
-    after the meeting has already started.
+    Editable for as long as the recording accepts status updates. Only final
+    processing, which starts after the capture stops, reads the cap, so the
+    value present at stop is the one used and a late joiner can still be
+    counted. Live speaker labels run during the capture and ignore it: they
+    are a preview and can show more speakers than the cap (#871).
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id

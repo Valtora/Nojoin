@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import wave
@@ -33,6 +34,7 @@ CREATE TABLE recordings (
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     name VARCHAR(255) NOT NULL,
+    title_user_edited BOOLEAN NOT NULL DEFAULT 0,
     public_id VARCHAR(36) NOT NULL,
     meeting_uid VARCHAR(36) NOT NULL,
     audio_path VARCHAR(1024) NOT NULL,
@@ -47,6 +49,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    first_processed_at DATETIME,
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
@@ -633,6 +636,28 @@ async def test_session_init_pause_resume_finalize_round_trip(
 
 
 @pytest.mark.anyio
+async def test_recordings_list_carries_a_running_capture_client_status(
+    client: AsyncClient,
+) -> None:
+    # A capture is UPLOADING like a finishing upload; the dashboard tells them
+    # apart by client status.
+    set_session_cookie(client)
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Browser meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+
+    listed = await client.get("/api/v1/recordings/")
+
+    assert listed.status_code == 200
+    assert [(row["status"], row["client_status"]) for row in listed.json()] == [
+        ("UPLOADING", "RECORDING")
+    ]
+
+
+@pytest.mark.anyio
 async def test_finalize_accepts_paused_recording_without_resuming(
     client: AsyncClient,
     monkeypatch,
@@ -885,13 +910,22 @@ async def test_discard_cancels_processing_recording_and_revokes_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A discard issued while the pipeline is running must revoke the Celery task
-    and remove the recording, so the user does not have to cancel then delete."""
+    and remove the recording, so the user does not have to cancel then delete.
+    The revoke is a broker publish, so it must not run on the event loop, where
+    a slow broker would hold every other request (issue #908)."""
     from backend.api.v1.endpoints import recordings as recordings_module
 
     revoked: list[tuple[str, bool]] = []
+    on_event_loop: list[bool] = []
 
     def fake_revoke(task_id, terminate=False, **kwargs):
         revoked.append((task_id, terminate))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            on_event_loop.append(False)
+        else:
+            on_event_loop.append(True)
 
     monkeypatch.setattr(recordings_module.celery_app.control, "revoke", fake_revoke)
 
@@ -919,6 +953,7 @@ async def test_discard_cancels_processing_recording_and_revokes_task(
 
     # The running pipeline task is revoked with terminate=True before deletion.
     assert revoked == [("task-9", True)]
+    assert on_event_loop == [False]
 
     async with test_session_maker() as session:
         remaining = (
@@ -950,6 +985,276 @@ async def test_discard_rejects_completed_recording(
         headers={"Origin": TRUSTED_ORIGIN},
     )
     assert discard_response.status_code == 400
+
+
+async def _finish_processing(session_maker: sessionmaker, recording_id: int) -> None:
+    """Take a seeded first pass to PROCESSED the way the pipeline does."""
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcripts SET transcript_status = 'completed', "
+                "notes_status = 'completed', text = 'Hello team.' "
+                "WHERE recording_id = :id"
+            ),
+            {"id": recording_id},
+        )
+        await session.commit()
+    await _run_status_manager(session_maker, recording_id)
+
+
+async def _run_status_manager(session_maker: sessionmaker, recording_id: int) -> None:
+    from sqlmodel import Session as SQLModelSession
+
+    from backend.utils.status_manager import update_recording_status
+
+    async with session_maker(sync_session_class=SQLModelSession) as session:
+        await session.run_sync(
+            lambda sync_session: update_recording_status(sync_session, recording_id)
+        )
+
+
+async def _status(session_maker: sessionmaker, recording_id: int) -> str | None:
+    async with session_maker() as session:
+        return (
+            await session.execute(
+                text("SELECT status FROM recordings WHERE id = :id"),
+                {"id": recording_id},
+            )
+        ).scalar_one_or_none()
+
+
+@pytest.mark.anyio
+async def test_a_discard_sent_as_processing_ends_is_told_to_use_the_bin(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Issue #850 follow-up: a Discard clicked while the first pass ran, and
+    arriving just after it finished, met the not-in-flight 400 before the
+    finished-meeting 409 that says what to do instead."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4445,
+        public_id="just-finished",
+        status="PROCESSING",
+    )
+    await _finish_processing(test_session_maker, 4445)
+    assert await _status(test_session_maker, 4445) == "PROCESSED"
+
+    set_session_cookie(client)
+    discard_response = await client.post(
+        "/api/v1/recordings/just-finished/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert discard_response.status_code == 409
+    assert "Move it to the bin" in discard_response.json()["detail"]
+    assert await _status(test_session_maker, 4445) == "PROCESSED"
+
+
+@pytest.mark.anyio
+async def test_discard_cannot_delete_a_finished_meeting_while_its_notes_regenerate(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Issue #833: notes generating showed a finished meeting as PROCESSING, and
+    Discard used to delete it, its transcript and its audio outright. Since
+    #828 the notes leave it PROCESSED, and Discard still refuses it."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4444,
+        public_id="regenerating-notes",
+        status="PROCESSING",
+    )
+    await _finish_processing(test_session_maker, 4444)
+    assert await _status(test_session_maker, 4444) == "PROCESSED"
+
+    # What generate_notes_task does as it starts.
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcripts SET notes_status = 'generating' "
+                "WHERE recording_id = :id"
+            ),
+            {"id": 4444},
+        )
+        await session.commit()
+    await _run_status_manager(test_session_maker, 4444)
+    assert await _status(test_session_maker, 4444) == "PROCESSED"
+
+    set_session_cookie(client)
+    discard_response = await client.post(
+        "/api/v1/recordings/regenerating-notes/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert discard_response.status_code == 409
+    assert "Move it to the bin" in discard_response.json()["detail"]
+    assert await _status(test_session_maker, 4444) == "PROCESSED"
+    async with test_session_maker() as session:
+        transcript_text = (
+            await session.execute(
+                text("SELECT text FROM transcripts WHERE recording_id = :id"),
+                {"id": 4444},
+            )
+        ).scalar_one()
+    assert transcript_text == "Hello team."
+
+
+@pytest.mark.anyio
+async def test_a_first_pass_that_has_not_finished_can_still_be_discarded(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Discard keeps its purpose: giving up on a meeting still being processed,
+    even once the status manager has had a hand in its status."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4545,
+        public_id="first-pass",
+        status="QUEUED",
+    )
+    await _run_status_manager(test_session_maker, 4545)
+    assert await _status(test_session_maker, 4545) == "PROCESSING"
+
+    set_session_cookie(client)
+    discard_response = await client.post(
+        "/api/v1/recordings/first-pass/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert discard_response.status_code == 200
+    assert await _status(test_session_maker, 4545) is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("paused", [False, True])
+async def test_speaker_inference_is_refused_during_a_live_capture(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    paused: bool,
+) -> None:
+    """Issue #832: inference held a live capture in PROCESSING and handed it back
+    as PROCESSED, so the tab's next segment was refused and its audio lost."""
+    set_session_cookie(client)
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Live standup"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    recording_id = init_response.json()["id"]
+    first_segment = await client.post(
+        f"/api/v1/recordings/{recording_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.wav", make_wav_bytes(), "audio/wav")},
+    )
+    assert first_segment.status_code == 200
+    if paused:
+        pause_response = await client.post(
+            f"/api/v1/recordings/{recording_id}/pause",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+        assert pause_response.status_code == 200
+
+    refused = await client.post(
+        f"/api/v1/recordings/{recording_id}/infer-speakers",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert refused.status_code == 409
+    assert "finished processing" in refused.json()["detail"]
+    async with test_session_maker() as session:
+        status, client_status, task_id = (
+            await session.execute(
+                text(
+                    "SELECT status, client_status, celery_task_id FROM recordings "
+                    "WHERE public_id = :id"
+                ),
+                {"id": recording_id},
+            )
+        ).one()
+    assert (status, client_status, task_id) == (
+        ("PAUSED", "PAUSED", None) if paused else ("UPLOADING", "RECORDING", None)
+    )
+    if not paused:
+        next_segment = await client.post(
+            f"/api/v1/recordings/{recording_id}/segment",
+            params={"sequence": 1},
+            headers={"Origin": TRUSTED_ORIGIN},
+            files={"file": ("1.wav", make_wav_bytes(), "audio/wav")},
+        )
+        assert next_segment.status_code == 200
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "detail"),
+    [
+        ("QUEUED", "finished processing"),
+        ("PROCESSING", "finished processing"),
+        ("ERROR", "Reprocess it"),
+    ],
+)
+async def test_speaker_inference_is_refused_on_an_unfinished_recording(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    status: str,
+    detail: str,
+) -> None:
+    await insert_recording(
+        test_session_maker,
+        recording_id=4646,
+        public_id="not-finished",
+        status=status,
+    )
+
+    set_session_cookie(client)
+    refused = await client.post(
+        "/api/v1/recordings/not-finished/infer-speakers",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert refused.status_code == 409
+    assert detail in refused.json()["detail"]
+    assert await _status(test_session_maker, 4646) == status
+
+
+@pytest.mark.anyio
+async def test_speaker_inference_runs_on_a_finished_meeting_that_discard_then_spares(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Inference holds the meeting in PROCESSING as notes do, so Discard, and a
+    second run, must refuse it until the run hands it back."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4747,
+        public_id="finished-meeting",
+        status="PROCESSING",
+    )
+    await _finish_processing(test_session_maker, 4747)
+
+    set_session_cookie(client)
+    started = await client.post(
+        "/api/v1/recordings/finished-meeting/infer-speakers",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert started.status_code == 200
+    assert started.json()["status"] == "queued"
+    assert await _status(test_session_maker, 4747) == "PROCESSING"
+
+    second = await client.post(
+        "/api/v1/recordings/finished-meeting/infer-speakers",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert second.status_code == 409
+
+    discard_response = await client.post(
+        "/api/v1/recordings/finished-meeting/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert discard_response.status_code == 409
+    assert await _status(test_session_maker, 4747) == "PROCESSING"
 
 
 @pytest.mark.anyio
@@ -1475,10 +1780,11 @@ async def test_a_stop_from_a_superseded_tab_does_not_finalize(
     assert stale_stop.json()["detail"] == SUPERSEDED
     row = await _recording_row(test_session_maker, recording_id)
     assert row.status == "UPLOADING"
-    # Stop from a dialog acts for no tab, and finalizes whoever holds it.
-    dialog_stop = await _post(client, f"{recording_id}/finalize")
-    assert dialog_stop.status_code == 200
-    assert dialog_stop.json()["status"] == "QUEUED"
+    # A stop with no epoch, from a tab on an older build, is not checked and
+    # finalizes whoever holds it.
+    unfenced_stop = await _post(client, f"{recording_id}/finalize")
+    assert unfenced_stop.status_code == 200
+    assert unfenced_stop.json()["status"] == "QUEUED"
 
 
 @pytest.mark.anyio
@@ -1600,3 +1906,192 @@ async def test_a_tab_on_an_older_build_sends_no_epoch_and_is_not_checked(
     assert segment.status_code == 200
     assert pause.status_code == 200
     assert pause.json()["capture_epoch"] == 1
+
+
+async def _capture_of_a_reloaded_tab(client: AsyncClient) -> str:
+    """A capture whose tab reloaded mid-upload, so its pause never arrived."""
+    set_session_cookie(client)
+    init = await _post(client, "init", params={"name": "Weekly sync"})
+    recording_id = init.json()["id"]
+    assert init.json()["capture_epoch"] == 0
+    assert (
+        await _upload(client, recording_id, 0, make_wav_bytes(), epoch=0)
+    ).status_code == 200
+    return recording_id
+
+
+@pytest.mark.anyio
+async def test_a_reloaded_tab_takes_its_capture_back_at_once(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Issue #778: the tab that held the epoch need not wait for a stall."""
+    recording_id = await _capture_of_a_reloaded_tab(client)
+
+    reclaim = await _post(client, f"{recording_id}/resume", params={"reclaim_epoch": 0})
+
+    assert reclaim.status_code == 200
+    assert reclaim.json()["capture_epoch"] == 1
+    assert reclaim.json()["last_sequence"] == 0
+    # A pause or segment the old page sent late is refused, not applied.
+    late_pause = await _post(client, f"{recording_id}/pause", params={"epoch": 0})
+    late_segment = await _upload(client, recording_id, 1, make_wav_bytes(), epoch=0)
+    assert late_pause.status_code == 409
+    assert late_pause.json()["detail"] == SUPERSEDED
+    assert late_segment.status_code == 409
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.client_status, row.capture_epoch) == (
+        "UPLOADING",
+        "RECORDING",
+        1,
+    )
+
+
+@pytest.mark.anyio
+async def test_a_reclaim_without_the_current_epoch_still_waits_for_a_stall(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """A wrong epoch, or a second tab whose copy is now stale, changes nothing."""
+    recording_id = await _capture_of_a_reloaded_tab(client)
+
+    wrong = await _post(client, f"{recording_id}/resume", params={"reclaim_epoch": 1})
+    first = await _post(client, f"{recording_id}/resume", params={"reclaim_epoch": 0})
+    # A duplicated tab carries the same per-tab storage, so the same epoch.
+    second = await _post(client, f"{recording_id}/resume", params={"reclaim_epoch": 0})
+
+    assert wrong.status_code == 409
+    assert wrong.json()["detail"] == (
+        "This recording is still in progress and received audio in the last two minutes."
+    )
+    assert first.status_code == 200
+    assert second.status_code == 409
+    row = await _recording_row(test_session_maker, recording_id)
+    assert row.capture_epoch == 1
+
+
+@pytest.mark.anyio
+async def test_a_reclaim_reopens_neither_a_closed_recording_nor_an_import(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    set_session_cookie(client)
+    await insert_recording(
+        test_session_maker, recording_id=3701, public_id="queued", status="QUEUED"
+    )
+    await insert_import(test_session_maker, recording_id=3702, public_id="slow-import")
+
+    closed = await _post(client, "queued/resume", params={"reclaim_epoch": 0})
+    an_import = await _post(client, "slow-import/resume", params={"reclaim_epoch": 0})
+
+    assert (closed.status_code, an_import.status_code) == (409, 409)
+    assert [
+        (await _recording_row(test_session_maker, public_id)).status
+        for public_id in ("queued", "slow-import")
+    ] == ["QUEUED", "UPLOADING"]
+
+
+@pytest.mark.anyio
+async def test_a_tab_reloaded_before_its_first_upload_cannot_delete_a_takeover(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """The old tab learns the epoch moved, and its fenced cleanup is refused."""
+    set_session_cookie(client)
+    init = await _post(client, "init", params={"name": "Weekly sync"})
+    recording_id = init.json()["id"]
+    # The tab reloaded offline, so nothing arrived. Once it stalled, another
+    # device took the capture over and records there.
+    await _set_last_heard(
+        test_session_maker, recording_id, quiet_for=QUIET_PAST_THRESHOLD, capture=True
+    )
+    assert (await _post(client, f"{recording_id}/resume")).status_code == 200
+    assert (
+        await _upload(client, recording_id, 0, make_wav_bytes(), epoch=1)
+    ).status_code == 200
+
+    listing = await client.get(
+        "/api/v1/recordings", params={"status": "UPLOADING", "user": "me"}
+    )
+    stale_cleanup = await _post(client, f"{recording_id}/discard", params={"epoch": 0})
+
+    assert [row["capture_epoch"] for row in listing.json()] == [1]
+    assert stale_cleanup.status_code == 409
+    assert stale_cleanup.json()["detail"] == SUPERSEDED
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.client_status, row.capture_epoch) == (
+        "UPLOADING",
+        "RECORDING",
+        1,
+    )
+
+
+@pytest.mark.anyio
+async def test_a_stale_recovery_offer_cannot_stop_or_discard_a_takeover(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Issue #789: the dialog sends its offer's epoch with Stop and Discard.
+
+    A dialog on one device offered the stalled capture at epoch 0. Before its
+    next check withdrew the offer, another device took the capture over.
+    """
+    set_session_cookie(client)
+    init = await _post(client, "init", params={"name": "Weekly sync"})
+    recording_id = init.json()["id"]
+    assert (
+        await _upload(client, recording_id, 0, make_wav_bytes(), epoch=0)
+    ).status_code == 200
+    await _set_last_heard(
+        test_session_maker, recording_id, quiet_for=QUIET_PAST_THRESHOLD, capture=True
+    )
+    offer = (
+        await client.get(
+            "/api/v1/recordings", params={"status": "UPLOADING", "user": "me"}
+        )
+    ).json()[0]
+    assert (offer["capture_epoch"], offer["capture_stalled"]) == (0, True)
+    takeover = await _post(client, f"{recording_id}/resume")
+    assert takeover.json()["capture_epoch"] == 1
+    assert (
+        await _upload(client, recording_id, 1, make_wav_bytes(), epoch=1)
+    ).status_code == 200
+
+    stale_resume = await _post(client, f"{recording_id}/resume")
+    # Stop first pauses to upload the audio that browser kept, then finalizes.
+    stale_pause = await _post(
+        client, f"{recording_id}/pause", params={"epoch": offer["capture_epoch"]}
+    )
+    stale_stop = await _post(
+        client, f"{recording_id}/finalize", params={"epoch": offer["capture_epoch"]}
+    )
+    stale_discard = await _post(
+        client, f"{recording_id}/discard", params={"epoch": offer["capture_epoch"]}
+    )
+
+    # Resume was refused already, because the capture is uploading again.
+    assert stale_resume.status_code == 409
+    for refused in (stale_pause, stale_stop, stale_discard):
+        assert refused.status_code == 409
+        assert refused.json()["detail"] == SUPERSEDED
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.client_status, row.capture_epoch) == (
+        "UPLOADING",
+        "RECORDING",
+        1,
+    )
+
+    # Once the new holder pauses, a fresh offer carries epoch 1 and acts.
+    assert (
+        await _post(client, f"{recording_id}/pause", params={"epoch": 1})
+    ).status_code == 200
+    fresh = (
+        await client.get(
+            "/api/v1/recordings", params={"status": "PAUSED", "user": "me"}
+        )
+    ).json()[0]
+    assert fresh["capture_epoch"] == 1
+    discard = await _post(
+        client, f"{recording_id}/discard", params={"epoch": fresh["capture_epoch"]}
+    )
+    assert discard.status_code == 200

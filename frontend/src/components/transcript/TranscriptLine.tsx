@@ -4,6 +4,7 @@ import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases
 import { memo, useId, useMemo, useRef } from "react";
 
 import { getColorByKey } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import { segmentEndMs, segmentStartMs } from "@/lib/notes/placement";
 import {
@@ -60,6 +61,7 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
   speakers: readonly RecordingSpeaker[];
+  liveSpeakerLabels?: Readonly<Record<string, string>>;
   globalSpeakers: GlobalSpeaker[];
   speakerColors: Record<string, string>;
   onUpdateSegmentSpeaker: (
@@ -76,7 +78,7 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
    */
   isSpeakersFirstLine: boolean;
   hasPendingRemoteUpdate: boolean;
-  /** Revised in the last 15 s, as of the view's last render. */
+  /** Its text or speaker changed in the last 15 s, after the view first showed it. */
   isRecentlyUpdated: boolean;
   decorations: readonly TextDecoration[];
   /** The marks of the words selection notes are on. */
@@ -114,6 +116,7 @@ function TranscriptLine({
   allowProvisionalEdits,
   speakerMap,
   speakers,
+  liveSpeakerLabels,
   globalSpeakers,
   speakerColors,
   onUpdateSegmentSpeaker,
@@ -221,6 +224,7 @@ function TranscriptLine({
             onChange={(e) => editor.setValue(e.target.value)}
             onBlur={editor.handleSpeakerRenameSubmit}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if (e.key === "Enter") editor.handleSpeakerRenameSubmit();
               if (e.key === "Escape") editor.cancelSpeakerRename();
             }}
@@ -263,7 +267,9 @@ function TranscriptLine({
             {popoverAnchor && !isSegmentReadOnly && (
               <SpeakerAssignmentPopover
                 availableSpeakers={speakers}
+                liveSpeakerLabels={liveSpeakerLabels}
                 currentSpeakerLabel={segment.speaker}
+                currentSpeakerName={speakerName}
                 globalSpeakers={globalSpeakers}
                 speakerColors={speakerColors}
                 targetElement={popoverAnchor}
@@ -302,7 +308,7 @@ function TranscriptLine({
         <TranscriptLineMenu
           segment={segment}
           segmentId={segmentId}
-          speakerName={speakerName}
+          speakerName={pendingDiarisation ? null : speakerName}
           isSegmentReadOnly={isSegmentReadOnly}
           actions={actions}
           onAddNote={onAddNote}
@@ -313,6 +319,7 @@ function TranscriptLine({
           isChangingSpeaker={popoverAnchor !== null}
           live={live}
           speakers={speakers}
+          liveSpeakerLabels={liveSpeakerLabels}
         />
       </div>
       {liveLine?.sourceLabel ? (

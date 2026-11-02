@@ -60,10 +60,13 @@ def build_attribution_warning(
     # (the merge gives each segment one speaker), and the audio-measured share
     # sits far below any threshold that would mean something (#481).
 
-    # A cap that bound is the case the user themselves suspected: they set an
-    # upper bound because they expected over-splitting, and it was reached.
+    # Final processing keeps at most the cap, so a meeting with exactly that
+    # many speakers may have had more people, merged into the ones shown, or
+    # may have had that many; nothing records which (#871). Above the cap,
+    # the speakers come from an edit or from live labels, which the cap does
+    # not bound, so the cap explains none of them.
     speaker_count = len(speakers)
-    if max_speakers is not None and speaker_count >= max_speakers:
+    if max_speakers is not None and speaker_count == max_speakers:
         reasons.append(
             {
                 "code": "speaker_cap_bound",

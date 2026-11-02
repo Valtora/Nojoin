@@ -9,7 +9,7 @@ vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification: vi.fn() }),
 }));
 
-// "Revised" means updated in the last 15 s, so the clock is held still.
+// "Revised" means changed in the last 15 s, so the clock is held still.
 const NOW = Date.parse("2026-10-22T12:00:00Z");
 const originalScrollIntoView = Element.prototype.scrollIntoView;
 beforeAll(() => {
@@ -97,7 +97,11 @@ const STEPS: Step[] = [
   { name: "seek into a line", apply: (p) => ({ ...p, currentTime: 11.5 }), shows: true },
   { name: "tick inside it", apply: (p) => ({ ...p, currentTime: 11.75 }), shows: false },
   { name: "start playing", apply: (p) => ({ ...p, isPlaying: true }), shows: true },
-  { name: "revise a line", apply: (p) => withLine(p, "u7", { updated_at: new Date(NOW - 1_000).toISOString() }), shows: true },
+  {
+    name: "revise a line",
+    apply: (p) => withLine(p, "u7", { text: "alpha closes, revised", updated_at: new Date(NOW - 1_000).toISOString() }),
+    shows: true,
+  },
   { name: "change a line's text", apply: (p) => withLine(p, "u0", { text: "alpha opens again" }), shows: true },
   { name: "reassign a line", apply: (p) => withLine(p, "u5", { speaker: "SPEAKER_0" }), shows: true },
   // Blair now speaks first, so the overlap's lanes swap; its own lines don't change.
@@ -136,6 +140,11 @@ const openSearch = (container: HTMLElement, findText: string) => {
   });
 };
 
+// A fresh mount has shown no line before, so it marks none "Revised"; the page
+// updated in place keeps that badge on the line the steps revised.
+const REVISED_BADGE = /<span [^>]*>Revised<\/span>/g;
+const withoutRevised = (page: string) => page.replace(REVISED_BADGE, "");
+
 /** The page as a fresh mount of `props` draws it. */
 const freshPage = (props: Props, findText: string | null) => {
   const fresh = render(<TranscriptView {...props} />);
@@ -164,10 +173,13 @@ describe("transcript lines after a change", () => {
       page.rerender(<TranscriptView {...props} />);
       const after = canon(page.container);
 
-      expect(after, step.name).toBe(freshPage(props, findText));
+      expect(withoutRevised(after), step.name).toBe(freshPage(props, findText));
       if (step.shows) expect(after, `${step.name} shows`).not.toBe(before);
       else expect(after, `${step.name} shows nothing`).toBe(before);
       before = after;
     }
+    // The badge is the one difference from a fresh mount, on the revised line alone.
+    expect(before.match(REVISED_BADGE)).toHaveLength(1);
+    expect(page.container.querySelector('[data-segment-id="u7"]')).toHaveTextContent("Revised");
   });
 });

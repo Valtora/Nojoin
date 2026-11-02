@@ -21,7 +21,7 @@ function Harness({ named = false, editable = true, lines = segments, sources }:
   { named?: boolean; editable?: boolean; lines?: typeof segments; sources?: Record<string, SpeakerNameSource> }) {
   const [names, setNames] = useState<Record<string, string>>(named ? { LIVE_PROVISIONAL_1: "Dana" } : {});
   const [suggestions, setSuggestions] = useState<Record<string, string>>({ LIVE_PROVISIONAL_1: "Alex" });
-  const naming = useLiveSpeakerNaming("r1", setNames, undefined, setSuggestions);
+  const naming = useLiveSpeakerNaming("r1", setNames, undefined, undefined, setSuggestions);
   return <SharedLiveTranscript hasLoaded segments={lines} liveSpeakerNames={names}
     liveSpeakerSuggestions={suggestions} liveSpeakerSuggestionSources={sources}
     onRenameLiveSpeaker={editable ? naming.renameLiveSpeaker : undefined}

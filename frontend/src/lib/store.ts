@@ -81,6 +81,12 @@ interface NavigationState {
   setChatPanelCollapsed: (collapsed: boolean) => void;
   sideTab: SideTab;
   setSideTab: (tab: SideTab) => void;
+  /**
+   * Analytics' Review speakers asked for the speaker list: the panel takes
+   * focus once it is shown, and clears this. Not persisted.
+   */
+  speakerReviewPending: boolean;
+  setSpeakerReviewPending: (pending: boolean) => void;
 
   // Log Settings
   logShowTimestamps: boolean;
@@ -208,6 +214,8 @@ export const useNavigationStore = create<NavigationState>()(
         set({ isChatPanelCollapsed: collapsed }),
       sideTab: "speakers",
       setSideTab: (tab) => set({ sideTab: tab }),
+      speakerReviewPending: false,
+      setSpeakerReviewPending: (pending) => set({ speakerReviewPending: pending }),
 
       // Log Settings
       logShowTimestamps: true,

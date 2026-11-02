@@ -103,6 +103,8 @@ export default function AiStep({
   onSubmit,
 }: AiStepProps) {
   const providerLabel = PROVIDER_LABEL[serverProvider] || serverProvider;
+  // Ollama is reached by its URL and takes no key (issue #841).
+  const credentialName = serverProvider === "ollama" ? "server URL" : "credential";
   const serverReady = Boolean(llmValidationMsg?.valid && selectedModel);
   const canContinue = aiRoute !== "server" || serverReady;
   const recommendations = MODEL_RECOMMENDATIONS[serverProvider];
@@ -125,8 +127,10 @@ export default function AiStep({
           title="This server's AI provider"
           description={
             serverCredentialPresent
-              ? `Uses the ${providerLabel} credential found in the server's .env, shared by every account.`
-              : "No provider credential was found in the server's .env."
+              ? `Uses the ${providerLabel} ${credentialName} found in the server's .env, shared by every account.`
+              : serverProviderSelected && serverProvider === "ollama"
+                ? "No Ollama server URL was found in the server's .env."
+                : "No provider credential was found in the server's .env."
           }
           badge={
             serverCredentialPresent
@@ -177,12 +181,12 @@ export default function AiStep({
               <div className="p-4 bg-surface-inset/40 border border-surface-border rounded-xl space-y-2 text-contrast-helper">
                 <p className="text-sm font-semibold text-foreground">
                   {serverProviderSelected
-                    ? `No ${providerLabel} credential in the server environment`
+                    ? `No ${providerLabel} ${credentialName} in the server environment`
                     : "No AI provider is configured on this server"}
                 </p>
                 <p className="text-xs leading-relaxed">
                   {serverProviderSelected
-                    ? `The server's .env selects ${providerLabel} but carries no credential for it.`
+                    ? `The server's .env selects ${providerLabel} but carries no ${credentialName} for it.`
                     : "A normal way to run Nojoin. Pick one of the other routes above, or set LLM_PROVIDER and its key in the server's .env."}
                 </p>
                 <p className="text-xs leading-relaxed">
@@ -225,7 +229,7 @@ export default function AiStep({
                       {llmValidationMsg.msg}
                     </p>
                     <p className="text-xs text-contrast-helper mt-2">
-                      Check the credential in the server&apos;s{" "}
+                      Check the {credentialName} in the server&apos;s{" "}
                       <code className="bg-surface-inset px-1 py-0.5 rounded">.env</code>{" "}
                       and restart the stack, or pick another route above.
                     </p>

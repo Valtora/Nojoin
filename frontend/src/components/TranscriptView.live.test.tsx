@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { pressWhileComposing } from "@/test/composition";
 import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
@@ -69,6 +70,14 @@ describe("LiveTranscriptPanel", () => {
     render(<LiveTranscriptPanel segments={[]} hasLoaded isPaused />);
 
     expect(screen.getByText("Recording is paused.")).toBeInTheDocument();
+  });
+
+  it("does not say it is listening once the capture has stopped", () => {
+    render(<LiveTranscriptPanel segments={[]} hasLoaded capturing={false} />);
+
+    expect(screen.queryByText("Listening.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/a few seconds behind the conversation/i)).not.toBeInTheDocument();
+    expect(screen.getByText("No transcript segments")).toBeInTheDocument();
   });
 
   it("says it is still loading before the first fetch resolves", () => {
@@ -182,6 +191,20 @@ describe("LiveTranscriptPanel", () => {
 
     rerender(<LiveTranscriptPanel segments={[{ ...segment, locked: true }]} hasLoaded />);
     expect(line).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("stops saying lines settle once the capture has stopped", () => {
+    render(
+      <LiveTranscriptPanel
+        segments={[buildSegment({ id: "a", text: "Settled words", settling_required: true, locked: true })]}
+        hasLoaded
+        capturing={false}
+      />,
+    );
+
+    expect(screen.queryByText(/Lines settle as the conversation continues/)).not.toBeInTheDocument();
+    expect(screen.getByText("The full transcript is being made. Your corrections are kept."))
+      .toBeInTheDocument();
   });
 
   it("keeps unmarked lines free of settling descriptions", () => {
@@ -362,6 +385,21 @@ describe("LiveTranscriptPanel", () => {
       expect(onRename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex");
       await act(async () => finish());
       expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    });
+
+    it("leaves the Enter and Escape of an input method's composition to it", async () => {
+      const { onRename } = renderNaming();
+
+      const input = await openRename(1);
+      fireEvent.change(input, { target: { value: "ブレア" } });
+      pressWhileComposing(input, "Enter");
+      pressWhileComposing(input, "Escape");
+
+      expect(onRename).not.toHaveBeenCalled();
+      expect(screen.getByRole("combobox")).toHaveValue("ブレア");
+
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(onRename).toHaveBeenCalledWith("LIVE_PROVISIONAL_2", "ブレア");
     });
 
     it("opens with the shown name selected, so typing replaces it", async () => {

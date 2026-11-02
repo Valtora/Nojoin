@@ -50,10 +50,11 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # A boolean form field whose declared default applies when the field is absent.
-# FastAPI 0.147+ reads an absent `bool` form field as an unchecked HTML checkbox,
-# so False whatever the default, and it recognises such a field by an annotation
-# of exactly `bool` or `bool | None`. A NewType of bool is neither, yet Pydantic
-# still parses it as a bool and OpenAPI still shows a boolean with its default.
+# FastAPI 0.147 to 0.161 read an absent `bool` form field as an unchecked HTML
+# checkbox, so False whatever the default, and recognised such a field by an
+# annotation of exactly `bool` or `bool | None`. A NewType of bool is neither,
+# yet Pydantic still parses it as a bool and OpenAPI still shows a boolean with
+# its default. 0.162 restored declared defaults, so a plain `bool` would now do.
 # test_document_upload_deep_parse.py fails if a FastAPI release changes this.
 FormBoolWithDefault = NewType("FormBoolWithDefault", bool)
 

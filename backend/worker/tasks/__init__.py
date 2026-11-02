@@ -13,6 +13,7 @@ from .live_naming_stage import *
 from .meeting_edge_stage import *
 from .meeting_intelligence_stage import *
 from .pipeline import *
+from .side_runs import *
 from .speaker_assignment import *
 from .system import *
 from .voiceprint_rebuild import *

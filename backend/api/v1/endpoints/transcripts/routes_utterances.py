@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.models.recording import Recording, RecordingStatus
 from backend.models.recording_public import (
     TranscriptPublicRead,
     serialize_recording_speaker,
@@ -14,6 +15,7 @@ from backend.models.recording_public import (
 )
 from backend.models.speaker import RecordingSpeaker
 from backend.models.user import User
+from backend.processing.live_state import LIVE_BEHIND_LAG_MS, live_lane_lag_ms
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.canonical_pipeline import (
     build_transient_utterance_payloads_from_segments,
@@ -33,8 +35,8 @@ from backend.utils.canonical_pipeline import (
 )
 from backend.utils.canonical_pipeline.guards import settling_required
 from backend.utils.canonical_pipeline.live_settling import settling_enabled
-from backend.utils.config_manager import is_meeting_edge_enabled
-from backend.utils.speaker_names.live import live_speaker_names
+from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
+from backend.utils.speaker_names.live import live_speaker_groups, live_speaker_names
 from backend.utils.speaker_names.live_suggestions import (
     live_speaker_suggestions,
     live_suggestion_sources,
@@ -62,6 +64,19 @@ from .routes_segments import update_segment_speaker, update_transcript_segment_t
 logger = logging.getLogger(__name__)
 
 
+async def _live_transcript_behind(db: AsyncSession, recording: Recording) -> bool:
+    """Whether a running capture's live lane is behind its uploads (issue #780).
+
+    A paused or stopped capture, or one with live transcription off, never is.
+    """
+    if recording.status != RecordingStatus.UPLOADING or not config_manager.get(
+        "enable_live_transcription"
+    ):
+        return False
+    lag_ms = await db.run_sync(lambda session: live_lane_lag_ms(session, recording.id))
+    return lag_ms >= LIVE_BEHIND_LAG_MS
+
+
 @router.get("/{recording_id}/utterances", response_model=TranscriptUtteranceListRead)
 async def get_transcript_utterances(
     recording_id: str,
@@ -74,6 +89,7 @@ async def get_transcript_utterances(
 
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    live_behind = await _live_transcript_behind(db, recording)
 
     if not _canonical_transcript_writes_enabled() and not settling_required(transcript):
         utterances = build_transient_utterance_payloads_from_segments(transcript)
@@ -107,6 +123,7 @@ async def get_transcript_utterances(
                 )
                 for speaker in speakers
             ],
+            live_behind=live_behind,
         )
 
     def _read_delta(sync_session):
@@ -116,9 +133,18 @@ async def get_transcript_utterances(
             recording.id,
             after_revision=after_revision,
         )
-        return delta, live_speaker_names(sync_session, recording.id)
+        names = live_speaker_names(sync_session, recording.id)
+        # Only while a current line carries the merged label, as for names.
+        merges = {
+            label: into
+            for label, into in live_speaker_groups(sync_session, recording.id).items()
+            if label in names
+        }
+        return delta, names, merges
 
-    (revision, utterances, tombstones), live_names = await db.run_sync(_read_delta)
+    (revision, utterances, tombstones), live_names, live_merges = await db.run_sync(
+        _read_delta
+    )
     if not utterances and transcript.segments and not settling_enabled(transcript):
         utterances = build_transient_utterance_payloads_from_segments(transcript)
         if after_revision is not None and after_revision >= 0:
@@ -158,6 +184,8 @@ async def get_transcript_utterances(
             for speaker in speakers
         ],
         live_speaker_names=live_names,
+        live_speaker_merges=live_merges,
+        live_behind=live_behind,
         live_speaker_suggestions=suggestions,
         live_speaker_suggestion_sources=live_suggestion_sources(
             transcript, list(suggestions)
