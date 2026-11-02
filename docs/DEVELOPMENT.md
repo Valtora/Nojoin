@@ -34,7 +34,7 @@ On Windows, install FFmpeg on `PATH` and the Microsoft Visual C++ Build Tools.
 For manual capture checks:
 
 - Chrome or another supported desktop Chromium browser on Windows, Linux or macOS, for shared-audio or microphone-only capture
-- Chrome on Android or iOS, for microphone-only capture
+- Firefox or Safari on desktop, or Chrome on Android or iOS, for microphone-only capture
 - Microphone permission in the browser
 - PipeWire screen capture, for shared-screen or system audio on Linux
 
