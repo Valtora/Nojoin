@@ -35,6 +35,7 @@ import {
 } from "@dnd-kit/core";
 import { useNavigationStore, ViewType } from "@/lib/store";
 import { DESKTOP_BREAKPOINT } from "@/lib/viewportDensity";
+import { isImeComposing } from "@/lib/imeComposition";
 import { logout } from "@/lib/api";
 
 import ConfirmationModal from "./ConfirmationModal";
@@ -456,6 +457,7 @@ export default function MainNav() {
                   value={newTagName}
                   onChange={(e) => setNewTagName(e.target.value)}
                   onKeyDown={(e) => {
+                    if (isImeComposing(e)) return;
                     if (e.key === "Enter") handleAddTag();
                     if (e.key === "Escape") {
                       setIsAddingTag(false);

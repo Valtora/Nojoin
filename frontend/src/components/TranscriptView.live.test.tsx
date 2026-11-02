@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { pressWhileComposing } from "@/test/composition";
 import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
@@ -384,6 +385,21 @@ describe("LiveTranscriptPanel", () => {
       expect(onRename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex");
       await act(async () => finish());
       expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    });
+
+    it("leaves the Enter and Escape of an input method's composition to it", async () => {
+      const { onRename } = renderNaming();
+
+      const input = await openRename(1);
+      fireEvent.change(input, { target: { value: "ブレア" } });
+      pressWhileComposing(input, "Enter");
+      pressWhileComposing(input, "Escape");
+
+      expect(onRename).not.toHaveBeenCalled();
+      expect(screen.getByRole("combobox")).toHaveValue("ブレア");
+
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(onRename).toHaveBeenCalledWith("LIVE_PROVISIONAL_2", "ブレア");
     });
 
     it("opens with the shown name selected, so typing replaces it", async () => {
