@@ -15,6 +15,7 @@ from backend.models.speaker_public import (
     PersonMeetingsRead,
     PersonTalkMonthRead,
 )
+from backend.utils.timezones import utc_naive_to_timezone
 
 # `links` holds the person's active speakers in meetings the user still owns;
 # matching against it keeps several labels for one person from multiplying
@@ -103,11 +104,16 @@ def person_meeting_count(user_id: int | None) -> ScalarSelect[int]:
     )
 
 
-def _summarise(rows: Sequence[RowMapping]) -> PersonMeetingsRead:
-    """Keep totals over all meetings, capping only the visible history."""
+def _summarise(rows: Sequence[RowMapping], timezone_name: str) -> PersonMeetingsRead:
+    """Keep totals over all meetings, capping only the visible history.
+
+    Months follow the user's time-zone setting, as every shown date does.
+    """
     monthly: dict[str, float] = defaultdict(float)
     for row in rows:
-        monthly[row["date"].strftime("%Y-%m")] += float(row["talk_time_seconds"])
+        local = utc_naive_to_timezone(row["date"], timezone_name)
+        assert local is not None  # recordings.created_at is NOT NULL
+        monthly[local.strftime("%Y-%m")] += float(row["talk_time_seconds"])
     return PersonMeetingsRead(
         meetings=[PersonMeetingRead.model_validate(row) for row in rows[:50]],
         meeting_count=len(rows),
@@ -122,11 +128,16 @@ def _summarise(rows: Sequence[RowMapping]) -> PersonMeetingsRead:
 
 
 async def person_meetings(
-    db: AsyncSession, *, speaker_id: int, user_id: int, person_name: str
+    db: AsyncSession,
+    *,
+    speaker_id: int,
+    user_id: int,
+    person_name: str,
+    timezone_name: str,
 ) -> PersonMeetingsRead:
     """Read distinct owned, non-deleted meetings and current attributed speech."""
     result = await db.execute(
         _MEETINGS,
         {"speaker_id": speaker_id, "user_id": user_id, "person_name": person_name},
     )
-    return _summarise(result.mappings().all())
+    return _summarise(result.mappings().all(), timezone_name)

@@ -366,6 +366,32 @@ async def test_each_meeting_row_reports_its_own_date_duration_and_talk_time(
 
 
 @pytest.mark.anyio
+async def test_monthly_talk_time_groups_by_the_users_time_zone(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    # 03:00 UTC on 1 February is still 31 January in Los Angeles.
+    with Session(history.engine) as session:
+        late = _meeting(
+            session, history.owner, "late", created_at=datetime(2026, 2, 1, 3)
+        )
+        _line(session, _link(session, late, history.person), 4)
+        later = _meeting(session, history.owner, "later", created_at=FEBRUARY)
+        _line(session, _link(session, later, history.person), 6)
+        session.commit()
+    # The control read proves the setting, not the host's zone, decides.
+    history.owner.settings = {"timezone": "UTC"}
+    utc = await _read(client, history.person)
+    history.owner.settings = {"timezone": "America/Los_Angeles"}
+    local = await _read(client, history.person)
+    assert utc["talk_time_by_month"] == [{"month": "2026-02", "talk_time_seconds": 10}]
+    assert local["talk_time_by_month"] == [
+        {"month": "2026-02", "talk_time_seconds": 6},
+        {"month": "2026-01", "talk_time_seconds": 4},
+    ]
+    assert local["total_talk_time_seconds"] == 10
+
+
+@pytest.mark.anyio
 async def test_legacy_projection_fallback_is_scoped_to_linked_labels(
     history: HistoryDatabase, client: AsyncClient
 ) -> None:

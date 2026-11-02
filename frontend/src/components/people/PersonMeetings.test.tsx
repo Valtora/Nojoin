@@ -55,7 +55,7 @@ describe("person meeting history", () => {
     expect(unknown).toHaveTextContent("30 Sep 2026 · Duration: Unknown · Talk time: 1m 1s");
     expect(screen.getByText("Meeting 1").closest("a")).toHaveTextContent("Duration: 0s");
     expect(screen.getByText("Meeting 2").closest("a")).toHaveTextContent("Duration: 2m 5s");
-    expect(screen.getByRole("heading", { name: "Talk time by month (UTC)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Talk time by month" })).toBeInTheDocument();
     const months = within(screen.getByRole("list", { name: "Monthly talk time" })).getAllByRole("listitem");
     expect(months[0]).toHaveTextContent("Oct 2026");
     expect(months[0]).toHaveTextContent("2m 0s");

@@ -95,7 +95,7 @@ function Figure({ label, value }: { label: string; value: string }) {
 function MonthlyTalkTime({ months }: { months: PersonTalkMonthRead[] }) {
   const maximum = Math.max(...months.map((month) => month.talk_time_seconds), 1);
   return <div>
-    <h4 className="text-sm font-medium text-foreground">Talk time by month (UTC)</h4>
+    <h4 className="text-sm font-medium text-foreground">Talk time by month</h4>
     <ul className="mt-2 space-y-2" aria-label="Monthly talk time">
       {months.map((month) => <li key={month.month}>
         <div className="flex justify-between gap-3 text-xs text-contrast-helper">
