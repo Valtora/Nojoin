@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import wave
@@ -909,13 +910,22 @@ async def test_discard_cancels_processing_recording_and_revokes_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A discard issued while the pipeline is running must revoke the Celery task
-    and remove the recording, so the user does not have to cancel then delete."""
+    and remove the recording, so the user does not have to cancel then delete.
+    The revoke is a broker publish, so it must not run on the event loop, where
+    a slow broker would hold every other request (issue #908)."""
     from backend.api.v1.endpoints import recordings as recordings_module
 
     revoked: list[tuple[str, bool]] = []
+    on_event_loop: list[bool] = []
 
     def fake_revoke(task_id, terminate=False, **kwargs):
         revoked.append((task_id, terminate))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            on_event_loop.append(False)
+        else:
+            on_event_loop.append(True)
 
     monkeypatch.setattr(recordings_module.celery_app.control, "revoke", fake_revoke)
 
@@ -943,6 +953,7 @@ async def test_discard_cancels_processing_recording_and_revokes_task(
 
     # The running pipeline task is revoked with terminate=True before deletion.
     assert revoked == [("task-9", True)]
+    assert on_event_loop == [False]
 
     async with test_session_maker() as session:
         remaining = (
