@@ -393,7 +393,7 @@ describe("RecordingPage (detail)", () => {
     renderPage();
 
     await screen.findByRole("heading", { name: /Quarterly sync/ });
-    await waitFor(() => expect(getUserTasks).toHaveBeenCalledWith("all", "rec-1"));
+    await waitFor(() => expect(getUserTasks).toHaveBeenCalledWith("all", { recordingId: "rec-1" }));
     expect(screen.queryByRole("tab", { name: "Tasks" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Show tasks" })).not.toBeInTheDocument();
     if (width === 1440) expect(screen.getByRole("tab", { name: "Speakers" })).toHaveAttribute("aria-selected", "true");

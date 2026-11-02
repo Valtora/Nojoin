@@ -569,6 +569,7 @@ export interface Tag extends BaseDBModel {
 export interface UserTaskListParams {
   status?: "active" | "open" | "completed" | "archived" | "all";
   recording_id?: RecordingId;
+  tag_ids?: number[];
 }
 
 export interface UserTask extends BaseDBModel {

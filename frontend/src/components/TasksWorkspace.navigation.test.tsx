@@ -1,7 +1,8 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useNavigationStore } from "@/lib/store";
 import { setCachedUserTimeZone } from "@/lib/timezone";
 import type { UserTask } from "@/types";
 
@@ -44,6 +45,7 @@ const tasks = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useNavigationStore.setState({ selectedTagIds: [] });
   setCachedUserTimeZone("UTC");
   api.getUserTasks.mockResolvedValue(tasks);
   api.getTags.mockResolvedValue([]);
@@ -68,6 +70,21 @@ describe("task links", () => {
     render(<TasksWorkspace initialTaskId={initialTaskId} />);
 
     expect(await screen.findByRole("heading", { name: "Unrelated open task" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Completed meeting follow-up" })).not.toBeInTheDocument();
+  });
+
+  it("doesn't reopen the linked task's view when a tag filter reloads the list", async () => {
+    render(<TasksWorkspace initialTaskId={7} />);
+    expect(await screen.findByRole("heading", { name: "Completed meeting follow-up" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(await screen.findByRole("heading", { name: "Unrelated open task" })).toBeInTheDocument();
+
+    act(() => useNavigationStore.getState().toggleTagFilter(1));
+    await waitFor(() => expect(api.getUserTasks).toHaveBeenLastCalledWith("all", { tagIds: [1] }));
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { name: "Unrelated open task" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Completed meeting follow-up" })).not.toBeInTheDocument();
   });
 

@@ -52,6 +52,9 @@ after call 28, and continues inference through the EOF FIFO overflow. It checks
 the final counts and flags separately. The runtime checks CPU/CUDA feature
 equivalence at process-local model load for the pinned window geometries;
 ordinary inference validates its inputs, probabilities and CPU cache storage.
+It compares outputs against the recorded arrays and requires the same checkpoint
+revision; the Transformers and Torch versions and the runtime fingerprint in
+`manifest.json` record how the arrays were generated, not what may run them.
 
 Three recorded generation repeats on RTX 4070 Ti (Ada), Torch 2.14.1+cu130,
 Transformers 5.20.2, fp32/SDPA, matmul TF32 off and cuDNN TF32 on produced maximum

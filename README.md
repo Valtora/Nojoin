@@ -44,7 +44,7 @@ You need Docker with Compose. An NVIDIA GPU is strongly recommended (GTX 16 or R
 
 4. Open `https://localhost:14443/setup`, enter your `FIRST_RUN_PASSWORD` and complete the wizard. Its last screen checks that your browser can record.
 
-Recording works in Chrome on Windows, Linux and macOS, in other Chromium browsers on Windows and Linux, and in Chrome on Android and iOS with the microphone only; the [capture guide](docs/CAPTURE.md) has the details. Reaching Nojoin from another device needs HTTPS through a reverse proxy, which [Remote Access](docs/DEPLOYMENT.md#remote-access-and-trusted-public-origin) covers. [Getting Started](docs/GETTING_STARTED.md) walks through the whole path.
+Recording works in Chrome on Windows, Linux and macOS, in other Chromium browsers on Windows and Linux, and with the microphone only in Firefox, Safari and mobile browsers; the [capture guide](docs/CAPTURE.md) has the details. Reaching Nojoin from another device needs HTTPS through a reverse proxy, which [Remote Access](docs/DEPLOYMENT.md#remote-access-and-trusted-public-origin) covers. [Getting Started](docs/GETTING_STARTED.md) walks through the whole path.
 
 ## Managed Nojoin
 

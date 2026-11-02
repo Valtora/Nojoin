@@ -5,6 +5,7 @@ import {
   PCM_TAP_PROCESSOR_NAME,
   type PcmSource,
 } from "./pcm/tapSource";
+import { AudioNotStartedError } from "./shared";
 
 export interface CaptureMixer {
   context: AudioContext;
@@ -43,6 +44,33 @@ export interface CreateCaptureMixerOptions {
 }
 
 const CAPTURE_CHANNEL_COUNT = 2;
+
+/**
+ * How long a new capture waits for the browser to start its audio context.
+ *
+ * Starting it usually takes a few milliseconds, but it opens the audio device,
+ * and a Bluetooth headset that switches profile as its microphone opens can
+ * take several seconds. A context the browser never starts would otherwise
+ * leave Start or a Resume after a reload waiting for ever (issue #924).
+ */
+export const AUDIO_START_TIMEOUT_MS = 10_000;
+
+/**
+ * Asks the context to render, waiting at most `timeoutMs`. True once it is
+ * running. A context the browser will not start, or an interrupted one (iOS
+ * during a call), can leave `resume()` pending, so it is never awaited alone.
+ */
+const resumeWithin = async (context: AudioContext, timeoutMs: number) => {
+  if (context.state !== "running") {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      context.resume().catch(() => {}),
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+    ]);
+    clearTimeout(timer);
+  }
+  return context.state === "running";
+};
 
 export interface AnalyserMetrics {
   rms: number;
@@ -154,8 +182,10 @@ export const createCaptureMixer = async (
   options: CreateCaptureMixerOptions,
 ): Promise<CaptureMixer> => {
   const context = options.audioContextFactory?.() ?? new AudioContext();
-  if (context.state === "suspended") {
-    await context.resume();
+  if (!(await resumeWithin(context, AUDIO_START_TIMEOUT_MS))) {
+    // Not awaited: a browser that would not start the context may not close it promptly.
+    void context.close().catch(() => {});
+    throw new AudioNotStartedError();
   }
 
   const hasDisplayAudio = Boolean(
@@ -246,18 +276,7 @@ export const createCaptureMixer = async (
     microphoneSource = null;
   };
 
-  const resumeContext = async (timeoutMs: number) => {
-    if (context.state !== "running") {
-      // An interrupted context (iOS during a call) can leave resume() pending.
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        context.resume().catch(() => {}),
-        new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
-      ]);
-      clearTimeout(timer);
-    }
-    return context.state === "running";
-  };
+  const resumeContext = (timeoutMs: number) => resumeWithin(context, timeoutMs);
 
   const replaceMicrophone = (stream: MediaStream) => {
     const replacement = context.createMediaStreamSource(stream);

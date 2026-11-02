@@ -1,6 +1,6 @@
-from typing import List, Literal
+from typing import Annotated, List, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -181,12 +181,14 @@ async def _replace_task_recordings(
 async def read_tasks_root(
     status: TaskStatusFilter = "active",
     recording_id: str | None = None,
+    tag_ids: Annotated[list[int] | None, Query()] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return await read_tasks(
         status=status,
         recording_id=recording_id,
+        tag_ids=tag_ids,
         db=db,
         current_user=current_user,
     )
@@ -196,6 +198,7 @@ async def read_tasks_root(
 async def read_tasks(
     status: TaskStatusFilter = "active",
     recording_id: str | None = None,
+    tag_ids: Annotated[list[int] | None, Query()] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -218,6 +221,13 @@ async def read_tasks(
             raise HTTPException(status_code=404, detail="Recording not found")
         statement = statement.where(
             UserTask.recording_links.any(UserTaskRecording.recording_id == recording.id)
+        )
+
+    if tag_ids:
+        statement = statement.where(
+            UserTask.id.in_(
+                select(UserTaskTag.task_id).where(UserTaskTag.tag_id.in_(tag_ids))
+            )
         )
 
     if status == "active":

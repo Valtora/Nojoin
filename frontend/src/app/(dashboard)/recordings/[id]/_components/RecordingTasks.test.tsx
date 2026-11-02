@@ -60,7 +60,7 @@ describe("recording linked tasks", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "Mark Send the agenda complete" }));
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Mark Send the agenda incomplete" }))
       .toBeChecked());
-    expect(api.getUserTasks).toHaveBeenCalledWith("all", "rec-planning");
+    expect(api.getUserTasks).toHaveBeenCalledWith("all", { recordingId: "rec-planning" });
     expect(api.updateUserTask).toHaveBeenCalledWith(7, { completed: true });
 
     const completed = screen.getByRole("checkbox", { name: "Mark Book a room incomplete" });

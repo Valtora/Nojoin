@@ -14,7 +14,7 @@ export function useRecordingTasks(recordingId: RecordingId | undefined) {
   useEffect(() => {
     if (!recordingId) return;
     let cancelled = false;
-    void getUserTasks("all", recordingId).then((tasks) => {
+    void getUserTasks("all", { recordingId }).then((tasks) => {
       if (!cancelled) setLoaded({ recordingId, tasks });
     }).catch((error: unknown) => {
       if (!cancelled) {
