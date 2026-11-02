@@ -12,6 +12,7 @@ from sqlmodel import col, select
 from backend.models.live_settling_public import public_settling_fields
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.processing.browser_live_audio import source_channel_from_confidence_payload
+from backend.utils.db_batching import bind_batches
 from backend.utils.word_text import reconstruct_text_from_words
 
 from .constants import LIVE_SPEAKER_LABEL_PAYLOAD_KEY, _append_utterance_event
@@ -51,6 +52,10 @@ def live_rows(
     lock: bool = False,
 ) -> list[TranscriptUtterance]:
     """Read the mutable tail and immutable anchors still inside the audio window."""
+    from .live_settling_flags import flags_readable
+
+    if flags_readable(session):
+        return _rows_by_kept_flags(session, recording_id, window_start_ms, lock=lock)
     mutable = (
         col(TranscriptUtterance.confidence_payload)[SETTLING_KEY]["line_locked"]
         .as_boolean()
@@ -110,6 +115,37 @@ def live_rows(
         session.execute(statement).scalars().all(),
         key=lambda row: (row.start_ms, row.sort_key, row.id),
     )
+
+
+def _rows_by_kept_flags(
+    session: Session, recording_id: int, window_start_ms: int | None, *, lock: bool
+) -> list[TranscriptUtterance]:
+    """``live_rows``, selected on flags kept per row version (#776, #880)."""
+    from .live_settling_flags import live_lines, unlocked_line_ids, windowed_line_ids
+
+    rows: list[TranscriptUtterance] = []
+    lines = live_lines(session, recording_id)
+    ids = (
+        unlocked_line_ids(lines)
+        if window_start_ms is None
+        else windowed_line_ids(lines, window_start_ms)
+    )
+    # Ascending ids, batch after batch, so locks are taken in id order.
+    for batch in bind_batches(ids):
+        statement = (
+            select(TranscriptUtterance)
+            .where(TranscriptUtterance.recording_id == recording_id)
+            .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
+            .where(TranscriptUtterance.source_kind == "live")
+            .where(col(TranscriptUtterance.id).in_(batch))
+            .order_by(col(TranscriptUtterance.id))
+        )
+        if lock:
+            statement = statement.with_for_update().execution_options(
+                populate_existing=True
+            )
+        rows.extend(session.execute(statement).scalars().all())
+    return sorted(rows, key=lambda row: (row.start_ms, row.sort_key, row.id))
 
 
 LeadSpeaker = Callable[[str | None], str | None]
@@ -332,7 +368,7 @@ def _payload(
     if not any(word_extent(word) is not None for word in partition.words):
         start = metadata.get("utterance_start_ms", start)
         end = metadata.get("utterance_end_ms", end)
-    return {
+    payload = {
         **(dict(rows[0].confidence_payload or {}) if rows else {}),
         **metadata,
         **partition_source_metadata(partition.words),
@@ -366,6 +402,11 @@ def _payload(
             "diarisation_pending": partition.diarisation_pending,
         },
     }
+    if partition.capture_interval is not None:
+        payload["capture_interval"] = partition.capture_interval
+    else:
+        payload.pop("capture_interval", None)
+    return payload
 
 
 def _event(session: Session, row: TranscriptUtterance, event_type: str) -> None:
@@ -407,10 +448,10 @@ def _partition_rows(
         {owners[word_id] for word_id in words if word_id in owners}
         for words in incoming
     ]
-    destinations = [
-        {index for index, sources in enumerate(contributors) if row_index in sources}
-        for row_index in range(len(rows))
-    ]
+    destinations: list[set[int]] = [set() for _ in rows]
+    for index, sources in enumerate(contributors):
+        for source in sources:
+            destinations[source].add(index)
     for index, sources in enumerate(contributors):
         if matches[index] is not None or len(sources) != 1:
             continue

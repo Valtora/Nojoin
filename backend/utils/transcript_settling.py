@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
+from backend.utils.capture_resume import durable_resume_state
 from backend.utils.config_manager import config_manager
 from backend.utils.live_settling_settings import (
     LIVE_SETTLING_DEFAULTS,
@@ -76,10 +77,11 @@ class CapturePublicationToken:
 
 
 def durable_settling_state(state: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Retain only actual word-publication provenance when runtime state resets."""
+    """Retain capture geometry and actual word provenance when runtime resets."""
+    durable = durable_resume_state(state)
     if (state or {}).get("settled") is not True:
-        return None
-    durable: dict[str, Any] = {"settled": True}
+        return durable or None
+    durable["settled"] = True
     if state and state.get("name_anchors"):
         durable["name_anchors"] = deepcopy(state["name_anchors"])
     return durable
@@ -138,7 +140,7 @@ def update_capture_settling_state(
 ) -> None:
     """Publish a lifecycle boundary under the same fence as live results."""
     state = getattr(transcript, "settling_state", None)
-    if transcript is None or not state:
+    if transcript is None or not state or "policy" not in state:
         return
     updated = dict(state)
     if phase == "live" and (
@@ -169,7 +171,7 @@ def resolve_capture_settling_policy(
 ) -> None:
     """Freeze effective eligibility only after actual worker placement is known."""
     state = getattr(transcript, "settling_state", None)
-    if transcript is None or not state or device is None:
+    if transcript is None or not state or "policy" not in state or device is None:
         return
     if state["policy"].get("enabled") is not None and not (
         disable_on_cpu and device == "cpu"

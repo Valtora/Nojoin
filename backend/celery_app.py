@@ -225,6 +225,8 @@ TASK_ROUTES = {
     "backend.worker.tasks.generate_notes_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_meeting_intelligence_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.infer_speakers_task": {"queue": IO_QUEUE},
+    # One query, and a write only for a hold whose speaker inference was lost.
+    "backend.worker.tasks.release_stale_side_run_holds_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.meeting_chat_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_notes_structure_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.codex_device_login_task": {"queue": IO_QUEUE},
@@ -283,6 +285,10 @@ celery_app.conf.update(
     # as worker-parse does because one document can be arbitrarily large. Beat
     # is forked by the main process, not the pool, so the schedule is unaffected.
     worker_max_tasks_per_child=500,
+    # Beat's schedule in a JSON file replaced atomically, in place of Celery's
+    # shelve: the worker image's dbm is Berkeley DB, whose file a killed beat
+    # leaves unreadable, and Celery then resets every interval (#917).
+    beat_scheduler="backend.utils.beat_schedule_store:JsonFileScheduler",
     beat_schedule={
         "cleanup-temp-recordings-every-24h": {
             "task": "backend.worker.tasks.cleanup_temp_recordings",
@@ -308,6 +314,14 @@ celery_app.conf.update(
         "renew-calendar-push-channels-every-30m": {
             "task": "backend.worker.tasks.renew_calendar_push_channels_task",
             "schedule": 1800.0,
+        },
+        # Hands a finished meeting back from a speaker inference lost with its
+        # worker once its hold is older than the claim expiry (issue #828). An
+        # io worker's own restart hands such a hold back at once; this covers
+        # a pool child killed mid-run and a dispatch that never arrived.
+        "release-stale-side-run-holds-every-5m": {
+            "task": "backend.worker.tasks.release_stale_side_run_holds_task",
+            "schedule": 300.0,
         },
         # Optional usage diagnostics (docs/TELEMETRY.md). The task itself is a
         # no-op unless the install is enabled and has consented, so scheduling it

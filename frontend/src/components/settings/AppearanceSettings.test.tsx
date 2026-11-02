@@ -4,6 +4,7 @@ import { act, fireEvent, renderWithProviders, screen, within } from "@/test/rend
 import { applyUiStyle } from "@/lib/appearance";
 
 import AppearanceSettings from "./AppearanceSettings";
+import { SETTINGS_CONTROL_COLUMN_WIDE } from "./settingsControls";
 
 const root = document.documentElement;
 
@@ -49,6 +50,16 @@ afterEach(() => {
 });
 
 describe("AppearanceSettings", () => {
+  it("holds every select in one fixed-width column, so a wider font cannot make them ragged", () => {
+    renderSettings();
+
+    const selects = screen.getAllByRole("combobox");
+    expect(selects).toHaveLength(5);
+    for (const select of selects) {
+      expect(select.parentElement).toHaveClass(...SETTINGS_CONTROL_COLUMN_WIDE.split(" "));
+    }
+  });
+
   it("shows the choices already stored for this browser", () => {
     localStorage.setItem("nojoin-palette", "ultraviolet");
     localStorage.setItem("nojoin-corners", "subtle");

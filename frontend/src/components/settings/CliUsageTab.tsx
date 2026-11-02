@@ -21,7 +21,7 @@ import {
 } from "./settingsControls";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
-import { formatTimeZoneLocale } from "@/lib/timezone";
+import { formatTimeZoneDay, formatTimeZoneLocale } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 
 const PAGE_SIZE = 10;
@@ -201,7 +201,7 @@ export default function CliUsageTab() {
                           back in UTC rather than the time-zone setting. */}
                       {lastUsed && (
                         <div className="text-xs contrast-helper">
-                          Last used {formatTimeZoneLocale(lastUsed, "UTC", "date")}
+                          Last used {formatTimeZoneDay(lastUsed, "UTC")}
                         </div>
                       )}
                     </td>

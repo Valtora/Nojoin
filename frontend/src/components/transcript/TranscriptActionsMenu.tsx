@@ -34,6 +34,13 @@ interface TranscriptActionsMenuProps {
   active?: boolean;
   /** Places the trigger in its line. */
   triggerClassName?: string;
+  /** The trigger's tooltip. */
+  title?: string;
+  /**
+   * When the trigger shows: with its line under the pointer or holding focus
+   * (and always on a touch screen), or always, as on a speaker's card.
+   */
+  reveal?: "hover" | "always";
 }
 
 /** How long a touch on the line is held before the menu opens. */
@@ -49,7 +56,7 @@ const NATIVE_PRESS = "p[data-segment-id], input, textarea, select, a[href]";
 const CLICK_AFTER_PRESS_MS = 800;
 
 /**
- * A line's ⋯ button and the menu it opens.
+ * A line's ⋯ button and the menu it opens, also used on a speaker's card.
  *
  * The button shows while the pointer is over its line or focus is in it, and
  * always on a touch screen, where it takes the full 44 px target. Holding a
@@ -65,6 +72,8 @@ export default function TranscriptActionsMenu({
   items,
   active = false,
   triggerClassName,
+  title = "Line actions",
+  reveal = "hover",
 }: TranscriptActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -193,7 +202,7 @@ export default function TranscriptActionsMenu({
         ref={triggerRef}
         size="sm"
         aria-label={label}
-        title="Line actions"
+        title={title}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -209,7 +218,7 @@ export default function TranscriptActionsMenu({
         }}
         className={cn(
           "h-7 w-7 pointer-coarse:h-[44px] pointer-coarse:w-[44px]",
-          open || active
+          open || active || reveal === "always"
             ? "opacity-100"
             : "opacity-0 group-hover/line:opacity-100 group-focus-within/line:opacity-100 pointer-coarse:opacity-100",
           triggerClassName,

@@ -89,8 +89,9 @@ def _describe_reason(
         )
     if code == "speaker_cap_bound":
         return (
-            f"This meeting reached its speaker limit of {reason.get('max_speakers')}. "
-            "Speakers beyond the limit were merged into the ones shown."
+            "This meeting has as many speakers as its limit of "
+            f"{reason.get('max_speakers')}. If more people spoke, their speech is "
+            "counted under the ones shown."
         )
     if code == "unnamed_speakers":
         return f"Not everyone has been named yet: {_names(reason.get('speaker_keys'), speakers)}."
@@ -387,9 +388,7 @@ def overlap_blocks(analytics: Mapping[str, Any]) -> tuple[Block, ...]:
         )
     blocks.extend(
         _note(
-            "Detected from the audio itself, so it works even though the transcript writes "
-            "speech down one line at a time. The figure is a floor: detection misses some "
-            "overlap and never invents any.",
+            "The figure is a floor: detection misses some overlap and never invents any.",
             "Talking over each other is not the same as interrupting. It includes agreement, "
             "encouragement and finishing each other's sentences, so Nojoin reports where it "
             "happened and does not guess who did it to whom.",

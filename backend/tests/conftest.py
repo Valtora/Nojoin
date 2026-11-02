@@ -154,6 +154,30 @@ def network_contact_guard(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def fresh_worker_caches() -> Iterator[None]:
+    """Start and end every test with no Silero model or settling flags kept.
+
+    A worker keeps one VAD model per device and each live line's settling
+    flags for its life (#776). Tests replace the VAD loader with fakes and
+    reuse row ids across schemas, so what one test kept would otherwise reach
+    the next. The modules are only looked up, never imported, so a test that
+    never runs them does not pay for torch.
+    """
+
+    def clear() -> None:
+        vad = sys.modules.get("backend.processing.vad")
+        if vad is not None:
+            vad._VAD_MODELS.clear()
+        flags = sys.modules.get("backend.utils.canonical_pipeline.live_settling_flags")
+        if flags is not None:
+            flags.clear_flags()
+
+    clear()
+    yield
+    clear()
+
+
+@pytest.fixture(autouse=True)
 def stored_files_may_live_in_temp(monkeypatch):
     """Let recordings and documents live in the system temp directory too.
 

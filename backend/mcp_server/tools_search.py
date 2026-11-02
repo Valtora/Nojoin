@@ -9,6 +9,7 @@ from sqlmodel import select
 
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import _parse_iso_datetime, mcp_tool
+from backend.utils.live_speaker_labels import render_indexed_transcript_for_llm
 
 logger = logging.getLogger(__name__)
 
@@ -127,10 +128,9 @@ async def search_context(  # noqa: PLR0913 - each parameter is a documented tool
             source = meta.get("source") or "transcript"
         item["source"] = source
         if source == "transcript":
-            # Resolve raw diarization labels to display names, as chat does.
-            for label, name in speaker_maps.get(chunk.recording_id, {}).items():
-                if label and name and label != name:
-                    content = content.replace(f"{label}:", f"{name}:")
+            content = render_indexed_transcript_for_llm(
+                content, speaker_maps.get(chunk.recording_id, {})
+            )
             item["start"] = meta.get("start")
             item["end"] = meta.get("end")
         elif source == "document":

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Recording, RecordingStatus } from "@/types";
+import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
 import { useDashboardRecordings } from "./useDashboardRecordings";
 
@@ -99,6 +99,26 @@ describe("useDashboardRecordings", () => {
     expect(result.current.processing.map((r) => r.id)).toEqual(["up", "q", "p"]);
   });
 
+  it("leaves a capture in progress out of in flight, but keeps an import uploading", async () => {
+    getRecordings.mockResolvedValue([
+      recording({
+        id: "live", created_at: "2026-07-05T10:00:00Z",
+        status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
+      }),
+      recording({
+        id: "paused", created_at: "2026-07-04T10:00:00Z",
+        status: RecordingStatus.UPLOADING, client_status: ClientStatus.PAUSED,
+      }),
+      recording({ id: "import", created_at: "2026-07-03T10:00:00Z", status: RecordingStatus.UPLOADING }),
+    ]);
+
+    const { result } = renderHook(() => useDashboardRecordings());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.processing.map((r) => r.id)).toEqual(["import"]);
+    expect(result.current.recent.map((r) => r.id)).toEqual(["live", "paused", "import"]);
+  });
+
   it("refetches when a recording changes, so the in-flight list drains", async () => {
     getRecordings.mockResolvedValueOnce([
       recording({ id: "1", created_at: "2026-07-01T10:00:00Z", status: RecordingStatus.PROCESSING }),
@@ -114,6 +134,23 @@ describe("useDashboardRecordings", () => {
 
     await waitFor(() => expect(result.current.processing).toHaveLength(0));
     expect(result.current.recent).toHaveLength(1);
+  });
+
+  it("applies a rename in place rather than fetching the library again", async () => {
+    getRecordings.mockResolvedValue([
+      recording({ id: "1", created_at: "2026-07-01T10:00:00Z", name: "Weekly check-in" }),
+      recording({ id: "2", created_at: "2026-07-02T10:00:00Z", name: "Budget review" }),
+    ]);
+
+    const { result } = renderHook(() => useDashboardRecordings());
+    await waitFor(() => expect(result.current.recent).toHaveLength(2));
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: "1", name: "Team check-in" } }));
+    });
+
+    expect(result.current.recent.map((r) => r.name)).toEqual(["Budget review", "Team check-in"]);
+    expect(getRecordings).toHaveBeenCalledTimes(1);
   });
 
   it("hides itself rather than throwing when the fetch fails", async () => {

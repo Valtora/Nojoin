@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@/test/renderWithProviders";
+import { pressWhileComposing } from "@/test/composition";
 import type { UserTask } from "@/types";
 
 const addNotification = vi.fn();
@@ -199,6 +200,38 @@ describe("DashboardTasksPanel", () => {
     expect(addNotification).toHaveBeenCalledWith({
       message: "Task added.",
       type: "success",
+    });
+  });
+
+  it("leaves the Enter and Escape of an input method's composition to it", async () => {
+    getUserTasks.mockResolvedValue([makeTask({ id: 1, title: "Task one" })]);
+    updateUserTask.mockResolvedValue(makeTask({ id: 1, title: "かいぎ" }));
+
+    renderWithProviders(<DashboardTasksPanel />);
+    await waitFor(() => {
+      expect(screen.getByText("1 open")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Add a task..."));
+    const composer = await screen.findByPlaceholderText("Add a task and press Enter");
+    fireEvent.change(composer, { target: { value: "かいぎ" } });
+    pressWhileComposing(composer, "Escape");
+    expect(composer).toBeInTheDocument();
+    expect(composer).toHaveValue("かいぎ");
+    fireEvent.keyDown(composer, { key: "Escape" });
+    expect(screen.queryByPlaceholderText("Add a task and press Enter")).not.toBeInTheDocument();
+
+    fireEvent.doubleClick(screen.getByText("Task one"));
+    const title = await screen.findByDisplayValue("Task one");
+    fireEvent.change(title, { target: { value: "かいぎ" } });
+    pressWhileComposing(title, "Enter");
+    pressWhileComposing(title, "Escape");
+    expect(updateUserTask).not.toHaveBeenCalled();
+    expect(title).toHaveValue("かいぎ");
+
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => {
+      expect(updateUserTask).toHaveBeenCalledWith(1, { title: "かいぎ" });
     });
   });
 

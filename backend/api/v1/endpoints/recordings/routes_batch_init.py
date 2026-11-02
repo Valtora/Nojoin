@@ -14,6 +14,7 @@ from backend.models.recording import (
     Recording,
     RecordingInitResponse,
     RecordingStatus,
+    chosen_recording_name,
 )
 from backend.models.transcript import Transcript
 from backend.models.user import User
@@ -23,9 +24,10 @@ from backend.utils.document_storage import (
 )
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
+from backend.utils.timezones import get_user_timezone_name
 from backend.utils.transcript_settling import new_capture_settling_state
 
-from .helpers import revoke_recording_task
+from .helpers import lock_recording_for_delete, revoke_recording_task
 from .router import router
 
 logger = logging.getLogger(__name__)
@@ -163,14 +165,16 @@ async def batch_permanently_delete_recordings(
     """
     recordings, requested = await _requested_recordings(db, batch, current_user.id)
 
-    # Locked in id order, so two batches over the same recordings, or a batch
-    # and a user deletion, take the locks in one order and cannot deadlock.
+    # Locked in id order, each in the single delete's order (audio lock,
+    # Transcript, row), so two batches over the same recordings, or a batch and
+    # a user deletion, take the locks in one order and cannot deadlock.
+    # One deleted by another request while this waited is skipped.
     recordings = sorted(recordings, key=lambda recording: recording.id)
+    locked: list[Recording] = []
     for recording in recordings:
-        # Locked, as in delete_recording, so keep_imported_audio_task cannot
-        # repoint audio_path between this read and the delete.
-        await db.refresh(recording, with_for_update=True)
-    binned = [recording for recording in recordings if recording.is_deleted]
+        if await lock_recording_for_delete(db, recording):
+            locked.append(recording)
+    binned = [recording for recording in locked if recording.is_deleted]
 
     for recording in binned:
         await revoke_recording_task(recording)
@@ -219,11 +223,18 @@ async def init_upload(
     unique_filename = f"{uuid4()}.wav"
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
 
+    # A name given here is the user's, which the AI title does not replace
+    # (issue #837). The web app sends none, so its captures take the AI title.
+    name = chosen_recording_name(name)
+    name_chosen = name is not None
     if not name:
-        name = recordings_module.generate_default_meeting_name()
+        name = recordings_module.generate_default_meeting_name(
+            get_user_timezone_name(current_user.settings)
+        )
 
     recording = Recording(
         name=name,
+        title_user_edited=name_chosen,
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
         # A live capture declares itself here rather than leaving client_status

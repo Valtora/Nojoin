@@ -50,11 +50,59 @@ describe("shared live capabilities", () => {
     expect(handlers.onFindAndReplace).not.toHaveBeenCalled();
   });
 
+  it("offers Jump to latest as the filled, bordered pill it was before, once the reader scrolls away", () => {
+    render(<TranscriptView {...props()} live={{ hasLoaded: true }} />);
+    const region = screen.getByTestId("live-transcript-scroll");
+    Object.defineProperty(region, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(region, "clientHeight", { configurable: true, value: 300 });
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    region.scrollTop = 0;
+    fireEvent.scroll(region);
+    const jump = screen.getByRole("button", { name: "Jump to latest" });
+    expect(jump).toHaveAttribute("type", "button");
+    expect(jump).toHaveAttribute("data-ui-fill", "card");
+    expect(jump).toHaveAttribute("data-ui-border", "full");
+    expect(jump).toHaveAttribute("data-ui-hover", "action-tint");
+    expect(jump.className.split(" ")).toEqual(
+      expect.arrayContaining(["bg-surface-card", "border", "border-action-border", "shadow-float"]),
+    );
+    fireEvent.click(jump);
+    expect(region.scrollTop).toBe(1000);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+
   it("retains an unlabelled live line alongside a labelled one", () => {
     render(<TranscriptView {...props()} segments={[segment, { ...segment, id: "unknown", start: 5, end: 6,
       speaker: "UNKNOWN", provisional: false, text: "A voice without a label." }]}
       live={{ hasLoaded: true }} />);
     expect(screen.getByText("A voice without a label.")).toBeInTheDocument();
+  });
+
+  it("names only the speakers a group's lines show in its play button (issue #840)", () => {
+    const plain = { ...segment, id: "plain", start: 2, end: 4, speaker: "UNKNOWN", provisional: false,
+      text: "A voice without a label." };
+    const view = render(<TranscriptView {...props()} segments={[plain]} live={{ hasLoaded: true }} />);
+    expect(screen.getByRole("button", { name: "Play at 00:02" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /UNKNOWN/ })).toBeNull();
+
+    // A labelled line beside it still names its speaker, once.
+    view.rerender(<TranscriptView {...props()} segments={[segment, { ...plain, start: 3 }]}
+      live={{ hasLoaded: true }} />);
+    expect(screen.getByRole("button", { name: "Play Speaker 1 at 00:01" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /UNKNOWN/ })).toBeNull();
+  });
+
+  it("leaves speech still waiting for its speaker out of a final transcript's line labels", () => {
+    const named = { id: "named", start: 0, end: 2, speaker: "SPEAKER_0", text: "We agree." };
+    const pending = { id: "pending", start: 2, end: 3, speaker: "UNKNOWN", text: "Then later.",
+      diarisation_pending: true };
+    // In another capture interval, so it stands alone rather than joining Alex's group.
+    render(<TranscriptView {...props()} speakerMap={{ SPEAKER_0: "Alex" }}
+      segments={[named, { ...pending, start: 70, end: 72, capture_interval: 1 }]} />);
+    expect(screen.getByRole("button", { name: "Play Alex at 00:00" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play at 01:10" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Actions for the line at 01:10" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /UNKNOWN/ })).toBeNull();
   });
 
   it("preserves an idless growing line and its rename draft when timing and attribution change", () => {

@@ -12,9 +12,9 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
-from backend.models.tag import RecordingTag
 from backend.models.user import User
 from backend.services.recording_identity_service import ensure_recording_meeting_uids
+from backend.tests.sqlite_schemas import RECORDING_TAGS_SCHEMA, TAGS_SCHEMA
 
 TEST_TIMESTAMP = datetime(2026, 4, 12, 12, 0, 0)
 RECORDINGS_SCHEMA = """
@@ -24,6 +24,7 @@ CREATE TABLE recordings (
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     name VARCHAR(255) NOT NULL,
+    title_user_edited BOOLEAN NOT NULL DEFAULT 0,
     public_id VARCHAR(36) NOT NULL,
     meeting_uid VARCHAR(36),
     audio_path VARCHAR(1024) NOT NULL,
@@ -38,6 +39,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    first_processed_at DATETIME,
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
@@ -158,9 +160,9 @@ async def test_session_maker() -> sessionmaker:
     session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as connection:
-        await connection.execute(text(RECORDINGS_SCHEMA))
-        # The list endpoint loads each recording's tags.
-        await connection.run_sync(RecordingTag.__table__.create)
+        # The list reads each page's tags as well as its recordings.
+        for schema in (RECORDINGS_SCHEMA, RECORDING_TAGS_SCHEMA, TAGS_SCHEMA):
+            await connection.execute(text(schema))
 
     try:
         yield session_maker

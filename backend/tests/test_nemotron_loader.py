@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -17,7 +18,9 @@ from backend.tests.nemotron_asset_helpers import native_assets as native_assets
 
 
 @pytest.fixture
-def constructor_spies(native_assets: tuple, monkeypatch: pytest.MonkeyPatch) -> Any:
+def constructor_spies(
+    native_assets: tuple, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Any]:
     import torch
     import transformers
     from transformers.models.nemotron3_diarization import (
@@ -100,11 +103,20 @@ def constructor_spies(native_assets: tuple, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(
         runtime_module.assets, "manifest_sha256", lambda: "asset-digest"
     )
-    monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", True)
-    monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
-    return SimpleNamespace(
-        calls=calls, model_class=Model, path=snapshot, frontend_devices=frontend_devices
-    )
+    # Set and restored by hand: torch serves cuBLAS's allow_tf32 through
+    # __getattr__, which monkeypatch cannot restore from pytest 9.2.
+    prior = (torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32)
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = False
+    try:
+        yield SimpleNamespace(
+            calls=calls,
+            model_class=Model,
+            path=snapshot,
+            frontend_devices=frontend_devices,
+        )
+    finally:
+        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = prior
 
 
 def test_native_constructors_are_local_safetensors_fp32_sdpa_and_processors_independent(

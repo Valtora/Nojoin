@@ -1,21 +1,19 @@
-# Follow this file with:
-#   python -m pip install --no-deps -r requirements/worker-no-deps.txt
 -r backend.txt
 -r worker.txt
 aiosqlite==0.22.1
 pyannote.audio==4.0.7
 # GPU half of the matched torch stack, checked by scripts/check_held_pins.py;
-# see the note in test.txt. PyPI's torch is the CUDA 13.0 build, the same CUDA
+# see the note in test.txt. PyPI's torch is the CUDA 13.2 build, the same CUDA
 # as the worker image, so no index URL is needed (pip would ignore a per-line
-# one anyway). torchvision pins torch exactly, so it moves with torch.
-# torchaudio stays at 2.11.0, which supports every later torch.
-torch==2.14.1
-torchvision==0.29.1
-torchaudio==2.11.0
+# one anyway). torchvision builds against torch's stable ABI from 0.29.2 and
+# declares torch>=2.14, so it moves only with a release of its own. torchaudio
+# is pinned in worker.txt.
+torch==2.15.0
+torchvision==0.29.2
 
 # pytest is pinned here too (mirrors test.txt) so the documented GPU host setup
 # can run the suite directly.
-pytest==9.1.1
+pytest==9.2.0
 
 # Linting, formatting, and type-checking tooling (ruff, mypy, pre-commit).
 -r lint.txt

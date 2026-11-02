@@ -53,14 +53,14 @@ vi.mock("@/lib/api", () => ({
 
 const captureState: {
   cancel: ReturnType<typeof vi.fn>;
-  recordingId: string | null;
+  ownedRecordingId: string | null;
   pausedRecording: { id: string } | null;
-  runtimeActive: boolean;
+  attentionRecordings: { id: string }[];
 } = {
   cancel: vi.fn(),
-  recordingId: null,
+  ownedRecordingId: null,
   pausedRecording: null,
-  runtimeActive: false,
+  attentionRecordings: [],
 };
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -76,9 +76,9 @@ describe("useRecordingActions", () => {
     addNotification.mockReset();
     Object.values(api).forEach((fn) => fn.mockReset().mockResolvedValue(undefined));
     captureState.cancel.mockReset().mockResolvedValue(undefined);
-    captureState.recordingId = null;
+    captureState.ownedRecordingId = null;
     captureState.pausedRecording = null;
-    captureState.runtimeActive = false;
+    captureState.attentionRecordings = [];
   });
 
   it("exposes exactly the shared recording action set", () => {
@@ -138,9 +138,8 @@ describe("useRecordingActions", () => {
     });
   });
 
-  it("routes discard through the capture controller when this browser owns the live capture", async () => {
-    captureState.runtimeActive = true;
-    captureState.recordingId = "rec-live";
+  it("routes discard through the capture controller when this tab holds the capture, live or after a failed stop", async () => {
+    captureState.ownedRecordingId = "rec-live";
     const { result } = renderHook(() => useRecordingActions());
 
     await act(async () => {
@@ -169,12 +168,23 @@ describe("useRecordingActions", () => {
     expect(api.discardRecordingCapture).not.toHaveBeenCalled();
   });
 
+  it("routes discard through the capture controller for a badged recording that is not offered", async () => {
+    captureState.attentionRecordings = [{ id: "rec-attention" }];
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      await result.current.discard("rec-attention");
+    });
+
+    expect(captureState.cancel).toHaveBeenCalledWith("rec-attention");
+    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
+  });
+
   it("uses a plain backend discard for a recording owned by another capture session", async () => {
     // An active capture exists for a different recording (e.g. recording A is
     // live in this tab while the user discards queued recording B). Discarding B
     // must not tear down A's runtime.
-    captureState.runtimeActive = true;
-    captureState.recordingId = "rec-A";
+    captureState.ownedRecordingId = "rec-A";
     const { result } = renderHook(() => useRecordingActions());
 
     await act(async () => {
@@ -457,10 +467,12 @@ describe("useRecordingActions", () => {
     const onError = vi.fn();
     const { result } = renderHook(() => useRecordingActions());
 
+    // Noon UTC, so the day is the same in whatever zone the test runs.
+    const recording = { id: "rec-1", name: "Weekly sync", created_at: "2026-10-31T12:00:00" };
     await act(async () => {
-      await result.current.exportAudio("rec-1", "Weekly sync", { onSuccess });
+      await result.current.exportAudio(recording, { onSuccess });
     });
-    expect(api.exportAudio).toHaveBeenCalledWith("rec-1", "Weekly sync");
+    expect(api.exportAudio).toHaveBeenCalledWith("rec-1", "Weekly sync", "20261031");
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expect(addNotification).not.toHaveBeenCalled();
 
@@ -473,7 +485,7 @@ describe("useRecordingActions", () => {
       addNotification.mockReset();
       api.exportAudio.mockRejectedValueOnce({ response: { status } });
       await act(async () => {
-        await result.current.exportAudio("rec-1", "Weekly sync", { onError });
+        await result.current.exportAudio(recording, { onError });
       });
       expect(addNotification).toHaveBeenCalledWith({
         message: expect.stringMatching(message),

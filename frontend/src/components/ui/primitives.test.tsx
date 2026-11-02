@@ -9,6 +9,7 @@ import Input from "./Input";
 import Modal from "./Modal";
 import Select from "./Select";
 import { Switch } from "./Switch";
+import { pressWhileComposing } from "@/test/composition";
 import { RecordingStatus } from "@/types";
 
 /**
@@ -323,6 +324,22 @@ describe("Modal", () => {
       </Modal>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("closes on Escape, but not on one that cancels an input method's composition", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open onClose={onClose} title="Rename">
+        <input aria-label="Name" />
+      </Modal>,
+    );
+    const field = screen.getByRole("textbox", { name: "Name" });
+
+    pressWhileComposing(field, "Escape");
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(field, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
   });
 

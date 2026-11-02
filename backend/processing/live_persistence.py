@@ -17,6 +17,7 @@ from backend.utils.audio_windows import (
     mark_audio_windows_processed,
 )
 from backend.utils.canonical_pipeline import append_utterances_from_segments
+from backend.utils.capture_resume import load_resume_boundaries, mark_capture_intervals
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_audio_sync import lock_recording_audio
 from backend.utils.transcript_settling import (
@@ -101,6 +102,9 @@ def _persist_live_run(
                 transcript, device=live_config.get("_settling_device")
             )
             if new_segments:
+                mark_capture_intervals(
+                    new_segments, load_resume_boundaries(session, transcript)
+                )
                 _mark_pending_speakers(new_segments, live_config)
                 use_canonical_live_writes = (
                     bool(config_manager.get("enable_canonical_transcript_writes", True))

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, uuid5
 
 from backend.processing.engines.errors import TranscriptionError
 from backend.processing.live_asr_payload import (
@@ -22,6 +24,13 @@ from backend.processing.live_settling_audio import (
     chunk_has_speech,
     rolling_audio_tail,
     rolling_channel_tail,
+)
+from backend.processing.live_settling_language import (
+    CAPTURE_LANGUAGE_KEY,
+    HEARD_LANGUAGE,
+    observe_language,
+    record_heard_language,
+    step_language,
 )
 from backend.processing.processing_tuning import LINE_BREAK_PAUSE_KEY, resolve_tuning
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
@@ -78,6 +87,7 @@ class EpisodeSnapshot:
     legacy_frontier_ms: int = 0
     trailing_silence_start_ms: int | None = None
     silence_audio_end_ms: int | None = None
+    capture_language: dict[str, Any] | None = None
 
 
 def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResult:
@@ -122,6 +132,7 @@ def _episode_snapshot(step: SettlingStep) -> EpisodeSnapshot | SettlingStepResul
             legacy_live_frontier(session, recording_id=step.recording_id),
             trailing_silence_start_ms=state.get("trailing_silence_start_ms"),
             silence_audio_end_ms=state.get("silence_audio_end_ms"),
+            capture_language=state.get(CAPTURE_LANGUAGE_KEY),
         )
     finally:
         session.close()
@@ -187,10 +198,14 @@ def _decode_words(
     )
     from backend.processing.vad import silero_vad
 
-    path = step.live_dir / f"settling-{uuid4().hex}.wav"
+    # Outside the capture's folder, which a Discard removes during the call.
+    fd, name = tempfile.mkstemp(prefix="nojoin-settling-", suffix=".wav")
+    os.close(fd)
+    path = Path(name)
     try:
         silero_vad.save_audio(str(path), audio.unsqueeze(0), sampling_rate=16000)
         result = transcribe_audio(str(path), config=config)
+        record_heard_language(config, result)
         device = loaded_transcription_device(config)
         _text, segments = _prepare_live_region(result, 0.0, exact_spans=True)
         channels, _ = rolling_channel_tail(
@@ -258,8 +273,11 @@ def _publish_step(
     )
 
     window_s = float(snapshot.policy["window_s"])
+    heard_language = (payload or {}).get(HEARD_LANGUAGE)
     metadata = {
-        key: value for key, value in (payload or {}).items() if key != "asr_segments"
+        key: value
+        for key, value in (payload or {}).items()
+        if key not in {"asr_segments", HEARD_LANGUAGE}
     }
     request = SettlingPass(
         recording_id=step.recording_id,
@@ -303,6 +321,13 @@ def _publish_step(
         accepted = publication.accepted
         transcript, recording = load_capture_publication(session, step.recording_id)
         state = getattr(transcript, "settling_state", None) or {}
+        if accepted and heard_language and transcript is not None:
+            transcript.settling_state = {
+                **state,
+                CAPTURE_LANGUAGE_KEY: observe_language(
+                    state.get(CAPTURE_LANGUAGE_KEY), heard_language
+                ),
+            }
         # The tail uploaded before a pause stays open until its speaker labels
         # run, then locks with the rest of the episode (``close_paused_tail``).
         paused = accepted and state.get("phase") == "paused"
@@ -430,13 +455,16 @@ def _decode_step(
     )
     first = max(0, round((input_start / 1000 - available_start_s) * 16000))
     try:
-        payload, device = _decode_words(step, config, audio[first:], input_start)
+        language = step_language(config, snapshot.capture_language)
+        payload, device = _decode_words(
+            step, language.config, audio[first:], input_start
+        )
         if device != "cuda" and not (device == "cpu" and cpu_settling_allowed()):
             if device == "cpu":
                 _disable_cpu_episode(step)
             return SettlingStepResult(False)
         config["_settling_device"] = device
-        return _publish_step(step, snapshot, payload, evidence)
+        return _publish_step(step, snapshot, language.tag(payload), evidence)
     except (TranscriptionError, ValueError):
         logger.warning(
             "Retained live words after failed settling decode", exc_info=True

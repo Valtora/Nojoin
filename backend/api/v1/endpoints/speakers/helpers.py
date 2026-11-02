@@ -47,6 +47,10 @@ from backend.utils.canonical_pipeline.live_compatibility import (
     prepare_live_compatibility_mutation,
 )
 from backend.utils.canonical_pipeline.public_ids import SegmentIdConflictError
+from backend.utils.reprocess_publication import (
+    REPROCESS_RUNNING_MESSAGE,
+    reprocess_replacement_running,
+)
 from backend.utils.speaker_name_suggestions import (
     supersede_pending_transcript_speaker_suggestions,
 )
@@ -77,12 +81,25 @@ def _canonical_transcript_writes_enabled() -> bool:
     )
 
 
-def _require_recording_speaker_mutations_supported(recording: Recording) -> None:
-    if recording_supports_unified_mutations(recording):
-        return
-    raise HTTPException(
-        status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL
-    )
+async def _require_recording_speaker_mutations_supported(
+    db: AsyncSession, recording: Recording
+) -> None:
+    """Refuse a speaker edit on a legacy recording or one being reprocessed.
+
+    The running pass replaces the recording's speakers, names and corrections
+    when it publishes, so an edit accepted now would answer 200 and then vanish.
+    """
+    if not recording_supports_unified_mutations(recording):
+        raise HTTPException(
+            status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL
+        )
+    transcript = (
+        await db.execute(
+            select(Transcript).where(Transcript.recording_id == recording.id)
+        )
+    ).scalar_one_or_none()
+    if reprocess_replacement_running(transcript):
+        raise HTTPException(status_code=409, detail=REPROCESS_RUNNING_MESSAGE)
 
 
 async def _require_recordings_support_speaker_mutations(

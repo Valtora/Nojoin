@@ -125,7 +125,7 @@ describe("the recording's composed capture ownership", () => {
     expect(screen.getByRole("textbox", { name: "New note" })).toHaveValue("A carried thought");
     expect(screen.getByLabelText("Place note")).toHaveValue("send");
     expect(screen.getByTestId("note-draft-file")).toHaveTextContent("context.png");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("stopped audio clock");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("where capture stopped");
     await shortcut();
     expect(grabDisplayFrame).toHaveBeenCalledTimes(3);
     expect(outbox.getSnapshot().entries).toHaveLength(3);

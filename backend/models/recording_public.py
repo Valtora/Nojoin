@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, List, Literal, Optional
 
@@ -20,6 +21,7 @@ from backend.models.recording import (
     RecordingStatus,
     capture_looks_stalled,
     import_looks_stalled,
+    recording_is_discardable,
 )
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
@@ -28,6 +30,10 @@ from backend.processing.embedding import (
     LIBRARY_VOICEPRINT_MIN_SPEECH_S,
     LibraryVoiceprintUpdate,
     VoiceprintStatus,
+)
+from backend.utils.generation_claim import (
+    reported_generation_error,
+    reported_generation_status,
 )
 from backend.utils.language_notice import language_notice
 from backend.utils.reprocess_publication import (
@@ -272,9 +278,17 @@ class RecordingPublicRead(PublicModel):
     # Computed server-side, like Document.is_stalled, because last_activity_at
     # carries no timezone and the browser's clock may disagree with the server's.
     capture_stalled: bool = False
+    # The capture's current epoch (Recording.capture_epoch). A reloaded tab
+    # offers its capture at once only while this is still the epoch it held,
+    # so it never offers one taken over elsewhere since (issue #778).
+    capture_epoch: int = 0
     # A file import that has received no part for STALLED_IMPORT_AFTER: the page
     # sending it went away. The client offers to import it again or discard it.
     import_stalled: bool = False
+    # Whether Discard would delete it: a capture, an import or a first pass that
+    # has not finished. False for a finished meeting while its notes regenerate,
+    # its speakers are inferred or it is reprocessed (recording_is_discardable).
+    discardable: bool = False
     # Computed server-side when the detail read includes the transcript: shown
     # once processing is complete, until the recording has a language of its
     # own (backend/utils/language_notice.py).
@@ -373,10 +387,23 @@ def serialize_transcript(
             for item in (transcript.speaker_name_suggestions or [])
             if isinstance(item, dict)
         ],
-        notes_status=transcript.notes_status,
+        # A claim lost with its worker reads as failed, and says so, so the
+        # page offers generation again (issue #828). A failed transcription's
+        # message stays its own.
+        notes_status=reported_generation_status(
+            transcript.notes_status, transcript.updated_at
+        ),
         notes_stale_documents=bool(getattr(transcript, "notes_stale_documents", False)),
         transcript_status=transcript.transcript_status,
-        error_message=transcript.error_message,
+        error_message=(
+            transcript.error_message
+            if transcript.transcript_status == "error"
+            else reported_generation_error(
+                transcript.notes_status,
+                transcript.updated_at,
+                transcript.error_message,
+            )
+        ),
     )
 
 
@@ -439,6 +466,7 @@ def serialize_recording(
     transcript_segments_override: Optional[list[dict]] = None,
     transcript_text_override: Optional[str] = None,
     speakers_override: Optional[list[RecordingSpeaker]] = None,
+    tags_override: Optional[Sequence[TagRead]] = None,
     captured_audio_seconds: Optional[float] = None,
     live_audio_ms: Optional[int] = None,
     timeline_notes_list_signature: Optional[str] = None,
@@ -475,7 +503,11 @@ def serialize_recording(
         ]
 
     tags: list[TagRead] = []
-    if include_tags and getattr(recording, "tags", None):
+    if tags_override is not None:
+        # A list reads its whole page's tags in one query
+        # (backend/services/recording_tag_reads.py) rather than per row.
+        tags = list(tags_override)
+    elif include_tags and getattr(recording, "tags", None):
         for recording_tag in recording.tags:
             tag = getattr(recording_tag, "tag", recording_tag)
             if isinstance(tag, Tag):
@@ -519,7 +551,9 @@ def serialize_recording(
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,
         capture_stalled=capture_looks_stalled(recording),
+        capture_epoch=getattr(recording, "capture_epoch", 0) or 0,
         import_stalled=import_looks_stalled(recording),
+        discardable=recording_is_discardable(recording),
         language_notice=LanguageNoticeRead(**notice) if notice else None,
         transcript=transcript,
         speakers=speakers,

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNotificationStore } from "@/lib/notificationStore";
+import { pressWhileComposing } from "@/test/composition";
 import { httpError } from "@/test/httpErrors";
 import type { RecordingId, Tag } from "@/types";
 
@@ -34,11 +35,13 @@ const messages = () =>
     .getState()
     .activeNotifications.map(({ type, message }) => `${type}: ${message}`);
 
+const onClose = vi.fn();
+
 function renderModal() {
   render(
     <AddTagModal
       isOpen
-      onClose={vi.fn()}
+      onClose={onClose}
       recordingId={"rec-1" as RecordingId}
       currentTags={[]}
     />,
@@ -81,6 +84,24 @@ describe("AddTagModal", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("leaves the Enter and Escape of an input method's composition to it", async () => {
+    await openMenuItem("Clients", "Rename");
+    const field = screen.getByDisplayValue("Clients");
+    fireEvent.change(field, { target: { value: "きゃく" } });
+    pressWhileComposing(field, "Enter");
+    pressWhileComposing(field, "Escape");
+    expect(updateTag).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("きゃく")).toBe(field);
+
+    const search = screen.getByLabelText("Search or create tag");
+    fireEvent.change(search, { target: { value: "とりひき" } });
+    pressWhileComposing(search, "Enter");
+    await act(async () => {});
+    expect(addTagToRecording).not.toHaveBeenCalled();
+    expect(createTag).not.toHaveBeenCalled();
   });
 
   it("says why a rename was refused and keeps the name typed", async () => {
