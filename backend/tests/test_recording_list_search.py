@@ -304,6 +304,53 @@ async def test_a_phrase_crosses_a_line_break_in_live_lines_only_in_order(
     assert await _search(client, "the quarterly") == ["rec-2", crossing]
 
 
+async def test_a_phrase_that_repeats_a_word_crosses_a_line_break(
+    session_maker: sessionmaker, client: AsyncClient
+) -> None:
+    # "yes yes" counts as one word once repeats are set aside, which took the
+    # single-line shortcut and missed this meeting.
+    crossing = await _meeting(
+        session_maker,
+        1,
+        "Crossing",
+        settling_lines=["So we said yes", "yes, and we would ship."],
+    )
+    # Both lines hold "yes", but never twice in a row.
+    await _meeting(
+        session_maker,
+        2,
+        "Apart",
+        settling_lines=["yes we did", "and then we said yes"],
+    )
+
+    assert await _search(client, "yes yes") == [crossing]
+    assert await _search(client, "YES Yes") == [crossing]
+    # A word repeated at both ends of a phrase is still looked for on a line.
+    assert await _search(client, "we said yes yes, and we") == [crossing]
+
+
+async def test_a_run_of_whitespace_in_the_search_counts_as_one_space(
+    session_maker: sessionmaker, client: AsyncClient
+) -> None:
+    crossing = await _meeting(
+        session_maker,
+        1,
+        "Crossing",
+        settling_lines=["We agreed that the quarterly", "lighthouse budget stands."],
+    )
+    spoken = await _meeting(
+        session_maker, 2, "Planning", transcript="We moved the lighthouse launch."
+    )
+    titled = await _meeting(session_maker, 3, "Harbour lighthouse review")
+
+    # The lines are joined with one space and words are spaced singly.
+    assert await _search(client, "quarterly  lighthouse") == [crossing]
+    assert await _search(client, "quarterly\tlighthouse") == [crossing]
+    assert await _search(client, "quarterly\r\nlighthouse") == [crossing]
+    assert await _search(client, "the \t lighthouse") == [spoken]
+    assert await _search(client, "\tharbour   lighthouse\n") == [titled]
+
+
 async def test_a_meeting_matching_many_ways_is_listed_once(
     session_maker: sessionmaker, client: AsyncClient
 ) -> None:

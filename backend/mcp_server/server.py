@@ -342,9 +342,12 @@ async def list_recordings(
     from backend.models.recording import Recording
     from backend.models.speaker import RecordingSpeaker
     from backend.models.tag import RecordingTag
+    from backend.services.recording_search import search_term
 
     user = get_current_mcp_user()
     limit = max(1, min(int(limit), 100))
+    # The hint tests the term the search matched, not the query as typed.
+    match_query = search_term(query) if query else None
 
     async with async_session_maker() as db:
         # api_list_recordings owns the search/date/ownership filtering and
@@ -411,7 +414,7 @@ async def list_recordings(
         _compact_recording(
             by_public_id[public_id],
             transcript_revision=revisions.get(by_public_id[public_id].id, 0),
-            match_query=query,
+            match_query=match_query,
         )
         for public_id in ordered_public_ids
         if public_id in by_public_id
