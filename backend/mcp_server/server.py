@@ -348,9 +348,9 @@ async def list_recordings(
 
     async with async_session_maker() as db:
         # api_list_recordings owns the search/date/ownership filtering and
-        # ordering, but serializes without tags or speakers. Re-load the same
-        # rows as ORM objects with those relationships eager-loaded so the
-        # compact projection reports them instead of always-empty lists.
+        # ordering, but serializes without speakers or the transcript. Re-load
+        # the same rows as ORM objects with those relationships eager-loaded so
+        # the compact projection reports them instead of always-empty lists.
         results = await api_list_recordings(
             skip=max(0, int(skip)),
             limit=limit,

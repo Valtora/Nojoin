@@ -76,6 +76,7 @@ import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
 import RecordingAttentionBadge from "./RecordingAttentionBadge";
+import RecordingTagDots from "./recordings/RecordingTagDots";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 
 interface RowMenuItem {
@@ -847,6 +848,13 @@ export default function Sidebar() {
   // Determine if we should hide the sidebar on mobile
   const isRecordingView = pathname?.startsWith("/recordings/");
 
+  // Tag dots sit in the gutter the hover checkbox keeps on a fine pointer. On
+  // touch that gutter opens only while selecting, so a list holding any
+  // tagged meeting keeps it open on every card and the titles stay aligned.
+  const reserveTagGutter = filteredRecordings.some(
+    (recording) => (recording.tags?.length ?? 0) > 0,
+  );
+
   // Collapse and expand animate the width. A drag sets it on every pointer
   // move, so it goes without a transition and the edge stays on the pointer.
   const widthTransition = isResizing
@@ -1250,7 +1258,9 @@ export default function Sidebar() {
                         {...longPress.bind(recording.id)}
                         // The right padding keeps the text clear of the actions button.
                         className={`block py-3 pr-9 pointer-coarse:pr-[52px] rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
-                          selection.isSelecting ? "pl-9" : "pl-3 pointer-fine:pl-9"
+                          selection.isSelecting || reserveTagGutter
+                            ? "pl-9"
+                            : "pl-3 pointer-fine:pl-9"
                         } ${
                           isHighlighted
                             ? isSelected
@@ -1301,6 +1311,12 @@ export default function Sidebar() {
                             </>
                           )}
                         </div>
+                        {/* In the left gutter, below where the selection
+                            checkbox appears, so the two never overlap. */}
+                        <RecordingTagDots
+                          tags={recording.tags}
+                          className="absolute left-3 top-8.5 w-4"
+                        />
                         <RecordingAttentionBadge recordingId={recording.id} className="mt-2" />
                         {/* The open recording lists its own unsent notes. */}
                         {!isActive && unsentRecordings.includes(recording.id) && (

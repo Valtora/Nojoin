@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, List, Literal, Optional
 
@@ -465,6 +466,7 @@ def serialize_recording(
     transcript_segments_override: Optional[list[dict]] = None,
     transcript_text_override: Optional[str] = None,
     speakers_override: Optional[list[RecordingSpeaker]] = None,
+    tags_override: Optional[Sequence[TagRead]] = None,
     captured_audio_seconds: Optional[float] = None,
     live_audio_ms: Optional[int] = None,
     timeline_notes_list_signature: Optional[str] = None,
@@ -501,7 +503,11 @@ def serialize_recording(
         ]
 
     tags: list[TagRead] = []
-    if include_tags and getattr(recording, "tags", None):
+    if tags_override is not None:
+        # A list reads its whole page's tags in one query
+        # (backend/services/recording_tag_reads.py) rather than per row.
+        tags = list(tags_override)
+    elif include_tags and getattr(recording, "tags", None):
         for recording_tag in recording.tags:
             tag = getattr(recording_tag, "tag", recording_tag)
             if isinstance(tag, Tag):
