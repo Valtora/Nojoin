@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SpeakerPanel from "./SpeakerPanel";
 import { useNavigationStore } from "@/lib/store";
+import { pressWhileComposing } from "@/test/composition";
 import { matchesStyleDeclaration } from "@/test/styleMarkerContracts";
 import type {
   GlobalSpeaker,
@@ -263,6 +264,30 @@ describe("SpeakerPanel", () => {
       expect(updateSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00", "Alicia");
     });
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it("leaves the Enter and Escape of an input method's composition to the rename", async () => {
+    updateSpeaker.mockClear();
+    renderPanel({
+      speakers: [
+        buildSpeaker({ diarization_label: "SPEAKER_00", local_name: "Alice" }),
+      ],
+      segments: [buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 })],
+    });
+
+    fireEvent.doubleClick(screen.getByText("Alice"));
+    const input = screen.getByDisplayValue("Alice");
+    fireEvent.change(input, { target: { value: "アリス" } });
+    pressWhileComposing(input, "Enter");
+    pressWhileComposing(input, "Escape");
+    await act(async () => {});
+    expect(updateSpeaker).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("アリス")).toBe(input);
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(updateSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00", "アリス");
+    });
   });
 
   it("says when a rename left the person without a voiceprint, and why", async () => {

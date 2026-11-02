@@ -13,6 +13,7 @@ import {
   removeTagFromRecording,
 } from "@/lib/api";
 import { getColorByKey, DEFAULT_TAG_COLORS } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import { notifyRequestError } from "@/lib/notifyRequestError";
 import ContextMenu from "./ContextMenu";
 import Button from "./ui/Button";
@@ -272,6 +273,7 @@ export default function AddTagModal({
                   value={editValue}
                   onChange={(e) => setEditValue(e.target.value)}
                   onKeyDown={(e) => {
+                    if (isImeComposing(e)) return;
                     if (e.key === "Enter") handleRenameTag(node.id, editValue);
                     if (e.key === "Escape") setEditingTagId(null);
                   }}
@@ -379,7 +381,7 @@ export default function AddTagModal({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreateTag(inputValue);
+                if (e.key === "Enter" && !isImeComposing(e)) handleCreateTag(inputValue);
               }}
               placeholder="Search or create tag..."
               aria-label="Search or create tag"

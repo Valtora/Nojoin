@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RecordingFilters } from "@/lib/api";
+import { pressWhileComposing } from "@/test/composition";
 import type { Recording } from "@/types";
 
 import TaskRecordingPicker, { type TaskRecordingChoice } from "./TaskRecordingPicker";
@@ -241,6 +242,28 @@ describe("TaskRecordingPicker", () => {
     fireEvent.change(input, { target: { value: "meeting" } });
     fireEvent.keyDown(input, { key: "Escape" });
     expect(input).toHaveValue("");
+  });
+
+  it("leaves the arrow keys, Enter and Escape to an input method while it composes", async () => {
+    serve(library(3));
+    render(<Picker />);
+    await screen.findByRole("option", { name: /Meeting 2/ });
+    const input = searchBox();
+    input.focus();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const highlighted = screen.getByRole("option", { name: /Meeting 1/ }).id;
+    fireEvent.change(input, { target: { value: "かいぎ" } });
+
+    for (const key of ["ArrowDown", "ArrowUp", "Enter", "Escape"]) pressWhileComposing(input, key);
+
+    expect(changes).not.toHaveBeenCalled();
+    expect(input).toHaveAttribute("aria-activedescendant", highlighted);
+    expect(input).toHaveValue("かいぎ");
+
+    // Once the composition has ended, Enter links the highlighted recording.
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(changes).toHaveBeenLastCalledWith([choice(meeting(1))]);
   });
 
   it("loads older recordings a page at a time, and returns focus to the search box at the end", async () => {

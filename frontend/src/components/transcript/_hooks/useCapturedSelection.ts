@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
+import { isImeComposing } from "@/lib/imeComposition";
 import type { NoteSelection } from "@/lib/notes/noteOutbox";
 import { linePicksOfRange, selectionFromPicks } from "@/lib/notes/selectionRange";
 
@@ -114,7 +115,7 @@ export function useCapturedSelection(root: RefObject<HTMLElement | null>, paused
       settle();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) setCaptured(null);
+      if (event.key === "Escape" && !event.defaultPrevented && !isImeComposing(event)) setCaptured(null);
     };
 
     document.addEventListener("selectionchange", settle);

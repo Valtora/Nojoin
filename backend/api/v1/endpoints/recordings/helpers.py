@@ -103,25 +103,30 @@ def _recording_has_audio(recording: Recording) -> bool:
 
 
 async def revoke_recording_task(recording: Recording) -> None:
-    """Stop the recording's Celery task before its row and files go.
+    """Stop the recording's Celery task before its row and files go."""
+    await revoke_task_of_recording(recording.celery_task_id, recording.public_id)
+
+
+async def revoke_task_of_recording(task_id: Optional[str], public_id: str) -> None:
+    """Stop a recording's Celery task, given its id read before the row went.
 
     ``terminate=True`` ends a task that is already running; a queued one is
     dropped. The revoke is a broker publish, so it runs off the event loop, and
     one that cannot reach the broker does not stop the delete.
     """
-    if not recording.celery_task_id:
+    if not task_id:
         return
     try:
         await asyncio.to_thread(
             recordings_module.celery_app.control.revoke,
-            recording.celery_task_id,
+            task_id,
             terminate=True,
         )
     except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
         logger.warning(
             "Could not revoke task %s of recording %s before deleting it",
-            recording.celery_task_id,
-            recording.public_id,
+            task_id,
+            public_id,
             exc_info=True,
         )
 
