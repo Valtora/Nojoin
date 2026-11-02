@@ -32,8 +32,17 @@ function useScheduledTour(
 ) {
   useEffect(() => {
     if (!enabled) return;
-    let cancelled = false;
     let activeDriver: Driver | null = null;
+    // Ends the tour once. Only a person closing it marks it seen: a route or
+    // state change leaves it for a later visit.
+    const end = (seen: boolean) => {
+      const ending = activeDriver;
+      if (!ending) return;
+      activeDriver = null;
+      ending.destroy();
+      onEnd?.();
+      if (seen) onSeen();
+    };
     const timer = setTimeout(() => {
       const validSteps = steps.filter(step =>
         typeof step.element !== 'string' || document.querySelector(step.element),
@@ -46,18 +55,16 @@ function useScheduledTour(
         nextBtnText: 'Next',
         prevBtnText: 'Previous',
         doneBtnText: 'Done',
-        onDestroyed: () => {
-          onEnd?.();
-          // Route/state cleanup must leave the tour available for a later visit.
-          if (!cancelled) onSeen();
-        },
+        // Escape, the close button, the overlay and Done all arrive here.
+        // driver.js skips onDestroyed when a tour closes in the 400 ms a step
+        // takes to animate in, so the end can't wait for it (#915).
+        onDestroyStarted: () => end(true),
       });
       activeDriver.drive();
     }, 1500);
     return () => {
-      cancelled = true;
       clearTimeout(timer);
-      activeDriver?.destroy();
+      end(false);
     };
   }, [enabled, onEnd, onSeen, scope, steps]);
 }

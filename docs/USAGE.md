@@ -6,7 +6,7 @@ This guide covers day-to-day use of Nojoin once it is deployed and you have an a
 
 For a first test recording, follow [Make Your First Recording](GETTING_STARTED.md#5-make-your-first-recording). [CAPTURE.md](CAPTURE.md) lists the supported browsers and covers choosing what to share.
 
-Guided tours introduce the dashboard, the recordings list and the transcript view the first time you open each. The transcript view's tour opens each tab it describes, in the side column as well, and when it ends you are back on the tabs you were on. **Settings > Help > Restart tours** shows them again, and **Create it again** brings back the Welcome to Nojoin demo meeting if you deleted it.
+Guided tours introduce the dashboard, the recordings list and the transcript view the first time you open each. Closing one early, with Escape or its close button, counts the same as finishing it; leave the page while one is open and it comes back on your next visit. The transcript view's tour opens each tab it describes, in the side column as well, and when it ends you are back on the tabs you were on. **Settings > Help > Restart tours** shows them again, and **Create it again** brings back the Welcome to Nojoin demo meeting if you deleted it.
 
 ## Dashboard
 
