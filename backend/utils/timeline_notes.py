@@ -49,6 +49,7 @@ from typing import (
 )
 
 from backend.models.timeline_note import TimelineNoteKind
+from backend.prompts import render_prompt
 
 NoteSlot = Literal["head", "body", "tail"]
 
@@ -273,31 +274,6 @@ def render_timeline_for_llm(
     return "\n".join(lines)
 
 
-MEETING_WIDE_NOTES_PREAMBLE = (
-    "The user wrote the following notes about the meeting as a whole, each quoted "
-    "below with every line opening `>`. Use them as "
-    "high-priority supporting context when composing the final notes. Incorporate "
-    "relevant items into the summary, detailed notes, and action items where they "
-    "materially improve accuracy."
-)
-
-INLINE_NOTES_EXPLANATION = (
-    "The transcript also carries notes the user wrote at particular moments, each on "
-    "its own line just after the line it refers to: "
-    '`[Note — name]: text`, or `[Note on "quoted words" at time — name]: text` for a '
-    "note about specific words. These lines are the user's notes, not speech, and "
-    "carry the same high priority. A note about quoted words may correct a "
-    "mistranscription, define a term, or comment on what was said; the user is "
-    "authoritative about what was said."
-)
-
-NOTES_LIST_PREAMBLE = (
-    "The user wrote the following notes about this meeting, in timeline order, "
-    "with the time in the recording where one was written at a particular moment. "
-    "Use them as high-priority supporting context."
-)
-
-
 def _split_slots(
     placements: Sequence[NotePlacement[N]],
 ) -> tuple[list[NotePlacement[N]], list[NotePlacement[N]]]:
@@ -328,10 +304,10 @@ def render_user_notes_context(
     meeting_wide, body = _split_slots(placements)
     parts: list[str] = []
     if meeting_wide:
-        parts.append(MEETING_WIDE_NOTES_PREAMBLE)
+        parts.append(render_prompt("shared.meeting_wide_notes_preamble"))
         parts.extend(_quoted(placement.note.body) for placement in meeting_wide)
     if body:
-        parts.append(INLINE_NOTES_EXPLANATION)
+        parts.append(render_prompt("shared.inline_notes_explanation"))
     return "\n\n".join(parts) if parts else None
 
 
@@ -366,7 +342,7 @@ def render_notes_list_context(
     lines = render_notes_as_lines(placements)
     if not lines:
         return None
-    return NOTES_LIST_PREAMBLE + "\n\n" + "\n".join(lines)
+    return render_prompt("shared.notes_list_preamble") + "\n\n" + "\n".join(lines)
 
 
 def timeline_notes_signature(notes: Iterable[TimelineNoteLike]) -> str:

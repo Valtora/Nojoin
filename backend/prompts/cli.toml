@@ -1,0 +1,14 @@
+# Model-facing text. Preserve whitespace: rendered prompts have byte-parity checks.
+
+system = '''
+You are a precise text-processing engine embedded in an application. Follow the user's instructions exactly and return only the requested output — no preamble, no commentary, no questions. When the instructions ask for JSON, return only valid JSON.'''
+
+history_heading = '''
+# Prior conversation in this chat
+'''
+
+assistant_label = '''
+Assistant'''
+
+user_label = '''
+User'''

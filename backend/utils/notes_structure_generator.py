@@ -18,8 +18,9 @@ import json
 import re
 from dataclasses import dataclass
 
+from backend.prompts import render_prompt
 from backend.utils.meeting_notes import (
-    DEFAULT_NOTES_SECTIONS,
+    default_notes_sections,
 )
 from backend.utils.notes_templates import (
     MAX_NOTES_SECTIONS_LENGTH,
@@ -35,54 +36,6 @@ JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNOR
 
 MAX_GENERATOR_BRIEF_LENGTH = 1500
 
-GENERATOR_INSTRUCTIONS = f"""You are helping a Nojoin user design a meeting-notes structure.
-
-Nojoin generates notes from a meeting transcript. The application owns the parts of
-the prompt that govern accuracy and formatting; you are writing only the *section
-structure*: which sections the notes contain, in what order, and what belongs under
-each one.
-
-# What you must return
-One valid JSON object, and nothing else:
-
-{{
-    "name": "Short name for this structure, at most {MAX_NOTES_TEMPLATE_NAME_LENGTH} characters",
-    "description": "One line on what it is for, at most {MAX_NOTES_TEMPLATE_DESCRIPTION_LENGTH} characters",
-    "sections": "The Markdown section structure"
-}}
-
-# Writing the sections
-- Begin each section with a Markdown heading (`## Section Name`). Use `###` for
-  subsections where a section genuinely needs them.
-- Under each heading, write a short instruction describing what belongs there,
-  addressed to the model that will write the notes. Describe the content, not the
-  formatting.
-- Order the sections so the most decision-relevant material comes first.
-- Where a section is naturally tabular, specify the exact Markdown table including
-  the header row and the `| --- |` delimiter row, as the shipped example does.
-- Tell the model when to omit a section that does not apply.
-- Keep the whole structure under {MAX_NOTES_SECTIONS_LENGTH} characters.
-
-# What you must NOT include
-These are added automatically by the application. Repeating or contradicting them
-wastes the user's tokens and changes nothing:
-- Accuracy and attribution rules ("never invent facts", "attribute claims to the
-  speaker who made them", how to treat user-authored notes).
-- Generic Markdown table syntax rules.
-- Anything about the transcript, speaker mapping, meeting metadata, glossary, or
-  output language.
-- A title heading, a preamble, or instructions about the response format.
-- Placeholders of any kind. There is no substitution step; the structure is used
-  literally.
-
-# The shipped default, as a reference for style and depth
-{DEFAULT_NOTES_SECTIONS}
-
-# The user's brief
-{{brief}}
-
-Return only the JSON object."""
-
 
 @dataclass(frozen=True)
 class GeneratedNotesStructure:
@@ -94,13 +47,17 @@ class GeneratedNotesStructure:
 
 
 def build_notes_structure_generator_prompt(brief: str) -> str:
-    """Render the generator prompt for a user's brief.
-
-    ``str.replace`` rather than ``str.format``: the instructions contain literal
-    JSON braces, and the brief is user text. Composition over substitution, the
-    same rule the notes prompts follow.
-    """
-    return GENERATOR_INSTRUCTIONS.replace("{brief}", brief.strip())
+    """Render once, preserving the user's brief as opaque text."""
+    return render_prompt(
+        "structure.instructions",
+        max_notes_template_name_length=str(MAX_NOTES_TEMPLATE_NAME_LENGTH),
+        max_notes_template_description_length=str(
+            MAX_NOTES_TEMPLATE_DESCRIPTION_LENGTH
+        ),
+        max_notes_sections_length=str(MAX_NOTES_SECTIONS_LENGTH),
+        default_notes_sections=default_notes_sections(),
+        brief=brief.strip(),
+    )
 
 
 def validate_generator_brief(value: str | None) -> str:

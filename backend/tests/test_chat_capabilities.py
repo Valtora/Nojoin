@@ -26,9 +26,8 @@ from backend.processing.llm_services import (
     OllamaLLMBackend,
     OpenAILLMBackend,
 )
+from backend.prompts import render_prompt
 from backend.utils.chat_prompt import (
-    CAPABILITIES_WITH_NOTES_TOOL,
-    CAPABILITIES_WITHOUT_TOOLS,
     ChatTranscript,
     LiveChatTranscript,
 )
@@ -223,11 +222,11 @@ def test_chat_capability_statement_matches_the_tools_sent(path: str) -> None:
     assert (NOTES_TOOL in tools) is has_notes_tool
     assert NOTES in prompt and TRANSCRIPT in prompt
     if has_notes_tool:
-        assert CAPABILITIES_WITH_NOTES_TOOL in prompt
-        assert CAPABILITIES_WITHOUT_TOOLS not in prompt
+        assert render_prompt("chat.capabilities_with_notes_tool") in prompt
+        assert render_prompt("chat.capabilities_without_tools") not in prompt
     else:
-        assert CAPABILITIES_WITHOUT_TOOLS in prompt
-        assert CAPABILITIES_WITH_NOTES_TOOL not in prompt
+        assert render_prompt("chat.capabilities_without_tools") in prompt
+        assert render_prompt("chat.capabilities_with_notes_tool") not in prompt
     _assert_offers_nothing_after_the_reply(prompt, has_notes_tool)
 
 
@@ -241,8 +240,8 @@ def test_in_flight_chat_never_offers_the_notes_tool(path: str) -> None:
 
     assert NOTES_TOOL not in tools
     assert NOTES in prompt and TRANSCRIPT in prompt
-    assert CAPABILITIES_WITHOUT_TOOLS in prompt
-    assert CAPABILITIES_WITH_NOTES_TOOL not in prompt
+    assert render_prompt("chat.capabilities_without_tools") in prompt
+    assert render_prompt("chat.capabilities_with_notes_tool") not in prompt
     _assert_offers_nothing_after_the_reply(prompt, can_edit_notes=False)
 
 
@@ -251,6 +250,6 @@ def test_cli_chat_prompt_offers_no_actions(stream: bool) -> None:
     prompt = _cli_prompt(stream)
 
     assert NOTES in prompt and TRANSCRIPT in prompt
-    assert CAPABILITIES_WITHOUT_TOOLS in prompt
-    assert CAPABILITIES_WITH_NOTES_TOOL not in prompt
+    assert render_prompt("chat.capabilities_without_tools") in prompt
+    assert render_prompt("chat.capabilities_with_notes_tool") not in prompt
     _assert_offers_nothing_after_the_reply(prompt, can_edit_notes=False)

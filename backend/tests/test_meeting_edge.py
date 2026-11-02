@@ -346,7 +346,7 @@ def test_build_meeting_edge_prompt_parts_does_not_cache_an_override() -> None:
 
 
 def test_meeting_edge_cache_prefix_is_stable_across_refreshes() -> None:
-    from backend.utils.meeting_edge import MEETING_EDGE_CACHE_SPLIT_MARKER
+    from backend.prompts import render_prompt
 
     # The prefix is now composed separately rather than found by searching a
     # rendered string, so this asserts the property that actually matters: two
@@ -370,7 +370,9 @@ def test_meeting_edge_cache_prefix_is_stable_across_refreshes() -> None:
     assert first_prefix != ""
     assert first_prefix == second_prefix
     assert first_suffix != second_suffix
-    assert first_suffix.startswith(MEETING_EDGE_CACHE_SPLIT_MARKER)
+    assert first_suffix.startswith(
+        render_prompt("shared.heading_earlier_context_summary")
+    )
 
 
 def test_parse_meeting_edge_response_reads_text_from_wrapped_items() -> None:

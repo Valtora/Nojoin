@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 
 import backend.worker.tasks as tasks
 from backend.processing.llm_backends.base import LLMBackend
+from backend.prompts import render_prompt
 from backend.services.live_chat import _recent_text, stream_live_chat
 from backend.tests.test_chat_mapped_transcript import (
     RECORDING_ID,
@@ -29,7 +30,6 @@ from backend.tests.test_meeting_chat_task import (
 )
 from backend.utils.chat_prompt import LiveChatTranscript, build_chat_context
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.llm_transcript import NOTES_LEGEND
 
 
 def test_recent_context_preserves_the_latest_words_of_one_long_line() -> None:
@@ -58,14 +58,16 @@ def test_recent_context_keeps_the_notes_legend_when_old_notes_are_trimmed_out(
     )
     original = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID, live=True)
     assert original is not None
-    assert original.startswith(NOTES_LEGEND)
+    assert original.startswith(render_prompt("shared.notes_legend"))
 
     shortened = _recent_text(original, 200)
 
     assert shortened.endswith("Latest decision.")
     assert "The old user note." not in shortened
     # Notes may still follow; the legend is what tells them from speech.
-    assert shortened.startswith(NOTES_LEGEND + "\n[00:00] Mira: [...] ")
+    assert shortened.startswith(
+        render_prompt("shared.notes_legend") + "\n[00:00] Mira: [...] "
+    )
     assert len(shortened.encode("utf-8")) <= 200
 
 
@@ -83,8 +85,8 @@ def test_recent_context_keeps_true_notes_after_multiline_speech(
 
     shortened = _recent_text(original, 300)
 
-    assert shortened.startswith(NOTES_LEGEND + "\n")
-    assert shortened.splitlines().count(NOTES_LEGEND) == 1
+    assert shortened.startswith(render_prompt("shared.notes_legend") + "\n")
+    assert shortened.splitlines().count(render_prompt("shared.notes_legend")) == 1
     assert shortened.endswith(
         "[Note — mira]: Current user note. / Still the same note."
     )
@@ -286,7 +288,9 @@ def test_cli_live_overflow_uses_current_names_notes_and_persists_once(
     assert "[00:02] Mira:" in backend.prompts[1]
     assert "Latest decision." in backend.prompts[1]
     assert "Current user note." in backend.prompts[1]
-    assert backend.prompts[1].splitlines().count(NOTES_LEGEND) == 1
+    assert (
+        backend.prompts[1].splitlines().count(render_prompt("shared.notes_legend")) == 1
+    )
     assert "older text" not in backend.prompts[1]
     rows = _chat_rows(engine)
     assert [(row.role, row.content) for row in rows] == [

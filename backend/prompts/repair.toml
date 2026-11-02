@@ -1,0 +1,17 @@
+# Shipped prompt prose. ${name} placeholders accept literal, single-pass input.
+
+json = '''Your previous response did not satisfy Nojoin's strict JSON contract.
+
+Validation error:
+${validation_error}
+
+Return a corrected response for the original task as one valid JSON object only.
+Do not include Markdown code fences, commentary, or prose before or after the JSON object.
+Preserve the same schema and do not invent facts not supported by the original task.
+
+# Original Task
+${original_prompt}
+
+# Previous Invalid Response
+${invalid_response}
+'''

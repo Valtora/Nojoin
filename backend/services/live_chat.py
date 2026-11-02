@@ -8,9 +8,9 @@ from typing import Any
 from backend.models.recording import IN_FLIGHT_TRANSCRIPT_STATUSES, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.processing.llm_backends.base import LLMBackend
+from backend.prompts import render_prompt
 from backend.utils.chat_prompt import LiveChatTranscript
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.llm_transcript import NOTES_LEGEND
 
 ChatChunk = str | dict[str, Any]
 
@@ -36,7 +36,8 @@ def _recent_text(text: str, budget: int) -> str:
     lines wherever they fall, so a shortened text keeps it.
     """
     lines = text.splitlines()
-    opening = lines[:1] if lines[:1] == [NOTES_LEGEND] else []
+    legend = render_prompt("shared.notes_legend").splitlines()
+    opening = legend if lines[: len(legend)] == legend else []
     budget -= sum(len(line.encode("utf-8")) + 1 for line in opening)
     kept: list[str] = []
     size = 0

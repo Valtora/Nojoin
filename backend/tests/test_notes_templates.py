@@ -17,6 +17,7 @@ from sqlmodel import Session
 import backend.models.registry  # noqa: F401
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.processing.llm_backends.base import LLMBackend
+from backend.prompts import render_prompt
 from backend.tests.sqlite_schemas import NOTES_TEMPLATES_SCHEMA, USERS_SCHEMA
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
@@ -25,11 +26,6 @@ from backend.utils.meeting_intelligence import (
     build_automatic_meeting_intelligence_prompt,
 )
 from backend.utils.meeting_notes import (
-    DEFAULT_NOTES_SECTIONS,
-    NOTES_BODY_SPEC,
-    NOTES_FIDELITY_RULES,
-    NOTES_SPEC_PREAMBLE,
-    NOTES_TABLE_RULES,
     MeetingMetadata,
     NotesPromptContext,
     build_notes_body_spec,
@@ -69,18 +65,27 @@ def session():
 
 def test_default_body_spec_is_unchanged_by_the_split():
     """No custom structure means a byte-identical prompt to the pre-feature one."""
-    assert build_notes_body_spec() == NOTES_BODY_SPEC
-    assert build_notes_body_spec(None) == NOTES_BODY_SPEC
-    assert build_notes_body_spec("   ") == NOTES_BODY_SPEC
-    assert DEFAULT_NOTES_SECTIONS in NOTES_BODY_SPEC
+    expected = "\n\n".join(
+        render_prompt(prompt_id)
+        for prompt_id in (
+            "notes.preamble",
+            "notes.default_sections",
+            "notes.table_rules",
+            "notes.fidelity_rules",
+        )
+    )
+    assert build_notes_body_spec() == expected
+    assert build_notes_body_spec(None) == expected
+    assert build_notes_body_spec("   ") == expected
+    assert render_prompt("notes.default_sections") in expected
 
 
 def test_custom_sections_keep_every_protected_part():
     body = build_notes_body_spec(CUSTOM_SECTIONS)
 
-    assert NOTES_SPEC_PREAMBLE in body
-    assert NOTES_TABLE_RULES in body
-    assert NOTES_FIDELITY_RULES in body
+    assert render_prompt("notes.preamble") in body
+    assert render_prompt("notes.table_rules") in body
+    assert render_prompt("notes.fidelity_rules") in body
     assert "## Questions Asked" in body
     # The shipped structure is genuinely replaced, not appended to.
     assert "## Key Decisions" not in body
@@ -163,8 +168,10 @@ def test_both_notes_paths_embed_the_default_body_spec():
         unresolved_speakers=(),
     )
 
-    assert NOTES_BODY_SPEC in build_automatic_meeting_intelligence_prompt(request)
-    assert NOTES_BODY_SPEC in LLMBackend.build_notes_prompt(
+    assert build_notes_body_spec() in build_automatic_meeting_intelligence_prompt(
+        request
+    )
+    assert build_notes_body_spec() in LLMBackend.build_notes_prompt(
         None, "[00:00 - 00:05] Sam: Hello.", {}
     )
 
@@ -332,7 +339,7 @@ def test_install_templates_are_visible_to_every_user(session):
 
 
 def test_a_template_matching_the_builtin_is_not_treated_as_custom(session):
-    template = _make_template(session, sections=DEFAULT_NOTES_SECTIONS)
+    template = _make_template(session, sections=render_prompt("notes.default_sections"))
     resolved = resolve_notes_template(
         session, {"notes_template_id": template.id}, user_id=1
     )

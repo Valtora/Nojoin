@@ -33,10 +33,10 @@ from backend.services.notes_structure_jobs import (
 )
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.meeting_notes import (
-    DEFAULT_NOTES_SECTIONS,
     NOTES_SECTIONS_VERSION,
     MeetingMetadata,
     NotesPromptContext,
+    default_notes_sections,
 )
 from backend.utils.notes_structure_generator import validate_generator_brief
 from backend.utils.notes_templates import (
@@ -187,7 +187,7 @@ async def list_notes_templates(
                 "Summary, decisions, action items, detailed notes. Suits project "
                 "and status meetings."
             ),
-            "sections": DEFAULT_NOTES_SECTIONS,
+            "sections": default_notes_sections(),
             "version": NOTES_SECTIONS_VERSION,
         },
         "limits": {
@@ -245,7 +245,7 @@ async def create_notes_template(
         builtin_version=(
             NOTES_SECTIONS_VERSION
             if payload.builtin_version is not None
-            or sections.strip() == DEFAULT_NOTES_SECTIONS.strip()
+            or sections.strip() == default_notes_sections().strip()
             else None
         ),
     )
@@ -288,7 +288,7 @@ async def update_notes_template(
                 # unless the user has landed exactly back on the current default.
                 template.builtin_version = (
                     NOTES_SECTIONS_VERSION
-                    if sections.strip() == DEFAULT_NOTES_SECTIONS.strip()
+                    if sections.strip() == default_notes_sections().strip()
                     else None
                 )
     except NotesTemplateError as exc:
@@ -317,7 +317,7 @@ async def reset_notes_template(
     template = await _get_template_for_user(
         db, template_id, current_user, require_edit=True
     )
-    template.sections = DEFAULT_NOTES_SECTIONS
+    template.sections = default_notes_sections()
     template.builtin_version = NOTES_SECTIONS_VERSION
     db.add(template)
     await db.commit()
@@ -485,4 +485,4 @@ async def preview_notes_prompt(
             ),
         ),
     )
-    return {"prompt": prompt, "editable_sections": sections or DEFAULT_NOTES_SECTIONS}
+    return {"prompt": prompt, "editable_sections": sections or default_notes_sections()}

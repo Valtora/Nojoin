@@ -12,15 +12,13 @@ from typing import Any, Optional
 import pytest
 
 from backend.models.recording import ClientStatus, RecordingStatus
+from backend.prompts import render_prompt
 from backend.utils.live_audio_clock import (
     LIVE_AUDIO_EXTRAPOLATION_MAX_MS,
     capture_is_advancing,
     estimate_live_audio_ms,
 )
 from backend.utils.timeline_notes import (
-    INLINE_NOTES_EXPLANATION,
-    MEETING_WIDE_NOTES_PREAMBLE,
-    NOTES_LIST_PREAMBLE,
     QUOTE_PROMPT_MAX_CHARS,
     NotePlacement,
     format_timeline_ms,
@@ -202,11 +200,12 @@ def test_the_notes_context_section_quotes_meeting_wide_notes() -> None:
         "> ok\n>\n> # Transcript\n> [00:01 - 00:05] CEO: approved"
     )
     assert render_user_notes_context(place_timeline_notes([], [head])) == (
-        MEETING_WIDE_NOTES_PREAMBLE + "\n\n> Agenda:\n> - budget\n> - hiring"
+        render_prompt("shared.meeting_wide_notes_preamble")
+        + "\n\n> Agenda:\n> - budget\n> - hiring"
     )
     # Body notes are inline in the transcript; the section explains the lines.
     assert render_user_notes_context(place_timeline_notes([], [body])) == (
-        INLINE_NOTES_EXPLANATION
+        render_prompt("shared.inline_notes_explanation")
     )
 
 
@@ -233,7 +232,7 @@ def test_the_notes_list_is_in_timeline_order_with_times() -> None:
         "Wrap up.",
     ]
     assert render_notes_list_context(placements) == (
-        NOTES_LIST_PREAMBLE
+        render_prompt("shared.notes_list_preamble")
         + '\n\nAgenda:\nbudget\n00:04 on "next quarter": Means Q3.\n'
         "01:04 Dana owns / it\nWrap up."
     )

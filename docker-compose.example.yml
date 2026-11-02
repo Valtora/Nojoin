@@ -13,6 +13,8 @@ x-shared-app-environment: &shared-app-environment
   CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0
   HF_TOKEN: ${HF_TOKEN:-}
   DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
+  # Prompt overrides need the same opt-in in the API and every generation lane.
+  NOJOIN_DEVELOPER_MODE: ${NOJOIN_DEVELOPER_MODE:-false}
   # Shared, not api-only: the worker lanes resolve the public origin too, for
   # calendar webhook URLs and for the telemetry local-origin flag. Without it
   # they fall back to the localhost default and build the wrong URL.

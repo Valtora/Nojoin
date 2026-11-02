@@ -21,6 +21,7 @@ from backend.processing.cli.manager import (
     CliOAuthUnavailableError,
 )
 from backend.processing.llm_services import LLMBackend
+from backend.prompts import render_prompt
 from backend.utils.meeting_analysis import (
     MeetingAnalysisRequest,
     MeetingAnalysisResult,
@@ -301,11 +302,15 @@ class CliLLMBackend(LLMBackend):
         for msg in conversation_history:
             if not (isinstance(msg, dict) and msg.get("role") and msg.get("parts")):
                 continue
-            speaker = "Assistant" if msg["role"] == "model" else "User"
+            speaker = (
+                render_prompt("cli.assistant_label")
+                if msg["role"] == "model"
+                else render_prompt("cli.user_label")
+            )
             for part in msg["parts"]:
                 text = part.get("text") if isinstance(part, dict) else None
                 if text:
                     lines.append(f"{speaker}: {text}")
         if not lines:
             return ""
-        return "# Prior conversation in this chat\n" + "\n".join(lines)
+        return render_prompt("cli.history_heading") + "\n".join(lines)

@@ -2,9 +2,15 @@ import type {
   AdminHealthStatus,
   AsyncTaskStatus,
   RecordingId,
+  SystemCapabilities,
   TelemetryStatus,
 } from "@/types";
 import api from "./client";
+
+export const getSystemCapabilities = async (): Promise<SystemCapabilities> => {
+  const response = await api.get<SystemCapabilities>("/system/capabilities");
+  return response.data;
+};
 
 export const getTelemetryStatus = async (): Promise<TelemetryStatus> => {
   const response = await api.get<TelemetryStatus>("/system/telemetry");

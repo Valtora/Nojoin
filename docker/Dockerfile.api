@@ -85,6 +85,9 @@ ENV NOJOIN_SERVER_VERSION=${NOJOIN_SERVER_VERSION}
 
 COPY . .
 
+# Fail the image build if a shipped prompt file or its contract is incomplete.
+RUN python -c "from backend.prompts import load_registry; load_registry()"
+
 RUN set -eu; \
     version="${NOJOIN_SERVER_VERSION:-}"; \
     if [ -z "$version" ] && [ -f /app/docs/VERSION ]; then \

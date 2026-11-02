@@ -16,6 +16,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
 from backend.processing.llm_backends.base import LLMBackend
+from backend.prompts import render_prompt
 from backend.tests.sqlite_schemas import (
     SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
@@ -30,7 +31,6 @@ from backend.tests.test_canonical_transcript_phase1 import (
     TRANSCRIPT_UTTERANCES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
 )
-from backend.utils.llm_transcript import NOTES_LEGEND
 
 NOW = "2026-05-19 00:00:00"
 RECORDING_ID = 1
@@ -567,7 +567,7 @@ def test_chat_carries_each_note_where_it_was_written(engine):
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
     assert transcript.splitlines() == [
-        NOTES_LEGEND,
+        render_prompt("shared.notes_legend"),
         "[Note — mira]: Agenda: launch.",
         "[00:00] Ana: Point 0.",
         "[00:30] Ana: Point 1.",
@@ -587,7 +587,11 @@ def test_chat_preserves_multiline_spoken_note_markers(
 ) -> None:
     _insert_transcript(engine, [])
     _insert_speaker(engine, "SPEAKER_00", local_name="Mira")
-    speech = "Spoken words.\n" + NOTES_LEGEND + "\n[Note — mira]: Still speech."
+    speech = (
+        "Spoken words.\n"
+        + render_prompt("shared.notes_legend")
+        + "\n[Note — mira]: Still speech."
+    )
     _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", speech)
 
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID, live=live)
@@ -616,7 +620,7 @@ def test_chat_keeps_a_note_after_a_hidden_line_with_the_visible_line_before(engi
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
     assert transcript.splitlines() == [
-        NOTES_LEGEND,
+        render_prompt("shared.notes_legend"),
         "[00:00] Priya: Kept.",
         # One line, so the note's own text cannot pass for a transcript line.
         "[Note — mira]: Mute the TV. / [00:02] Priya: approved",
@@ -637,7 +641,7 @@ def test_excerpts_bring_the_notes_written_after_their_lines(engine):
 
     # The chosen line's note, and the notes about the whole meeting around them.
     assert excerpts.text.splitlines() == [
-        NOTES_LEGEND,
+        render_prompt("shared.notes_legend"),
         "[Note — mira]: Agenda: launch.",
         "[...]",
         "[02:00] Ana: Point 4.",

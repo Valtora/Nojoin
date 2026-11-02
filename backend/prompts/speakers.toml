@@ -1,0 +1,42 @@
+# Shipped prompt prose. ${name} placeholders accept literal, single-pass input.
+
+no_unresolved = '''No unresolved speaker labels remain. Return an empty object for `speaker_mapping`.'''
+
+unresolved_intro = '''Only these diarization labels may appear in `speaker_mapping`:'''
+
+all_eligible = '''All unresolved diarization labels in the transcript are eligible.'''
+
+eligible_intro = '''Only return suggestions for these diarization labels:'''
+
+suggestion_intro = '''You are an expert meeting assistant. Analyze the diarized meeting transcript below and return only evidence-backed speaker name suggestions for unresolved diarization labels.'''
+
+suggestion_rules = '''- Return valid JSON only. Do not include Markdown, commentary, or code fences unless the client asks for them.
+- Only include suggestions for the eligible diarization labels listed below.
+- Omit a label entirely if the transcript evidence is weak or ambiguous.
+- Each suggestion must include at least one direct evidence span quoted from the transcript.
+- Prefer names already present in the transcript or linked meeting attendees. Do not invent names.
+- Be conservative. If you are unsure, omit the suggestion instead of guessing.
+- `confidence` must be between 0.0 and 1.0.'''
+
+suggestion_schema = '''{
+    "suggestions": [
+        {
+            "diarization_label": "SPEAKER_00",
+            "suggested_name": "Alex Johnson",
+            "confidence": 0.93,
+            "rationale": "The speaker says 'I'm Alex' and the attendee list contains Alex Johnson.",
+            "signals": ["self_introduction", "meeting_attendee_exact"],
+            "evidence_spans": [
+                {
+                    "quote": "Hi everyone, I'm Alex from product.",
+                    "reason": "self_introduction",
+                    "start_seconds": 0.0,
+                    "end_seconds": 3.2
+                }
+            ]
+        }
+    ]
+}'''
+
+mapping_header = '''| Diarization Label | Inferred Name/Role |
+|---|---|'''

@@ -8,6 +8,16 @@ For a first test recording, follow [Make Your First Recording](GETTING_STARTED.m
 
 Guided tours introduce the dashboard, the recordings list and the transcript view the first time you open each. A tour that comes due while you are typing, in the search box or a note for instance, waits until you have left the field and paused for a moment. Closing one early, with Escape or its close button, counts the same as finishing it; leave the page while one is open or waiting and it comes back on your next visit. The transcript view's tour opens each tab it describes, in the side column as well, and when it ends you are back on the tabs you were on. **Settings > Help > Restart tours** shows them again, and **Create it again** brings back the Welcome to Nojoin demo meeting if you deleted it.
 
+## Developer Prompts
+
+When the operator enables [developer mode](DEPLOYMENT.md#developer-mode), administrators can open **Settings > Developer > Prompts**. Choose a prompt from the list grouped by feature. Its shipped default appears beside an override editor, with the placeholders and required literals that the prompt must retain. `${name}` placeholders substitute meeting data once; use `$$` for a literal dollar sign.
+
+**Save** applies the override across the installation on the next generation, without restarting. A refused save names the missing placeholder or required literal; correct the text and save again. **Restore default** removes that prompt's override. These actions do not regenerate existing notes or other results.
+
+Overrides are installation-wide instructions, not secrets, and anyone who can preview their notes sees the resolved prompt including those overrides.
+
+The status is **Default**, **Overridden**, **Default changed**, or **Default used** for an invalid stored override. When an update changes the shipped default, compare it beside your retained override before saving or restoring it. An invalid override remains editable while generation uses the default. Turning developer mode off hides this section and uses shipped defaults, retaining edits for later.
+
 ## Dashboard
 
 The dashboard holds:
