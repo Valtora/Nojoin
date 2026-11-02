@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNotificationStore } from "@/lib/notificationStore";
+import { pressWhileComposing } from "@/test/composition";
 import { httpError } from "@/test/httpErrors";
 import type { PeopleTag } from "@/types";
 
@@ -88,6 +89,20 @@ describe("PeopleTagSidebar", () => {
     expect(updatePeopleTag).toHaveBeenCalledWith(1, { name: "Suppliers" });
     expect(messages()).toEqual(["error: Tag with this name already exists"]);
     expect(screen.getByDisplayValue("Suppliers")).toBe(field);
+  });
+
+  it("leaves the Enter and Escape of an input method's composition to the rename", async () => {
+    await renderSidebar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Clients" }));
+    const field = screen.getByDisplayValue("Clients");
+    fireEvent.change(field, { target: { value: "きゃく" } });
+    pressWhileComposing(field, "Enter");
+    pressWhileComposing(field, "Escape");
+    await act(async () => {});
+
+    expect(updatePeopleTag).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("きゃく")).toBe(field);
   });
 
   it("starts the next rename from the saved name", async () => {

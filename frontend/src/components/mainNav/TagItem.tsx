@@ -6,6 +6,7 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
 import { getColorByKey } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import { Tag } from "@/types";
 
 import { InlineColorPicker } from "../ColorPicker";
@@ -245,6 +246,7 @@ export default function TagItem({
           }
           ref={inputRef}
           onKeyDown={(e: React.KeyboardEvent) => {
+            if (isImeComposing(e)) return;
             if (e.key === "Enter") void handleSubmit();
             if (e.key === "Escape") onCancelEdit();
           }}

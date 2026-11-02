@@ -22,6 +22,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
+import { isImeComposing } from "@/lib/imeComposition";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -380,6 +381,7 @@ export default function SpeakerPanel({
                           onChange={(e) => setRenameValue(e.target.value)}
                           onBlur={handleRenameSubmit}
                           onKeyDown={(e) => {
+                            if (isImeComposing(e)) return;
                             if (e.key === "Enter") handleRenameSubmit();
                             if (e.key === "Escape") setRenamingSpeaker(null);
                           }}

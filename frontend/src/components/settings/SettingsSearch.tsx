@@ -8,6 +8,7 @@ import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { Search } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { isImeComposing } from "@/lib/imeComposition";
 
 import {
   SETTINGS_CATEGORIES,
@@ -82,7 +83,7 @@ export default function SettingsSearch({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!results.length) {
+    if (!results.length || isImeComposing(event)) {
       return;
     }
 

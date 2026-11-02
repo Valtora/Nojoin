@@ -12,6 +12,7 @@ import { ArrowRightLeft, Search, User, Users, Plus } from "lucide-react";
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getColorByKey } from "@/lib/constants";
+import { isImeComposing } from "@/lib/imeComposition";
 import {
   buildGlobalSpeakerById,
   buildUniqueGlobalSpeakerIdByName,
@@ -320,6 +321,7 @@ export default function SpeakerAssignmentPopover({
   // speaker: two can share a name, and a live speaker is chosen by its label,
   // from the list.
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isImeComposing(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       if (exactOption) selectOption(exactOption);
