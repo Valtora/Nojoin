@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import TranscriptView from "@/components/TranscriptView";
+import { pressWhileComposing } from "@/test/composition";
 import type { TranscriptSegment } from "@/types";
 
 vi.mock("@/lib/notificationStore", () => ({
@@ -101,6 +102,32 @@ async function leave(editor: HTMLElement | null) {
 }
 
 describe("transcript saves", () => {
+  it("leaves the Enter and Escape of an input method's composition to it, in a line's text and a rename", async () => {
+    const onRenameSpeaker = vi.fn(async () => {});
+    const onUpdateSegmentText = vi.fn(async () => {});
+    renderView({ onRenameSpeaker, onUpdateSegmentText });
+
+    await openText("u1");
+    fireEvent.change(textEditor()!, { target: { value: "いちばん" } });
+    pressWhileComposing(textEditor()!, "Enter");
+    pressWhileComposing(textEditor()!, "Escape");
+    await act(async () => {});
+    expect(onUpdateSegmentText).not.toHaveBeenCalled();
+    expect(textEditor()).toHaveValue("いちばん");
+    await submit(textEditor(), "いちばん");
+    expect(onUpdateSegmentText).toHaveBeenCalledWith(SEGMENTS[1], "いちばん");
+
+    await openRename("u0");
+    fireEvent.change(renameInput()!, { target: { value: "アレックス" } });
+    pressWhileComposing(renameInput()!, "Enter");
+    pressWhileComposing(renameInput()!, "Escape");
+    await act(async () => {});
+    expect(onRenameSpeaker).not.toHaveBeenCalled();
+    expect(renameInput()).toHaveValue("アレックス");
+    await submit(renameInput(), "アレックス");
+    expect(onRenameSpeaker).toHaveBeenCalledWith("SPEAKER_A", "アレックス");
+  });
+
   it("sends a line's text while a rename saves", async () => {
     const rename = heldSave();
     const onUpdateSegmentText = vi.fn(async () => {});

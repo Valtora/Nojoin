@@ -42,9 +42,9 @@ The compose template is set up for GPU inference.
 
 ### GPU Requirements
 
-The worker image is built on CUDA 13.0, which needs:
+The worker image is built on CUDA 13.2, which needs:
 
-- **NVIDIA driver 580 or newer** on the host, Linux or Windows.
+- **NVIDIA driver 580 or newer** on the host, Linux or Windows. Every CUDA 13 release runs on a 580 driver, so the image does not need the newer driver that CUDA 13.2 itself shipped with.
 - **A Turing-generation GPU or later** (compute capability 7.5 or higher): GTX 16 and RTX 20 series and newer, including RTX 50 series. Maxwell, Pascal and Volta cards (GTX 900 and 10 series, TITAN V, Tesla P4, P40, P100 and V100) are not supported.
 
 Check both with:
@@ -173,7 +173,7 @@ Changing the transcription model downloads nothing by itself. **Settings > Trans
 
 After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation.
 
-`worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Its schedule file is `data/celerybeat-schedule`, so the cadence survives restarts. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
+`worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Beat records each job's last run in `data/celerybeat-schedule.json`, the `-s` path plus `.json`, and replaces the whole file after every task it sends, so the cadence survives restarts, even when Docker has to kill a busy `worker-io`. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
 
 ### Forced Aligner Assets
 
@@ -189,15 +189,17 @@ The native Qwen feature extractor now supplies the encoder's mel padding for arb
 
 ### Optional Native Speaker Assets
 
-The native Nemotron runtime supplies live speaker labels on eligible CUDA captures when `speaker_engine` is `auto` and live labels are enabled ([Live Speaker Labels](#live-speaker-labels)). The same install-level engine setting also enables the offline final speaker pass on CUDA captures, imports and reprocessing with verified assets and no recording speaker cap. The live-label master switch does not control final processing.
+The native Nemotron runtime supplies live speaker labels on eligible CUDA captures when `speaker_engine` is `auto` and live labels are enabled ([Live Speaker Labels](#live-speaker-labels)). The same install-level engine setting also enables the offline final speaker pass on CUDA captures, imports and reprocessing with verified assets. A recording with a speaker cap keeps the combined result only when it fits the cap ([Final Speaker Pass](ARCHITECTURE.md#final-speaker-pass)). The live-label master switch does not control final processing.
 
 An administrator can prepare it ahead of the first recording, or repair it, through **Settings > AI providers > Advanced > Model downloads > Nemotron**, or `POST /api/v1/system/models/prepare` with `{"target":"nemotron"}`. This prepares only Nemotron, regardless of the transcription engine. The existing `active` and `core` targets retain their meaning. `GET /api/v1/system/models/status` reports its download `state` (`absent`, `downloading`, `ready` or `failed`), manifest-derived `size_bytes`, `verification_state` (`missing`, `partial`, `verified` or `invalid`), revision and manifest identity. The row stays visible when unused and explains the CUDA/automatic-engine requirement. `DELETE /api/v1/system/models/nemotron` removes its managed cache through a worker, using the same shared-blob safeguards as other models. These operations require running workers; explicit preparation and deletion require an administrator.
 
 The three official files occupy **396,956,673 bytes**, including **396,954,592 bytes** of safetensors weights, under `$HF_HOME/hub/models--nvidia--Nemotron-3-Diarization/snapshots/f667ed73aee57d40cc39428eb768b4fd87a0a29e/`. `HF_HUB_CACHE` overrides the hub root when set. Keep that directory on the existing `model_cache` volume. Its `nojoin-verification.json` receipt sits in the repository directory, outside the upstream snapshot. A completed receipt and unchanged file metadata indicate completed preparation; the worker rehashes the actual files before its first model load. An interrupted download or a changed file is never reported as verified. Explicit preparation repairs it.
 
-The worker pins Transformers **5.20.2**, loads only the verified local safetensors snapshot with remote code disabled, and uses fp32/SDPA on CUDA. No checkpoint is baked into an image or fetched by settings saves, health polling or startup. The clean worker build adds **55,894,050 bytes** of installed package payload, excluding bytecode and console scripts; this is not a compressed image-layer measurement. The API has no Transformers dependency, and CPU-only workers do not import the native runtime's ML dependencies.
+The worker pins Transformers **5.21.0**, loads only the verified local safetensors snapshot with remote code disabled, and uses fp32/SDPA on CUDA. No checkpoint is baked into an image or fetched by settings saves or health polling, and startup never makes a first download. The clean worker build adds **55,894,050 bytes** of installed package payload, excluding bytecode and console scripts; this is not a compressed image-layer measurement. The API has no Transformers dependency, and CPU-only workers do not import the native runtime's ML dependencies.
 
-If verified assets are missing when live labels start, the worker uses clustering for the whole capture without requesting preparation. After a capture ends, an eligible CUDA final pass requests preparation when assets are absent and keeps community-1 for that recording. Imports and reprocessing use the same final-pass request, independently of the live-label setting. Requests are deduplicated: another recording does not queue a second download while one is pending. The final pass does not wait for the download; a later eligible capture can use Nemotron for live labels, and a later eligible final pass can use the union once preparation completes. CPU processing, `classic` mode and recordings with a speaker cap do not request final-pass preparation. A failed request needs administrator repair or another eligible recording's request. Preparation uses the IO lane, leaving live transcription and CPU segment transcodes available; administrators can prepare ahead to avoid first-use fallback. Native packet timing measures neither the complete live lane nor final processing.
+If verified assets are missing when live labels start, the worker uses clustering for the whole capture without requesting preparation. After a capture ends, an eligible CUDA final pass requests preparation when assets are absent and keeps community-1 for that recording. Imports and reprocessing use the same final-pass request, independently of the live-label setting. Requests are deduplicated: another recording does not queue a second download while one is pending. The final pass does not wait for the download; a later eligible capture can use Nemotron for live labels, and a later eligible final pass can use the union once preparation completes. CPU processing and `classic` mode do not request final-pass preparation. A recording with a speaker cap requests it as any other does. A failed request needs administrator repair or another eligible recording's request. Preparation uses the IO lane, leaving live transcription and CPU segment transcodes available; administrators can prepare ahead to avoid first-use fallback. Native packet timing measures neither the complete live lane nor final processing.
+
+An installed copy that no longer verifies is prepared again at startup. An upgrade that changes the asset manifest, as a new pinned Transformers version does, leaves a receipt naming the old manifest, which reads as `invalid`. The preparation the API queues when it starts sees that once the transcription engine is ready and queues Nemotron's preparation on `worker-io`, as it does the [forced aligner's](#forced-aligner-assets). That task re-hashes the unchanged files and writes a new receipt without downloading them, so live labels and the final pass use Nemotron again once it finishes. It is queued only for a copy prepared before, with `speaker_engine` on `auto` and `processing_device` other than `cpu`; a missing or interrupted copy still waits for a final pass or an administrator, as above.
 
 ### Worker Concurrency Lanes
 
@@ -247,7 +249,7 @@ Nojoin generates its JWT signing keyring at `data/.secret_keys.json` ([JWT Signi
 
 Restart after changing `.env` (`docker compose up -d`). The LLM provider, Ollama URL and Ollama context window variables take precedence over the same settings in `data/config.json`.
 
-Put each comment on a line of its own. Compose strips a comment that follows a value, so `KEY=value # note` sets `value`, but with nothing before the `#` it keeps the comment: `KEY= # note` sets the variable to `# note`. The `.env.example` of earlier releases had up to nine lines of that shape, and for those nine variables Nojoin reads a value that starts with `#` as empty, and the api and each worker log a warning naming them when they start ([Version Notes](#unreleased-changes-on-main)). Any other variable takes the comment as its value.
+Put each comment on a line of its own. Compose strips a comment that follows a value, so `KEY=value # note` sets `value`, but with nothing before the `#` it keeps the comment: `KEY= # note` sets the variable to `# note`. The `.env.example` of earlier releases had up to nine lines of that shape, and for those nine variables Nojoin reads a value that starts with `#` as empty, and the api and each worker log a warning naming them when they start ([Version Notes](#upgrading-from-before-300)). Any other variable takes the comment as its value.
 
 ### Always Set
 
@@ -298,7 +300,7 @@ MCP and telemetry:
 | --- | --- | --- |
 | `MCP_ENABLED` | `true` | `false` turns off the built-in [MCP connector](MCP.md): `/mcp`, its OAuth discovery documents and the connector authorisation endpoints all return 404. |
 | `MCP_ANONYMOUS_DISCOVERY` | `true` | Answers the MCP handshake and tool listing without authentication, so clients that cannot start OAuth from a `401` (Codex Desktop) can connect. Only generic tool metadata is exposed, and no tool runs without a signed-in user. `false` requires authentication for every request. |
-| `NOJOIN_TELEMETRY_ENABLED` | Empty | Empty sends the daily install heartbeat and leaves usage diagnostics to **Settings > Privacy**. `false` stops both, and `true` opts in to both. Either value makes the Settings toggle read-only and suppresses the one-time admin notice. The heartbeat goes out within fifteen minutes of starting, so set `false` before the first start if nothing may ever be sent. See [TELEMETRY.md](TELEMETRY.md). |
+| `NOJOIN_TELEMETRY_ENABLED` | Empty | Empty sends the daily install heartbeat and leaves usage diagnostics to **Settings > Privacy**. `false` stops both, and `true` opts in to both. Either value makes the setup wizard's checkbox and the Settings toggle read-only, and suppresses the one-time admin notice. The heartbeat goes out within fifteen minutes of starting, so set `false` before the first start if nothing may ever be sent. See [TELEMETRY.md](TELEMETRY.md). |
 | `NOJOIN_TELEMETRY_ENDPOINT` | Empty | Test override for the diagnostics ingest URL. The heartbeat goes to `heartbeat` beside it. Not in `.env.example`. |
 
 Operations:
@@ -394,7 +396,7 @@ Any other value is off. Workers re-read `config.json` before each task, so chang
 
 The install-wide `speaker_engine` key selects the speaker engine independently of that master switch:
 
-- `auto`, the default: use verified Nemotron on CUDA, with clustering running alongside it. Missing assets, model failure or two seconds of activity on each of its eight channels switch live labels to clustering for the rest of the capture. Settled labels and manual assignments stay authoritative; matching earlier voices is best-effort. Final processing runs community-1, releases it, then runs offline Nemotron. If Nemotron ever uses its eighth speaker channel, keep community-1; otherwise combine native turns with community speech outside them. Setting **Max Speakers** keeps community-1.
+- `auto`, the default: use verified Nemotron on CUDA, with clustering running alongside it. Missing assets, model failure or two seconds of activity on each of its eight channels switch live labels to clustering for the rest of the capture. Settled labels and manual assignments stay authoritative; matching earlier voices is best-effort. Final processing runs community-1, releases it, then runs offline Nemotron. If Nemotron ever uses its eighth speaker channel, keep community-1; otherwise combine native turns with community speech outside them. With **Max Speakers** set, keep that combination only if it has no more speakers than the limit, and otherwise community-1 with the limit. Live labels ignore **Max Speakers**.
 - `classic`: use live clustering and final community-1, without native loading or preparation.
 
 Set these keys in `data/config.json`; neither has a settings-page control. Owners and administrators can also save them through the settings API. Other users cannot change them or supply personal overrides. `speaker_engine` is resolved when labels first start for a capture and retained across worker restarts; a later change applies to subsequent captures. Final processing reads the current install selection on each run. An invalid stored engine value is logged and uses `auto`. Neither key enables live speaker labels on CPU-only hosts. CPU final processing retains community-1.
@@ -645,7 +647,11 @@ If your `docker-compose.yml` has its own `build:` directives, run `docker compos
 
 These run on the first start after the upgrade and need no action unless a note says so.
 
-#### Unreleased Changes on Main
+#### Upgrading From Before 3.1.0
+
+- **Beat schedule kept in a JSON file (#917).** Celery Beat on `worker-io` now keeps its schedule in `data/celerybeat-schedule.json`. It used to be a Berkeley DB file, `data/celerybeat-schedule.db`, which a `worker-io` killed at the end of `docker stop`'s grace period could leave unreadable; beat then deleted it and every periodic job waited a full interval again. The first start carries each job's last run over from the old file and deletes it. If the old file is unreadable, every interval starts again this once, and the `worker-io` log says so. The `-s /app/data/celerybeat-schedule` argument in `docker-compose.yml` stays as it is. A downgrade ignores the JSON file and starts a new schedule.
+
+#### Upgrading From Before 3.0.0
 
 - **Live word settling (#735).** Alembic revision `f2a6e1d9c735` adds `transcripts.change_sequence`, `0` by default, which a finished recording's page checks every 15 s to notice edits made elsewhere, and the nullable `transcripts.settling_state`, with no backfill: existing recordings keep their usual behaviour. A downgrade drops both. A newer worker fails on the missing columns until the API has migrated, so upgrade the API and the workers together.
 - **Settling on by default on GPU (#735).** New `live_text_settling` (`off`, `auto` or `always`), `live_text_settling_k` (3) and `live_text_settling_window_s` (10) keys in `data/config.json` ([ADMIN.md](ADMIN.md#transcription)). An installation without a stored mode inherits `auto`, so from the next capture a CUDA worker settles live words, and a CPU worker keeps whole-line live transcription. A stored `off` stays off. `always` settles on a CPU worker too, decoding the recent audio again at every step, which needs a lot of CPU and RAM.

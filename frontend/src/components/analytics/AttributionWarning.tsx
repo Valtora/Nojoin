@@ -32,7 +32,7 @@ const describe = (
     case "low_share_clusters":
       return `${reason.speaker_count} speakers hold under 3% of the talking each. If one person was split into several, these shares are wrong.`;
     case "speaker_cap_bound":
-      return `This meeting reached its speaker limit of ${reason.max_speakers}. Speakers beyond the limit were merged into the ones shown.`;
+      return `This meeting has as many speakers as its limit of ${reason.max_speakers}. If more people spoke, their speech is counted under the ones shown.`;
     case "unnamed_speakers":
       return `Not everyone has been named yet: ${namesFor(reason.speaker_keys, speakers)}.`;
     default:

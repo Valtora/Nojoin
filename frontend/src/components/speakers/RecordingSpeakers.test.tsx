@@ -37,7 +37,8 @@ describe("recording speaker orchestration", () => {
   it("refreshes People and the feed only after accepting live Add to People", async () => {
     const options = props();
     render(<RecordingSpeakers {...options} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add to People" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Alex" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add to People" }));
     await waitFor(() => expect(options.onPeopleChanged).toHaveBeenCalledOnce());
     expect(options.liveTranscript.refresh).toHaveBeenCalledOnce();
     expect(options.liveTranscript.applyLiveSpeakerNames).toHaveBeenCalledWith({ LIVE_PROVISIONAL_1: "Alex" });
@@ -80,7 +81,8 @@ describe("recording speaker orchestration", () => {
     mocks.name.mockRejectedValue({ response: { data: { detail: "This source changed. Try again." } } });
     const options = props();
     render(<RecordingSpeakers {...options} />);
-    fireEvent.click(screen.getByRole("button", { name: "Change identity for Alex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Alex" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Change identity" }));
     const input = screen.getByPlaceholderText("Search or add...");
     fireEvent.change(input, { target: { value: "Robin" } });
     fireEvent.keyDown(input, { key: "Enter" });

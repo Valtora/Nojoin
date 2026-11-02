@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { pressWhileComposing } from "@/test/composition";
 import type { Tag } from "@/types";
 
 import TagItem from "./TagItem";
@@ -35,6 +36,23 @@ function renderEditing(onRename: (name: string) => Promise<boolean>) {
 }
 
 describe("TagItem rename", () => {
+  it("leaves the Enter and Escape of an input method's composition to it", async () => {
+    const onRename = vi.fn().mockResolvedValue(true);
+    const { input, onCancelEdit } = renderEditing(onRename);
+
+    input.focus();
+    fireEvent.change(input, { target: { value: "きゃく" } });
+    pressWhileComposing(input, "Enter");
+    pressWhileComposing(input, "Escape");
+    expect(onRename).not.toHaveBeenCalled();
+    expect(onCancelEdit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    expect(onRename).toHaveBeenCalledWith("きゃく");
+  });
+
   it("keeps a refused name in the field while it has focus", async () => {
     const onRename = vi.fn().mockResolvedValue(false);
     const { input, onCancelEdit } = renderEditing(onRename);

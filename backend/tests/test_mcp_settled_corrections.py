@@ -8,7 +8,6 @@ corrections still apply there, after the same scope and ownership checks.
 from __future__ import annotations
 
 import pytest
-from fastapi import HTTPException
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import text
 from sqlmodel import select
@@ -83,14 +82,9 @@ async def test_a_settled_recording_takes_mcp_corrections_after_scope_and_ownersh
         id=test_user.id + 1, username="stranger", hashed_password="x", settings={}
     )
     bind_mcp_identity(stranger)
-    # Called directly, the tool raises the route's refusal; the server hands
-    # the assistant its message.
-    with pytest.raises(HTTPException) as refused:
+    # The route's refusal reaches the assistant as its message.
+    with pytest.raises(ToolError, match="^Recording not found$"):
         await correct_utterance_text(public_id, "u-1", "Not yours.")
-    assert (refused.value.status_code, refused.value.detail) == (
-        404,
-        "Recording not found",
-    )
     assert await _line(session_maker) == ("Hello everyone.", None)
 
     bind_mcp_identity(test_user)

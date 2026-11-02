@@ -2,7 +2,7 @@ import type { ComponentPropsWithoutRef } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CaptureProvider } from "@/lib/capture/CaptureProvider";
+import { CaptureProvider, useCapture } from "@/lib/capture/CaptureProvider";
 import { audioTrack, mediaStream } from "@/lib/capture/releaseMicrophone.fixtures";
 import { clearPausedCaptureContext } from "@/lib/capture/shared";
 import { createSegmentUploader } from "@/lib/capture/uploader";
@@ -13,6 +13,12 @@ import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 import CaptureShell from "./CaptureShell";
 import MeetingControls from "./MeetingControls";
 import RecordingCaptureSlot from "./RecordingCaptureSlot";
+import LiveMeetingControls from "./LiveMeetingControls";
+
+function MeetingEntry() {
+  const { runtimeActive } = useCapture();
+  return <><MeetingControls variant="dashboard" />{runtimeActive ? <LiveMeetingControls size="bar" /> : null}</>;
+}
 
 // Which tab gets the header's transport, with the real provider, controller,
 // recovery dialog, slot and live controls. Browser media and the network are
@@ -132,7 +138,7 @@ const recordThenReload = async ({ uploaded = true } = {}) => {
   pathname = "/";
   api.getUnfinishedCaptures.mockResolvedValue([]);
   const oldPage = render(
-    <CaptureProvider><CaptureShell><MeetingControls variant="dashboard" /></CaptureShell></CaptureProvider>,
+    <CaptureProvider><CaptureShell><MeetingEntry /></CaptureShell></CaptureProvider>,
   );
   await act(async () => {});
   fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));

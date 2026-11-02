@@ -8,6 +8,7 @@ import {
   within,
 } from "@/test/renderWithProviders";
 import type { Tag } from "@/types";
+import { pressWhileComposing } from "@/test/composition";
 import { selectorFor } from "@/test/depthSelectors";
 import { styleRules } from "@/test/styleRules";
 import { activeTransitions, animatesWidth } from "@/test/widthTransition";
@@ -218,6 +219,24 @@ describe("MainNav", () => {
     renderWithProviders(<MainNav />);
     await waitFor(() => {
       expect(screen.getAllByText("Child").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("leaves the Enter and Escape of an input method's composition to the new tag's name", async () => {
+    createTag.mockResolvedValue(makeTag({ id: 9, name: "きゃく" }));
+    renderWithProviders(<MainNav />);
+
+    fireEvent.click(await screen.findByTitle("Add tag"));
+    const name = screen.getByPlaceholderText("Tag name...");
+    fireEvent.change(name, { target: { value: "きゃく" } });
+    pressWhileComposing(name, "Enter");
+    pressWhileComposing(name, "Escape");
+    expect(createTag).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText("Tag name...")).toHaveValue("きゃく");
+
+    fireEvent.keyDown(name, { key: "Enter" });
+    await waitFor(() => {
+      expect(createTag).toHaveBeenCalledWith("きゃく", expect.any(String), undefined);
     });
   });
 

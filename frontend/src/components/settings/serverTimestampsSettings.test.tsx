@@ -33,6 +33,10 @@ import ConnectedAppsSettings from "./ConnectedAppsSettings";
 import InvitesTab from "./InvitesTab";
 import DocumentsView from "../DocumentsView";
 
+// A day reads "27 Oct 2026" whatever the browser's locale, as the recordings list shows it.
+const day = (instant: Date, timeZone: string) =>
+  instant.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone });
+
 // The browser's zone and the Nojoin setting differ, and every instant shown
 // must be in the setting's zone.
 describe.each([
@@ -64,7 +68,8 @@ describe.each([
       mocks.getInvitations.mockResolvedValue([invitation]);
       render(<InvitesTab />);
 
-      const expectedDay = new Date(`${expiresAt}Z`).toLocaleDateString(undefined, { timeZone: settingZone });
+      const expectedDay = day(new Date(`${expiresAt}Z`), settingZone);
+      expect(expectedDay).toMatch(/^2[678] Oct 2026$/);
       expect(await screen.findByText(`Used 0 of 1. Expires ${expectedDay}.`)).toBeVisible();
     },
   );
@@ -81,7 +86,8 @@ describe.each([
       render(<DocumentsView recordingId="rec-1" />);
 
       const row = (await screen.findByText("Agenda.pdf")).closest("tr")!;
-      const expectedDay = new Date(`${createdAt}Z`).toLocaleDateString(undefined, { timeZone: settingZone });
+      const expectedDay = day(new Date(`${createdAt}Z`), settingZone);
+      expect(expectedDay).toMatch(/^2[678] Oct 2026$/);
       expect(within(row).getByText(expectedDay)).toBeVisible();
     },
   );
@@ -164,8 +170,7 @@ describe.each([
       expect(await screen.findByText(`Limited until ${expectedTime}`)).toBeVisible();
       // The rollup is the civil date 27 October, whatever the browser's zone
       // and the setting.
-      const lastUsed = new Date(2026, 9, 27).toLocaleDateString();
-      expect(screen.getByText(`Last used ${lastUsed}`)).toBeVisible();
+      expect(screen.getByText("Last used 27 Oct 2026")).toBeVisible();
     },
   );
 });

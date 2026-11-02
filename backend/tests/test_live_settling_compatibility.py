@@ -1,5 +1,6 @@
 """Explicit live reads and edits work while compatibility JSON is deferred."""
 
+import json
 from dataclasses import replace
 from typing import Any
 
@@ -93,6 +94,54 @@ async def test_live_edits_materialise_current_lines_before_mutating(
         canonical = await session.run_sync(build_transcript_segments_for_read, 1)
     assert canonical[0]["text"].startswith("Edited words")
     assert canonical[0]["text_manually_edited"] is True
+
+
+async def test_a_replace_rewrites_a_settled_line_edited_by_hand(
+    client: Any, session_maker: Any
+) -> None:
+    """A hand edit on a settling transcript is one protected, untimed piece
+    that later passes keep. A find and replace over it is the person's edit
+    too, so it replaces that piece rather than skipping the locked line, which
+    stays protected (issue #842)."""
+    await _defer(session_maker)
+    edited = await client.patch(
+        f"/api/v1/transcripts/{REC}/utterances/live-1-0/text",
+        json={"text": "Edited words"},
+    )
+    assert edited.status_code == 200, edited.text
+
+    response = await client.post(
+        f"/api/v1/transcripts/{REC}/replace",
+        json={"find_text": "edited", "replace_text": "Revised"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["segments"][0]["text"] == "Revised words"
+    async with session_maker() as session:
+        canonical = await session.run_sync(build_transcript_segments_for_read, 1)
+        payload, locked = (
+            await session.execute(
+                text(
+                    "SELECT confidence_payload, manual_text_locked "
+                    "FROM transcript_utterances WHERE public_id = 'live-1-0'"
+                )
+            )
+        ).one()
+    assert (canonical[0]["text"], canonical[0]["text_manually_edited"]) == (
+        "Revised words",
+        True,
+    )
+    assert bool(locked) is True
+    payload = json.loads(payload) if isinstance(payload, str) else payload
+    assert payload["human_protection"]["replacement"]["text"] == "Revised words"
+    assert [
+        atom["word"] for segment in payload["asr_segments"] for atom in segment["words"]
+    ] == ["Revised words"]
+    # Only the line that matched was rewritten.
+    assert [line["text"] for line in canonical[1:3]] == [
+        "live line 1 with a few more words to say",
+        "live line 2 with a few more words to say",
+    ]
 
 
 async def test_people_samples_read_current_live_lines_without_materialising_snapshot(

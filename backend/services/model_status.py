@@ -29,7 +29,7 @@ def add_nemotron_preparation_status(status: dict[str, Any]) -> None:
     native["size_bytes"] = sum(
         entry["size"] for entry in load_asset_manifest()["files"]
     )
-    native["unused_reason"] = _unused_reason()
+    native["unused_reason"] = nemotron_unused_reason()
     if "forced_aligner" in status:
         aligner = status["forced_aligner"]
         progress = get_download_progress("forced_aligner")
@@ -76,7 +76,8 @@ def _preparation_state(
     return "absent"
 
 
-def _unused_reason() -> str | None:
+def nemotron_unused_reason() -> str | None:
+    """Why the install's settings leave Nemotron unused, or None if it is used."""
     if config_manager.get("speaker_engine", "auto") == "classic":
         return "Unused while the classic speaker engine is selected."
     if str(config_manager.get("processing_device", "auto")).lower() == "cpu":

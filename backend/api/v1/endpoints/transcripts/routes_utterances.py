@@ -36,7 +36,7 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline.guards import settling_required
 from backend.utils.canonical_pipeline.live_settling import settling_enabled
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
-from backend.utils.speaker_names.live import live_speaker_names
+from backend.utils.speaker_names.live import live_speaker_groups, live_speaker_names
 
 from .helpers import (
     TranscriptSegmentSpeakerUpdate,
@@ -129,9 +129,18 @@ async def get_transcript_utterances(
             recording.id,
             after_revision=after_revision,
         )
-        return delta, live_speaker_names(sync_session, recording.id)
+        names = live_speaker_names(sync_session, recording.id)
+        # Only while a current line carries the merged label, as for names.
+        merges = {
+            label: into
+            for label, into in live_speaker_groups(sync_session, recording.id).items()
+            if label in names
+        }
+        return delta, names, merges
 
-    (revision, utterances, tombstones), live_names = await db.run_sync(_read_delta)
+    (revision, utterances, tombstones), live_names, live_merges = await db.run_sync(
+        _read_delta
+    )
     if not utterances and transcript.segments and not settling_enabled(transcript):
         utterances = build_transient_utterance_payloads_from_segments(transcript)
         if after_revision is not None and after_revision >= 0:
@@ -168,6 +177,7 @@ async def get_transcript_utterances(
             for speaker in speakers
         ],
         live_speaker_names=live_names,
+        live_speaker_merges=live_merges,
         live_behind=live_behind,
     )
     # Backfill can write, under the fence it takes itself; commit what it wrote.

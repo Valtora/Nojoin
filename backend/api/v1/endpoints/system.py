@@ -353,7 +353,10 @@ class SetupRequest(BaseModel):
     include_demo_recording: bool = True
     # The wizard checkbox is this install's telemetry consent, so a first-run
     # install never needs the admin notice and can start pinging immediately.
-    enable_telemetry: bool = True
+    # None when setup sends no choice, as the wizard does after seeing a
+    # NOJOIN_TELEMETRY_ENABLED pin: none is recorded, so an absent field can
+    # never stand in for consent. Ignored while the pin is set, whatever it is.
+    enable_telemetry: Optional[bool] = None
 
     @field_validator("password")
     @classmethod
@@ -522,11 +525,12 @@ async def setup_system(
 
     # The wizard checkbox is an explicit, visible consent, so it also retires
     # the admin notice: a first-run install never needs to be told after the
-    # fact, and can start pinging on the next beat tick.
+    # fact, and can start pinging on the next beat tick. Under an environment
+    # pin, or when setup sends no choice, there is none to record.
     from backend.utils import telemetry
 
     try:
-        telemetry.set_enabled(setup_in.enable_telemetry)
+        telemetry.record_first_run_choice(setup_in.enable_telemetry)
     except Exception as e:  # noqa: BLE001 -- boundary: setup must not fail on a telemetry write
         logger.error("Failed to persist first-run telemetry choice: %s", e)
 

@@ -190,10 +190,12 @@ async def test_local_speaker_split_keeps_assignment_through_final_drift(
             lambda sync: finalize_utterances_from_segments(
                 sync,
                 recording_id=1,
+                # The split line is 0-1.5 s. An untimed final segment takes
+                # its speaker only where the line covers most of it.
                 segments=[
                     {
                         "start": 0,
-                        "end": 4,
+                        "end": 1.6,
                         "text": "Final segmentation drift.",
                         "speaker": "SPEAKER_99",
                     }

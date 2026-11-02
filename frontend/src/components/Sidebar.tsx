@@ -30,8 +30,8 @@ import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useHydrated } from "@/lib/useHydrated";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "@/lib/useDebouncedValue";
 import {
-  getRecordings,
   getGlobalSpeakers,
   RecordingFilters,
   getTags,
@@ -48,28 +48,37 @@ import {
   permanentDeleteConfirmation,
   type ListActionId,
 } from "./recordings/recordingListActions";
-import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
+import {
+  RECORDING_UPDATED_EVENT,
+  dispatchRecordingRenamed,
+  recordingRenameOf,
+  subscribeRecordingRemoved,
+  withRecordingName,
+} from "@/lib/recordingEvents";
 import MonthCalendar from "./MonthCalendar";
-import { formatTimeZoneLocale, localDayRangeToUtc } from "@/lib/timezone";
+import { formatTimeZoneDay, formatTimeZoneLocale, localDayRangeToUtc } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { format, startOfMonth } from "date-fns";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
+import { DISCARD_RECORDING_MESSAGE, DISCARD_RECORDING_TITLE } from "./recordings/DiscardRecordingDialog";
 import BatchActionBar from "./BatchActionBar";
 import ReprocessDialog from "./ReprocessDialog";
 import { GlobalSpeaker } from "@/types";
 import { useNavigationStore } from "@/lib/store";
-import { useNotificationStore } from "@/lib/notificationStore";
-import { createFuse } from "@/lib/searchUtils";
 import { getColorByKey } from "@/lib/constants";
 import { useViewportDensity } from "./ViewportDensityProvider";
 import { Badge } from "./ui/Badge";
 import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingNotes";
 import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
+import { useRecordingListPages } from "./recordings/_hooks/useRecordingListPages";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
 import RecordingAttentionBadge from "./RecordingAttentionBadge";
+import RecordingTagDots from "./recordings/RecordingTagDots";
+import RecordingListFooter from "./recordings/RecordingListFooter";
+import { RECORDINGS_PAGE_SIZE } from "./recordings/recordingListPages";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 
 interface RowMenuItem {
@@ -93,13 +102,7 @@ const formatDurationString = (seconds?: number) => {
 const formatDate = (dateString: string, timeZone: string) => {
   const date = parseServerTimestamp(dateString);
   if (!date) return "Unknown date";
-  return formatTimeZoneLocale(
-    date,
-    timeZone,
-    "date",
-    { day: "numeric", month: "short", year: "numeric" },
-    "en-GB",
-  );
+  return formatTimeZoneDay(date, timeZone);
 };
 
 const formatTime = (date: Date, timeZone: string) => {
@@ -144,7 +147,16 @@ const StatusIcon = ({ recording }: { recording: Recording }) => {
     case RecordingStatus.PAUSED:
       return <Pause className="w-3 h-3 text-status-warning-fg" />;
     case RecordingStatus.ERROR:
-      return <AlertCircle className="w-3 h-3 text-danger-text" />;
+      return (
+        <span
+          role="img"
+          aria-label="Processing failed"
+          className="cursor-help"
+          title="Processing failed. Open the recording to see why and retry."
+        >
+          <AlertCircle className="w-3 h-3 text-danger-text" />
+        </span>
+      );
     default:
       return <HelpCircle className="w-3 h-3 text-rail-fg-muted" />;
   }
@@ -153,7 +165,6 @@ const StatusIcon = ({ recording }: { recording: Recording }) => {
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { addNotification } = useNotificationStore();
   const { refreshPausedRecording } = useCapture();
   const actions = useRecordingActions();
   const unsentRecordings = useUnsentRecordings();
@@ -171,8 +182,6 @@ export default function Sidebar() {
   } = useNavigationStore();
 
   const mounted = useHydrated();
-  const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [hasLoadedRecordings, setHasLoadedRecordings] = useState(false);
   // The menu's items are built when it opens, as they act on the list. A
   // right-click opens it at the pointer; a row's actions button anchors it.
   const [contextMenu, setContextMenu] = useState<{
@@ -211,7 +220,7 @@ export default function Sidebar() {
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
   const [showFilters, setShowFilters] = useState(false);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [selectedSpeakers, setSelectedSpeakers] = useState<number[]>([]);
@@ -283,37 +292,58 @@ export default function Sidebar() {
     return () => window.removeEventListener("tags-updated", handleTagsUpdated);
   }, []);
 
+  // Search, the filters and the view all go to the server, which pages the
+  // list newest first (issues #900 and #901).
+  const listFilters = useMemo(() => {
+    const filters: RecordingFilters = {};
+    const query = debouncedSearchQuery.trim();
+    if (query) filters.q = query;
+    if ((dateMode === "range" || dateMode === "after") && dateRange.start) {
+      filters.start_date = localDayRangeToUtc(dateRange.start, userTimeZone).startISO;
+    }
+    if ((dateMode === "range" || dateMode === "before") && dateRange.end) {
+      filters.end_date = localDayRangeToUtc(dateRange.end, userTimeZone).endISO;
+    }
+    if (selectedSpeakers.length > 0) filters.speaker_ids = selectedSpeakers;
+    if (selectedTagIds.length > 0) filters.tag_ids = selectedTagIds;
+    if (currentView === "archived") filters.only_archived = true;
+    if (currentView === "deleted") filters.only_deleted = true;
+    return filters;
+  }, [
+    debouncedSearchQuery,
+    dateMode,
+    dateRange,
+    userTimeZone,
+    selectedSpeakers,
+    selectedTagIds,
+    currentView,
+  ]);
+
+  // A hidden tab's badges can wait for the first refresh after it shows.
+  const refreshBadges = useCallback(() => {
+    if (document.visibilityState !== "hidden") {
+      void refreshPausedRecording().catch(() => {});
+    }
+  }, [refreshPausedRecording]);
+
+  const list = useRecordingListPages(listFilters, refreshBadges);
+  const {
+    recordings,
+    hasLoaded: hasLoadedRecordings,
+    refresh: refreshList,
+    update: updateRows,
+  } = list;
+  const fetchRecordings = useCallback(() => refreshList("all"), [refreshList]);
+
   useRecordingStatusNotifications(recordings);
   useForgetNotesOfDeletedRecordings(hasLoadedRecordings ? recordings : null);
 
-  const filteredRecordings = useMemo(() => {
-    if (!debouncedSearchQuery) return recordings;
-
-    const fuse = createFuse(recordings, [
-      "name",
-      "status",
-      "tags.name",
-      "speakers.local_name",
-      "speakers.global_speaker.name",
-    ]);
-
-    return fuse.search(debouncedSearchQuery).map((result) => result.item);
-  }, [recordings, debouncedSearchQuery]);
-
   const shownIds = useMemo(
-    () => filteredRecordings.map((recording) => recording.id),
-    [filteredRecordings],
+    () => recordings.map((recording) => recording.id),
+    [recordings],
   );
   const selection = useRecordingSelection(shownIds);
   const longPress = useTouchLongPress(selection.toggle);
-
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
 
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -332,97 +362,41 @@ export default function Sidebar() {
   });
 
 
-  const fetchRecordings = useCallback(async () => {
-    try {
-      const filters: RecordingFilters = {};
-      // Uses client-side search; 'q' parameter omitted.
-
-      if (dateMode === "range") {
-        if (dateRange.start)
-          filters.start_date = localDayRangeToUtc(
-            dateRange.start,
-            userTimeZone,
-          ).startISO;
-        if (dateRange.end)
-          filters.end_date = localDayRangeToUtc(
-            dateRange.end,
-            userTimeZone,
-          ).endISO;
-      } else if (dateMode === "before") {
-        if (dateRange.end)
-          filters.end_date = localDayRangeToUtc(
-            dateRange.end,
-            userTimeZone,
-          ).endISO;
-      } else if (dateMode === "after") {
-        if (dateRange.start)
-          filters.start_date = localDayRangeToUtc(
-            dateRange.start,
-            userTimeZone,
-          ).startISO;
-      }
-
-      if (selectedSpeakers.length > 0) filters.speaker_ids = selectedSpeakers;
-      if (selectedTagIds.length > 0) filters.tag_ids = selectedTagIds;
-
-      // Apply view-based filters
-      if (currentView === "archived") {
-        filters.only_archived = true;
-      } else if (currentView === "deleted") {
-        filters.only_deleted = true;
-      }
-
-      const data = await getRecordings(filters);
-      setRecordings(data);
-      setHasLoadedRecordings(true);
-      // A hidden tab's badges can wait for the first refresh after it shows.
-      if (document.visibilityState !== "hidden") {
-        void refreshPausedRecording().catch(() => {});
-      }
-
-        } catch (error: unknown) {
-      console.error("Failed to fetch recordings:", error);
-    }
-  }, [
-    dateRange,
-    dateMode,
-    selectedSpeakers,
-    selectedTagIds,
-    currentView,
-    userTimeZone,
-    refreshPausedRecording,
-  ]);
-
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchRecordings only sets state once its request resolves; the rule cannot see past the await
-    fetchRecordings();
-    const interval = setInterval(fetchRecordings, 15000);
+    const interval = setInterval(() => refreshList("poll"), 15000);
     return () => clearInterval(interval);
-  }, [fetchRecordings]);
+  }, [refreshList]);
 
   useEffect(() => {
     getGlobalSpeakers().then(setGlobalSpeakers).catch(console.error);
   }, []);
 
-  // Listen for recording-updated events
+  // A rename is applied in place. Anything else, or a tag change, re-reads the list.
   useEffect(() => {
-    const handleUpdate = () => fetchRecordings();
-    window.addEventListener("recording-updated", handleUpdate);
+    const handleUpdate = (event: Event) => {
+      const rename = recordingRenameOf(event);
+      if (rename) {
+        updateRows((prev) => withRecordingName(prev, rename));
+        return;
+      }
+      fetchRecordings();
+    };
+    window.addEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
     window.addEventListener("tags-updated", handleUpdate);
     return () => {
-      window.removeEventListener("recording-updated", handleUpdate);
+      window.removeEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
       window.removeEventListener("tags-updated", handleUpdate);
     };
-  }, [fetchRecordings]);
+  }, [fetchRecordings, updateRows]);
 
   // A discard from any surface drops the row here immediately rather than
   // leaving it on screen until the 15s poll comes round.
   useEffect(
     () =>
       subscribeRecordingRemoved((id) => {
-        setRecordings((prev) => prev.filter((r) => r.id !== id));
+        updateRows((prev) => prev.filter((r) => r.id !== id));
       }),
-    [],
+    [updateRows],
   );
 
   // Clear selection when view changes
@@ -468,6 +442,7 @@ export default function Sidebar() {
   };
 
   const listRef = useRef<HTMLUListElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Where focus goes once the rows an action took away have gone, or the
   // batch bar holding focus has closed: a row link by id, or the search box.
@@ -512,7 +487,7 @@ export default function Sidebar() {
 
   const removeRows = (ids: RecordingId[]) => {
     const gone = new Set(ids);
-    setRecordings((prev) => prev.filter((r) => !gone.has(r.id)));
+    updateRows((prev) => prev.filter((r) => !gone.has(r.id)));
   };
 
   const leaveIfOpen = (ids: RecordingId[]) => {
@@ -622,19 +597,19 @@ export default function Sidebar() {
   const handleRenameSubmit = async (id: RecordingId) => {
     if (!renameValue.trim()) return;
 
-    setRecordings((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, name: renameValue } : r)),
-    );
+    const previousName = recordings.find((r) => r.id === id)?.name;
     setRenamingId(null);
 
-    // Dispatch event for optimistic update elsewhere
-    window.dispatchEvent(
-      new CustomEvent("recording-updated", {
-        detail: { id, name: renameValue },
-      }),
-    );
+    // This list, the open recording and the dashboard take the name now, and
+    // a refusal puts the old one back in each.
+    dispatchRecordingRenamed(id, renameValue);
 
-    await actions.rename(id, renameValue, { onError: fetchRecordings });
+    await actions.rename(id, renameValue, {
+      onError: () => {
+        if (previousName !== undefined) dispatchRecordingRenamed(id, previousName);
+        void fetchRecordings();
+      },
+    });
   };
 
   const handleInferSpeakers = async (id: RecordingId) => {
@@ -653,13 +628,12 @@ export default function Sidebar() {
     confirmFocusRef.current = null;
     setConfirmModal({
       isOpen: true,
-      title: "Discard Recording",
-      message:
-        "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.",
+      title: DISCARD_RECORDING_TITLE,
+      message: DISCARD_RECORDING_MESSAGE,
       isDangerous: true,
       confirmText: "Discard",
       onConfirm: async () => {
-        setRecordings((prev) => prev.filter((r) => r.id !== id));
+        updateRows((prev) => prev.filter((r) => r.id !== id));
         await actions.discard(id, {
           onSuccess: () => {
             if (pathname === `/recordings/${id}`) {
@@ -721,14 +695,19 @@ export default function Sidebar() {
           label: "Rename",
           onClick: () => handleRenameStart(recording.id, recording.name),
         },
-        {
-          label: "Retry Speaker Inference",
-          onClick: () => handleInferSpeakers(recording.id),
-        },
-        ...(recording.status === RecordingStatus.PROCESSING ||
-        recording.status === RecordingStatus.QUEUED ||
-        recording.status === RecordingStatus.UPLOADING ||
-        recording.status === RecordingStatus.PAUSED
+        // Only a finished meeting: the run holds the recording in processing
+        // and hands it back as processed, which would end a capture (#832).
+        ...(recording.status === RecordingStatus.PROCESSED
+          ? [
+              {
+                label: "Retry Speaker Inference",
+                onClick: () => handleInferSpeakers(recording.id),
+              },
+            ]
+          : []),
+        // A finished meeting regenerating notes, inferring speakers or being
+        // reprocessed shows as processing too, and goes to the bin (#833).
+        ...(recording.discardable
           ? [
               {
                 label: "Discard Recording",
@@ -820,6 +799,19 @@ export default function Sidebar() {
     selectedSpeakers.length > 0 ||
     selectedTagIds.length > 0;
 
+  // A new search or filter is on its way while the last one's rows stay up.
+  const isSearching = list.isLoadingQuery && hasLoadedRecordings;
+  const appliedSearch = listFilters.q ?? "";
+  const searchStatus = !appliedSearch
+    ? ""
+    : isSearching
+      ? "Searching..."
+      : recordings.length === 0
+        ? "No recordings match."
+        : list.hasMore
+          ? `${recordings.length} matches shown, more load as you scroll.`
+          : `${recordings.length} ${recordings.length === 1 ? "match" : "matches"}.`;
+
   // Prevent hydration mismatch
   const view = mounted ? currentView : "recordings";
   const currentViewLabel =
@@ -827,6 +819,13 @@ export default function Sidebar() {
 
   // Determine if we should hide the sidebar on mobile
   const isRecordingView = pathname?.startsWith("/recordings/");
+
+  // Tag dots sit in the gutter the hover checkbox keeps on a fine pointer. On
+  // touch that gutter opens only while selecting, so a list holding any
+  // tagged meeting keeps it open on every card and the titles stay aligned.
+  const reserveTagGutter = recordings.some(
+    (recording) => (recording.tags?.length ?? 0) > 0,
+  );
 
   // Collapse and expand animate the width. A drag sets it on every pointer
   // move, so it goes without a transition and the edge stays on the pointer.
@@ -885,7 +884,7 @@ export default function Sidebar() {
       // bar's sr-only status line, inside this scroller. Without it their
       // containing block is the aside, and the full list's height leaks out
       // as scrollable overflow on the app shell.
-      <div className="relative flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
           <MeetingControls
@@ -915,24 +914,41 @@ export default function Sidebar() {
         </div>
 
         <div className="space-y-2">
+          <p aria-live="polite" className="sr-only">
+            {searchStatus}
+          </p>
           <div className="flex items-center gap-1">
             <div className="relative min-w-0 flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
+              {isSearching ? (
+                <Loader2
+                  aria-hidden="true"
+                  className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-contrast-icon-muted"
+                />
+              ) : (
+                <Search
+                  aria-hidden="true"
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted"
+                />
+              )}
               <InputBase
                 data-ui-fill="control"
                 data-ui-border="full"
                 ref={searchInputRef}
                 type="text"
                 placeholder="Search..."
+                aria-label="Search recordings"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-9 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
               />
               <ButtonBase
                 onClick={() => setShowFilters(!showFilters)}
+                aria-label="Filter recordings"
+                title="Filter recordings"
+                aria-expanded={showFilters}
                 className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-rail-item-hover ${showFilters ? "text-action-text" : "text-contrast-icon-muted"}`}
               >
-                <Filter className="w-4 h-4" />
+                <Filter aria-hidden="true" className="w-4 h-4" />
               </ButtonBase>
             </div>
             <IconButton
@@ -1108,20 +1124,44 @@ export default function Sidebar() {
       </div>
 
       {/* Recording List */}
-      {filteredRecordings.length === 0 && (
+      {recordings.length === 0 && (
         <div className="text-center p-4 m-2 text-rail-fg-muted text-sm">
-          <p>{getEmptyMessage().main}</p>
-          <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
-          {/* Only for a library that is really empty: not before the first
-              fetch lands, and not when a search or filter hides the rows. */}
-          {view === "recordings" && hasLoadedRecordings && !hasActiveFilters && (
-            <div className="mt-3">
-              <ImportAudioButton />
-            </div>
+          {list.loadFailed ? (
+            <>
+              <p role="alert">Could not load recordings.</p>
+              <ButtonBase
+                onClick={fetchRecordings}
+                className="mt-2 rounded px-2 py-1 text-xs font-medium text-action-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              >
+                Try again
+              </ButtonBase>
+            </>
+          ) : list.isLoadingQuery ? (
+            <p className="flex items-center justify-center gap-2">
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              Loading recordings...
+            </p>
+          ) : hasActiveFilters ? (
+            <>
+              <p>No recordings match.</p>
+              <p className="mt-1 text-xs">Try other words, or clear the search and filters.</p>
+            </>
+          ) : (
+            <>
+              <p>{getEmptyMessage().main}</p>
+              <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
+              {/* Only for a library that is really empty, not when a search
+                  or filter hides the rows. */}
+              {view === "recordings" && (
+                <div className="mt-3">
+                  <ImportAudioButton />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
-      {filteredRecordings.length > 0 && (
+      {recordings.length > 0 && (
         // Escape anywhere in the list, header checkbox included, clears the selection.
         <div onKeyDown={handleListKeyDown}>
           <label className="flex w-fit cursor-pointer items-center gap-2 px-5 pt-2 text-xs text-rail-fg-muted pointer-coarse:min-h-[44px] pointer-coarse:pt-0">
@@ -1141,12 +1181,18 @@ export default function Sidebar() {
             id="recordings-list"
             ref={listRef}
             aria-label={`${currentViewLabel} list`}
+            aria-busy={list.isLoadingQuery || undefined}
             className="@container p-2 space-y-2"
           >
-            {filteredRecordings.map((recording) => {
+            {recordings.map((recording) => {
               const isActive = pathname === `/recordings/${recording.id}`;
               const startDate = parseServerTimestamp(recording.created_at);
-              const endDate = startDate
+              // A capture's length is known only once Stop has joined its
+              // audio, so until then the row shows when it started and no
+              // length, rather than 0s and an end time equal to the start.
+              const lengthPending = !recording.duration_seconds &&
+                recording.status !== RecordingStatus.PROCESSED;
+              const endDate = startDate && !lengthPending
                 ? new Date(startDate.getTime() + (recording.duration_seconds || 0) * 1000)
                 : null;
               const isRenaming = renamingId === recording.id;
@@ -1223,7 +1269,9 @@ export default function Sidebar() {
                         {...longPress.bind(recording.id)}
                         // The right padding keeps the text clear of the actions button.
                         className={`block py-3 pr-9 pointer-coarse:pr-[52px] rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
-                          selection.isSelecting ? "pl-9" : "pl-3 pointer-fine:pl-9"
+                          selection.isSelecting || reserveTagGutter
+                            ? "pl-9"
+                            : "pl-3 pointer-fine:pl-9"
                         } ${
                           isHighlighted
                             ? isSelected
@@ -1257,17 +1305,29 @@ export default function Sidebar() {
                             |
                           </span>
                           <span className="hidden whitespace-nowrap @min-[19rem]:inline">
-                            {startDate && endDate
-                              ? `${formatTime(startDate, userTimeZone)} - ${formatTime(endDate, userTimeZone)}`
-                              : "Time unavailable"}
+                            {!startDate
+                              ? "Time unavailable"
+                              : endDate
+                                ? `${formatTime(startDate, userTimeZone)} - ${formatTime(endDate, userTimeZone)}`
+                                : `Started ${formatTime(startDate, userTimeZone)}`}
                           </span>
-                          <span className="whitespace-nowrap text-contrast-icon-muted">
-                            |
-                          </span>
-                          <span className="whitespace-nowrap">
-                            {formatDurationString(recording.duration_seconds)}
-                          </span>
+                          {!lengthPending && (
+                            <>
+                              <span className="whitespace-nowrap text-contrast-icon-muted">
+                                |
+                              </span>
+                              <span className="whitespace-nowrap">
+                                {formatDurationString(recording.duration_seconds)}
+                              </span>
+                            </>
+                          )}
                         </div>
+                        {/* In the left gutter, below where the selection
+                            checkbox appears, so the two never overlap. */}
+                        <RecordingTagDots
+                          tags={recording.tags}
+                          className="absolute left-3 top-8.5 w-4"
+                        />
                         <RecordingAttentionBadge recordingId={recording.id} className="mt-2" />
                         {/* The open recording lists its own unsent notes. */}
                         {!isActive && unsentRecordings.includes(recording.id) && (
@@ -1312,6 +1372,23 @@ export default function Sidebar() {
               );
             })}
           </ul>
+          <RecordingListFooter
+            rowCount={recordings.length}
+            hasMore={list.hasMore}
+            isLoadingMore={list.isLoadingMore}
+            loadMoreFailed={list.loadMoreFailed}
+            lastAdded={list.lastAdded}
+            onLoadMore={list.loadMore}
+            scrollRootRef={scrollRef}
+            listRef={listRef}
+            endMessage={
+              recordings.length > RECORDINGS_PAGE_SIZE
+                ? hasActiveFilters
+                  ? "No more matches."
+                  : "No older recordings."
+                : null
+            }
+          />
         </div>
       )}
 
@@ -1369,20 +1446,14 @@ export default function Sidebar() {
             recordings.find((r) => r.id === reprocessRecordingId)
               ?.transcription_language ?? null
           }
+          // The list does not say whether a failed recording kept a
+          // transcript, so the dialog reads the recording to find out.
+          failed={
+            recordings.find((r) => r.id === reprocessRecordingId)?.status ===
+            RecordingStatus.ERROR
+          }
           isOpen={!!reprocessRecordingId}
           onClose={() => setReprocessRecordingId(null)}
-          onReprocessed={(updatedRecording) => {
-            addNotification({
-              message: "Recording reprocessing started.",
-              type: "success",
-            });
-            window.dispatchEvent(
-              new CustomEvent("recording-updated", {
-                detail: { id: updatedRecording.id },
-              }),
-            );
-            fetchRecordings();
-          }}
         />
       )}
       </div>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -23,6 +24,8 @@ from backend.utils.meeting_notes import (
 )
 from backend.utils.prompt_blocks import render_prompt_blocks
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
+
+logger = logging.getLogger(__name__)
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
@@ -190,20 +193,28 @@ class AutomaticMeetingIntelligenceResult:
         object.__setattr__(self, "title", title)
         object.__setattr__(self, "notes_markdown", notes_markdown)
 
-    def validate_for_request(
-        self,
-        request: AutomaticMeetingIntelligenceRequest,
-    ) -> None:
-        unknown_labels = sorted(
-            label
-            for label in self.speaker_mapping
-            if label not in request.unresolved_speakers
+
+def keep_offered_speaker_labels(
+    speaker_mapping: Mapping[str, str],
+    request: AutomaticMeetingIntelligenceRequest,
+) -> dict[str, str]:
+    """The entries of ``speaker_mapping`` for labels the request offered.
+
+    A model can still name a label it was not offered: a speaker the transcript
+    already names, or a label it made up. Such an entry is a suggestion nobody
+    asked for, so it is dropped and the title and notes stand, rather than the
+    whole analysis failing over it. The log gives the count, not the labels,
+    since a model can put a person's name where a label belongs.
+    """
+    offered = set(request.unresolved_speakers)
+    kept = {label: name for label, name in speaker_mapping.items() if label in offered}
+    dropped = len(speaker_mapping) - len(kept)
+    if dropped:
+        logger.warning(
+            "Ignored %d speaker_mapping entries for labels the request did not offer",
+            dropped,
         )
-        if unknown_labels:
-            raise MeetingIntelligenceContractError(
-                "speaker_mapping contains labels that were not unresolved in the request: "
-                + ", ".join(unknown_labels)
-            )
+    return kept
 
 
 def get_default_notes_markdown_requirements() -> str:
@@ -392,19 +403,17 @@ def parse_automatic_meeting_intelligence_response(
     request: AutomaticMeetingIntelligenceRequest | None = None,
 ) -> AutomaticMeetingIntelligenceResult:
     payload = _load_meeting_intelligence_payload(response_text)
-    result = AutomaticMeetingIntelligenceResult(
-        speaker_mapping=_read_speaker_mapping(payload),
+    speaker_mapping = _read_speaker_mapping(payload)
+    if request is not None:
+        speaker_mapping = keep_offered_speaker_labels(speaker_mapping, request)
+    return AutomaticMeetingIntelligenceResult(
+        speaker_mapping=speaker_mapping,
         title=_read_required_string(payload, "title"),
         notes_markdown=_read_required_string(payload, "notes_markdown"),
         require_section_heading=not (
             request is not None and request.uses_custom_notes_sections
         ),
     )
-
-    if request is not None:
-        result.validate_for_request(request)
-
-    return result
 
 
 def _load_meeting_intelligence_payload(response_text: str) -> Mapping[str, Any]:

@@ -13,6 +13,12 @@ VAD_MUTED_INPUT = "vad_muted_input"
 # file it reads (#671). Unset with VAD off and in the live lane.
 LANGUAGE_DETECTION_AUDIO = "language_detection_audio"
 
+# Config key the live lane's settling steps set once a capture's automatic
+# language is known (#776): the code Whisper detected on that capture's earlier
+# steps. On automatic, Whisper transcribes in it instead of detecting again; a
+# set language still wins. Unset in the finalize pipeline.
+CAPTURE_LANGUAGE = "capture_language"
+
 
 class TranscriptionEngine(ABC):
     """Base of a pluggable transcription engine.

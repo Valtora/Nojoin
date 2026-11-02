@@ -20,7 +20,7 @@ import { useTheme, type Theme } from "@/lib/ThemeProvider";
 
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
-import { SETTINGS_SELECT_CLASS } from "./settingsControls";
+import { SETTINGS_CONTROL_COLUMN_WIDE, SETTINGS_SELECT_CLASS } from "./settingsControls";
 
 /**
  * The live palette, drawn from the tokens themselves rather than from a copy
@@ -52,7 +52,7 @@ export default function AppearanceSettings() {
       title="Look and feel"
       description="How Nojoin looks in this browser. Each choice is saved in this browser only, not with your account."
     >
-      <SettingsRow label="Theme">
+      <SettingsRow label="Theme" controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}>
         <SelectBase
           data-ui-fill="control"
           data-ui-disabled-fill="control-disabled"
@@ -71,6 +71,7 @@ export default function AppearanceSettings() {
       </SettingsRow>
 
       <SettingsRow
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
         label="Colour palette"
         description="The accent colour and the tint of the page, cards and navigation. Status colours keep their meaning in every palette."
         badge={<PaletteSwatch />}
@@ -95,6 +96,7 @@ export default function AppearanceSettings() {
       </SettingsRow>
 
       <SettingsRow
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
         id="appearance-style"
         label="Style"
         controlId="appearance-style-select"
@@ -121,6 +123,7 @@ export default function AppearanceSettings() {
       </SettingsRow>
 
       <SettingsRow
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
         label="Corner style"
         description="How rounded cards, buttons and fields are. Avatars and status dots stay round."
       >
@@ -144,6 +147,7 @@ export default function AppearanceSettings() {
       </SettingsRow>
 
       <SettingsRow
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
         label="Density"
         description="Automatic uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing everywhere else. Dense is tighter still for mouse and keyboard; on a touch screen it keeps compact-sized controls."
       >

@@ -17,17 +17,23 @@ export interface LiveLineHandlers {
   split: (segment: TranscriptSegment, wordId: string) => Promise<boolean>;
 }
 
-export type LiveEditKind = "editText" | "changeSpeaker" | "split";
+const NO_SPEAKERS: readonly RecordingSpeaker[] = [];
+const NO_PEOPLE: GlobalSpeaker[] = [];
+
+export type LiveEditKind = "editText" | "changeSpeaker" | "mergeSpeaker" | "split";
 
 /** An explicit text editor, speaker picker, or genuine-word boundary picker. */
 export default function LiveLineEditor({
-  kind, segment, anchor, handlers, speakers = [], onClose,
+  kind, segment, anchor, handlers, speakers = [], liveSpeakerLabels, onMergeSpeaker, onClose,
 }: {
   kind: LiveEditKind;
   segment: TranscriptSegment;
   anchor: HTMLElement;
   handlers: LiveLineHandlers;
   speakers?: readonly RecordingSpeaker[];
+  liveSpeakerLabels?: Readonly<Record<string, string>>;
+  /** Merges the line's live speaker into another; with kind "mergeSpeaker". */
+  onMergeSpeaker?: (label: string, intoLabel: string) => Promise<boolean>;
   onClose: () => void;
 }) {
   const [text, setText] = useState(segment.text);
@@ -53,11 +59,11 @@ export default function LiveLineEditor({
   }, [kind]);
   // Back to the ⋯ button it opened from; a press outside leaves focus where it landed.
   const close = () => { onClose(); anchor.focus(); };
-  // The speaker picker handles its own presses outside. The others let go
+  // The speaker pickers handle their own presses outside. The others let go
   // while nothing typed or chosen would be lost, and never mid-save.
   const unchanged = kind === "split" ? wordId === (words[0]?.id ?? "") : text === segment.text;
   const handlePanelKeyDown = usePanelDismissal({
-    panelRef, anchor, unchanged: kind !== "changeSpeaker" && unchanged && !saving,
+    panelRef, anchor, unchanged: kind !== "changeSpeaker" && kind !== "mergeSpeaker" && unchanged && !saving,
     dismiss: onClose, close: () => { if (!saving) close(); },
   });
   // A refusal keeps the editor open. Save and the text were disabled while it
@@ -82,9 +88,23 @@ export default function LiveLineEditor({
     if (text === segment.text) close();
     else void save(() => handlers.editText(segment, text));
   };
+  // The line's whole live speaker joins another of this capture's live
+  // speakers: only those are offered, and nothing is created.
+  if (kind === "mergeSpeaker") return (
+    <SpeakerAssignmentPopover
+      availableSpeakers={NO_SPEAKERS} globalSpeakers={NO_PEOPLE} currentSpeakerLabel={segment.speaker}
+      liveSpeakerLabels={liveSpeakerLabels} liveTargets="speaker" offerNames={false}
+      fixedScope="speaker_everywhere_in_recording" targetElement={anchor} speakerColors={{}}
+      onSelect={(assignment) => {
+        const into = assignment.diarizationLabel;
+        if (into && onMergeSpeaker) void save(() => onMergeSpeaker(segment.speaker, into));
+      }} onClose={close}
+    />
+  );
   if (kind === "changeSpeaker") return (
     <SpeakerAssignmentPopover
       availableSpeakers={speakers} globalSpeakers={people} currentSpeakerLabel={segment.speaker}
+      liveSpeakerLabels={liveSpeakerLabels}
       targetElement={anchor} speakerColors={{}}
       onSelect={(assignment) => void save(() => handlers.changeSpeaker(segment, assignment))} onClose={close}
     />

@@ -479,7 +479,6 @@ describe("CaptureShell watching a paused capture", () => {
     pathname = `/recordings/${paused.id}`;
     api.initRecording.mockRejectedValue(activeRecordingConflict(paused));
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<CaptureProvider><CaptureShell>
       <MeetingControls variant="dashboard" /><LiveMeetingControls size="bar" /><WatcherState />
     </CaptureShell></CaptureProvider>);
@@ -495,7 +494,6 @@ describe("CaptureShell watching a paused capture", () => {
     fireEvent.click(screen.getByTitle("Discard recording"));
     expect(api.finalizeRecordingCapture).not.toHaveBeenCalled();
     expect(api.discardRecordingCapture).not.toHaveBeenCalled();
-    expect(confirm).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(api.initRecording).toHaveBeenCalledOnce();
     expect(pickCaptureSource).not.toHaveBeenCalled();

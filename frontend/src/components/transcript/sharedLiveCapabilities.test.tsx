@@ -78,6 +78,33 @@ describe("shared live capabilities", () => {
     expect(screen.getByText("A voice without a label.")).toBeInTheDocument();
   });
 
+  it("names only the speakers a group's lines show in its play button (issue #840)", () => {
+    const plain = { ...segment, id: "plain", start: 2, end: 4, speaker: "UNKNOWN", provisional: false,
+      text: "A voice without a label." };
+    const view = render(<TranscriptView {...props()} segments={[plain]} live={{ hasLoaded: true }} />);
+    expect(screen.getByRole("button", { name: "Play at 00:02" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /UNKNOWN/ })).toBeNull();
+
+    // A labelled line beside it still names its speaker, once.
+    view.rerender(<TranscriptView {...props()} segments={[segment, { ...plain, start: 3 }]}
+      live={{ hasLoaded: true }} />);
+    expect(screen.getByRole("button", { name: "Play Speaker 1 at 00:01" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /UNKNOWN/ })).toBeNull();
+  });
+
+  it("leaves speech still waiting for its speaker out of a final transcript's line labels", () => {
+    const named = { id: "named", start: 0, end: 2, speaker: "SPEAKER_0", text: "We agree." };
+    const pending = { id: "pending", start: 2, end: 3, speaker: "UNKNOWN", text: "Then later.",
+      diarisation_pending: true };
+    // In another capture interval, so it stands alone rather than joining Alex's group.
+    render(<TranscriptView {...props()} speakerMap={{ SPEAKER_0: "Alex" }}
+      segments={[named, { ...pending, start: 70, end: 72, capture_interval: 1 }]} />);
+    expect(screen.getByRole("button", { name: "Play Alex at 00:00" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play at 01:10" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Actions for the line at 01:10" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /UNKNOWN/ })).toBeNull();
+  });
+
   it("preserves an idless growing line and its rename draft when timing and attribution change", () => {
     const handlers = props();
     const live = { hasLoaded: true, onRenameLiveSpeaker: vi.fn(async () => true) };

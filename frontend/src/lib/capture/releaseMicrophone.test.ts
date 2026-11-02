@@ -196,7 +196,8 @@ describe("releasing only the microphone while paused", () => {
     expect(getUserMedia.mock.invocationCallOrder[1]).toBeLessThan(
       api.resumeRecordingCapture.mock.invocationCallOrder[0],
     );
-    expect(api.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 3 });
+    // The pause emitted the recorded audio as segment 0, so new audio starts at 1.
+    expect(api.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 3, nextSequence: 1 });
     expect(createBrowserRecorder).toHaveBeenCalledTimes(1);
     expect(createSegmentUploader).toHaveBeenCalledTimes(1);
     expect(getDisplayMedia).toHaveBeenCalledTimes(1);

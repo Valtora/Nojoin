@@ -29,6 +29,8 @@ HF_VALIDATE_URL = "https://huggingface.co/api/whoami-v2"
 HF_VALIDATION_TTL_SECONDS = 300.0
 
 _hf_validation_cache: tuple[float, str, dict[str, Any]] | None = None
+# The Celery ping in flight, which concurrent health polls share.
+_worker_ping: asyncio.Task[str] | None = None
 
 
 def _build_component(
@@ -48,10 +50,15 @@ def _build_component(
     return component
 
 
+def _probe_db() -> None:
+    with Session(sync_engine) as session:
+        session.execute(text("SELECT 1"))
+
+
 async def _get_db_component() -> tuple[dict[str, Any], bool]:
     try:
-        with Session(sync_engine) as session:
-            session.execute(text("SELECT 1"))
+        # A synchronous query, so it runs on a thread rather than the event loop.
+        await asyncio.to_thread(_probe_db)
         return (
             _build_component(
                 "ok",
@@ -115,14 +122,37 @@ async def _resolve_worker_status() -> str:
             await heartbeat_client.close()
 
     if worker_status != "active":
-        try:
-            inspector = celery_app.control.inspect()
-            active_workers = inspector.ping()
-            worker_status = "active" if active_workers else "inactive"
-        except Exception:  # noqa: BLE001 -- boundary: a health probe reports the failure instead of raising
-            worker_status = "error"
+        worker_status = await _shared_worker_ping()
 
     return worker_status
+
+
+def _ping_workers() -> str:
+    """Broadcast a Celery ping, blocking until its one-second timeout ends."""
+    try:
+        active_workers = celery_app.control.inspect().ping()
+    except Exception:  # noqa: BLE001 -- boundary: a health probe reports the failure instead of raising
+        return "error"
+    return "active" if active_workers else "inactive"
+
+
+async def _shared_worker_ping() -> str:
+    """Ping the workers on a thread, once for every health poll waiting on it.
+
+    The ping blocks for its whole timeout whenever no worker answers. Run on the
+    event loop, it held every other request for that second on each health poll
+    while the worker was down (issue #904). Polls that arrive while a ping is in
+    flight wait for that one instead of each taking a thread of their own, and
+    the shield keeps one poll's cancellation from cancelling it for the others.
+    """
+    global _worker_ping
+
+    loop = asyncio.get_running_loop()
+    ping = _worker_ping
+    if ping is None or ping.done() or ping.get_loop() is not loop:
+        ping = loop.create_task(asyncio.to_thread(_ping_workers))
+        _worker_ping = ping
+    return await asyncio.shield(ping)
 
 
 async def _get_worker_component() -> tuple[dict[str, Any], str]:
@@ -757,7 +787,8 @@ async def get_admin_health_status(db: AsyncSession) -> dict[str, Any]:
     model_status = check_model_status(
         whisper_model_size=str(config_manager.get("whisper_model_size", "turbo"))
     )
-    download = _current_download_summary()
+    # Read from Redis with the synchronous client, so off the event loop.
+    download = await asyncio.to_thread(_current_download_summary)
 
     database_component, _ = await _get_db_component()
     queue_component, _ = await _get_queue_component()

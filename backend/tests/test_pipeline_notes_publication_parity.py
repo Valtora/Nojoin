@@ -217,12 +217,10 @@ def test_post_publication_notes_failure_matches_unmarked(
     assert final["notes"] == "Previous notes"
     assert final["completed"] is False
     interrupted = scenario in {"timeout", "cancel"}
+    # A failed enqueue leaves the notes generating until their claim expires;
+    # it no longer holds the recording in PROCESSING (issue #828).
     assert final["status"] == (
-        RecordingStatus.ERROR
-        if interrupted
-        else RecordingStatus.PROCESSING
-        if scenario == "enqueue"
-        else RecordingStatus.PROCESSED
+        RecordingStatus.ERROR if interrupted else RecordingStatus.PROCESSED
     )
     assert len(actual["failure_views"]) == 1
     assert actual["failure_views"][0]["text"] == "Goodbye world"

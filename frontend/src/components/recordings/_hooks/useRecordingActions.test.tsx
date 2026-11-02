@@ -467,10 +467,12 @@ describe("useRecordingActions", () => {
     const onError = vi.fn();
     const { result } = renderHook(() => useRecordingActions());
 
+    // Noon UTC, so the day is the same in whatever zone the test runs.
+    const recording = { id: "rec-1", name: "Weekly sync", created_at: "2026-10-31T12:00:00" };
     await act(async () => {
-      await result.current.exportAudio("rec-1", "Weekly sync", { onSuccess });
+      await result.current.exportAudio(recording, { onSuccess });
     });
-    expect(api.exportAudio).toHaveBeenCalledWith("rec-1", "Weekly sync");
+    expect(api.exportAudio).toHaveBeenCalledWith("rec-1", "Weekly sync", "20261031");
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expect(addNotification).not.toHaveBeenCalled();
 
@@ -483,7 +485,7 @@ describe("useRecordingActions", () => {
       addNotification.mockReset();
       api.exportAudio.mockRejectedValueOnce({ response: { status } });
       await act(async () => {
-        await result.current.exportAudio("rec-1", "Weekly sync", { onError });
+        await result.current.exportAudio(recording, { onError });
       });
       expect(addNotification).toHaveBeenCalledWith({
         message: expect.stringMatching(message),

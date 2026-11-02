@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pressWhileComposing } from "@/test/composition";
 import LiveTranscriptPanel from "@/test/SharedLiveTranscript";
 import TranscriptView from "@/components/TranscriptView";
 import type { TranscriptSegment } from "@/types";
@@ -210,6 +211,10 @@ describe("selected text in the finished transcript", () => {
     renderFinished();
     drag([0, 0], [0, 5]);
     fireEvent.pointerDown(toolbar());
+    expect(toolbar()).toBeInTheDocument();
+
+    // Not the Escape that cancels an input method's composition, in a note box say.
+    pressWhileComposing(document.body, "Escape");
     expect(toolbar()).toBeInTheDocument();
 
     fireEvent.keyDown(document.body, { key: "Escape" });

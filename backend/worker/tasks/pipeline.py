@@ -6,6 +6,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.capture_resume import with_resume_boundaries
+from backend.utils.generation_claim import claim_generation
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
 from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
@@ -23,6 +24,7 @@ from .final_publication import (
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
+from .side_runs import release_holds_among
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
 from .vad_stage import (
@@ -389,7 +391,7 @@ def _finalize_transcript_and_notes(
         # the IO image. Free the GPU lane by generating notes on the IO worker.
         # The recording is otherwise finished; only notes remain pending, exactly
         # as in manual regeneration, so the GPU task still marks it Completed.
-        transcript.notes_status = "generating"
+        claim_generation(transcript, "notes_status")
         transcript.set_notes_error_message(None)
         session.add(transcript)
         session.commit()
@@ -806,11 +808,10 @@ def _live_task_ids() -> set[str] | None:
 def _reclaim_orphaned_processing(session) -> list[Recording]:
     """Return recordings left in PROCESSING by a worker that died mid-pipeline.
 
-    A recording only leaves PROCESSING when its task finishes, so one whose task is
-    no longer running is stranded: the reprocess endpoint refuses to touch a
-    PROCESSING recording, leaving no way back short of editing the database.
-    Reclaiming needs proof the task is gone, so this returns nothing when
-    liveness cannot be established.
+    One whose task is no longer running is stranded, as reprocess refuses a
+    PROCESSING recording. Reclaiming needs proof the task is gone, so this
+    returns nothing when liveness cannot be established. A finished meeting
+    held by a side run is handed back instead, not reprocessed (issue #828).
     """
     stuck = session.exec(
         select(Recording).where(Recording.status == RecordingStatus.PROCESSING)
@@ -827,7 +828,8 @@ def _reclaim_orphaned_processing(session) -> list[Recording]:
         )
         return []
 
-    orphaned = [r for r in stuck if r.celery_task_id not in live]
+    pipeline_runs = release_holds_among(session, stuck, live_task_ids=live)
+    orphaned = [r for r in pipeline_runs if r.celery_task_id not in live]
     for recording in orphaned:
         logger.warning(
             "Recording %s was left PROCESSING by task %s, which is no longer "

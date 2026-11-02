@@ -339,13 +339,19 @@ export interface TranscriptUtteranceList {
    * capture. Whole on every read, delta or not: naming changes no utterance.
    */
   live_speaker_names?: Record<string, string>;
+  /**
+   * Live label -> the live label the user merged it into during capture, so
+   * its lines read as that speaker's. Whole on every read, like the names.
+   */
+  live_speaker_merges?: Record<string, string>;
   /** The live lane is behind a running capture's uploads. */
   live_behind?: boolean;
 }
 
-/** The answer to naming a live speaker: every live name, as the live read gives it. */
+/** The answer to naming or merging a live speaker, as the live read gives it. */
 export interface LiveSpeakerNames {
   live_speaker_names: Record<string, string>;
+  live_speaker_merges?: Record<string, string>;
 }
 
 export interface TranscriptSegment extends LiveTranscriptSettling {
@@ -544,7 +550,12 @@ export interface Transcript extends BaseDBModel {
    * never triggers one, since that spends provider quota and overwrites edits.
    */
   notes_stale_documents?: boolean;
-  transcript_status?: string; // pending, processing, completed, error
+  /**
+   * pending, processing, completed or error. Only a capture's transcript is
+   * "processing", from its start until its run publishes; an import's and a
+   * reprocess's stay "pending" until then.
+   */
+  transcript_status?: string;
   error_message?: string;
 }
 
@@ -672,6 +683,13 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * imported again or discarded.
    */
   import_stalled?: boolean;
+  /**
+   * Whether Discard would delete it: a capture, an import or a first pass that
+   * has not finished. False for a finished meeting while its notes regenerate,
+   * its speakers are inferred or it is reprocessed, which also show as queued
+   * or processing (issue #833). Judged by the server.
+   */
+  discardable?: boolean;
   /** Detail read only; null when there is nothing to ask. */
   language_notice?: LanguageNotice | null;
   is_archived: boolean;

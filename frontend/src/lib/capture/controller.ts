@@ -283,17 +283,22 @@ const isEndedForThisTab = (error: unknown) =>
 
 /**
  * What a tab says once the server refuses it because its capture ended for it:
- * resumed elsewhere, stopped or discarded.
+ * resumed elsewhere, stopped or discarded. `capturing` is false for a tab that
+ * acted on a recovery offer with no capture of its own, such as Stop or
+ * Discard in the resume-or-discard dialog.
  */
-const endedElsewhereMessage = (error: unknown, queuedSeconds: number) =>
+const endedElsewhereMessage = (error: unknown, queuedSeconds: number, capturing = true) =>
   (isCaptureClosedError(error)
-    ? "This recording has already been stopped and sent for processing, so " +
-      "this tab is no longer recording it."
+    ? "This recording has already been stopped and sent for processing" +
+      (capturing ? ", so this tab is no longer recording it." : ".")
     : error instanceof CaptureDiscardedError
-      ? "This recording was discarded in another tab or on another device, so " +
-        "this tab is no longer recording it."
-      : "This recording continued in another tab or on another device, so this " +
-        "tab has stopped recording it.") +
+      ? "This recording was discarded in another tab or on another device" +
+        (capturing ? ", so this tab is no longer recording it." : ".")
+      : capturing
+        ? "This recording continued in another tab or on another device, so this " +
+          "tab has stopped recording it."
+        : "This recording continued in another tab or on another device, so it " +
+          "was left as it is. Finish it there.") +
   (queuedSeconds > 0
     ? ` About ${describeAudioLength(queuedSeconds)} of audio this tab recorded ` +
       "had not uploaded and is not in the recording."
@@ -618,7 +623,14 @@ export class CaptureController {
     const decision = ownedPause ??
       selectRecoveryOffer(attentionRecordings, this.state.pausedRecording?.id ?? null, options);
     void this.settleAudioKeptForFinishedCaptures(unfinished);
-    this.setState({ pausedRecording: decision, attentionRecordings });
+    // A check that finds what is already shown publishes nothing: the
+    // recordings list asks after every poll, and a new state re-renders each
+    // consumer, a badge on every row of a long list among them (#900).
+    const unchanged =
+      JSON.stringify(decision) === JSON.stringify(this.state.pausedRecording) &&
+      JSON.stringify(attentionRecordings) === JSON.stringify(this.state.attentionRecordings) &&
+      this.state.ownedRecordingId === this.getOwnedRecordingId();
+    if (!unchanged) this.setState({ pausedRecording: decision, attentionRecordings });
     if (this.runtime || captures.length === 0) {
       this.stopCaptureRecheck();
     } else {
@@ -983,11 +995,17 @@ export class CaptureController {
       );
       const lastRecordedSequence =
         restoredSegments.at(-1)?.sequence ?? resumeResponse.last_sequence;
+      const startSequence = lastRecordedSequence + 1;
       await this.activateRuntime({
         recordingId: targetRecordingId,
         epoch: resumeResponse.capture_epoch,
-        startSequence: lastRecordedSequence + 1,
+        startSequence,
         uploadFromSequence: resumeResponse.last_sequence + 1,
+        // The resume put its line break where the restored audio starts. The
+        // first new segment moves it to where recording resumed (issue #815).
+        resumeMark: restoredSegments.length
+          ? { sequence: startSequence, mark: resumeResponse.last_sequence + 1 }
+          : undefined,
         restoredSegments,
         sources,
         captureReport: sources.captureReport,
@@ -1061,9 +1079,12 @@ export class CaptureController {
       }
       assertMicrophoneResumeCurrent(isCurrent);
       // Keep this tab's epoch: resuming elsewhere must still refuse this holder.
+      // The queue from before the pause uploads after this, so the server is
+      // told where the new audio starts (issue #815).
+      const nextSequence = runtime.recorder.nextSegmentSequence;
       response = await retryAfterSignIn(() =>
         this.forCapture(recordingId, runtime.ownerId, () =>
-          resumeRecordingCapture(recordingId, { epoch: runtime.epoch }),
+          resumeRecordingCapture(recordingId, { epoch: runtime.epoch, nextSequence }),
         ),
       );
       // A stalled uploader retries its retained queue before new audio.
@@ -1143,6 +1164,7 @@ export class CaptureController {
 
     const hadRuntime = Boolean(this.runtime);
     const runtime = this.runtime;
+    const offerEpoch = runtime ? undefined : this.offeredEpoch(targetRecordingId);
     // Finalize accepts an uploading recording, and a stop that fails owes the
     // pause again.
     this.forgetUnconfirmedPause();
@@ -1188,7 +1210,7 @@ export class CaptureController {
           );
         }
       } else {
-        await this.uploadStoredSegments(targetRecordingId);
+        await this.uploadStoredSegments(targetRecordingId, offerEpoch);
       }
 
       this.setStopStage("finalizing");
@@ -1196,7 +1218,7 @@ export class CaptureController {
       const recording = await this.finalizeRecordingWhenReady(
         targetRecordingId,
         hadRuntime ? this.state.elapsedSeconds : undefined,
-        ownCapture?.epoch,
+        ownCapture ? ownCapture.epoch : offerEpoch,
         ownCapture ? ownCapture.ownerId : signedInAccountId(),
       );
       clearPausedCaptureContext();
@@ -1291,7 +1313,8 @@ export class CaptureController {
 
   /**
    * `fenceEpoch`, the epoch this tab held before a reload, has the server
-   * refuse the discard once the capture has been taken over elsewhere.
+   * refuse the discard once the capture has been taken over elsewhere. With no
+   * capture of its own and no fence, the tab sends its offer's epoch instead.
    */
   cancel = async (recordingId?: RecordingId, fenceEpoch?: number) => {
     const targetRecordingId =
@@ -1304,9 +1327,9 @@ export class CaptureController {
 
     // A tab whose capture continued elsewhere must not delete it from under
     // the tab now running it, nor delete one stopped elsewhere and now being
-    // processed. A discard from a dialog or the list sends none.
+    // processed. A discard of an offer is fenced by the offer's epoch.
     const ownCapture = this.runtime?.recordingId === targetRecordingId ? this.runtime : null;
-    const epoch = ownCapture ? ownCapture.epoch : fenceEpoch;
+    const epoch = ownCapture ? ownCapture.epoch : fenceEpoch ?? this.offeredEpoch(targetRecordingId);
     const ownerId = ownCapture ? ownCapture.ownerId : signedInAccountId();
     try {
       if (ownCapture) {
@@ -1361,6 +1384,19 @@ export class CaptureController {
       throw new Error("Open the recording to recover it, or use the tab that is capturing it.");
     }
   };
+
+  /**
+   * The capture epoch of the recovery offer for `recordingId`, sent with a stop
+   * or discard this tab makes with no capture of its own (the resume-or-discard
+   * dialog, the reloaded recording's header, the list). The server refuses it
+   * once another tab or device has taken the capture over since, as it refuses
+   * that offer's Resume (issue #789).
+   */
+  private offeredEpoch = (recordingId: RecordingId): number | undefined =>
+    (this.state.pausedRecording?.id === recordingId
+      ? this.state.pausedRecording
+      : this.state.attentionRecordings.find((recording) => recording.id === recordingId)
+    )?.capture_epoch;
 
   /**
    * Discards a paused recording this tab lost before it banked any audio.
@@ -1697,7 +1733,7 @@ export class CaptureController {
    * This is the stop for a recording paused by a closed or reloaded tab: there
    * is no live uploader, only what the store kept.
    */
-  private uploadStoredSegments = async (recordingId: RecordingId) => {
+  private uploadStoredSegments = async (recordingId: RecordingId, offerEpoch: number | undefined) => {
     const stored = await this.segmentStore.list(recordingId).catch(() => []);
     if (stored.length === 0) {
       return;
@@ -1706,10 +1742,12 @@ export class CaptureController {
     // Pausing an already paused recording changes nothing and reports the last
     // sequence the server holds, and its epoch. Only audio a tab of this
     // browser kept under that epoch continues the capture, and it is sent
-    // under it, as that tab would have.
+    // under it, as that tab would have. The offer's epoch fences the pause, so
+    // a capture taken over since is not paused under the tab now running it.
     const ownerId = signedInAccountId();
     const response = await retryAfterSignIn(() =>
-      this.forCapture(recordingId, ownerId, () => pauseRecordingCapture(recordingId)),
+      this.forCapture(recordingId, ownerId, () =>
+        pauseRecordingCapture(recordingId, { epoch: offerEpoch })),
     );
     const segments = await this.loadQueuedSegments(
       recordingId,
@@ -1746,6 +1784,8 @@ export class CaptureController {
     startSequence: number;
     /** First sequence the server is missing, when queued audio precedes new audio. */
     uploadFromSequence?: number;
+    /** The first new segment and the line break it moves, after restored audio. */
+    resumeMark?: { sequence: number; mark: number };
     restoredSegments?: StoredSegment[];
     sources: PickedCaptureSources;
     captureReport: CaptureSourceReportSnapshot;
@@ -1766,6 +1806,7 @@ export class CaptureController {
       epoch: options.epoch,
       ownerId,
       initialSequence: options.uploadFromSequence ?? options.startSequence,
+      resumeMark: options.resumeMark,
       store: this.segmentStore,
       checkCaptureGone: (error) => this.captureGoneError(options.recordingId, ownerId, error),
       onQueueChange: (uploadQueue) => {
@@ -2129,7 +2170,7 @@ export class CaptureController {
     this.resetCoverageTracking();
     this.setState({
       status: "idle",
-      error: endedElsewhereMessage(error, queuedSeconds),
+      error: endedElsewhereMessage(error, queuedSeconds, runtime !== null),
       lastSequence: -1,
       elapsedSeconds: 0,
       recordingId: null,
@@ -2216,7 +2257,8 @@ export class CaptureController {
     if (!isEndedForThisTab(error)) {
       return error;
     }
-    const message = endedElsewhereMessage(error, runtime?.uploader.pendingAudioSeconds() ?? 0);
+    const message = endedElsewhereMessage(
+      error, runtime?.uploader.pendingAudioSeconds() ?? 0, runtime !== null);
     await this.captureEndedElsewhere(runtime, error);
     return new Error(this.state.error ?? message);
   };

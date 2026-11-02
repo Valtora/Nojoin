@@ -35,7 +35,7 @@ from backend.utils.config_manager import EXPORT_BRANDING_KEY, config_manager
 from backend.utils.note_attachments import is_image, render_for_export
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.stored_paths import confined_document_path
-from backend.utils.timezones import get_user_timezone_name
+from backend.utils.timezones import get_user_timezone_name, utc_naive_to_timezone
 
 from .helpers import _build_speaker_map, _get_owned_recording, _sanitize_filename
 from .router import router
@@ -85,12 +85,21 @@ def _speaker_name(speaker: RecordingSpeaker) -> str:
 
 
 def _filename(
-    recording: Recording, sections: tuple[str, ...], export_format: str
+    recording: Recording,
+    sections: tuple[str, ...],
+    export_format: str,
+    timezone_name: str,
 ) -> str:
-    timestamp = (
-        recording.created_at.strftime("%Y%m%d") if recording.created_at else "export"
+    # The meeting's day in the reader's zone, as the file's own header gives it.
+    created = utc_naive_to_timezone(recording.created_at, timezone_name)
+    timestamp = created.strftime("%Y%m%d") if created else "export"
+    # Only all three sections are a full export; fewer are named for what
+    # they hold, in the order the file lists them.
+    label = (
+        "FullExport"
+        if len(sections) == len(FILE_LABELS)
+        else "And".join(FILE_LABELS[section] for section in sections)
     )
-    label = FILE_LABELS[sections[0]] if len(sections) == 1 else "FullExport"
     return f"{timestamp}_{_sanitize_filename(recording.name)}_{label}.{export_format}"
 
 
@@ -232,7 +241,7 @@ async def export_content(
         logger.exception("Export generation failed for recording %s", recording_id)
         raise HTTPException(status_code=500, detail="Export generation failed")
 
-    filename = _filename(recording, sections, query.export_format)
+    filename = _filename(recording, sections, query.export_format, parts.timezone_name)
     return Response(
         content=content,
         media_type=MEDIA_TYPES[query.export_format],

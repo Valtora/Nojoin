@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "transformers_version": "5.20.2",
-  "asset_manifest_sha256": "82cb1da687ecdd7378b13ad4585274d00b0f3022f32af0774b741452a8c8239c",
+  "transformers_version": "5.21.0",
+  "asset_manifest_sha256": "9be30db6956118115b664052ae795996132f85331a9f34f7e9457f058f73b181",
   "asset_revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
   "source": {
     "name": "ES2004d.Mix-Headset.wav",
@@ -17,9 +17,9 @@
   "tail_samples": 18080,
   "runtime": {
     "torch": "2.14.1+cu130",
-    "python": "3.12.3",
+    "python": "3.12.15",
     "gpu": "NVIDIA GeForce RTX 4070 Ti, 595.99.02",
-    "fingerprint": "1394e6d58b4e8f8bfc3fe90db4d7e7977a3544b10d30feb1e235dd9b5ed5eb59",
+    "fingerprint": "d02e5cf6272518fdc74a21bee825bfd07a5853c8310ec413a0598e94cd235c1e",
     "dtype": "float32",
     "attention": "sdpa",
     "tf32_matmul": false,
@@ -43,7 +43,7 @@
     }
   },
   "tolerance_policy_sha256": "41f0b6ce00e709f08e3f8d3f1393d28acb134f26b9152e3c0f3b23e116f5d621",
-  "generated_utc": "2026-10-26T01:09:47.320483+00:00",
+  "generated_utc": "2026-10-30T16:23:50.798660+00:00",
   "artifacts": {
     "es2004d-first-21_13.wav": {
       "bytes": 676204,

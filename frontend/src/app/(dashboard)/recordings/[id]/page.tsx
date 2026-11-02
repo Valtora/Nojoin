@@ -14,16 +14,17 @@ import RecordingNoteComposer from "@/components/notes/RecordingNoteComposer";
 import { NoteFilesProvider } from "@/components/notes/NoteFiles";
 import MeetingEdgePanel from "@/components/MeetingEdgePanel";
 import RecordingCaptureSlot from "@/components/RecordingCaptureSlot";
+import { liveTextActivityMark } from "@/components/transcript/liveTranscriptPresentation";
 import ExportModal from "@/components/ExportModal";
 import { RecordingTranscriptTour } from "@/components/TourGuide";
 import { RecordingStatus } from "@/types";
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
-import { getAutoSpeakerReplacementName } from "./_hooks/recordingDetailUtils";
+import { sideColumnOpeningSize } from "./_hooks/recordingDetailUtils";
 import RecordingMainContent from "./_components/RecordingMainContent";
 import RecordingSideColumn, { RecordingSideRail } from "./_components/RecordingSideColumn";
 
@@ -43,6 +44,12 @@ export default function RecordingPage({ params }: PageProps) {
   const isChatPanelCollapsed = useNavigationStore(
     (state) => state.isChatPanelCollapsed,
   );
+  // The desktop columns' width, read once they mount and before they paint,
+  // so the side column opens at a width that suits the page.
+  const [columnsWidth, setColumnsWidth] = useState<number | null>(null);
+  const measureColumns = useCallback((node: HTMLDivElement | null) => {
+    if (node) setColumnsWidth(node.getBoundingClientRect().width);
+  }, []);
 
   const {
     recording,
@@ -95,6 +102,7 @@ export default function RecordingPage({ params }: PageProps) {
     navigateToRecordings,
     fetchRecording,
     refreshRecordingView,
+    refreshRecordingMetadata,
     refreshPeople,
     handleTimeUpdate,
     handlePlaySegment,
@@ -106,6 +114,7 @@ export default function RecordingPage({ params }: PageProps) {
     handleUpdateSegmentSpeaker,
     handleUpdateSegmentText,
     handleGlobalFindAndReplace,
+    handleSpeakerRenamed,
     handleTitleSubmit,
     handleColorChange,
     handleGenerateNotes,
@@ -135,18 +144,7 @@ export default function RecordingPage({ params }: PageProps) {
   // produced, not while a finished one's notes or speakers are regenerated.
   const transcriptInProgress = showCaptureSlot && recording.transcript?.transcript_status !== "completed";
   const sideColumnCollapsed = isSpeakerPanelCollapsed && isChatPanelCollapsed;
-
-  // Renaming a speaker propagates into the generated notes (shared by the
-  // desktop side panel and the mobile Speakers tab).
-  const handleSpeakerRenamed = async (oldName: string, newName: string) => {
-    if (recording?.transcript?.notes) {
-      await handleGlobalFindAndReplace(
-        oldName,
-        getAutoSpeakerReplacementName(newName),
-        { caseSensitive: true },
-      );
-    }
-  };
+  const sideColumnSize = sideColumnOpeningSize(columnsWidth ?? 0, isCompact);
 
   const speakersContent = <RecordingSpeakers
     recording={recording}
@@ -184,6 +182,7 @@ export default function RecordingPage({ params }: PageProps) {
     className="bg-surface-inset"
   />;
   const capturing = isLiveCaptureInProgress(recording);
+  const liveTextMark = usesInFlightTranscript ? liveTextActivityMark(liveTranscript.segments) : null;
   const meetingEdgeContent = showMeetingEdge ? <MeetingEdgePanel
     readOnly={!capturing}
     payload={recording.transcript?.meeting_edge_payload}
@@ -210,7 +209,7 @@ export default function RecordingPage({ params }: PageProps) {
       myNotesContent={myNotesContent}
       meetingEdgeContent={meetingEdgeContent}
       playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording}
-        audioClock={audioClock} onDiscarded={navigateToRecordings} /> : undefined}
+        audioClock={audioClock} onDiscarded={navigateToRecordings} liveTextMark={liveTextMark} /> : undefined}
       inFlightContent={<RecordingNoteComposer recording={recording} segments={transcriptSegments}
         audioClock={audioClock} boxRef={liveNoteBoxRef} />}
       timelineNotes={timelineNotes}
@@ -244,6 +243,7 @@ export default function RecordingPage({ params }: PageProps) {
       onRenameSpeaker={handleRenameSpeaker}
       onColorChange={handleColorChange}
       onRefresh={refreshRecordingView}
+      onRefreshMetadata={refreshRecordingMetadata}
       onSpeakerRenamed={handleSpeakerRenamed}
       onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
       onUpdateSegmentText={handleUpdateSegmentText}
@@ -328,14 +328,14 @@ export default function RecordingPage({ params }: PageProps) {
             )}
           </SurfaceBase>
         ) : (
-          <div className="flex h-full flex-1 min-w-0">
-            <PanelGroup
+          <div ref={measureColumns} className="flex h-full flex-1 min-w-0">
+            {columnsWidth !== null && <PanelGroup
               data-ui-resize-group="horizontal"
               direction="horizontal"
               autoSaveId={`recording-layout-persistence-${isCompact ? "compact" : "comfortable"}`}
               className="h-full flex-1 min-w-0"
             >
-              <Panel id="recording-main" order={1} defaultSize={isCompact ? 78 : 75} minSize={30}>
+              <Panel id="recording-main" order={1} defaultSize={100 - sideColumnSize} minSize={30}>
                 {mainContent}
               </Panel>
 
@@ -353,7 +353,7 @@ export default function RecordingPage({ params }: PageProps) {
                   <Panel
                     id="recording-side"
                     order={2}
-                    defaultSize={isCompact ? 22 : 25}
+                    defaultSize={sideColumnSize}
                     minSize={18}
                   >
                     <RecordingSideColumn
@@ -383,7 +383,7 @@ export default function RecordingPage({ params }: PageProps) {
                   </Panel>
                 </>
               )}
-            </PanelGroup>
+            </PanelGroup>}
 
             {sideColumnCollapsed && <RecordingSideRail showMeetingEdge={showMeetingEdge} />}
           </div>

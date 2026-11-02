@@ -2,8 +2,9 @@
 
 import { AlertTriangle, PauseCircle, Square } from "lucide-react";
 
+import { isCaptureInterrupted } from "@/lib/capture/recovery";
 import type { CaptureSupport } from "@/lib/capture/shared";
-import { RecordingStatus, type Recording } from "@/types";
+import type { Recording } from "@/types";
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
@@ -19,6 +20,11 @@ interface ResumeRecordingModalProps {
   onStop: () => void;
   /** Closes the dialog and leaves the recording as it is. */
   onDismiss: () => void;
+  /**
+   * Shown on the recording's own page, on opening or reloading it, rather
+   * than for a Start Meeting or Import Audio it holds up.
+   */
+  onItsPage?: boolean;
 }
 
 export default function ResumeRecordingModal({
@@ -30,15 +36,13 @@ export default function ResumeRecordingModal({
   onCancel,
   onStop,
   onDismiss,
+  onItsPage = false,
 }: ResumeRecordingModalProps) {
   if (!recording) {
     return null;
   }
 
-  // Still marked as uploading once the server judged it stalled: its tab
-  // closed without the pause arriving (issue #519). A reloaded tab is offered
-  // its own capture before that (issue #778), and reads as paused.
-  const interrupted = recording.status === RecordingStatus.UPLOADING && Boolean(recording.capture_stalled);
+  const interrupted = isCaptureInterrupted(recording);
   const StatusIcon = interrupted ? AlertTriangle : PauseCircle;
 
   return (
@@ -98,7 +102,9 @@ export default function ResumeRecordingModal({
             {interrupted ? "Recording interrupted" : "Recording paused"}
           </p>
           <h2 className="mt-2 text-xl font-semibold text-foreground">
-            Choose what to do before starting anything new
+            {onItsPage
+              ? "Choose what to do with this recording"
+              : "Choose what to do before starting anything new"}
           </h2>
         </div>
       </div>

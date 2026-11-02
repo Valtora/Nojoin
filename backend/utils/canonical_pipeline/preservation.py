@@ -1,15 +1,20 @@
 """Conservative final remapping of accepted human work on settled recordings."""
 
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass, field
 from itertools import groupby
 from operator import itemgetter
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeVar
 
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.utils.final_word_boundaries import final_words
+from backend.utils.live_speaker_labels import live_speaker_display_name
 from backend.utils.word_text import reconstruct_text_from_words
 from backend.utils.word_times import has_word_timing
+
+T = TypeVar("T")
 
 
 def line_is_protected(line: TranscriptUtterance) -> bool:
@@ -65,6 +70,46 @@ def _retained_segment(line: TranscriptUtterance) -> dict[str, Any]:
     }
 
 
+def _speaker_chosen(line: TranscriptUtterance) -> bool:
+    """A speaker a person chose for the line, which keeps it as it is."""
+    return bool(line.manual_speaker_locked) and line.recording_speaker_id is not None
+
+
+@dataclass
+class _Reviews:
+    """The final words over each protected line, and whose speech they were."""
+
+    texts: dict[int, list[str]] = field(default_factory=lambda: defaultdict(list))
+    # Milliseconds of those words each final speaker holds, UNKNOWN left out.
+    speakers: dict[int, Counter[str]] = field(
+        default_factory=lambda: defaultdict(Counter)
+    )
+
+    def add(self, index: int, text: str, speaker: object, held_ms: int) -> None:
+        if not text:
+            return
+        self.texts[index].append(text)
+        label = str(speaker or "UNKNOWN")
+        if label != "UNKNOWN" and live_speaker_display_name(label) is None:
+            self.speakers[index][label] += max(1, held_ms)
+
+    def speaker(self, index: int) -> str:
+        """The final speaker holding most of the words, or UNKNOWN for none."""
+        held = self.speakers.get(index)
+        return max(held, key=held.__getitem__) if held else "UNKNOWN"
+
+
+def _held_ms(words: list[dict[str, Any]]) -> int:
+    return round(
+        sum(
+            float(word["end"]) - float(word["start"])
+            for word in words
+            if has_word_timing(word)
+        )
+        * 1000
+    )
+
+
 def _with_final_review(
     segment: dict[str, Any], line: TranscriptUtterance, text: str
 ) -> dict[str, Any]:
@@ -80,6 +125,23 @@ def _with_final_review(
 
 def _middle_ms(word: dict[str, Any]) -> float:
     return (float(word["start"]) + float(word["end"])) * 500
+
+
+def timed_word_owners(
+    words: list[dict[str, Any]], owner: Callable[[dict[str, Any]], T]
+) -> list[T]:
+    """Each word's owner: a timed word's own, an untimed word's from its neighbour.
+
+    An untimed word goes with the timed word before it, or the first timed
+    word when none precedes it. ``words`` must hold at least one timed word.
+    """
+    current = next(owner(word) for word in words if has_word_timing(word))
+    owners: list[T] = []
+    for word in words:
+        if has_word_timing(word):
+            current = owner(word)
+        owners.append(current)
+    return owners
 
 
 def _part_bounds(
@@ -136,24 +198,30 @@ def _consume_overlap(
     segment: dict[str, Any],
     found: list[int],
     line_bounds: dict[int, tuple[int, int]],
-    reviews: dict[int, list[str]],
+    reviews: _Reviews,
 ) -> list[dict[str, Any]]:
     """Review only the words over protected lines; return the rest as segments.
 
-    A timed word belongs to the protected line holding its midpoint. Untimed
-    runs belong to a protected line only when both timed neighbours agree;
-    otherwise they join an ordinary neighbour or remain ordinary edge runs.
-    Runs of words outside every protected line stay
-    ordinary final segments, split wherever a protected line lies between
+    A timed word belongs to the protected line holding its midpoint. An
+    untimed run belongs to a protected line only when the timed words on both
+    sides of it do; otherwise it joins an ordinary neighbour or stays an
+    ordinary edge run, since a review drops its words from the transcript
+    text. Runs of words outside every protected line stay ordinary final
+    segments, split wherever a protected line lies between
     them, even one holding no word's midpoint, and bounded by their timed
     words and the protected lines beside them. Only a segment with no timed
     word is reviewed whole on the first line.
     """
     words = segment.get("words") or []
     if not any(has_word_timing(word) for word in words):
-        text = str(segment.get("text") or "").strip()
-        if text:
-            reviews[found[0]].append(text)
+        start, end = _bounds(segment)
+        line_start, line_end = line_bounds[found[0]]
+        reviews.add(
+            found[0],
+            str(segment.get("text") or "").strip(),
+            segment.get("speaker"),
+            min(end, line_end) - max(start, line_start),
+        )
         return []
 
     def owner(word: dict[str, Any]) -> tuple[int | None, int]:
@@ -184,8 +252,7 @@ def _consume_overlap(
         kept = [word for word, _ in run]
         text = reconstruct_text_from_words(kept)
         if index is not None:
-            if text:
-                reviews[index].append(text)
+            reviews.add(index, text, segment.get("speaker"), _held_ms(kept))
             continue
         timed = [word for word in kept if has_word_timing(word)]
         start, end = _part_bounds(timed, found, line_bounds, segment=segment, gap=gap)
@@ -217,7 +284,10 @@ def preserve_human_segments(
     path instead. Otherwise a final segment that directly overlaps a
     protected line offers the words over it for review there, once, rather
     than duplicating them beside the kept text; its other words, and every
-    other final segment, replace the live lines as usual.
+    other final segment, replace the live lines as usual. A line kept so
+    takes the final speaker holding most of those words, or UNKNOWN when no
+    speaker holds any, unless a person chose its speaker: a live label, or an
+    earlier run's label, names nobody in this run.
     """
     protected = [index for index, line in enumerate(lines) if line_is_protected(line)]
     if not protected:
@@ -239,7 +309,7 @@ def preserve_human_segments(
         and line_bounds[found[0]] == bounds
         and not _has_unplaced_edges(segment)
     }
-    reviews: dict[int, list[str]] = defaultdict(list)
+    reviews = _Reviews()
     result: list[dict[str, Any]] = []
     for segment, found in zip(segments, hits):
         text = str(segment.get("text") or "").strip()
@@ -253,10 +323,13 @@ def preserve_human_segments(
         if index in exact:
             continue
         kept = _retained_segment(lines[index])
+        if not _speaker_chosen(lines[index]):
+            kept["speaker"] = reviews.speaker(index)
+            kept["recording_speaker_id"] = None
         kept["confidence_payload"].pop("final_review", None)
-        if reviews[index]:
+        if reviews.texts[index]:
             kept["confidence_payload"]["final_review"] = {
-                "text": " ".join(reviews[index]),
+                "text": " ".join(reviews.texts[index]),
                 "reason": "ambiguous_alignment",
             }
         result.append(kept)

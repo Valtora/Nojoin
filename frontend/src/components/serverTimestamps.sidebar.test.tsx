@@ -5,7 +5,7 @@ import { setCachedUserTimeZone } from "@/lib/timezone";
 import { withProcessTimeZone } from "@/test/processTimeZone";
 import { renderWithProviders, screen, within } from "@/test/renderWithProviders";
 import { useNavigationStore } from "@/lib/store";
-import { RecordingStatus, type Recording } from "@/types";
+import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 import Sidebar from "./Sidebar";
 
 const getRecordings = vi.hoisted(() => vi.fn());
@@ -100,5 +100,41 @@ describe.each([
     const end = new Date("2026-10-27T02:40:00Z");
     const expected = `${formatClock(earlyInstant, settingZone)} - ${formatClock(end, settingZone)}`;
     expect(within(title.closest("a")!).getByText(expected)).toBeInTheDocument();
+  });
+});
+
+describe("a recording whose length is not known yet", () => {
+  // The browser's zone differs from the setting, which the row follows.
+  withProcessTimeZone("America/New_York");
+
+  beforeEach(() => {
+    setCachedUserTimeZone("UTC");
+    useNavigationStore.setState({
+      currentView: "recordings", selectedTagIds: [], selectedRecordingIds: [],
+      isRecordingsSidebarCollapsed: false,
+    });
+  });
+
+  // The server sets the length when Stop joins the audio (issue #841).
+  it.each([
+    ["while it records", { status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING }],
+    ["while it is paused", { status: RecordingStatus.PAUSED, client_status: ClientStatus.PAUSED }],
+  ])("shows when it started and no length %s", async (_, state) => {
+    getRecordings.mockResolvedValue([
+      { ...recording("live", "2026-10-27T09:15:00"), ...state, duration_seconds: 0 },
+    ]);
+    renderWithProviders(<Sidebar />);
+    const row = (await screen.findByRole("heading", { name: "Meeting live" })).closest("a")!;
+    expect(within(row).getByText("Started 09:15")).toBeInTheDocument();
+    expect(within(row).queryByText("0s")).not.toBeInTheDocument();
+    expect(within(row).queryByText(/09:15 - 09:15/)).not.toBeInTheDocument();
+  });
+
+  it("keeps a processed recording's range and length", async () => {
+    getRecordings.mockResolvedValue([recording("done", "2026-10-27T09:15:00")]);
+    renderWithProviders(<Sidebar />);
+    const row = (await screen.findByRole("heading", { name: "Meeting done" })).closest("a")!;
+    expect(within(row).getByText("09:15 - 09:25")).toBeInTheDocument();
+    expect(within(row).getByText("10mins")).toBeInTheDocument();
   });
 });

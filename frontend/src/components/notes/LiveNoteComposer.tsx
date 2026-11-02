@@ -68,8 +68,6 @@ const ON_SELECTION_LABEL = "On the chosen text";
 interface LiveNoteComposerProps {
   /** Active and paused captures retain the timeline placement choices. */
   captureActive?: boolean;
-  /** The recording has finished processing, so a new note waits for the next notes run. */
-  finished?: boolean;
   /** Where capture is on the audio timeline now, in ms. */
   readAudioNow: () => number;
   /** Queues a note; returns why it was refused, or null once it is on its way. */
@@ -117,9 +115,9 @@ const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
     case "send":
       return "Placed where the recording is when you press Enter.";
     case "head":
-      return "For the whole meeting, before the transcript. Also listed in My notes.";
     case "tail":
-      return "For the whole meeting, after the transcript. Also listed in My notes.";
+      // Nothing to add to the mode's own label (issue #825).
+      return "";
   }
 };
 
@@ -161,7 +159,6 @@ export default function LiveNoteComposer({
   boxRef,
   onCapture,
   capturing = false,
-  finished = false,
   captureShortcut,
   draftFile = null,
   onDraftFileChange,
@@ -442,11 +439,6 @@ export default function LiveNoteComposer({
         className={`mt-1 text-xs ${status.tone === "error" ? "text-status-danger-fg" : "text-contrast-helper"}`}
       >
         {status.text}
-      </p>
-      <p className="mt-1 text-xs text-contrast-helper">
-        {finished
-          ? "New notes are included, labelled as yours, the next time meeting notes are generated."
-          : "Your notes go into the meeting notes when they are generated, labelled as yours."}
       </p>
     </form>
   );

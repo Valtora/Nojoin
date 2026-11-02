@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import RecordingCaptureSlot from "./RecordingCaptureSlot";
@@ -27,7 +27,10 @@ const capture = {
   uploadQueue: { segments: 0, seconds: 0 },
 };
 
-vi.mock("@/lib/capture/CaptureProvider", () => ({ useCapture: () => capture }));
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => capture,
+  useCaptureState: (select: (state: typeof capture) => unknown) => select(capture),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("./recordings/_hooks/useRecordingActions", () => ({
   useRecordingActions: () => ({ discard }),
@@ -51,7 +54,7 @@ const recording = (overrides: Partial<Recording> = {}): Recording => ({
   id: "rec-1", created_at: "2026-10-27T10:00:00Z", updated_at: "2026-10-27T10:00:00Z",
   name: "Weekly sync", meeting_uid: "meeting-1", audio_path: "/tmp/audio.wav",
   status: RecordingStatus.PROCESSING, duration_seconds: 600, processing_progress: 40,
-  is_archived: false, is_deleted: false, ...overrides,
+  discardable: true, is_archived: false, is_deleted: false, ...overrides,
 });
 
 const ownCapture = (status = "recording") => Object.assign(capture, {
@@ -98,6 +101,15 @@ describe("RecordingCaptureSlot", () => {
     expect(screen.getByLabelText(/max speakers/i)).toBeEnabled();
     fireEvent.click(screen.getByTitle("Pause recording"));
     await waitFor(() => expect(pause).toHaveBeenCalledTimes(1));
+  });
+
+  // A reloaded tab read auto-detect while the server held a cap (#871).
+  it("shows the speaker cap the recording holds", () => {
+    ownCapture();
+    render(<RecordingCaptureSlot recording={recording({
+      status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING, max_speakers: 4,
+    })} />);
+    expect(screen.getByLabelText(/max speakers/i)).toHaveValue(4);
   });
 
   it("never exposes another recording's waveform or transport", () => {
@@ -167,30 +179,58 @@ describe("RecordingCaptureSlot", () => {
   });
 
   it("shows processing step, progress, ETA and confirmed shared discard", async () => {
-    const confirmed = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const nativeConfirm = vi.spyOn(window, "confirm");
     const onDiscarded = vi.fn();
     render(<RecordingCaptureSlot recording={recording({ processing_step: "Identifying speakers", processing_eta_seconds: 63 })} onDiscarded={onDiscarded} />);
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40");
     expect(screen.getByText("Identifying speakers")).toBeInTheDocument();
     expect(screen.getByText("1m 3s remaining")).toBeInTheDocument();
+    // Discard asks in the app's own dialog, never the browser's (#841).
     fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+    const dialog = await screen.findByRole("dialog", { name: "Discard Recording" });
+    expect(dialog).toHaveTextContent(
+      "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(discard).not.toHaveBeenCalled();
-    confirmed.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(discard).toHaveBeenCalledWith("rec-1", {
       onSuccess: onDiscarded, onError: expect.any(Function),
     }));
     expect(screen.getByRole("button", { name: "Discard Recording" })).toBeDisabled();
     expect(cancel).not.toHaveBeenCalled();
+    expect(nativeConfirm).not.toHaveBeenCalled();
+  });
+
+  it.each([RecordingStatus.QUEUED, RecordingStatus.PROCESSING])(
+    "offers no Discard on a finished meeting back in %s, as notes regenerate or it is reprocessed (#833)",
+    (status) => {
+      render(<RecordingCaptureSlot recording={recording({ status, discardable: false, processing_step: "Generating notes" })} />);
+      expect(screen.getByText("Generating notes")).toBeInTheDocument();
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Discard Recording" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Attach Docs" })).toBeInTheDocument();
+    },
+  );
+
+  it("offers no Discard when the server has not said the recording can be discarded", () => {
+    render(<RecordingCaptureSlot recording={recording({ discardable: undefined })} />);
+    expect(screen.queryByRole("button", { name: "Discard Recording" })).not.toBeInTheDocument();
   });
 
   it("allows another discard attempt after the shared action reports failure", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     discard.mockImplementation(async (_id: string, options: { onError: () => void }) => options.onError());
     render(<RecordingCaptureSlot recording={recording()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+    const confirmDiscard = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
+    };
+    await confirmDiscard();
     await waitFor(() => expect(screen.getByRole("button", { name: "Discard Recording" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "Discard Recording" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await confirmDiscard();
     await waitFor(() => expect(discard).toHaveBeenCalledTimes(2));
   });
 
