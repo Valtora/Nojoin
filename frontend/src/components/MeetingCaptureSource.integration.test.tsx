@@ -135,7 +135,8 @@ const useBrowser = (userAgent: string) => {
 const startFromTheButton = async () => {
   fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
   await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/recordings/rec-1"));
-  expect(capture.status).toBe("recording");
+  // The probe publishes the state from an effect, after the navigation.
+  await waitFor(() => expect(capture.status).toBe("recording"));
 };
 
 /**
@@ -158,7 +159,7 @@ const resumeThePausedRecording = async () => {
   await act(async () => {
     await capture.resume();
   });
-  expect(capture.status).toBe("recording");
+  await waitFor(() => expect(capture.status).toBe("recording"));
 };
 
 describe("the recording source chosen beside Start", () => {
