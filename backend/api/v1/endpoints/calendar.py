@@ -7,6 +7,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
+from backend.api.params import RowId
 from backend.models.calendar import (
     CalendarActionResponse,
     CalendarAuthorisationStart,
@@ -239,7 +240,7 @@ async def calendar_authorisation_callback(
     "/connections/{connection_id}/calendars", response_model=CalendarConnectionRead
 )
 async def update_selected_calendars(
-    connection_id: int,
+    connection_id: RowId,
     payload: CalendarSelectionUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -256,8 +257,8 @@ async def update_selected_calendars(
     response_model=CalendarConnectionRead,
 )
 async def update_calendar_colour(
-    connection_id: int,
-    calendar_id: int,
+    connection_id: RowId,
+    calendar_id: RowId,
     payload: CalendarSourceColourUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -273,7 +274,7 @@ async def update_calendar_colour(
 
 @router.post("/connections/{connection_id}/sync", response_model=CalendarConnectionRead)
 async def sync_calendar_connection(
-    connection_id: int,
+    connection_id: RowId,
     request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -291,7 +292,7 @@ async def sync_calendar_connection(
 
 @router.delete("/connections/{connection_id}", response_model=CalendarActionResponse)
 async def delete_calendar_connection(
-    connection_id: int,
+    connection_id: RowId,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CalendarActionResponse:

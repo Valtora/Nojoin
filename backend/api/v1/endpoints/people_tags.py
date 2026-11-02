@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import RowId
 from backend.models.people_tag import PeopleTag
 from backend.models.people_tag_schemas import (
     PeopleTagCreate,
@@ -76,7 +77,7 @@ async def create_people_tag(
 
 @router.patch("/{tag_id}", response_model=PeopleTagRead)
 async def update_people_tag(
-    tag_id: int,
+    tag_id: RowId,
     tag_in: PeopleTagUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -111,7 +112,7 @@ async def update_people_tag(
 
 @router.delete("/{tag_id}")
 async def delete_people_tag(
-    tag_id: int,
+    tag_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
