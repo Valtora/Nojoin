@@ -187,6 +187,18 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||
   JSON.stringify(polled.speakers) !== JSON.stringify(current.speakers);
 
+/**
+ * `read` carrying the transcript change counter of `shown`, the page's copy of
+ * the same recording. The page's counter is the one its transcript has caught
+ * up with, and the idle poll loads the transcript once the server's moves past
+ * it, so a read stored without loading the transcript keeps the page's.
+ */
+export const keepTranscriptCounter = (read: Recording, shown: Recording | null): Recording =>
+  read.transcript && shown?.id === read.id &&
+  read.transcript.change_sequence !== shown.transcript?.change_sequence
+    ? { ...read, transcript: { ...read.transcript, change_sequence: shown.transcript?.change_sequence } }
+    : read;
+
 /** Narrower than this, the side column truncates its open tab's label and Chat wraps every few words. */
 const SIDE_COLUMN_OPENING_PX = 320;
 /** The most of the page the side column opens at, so the transcript keeps the larger part. */

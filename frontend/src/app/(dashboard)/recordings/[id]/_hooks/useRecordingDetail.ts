@@ -68,6 +68,7 @@ import {
   hasPolledRecordingChanged,
   isAudioUnavailable,
   isRecordingInFlight,
+  keepTranscriptCounter,
   noteFilesBeingRead,
   pollFailureMeansRemoved,
   recordingPollIntervalMs,
@@ -95,6 +96,11 @@ export const IDLE_RECORDING_POLL_INTERVAL_MS = 15_000;
  */
 export function useRecordingDetail({ params, capture }: UseRecordingDetailParams) {
   const [recording, setRecording] = useState<Recording | null>(null);
+  // For a read that returns after the recording on screen has changed.
+  const recordingRef = useRef(recording);
+  useEffect(() => {
+    recordingRef.current = recording;
+  }, [recording]);
   // Fed every read of the recording, changed or not: `recording` ignores
   // `live_audio_ms`, which changes on every poll.
   const [audioClock] = useState(() => new AudioClock());
@@ -272,6 +278,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   }, [addNotification, metadataReader, params, router, recordingNotFound]);
 
   const refreshRecordingView = useCallback(async () => {
+    const shown = recordingRef.current;
     const refreshedRecording = await fetchRecording();
 
     if (!refreshedRecording?.id || (isRecordingInFlight(refreshedRecording) && !hasRetainedPublication)) {
@@ -281,22 +288,50 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
 
     await syncTranscriptState("full").catch((e) => {
       console.error("Failed to refresh transcript state:", e);
+      // Not caught up, so the next poll loads it.
+      setRecording((current) => current && keepTranscriptCounter(current, shown));
     });
   }, [fetchRecording, syncTranscriptState, refreshInFlightTranscript, hasRetainedPublication]);
 
+  // Stores a fresh read of the recording, taking its transcript change counter
+  // only once the transcript has caught up with it, as the idle poll does. A
+  // moved counter loads the transcript first when `loadTranscript` is set;
+  // otherwise, or when that load fails, the read keeps the page's counter and
+  // the next poll loads the change rather than take it as seen.
+  const storeRecordingRead = useCallback(async (updated: Recording, loadTranscript: boolean) => {
+    const shown = recordingRef.current;
+    const transcriptMoved = shown?.id === updated.id &&
+      updated.transcript?.change_sequence !== shown.transcript?.change_sequence;
+    // In flight, the live feed shows the transcript and reads it itself.
+    if (!transcriptMoved || (isRecordingInFlight(updated) && !hasRetainedPublication)) {
+      setRecording(updated);
+      return;
+    }
+    if (loadTranscript) {
+      try {
+        await syncTranscriptState("full");
+        setRecording(updated);
+        return;
+      } catch (e: unknown) {
+        console.error("Failed to refresh transcript state:", e);
+      }
+    }
+    setRecording((current) => keepTranscriptCounter(updated, current));
+  }, [hasRetainedPublication, syncTranscriptState]);
+
   // Tags and the calendar link change the recording but not its transcript,
-  // so one read of the recording is enough after them.
+  // so after them the transcript is read only if it changed elsewhere.
   const refreshRecordingMetadata = useCallback(async () => {
     try {
       const { id } = await params;
       const updated = await metadataReader.read(id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, true);
       if (!isEditingTitleRef.current) setTitleValue(updated.name);
     } catch (e: unknown) {
       console.error("Failed to refresh recording:", e);
     }
-  }, [metadataReader, params]);
+  }, [metadataReader, params, storeRecordingRead]);
 
   useEffect(() => {
     fetchRecording();
@@ -370,7 +405,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         if (!polled) return;
         const data = polled.recording;
 
-        const transcriptMoved = idle &&
+        // A recording that changes by itself has its transcript polled as
+        // well. Any other, a note's file being read included, loads it here.
+        const transcriptMoved = !shouldPollRecordingUpdates(recording) &&
           data.transcript?.change_sequence !== recording.transcript?.change_sequence;
         // Taken as seen only once the transcript has caught up: a failed read
         // keeps the old ETag and counter, so the next check tries again.
@@ -545,8 +582,13 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       accepted = true;
       const updated = await metadataReader.read(recording.id);
       if (!updated) return true;
+      // The read's change counter is taken only once the transcript has
+      // caught up, so after a failed load the next poll tries again.
+      await syncTranscriptState("full").catch((e: unknown) => {
+        setRecording((current) => keepTranscriptCounter(updated, current));
+        throw e;
+      });
       setRecording(updated);
-      await syncTranscriptState("full");
       for (const message of libraryVoiceprintNotices(renamed)) {
         addNotification({ type: "info", message });
       }
@@ -827,10 +869,11 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     if (recording) {
       try {
         await updateSpeakerColor(recording.id, targetLabel, colorKey);
-        // Refresh recording to get updated speaker data
+        // Refresh recording to get updated speaker data. The colour moves the
+        // transcript change counter itself, so the next poll loads the transcript.
         const updated = await metadataReader.read(recording.id);
         if (!updated) return;
-        setRecording(updated);
+        await storeRecordingRead(updated, false);
 
             } catch (e: unknown) {
         console.error("Failed to update speaker color", e);
@@ -849,7 +892,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       await generateNotes(recording.id, notesTemplateId ?? null);
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, true);
       setActivePanel("notes"); // Switch to notes panel after generation
 
         } catch (e: unknown) {
@@ -857,7 +900,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       try {
         const updated = await metadataReader.read(recording.id);
         if (!updated) return;
-        setRecording(updated);
+        await storeRecordingRead(updated, true);
         setActivePanel("notes");
 
             } catch (refreshError: unknown) {
@@ -882,9 +925,12 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
 
     try {
       await updateNotes(recording.id, notes);
+      // A notes save moves the transcript change counter itself, so the read
+      // keeps the page's and the next poll loads the transcript once, rather
+      // than after every save.
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, false);
 
         } catch (e: unknown) {
       console.error("Failed to update notes:", e);
@@ -905,7 +951,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       await updateNotes(recording.id, previousNotes || "");
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, false);
 
         } catch (e: unknown) {
       console.error("Notes undo failed:", e);
@@ -926,7 +972,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       await updateNotes(recording.id, nextNotes || "");
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, false);
 
         } catch (e: unknown) {
       console.error("Notes redo failed:", e);
