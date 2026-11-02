@@ -21,6 +21,7 @@ import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useHydrated } from "@/lib/useHydrated";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "@/lib/useDebouncedValue";
 import {
   getGlobalSpeakers,
   RecordingFilters,
@@ -136,7 +137,7 @@ export default function Sidebar() {
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
   const [showFilters, setShowFilters] = useState(false);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [selectedSpeakers, setSelectedSpeakers] = useState<number[]>([]);
@@ -260,14 +261,6 @@ export default function Sidebar() {
   );
   const selection = useRecordingSelection(shownIds);
   const longPress = useTouchLongPress(selection.toggle);
-
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
 
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
