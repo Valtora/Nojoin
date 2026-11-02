@@ -5,7 +5,9 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/Badge";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { Recording } from "@/types";
+import RecordingAttentionBadge from "../RecordingAttentionBadge";
 
 interface ProcessingCardProps {
   recordings: Recording[];
@@ -27,6 +29,7 @@ const formatEta = (seconds?: number | null): string | null => {
  * while there is something to report and disappears when the queue drains.
  */
 export default function ProcessingCard({ recordings }: ProcessingCardProps) {
+  const { ownedRecordingId } = useCapture();
   return (
     <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center gap-3">
@@ -44,11 +47,15 @@ export default function ProcessingCard({ recordings }: ProcessingCardProps) {
                 href={`/recordings/${recording.id}`}
                 className="density-surface-panel block bg-surface-inset px-3 py-2.5 transition-colors hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
               >
-                <span className="flex items-center gap-3">
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                <span className="flex flex-wrap items-center gap-3">
+                  <span className="min-w-0 grow basis-40 truncate text-sm font-medium text-foreground">
                     {recording.name}
                   </span>
-                  <StatusBadge status={recording.status} size="sm" />
+                  <RecordingAttentionBadge
+                    recordingId={recording.id}
+                    fallback={<StatusBadge status={recording.status} clientStatus={recording.client_status}
+                    capturedHere={recording.id === ownedRecordingId} size="sm" />}
+                  />
                 </span>
                 {recording.processing_step || eta ? (
                   <span className="mt-1 block truncate text-xs text-contrast-helper">

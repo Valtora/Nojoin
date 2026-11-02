@@ -6,6 +6,7 @@ import {
 import {
   describeCaptureSettings,
   describeTrack,
+  isTrustedMicrophoneListing,
   listAvailableMicrophones,
   type CaptureSourceReportSnapshot,
 } from "./sourceReport";
@@ -169,12 +170,17 @@ export const pickCaptureSource = async (
       (device) => device.device_id === options.microphoneDeviceId,
     )?.label ?? null;
 
+  // Only a listing with real ids can refuse up front. Blank-id placeholders, and
+  // an empty list (enumeration may have failed), leave the decision to the
+  // exact getUserMedia request below.
+  const listedMicrophoneIds = availableMicrophones.map(
+    (device) => device.device_id,
+  );
   if (
     options.microphoneDeviceId &&
-    availableMicrophones.length > 0 &&
-    !availableMicrophones.some(
-      (device) => device.device_id === options.microphoneDeviceId,
-    )
+    listedMicrophoneIds.length > 0 &&
+    isTrustedMicrophoneListing(listedMicrophoneIds) &&
+    !listedMicrophoneIds.includes(options.microphoneDeviceId)
   ) {
     throw new PickSourceError(
       "selected_microphone_unavailable",

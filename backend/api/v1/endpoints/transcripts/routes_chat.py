@@ -26,8 +26,10 @@ from backend.models.tag import RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
+from backend.services.live_chat import chat_transcript_in_progress
 from backend.utils.chat_prompt import ChatTranscript, TranscriptExcerpts
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.live_speaker_labels import render_indexed_transcript_for_llm
 from backend.utils.llm_config import CLI_PROVIDER, resolve_llm_config_async
 from backend.utils.meeting_notes import escape_prompt_attribute
 from backend.utils.note_attachments import unread_attachment_ids
@@ -214,9 +216,8 @@ async def chat_with_meeting(
 
     if not transcript_obj and not in_flight:
         raise HTTPException(status_code=404, detail="Transcript not found")
-    # Regenerating notes or speakers leaves a finished transcript finished.
-    transcript_in_progress = in_flight and (
-        transcript_obj is None or transcript_obj.transcript_status != "completed"
+    transcript_in_progress = chat_transcript_in_progress(
+        recording.status, transcript_obj
     )
 
     meeting_notes = (transcript_obj.notes if transcript_obj else "") or ""
@@ -316,12 +317,9 @@ async def chat_with_meeting(
                 rec_name = rec.name if rec else f"Recording {chunk.recording_id}"
 
                 content = chunk.content
-                if chunk.meta and chunk.meta.get("source") == "transcript" and rec:
-                    speaker_map = _build_speaker_map(rec.speakers)
-                    # Replace raw diarization labels (e.g. "SPEAKER_XX:") with resolved names.
-                    for label, name in speaker_map.items():
-                        if label and name and label != name:
-                            content = content.replace(f"{label}:", f"{name}:")
+                if chunk.meta and chunk.meta.get("source") == "transcript":
+                    speaker_map = _build_speaker_map(rec.speakers) if rec else {}
+                    content = render_indexed_transcript_for_llm(content, speaker_map)
 
                 if is_document_chunk:
                     # Document text is authored outside the meeting, so it is

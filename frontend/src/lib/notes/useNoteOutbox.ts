@@ -21,26 +21,65 @@ const EMPTY_SNAPSHOT: OutboxSnapshot = {
 };
 const subscribeToNothing = () => () => undefined;
 const emptySnapshot = () => EMPTY_SNAPSHOT;
+const selectAll = (snapshot: OutboxSnapshot) => snapshot;
+
+/** The fields read by note lists, independent of the composer's draft. */
+export const selectNoteList = ({ entries, saved, discarded }: OutboxSnapshot) => ({ entries, saved, discarded });
+export const selectSavedNotes = ({ saved, discarded }: OutboxSnapshot) => ({ saved, discarded });
+const selectOutboxActions = () => null;
+export const selectComposer = ({ draft, draftFile, notice }: OutboxSnapshot) => ({ draft, draftFile, notice });
+export const selectUnsentNotes = ({ entries, uploads, notice, draft, draftFile }: OutboxSnapshot) =>
+  ({ entries, uploads, notice, draft, draftFile });
+export const selectRecovery = (snapshot: OutboxSnapshot): ReturnType<typeof selectUnsentNotes> =>
+  ({ ...selectUnsentNotes(snapshot), draft: EMPTY_DRAFT, draftFile: null });
+
+function sameSelection<T>(left: T, right: T): boolean {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  if (Object.getPrototypeOf(left) !== Object.prototype || Object.getPrototypeOf(right) !== Object.prototype) return false;
+  const keys = Object.keys(right) as (keyof T)[];
+  return keys.length === Object.keys(left).length && keys.every((key) => Object.is(left[key], right[key]));
+}
+
+function selectedSnapshot<T>(read: () => OutboxSnapshot, select: (snapshot: OutboxSnapshot) => T) {
+  let selected = select(read());
+  return () => {
+    const next = select(read());
+    if (!sameSelection(selected, next)) selected = next;
+    return selected;
+  };
+}
 
 /**
  * A recording's note outbox and its state (see `NoteOutbox`). Every view of
  * the recording gets the same one, so a note still on its way and the note
  * box's text outlive the view that made them.
+ * Select immutable values or a shallow record of the fields a view displays;
+ * equal selections keep their identity and do not schedule a render.
  */
-export function useNoteOutbox(recordingId: RecordingId): {
+export function useNoteOutbox<T = OutboxSnapshot>(
+  recordingId: RecordingId, select?: (snapshot: OutboxSnapshot) => T,
+): {
   outbox: NoteOutbox;
-  snapshot: OutboxSnapshot;
+  snapshot: T;
 };
-export function useNoteOutbox(recordingId: RecordingId | null): {
+export function useNoteOutbox<T = OutboxSnapshot>(
+  recordingId: RecordingId | null, select?: (snapshot: OutboxSnapshot) => T,
+): {
   outbox: NoteOutbox | null;
-  snapshot: OutboxSnapshot;
+  snapshot: T;
 };
-export function useNoteOutbox(recordingId: RecordingId | null) {
+export function useNoteOutbox<T>(recordingId: RecordingId | null, select?: (snapshot: OutboxSnapshot) => T) {
   const outbox = recordingId ? noteOutboxFor(recordingId) : null;
+  // Cache the selection inside the subscription, so an unrelated publication
+  // never schedules a render. The cache belongs to this outbox and selector.
+  const getSnapshot = useMemo(() => selectedSnapshot<T | OutboxSnapshot>(
+    outbox?.getSnapshot ?? emptySnapshot, select ?? selectAll,
+  ), [outbox, select]);
   const snapshot = useSyncExternalStore(
     outbox?.subscribe ?? subscribeToNothing,
-    outbox?.getSnapshot ?? emptySnapshot,
-    outbox?.getSnapshot ?? emptySnapshot,
+    getSnapshot,
+    getSnapshot,
   );
   return { outbox, snapshot };
 }
@@ -59,7 +98,7 @@ export function useRecordingNotes(
     recordingId,
     recording?.timeline_notes_list_signature,
   );
-  const { outbox } = useNoteOutbox(recordingId);
+  const { outbox } = useNoteOutbox(recordingId, selectOutboxActions);
   const polledRef = useRef(polled);
 
   useEffect(() => {

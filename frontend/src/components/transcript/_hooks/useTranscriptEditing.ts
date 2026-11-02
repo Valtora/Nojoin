@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { isImeComposing } from "@/lib/imeComposition";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { TranscriptSegment } from "@/types";
@@ -271,6 +272,7 @@ export function useTranscriptEditing(
   };
 
   const handleKeyDown = (e: KeyboardEvent, segment: TranscriptSegment) => {
+    if (isImeComposing(e)) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleTextSubmit(segment);

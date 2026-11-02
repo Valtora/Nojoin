@@ -708,3 +708,79 @@ describe("capture uploader once the capture is taken over or stopped elsewhere",
     uploader.dispose();
   });
 });
+
+describe("capture uploader after a resume that restored queued audio (issue #815)", () => {
+  it("sends the resume mark with the first new segment only", async () => {
+    const restored: StoredSegment[] = [
+      { recordingId: "rec-1", sequence: 5, blob: new Blob(["5"]), durationSeconds: 2 },
+      { recordingId: "rec-1", sequence: 6, blob: new Blob(["6"]), durationSeconds: 2 },
+    ];
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => accepted(sequence));
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 3,
+      initialSequence: 5,
+      resumeMark: { sequence: 7, mark: 5 },
+      uploadSegment: uploadSegment as never,
+    });
+
+    uploader.restore(restored);
+    uploader.enqueue(7, new Blob(["7"]), 2);
+    uploader.enqueue(8, new Blob(["8"]), 2);
+    await uploader.waitForIdle();
+
+    expect(
+      uploadSegment.mock.calls.map((call) => [(call as unknown[])[1], (call as unknown[])[3]]),
+    ).toEqual([
+      [5, { epoch: 3 }],
+      [6, { epoch: 3 }],
+      [7, { epoch: 3, resumeMark: 5 }],
+      [8, { epoch: 3 }],
+    ]);
+  });
+
+  it("keeps the mark in the store, so a later page still sends it", async () => {
+    const store = new MemorySegmentStore();
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 3,
+      initialSequence: 7,
+      resumeMark: { sequence: 7, mark: 5 },
+      // Never answers, as for a page closed before the upload finished.
+      uploadSegment: vi.fn(() => new Promise(() => {})) as never,
+      store,
+    });
+
+    uploader.enqueue(7, new Blob(["7"]), 2);
+    uploader.enqueue(8, new Blob(["8"]), 2);
+
+    await vi.waitFor(async () =>
+      expect(
+        (await store.list("rec-1")).map((segment) => [segment.sequence, segment.resumeMark]),
+      ).toEqual([
+        [7, 5],
+        [8, undefined],
+      ]),
+    );
+    uploader.dispose();
+
+    // The next page restores it under its own epoch, mark and all.
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => accepted(sequence));
+    const next = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 4,
+      initialSequence: 7,
+      uploadSegment: uploadSegment as never,
+      store,
+    });
+    next.restore(await store.list("rec-1"));
+    await next.waitForIdle();
+
+    expect(
+      uploadSegment.mock.calls.map((call) => [(call as unknown[])[1], (call as unknown[])[3]]),
+    ).toEqual([
+      [7, { epoch: 4, resumeMark: 5 }],
+      [8, { epoch: 4 }],
+    ]);
+  });
+});

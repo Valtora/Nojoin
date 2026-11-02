@@ -15,6 +15,10 @@ import {
 
 const getCalendarDashboardSummary = vi.fn();
 
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => ({ attentionRecordings: [] }),
+}));
+
 vi.mock("next/link", () => ({
   default: ({
     children,

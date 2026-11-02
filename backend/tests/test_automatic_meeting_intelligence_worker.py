@@ -46,6 +46,7 @@ CREATE TABLE recordings (
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     name VARCHAR(255) NOT NULL,
+    title_user_edited BOOLEAN NOT NULL DEFAULT 0,
     public_id VARCHAR(36) NOT NULL,
     meeting_uid VARCHAR(36) NOT NULL,
     audio_path VARCHAR(1024) NOT NULL,
@@ -60,6 +61,7 @@ CREATE TABLE recordings (
     processing_step VARCHAR(255),
     processing_started_at DATETIME,
     processing_completed_at DATETIME,
+    first_processed_at DATETIME,
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
@@ -480,7 +482,8 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
         assert suggestions[0]["resolution_reason"] is None
         assert suggestions[0]["origin"] == "automatic_meeting_intelligence"
         assert recording.name == "Launch Readiness Review"
-        assert recording.status == "PROCESSED"
+        # Inline, the pipeline running the stage owns the status (issue #828).
+        assert recording.status == "PROCESSING"
         assert recording.processing_step == "Generating meeting notes... (CPU)"
         assert recording.processing_progress == 97
         assert transcript.notes_status == "completed"
@@ -681,8 +684,10 @@ def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
             ).first()
 
         assert result is None
-        assert recording.status == "PROCESSED"
-        assert recording.processing_step == "Error generating notes"
+        # The failure is the notes' alone; the pipeline running the stage still
+        # owns the recording's status and step (issue #828).
+        assert recording.status == "PROCESSING"
+        assert recording.processing_step == "Generating meeting notes... (CPU)"
         assert recording.processing_progress == 97
         assert transcript.notes_status == "error"
         assert transcript.error_message == "Unified AI contract failed"
@@ -750,6 +755,123 @@ def test_a_meeting_too_long_for_one_call_gets_its_notes_in_parts(
         assert recording.name == "Written in Parts"
         assert transcript.notes_status == "completed"
         assert transcript.notes == "## Summary\nCombined notes."
+    finally:
+        engine.dispose()
+
+
+def _run_stage_titling(
+    engine: Any, monkeypatch: pytest.MonkeyPatch, *, while_answering=None
+) -> tuple[Recording, Transcript]:
+    """Run the stage with a model that titles the meeting "AI Title".
+
+    ``while_answering`` runs during the model call, as a user's rename could.
+    """
+
+    class FakeLLM:
+        def generate_meeting_intelligence(self, request, timeout: int = 60):
+            if while_answering is not None:
+                while_answering()
+            return AutomaticMeetingIntelligenceResult(
+                speaker_mapping={},
+                title="AI Title",
+                notes_markdown="## Summary\nGenerated notes.",
+            )
+
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
+    with Session(engine) as session:
+        recording = session.get(Recording, 1)
+        transcript = session.exec(
+            select(Transcript).where(Transcript.recording_id == 1)
+        ).first()
+        speakers = session.exec(
+            select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
+        ).all()
+        result = tasks_module._run_automatic_meeting_intelligence_stage(
+            session=session,
+            task=None,
+            recording=recording,
+            transcript=transcript,
+            speakers=speakers,
+            transcript_text="[00:00:00 - 00:00:04] SPEAKER_00: Opening update.",
+            unresolved_speakers=("SPEAKER_00",),
+            llm_config=_sample_llm_config(),
+            prefer_short_titles=True,
+            device_suffix="",
+            timeline_notes=NO_NOTES,
+        )
+    assert result is not None
+
+    with Session(engine) as verification_session:
+        recording = verification_session.get(Recording, 1)
+        transcript = verification_session.exec(
+            select(Transcript).where(Transcript.recording_id == 1)
+        ).first()
+    return recording, transcript
+
+
+def test_the_ai_title_leaves_a_name_the_user_chose(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A name typed at import or given by a rename is kept (issue #837)."""
+    engine = _create_worker_ai_database(tmp_path)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE recordings SET title_user_edited = 1 WHERE id = 1")
+            )
+
+        recording, transcript = _run_stage_titling(engine, monkeypatch)
+
+        assert recording.name == "Planning"
+        assert recording.title_user_edited is True
+        # Only the title is held back: the notes still arrive.
+        assert transcript.notes_status == "completed"
+        assert transcript.notes == "## Summary\nGenerated notes."
+    finally:
+        engine.dispose()
+
+
+def test_a_rename_made_while_the_model_answers_is_kept(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stage loaded the recording before the rename, and still keeps it."""
+    engine = _create_worker_ai_database(tmp_path)
+
+    def rename() -> None:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE recordings SET name = 'Budget review',"
+                    " title_user_edited = 1 WHERE id = 1"
+                )
+            )
+
+    try:
+        recording, transcript = _run_stage_titling(
+            engine, monkeypatch, while_answering=rename
+        )
+
+        assert recording.name == "Budget review"
+        assert transcript.notes_status == "completed"
+    finally:
+        engine.dispose()
+
+
+def test_the_ai_title_names_a_recording_nobody_named(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_worker_ai_database(tmp_path)
+    try:
+        recording, _ = _run_stage_titling(engine, monkeypatch)
+
+        assert recording.name == "AI Title"
+        # Taking the AI title does not make the name the user's.
+        assert recording.title_user_edited is False
     finally:
         engine.dispose()
 

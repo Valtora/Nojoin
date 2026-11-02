@@ -74,7 +74,7 @@ def test_final_unverified_assets_request_shared_preparation(
     assert len(stub_celery_dispatch) == 1
 
 
-@pytest.mark.parametrize("reason", ["cpu", "classic", "speaker_cap"])
+@pytest.mark.parametrize("reason", ["cpu", "classic"])
 def test_final_ineligible_does_not_request_preparation(
     lane: SimpleNamespace,
     reason: str,
@@ -88,9 +88,8 @@ def test_final_ineligible_does_not_request_preparation(
         "classic" if reason == "classic" else "auto",
     )
     config = {"processing_device": "cpu" if reason == "cpu" else "cuda"}
-    cap = 0 if reason == "speaker_cap" else None
     assert (
-        final.diarize_final_audio("meeting.wav", config, cap, recording_id=42)
+        final.diarize_final_audio("meeting.wav", config, recording_id=42)
         is lane.community
     )
     assert stub_celery_dispatch == []

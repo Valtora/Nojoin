@@ -92,6 +92,58 @@ describe("ImportAudioModal", () => {
     expect(screen.queryByText("slides.pptx")).not.toBeInTheDocument();
   });
 
+  describe("meeting name (issue #837)", () => {
+    const nameField = () => screen.getByLabelText<HTMLInputElement>("Meeting Name");
+
+    const importAndReadName = async () => {
+      vi.mocked(importAudio).mockResolvedValue({ id: "rec-1" } as never);
+      fireEvent.click(screen.getByRole("button", { name: "Import Audio" }));
+      await screen.findByText(/success/i);
+      return vi.mocked(importAudio).mock.calls[0][1]?.name;
+    };
+
+    it("sends no name when the file's name was left, so the AI title can replace it", async () => {
+      renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+      selectFile("board-call.mp3");
+
+      expect(nameField().value).toBe("board-call");
+      expect(await importAndReadName()).toBeUndefined();
+    });
+
+    it("sends a typed name, trimmed, as the user's choice", async () => {
+      renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+      selectFile("board-call.mp3");
+
+      fireEvent.change(nameField(), { target: { value: "  Budget review  " } });
+
+      expect(await importAndReadName()).toBe("Budget review");
+    });
+
+    it("follows the file chosen until a name is typed, then keeps the typed one", () => {
+      renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+      selectFile("first.mp3");
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+      selectFile("second.mp3");
+      expect(nameField().value).toBe("second");
+
+      fireEvent.change(nameField(), { target: { value: "Budget review" } });
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+      selectFile("third.mp3");
+      expect(nameField().value).toBe("Budget review");
+    });
+
+    it("hands an emptied name back to the file", async () => {
+      renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+      selectFile("first.mp3");
+      fireEvent.change(nameField(), { target: { value: "" } });
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+      selectFile("second.mp3");
+
+      expect(nameField().value).toBe("second");
+      expect(await importAndReadName()).toBeUndefined();
+    });
+  });
+
   it("imports in the language chosen for the recording", async () => {
     const registry: LanguageRegistry = {
       transcription_languages: [

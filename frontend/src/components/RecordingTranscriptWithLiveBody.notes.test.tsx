@@ -187,7 +187,7 @@ describe("RecordingTranscriptWithLiveBody live notes", () => {
     await show(buildRecording({ status: RecordingStatus.PROCESSED, client_status: undefined, duration_seconds: 600 }));
     expect(box()).toBe(originalBox);
     expect(noteOutboxFor("rec-1").getSnapshot().draftFile).toBe(file);
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("stopped audio clock");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("where capture stopped");
   });
 
   it("empties the box in the same change that queues its note", async () => {

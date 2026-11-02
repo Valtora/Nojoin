@@ -73,6 +73,9 @@ vi.mock("./waveform", () => ({
 const lifecycle = (status: string, lastSequence = -1) => ({
   recording_id: "rec-1", status, last_sequence: lastSequence, capture_epoch: 3,
 });
+const paused = {
+  id: "rec-1", name: "Meeting", status: "PAUSED", client_status: "PAUSED", capture_epoch: 3,
+};
 const controllers: CaptureController[] = [];
 let microphone: MediaStreamTrack;
 let sharedAudio: MediaStreamTrack;
@@ -193,7 +196,8 @@ describe("releasing only the microphone while paused", () => {
     expect(getUserMedia.mock.invocationCallOrder[1]).toBeLessThan(
       api.resumeRecordingCapture.mock.invocationCallOrder[0],
     );
-    expect(api.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 3 });
+    // The pause emitted the recorded audio as segment 0, so new audio starts at 1.
+    expect(api.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 3, nextSequence: 1 });
     expect(createBrowserRecorder).toHaveBeenCalledTimes(1);
     expect(createSegmentUploader).toHaveBeenCalledTimes(1);
     expect(getDisplayMedia).toHaveBeenCalledTimes(1);
@@ -343,6 +347,28 @@ describe("releasing only the microphone while paused", () => {
     }
     expect(await resuming).toBeInstanceOf(CaptureResumeSupersededError);
     expect(capture.getState()).toMatchObject({ status: "idle", runtimeActive: false, error: null });
+  });
+
+  it.each([false, true])("entering the recording page preserves pending Resume, cold=%s", async (cold) => {
+    const { capture } = await start("microphone_only");
+    await capture.pause();
+    let resumingCapture = capture;
+    if (cold) {
+      await capture.destroy();
+      resumingCapture = controller();
+      api.getUnfinishedCaptures.mockResolvedValue([paused]);
+      await resumingCapture.openRecording("rec-1");
+    }
+    const grant = deferred<MediaStream>();
+    getUserMedia.mockReturnValueOnce(grant.promise);
+    const resuming = resumingCapture.resume("rec-1");
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+
+    await resumingCapture.openRecording("rec-1");
+    grant.resolve(mediaStream(replacement));
+    await expect(resuming).resolves.toMatchObject({ recordingId: "rec-1", resumed: true });
+    expect(resumingCapture.getState()).toMatchObject({ status: "recording", runtimeActive: true });
+    expect(replacement.readyState).toBe("live");
   });
   it("releases the microphone when an upload stall pauses capture", async () => {
     const { capture, uploaderOptions } = await start();

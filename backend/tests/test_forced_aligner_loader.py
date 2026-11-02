@@ -144,8 +144,8 @@ def test_version_drift_is_rejected(
 ) -> None:
     import transformers
 
-    monkeypatch.setattr(transformers, "__version__", "5.21.0")
-    with pytest.raises(ForcedAlignerError, match="5.20.2"):
+    monkeypatch.setattr(transformers, "__version__", "5.21.1")
+    with pytest.raises(ForcedAlignerError, match="5.21.0"):
         native.load_native_model(constructors.path)
     assert constructors.state.calls == []
 

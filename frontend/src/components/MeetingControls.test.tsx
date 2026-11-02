@@ -13,11 +13,15 @@ const captureState = {
   controller: {
     getState: () => ({ error: null }),
   },
-  pausedRecording: null as { id: string; status: string } | null,
+  pausedRecording: null as { id: string; status: string; capture_stalled?: boolean } | null,
   runtimeActive: false,
+  uploadQueue: { segments: 0, seconds: 0 },
+  coverageWarning: null,
+  dismissCoverageWarning: vi.fn(),
   settings: { startMode: "shared_audio" },
   updateSettings,
   start: (...args: unknown[]) => start(...args),
+  refreshPausedRecording: vi.fn(async () => null),
   status: "idle",
   support: {
     supported: true,
@@ -38,13 +42,15 @@ vi.mock("@/lib/connectivity/monitor", () => ({
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => captureState,
+  useCaptureState: (select: (state: typeof captureState) => unknown) => select(captureState),
 }));
 
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
 }));
 
-vi.mock("./LiveMeetingControls", () => ({
+vi.mock("./LiveMeetingControls", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./LiveMeetingControls")>(),
   default: () => <div data-testid="live-controls" />,
 }));
 
@@ -53,6 +59,7 @@ describe("MeetingControls", () => {
     routerPush.mockReset();
     addNotification.mockReset();
     start.mockReset();
+    captureState.refreshPausedRecording.mockClear();
     updateSettings.mockReset();
     captureState.settings = { startMode: "shared_audio" };
     connectivityStatus = "online";
@@ -60,13 +67,14 @@ describe("MeetingControls", () => {
     captureState.runtimeActive = false;
     captureState.pausedRecording = null;
     captureState.status = "idle";
+    captureState.uploadQueue = { segments: 0, seconds: 0 };
     captureState.support = {
       supported: true,
       mode: "shared_audio",
     };
   });
 
-  it.each(["dashboard", "rail"] as const)("toasts %s start failures instead of rendering them inline", async (variant) => {
+  it.each(["dashboard", "rail", "compact"] as const)("toasts %s start failures instead of rendering them inline", async (variant) => {
     start.mockRejectedValue(new Error("Permission denied by user"));
 
     render(<MeetingControls variant={variant} />);
@@ -84,7 +92,7 @@ describe("MeetingControls", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  it.each(["dashboard", "rail"] as const)("does not toast or navigate when the %s share picker is cancelled", async (variant) => {
+  it.each(["dashboard", "rail", "compact"] as const)("does not toast or navigate when the %s share picker is cancelled", async (variant) => {
     start.mockResolvedValue(null);
 
     render(<MeetingControls variant={variant} />);
@@ -99,7 +107,18 @@ describe("MeetingControls", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  it.each(["sidebar", "rail"] as const)("starts and opens a recording from the %s control", async (variant) => {
+  it.each(["dashboard", "sidebar", "rail", "compact"] as const)("hands %s Start directly to the controller so its reservation covers preflight", async (variant) => {
+    start.mockResolvedValue({ recordingId: "rec-new" });
+    render(<MeetingControls variant={variant} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+    expect(start).toHaveBeenCalledWith("");
+    expect(captureState.refreshPausedRecording).not.toHaveBeenCalled();
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/recordings/rec-new"));
+  });
+
+  it.each(["sidebar", "rail", "compact"] as const)("starts and opens a recording from the %s control", async (variant) => {
     const onMeetingEnd = vi.fn();
     start.mockResolvedValue({ recordingId: "rec-new" });
     render(<MeetingControls variant={variant} onMeetingEnd={onMeetingEnd} />);
@@ -117,9 +136,37 @@ describe("MeetingControls", () => {
     expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
   });
 
+  it("keeps Start reserved when expanding the rail during preflight", async () => {
+    let finishStart: (result: { recordingId: string }) => void = () => {};
+    start.mockImplementation(() => {
+      captureState.status = "starting";
+      return new Promise((resolve) => { finishStart = resolve; });
+    });
+    const onMeetingEnd = vi.fn();
+    const { rerender } = render(<MeetingControls variant="rail" onMeetingEnd={onMeetingEnd} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+    for (const variant of ["rail", "sidebar"] as const) {
+      rerender(<MeetingControls variant={variant} onMeetingEnd={onMeetingEnd} />);
+      const button = screen.getByRole("button", { name: "Starting meeting..." });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+    }
+    expect(start).toHaveBeenCalledExactlyOnceWith("");
+    expect(captureState.refreshPausedRecording).not.toHaveBeenCalled();
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(onMeetingEnd).not.toHaveBeenCalled();
+
+    finishStart({ recordingId: "rec-new" });
+    await waitFor(() => {
+      expect(routerPush).toHaveBeenCalledExactlyOnceWith("/recordings/rec-new");
+      expect(onMeetingEnd).toHaveBeenCalledOnce();
+    });
+  });
+
   // Saving the choice and starting with it run for real in
   // MeetingCaptureSource.integration.test.tsx; here each surface offers it.
-  it.each(["sidebar", "dashboard", "rail"] as const)("chooses a source beside %s Start without starting early", (variant) => {
+  it.each(["sidebar", "dashboard", "rail", "compact"] as const)("chooses a source beside %s Start without starting early", (variant) => {
     render(<MeetingControls variant={variant} />);
     const select = screen.getByRole("combobox", { name: "Recording source" });
     expect(select).toHaveValue("shared_audio");
@@ -128,7 +175,7 @@ describe("MeetingControls", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it.each(["sidebar", "dashboard", "rail"] as const)("says %s Start shares nothing once Microphone only is chosen", async (variant) => {
+  it.each(["sidebar", "dashboard", "rail", "compact"] as const)("says %s Start shares nothing once Microphone only is chosen", async (variant) => {
     captureState.settings = { startMode: "microphone_only" };
     render(<MeetingControls variant={variant} />);
     const select = screen.getByRole("combobox", { name: "Recording source" });
@@ -140,7 +187,7 @@ describe("MeetingControls", () => {
     await waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(""));
   });
 
-  it.each(["sidebar", "dashboard", "rail"] as const)("keeps phone %s Start microphone-only without a selector", async (variant) => {
+  it.each(["sidebar", "dashboard", "rail", "compact"] as const)("keeps phone %s Start microphone-only without a selector", async (variant) => {
     captureState.support.mode = "microphone_only";
     captureState.settings.startMode = "shared_audio";
     render(<MeetingControls variant={variant} />);
@@ -149,16 +196,18 @@ describe("MeetingControls", () => {
     await waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(""));
   });
 
-  describe.each(["sidebar", "rail"] as const)("%s start availability", (variant) => {
+  describe.each(["sidebar", "rail", "compact"] as const)("%s start availability", (variant) => {
     it.each([
       { state: "paused", label: "Paused recording needs attention", paused: "PAUSED" },
-      { state: "interrupted", label: "Interrupted recording needs attention", paused: "UPLOADING" },
+      { state: "interrupted", label: "Interrupted recording needs attention", paused: "UPLOADING", stalled: true },
+      // A reloaded tab's own capture, offered before it stalls, reads as paused (issue #789).
+      { state: "reloaded", label: "Paused recording needs attention", paused: "UPLOADING", stalled: false },
       { state: "starting", label: "Starting meeting...", status: "starting" },
       { state: "finalising", label: "Finalizing meeting...", status: "finalizing" },
       { state: "unsupported", label: "Unsupported browser", unsupported: true },
       { state: "offline", label: "Nojoin unavailable", offline: true },
-    ])("prevents starting while $state", ({ label, paused, status, unsupported, offline }) => {
-      captureState.pausedRecording = paused ? { id: "rec-held", status: paused } : null;
+    ])("prevents starting while $state", ({ label, paused, stalled, status, unsupported, offline }) => {
+      captureState.pausedRecording = paused ? { id: "rec-held", status: paused, capture_stalled: stalled } : null;
       captureState.status = status ?? "idle";
       captureState.support.supported = !unsupported;
       connectivityStatus = offline ? "offline" : "online";
@@ -176,30 +225,40 @@ describe("MeetingControls", () => {
     });
   });
 
-  it.each(["recording", "paused"])("keeps the rail disabled during live %s without rendering live controls", (status) => {
-    captureState.runtimeActive = true;
-    captureState.status = status;
-    const { rerender } = render(<MeetingControls variant="rail" />);
+  describe.each(["rail", "compact"] as const)("%s during capture", (variant) => {
+    it.each(["recording", "paused"])("shows passive status during live %s", (status) => {
+      captureState.runtimeActive = true;
+      captureState.status = status;
+      const { rerender } = render(<MeetingControls variant={variant} />);
 
-    const button = screen.getByRole("button", { name: "Meeting in progress" });
-    expect(button).toBeDisabled();
-    expect(screen.queryByRole("combobox", { name: "Recording source" })).not.toBeInTheDocument();
-    expect(button).toHaveAttribute(
-      "title",
-      "A meeting recording is already running. Use the recording controls to pause or stop it.",
-    );
-    expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
-    fireEvent.click(button);
-    expect(start).not.toHaveBeenCalled();
+      expect(screen.getByTestId("capture-status")).toHaveTextContent(status === "paused" ? /^Paused$/ : /^Recording$/);
+      // The capture's own controls announce its state; this is no second live region.
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Recording source" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+      expect(start).not.toHaveBeenCalled();
 
-    rerender(<MeetingControls variant="sidebar" />);
-    expect(screen.getByTestId("live-controls")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
-    rerender(<MeetingControls variant="rail" />);
-    expect(screen.getByRole("button", { name: "Meeting in progress" })).toBeDisabled();
+      rerender(<MeetingControls variant="sidebar" />);
+      expect(screen.getByTestId("capture-status")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
+      rerender(<MeetingControls variant={variant} />);
+      expect(screen.getByTestId("capture-status")).toBeInTheDocument();
+    });
   });
 
-  it.each(["sidebar", "rail"] as const)("blocks %s start when an errored capture still has a runtime", (variant) => {
+  it.each(["sidebar", "dashboard"] as const)("keeps an upload backlog notice under the %s status", (variant) => {
+    captureState.runtimeActive = true;
+    captureState.status = "recording";
+    captureState.uploadQueue = { segments: 4, seconds: 40 };
+    render(<MeetingControls variant={variant} />);
+
+    expect(screen.getByTestId("capture-status")).toHaveTextContent(/^Recording$/);
+    expect(screen.getByRole("status")).toHaveTextContent("Uploads are 00:40 behind.");
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it.each(["sidebar", "rail", "compact"] as const)("blocks %s start when an errored capture still has a runtime", (variant) => {
     captureState.runtimeActive = true;
     captureState.status = "error";
     render(<MeetingControls variant={variant} />);
@@ -209,6 +268,67 @@ describe("MeetingControls", () => {
     fireEvent.click(button);
     expect(start).not.toHaveBeenCalled();
     expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  describe.each(["dashboard", "sidebar", "rail"] as const)("%s recovery precedence", (variant) => {
+    it.each(["starting", "finalizing"])("preserves the owned %s stage over a retained pause offer", (status) => {
+      captureState.runtimeActive = true;
+      captureState.status = status;
+      captureState.pausedRecording = { id: "rec-owned", status: "PAUSED" };
+      render(<MeetingControls variant={variant} />);
+
+      const label = status === "starting" ? "Starting meeting..." : "Finalizing meeting...";
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(start).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { status: "PAUSED", label: "Paused recording needs attention" },
+      { status: "UPLOADING", label: "Interrupted recording needs attention" },
+    ])("keeps $status attention visible when an errored runtime remains", ({ status, label }) => {
+      captureState.runtimeActive = true;
+      captureState.status = "error";
+      captureState.pausedRecording = { id: "rec-held", status, capture_stalled: status === "UPLOADING" };
+      render(<MeetingControls variant={variant} />);
+
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute(
+        "title",
+        "Stop or discard the current recording from its page before starting anything new.",
+      );
+      expect(screen.queryByRole("button", { name: "Meeting in progress" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+      fireEvent.click(button);
+      expect(start).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps an owned live pause on the rail and expanded recording status", () => {
+    captureState.runtimeActive = true;
+    captureState.status = "paused";
+    captureState.pausedRecording = { id: "rec-owned", status: "PAUSED" };
+    const { rerender } = render(<MeetingControls variant="rail" />);
+
+    expect(screen.getByTestId("capture-status")).toHaveTextContent(/^Paused$/);
+    for (const variant of ["sidebar", "dashboard"] as const) {
+      rerender(<MeetingControls variant={variant} />);
+      expect(screen.getByTestId("capture-status")).toHaveTextContent(/^Paused$/);
+      expect(screen.queryByRole("button", { name: /needs attention/ })).not.toBeInTheDocument();
+    }
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  describe.each(["sidebar", "dashboard"] as const)("%s capture ownership", (variant) => {
+    it.each(["recording", "paused"])("does not render live %s controls without this tab's runtime", (status) => {
+      captureState.status = status;
+      render(<MeetingControls variant={variant} />);
+
+      expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start Meeting" })).toBeEnabled();
+    });
   });
 
   it("keeps the sidebar's paired action through idle, recording, paused and finalizing", () => {
@@ -224,7 +344,7 @@ describe("MeetingControls", () => {
 
     for (const status of ["recording", "paused"]) {
       rerender(renderAs(true, status));
-      expect(screen.getByTestId("live-controls")).toBeInTheDocument();
+      expect(screen.getByTestId("capture-status")).toHaveTextContent(status === "paused" ? /^Paused$/ : /^Recording$/);
       expect(screen.queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
     }
@@ -238,7 +358,7 @@ describe("MeetingControls", () => {
   });
 
   it("names an interrupted capture apart from a paused one", () => {
-    captureState.pausedRecording = { id: "rec-1", status: "UPLOADING" };
+    captureState.pausedRecording = { id: "rec-1", status: "UPLOADING", capture_stalled: true };
     const { rerender } = render(<MeetingControls variant="dashboard" />);
 
     expect(

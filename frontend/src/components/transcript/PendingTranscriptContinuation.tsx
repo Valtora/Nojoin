@@ -42,7 +42,7 @@ export default function PendingTranscriptContinuation({
           speakerName={segmentSpeakerDisplayName(lineShared.speakerMap, segment.speaker)} isSegmentReadOnly
           actions={lineShared.actions} onAddNote={lineShared.onAddNote} onPlayFrom={lineShared.onPlayFrom}
           readOnly={lineShared.readOnly} isEditingText={false} isChangingSpeaker={false}
-          live={lineShared.live} speakers={lineShared.speakers} />
+          live={lineShared.live} speakers={lineShared.speakers} liveSpeakerLabels={lineShared.liveSpeakerLabels} />
       </span>
     </div>
   </>;

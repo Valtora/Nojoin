@@ -18,7 +18,7 @@ import Modal from "../ui/Modal";
 import Select from "../ui/Select";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
-import { formatTimeZoneLocale } from "@/lib/timezone";
+import { formatTimeZoneDay } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
@@ -201,7 +201,7 @@ export default function InvitesTab() {
           const role = inv.role.charAt(0).toUpperCase() + inv.role.slice(1);
           const expiresAt = parseServerTimestamp(inv.expires_at);
           const expires = inv.expires_at
-            ? (expiresAt ? formatTimeZoneLocale(expiresAt, timeZone, "date") : "Unknown date")
+            ? (expiresAt ? formatTimeZoneDay(expiresAt, timeZone) : "Unknown date")
             : null;
           return (
             <SettingsRow

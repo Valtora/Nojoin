@@ -5,12 +5,28 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from backend.models.recording import IN_FLIGHT_TRANSCRIPT_STATUSES, RecordingStatus
+from backend.models.transcript import Transcript
 from backend.processing.llm_backends.base import LLMBackend
 from backend.utils.chat_prompt import LiveChatTranscript
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_transcript import NOTES_LEGEND
 
 ChatChunk = str | dict[str, Any]
+
+
+def chat_transcript_in_progress(
+    status: RecordingStatus, transcript: Transcript | None
+) -> bool:
+    """Whether Chat answers from the transcript so far rather than the whole one.
+
+    Regenerating notes or speakers holds a recording in flight but leaves its
+    transcript finished, so Chat reads that one whole, as for any finished
+    recording.
+    """
+    return status in IN_FLIGHT_TRANSCRIPT_STATUSES and (
+        transcript is None or transcript.transcript_status != "completed"
+    )
 
 
 def _recent_text(text: str, budget: int) -> str:

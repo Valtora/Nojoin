@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import threading
+from types import SimpleNamespace
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 import backend.api.services.health_service as health_service
+from backend.api.deps import get_current_user
+from backend.main import create_app
+
+SECURE_TEST_BASE_URL = "https://test"
 
 
 class _FakeResponse:
@@ -33,6 +41,118 @@ def _reset_hf_validation_cache() -> None:
     health_service._hf_validation_cache = None
     yield
     health_service._hf_validation_cache = None
+
+
+@pytest.fixture(autouse=True)
+def _reset_worker_ping() -> None:
+    health_service._worker_ping = None
+    yield
+    health_service._worker_ping = None
+
+
+class _NoHeartbeat:
+    """The heartbeat key's Redis client, with no worker heartbeat stored."""
+
+    async def get(self, _key: str) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
+class _HeldPing:
+    """A Celery ping that blocks until released, as one does while no worker answers."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.started = threading.Event()
+        self.released = threading.Event()
+        self.returned = threading.Event()
+
+    def inspect(self) -> _HeldPing:
+        return self
+
+    def ping(self) -> None:
+        self.calls += 1
+        self.started.set()
+        # Bounded, so a ping run on the event loop fails the test, not hangs it.
+        self.released.wait(timeout=5)
+        self.returned.set()
+        return None
+
+
+def _worker_down(monkeypatch) -> _HeldPing:
+    ping = _HeldPing()
+    monkeypatch.setattr(
+        health_service, "redis", SimpleNamespace(from_url=lambda _url: _NoHeartbeat())
+    )
+    monkeypatch.setattr(health_service.celery_app.control, "inspect", ping.inspect)
+
+    async def _db_up():
+        return {"status": "ok"}, True
+
+    monkeypatch.setattr(health_service, "_get_db_component", _db_up)
+    return ping
+
+
+@pytest.mark.anyio
+async def test_a_health_poll_waiting_on_the_worker_ping_holds_no_other_request(
+    monkeypatch,
+) -> None:
+    """Issue #904: the ping ran on the event loop and held every request."""
+    ping = _worker_down(monkeypatch)
+    app = create_app(app_lifespan=None)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1, role="user", is_superuser=False
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        health = asyncio.create_task(client.get("/api/v1/system/health"))
+        assert await asyncio.to_thread(ping.started.wait, 5)
+        other = await client.get("/api/health")
+        held = ping.returned.is_set()
+        ping.released.set()
+        response = await health
+
+    assert other.status_code == 200
+    assert held is False, "the other request waited for the worker ping"
+    assert response.json()["components"]["worker"] == "inactive"
+
+
+@pytest.mark.anyio
+async def test_concurrent_health_polls_share_one_worker_ping(monkeypatch) -> None:
+    ping = _worker_down(monkeypatch)
+
+    leaving = asyncio.create_task(health_service._resolve_worker_status())
+    staying = asyncio.create_task(health_service._resolve_worker_status())
+    assert await asyncio.to_thread(ping.started.wait, 5)
+    # A poll that goes away, such as a closed tab, leaves the ping to the rest.
+    leaving.cancel()
+    ping.released.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await leaving
+    assert await staying == "inactive"
+    assert ping.calls == 1
+    # Shared while in flight only: the next poll asks the workers again.
+    assert await health_service._resolve_worker_status() == "inactive"
+    assert ping.calls == 2
+
+
+@pytest.mark.anyio
+async def test_a_failed_worker_ping_reports_an_error(monkeypatch) -> None:
+    _worker_down(monkeypatch)
+
+    def _unreachable_broker():
+        raise ConnectionError("broker unreachable")
+
+    monkeypatch.setattr(
+        health_service.celery_app.control, "inspect", _unreachable_broker
+    )
+
+    assert await health_service._resolve_worker_status() == "error"
 
 
 @pytest.mark.anyio

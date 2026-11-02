@@ -2,17 +2,20 @@
 
 import { describe, expect, it } from "vitest";
 
-import { RecordingStatus, type Recording, type TimelineNote } from "@/types";
+import { ClientStatus, RecordingStatus, type Recording, type TimelineNote } from "@/types";
 
 import {
   AUDIO_RECHECK_INTERVAL_MS,
   AUDIO_RECHECK_WINDOW_MS,
+  hasInFlightTranscriptFeed,
   hasPolledRecordingChanged,
+  keepTranscriptCounter,
   noteFilesBeingRead,
   pollFailureMeansRemoved,
   notFoundMeans,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
+  sideColumnOpeningSize,
 } from "./recordingDetailUtils";
 
 const recordingWith = (overrides: Partial<Recording>) =>
@@ -75,6 +78,15 @@ describe("polling a recording with no audio and no proxy", () => {
     expect(hasPolledRecordingChanged(before, { ...before, has_audio: true })).toBe(
       true,
     );
+  });
+});
+
+describe("noticing a change to the speaker cap in a poll", () => {
+  it("takes a new cap, which the live Max Speakers field shows", () => {
+    const before = recordingWith({ max_speakers: 3 });
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: 3 }))).toBe(false);
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: 4 }))).toBe(true);
+    expect(hasPolledRecordingChanged(before, recordingWith({ max_speakers: null }))).toBe(true);
   });
 });
 
@@ -180,5 +192,87 @@ describe("polling while a note's file is read", () => {
     expect(noteFilesBeingRead(withFile("READY", true))).toBe(false);
     expect(noteFilesBeingRead(null)).toBe(false);
     expect(recordingPollIntervalMs(processed, 0, true)).toBe(3000);
+  });
+});
+
+describe("which in-flight recordings have live lines to read (#835)", () => {
+  const withTranscript = (transcript_status: string | null, overrides: Partial<Recording> = {}) => recordingWith({
+    status: RecordingStatus.QUEUED, client_status: ClientStatus.IDLE,
+    transcript: transcript_status === null ? undefined
+      : { id: 1, recording_id: "rec-1", created_at: "", updated_at: "", segments: [], transcript_status },
+    ...overrides,
+  });
+
+  it("is true for a capture, recording, paused or stopped", () => {
+    expect(hasInFlightTranscriptFeed(withTranscript(null, {
+      status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
+    }))).toBe(true);
+    expect(hasInFlightTranscriptFeed(withTranscript(null, { status: RecordingStatus.PAUSED }))).toBe(true);
+    expect(hasInFlightTranscriptFeed(withTranscript("processing"))).toBe(true);
+  });
+
+  it("is true for a finished transcript a later step runs over", () => {
+    expect(hasInFlightTranscriptFeed(withTranscript("completed", { status: RecordingStatus.PROCESSING }))).toBe(true);
+  });
+
+  it("is false for an import or a reprocess before it publishes", () => {
+    expect(hasInFlightTranscriptFeed(withTranscript(null, {
+      status: RecordingStatus.UPLOADING, client_status: undefined,
+    }))).toBe(false);
+    expect(hasInFlightTranscriptFeed(withTranscript(null))).toBe(false);
+    expect(hasInFlightTranscriptFeed(withTranscript("pending"))).toBe(false);
+    expect(hasInFlightTranscriptFeed(withTranscript("error"))).toBe(false);
+  });
+
+  it("notices the transcript's status move on a poll", () => {
+    expect(hasPolledRecordingChanged(withTranscript("pending"), withTranscript("completed"))).toBe(true);
+  });
+});
+
+describe("sideColumnOpeningSize", () => {
+  it("keeps the density's share where it is already wide enough", () => {
+    expect(sideColumnOpeningSize(1_600, true)).toBe(22);
+    expect(sideColumnOpeningSize(1_600, false)).toBe(25);
+  });
+
+  // A 1440 px window less the nav and the recordings list leaves about 900 px,
+  // where 22% left the column about 200 px wide (#841).
+  it("opens a narrow page's column 20rem wide", () => {
+    expect(sideColumnOpeningSize(1_100, true)).toBe(30);
+    expect((1_100 * 30) / 100).toBeGreaterThanOrEqual(320);
+  });
+
+  it("never gives the column more than 35% of the page", () => {
+    expect(sideColumnOpeningSize(912, true)).toBe(35);
+    expect(sideColumnOpeningSize(700, false)).toBe(35);
+  });
+
+  it("falls back to the share before the page is measured", () => {
+    expect(sideColumnOpeningSize(0, true)).toBe(22);
+    expect(sideColumnOpeningSize(Number.NaN, false)).toBe(25);
+  });
+});
+
+describe("keeping the page's transcript change counter", () => {
+  const withCounter = (changeSequence: number | undefined, overrides: Partial<Recording> = {}) =>
+    recordingWith({ transcript: { change_sequence: changeSequence, notes: "Read" } as Recording["transcript"], ...overrides });
+
+  it("keeps the counter the page has caught up with, and the rest of the read", () => {
+    const kept = keepTranscriptCounter(withCounter(4, { name: "Renamed" }), withCounter(2));
+    expect(kept.transcript?.change_sequence).toBe(2);
+    expect(kept.transcript?.notes).toBe("Read");
+    expect(kept.name).toBe("Renamed");
+  });
+
+  it("keeps a missing counter, so the next check loads the transcript", () => {
+    expect(keepTranscriptCounter(withCounter(1), recordingWith({}))
+      .transcript?.change_sequence).toBeUndefined();
+  });
+
+  it("returns the read as it is when the counter has not moved, the recording differs or nothing is shown", () => {
+    const read = withCounter(3);
+    expect(keepTranscriptCounter(read, withCounter(3))).toBe(read);
+    expect(keepTranscriptCounter(read, withCounter(1, { id: "rec-2" }))).toBe(read);
+    expect(keepTranscriptCounter(read, null)).toBe(read);
   });
 });

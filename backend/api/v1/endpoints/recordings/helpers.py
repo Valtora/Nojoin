@@ -2,12 +2,13 @@ import asyncio
 import logging
 import os
 import shutil
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import delete
+from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -38,6 +39,7 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.browser_capture_audio import BROWSER_MASTER_SUFFIX
+from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.recording_audio_sync import (
     SEGMENT_CORRUPT_SUFFIX,
     STAGED_BROWSER_SEGMENT_SUFFIXES,
@@ -47,6 +49,7 @@ from backend.utils.recording_audio_sync import (
     find_pending_recording_upload_sequences,
     list_recording_audio_chunks,
     list_recording_upload_sequences,
+    lock_recording_audio,
     sync_recording_audio_chunks_from_directory,
     sync_recording_audio_chunks_from_entries,
     sync_recording_audio_window_manifests,
@@ -60,6 +63,7 @@ from backend.utils.reprocess_publication import (
 )
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
+from backend.utils.timezones import get_timezone
 from backend.utils.transcript_change import change_sequence_bump
 from backend.utils.transcript_settling import durable_settling_state
 
@@ -99,27 +103,56 @@ def _recording_has_audio(recording: Recording) -> bool:
 
 
 async def revoke_recording_task(recording: Recording) -> None:
-    """Stop the recording's Celery task before its row and files go.
+    """Stop the recording's Celery task before its row and files go."""
+    await revoke_task_of_recording(recording.celery_task_id, recording.public_id)
+
+
+async def revoke_task_of_recording(task_id: Optional[str], public_id: str) -> None:
+    """Stop a recording's Celery task, given its id read before the row went.
 
     ``terminate=True`` ends a task that is already running; a queued one is
     dropped. The revoke is a broker publish, so it runs off the event loop, and
     one that cannot reach the broker does not stop the delete.
     """
-    if not recording.celery_task_id:
+    if not task_id:
         return
     try:
         await asyncio.to_thread(
             recordings_module.celery_app.control.revoke,
-            recording.celery_task_id,
+            task_id,
             terminate=True,
         )
     except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
         logger.warning(
             "Could not revoke task %s of recording %s before deleting it",
-            recording.celery_task_id,
-            recording.public_id,
+            task_id,
+            public_id,
             exc_info=True,
         )
+
+
+async def lock_recording_for_delete(db: AsyncSession, recording: Recording) -> bool:
+    """Lock a recording to delete it: its audio lock, Transcript, then the row.
+
+    Discard's order, which Stop and pause take too. A live capture's publisher
+    holds Transcript before the row, and the audio bookkeeping holds the audio
+    lock before either. A delete that locked the row first reached Transcript
+    only through the cascade, and could deadlock with them (issue #816). The
+    row is locked so a worker cannot repoint ``audio_path`` between the read
+    and the delete (keep_imported_audio_task) and leave its new file behind.
+
+    Returns False when another request deleted the recording while this one
+    waited for the locks.
+    """
+    await db.run_sync(lambda session: lock_recording_audio(session, recording.id))
+    await db.run_sync(
+        lambda session: _load_transcript(session, recording.id, lock=True)
+    )
+    try:
+        await db.refresh(recording, with_for_update=True)
+    except InvalidRequestError:
+        return False
+    return True
 
 
 def _estimated_audio_bitrate_bits_per_second(
@@ -862,8 +895,20 @@ def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
         )
 
 
-def generate_default_meeting_name() -> str:
-    now = datetime.now()
+def generate_default_meeting_name(
+    timezone_name: str, *, now: datetime | None = None
+) -> str:
+    """The name a meeting gets when nobody gave it one, such as
+    "Sunday 1st Nov, Night Meeting".
+
+    The day and the time of day are the owner's: pass their zone from
+    ``get_user_timezone_name``, which falls back to ``DEFAULT_TIMEZONE`` and
+    then UTC. The container's clock runs in UTC, so its local time would name
+    an evening meeting in Tokyo as an afternoon one, and near midnight give
+    it the wrong day (issue #886). ``now`` is naive UTC, as the schema stores
+    times, and defaults to the current time.
+    """
+    now = (now or utc_now()).replace(tzinfo=UTC).astimezone(get_timezone(timezone_name))
     day_name = now.strftime("%A")
     day_num = now.day
     suffix = get_ordinal_suffix(day_num)

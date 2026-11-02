@@ -212,11 +212,9 @@ export default function MeetingAnalysisPanel({
 
         <Note label="How to read this section">
           <p>
-            Unlike the rest of this tab, this section is an AI model&apos;s
-            reading of the transcript rather than a measurement, so treat it as
-            a starting point and check the quotes. Anything it could not
-            evidence with a quote from the transcript was discarded rather than
-            shown.
+            Treat this section as a starting point and check the quotes.
+            Anything the model could not back with a quote from the transcript
+            was left out.
           </p>
         </Note>
       </div>
@@ -238,8 +236,7 @@ export default function MeetingAnalysisPanel({
         </span>
       </div>
       <p className="mt-0.5 text-xs text-contrast-helper">
-        Read from the transcript by AI, with quotes you can check. Everything
-        above is measured; this is not.
+        Taken from the transcript, with quotes you can check.
       </p>
       <div className="mt-3">{body()}</div>
     </div>

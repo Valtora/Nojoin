@@ -278,7 +278,7 @@ def update_utterance_speaker(
     actor_user_id: int | None = None,
     expected_revision: int | None = None,
     source: str = "api",
-) -> tuple[TranscriptUtterance, RecordingSpeaker]:
+) -> tuple[TranscriptUtterance, RecordingSpeaker | None]:
     utterance = _lock_anchor(session, recording_id, utterance_public_id, scope)
     if utterance is None:
         raise LookupError("Utterance not found")
@@ -317,7 +317,12 @@ def update_utterance_speaker(
         scope=scope,
     )
 
-    target_key = target_speaker.id
+    target_key = target_speaker.id if target_speaker is not None else None
+    target_label = (
+        target_speaker.diarization_label
+        if target_speaker is not None
+        else str(diarization_label)
+    )
 
     updated_segments = [dict(segment) for segment in (transcript.segments or [])]
     index_by_public_id = {
@@ -335,7 +340,7 @@ def update_utterance_speaker(
             "revision": target_utterance.revision,
         }
         target_utterance.recording_speaker_id = target_key
-        target_utterance.speaker_label = target_speaker.diarization_label
+        target_utterance.speaker_label = target_label
         target_utterance.manual_speaker_locked = True
         live_payload = dict(target_utterance.confidence_payload or {})
         if isinstance(live_payload.get(LIVE_SPEAKER_LABEL_PAYLOAD_KEY), dict):
@@ -361,7 +366,7 @@ def update_utterance_speaker(
             source=source,
             old_values=old_values,
             new_values={
-                "speaker_label": target_speaker.diarization_label,
+                "speaker_label": target_label,
                 "recording_speaker_id": target_key,
             },
             resulting_revision=target_utterance.revision,
@@ -381,7 +386,7 @@ def update_utterance_speaker(
                 updated_segments,
                 projection_index,
                 old_label,
-                target_speaker.diarization_label,
+                target_label,
             )
             updated_segments[projection_index]["speaker_manually_edited"] = True
             updated_segments[projection_index]["speaker_edit_source"] = source
@@ -398,16 +403,18 @@ def update_utterance_speaker(
                 target_utterance.speaker_assignment_authority
             )
 
-    _preserve_speaker_label_continuity(
-        session,
-        source_speaker=source_speaker,
-        target_speaker=target_speaker,
-        scope=scope,
-        anchor_start_ms=utterance.start_ms,
-    )
+    if target_speaker is not None:
+        _preserve_speaker_label_continuity(
+            session,
+            source_speaker=source_speaker,
+            target_speaker=target_speaker,
+            scope=scope,
+            anchor_start_ms=utterance.start_ms,
+        )
 
     if (
         scope == SpeakerCorrectionScope.MERGE_INTO_SPEAKER
+        and target_speaker is not None
         and source_recording_speaker_id
         and source_recording_speaker_id != target_key
     ):
@@ -428,14 +435,18 @@ def update_utterance_speaker(
         utterance_id=utterance.id,
         source_recording_speaker_id=source_recording_speaker_id,
         target_recording_speaker_id=target_key,
-        target_global_speaker_id=target_speaker.global_speaker_id,
+        target_global_speaker_id=(
+            target_speaker.global_speaker_id if target_speaker is not None else None
+        ),
         event_type=_event_type_for_scope(scope),
         scope=scope,
         effective_from_ms=utterance.start_ms,
         payload={
             "new_speaker_name": new_speaker_name,
             "diarization_label": diarization_label,
-            "target_public_id": target_speaker.public_id,
+            "target_public_id": (
+                target_speaker.public_id if target_speaker is not None else None
+            ),
         },
         update_source_provenance=(
             scope == SpeakerCorrectionScope.MERGE_INTO_SPEAKER

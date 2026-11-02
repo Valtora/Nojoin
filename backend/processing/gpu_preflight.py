@@ -1,9 +1,9 @@
 """Hide GPUs that this image's CUDA build cannot drive, before the worker starts.
 
-The worker image is built on CUDA 13.0. That needs NVIDIA driver 580 or newer, and
-its kernels cover compute capability 7.5 (Turing) upwards. A host that falls short
-still passes the checks the processing code relies on: the device nodes exist, so
-ONNX Runtime is asked for its CUDA provider, and on a Pascal card
+The worker image is built on CUDA 13.2. Any CUDA 13 build runs on NVIDIA driver 580
+or newer, and its kernels cover compute capability 7.5 (Turing) upwards. A host that
+falls short still passes the checks the processing code relies on: the device nodes
+exist, so ONNX Runtime is asked for its CUDA provider, and on a Pascal card
 ``torch.cuda.is_available()`` is True although no kernel can launch. Each recording
 would then fail on its first GPU operation.
 

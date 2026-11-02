@@ -11,7 +11,6 @@ import {
   updateTranscriptSegmentText,
   updateTranscriptUtteranceText,
   findAndReplace,
-  renameRecording,
   getGlobalSpeakers,
   updateSpeakerColor,
   generateNotes,
@@ -26,7 +25,12 @@ import {
 } from "@/lib/meetingEdgeContext";
 import { getErrorDetail, getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
 import { notesErrorDetail } from "@/lib/transcriptErrors";
-import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
+import {
+  RECORDING_UPDATED_EVENT,
+  dispatchRecordingRenamed,
+  recordingRenameOf,
+  subscribeRecordingRemoved,
+} from "@/lib/recordingEvents";
 import {
   Recording,
   TranscriptSegment,
@@ -60,21 +64,24 @@ import { useRecordingActions } from "@/components/recordings/_hooks/useRecording
 
 import {
   cloneTranscriptSegments,
+  getAutoSpeakerReplacementName,
   hasPolledRecordingChanged,
   isAudioUnavailable,
   isRecordingInFlight,
+  keepTranscriptCounter,
   noteFilesBeingRead,
   pollFailureMeansRemoved,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
 } from "./recordingDetailUtils";
 import { useRecordingNotFound } from "./useRecordingNotFound";
+import { useRecordingPanel } from "./useRecordingPanel";
 import { useRecordingTranscript } from "./useRecordingTranscript";
 import { createRecordingMetadataReader } from "./recordingMetadataReader";
 
 interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
-  capture?: { recordingId: string | null; status: string };
+  capture?: { ownedRecordingId: string | null; status: string };
 }
 
 // A finished page still notices changes made from another tab or device: a
@@ -89,6 +96,11 @@ export const IDLE_RECORDING_POLL_INTERVAL_MS = 15_000;
  */
 export function useRecordingDetail({ params, capture }: UseRecordingDetailParams) {
   const [recording, setRecording] = useState<Recording | null>(null);
+  // For a read that returns after the recording on screen has changed.
+  const recordingRef = useRef(recording);
+  useEffect(() => {
+    recordingRef.current = recording;
+  }, [recording]);
   // Fed every read of the recording, changed or not: `recording` ignores
   // `live_audio_ms`, which changes on every poll.
   const [audioClock] = useState(() => new AudioClock());
@@ -122,7 +134,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const audioRef = useRef<HTMLAudioElement>(null);
   const { addNotification } = useNotificationStore();
   const recordingActions = useRecordingActions();
-  const { chatPanelHeight, setChatPanelHeight, activePanel, setActivePanel } = useNavigationStore();
+  const {
+    chatPanelHeight, setChatPanelHeight, activePanel: rememberedPanel, setActivePanel: rememberPanel,
+  } = useNavigationStore();
 
   // Player State
   const [currentTime, setCurrentTime] = useState(0);
@@ -132,6 +146,14 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // Title Editing State
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState("");
+  // Read wherever a newer name arrives, so the field keeps what is being
+  // typed. A ref, so opening or closing the field reads nothing again.
+  const isEditingTitleRef = useRef(isEditingTitle);
+  useEffect(() => {
+    isEditingTitleRef.current = isEditingTitle;
+  }, [isEditingTitle]);
+  // Numbers the title saves, so a late answer to an earlier one cannot undo a later one.
+  const titleSaveRef = useRef(0);
 
   // Speaker Colors State
   const [speakerColors, setSpeakerColors] = useState<Record<string, string>>(
@@ -164,8 +186,19 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const audioUnavailableSinceRef = useRef<number | null>(null);
   const idleEtagRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
-  const localCaptureActive = !!recording && capture?.recordingId === recording.id &&
+  // Only this tab's runtime, a failed stop's included, keeps a recording in
+  // flight here ahead of the server. A stored ID outlives a reload after which
+  // another device may have finished the recording, and a recovery offer alone
+  // has nothing to play back from either.
+  const localCaptureActive = !!recording && capture?.ownedRecordingId === recording.id &&
     (capture.status === "recording" || capture.status === "paused" || capture.status === "finalizing");
+  const { activePanel, setActivePanel } = useRecordingPanel(
+    recording?.id ?? null,
+    !!recording && (isLiveCaptureInProgress(recording) || localCaptureActive),
+    rememberedPanel,
+    rememberPanel,
+    isMobile,
+  );
   const canPlayback = !!recording && !isInFlightRecording && !localCaptureActive;
   const canExport = canPlayback;
   const {
@@ -219,8 +252,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
           setMeetingEdgeContextLevel(clampMeetingEdgeContextLevel(settingsData.meeting_edge_context_level));
         }
       });
-      // Only set title if not editing, or on first load
-      if (!isEditingTitle) {
+      if (!isEditingTitleRef.current) {
         setTitleValue(recData.name);
       }
       return recData;
@@ -243,9 +275,10 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     } finally {
       if (metadataReader.isActive()) setLoading(false);
     }
-  }, [addNotification, metadataReader, params, isEditingTitle, router, recordingNotFound]);
+  }, [addNotification, metadataReader, params, router, recordingNotFound]);
 
   const refreshRecordingView = useCallback(async () => {
+    const shown = recordingRef.current;
     const refreshedRecording = await fetchRecording();
 
     if (!refreshedRecording?.id || (isRecordingInFlight(refreshedRecording) && !hasRetainedPublication)) {
@@ -255,8 +288,50 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
 
     await syncTranscriptState("full").catch((e) => {
       console.error("Failed to refresh transcript state:", e);
+      // Not caught up, so the next poll loads it.
+      setRecording((current) => current && keepTranscriptCounter(current, shown));
     });
   }, [fetchRecording, syncTranscriptState, refreshInFlightTranscript, hasRetainedPublication]);
+
+  // Stores a fresh read of the recording, taking its transcript change counter
+  // only once the transcript has caught up with it, as the idle poll does. A
+  // moved counter loads the transcript first when `loadTranscript` is set;
+  // otherwise, or when that load fails, the read keeps the page's counter and
+  // the next poll loads the change rather than take it as seen.
+  const storeRecordingRead = useCallback(async (updated: Recording, loadTranscript: boolean) => {
+    const shown = recordingRef.current;
+    const transcriptMoved = shown?.id === updated.id &&
+      updated.transcript?.change_sequence !== shown.transcript?.change_sequence;
+    // In flight, the live feed shows the transcript and reads it itself.
+    if (!transcriptMoved || (isRecordingInFlight(updated) && !hasRetainedPublication)) {
+      setRecording(updated);
+      return;
+    }
+    if (loadTranscript) {
+      try {
+        await syncTranscriptState("full");
+        setRecording(updated);
+        return;
+      } catch (e: unknown) {
+        console.error("Failed to refresh transcript state:", e);
+      }
+    }
+    setRecording((current) => keepTranscriptCounter(updated, current));
+  }, [hasRetainedPublication, syncTranscriptState]);
+
+  // Tags and the calendar link change the recording but not its transcript,
+  // so after them the transcript is read only if it changed elsewhere.
+  const refreshRecordingMetadata = useCallback(async () => {
+    try {
+      const { id } = await params;
+      const updated = await metadataReader.read(id);
+      if (!updated) return;
+      await storeRecordingRead(updated, true);
+      if (!isEditingTitleRef.current) setTitleValue(updated.name);
+    } catch (e: unknown) {
+      console.error("Failed to refresh recording:", e);
+    }
+  }, [metadataReader, params, storeRecordingRead]);
 
   useEffect(() => {
     fetchRecording();
@@ -330,7 +405,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         if (!polled) return;
         const data = polled.recording;
 
-        const transcriptMoved = idle &&
+        // A recording that changes by itself has its transcript polled as
+        // well. Any other, a note's file being read included, loads it here.
+        const transcriptMoved = !shouldPollRecordingUpdates(recording) &&
           data.transcript?.change_sequence !== recording.transcript?.change_sequence;
         // Taken as seen only once the transcript has caught up: a failed read
         // keeps the old ETag and counter, so the next check tries again.
@@ -338,7 +415,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         idleEtagRef.current = polled.etag;
         if (transcriptMoved || hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
-          if (!isEditingTitle) setTitleValue(data.name);
+          if (!isEditingTitleRef.current) setTitleValue(data.name);
         }
 
             } catch (e: unknown) {
@@ -358,30 +435,30 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, audioClock, metadataReader, recordingNotFound, filesBeingRead,
+  }, [params, recording, audioClock, metadataReader, recordingNotFound, filesBeingRead,
     syncTranscriptState]);
 
-  // Listen for recording updates (e.g. from Sidebar retry or rename)
+  // Updates announced for this recording, by this page or elsewhere: a rename
+  // (this page's title, the rail's menu) is applied as it is, and anything
+  // else, such as a retry or a speaker inference, reads the recording again.
   useEffect(() => {
-    const handleUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (recording && customEvent.detail?.id === recording.id) {
-        if (customEvent.detail.name) {
-          // Optimistic update
-          setRecording((prev) =>
-            prev ? { ...prev, name: customEvent.detail.name } : null,
-          );
-          if (!isEditingTitle) setTitleValue(customEvent.detail.name);
-        } else {
-          // Force refresh for other updates (like status change or speaker inference)
-          refreshRecordingView().catch(console.error);
-        }
+    const handleUpdate = (event: Event) => {
+      if (!recording) return;
+      const rename = recordingRenameOf(event);
+      if (rename) {
+        if (rename.id !== recording.id) return;
+        setRecording((prev) =>
+          prev && prev.id === rename.id && prev.name !== rename.name ? { ...prev, name: rename.name } : prev,
+        );
+        if (!isEditingTitleRef.current) setTitleValue(rename.name);
+      } else if ((event as CustomEvent<{ id?: string } | null>).detail?.id === recording.id) {
+        refreshRecordingView().catch(console.error);
       }
     };
 
-    window.addEventListener("recording-updated", handleUpdate);
-    return () => window.removeEventListener("recording-updated", handleUpdate);
-  }, [recording, isEditingTitle, refreshRecordingView]);
+    window.addEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
+    return () => window.removeEventListener(RECORDING_UPDATED_EVENT, handleUpdate);
+  }, [recording, refreshRecordingView]);
 
   // Discarding the open recording deletes it, so this page has nothing left to
   // show. Leaving centrally means every discard surface gets the redirect.
@@ -394,23 +471,6 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       }),
     [navigateToRecordings, recording],
   );
-
-  // Listen for tour events to switch panels
-  useEffect(() => {
-    const handleTourSwitch = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (
-        customEvent.detail === "notes" ||
-        customEvent.detail === "transcript"
-      ) {
-        setActivePanel(customEvent.detail);
-      }
-    };
-
-    window.addEventListener("tour:switch-panel", handleTourSwitch);
-    return () =>
-      window.removeEventListener("tour:switch-panel", handleTourSwitch);
-  }, [setActivePanel]);
 
   // Initialize speaker colors
   useEffect(() => {
@@ -522,8 +582,13 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       accepted = true;
       const updated = await metadataReader.read(recording.id);
       if (!updated) return true;
+      // The read's change counter is taken only once the transcript has
+      // caught up, so after a failed load the next poll tries again.
+      await syncTranscriptState("full").catch((e: unknown) => {
+        setRecording((current) => keepTranscriptCounter(updated, current));
+        throw e;
+      });
       setRecording(updated);
-      await syncTranscriptState("full");
       for (const message of libraryVoiceprintNotices(renamed)) {
         addNotification({ type: "info", message });
       }
@@ -741,30 +806,42 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     }
   };
 
-  const handleTitleSubmit = async () => {
-    if (!recording || !titleValue.trim()) {
-      setIsEditingTitle(false);
-      setTitleValue(recording?.name || "");
-      return;
-    }
-
-    if (titleValue.trim() === recording.name) {
-      setIsEditingTitle(false);
-      return;
-    }
-
+  // A speaker renamed or merged in the speaker panel takes its new name into
+  // the notes. The panel reads the recording and its transcript again straight
+  // after, so this asks only for the replacement, rather than reading both
+  // first as the find-and-replace bar does.
+  const handleSpeakerRenamed = async (oldName: string, newName: string) => {
+    if (!recording?.transcript?.notes) return;
     try {
-      await renameRecording(recording.id, titleValue.trim());
-      const updated = await metadataReader.read(recording.id);
-      if (!updated) return;
-      setRecording(updated);
-      setIsEditingTitle(false);
-      router.refresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to rename recording:", e);
-      addNotification({ type: "error", message: "Failed to rename recording." });
+      await findAndReplace(recording.id, oldName, getAutoSpeakerReplacementName(newName), {
+        caseSensitive: true,
+      });
+    } catch (error: unknown) {
+      console.error("Failed to find and replace:", error);
+      addNotification({ type: "error", message: getErrorDetail(error) ?? "Failed to find and replace." });
     }
+  };
+
+  const handleTitleSubmit = () => {
+    setIsEditingTitle(false);
+    if (!recording) return;
+    const { id, name: previousName } = recording;
+    const name = titleValue.trim();
+    if (!name || name === previousName) {
+      setTitleValue(previousName);
+      return;
+    }
+
+    const save = ++titleSaveRef.current;
+    const announce = (value: string) => {
+      if (save === titleSaveRef.current) dispatchRecordingRenamed(id, value);
+    };
+    setTitleValue(name);
+    // The page's own listener above applies it with the rail and the
+    // dashboard, now rather than after the save, and a refusal (which the
+    // shared action reports) puts the old name back in all of them.
+    announce(name);
+    void recordingActions.rename(id, name, { onError: () => announce(previousName) });
   };
 
   const handleColorChange = async (speakerLabel: string, colorKey: string) => {
@@ -792,10 +869,11 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     if (recording) {
       try {
         await updateSpeakerColor(recording.id, targetLabel, colorKey);
-        // Refresh recording to get updated speaker data
+        // Refresh recording to get updated speaker data. The colour moves the
+        // transcript change counter itself, so the next poll loads the transcript.
         const updated = await metadataReader.read(recording.id);
         if (!updated) return;
-        setRecording(updated);
+        await storeRecordingRead(updated, false);
 
             } catch (e: unknown) {
         console.error("Failed to update speaker color", e);
@@ -814,7 +892,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       await generateNotes(recording.id, notesTemplateId ?? null);
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, true);
       setActivePanel("notes"); // Switch to notes panel after generation
 
         } catch (e: unknown) {
@@ -822,7 +900,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       try {
         const updated = await metadataReader.read(recording.id);
         if (!updated) return;
-        setRecording(updated);
+        await storeRecordingRead(updated, true);
         setActivePanel("notes");
 
             } catch (refreshError: unknown) {
@@ -847,9 +925,12 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
 
     try {
       await updateNotes(recording.id, notes);
+      // A notes save moves the transcript change counter itself, so the read
+      // keeps the page's and the next poll loads the transcript once, rather
+      // than after every save.
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, false);
 
         } catch (e: unknown) {
       console.error("Failed to update notes:", e);
@@ -870,7 +951,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       await updateNotes(recording.id, previousNotes || "");
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, false);
 
         } catch (e: unknown) {
       console.error("Notes undo failed:", e);
@@ -891,7 +972,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       await updateNotes(recording.id, nextNotes || "");
       const updated = await metadataReader.read(recording.id);
       if (!updated) return;
-      setRecording(updated);
+      await storeRecordingRead(updated, false);
 
         } catch (e: unknown) {
       console.error("Notes redo failed:", e);
@@ -925,7 +1006,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     if (!recording) return;
     if (selection.kind === "audio") {
       // Reports its own failures, with what went wrong.
-      await recordingActions.exportAudio(recording.id, recording.name);
+      await recordingActions.exportAudio(recording);
       return;
     }
     try {
@@ -1020,6 +1101,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     // Handlers
     fetchRecording,
     refreshRecordingView,
+    refreshRecordingMetadata,
     handleTimeUpdate,
     handlePlaySegment,
     handlePause,
@@ -1030,6 +1112,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     handleUpdateSegmentSpeaker,
     handleUpdateSegmentText,
     handleGlobalFindAndReplace,
+    handleSpeakerRenamed,
     handleTitleSubmit,
     handleColorChange,
     handleGenerateNotes,

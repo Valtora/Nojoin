@@ -266,6 +266,8 @@ export interface LiveTranscriptWord {
 
 /** Live settling evidence, or timed final words on a recording that used settling. */
 export interface LiveTranscriptSettling {
+  /** Capture interval between resume cuts; absent means the initial interval. */
+  capture_interval?: number;
   /** Live diarisation has not covered these words yet; UNKNOWN remains unassigned. */
   diarisation_pending?: boolean;
   /** Sticky recording policy, copied onto local segments by the delta reader. */
@@ -337,11 +339,19 @@ export interface TranscriptUtteranceList {
    * capture. Whole on every read, delta or not: naming changes no utterance.
    */
   live_speaker_names?: Record<string, string>;
+  /**
+   * Live label -> the live label the user merged it into during capture, so
+   * its lines read as that speaker's. Whole on every read, like the names.
+   */
+  live_speaker_merges?: Record<string, string>;
+  /** The live lane is behind a running capture's uploads. */
+  live_behind?: boolean;
 }
 
-/** The answer to naming a live speaker: every live name, as the live read gives it. */
+/** The answer to naming or merging a live speaker, as the live read gives it. */
 export interface LiveSpeakerNames {
   live_speaker_names: Record<string, string>;
+  live_speaker_merges?: Record<string, string>;
 }
 
 export interface TranscriptSegment extends LiveTranscriptSettling {
@@ -540,7 +550,12 @@ export interface Transcript extends BaseDBModel {
    * never triggers one, since that spends provider quota and overwrites edits.
    */
   notes_stale_documents?: boolean;
-  transcript_status?: string; // pending, processing, completed, error
+  /**
+   * pending, processing, completed or error. Only a capture's transcript is
+   * "processing", from its start until its run publishes; an import's and a
+   * reprocess's stay "pending" until then.
+   */
+  transcript_status?: string;
   error_message?: string;
 }
 
@@ -658,11 +673,23 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    */
   capture_stalled?: boolean;
   /**
+   * The capture's current epoch. A reloaded tab offers its capture at once only
+   * while this is still the epoch it held (issue #778).
+   */
+  capture_epoch?: number;
+  /**
    * A file import that has received no part for 15 minutes, so the page
    * sending it went away. Judged by the server. It cannot be resumed, only
    * imported again or discarded.
    */
   import_stalled?: boolean;
+  /**
+   * Whether Discard would delete it: a capture, an import or a first pass that
+   * has not finished. False for a finished meeting while its notes regenerate,
+   * its speakers are inferred or it is reprocessed, which also show as queued
+   * or processing (issue #833). Judged by the server.
+   */
+  discardable?: boolean;
   /** Detail read only; null when there is nothing to ask. */
   language_notice?: LanguageNotice | null;
   is_archived: boolean;
@@ -1009,6 +1036,8 @@ export interface CalendarDashboardRecording {
   ends_at?: string | null;
   duration_seconds?: number | null;
   status: RecordingStatus;
+  /** Tells a capture in progress, which is UPLOADING too, from a finishing upload. */
+  client_status?: ClientStatus | null;
   speaker_names: string[];
   tags: CalendarDashboardTag[];
 }

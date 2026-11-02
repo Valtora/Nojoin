@@ -7,7 +7,7 @@ import { Pencil, Play } from "lucide-react";
 import { noteSnippet, shownNotes } from "@/lib/notes/noteOutbox";
 import { placeTimelineNotes, type NotePlacement } from "@/lib/notes/placement";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
-import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import { selectSavedNotes, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import { cn } from "@/lib/cn";
 import type { RecordingId, TimelineNote, TranscriptSegment } from "@/types";
 
@@ -20,7 +20,7 @@ import { formatTime } from "../transcript/transcriptDisplay";
 import IconButton from "../ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
-import { NoteFile } from "./NoteFiles";
+import { NoteFile, useNoteUpload } from "./NoteFiles";
 import { scrollTranscriptToNote } from "./transcriptJump";
 
 interface MyNotesListProps {
@@ -59,7 +59,7 @@ export default function MyNotesList({
   onShowTranscript,
   className,
 }: MyNotesListProps) {
-  const { snapshot } = useNoteOutbox(recordingId);
+  const { snapshot } = useNoteOutbox(recordingId, selectSavedNotes);
   const { apply, edit, remove } = noteEdits;
   const notes = useMemo(
     () => (timelineNotes === null ? null : apply(shownNotes(timelineNotes, snapshot))),
@@ -169,7 +169,7 @@ export default function MyNotesList({
         </p>
         {/* Above the row's jump button, as the row's own buttons are. */}
         <div className="relative">
-          <NoteFile noteId={note.id} attachment={note.attachment} />
+          <MyNoteFile note={note} />
         </div>
       </li>
     );
@@ -202,4 +202,9 @@ export default function MyNotesList({
       />
     </div>
   );
+}
+
+function MyNoteFile({ note }: { note: TimelineNote }) {
+  const { upload } = useNoteUpload(note.id);
+  return note.attachment || upload ? <NoteFile noteId={note.id} attachment={note.attachment} /> : null;
 }

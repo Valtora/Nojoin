@@ -16,6 +16,8 @@ interface RichTextEditorProps {
   onChange: (content: string) => void;
   editable?: boolean;
   onEditorReady?: (editor: Editor) => void;
+  /** The editor's accessible name (issue #856). */
+  label?: string;
 }
 
 type MarkdownStorageEditor = Editor & {
@@ -30,12 +32,17 @@ function getMarkdown(editor: Editor): string {
   return (editor as MarkdownStorageEditor).storage.markdown.getMarkdown();
 }
 
-export default function RichTextEditor({ content, onChange, editable = true, onEditorReady }: RichTextEditorProps) {
+export default function RichTextEditor({
+  content, onChange, editable = true, onEditorReady, label = "Meeting notes",
+}: RichTextEditorProps) {
   // The Markdown of the document as loaded or last reported. Loading emits
   // updates that change nothing a user wrote (a re-serialised setContent, a
   // table normalised on mount), and NotesView autosaves every update, so an
   // update whose Markdown matches this is not passed on.
   const reported = useRef<string | null>(null);
+  // Read by the attributes below, which ProseMirror recomputes on every view
+  // update, setEditable's included.
+  const readOnly = useRef(!editable);
 
   const editor = useEditor({
     // The CSP refuses the style tag Tiptap would inject; the base rules are in
@@ -83,10 +90,15 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
       onEditorReady?.(editor);
     },
     editorProps: {
-      attributes: {
+      // A name for the textbox role Tiptap gives the editor, and whether it
+      // takes input, so assistive technology does not announce an unnamed
+      // text box (issue #856).
+      attributes: () => ({
         class: 'prose prose-gray dark:prose-invert max-w-none focus:outline-none min-h-full p-6',
         spellcheck: 'false',
-      },
+        'aria-label': label,
+        'aria-readonly': readOnly.current ? 'true' : 'false',
+      }),
     },
   });
 
@@ -101,6 +113,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
   // Update editable state
   useEffect(() => {
     if (editor) {
+      readOnly.current = !editable;
       editor.setEditable(editable);
     }
   }, [editable, editor]);

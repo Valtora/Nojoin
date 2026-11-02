@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { getCliOAuthStatus } from "@/lib/api/cliOauth";
 import { AiAvailability, resolveAiAvailability } from "@/lib/aiAvailability";
+import { isImeComposing } from "@/lib/imeComposition";
 import { isAdministrator } from "@/lib/roles";
 import { ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
 import Link from "next/link";
@@ -268,23 +269,30 @@ export default function ChatPanel({
       className="@container flex-1 min-w-0 bg-surface-inset h-full flex flex-col"
     >
       <SurfaceBase data-ui-fill="card" kind="pane" className="py-1 pl-3 pr-2 @min-[20rem]:pl-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-action-text" />
-          Chat
+        {/* A narrow column keeps the buttons: the title gives way first, and
+            Context drops its word under 18rem, as the side tabs drop theirs. */}
+        <h2 className="text-sm font-semibold text-foreground flex min-w-0 items-center gap-2">
+          <MessageSquare className="w-4 h-4 shrink-0 text-action-text" />
+          <span className="truncate">Chat</span>
         </h2>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {recordingId && (
             <ButtonBase
               id="chat-context-toggle"
               onClick={() => setShowTagFilter(!showTagFilter)}
+              // Its word is hidden on a phone and in a narrow column, where the icon alone shows.
+              aria-label={selectedTagIds.length > 0
+                ? `Context, ${selectedTagIds.length} tag${selectedTagIds.length === 1 ? "" : "s"} selected`
+                : "Context"}
+              aria-expanded={showTagFilter}
               className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border transition-colors ${
                 showTagFilter || selectedTagIds.length > 0
                   ? "bg-action-tint text-action-text border-action-border"
                   : "text-contrast-helper border-transparent hover:bg-surface-inset"
               }`}
             >
-              <TagIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Context</span>
+              <TagIcon aria-hidden="true" className="w-3.5 h-3.5" />
+              <span className="hidden sm:@min-[18rem]:inline">Context</span>
               {selectedTagIds.length > 0 && (
                 <span className="ml-0.5 bg-action-tint text-action-text text-[10px] px-1.5 rounded-pill">
                   {selectedTagIds.length}
@@ -443,7 +451,7 @@ export default function ChatPanel({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
                 e.preventDefault();
                 handleSend();
               }
@@ -463,7 +471,7 @@ export default function ChatPanel({
                 className="p-2 bg-status-danger-bg text-foreground rounded-lg hover:bg-status-danger-bg transition-colors shadow-card"
                 title="Stop Generation"
               >
-                <StopCircle className="w-4 h-4" />
+                <StopCircle aria-hidden="true" className="w-4 h-4" />
               </ButtonBase>
             ) : (
               <ButtonBase
@@ -471,9 +479,11 @@ export default function ChatPanel({
                 data-ui-hover="action-hover" chrome="action"
                 onClick={handleSend}
                 disabled={!recordingId || !inputValue.trim() || !historyReady}
+                aria-label="Send message"
+                title="Send message"
                 className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-card"
               >
-                <Send className="w-4 h-4" />
+                <Send aria-hidden="true" className="w-4 h-4" />
               </ButtonBase>
             )}
           </div>

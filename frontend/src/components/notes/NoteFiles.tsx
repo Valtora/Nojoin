@@ -4,6 +4,7 @@ import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import {
   createContext,
+  useCallback,
   useContext,
   useId,
   useMemo,
@@ -24,9 +25,9 @@ import {
 } from "@/lib/api";
 import { CAPTURE_NOTE_BODY } from "@/lib/captures/useCaptureActions";
 import { getErrorStatus } from "@/lib/errors";
-import { shownNotes, type NoteOutbox, type NoteUpload } from "@/lib/notes/noteOutbox";
+import { shownNotes, type NoteOutbox, type NoteUpload, type OutboxSnapshot } from "@/lib/notes/noteOutbox";
 import { formatTimelineMs } from "@/lib/notes/placement";
-import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import { selectSavedNotes, useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { notifyRequestError } from "@/lib/notifyRequestError";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
@@ -61,6 +62,23 @@ export const noteFileTimeMs = (note: Pick<TimelineNote, "kind" | "anchor_ms" | "
       ? (note.start_ms ?? 0)
       : null;
 
+/**
+ * Where a note sits, as My notes and the transcript name it: its time, or
+ * "Before the transcript" and "After the transcript" for a note on the whole
+ * meeting. `place` reads inside a sentence ("at 01:05", "before the transcript").
+ */
+export const noteFileWhere = (
+  note: Pick<TimelineNote, "kind">,
+  atMs: number | null,
+): { label: string; place: string } => {
+  if (atMs !== null) {
+    const time = formatTimelineMs(atMs);
+    return { label: time, place: `at ${time}` };
+  }
+  const label = note.kind === "tail" ? "After the transcript" : "Before the transcript";
+  return { label, place: label.toLowerCase() };
+};
+
 type NoteText = Pick<TimelineNote, "kind" | "body">;
 
 /** A capture's point note whose text is still only "Screen capture". */
@@ -83,7 +101,7 @@ export const removalQuestion = (
   file: Pick<NoteAttachment, "title" | "use_in_notes">,
   atMs: number | null,
 ): string => {
-  const place = atMs === null ? "on the meeting" : `at ${formatTimelineMs(atMs)}`;
+  const { place } = noteFileWhere(note, atMs);
   return [
     isUncaptionedCapture(note)
       ? `Remove this file and its note? The note ${place} has only the automatic text “${CAPTURE_NOTE_BODY}”, so it goes too.`
@@ -142,7 +160,7 @@ export function NoteFilesProvider({
   // the viewer has gone: set only when Remove takes that button away.
   const opened = useRef<{ noteId: string; home: HTMLElement | null } | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
-  const { outbox, snapshot } = useNoteOutbox(recordingId);
+  const { outbox, snapshot } = useNoteOutbox(recordingId, selectSavedNotes);
   const { apply } = noteEdits;
   const note = useMemo(
     () =>
@@ -205,7 +223,7 @@ export function NoteFile({
   attachment?: NoteAttachment | null;
 }) {
   const context = useContext(NoteFilesContext);
-  const { outbox, snapshot } = useNoteOutbox(context?.recordingId ?? null);
+  const { outbox, upload } = useNoteUpload(noteId);
   if (!context) return null;
   if (attachment) {
     return (
@@ -236,9 +254,17 @@ export function NoteFile({
       </ButtonBase>
     );
   }
-  const upload = snapshot.uploads.get(noteId);
   if (!upload || !outbox) return null;
   return <NoteFileUpload upload={upload} outbox={outbox} />;
+}
+
+/** Only this note's upload can redraw its file or make an empty file slot appear. */
+export function useNoteUpload(noteId: string) {
+  const context = useContext(NoteFilesContext);
+  const select = useCallback((snapshot: OutboxSnapshot) =>
+    snapshot.uploads.get(noteId), [noteId]);
+  const { outbox, snapshot: upload } = useNoteOutbox(context?.recordingId ?? null, select);
+  return { outbox, upload };
 }
 
 /** A file on its way to its note, with Retry and Discard once its upload failed. */
@@ -475,7 +501,7 @@ function NoteFileViewer({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={documentFileUrl(file.id)}
-              alt={`${file.title}, on the note ${atMs === null ? "on the meeting" : `at ${formatTimelineMs(atMs)}`}`}
+              alt={`${file.title}, on the note ${noteFileWhere(note, atMs).place}`}
               className="max-h-[60dvh] w-auto max-w-full object-contain"
             />
           </SurfaceBase>
@@ -487,7 +513,7 @@ function NoteFileViewer({
         )}
         <p className="whitespace-pre-wrap break-words text-sm text-foreground">
           <span className="font-semibold">
-            {atMs === null ? "Note on the meeting" : `Note at ${formatTimelineMs(atMs)}`}:
+            Note {noteFileWhere(note, atMs).place}:
           </span>{" "}
           {note.body}
         </p>

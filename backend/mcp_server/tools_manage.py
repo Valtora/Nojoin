@@ -12,6 +12,7 @@ the connector at all.
 import logging
 from typing import Any, Optional
 
+from fastapi import HTTPException
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlmodel import select
 
@@ -77,6 +78,9 @@ async def rename_recording(
     recording_id: str, name: str, expected_name: Optional[str] = None
 ) -> dict[str, Any]:
     """Rename a recording. Requires the mcp:write scope.
+
+    The new name counts as the user's choice, so the title Nojoin generates
+    when notes are written or the recording is reprocessed never replaces it.
 
     The response echoes updated_at and the transcript_revision cursor, so
     the write is self-verifying: an unchanged cursor confirms the rename
@@ -256,22 +260,28 @@ async def reprocess_recording(
     recording_id: str,
     transcription_backend: str,
     max_speakers: Optional[int] = None,
+    clear_max_speakers: bool = False,
 ) -> dict[str, Any]:
     """Re-run the full processing pipeline for a recording.
 
     Replaces the transcript and regenerates downstream artefacts; most
     utterance ids will change, though the revision cursor keeps
-    increasing. Processing occupies the deployment's GPU, so avoid
-    triggering this while a live meeting is being captured. Requires the
-    mcp:write scope.
+    increasing. A recording still being captured, running or paused, or
+    already queued or processing is refused with the reason. Processing
+    occupies the deployment's GPU, so avoid triggering this while another
+    live meeting is being captured. Requires the mcp:write scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
         transcription_backend: The ASR backend to use, matching the
             deployment's configured engines (for example "whisper",
             "parakeet", or "canary").
-        max_speakers: Optional upper bound on diarised speakers; omit to
-            auto-detect.
+        max_speakers: Upper bound on the speakers final processing keeps,
+            1 to 50, saved on the recording for later runs too. Omit to
+            keep the recording's current limit: none unless one was set
+            at import, during capture or by an earlier reprocess.
+        clear_max_speakers: True removes the recording's limit, so the
+            speakers are detected automatically. Not with max_speakers.
     """
     from backend.api.v1.endpoints.recordings.routes_actions import (
         ReprocessRequest,
@@ -284,8 +294,15 @@ async def reprocess_recording(
     user = get_current_mcp_user()
     _require_write_scope("reprocessing recordings")
 
+    if clear_max_speakers and max_speakers is not None:
+        raise ToolError("Pass max_speakers or clear_max_speakers, not both.")
+
+    # The route keeps the stored limit when max_speakers is absent and clears
+    # it on an explicit null, so only a requested change is passed on.
     body_kwargs: dict[str, Any] = {"transcription_backend": transcription_backend}
-    if max_speakers is not None:
+    if clear_max_speakers:
+        body_kwargs["max_speakers"] = None
+    elif max_speakers is not None:
         body_kwargs["max_speakers"] = max_speakers
 
     async with async_session_maker() as db:
@@ -306,7 +323,9 @@ async def regenerate_notes(
 
     Re-runs Nojoin's own notes pipeline over the transcript, replacing the
     current AI-generated notes; user notes are untouched. The agent never
-    authors note content directly. Requires the mcp:write scope.
+    authors note content directly. A recording still being captured,
+    running or paused, is refused with the reason. Requires the mcp:write
+    scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -392,8 +411,6 @@ async def attach_document(
 
 
 async def _load_recording_for_correction(db, recording_id: str, user_id: int):
-    from fastapi import HTTPException
-
     from backend.api.v1.endpoints.transcripts.helpers import (
         _get_owned_recording,
         _get_recording_transcript,
