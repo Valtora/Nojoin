@@ -23,6 +23,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
+from backend.api.params import PageLimit, PageOffset
 from backend.core.task_dispatch import dispatch_task
 from backend.models.cli_oauth import (
     CliOAuthCredential,
@@ -406,8 +407,8 @@ async def refresh_codex_models(
 
 @router.get("/admin/usage", response_model=CliUsageOverviewRead)
 async def get_cli_usage_overview(
-    skip: int = 0,
-    limit: int = 25,
+    skip: PageOffset = 0,
+    limit: PageLimit = 25,
     search: str = "",
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db),
@@ -420,7 +421,6 @@ async def get_cli_usage_overview(
     connected shows a single row (usage is summed across providers; the displayed
     rate-limit reading is whichever credential row is iterated last)."""
     limit = max(1, min(limit, 100))
-    skip = max(0, skip)
 
     usage = await _usage_by_user(db)
     credentials = (await db.execute(select(CliOAuthCredential))).scalars().all()

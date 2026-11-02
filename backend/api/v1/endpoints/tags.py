@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import PageLimit, PageOffset, RowId
 from backend.models.recording import Recording
 from backend.models.tag import RecordingTag, Tag, TagCreate, TagRead, TagUpdate
 from backend.models.user import User
@@ -53,8 +54,8 @@ class BatchTagOperation(BaseModel):
 
 @router.get("", response_model=List[TagRead])
 async def read_tags_root(
-    skip: int = 0,
-    limit: int = 100,
+    skip: PageOffset = 0,
+    limit: PageLimit = 100,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -66,8 +67,8 @@ async def read_tags_root(
 
 @router.get("/", response_model=List[TagRead])
 async def read_tags(
-    skip: int = 0,
-    limit: int = 100,
+    skip: PageOffset = 0,
+    limit: PageLimit = 100,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -108,7 +109,7 @@ async def create_tag(
 
 @router.patch("/{tag_id}", response_model=TagRead)
 async def update_tag(
-    tag_id: int,
+    tag_id: RowId,
     tag_update: TagUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -196,7 +197,7 @@ async def remove_tag_from_recording(
 
 @router.delete("/{tag_id}")
 async def delete_tag(
-    tag_id: int,
+    tag_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

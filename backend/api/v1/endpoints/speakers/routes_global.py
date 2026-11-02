@@ -3,7 +3,7 @@ import time
 from collections import defaultdict
 from typing import List, Optional
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from sqlmodel import select
 
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import PageLimit, PageOffset, RowId, RowIdsQuery
 from backend.core.task_dispatch import dispatch_task
 from backend.models.people_tag import PeopleTag, PeopleTagLink
 from backend.models.people_tag_schemas import PeopleTagRead
@@ -86,20 +87,18 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=List[GlobalSpeakerWithCount])
 async def list_global_speakers(
-    skip: int = 0,
-    limit: int = 100,
+    skip: PageOffset = 0,
+    limit: PageLimit = 100,
     q: Optional[str] = None,
-    tags: Optional[List[int]] = Query(None),
+    tags: RowIdsQuery = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """List all global speakers (People), each with their distinct owned meetings."""
     counts = person_meeting_counts(current_user.id)
+    recording_count = func.coalesce(counts.c.meeting_count, 0).label("recording_count")
     query = (
-        select(
-            GlobalSpeaker,
-            func.coalesce(counts.c.meeting_count, 0).label("recording_count"),
-        )
+        select(GlobalSpeaker, recording_count)
         .outerjoin(counts, counts.c.global_speaker_id == GlobalSpeaker.id)
         .where(GlobalSpeaker.user_id == current_user.id)
     )
@@ -323,7 +322,7 @@ async def merge_speakers(
 
 @router.put("/{speaker_id}", response_model=GlobalSpeaker)
 async def update_global_speaker(
-    speaker_id: int,
+    speaker_id: RowId,
     speaker_in: GlobalSpeakerUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -419,7 +418,7 @@ async def update_global_speaker(
 
 @router.delete("/{speaker_id}")
 async def delete_global_speaker(
-    speaker_id: int,
+    speaker_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -450,8 +449,8 @@ async def delete_global_speaker(
 
 @router.get("/{speaker_id}/segments", response_model=List[SpeakerSegment])
 async def get_speaker_segments(
-    speaker_id: int,
-    limit: int = 50,
+    speaker_id: RowId,
+    limit: PageLimit = 50,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -519,7 +518,7 @@ async def get_speaker_segments(
 
 @router.post("/{speaker_id}/recalibrate")
 async def recalibrate_voiceprint(
-    speaker_id: int,
+    speaker_id: RowId,
     segments: List[SegmentSelection],
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -625,7 +624,7 @@ async def recalibrate_voiceprint(
 
 @router.delete("/{speaker_id}/embedding")
 async def delete_global_speaker_embedding(
-    speaker_id: int,
+    speaker_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -646,7 +645,7 @@ async def delete_global_speaker_embedding(
 
 @router.post("/{speaker_id}/split", response_model=SpeakerSplitRead)
 async def split_speaker(
-    speaker_id: int,
+    speaker_id: RowId,
     request: SpeakerSplitRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -919,7 +918,7 @@ async def split_speaker(
 
 @router.post("/{speaker_id}/scan-matches")
 async def scan_for_matches(
-    speaker_id: int,
+    speaker_id: RowId,
     threshold: float = SCAN_MATCH_THRESHOLD,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
