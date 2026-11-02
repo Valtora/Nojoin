@@ -335,7 +335,7 @@ Eight values in these stages can be overridden. Keys, defaults and bounds live i
 
 Defaults and ranges are in [DEPLOYMENT.md](DEPLOYMENT.md#processing-tuning-defaults).
 
-Either phantom ceiling at 0 turns the phantom filter off, and a `word_flip_max_duration_s` of 0 turns smoothing off.
+Either phantom ceiling at 0 turns the phantom filter off, and a `word_flip_max_duration_s` of 0 turns smoothing off. The per-user `phantom_filter_off` switch (#813) skips the filter outright, before its candidate pass and the embedding model: `true` turns it off, and unset, `null` or `false` leaves it on, so the shipped behaviour is unchanged. Like the values above it inherits the install's flat `config.json` key, and the worker logs and ignores a value that is not a bool. `filter_phantom_speakers` reads it, so the pipeline's run and the speaker-cap count both honour it; the settings page shows it inverted, as a ticked **Filter phantom speakers** checkbox.
 
 Each value is a per-user setting. A stage resolves it as an explicit argument, else the recording owner's merged settings (their value over the install's flat `config.json` key), else for VAD the install's `vad_parameters.threshold`, else the shipped default. User defaults stay `None` (inherit), because the settings page autosaves the whole object and a concrete default would be written onto every row.
 

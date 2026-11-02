@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
-from backend.processing.processing_tuning import TUNING_KEYS
+from backend.processing.processing_tuning import PHANTOM_FILTER_OFF_KEY, TUNING_KEYS
 from backend.processing.vad_muting import (
     VAD_MUTE_DEFAULTS,
     VAD_MUTE_DIARIZATION_KEY,
@@ -324,6 +324,7 @@ DEFAULT_USER_SETTINGS = {
     # A non-None default here would be stamped onto every row by the settings
     # page's whole-object autosave and shadow both.
     **dict.fromkeys(TUNING_KEYS),
+    PHANTOM_FILTER_OFF_KEY: None,  # True skips the phantom filter (#813)
     "spellcheck_language": "en-GB",  # Default spell check language for meeting notes
     "timezone": "UTC",  # Default user timezone for calendar and task rendering
 }

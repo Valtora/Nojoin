@@ -469,9 +469,10 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "phantom_max_segments",
       "phantom_embedding_floor",
       "phantom_merge_threshold",
+      "phantom_filter_off",
     ],
     defaultValue: null,
-    keywords: ["phantom speaker", "brief speaker", "short speaker", "noise", "chime", "large meeting", "tuning"],
+    keywords: ["phantom speaker", "brief speaker", "short speaker", "noise", "chime", "large meeting", "tuning", "turn off"],
   },
   {
     id: "recording-word-flip",

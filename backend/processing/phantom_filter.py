@@ -20,6 +20,7 @@ from backend.processing.processing_tuning import (
     PHANTOM_MAX_SEGMENTS_KEY,
     PHANTOM_MERGE_THRESHOLD_KEY,
     TUNING_SPECS,
+    phantom_filter_turned_off,
     resolve_tuning,
 )
 
@@ -153,11 +154,15 @@ def filter_phantom_speakers(
     from ``config`` falls back to its default; explicit arguments are used as
     given, as they always were. A zero duration or segment ceiling selects no
     candidates, which turns the filter off before the embedding model is
-    loaded.
+    loaded. ``phantom_filter_off`` in ``config`` skips the filter entirely,
+    whatever the thresholds.
 
     Returns:
         A new Annotation with phantom segments reassigned or merged.
     """
+    if phantom_filter_turned_off(config):
+        logger.info("[PhantomFilter] Turned off in settings; skipping filter.")
+        return diarization
     max_duration_s, max_segments, embedding_floor, merge_threshold = (
         _resolve_thresholds(
             config, max_duration_s, max_segments, embedding_floor, merge_threshold

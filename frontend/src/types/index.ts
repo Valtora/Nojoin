@@ -838,6 +838,8 @@ export interface Settings {
   phantom_max_segments?: number | null;
   phantom_embedding_floor?: number | null;
   phantom_merge_threshold?: number | null;
+  // True skips the phantom filter; null or absent runs it.
+  phantom_filter_off?: boolean | null;
   word_flip_max_duration_s?: number | null;
   word_flip_max_gap_s?: number | null;
   line_break_pause_s?: number | null;

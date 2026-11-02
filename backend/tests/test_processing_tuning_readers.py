@@ -383,14 +383,70 @@ def _filter_with_an_unloaded_model(monkeypatch, tuning: dict):
     return diarization, result, loads, model.crops
 
 
-def test_phantom_filter_loads_the_model_for_a_candidate_at_defaults(monkeypatch):
-    """The control for the test below: at the defaults the 1 s speaker is a
-    candidate, so the model loads and embeds both speakers."""
-    _diarization, result, loads, crops = _filter_with_an_unloaded_model(monkeypatch, {})
+@pytest.mark.parametrize(
+    "tuning",
+    [{}, {"phantom_filter_off": None}, {"phantom_filter_off": False}],
+    ids=["absent", "null", "false"],
+)
+def test_phantom_filter_loads_the_model_for_a_candidate_at_defaults(
+    monkeypatch, tuning
+):
+    """The control for the tests below: at the defaults, and with the off
+    switch absent or unticked, the 1 s speaker is a candidate, so the model
+    loads and embeds both speakers."""
+    _diarization, result, loads, crops = _filter_with_an_unloaded_model(
+        monkeypatch, tuning
+    )
 
     assert loads == ["cpu"]
     assert len(crops) == 2
     assert _labels(result) == {"SPEAKER_00"}
+
+
+def test_phantom_filter_turned_off_runs_nothing(monkeypatch, caplog):
+    """Ticked, the filter is skipped before any candidate pass or model load,
+    and the diarisation comes back unchanged (#813)."""
+    with caplog.at_level(logging.INFO):
+        diarization, result, loads, crops = _filter_with_an_unloaded_model(
+            monkeypatch, {"phantom_filter_off": True}
+        )
+
+    assert loads == []
+    assert crops == []
+    assert result is diarization
+    assert "Turned off in settings" in caplog.text
+    assert "Stage 1" not in caplog.text
+
+
+def test_an_unusable_off_switch_is_logged_and_the_filter_runs(monkeypatch, caplog):
+    """A hand-edited config.json string is not a tick: processing never fails
+    or changes over a value it cannot read."""
+    with caplog.at_level(logging.WARNING):
+        _diarization, result, loads, _crops = _filter_with_an_unloaded_model(
+            monkeypatch, {"phantom_filter_off": "true"}
+        )
+
+    assert loads == ["cpu"]
+    assert _labels(result) == {"SPEAKER_00"}
+    assert "Ignoring invalid phantom_filter_off='true'" in caplog.text
+
+
+def test_pipeline_keeps_the_diarisation_with_the_filter_off(
+    monkeypatch,
+):
+    """Through the pipeline's own call: a cluster the filter would treat as
+    noise keeps its label."""
+    from backend.worker.tasks.vad_stage import run_phantom_filter
+
+    _install_phantom_model(monkeypatch, _PhantomModel(cosine=0.2))
+    ctx = types.SimpleNamespace(
+        merged_config={"processing_device": "cpu", "phantom_filter_off": True},
+    )
+    diarization = _phantom_diarization()
+
+    result = run_phantom_filter(ctx, diarization, "audio.wav")
+
+    assert _labels(result) == {"SPEAKER_00", "SPEAKER_01"}
 
 
 @pytest.mark.parametrize(

@@ -374,6 +374,7 @@ Speech and speaker tuning is per user (**Settings > Recording > Advanced**, **Sp
 | `phantom_max_segments` | 3 | 0 to 20 (whole number) |
 | `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
 | `phantom_merge_threshold` | 0.60 | 0.05 to 1.0 |
+| `phantom_filter_off` | unset (the filter runs) | `true` skips the phantom filter; unset, `null` or `false` runs it |
 | `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
 | `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
 

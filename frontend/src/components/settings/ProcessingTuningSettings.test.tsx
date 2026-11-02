@@ -54,11 +54,13 @@ describe("ProcessingTuningSettings", () => {
       vad_threshold: 0.3,
       phantom_merge_threshold: 0.7,
       line_break_pause_s: 2,
+      phantom_filter_off: true,
     });
 
     fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
 
     const next = onUpdate.mock.calls[0][0] as Settings;
+    expect(next.phantom_filter_off).toBeNull();
     expect(next.theme).toBe("dark");
     expect(next.line_break_pause_s).toBe(2);
     for (const key of PROCESSING_TUNING_KEYS) {
@@ -107,6 +109,50 @@ describe("ProcessingTuningSettings", () => {
     const flip = screen.getByRole("group", { name: "Single-word flip smoothing" });
     expect(within(phantom).getByRole("spinbutton", { name: "Merge similarity" })).toBeInTheDocument();
     expect(within(flip).getByRole("spinbutton", { name: "Max gap (seconds)" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["absent", {}],
+    ["null", { phantom_filter_off: null }],
+    ["false", { phantom_filter_off: false }],
+  ])("ticks the phantom filter and shows its settings when the switch is %s", (_name, settings) => {
+    renderTuning(settings as Settings);
+
+    expect(screen.getByRole("checkbox", { name: "Filter phantom speakers" })).toBeChecked();
+    expect(screen.getByRole("group", { name: "Phantom speaker filter" })).toBeVisible();
+  });
+
+  it("unticking hides the phantom settings and saves the filter as off", () => {
+    const state = renderWithState({ phantom_max_segments: 2, phantom_merge_threshold: 0.7 });
+    const checkbox = screen.getByRole("checkbox", { name: "Filter phantom speakers" });
+    expect(checkbox).toHaveAttribute(
+      "aria-controls",
+      screen.getByRole("group", { name: "Phantom speaker filter" }).id,
+    );
+
+    fireEvent.click(checkbox);
+
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByRole("group", { name: "Phantom speaker filter" })).toBeNull();
+    expect(screen.queryByRole("spinbutton", { name: "Max segments" })).toBeNull();
+    // The other rows stay.
+    expect(screen.getByRole("group", { name: "Single-word flip smoothing" })).toBeVisible();
+    expect(state.latest().phantom_filter_off).toBe(true);
+    expect(state.latest().phantom_max_segments).toBe(2);
+    expect(state.latest().phantom_merge_threshold).toBe(0.7);
+  });
+
+  it("ticking again shows the phantom settings with their values and clears the switch", () => {
+    const state = renderWithState({ phantom_filter_off: true, phantom_max_segments: 2 });
+    const checkbox = screen.getByRole("checkbox", { name: "Filter phantom speakers" });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByRole("spinbutton", { name: "Max segments" })).toBeNull();
+
+    fireEvent.click(checkbox);
+
+    expect(checkbox).toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Max segments" })).toHaveValue(2);
+    expect(state.latest().phantom_filter_off).toBeNull();
   });
 
   it("describes each field with its row's help text", () => {

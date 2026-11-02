@@ -110,7 +110,7 @@ Database migrations run automatically on the first API start after upgrading. Ba
 <!-- Maintainer: list only problems Nojoin can fix, each with its open issue. A limit set by a dependency or a provider is documented in the guide for that feature and does not belong here. -->
 
 - After a pause, the transcript's line break can land a few seconds early, mid-speech, when audio from before the pause was still waiting to upload, for example after an upload stall, an offline pause or a reload. The final words are unaffected (#815).
-- The first words of a reply can go to the previous speaker, and live lines can move words between speakers at a turn change before they lock. The phantom speaker filter can also drop a short interjection with its words, and setting either of its limits to 0 turns it off (#776, #813).
+- The first words of a reply can go to the previous speaker, and live lines can move words between speakers at a turn change before they lock. The phantom speaker filter can also drop a short interjection with its words, and unticking **Filter phantom speakers** on its settings turns it off (#776, #813).
 - After a damaged audio segment the live transcript waits about 10 seconds before it moves on (#808).
 - With Canary, untimed words after a line you corrected can go into that line's review and out of the transcript. Within ten minutes of a failed aligner download, preparing Canary reports done without fetching the aligner (#788).
 - While the Canary aligner and Nemotron download at the same time, **Model downloads** can show one's progress against the other (#783).
