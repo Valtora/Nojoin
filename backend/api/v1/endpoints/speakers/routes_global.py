@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -43,7 +43,7 @@ from backend.processing.embedding import (
     too_little_speech_detail,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
-from backend.services.person_meetings import person_meeting_count
+from backend.services.person_meetings import person_meeting_counts
 from backend.services.recording_identity_service import get_recordings_by_public_ids
 from backend.services.tag_ownership import require_own_tag_ids
 from backend.utils.canonical_pipeline import (
@@ -97,10 +97,15 @@ async def list_global_speakers(
     List all global speakers (People) with filtering.
     """
     # Count distinct owned meetings, including a person with several labels once.
-    query = select(
-        GlobalSpeaker,
-        person_meeting_count(current_user.id).label("recording_count"),
-    ).where(GlobalSpeaker.user_id == current_user.id)
+    counts = person_meeting_counts(current_user.id)
+    query = (
+        select(
+            GlobalSpeaker,
+            func.coalesce(counts.c.meeting_count, 0).label("recording_count"),
+        )
+        .outerjoin(counts, counts.c.global_speaker_id == GlobalSpeaker.id)
+        .where(GlobalSpeaker.user_id == current_user.id)
+    )
 
     if q:
         search_term = f"%{q}%"
@@ -121,7 +126,7 @@ async def list_global_speakers(
         )
 
     query = (
-        query.group_by(GlobalSpeaker.id)
+        query.group_by(GlobalSpeaker.id, counts.c.meeting_count)
         .order_by(GlobalSpeaker.name)
         .offset(skip)
         .limit(limit)

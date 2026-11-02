@@ -5,11 +5,11 @@ from collections.abc import Sequence
 
 from sqlalchemy import RowMapping, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.selectable import ScalarSelect
+from sqlalchemy.sql.selectable import Subquery
 from sqlmodel import col, select
 
 from backend.models.recording import Recording
-from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+from backend.models.speaker import RecordingSpeaker
 from backend.models.speaker_public import (
     PersonMeetingRead,
     PersonMeetingsRead,
@@ -39,15 +39,18 @@ _MEETINGS = text("""
         FROM recordings r
         WHERE r.id IN (SELECT recording_id FROM links)
     ), canonical AS (
-        SELECT u.recording_id,
-               SUM(CASE WHEN l.id IS NULL THEN 0
-                        ELSE GREATEST(0, u.end_ms - u.start_ms) END) / 1000.0
+        SELECT m.id AS recording_id,
+               COALESCE(SUM(GREATEST(0, u.end_ms - u.start_ms)), 0) / 1000.0
                    AS talk_time_seconds
-        FROM transcript_utterances u
-        JOIN meetings m ON m.id = u.recording_id
-        LEFT JOIN links l ON l.id = u.recording_speaker_id
-        WHERE u.state IN ('provisional', 'stable', 'finalized')
-        GROUP BY u.recording_id
+        FROM meetings m
+        JOIN links l ON l.recording_id = m.id
+        LEFT JOIN transcript_utterances u ON u.recording_speaker_id = l.id
+             AND u.state IN ('provisional', 'stable', 'finalized')
+        WHERE EXISTS (
+            SELECT 1 FROM transcript_utterances a
+            WHERE a.recording_id = m.id
+              AND a.state IN ('provisional', 'stable', 'finalized'))
+        GROUP BY m.id
     ), legacy AS (
         SELECT t.recording_id,
                SUM(GREATEST(0, (s->>'end')::double precision
@@ -87,20 +90,28 @@ _MEETINGS = text("""
 """)
 
 
-def person_meeting_count(user_id: int | None) -> ScalarSelect[int]:
-    """Use the same distinct, active owned-meeting scope on the People list."""
+def person_meeting_counts(user_id: int | None) -> Subquery:
+    """Each person's distinct, active owned meetings, counted in one pass.
+
+    The People list joins this once; a subquery per person rescans
+    recording_speakers for every row of the page.
+    """
     return (
-        select(func.count(col(RecordingSpeaker.recording_id).distinct()))
+        select(
+            col(RecordingSpeaker.global_speaker_id).label("global_speaker_id"),
+            func.count(col(RecordingSpeaker.recording_id).distinct()).label(
+                "meeting_count"
+            ),
+        )
         .join(Recording, col(Recording.id) == col(RecordingSpeaker.recording_id))
         .where(
-            RecordingSpeaker.global_speaker_id == GlobalSpeaker.id,
             Recording.user_id == user_id,
             col(Recording.is_deleted).is_(False),
             col(RecordingSpeaker.merged_into_id).is_(None),
             RecordingSpeaker.speaker_status != "merged",
         )
-        .correlate(GlobalSpeaker)
-        .scalar_subquery()
+        .group_by(col(RecordingSpeaker.global_speaker_id))
+        .subquery()
     )
 
 
