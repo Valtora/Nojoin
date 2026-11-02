@@ -67,7 +67,7 @@ def constructors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
         sys.modules,
         "transformers",
         SimpleNamespace(
-            __version__=native.TRANSFORMERS_VERSION,
+            __version__="5.21.0",
             Qwen3ASRConfig=lambda **kwargs: SimpleNamespace(**kwargs),
             Qwen3ASRForTokenClassification=Model,
         ),
@@ -139,15 +139,15 @@ def test_projector_prefixes_win_over_audio_prefix() -> None:
     )
 
 
-def test_version_drift_is_rejected(
+def test_another_installed_transformers_still_loads(
     constructors: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import transformers
 
-    monkeypatch.setattr(transformers, "__version__", "5.21.1")
-    with pytest.raises(ForcedAlignerError, match="5.21.0"):
-        native.load_native_model(constructors.path)
-    assert constructors.state.calls == []
+    monkeypatch.setattr(transformers, "__version__", "5.99.0")
+    native.load_native_model(constructors.path)
+    assert len(constructors.state.calls) == 1
+    assert constructors.state.moved == ["cpu"]
 
 
 def test_missing_checkpoint_keys_are_refused(constructors: Any) -> None:
