@@ -13,6 +13,7 @@ from sqlmodel import col, select
 
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_user, get_current_user_stream, get_db
+from backend.api.params import PageLimit, PageOffset, RowIdsQuery
 from backend.models.calendar import (
     CalendarConnection,
     CalendarDashboardDayCountRead,
@@ -85,13 +86,13 @@ _CAPTURE_IN_PROGRESS_STATUSES = {RecordingStatus.UPLOADING, RecordingStatus.PAUS
 
 @router.get("", response_model=List[RecordingPublicRead])
 async def list_recordings_root(
-    skip: int = 0,
-    limit: int = 100,
+    skip: PageOffset = 0,
+    limit: PageLimit = 100,
     q: Optional[str] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    speaker_ids: Optional[List[int]] = Query(None),
-    tag_ids: Optional[List[int]] = Query(None),
+    speaker_ids: RowIdsQuery = None,
+    tag_ids: RowIdsQuery = None,
     include_archived: bool = Query(False, description="Include archived recordings"),
     include_deleted: bool = Query(False, description="Include deleted recordings"),
     only_archived: bool = Query(False, description="Only show archived recordings"),
@@ -125,13 +126,13 @@ async def list_recordings_root(
 
 @router.get("/", response_model=List[RecordingPublicRead])
 async def list_recordings(
-    skip: int = 0,
-    limit: int = 100,
+    skip: PageOffset = 0,
+    limit: PageLimit = 100,
     q: Optional[str] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    speaker_ids: Optional[List[int]] = Query(None),
-    tag_ids: Optional[List[int]] = Query(None),
+    speaker_ids: RowIdsQuery = None,
+    tag_ids: RowIdsQuery = None,
     include_archived: bool = Query(False, description="Include archived recordings"),
     include_deleted: bool = Query(False, description="Include deleted recordings"),
     only_archived: bool = Query(False, description="Only show archived recordings"),

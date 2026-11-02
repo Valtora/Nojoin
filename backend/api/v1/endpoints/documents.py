@@ -11,6 +11,7 @@ from sqlmodel import col, select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
+from backend.api.params import RowId
 from backend.core.task_dispatch import dispatch_task
 from backend.models.document import (
     Document,
@@ -185,7 +186,7 @@ def _backfill_size(document: Document) -> bool:
 
 @router.get("/documents/{document_id}/download")
 async def download_document(
-    document_id: int,
+    document_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -357,7 +358,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
 
 @router.post("/documents/{document_id}/reparse", response_model=DocumentPublicRead)
 async def reparse_document(
-    document_id: int,
+    document_id: RowId,
     deep_parse: bool = True,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -425,7 +426,7 @@ async def reparse_document(
 
 @router.delete("/documents/{document_id}")
 async def delete_document(
-    document_id: int,
+    document_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -457,7 +458,7 @@ async def delete_document(
 
 @router.get("/documents/{document_id}/preview")
 async def preview_document(
-    document_id: int,
+    document_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

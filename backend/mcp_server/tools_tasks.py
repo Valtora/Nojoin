@@ -12,6 +12,7 @@ from typing import Any, Literal, Optional
 
 from mcp.server.mcpserver.exceptions import ToolError
 
+from backend.api.params import RowId
 from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import (
@@ -63,7 +64,7 @@ async def create_task(
     title: str,
     body: Optional[str] = None,
     due_at: Optional[str] = None,
-    tag_ids: Optional[list[int]] = None,
+    tag_ids: Optional[list[RowId]] = None,
     recording_ids: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Create a task in the user's Task workspace.
@@ -105,13 +106,13 @@ async def create_task(
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)
 async def update_task(  # noqa: PLR0913 - each parameter is a documented tool argument
-    task_id: int,
+    task_id: RowId,
     title: Optional[str] = None,
     body: Optional[str] = None,
     due_at: Optional[str] = None,
     completed: Optional[bool] = None,
     archived: Optional[bool] = None,
-    tag_ids: Optional[list[int]] = None,
+    tag_ids: Optional[list[RowId]] = None,
     recording_ids: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Update a task: edit fields, complete, reopen, archive, or restore.

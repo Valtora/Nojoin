@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import RevisionCursor
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.recording_public import (
     TranscriptPublicRead,
@@ -76,7 +77,7 @@ async def _live_transcript_behind(db: AsyncSession, recording: Recording) -> boo
 @router.get("/{recording_id}/utterances", response_model=TranscriptUtteranceListRead)
 async def get_transcript_utterances(
     recording_id: str,
-    after_revision: Optional[int] = Query(default=None, ge=0),
+    after_revision: Optional[RevisionCursor] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

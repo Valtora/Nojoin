@@ -1,11 +1,12 @@
-from typing import Annotated, List, Literal
+from typing import List, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import RowId, RowIdsQuery
 from backend.models.tag import Tag, TagRead
 from backend.models.task import (
     UserTask,
@@ -181,7 +182,7 @@ async def _replace_task_recordings(
 async def read_tasks_root(
     status: TaskStatusFilter = "active",
     recording_id: str | None = None,
-    tag_ids: Annotated[list[int] | None, Query()] = None,
+    tag_ids: RowIdsQuery = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -198,7 +199,7 @@ async def read_tasks_root(
 async def read_tasks(
     status: TaskStatusFilter = "active",
     recording_id: str | None = None,
-    tag_ids: Annotated[list[int] | None, Query()] = None,
+    tag_ids: RowIdsQuery = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -283,7 +284,7 @@ async def create_task(
 
 @router.patch("/{task_id}", response_model=UserTaskRead)
 async def update_task(
-    task_id: int,
+    task_id: RowId,
     task_update: UserTaskUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -342,7 +343,7 @@ async def update_task(
 
 @router.delete("/{task_id}")
 async def delete_task(
-    task_id: int,
+    task_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
