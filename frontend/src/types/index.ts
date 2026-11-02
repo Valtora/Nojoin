@@ -350,6 +350,11 @@ export interface TranscriptUtteranceList {
   live_speaker_suggestions?: Record<string, string>;
   /** Where each pending name came from: "heuristic" (a self-introduction) or "llm". */
   live_speaker_suggestion_sources?: Record<string, SpeakerNameSource>;
+  /**
+   * Where each pending name's evidence starts, in seconds: the introduction's
+   * line. Left out for a name with no single timed span (most AI names).
+   */
+  live_speaker_suggestion_starts?: Record<string, number>;
 }
 
 /** The answer to naming or merging a live speaker, as the live read gives it. */

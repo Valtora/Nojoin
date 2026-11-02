@@ -209,7 +209,7 @@ function TranscriptLine({
             onRename={!readOnly && live.onRenameLiveSpeaker && liveSpeakerDisplayName(segment.speaker) !== null
               ? live.onRenameLiveSpeaker : undefined}
             loadPeopleNames={live.loadPeopleNames}
-            suggestion={liveLine.speakersLatestLine && speakerName === liveSpeakerDisplayName(liveLine.speakerLabel)
+            suggestion={liveLine.offersSuggestion && speakerName === liveSpeakerDisplayName(liveLine.speakerLabel)
               ? live.liveSpeakerSuggestions?.[liveLine.speakerLabel] : undefined}
             suggestionSource={live.liveSpeakerSuggestionSources?.[liveLine.speakerLabel]}
             onDismissSuggestion={!readOnly ? live.onDismissLiveSpeakerSuggestion : undefined}

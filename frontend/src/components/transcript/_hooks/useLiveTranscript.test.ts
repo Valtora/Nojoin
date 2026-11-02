@@ -520,6 +520,22 @@ describe("useLiveTranscript", () => {
     expect(result.current.liveSpeakerSuggestionSources).toEqual({});
   });
 
+  it("reads where each suggestion was heard, keeping one object while it holds", async () => {
+    const heard = { ...buildDelta(4, []), live_speaker_suggestions: { LIVE_PROVISIONAL_1: "Alex" } };
+    getTranscriptUtterances
+      .mockResolvedValueOnce({ ...heard, live_speaker_suggestion_starts: { LIVE_PROVISIONAL_1: 9.5 } })
+      .mockResolvedValueOnce({ ...heard, live_speaker_suggestion_starts: { LIVE_PROVISIONAL_1: 9.5 } })
+      .mockResolvedValueOnce({ ...buildDelta(4, []), live_speaker_suggestions: {} });
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    const starts = result.current.liveSpeakerSuggestionStarts;
+    expect(starts).toEqual({ LIVE_PROVISIONAL_1: 9.5 });
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerSuggestionStarts).toBe(starts);
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerSuggestionStarts).toEqual({});
+  });
+
   it("hides an accepted label immediately and resets suggestions when switching recordings", async () => {
     getTranscriptUtterances.mockResolvedValue({ ...buildDelta(4, []),
       live_speaker_suggestions: { LIVE_PROVISIONAL_1: "Alex", LIVE_PROVISIONAL_2: "Blair" } });

@@ -25,6 +25,7 @@ interface SharedLiveTranscriptProps {
   liveSpeakerNames?: Readonly<Record<string, string>>;
   liveSpeakerSuggestions?: Readonly<Record<string, string>>;
   liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
+  liveSpeakerSuggestionStarts?: Readonly<Record<string, number>>;
   onDismissLiveSpeakerSuggestion?: (label: string) => Promise<boolean>;
   onRenameLiveSpeaker?: (label: string, name: string) => Promise<boolean>;
   loadPeopleNames?: () => Promise<readonly string[]>;
@@ -37,7 +38,7 @@ export default function SharedLiveTranscript({
   segments, hasLoaded, capturing = true, isPaused, lineHandlers, speakers = [], notes, onRetryNote,
   onDiscardNote, onMoveNote, footer, onNoteOnLine, onNoteAtTime, liveSpeakerNames = {},
   onRenameLiveSpeaker, loadPeopleNames, liveSpeakerSuggestions, onDismissLiveSpeakerSuggestion,
-  liveSpeakerSuggestionSources,
+  liveSpeakerSuggestionSources, liveSpeakerSuggestionStarts,
 }: SharedLiveTranscriptProps) {
   const speakerMap = {
     ...Object.fromEntries(speakers.map((speaker) => [
@@ -55,7 +56,8 @@ export default function SharedLiveTranscript({
       disableSegmentPlayback disableExport timelineNotes={notes} onRetryNote={onRetryNote}
       onDiscardNote={onDiscardNote} onMoveNote={onMoveNote}
       live={{ hasLoaded, capturing, isPaused, lineHandlers, onNoteOnLine, onNoteAtTime, onRenameLiveSpeaker, loadPeopleNames,
-        liveSpeakerSuggestions, liveSpeakerSuggestionSources, onDismissLiveSpeakerSuggestion }} />
+        liveSpeakerSuggestions, liveSpeakerSuggestionSources, liveSpeakerSuggestionStarts,
+        onDismissLiveSpeakerSuggestion }} />
     {footer}
   </>;
 }

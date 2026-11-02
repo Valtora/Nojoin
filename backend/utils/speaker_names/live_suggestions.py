@@ -422,6 +422,25 @@ def live_suggestion_sources(
     }
 
 
+def live_suggestion_starts(
+    transcript: Transcript, labels: Sequence[str]
+) -> dict[str, float]:
+    """Where each shown proposal's evidence starts, in seconds, so the live
+    view can offer it on that line.
+
+    A self-introduction has one span, its line's start. An AI proposal has a
+    start only when it quotes a single timed span; otherwise it has none here.
+    """
+    pending = _pending_live_entries(transcript)
+    starts: dict[str, float] = {}
+    for label in labels:
+        spans = (pending.get(label) or {}).get("evidence_spans") or []
+        start = spans[0].get("start_seconds") if len(spans) == 1 else None
+        if isinstance(start, int | float):
+            starts[label] = float(start)
+    return starts
+
+
 def shown_in_transcript_read(item: Mapping[str, Any]) -> bool:
     """A pending live proposal names a live label, shown only by the live read
     while capture runs; after Stop that label no longer exists. An ask record

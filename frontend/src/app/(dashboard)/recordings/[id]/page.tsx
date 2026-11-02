@@ -146,6 +146,10 @@ export default function RecordingPage({ params }: PageProps) {
   const sideColumnCollapsed = isSpeakerPanelCollapsed && isChatPanelCollapsed;
   const sideColumnSize = sideColumnOpeningSize(columnsWidth ?? 0, isCompact);
 
+  const showTranscript = () => {
+    setActivePanel("transcript");
+    requestAnimationFrame(() => document.getElementById("panel-transcript")?.focus({ preventScroll: true }));
+  };
   const speakersContent = <RecordingSpeakers
     recording={recording}
     liveTranscript={usesInFlightTranscript ? liveTranscript : undefined}
@@ -164,13 +168,10 @@ export default function RecordingPage({ params }: PageProps) {
     globalSpeakers={globalSpeakers}
     onSpeakerRenamed={handleSpeakerRenamed}
     onPeopleChanged={refreshPeople}
+    onShowTranscript={showTranscript}
     readOnly={!isLiveCaptureInProgress(recording) && (showCaptureSlot ||
       (hasRetainedPublication && (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0)))}
   />;
-  const showTranscript = () => {
-    setActivePanel("transcript");
-    requestAnimationFrame(() => document.getElementById("panel-transcript")?.focus({ preventScroll: true }));
-  };
   const myNotesContent = <RecordingMyNotes
     recording={recording}
     timelineNotes={timelineNotes}

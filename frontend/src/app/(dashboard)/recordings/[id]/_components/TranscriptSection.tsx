@@ -221,11 +221,13 @@ export default function TranscriptSection({
     onMergeLiveSpeaker: activeCapture ? liveNaming.mergeLiveSpeaker : undefined,
     liveSpeakerSuggestions: activeCapture ? liveTranscript?.liveSpeakerSuggestions : undefined,
     liveSpeakerSuggestionSources: liveTranscript?.liveSpeakerSuggestionSources,
+    liveSpeakerSuggestionStarts: liveTranscript?.liveSpeakerSuggestionStarts,
     onDismissLiveSpeakerSuggestion: activeCapture ? liveNaming.dismissLiveSpeakerSuggestion : undefined,
     loadPeopleNames: liveNaming.loadPeopleNames,
   }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveBehind, liveLineHandlers, activeCapture,
     noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.mergeLiveSpeaker, liveNaming.loadPeopleNames,
     liveTranscript?.liveSpeakerSuggestions, liveTranscript?.liveSpeakerSuggestionSources,
+    liveTranscript?.liveSpeakerSuggestionStarts,
     liveNaming.dismissLiveSpeakerSuggestion]);
   const discardNote = useCallback(
     (key: string) => {

@@ -71,6 +71,8 @@ class FakeLLM:
         self.ran = 0
         # Raised instead of answering, as a provider raises a failed call.
         self.error: Exception | None = None
+        # The answer's evidence spans, each quoted with these keys besides.
+        self.spans: list[dict[str, Any]] = [{}]
 
     def infer_speaker_suggestions(self, transcript: str, **kwargs: Any) -> Any:
         labels = list(kwargs["eligible_labels"])
@@ -83,7 +85,10 @@ class FakeLLM:
                     "diarization_label": label,
                     "suggested_name": name,
                     "confidence": 0.9,
-                    "evidence_spans": [{"quote": "live line", "reason": "context"}],
+                    "evidence_spans": [
+                        {"quote": "live line", "reason": "context", **span}
+                        for span in self.spans
+                    ],
                 }
                 for label, name in self.names.items()
                 if label in labels
@@ -497,6 +502,53 @@ async def _say_at(session_maker: Any, start_ms: int, words: str) -> None:
         words=words,
         start=start_ms,
     )
+
+
+async def test_a_self_introduction_is_read_with_where_it_was_said(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, NO_PROVIDER)
+    await _say_at(session_maker, 9500, "Hello, I'm Alex.")
+
+    await _refresh(session_maker, llm)
+
+    read = await _read(client)
+    assert read["live_speaker_suggestions"] == {ONE: "Alex"}
+    assert read["live_speaker_suggestion_starts"] == {ONE: 9.5}
+
+
+@pytest.mark.parametrize(
+    ("spans", "starts"),
+    [
+        ([{}], {}),
+        ([{"start_seconds": 9.5, "end_seconds": 20.0}], {ONE: 9.5}),
+        (
+            [
+                {"start_seconds": 0.0, "end_seconds": 4.0},
+                {"start_seconds": 9.5, "end_seconds": 20.0},
+            ],
+            {},
+        ),
+    ],
+    ids=["untimed", "one-timed-span", "two-spans"],
+)
+async def test_an_ai_name_is_placed_only_by_a_single_timed_span(
+    client: AsyncClient,
+    session_maker: Any,
+    llm: FakeLLM,
+    spans: list[dict[str, Any]],
+    starts: dict[str, float],
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _talk_until(session_maker, 64_000)
+    llm.names = {ONE: "Priya Raman"}
+    llm.spans = spans
+
+    await _refresh(session_maker, llm)
+
+    read = await _read(client)
+    assert read["live_speaker_suggestions"] == {ONE: "Priya Raman"}
+    assert read["live_speaker_suggestion_starts"] == starts
 
 
 async def test_a_failed_ask_gives_up_quietly_until_the_next_window(

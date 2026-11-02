@@ -274,7 +274,7 @@ function TranscriptGroup({
 function sameLiveLine(left: LiveLinePresentation | undefined, right: LiveLinePresentation | undefined): boolean {
   return left === right || !!left && !!right &&
     left.sourceLabel === right.sourceLabel && left.speakerLabel === right.speakerLabel &&
-    left.speakerLocked === right.speakerLocked && left.speakersLatestLine === right.speakersLatestLine;
+    left.speakerLocked === right.speakerLocked && left.offersSuggestion === right.offersSuggestion;
 }
 
 function sameLineShared(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
@@ -287,15 +287,17 @@ function sameLineShared(previous: TranscriptGroupProps, next: TranscriptGroupPro
     if (key === "live" && left.live && right.live) {
       const liveKeys = Object.keys(right.live) as (keyof LiveTranscriptPresentation)[];
       return liveKeys.length === Object.keys(left.live).length &&
-        liveKeys.every((liveKey) => liveKey === "liveSpeakerSuggestions" || liveKey === "liveSpeakerSuggestionSources"
-          // Only a speaker's latest line offers a proposal, so a proposal
-          // redraws that line's group alone.
-          ? next.group.items.every(({ segmentId }) => {
-            const line = right.liveLines?.get(segmentId);
-            const label = line?.speakersLatestLine ? line.speakerLabel : null;
-            return !label || left.live![liveKey]?.[label] === right.live![liveKey]?.[label];
-          })
-          : Object.is(left.live![liveKey], right.live![liveKey]));
+        // Where a proposal was heard only places it, which `liveLines` carries.
+        liveKeys.every((liveKey) => liveKey === "liveSpeakerSuggestionStarts" || (
+          liveKey === "liveSpeakerSuggestions" || liveKey === "liveSpeakerSuggestionSources"
+            // Only one line per speaker offers a proposal, so a proposal
+            // redraws that line's group alone.
+            ? next.group.items.every(({ segmentId }) => {
+              const line = right.liveLines?.get(segmentId);
+              const label = line?.offersSuggestion ? line.speakerLabel : null;
+              return !label || left.live![liveKey]?.[label] === right.live![liveKey]?.[label];
+            })
+            : Object.is(left.live![liveKey], right.live![liveKey])));
     }
     return Object.is(left[key], right[key]);
   });

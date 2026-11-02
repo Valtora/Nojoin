@@ -40,6 +40,7 @@ from backend.utils.speaker_names.live import live_speaker_groups, live_speaker_n
 from backend.utils.speaker_names.live_suggestions import (
     live_speaker_suggestions,
     live_suggestion_sources,
+    live_suggestion_starts,
 )
 
 from .helpers import (
@@ -188,6 +189,9 @@ async def get_transcript_utterances(
         live_behind=live_behind,
         live_speaker_suggestions=suggestions,
         live_speaker_suggestion_sources=live_suggestion_sources(
+            transcript, list(suggestions)
+        ),
+        live_speaker_suggestion_starts=live_suggestion_starts(
             transcript, list(suggestions)
         ),
     )

@@ -81,6 +81,8 @@ export interface LiveTranscript {
   liveBehind?: boolean;
   liveSpeakerSuggestions?: Readonly<Record<string, string>>;
   liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
+  /** Where each pending name was heard, in seconds, when the read says. */
+  liveSpeakerSuggestionStarts?: Readonly<Record<string, number>>;
   applyLiveSpeakerSuggestions?: (suggestions: Record<string, string>) => void;
 }
 
@@ -90,7 +92,7 @@ const NO_NAMES: Readonly<Record<string, never>> = {};
  * `next`, or `previous` when it holds the same names: every poll answers with
  * a new object, and a new one would re-render the panel each time.
  */
-function sameOrNext<T extends string>(
+function sameOrNext<T extends string | number>(
   previous: Readonly<Record<string, T>>,
   next: Readonly<Record<string, T>> | undefined,
 ): Readonly<Record<string, T>> {
@@ -140,6 +142,8 @@ export function useLiveTranscript(
     useState<Readonly<Record<string, string>>>(NO_NAMES);
   const [liveSpeakerSuggestionSources, setLiveSpeakerSuggestionSources] =
     useState<Readonly<Record<string, SpeakerNameSource>>>(NO_NAMES);
+  const [liveSpeakerSuggestionStarts, setLiveSpeakerSuggestionStarts] =
+    useState<Readonly<Record<string, number>>>(NO_NAMES);
   const stateRef = useRef<LocalTranscriptState | null>(null);
 
   // A feed that starts, or restarts for another recording, shows nothing until
@@ -153,6 +157,7 @@ export function useLiveTranscript(
       setLiveSpeakerMerges(NO_NAMES);
       setLiveSpeakerSuggestions(NO_NAMES);
       setLiveSpeakerSuggestionSources(NO_NAMES);
+      setLiveSpeakerSuggestionStarts(NO_NAMES);
       setSpeakers([]);
     }
   });
@@ -227,6 +232,9 @@ export function useLiveTranscript(
       );
       setLiveSpeakerSuggestionSources((previous) =>
         sameOrNext(previous, delta.live_speaker_suggestion_sources),
+      );
+      setLiveSpeakerSuggestionStarts((previous) =>
+        sameOrNext(previous, delta.live_speaker_suggestion_starts),
       );
       setHasLoaded(true);
     };
@@ -313,7 +321,8 @@ export function useLiveTranscript(
   return {
     segments: shown, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames,
     liveSpeakerMerges, applyLiveSpeakerMerges, refresh, liveBehind,
-    liveSpeakerSuggestions, liveSpeakerSuggestionSources, applyLiveSpeakerSuggestions,
+    liveSpeakerSuggestions, liveSpeakerSuggestionSources, liveSpeakerSuggestionStarts,
+    applyLiveSpeakerSuggestions,
   };
 }
 

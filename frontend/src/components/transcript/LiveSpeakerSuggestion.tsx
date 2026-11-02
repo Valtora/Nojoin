@@ -36,7 +36,8 @@ export default function LiveSpeakerSuggestion({ label, name, source, onAccept, o
   };
   const reason = source ? describeSuggestedNameSource({ name_source: source }) : null;
   const buttonClass = `rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT}`;
-  return <span className="inline-flex flex-wrap items-center gap-1" aria-label={`Suggested name ${name}`}>
+  return <span className="inline-flex flex-wrap items-center gap-1" aria-label={`Suggested name ${name}`}
+    data-live-suggestion-label={label}>
     <span className="font-bold text-status-warning-fg" title="Suggested name, not confirmed yet">{name}?</span>
     {reason && <span className="text-xs text-contrast-helper">{reason}</span>}
     <ButtonBase type="button" disabled={sending} className={buttonClass}

@@ -7,6 +7,7 @@ import {
   RecordingId,
   TranscriptSegment,
   GlobalSpeaker,
+  SpeakerNameSource,
 } from "@/types";
 import {
   Play,
@@ -71,6 +72,10 @@ interface SpeakerPanelProps {
   liveSpeakerNames?: Record<string, string>;
   onRenameLiveSpeaker?: RenameLiveSpeaker;
   onMergeLiveSpeaker?: MergeLiveSpeaker;
+  liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
+  onDismissLiveSpeakerSuggestion?: (label: string) => Promise<boolean>;
+  onShowTranscript?: () => void;
 }
 
 export default function SpeakerPanel({
@@ -92,6 +97,10 @@ export default function SpeakerPanel({
   liveSpeakerNames = {},
   onRenameLiveSpeaker,
   onMergeLiveSpeaker,
+  liveSpeakerSuggestions,
+  liveSpeakerSuggestionSources,
+  onDismissLiveSpeakerSuggestion,
+  onShowTranscript,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const highlight = useSpeakerTurnHighlight();
@@ -221,7 +230,9 @@ export default function SpeakerPanel({
         <LiveSpeakerRows labels={liveLabels} names={liveSpeakerNames} speakers={speakers}
           globalSpeakers={globalSpeakers} speakerColors={speakerColors} onRename={onRenameLiveSpeaker}
           onMerge={onMergeLiveSpeaker}
-          readOnly={disableEditing} />
+          readOnly={disableEditing} suggestions={liveSpeakerSuggestions}
+          suggestionSources={liveSpeakerSuggestionSources} onDismissSuggestion={onDismissLiveSpeakerSuggestion}
+          onShowTranscript={onShowTranscript} />
         {pendingEntries.length >= 2 && !disableEditing && (
           <div className="flex justify-end">
             <ButtonBase
