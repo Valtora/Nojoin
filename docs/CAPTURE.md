@@ -261,6 +261,12 @@ The recording was stopped in another tab or on another device and sent for proce
 
 The meeting button and the recording header name the stage while stopping. The header keeps the upload backlog visible even if the server still reports recording or paused; its transport is disabled while Stop finishes. The transcript remains visible. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. Until the server has that pause, **Start Meeting** says the last recording was not stopped instead of starting a new one. You can then stop it again from this tab's controls on the recording's page or from the global resume-or-discard dialog. A failed discard works the same way: the recording stays paused, on the server too, and you can discard it again. Stopping does not need the original capture, so it works after a reload.
 
+### The browser did not start audio
+
+**Start Meeting** waits up to 10 seconds for the browser to start audio for the recording. If it doesn't, Nojoin says so, releases the microphone and any shared tab, and removes the meeting it had begun, so **Start Meeting** works again at once. A **Resume** after a reload gives up the same way and leaves the recording paused, with everything recorded so far.
+
+The usual cause is a browser with no working sound output. Check that the device can play sound, for example a video in another tab, then try again. Firefox on Linux needs a sound server such as PipeWire or PulseAudio. If it keeps happening, use another browser.
+
 ### Browser recording unavailable
 
 The meeting button reads **Unsupported browser** when the browser offers no microphone access or no AudioWorklet support. Open Nojoin in a browser from [Supported Environments](#supported-environments). The recovery dialog in the unsupported browser offers **Stop and process** and **Discard recording** but not **Resume recording**, which needs capture. Firefox and Safari record the microphone only; for the meeting's shared audio, use Chrome or another Chromium-family browser on desktop.
