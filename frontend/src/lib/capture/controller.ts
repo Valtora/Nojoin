@@ -623,7 +623,14 @@ export class CaptureController {
     const decision = ownedPause ??
       selectRecoveryOffer(attentionRecordings, this.state.pausedRecording?.id ?? null, options);
     void this.settleAudioKeptForFinishedCaptures(unfinished);
-    this.setState({ pausedRecording: decision, attentionRecordings });
+    // A check that finds what is already shown publishes nothing: the
+    // recordings list asks after every poll, and a new state re-renders each
+    // consumer, a badge on every row of a long list among them (#900).
+    const unchanged =
+      JSON.stringify(decision) === JSON.stringify(this.state.pausedRecording) &&
+      JSON.stringify(attentionRecordings) === JSON.stringify(this.state.attentionRecordings) &&
+      this.state.ownedRecordingId === this.getOwnedRecordingId();
+    if (!unchanged) this.setState({ pausedRecording: decision, attentionRecordings });
     if (this.runtime || captures.length === 0) {
       this.stopCaptureRecheck();
     } else {

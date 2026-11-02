@@ -6,11 +6,10 @@ from typing import Any, List, Optional
 import aiofiles
 from fastapi import Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy.sql.elements import ColumnElement
-from sqlmodel import col, or_, select
+from sqlmodel import col, select
 
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_user, get_current_user_stream, get_db
@@ -20,7 +19,7 @@ from backend.models.calendar import (
     CalendarEvent,
     CalendarSource,
 )
-from backend.models.pipeline import RecordingAudioChunk, TranscriptUtterance
+from backend.models.pipeline import RecordingAudioChunk
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.recording_public import (
     CalendarEventLinkRead,
@@ -29,19 +28,23 @@ from backend.models.recording_public import (
     serialize_recording,
 )
 from backend.models.speaker import RecordingSpeaker
-from backend.models.tag import RecordingTag, Tag
+from backend.models.tag import RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.services.calendar_link_service import (
     CANDIDATE_WINDOW_PADDING,
     score_event_match,
 )
+from backend.services.recording_search import (
+    has_any_speaker,
+    has_any_tag,
+    recording_search_condition,
+)
 from backend.services.recording_tag_reads import load_tags_by_recording
 from backend.services.timeline_note_service import (
     load_timeline_notes_list_signature_async,
 )
 from backend.utils.canonical_pipeline import (
-    ACTIVE_UTTERANCE_STATES,
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
 )
@@ -78,32 +81,6 @@ RECORDING_AUDIO_UNAVAILABLE_DETAIL = (
 # A paused recording counts: it can be resumed, and the shortfall accrued before
 # the pause is still what the user needs told.
 _CAPTURE_IN_PROGRESS_STATUSES = {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}
-
-
-def _transcript_search_text() -> ColumnElement[str]:
-    """Search current live words without maintaining a growing JSON snapshot."""
-    ordered_text = (
-        select(TranscriptUtterance.text)
-        .where(TranscriptUtterance.recording_id == Recording.id)
-        .where(TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES))
-        .order_by(TranscriptUtterance.sort_key, TranscriptUtterance.id)
-        .correlate(Recording)
-        .subquery()
-    )
-    # Aggregate the ordered input so phrases spanning two lines still match.
-    # aggregate_strings emits string_agg on Postgres and group_concat on SQLite.
-    canonical_text = select(
-        func.aggregate_strings(ordered_text.c.text, " ")
-    ).scalar_subquery()
-    state = col(Transcript.settling_state)
-    return case(
-        (
-            state["eligible"].as_boolean().is_(True)
-            & state["policy"]["enabled"].as_boolean().is_(True),
-            func.coalesce(canonical_text, ""),
-        ),
-        else_=Transcript.text,
-    )
 
 
 @router.get("", response_model=List[RecordingPublicRead])
@@ -171,7 +148,7 @@ async def list_recordings(
     if user_filter is not None and user_filter != "me":
         raise HTTPException(status_code=400, detail="Only user=me is supported")
 
-    query = select(Recording).where(Recording.user_id == current_user.id).distinct()
+    query = select(Recording).where(Recording.user_id == current_user.id)
 
     if status_filters:
         query = query.where(Recording.status.in_(list(status_filters)))
@@ -188,20 +165,10 @@ async def list_recordings(
         if not include_archived:
             query = query.where(Recording.is_archived == False)
 
-    if q or speaker_ids or tag_ids:
-        query = query.join(Transcript, isouter=True)
-        query = query.join(RecordingSpeaker, isouter=True)
-        query = query.join(RecordingTag, isouter=True).join(Tag, isouter=True)
-
-    # 1. Text Search (OR condition across fields)
-    if q:
-        search_filter = or_(
-            col(Recording.name).ilike(f"%{q}%"),
-            _transcript_search_text().ilike(f"%{q}%"),
-            col(RecordingSpeaker.name).ilike(f"%{q}%"),
-            col(Tag.name).ilike(f"%{q}%"),
-        )
-        query = query.where(search_filter)
+    # 1. Text search across title, tags, speaker names and transcript.
+    search = recording_search_condition(q) if q else None
+    if search is not None:
+        query = query.where(search)
 
     # 2. Filters (AND conditions)
     if start_date:
@@ -214,12 +181,18 @@ async def list_recordings(
         query = query.where(Recording.created_at <= end_date)
 
     if speaker_ids:
-        query = query.where(RecordingSpeaker.global_speaker_id.in_(speaker_ids))
+        query = query.where(has_any_speaker(speaker_ids))
 
     if tag_ids:
-        query = query.where(Tag.id.in_(tag_ids))
+        query = query.where(has_any_tag(tag_ids))
 
-    query = query.order_by(Recording.created_at.desc()).offset(skip).limit(limit)
+    # The id breaks a tie in created_at, so offset pages never overlap or
+    # leave a meeting out between them.
+    query = (
+        query.order_by(col(Recording.created_at).desc(), col(Recording.id).desc())
+        .offset(skip)
+        .limit(limit)
+    )
 
     result = await db.execute(query)
     recordings = result.scalars().all()

@@ -1640,6 +1640,26 @@ describe("a capture whose tab closed without pausing it (issue #519)", () => {
     expect(controller.getState().pausedRecording).toEqual(stalled);
   });
 
+  it("publishes nothing when a check finds what is already shown", async () => {
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([capture({ capture_stalled: true })]);
+    const controller = newController();
+    await controller.refreshPausedRecording();
+    const shown = controller.getState();
+    const published: unknown[] = [];
+    controller.subscribe((state) => published.push(state));
+
+    await controller.refreshPausedRecording();
+
+    expect(published).toEqual([]);
+    expect(controller.getState()).toBe(shown);
+
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
+    await controller.refreshPausedRecording();
+
+    expect(published).toHaveLength(1);
+    expect(controller.getState().attentionRecordings).toEqual([]);
+  });
+
   it("never offers a capture that is still uploading", async () => {
     apiMocks.getUnfinishedCaptures.mockResolvedValue([capture()]);
     const controller = newController();
