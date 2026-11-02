@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { getRecordings, type RecordingFilters } from "@/lib/api";
 import type { Recording } from "@/types";
@@ -95,7 +95,10 @@ export function useRecordingListPages(
   const latestRefresh = useRef(0);
   const loadingMore = useRef(false);
 
-  useEffect(() => {
+  // Load more, its IntersectionObserver and the refresh events read this ref.
+  // It is set at commit, so one that fires after new rows show but before the
+  // passive effects run still sees those rows.
+  useLayoutEffect(() => {
     stateRef.current = state;
   }, [state]);
 
