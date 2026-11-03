@@ -200,6 +200,49 @@ describe("meeting list card renders at 1,000 cards", () => {
     expect(rendered()).toEqual(["rec-3"]);
   }, 60_000);
 
+  it("draws only the changed card as its first tags appear, grow and disappear", async () => {
+    const intervals = vi.spyOn(globalThis, "setInterval");
+    const { container } = await showRows(LIBRARY_SIZE);
+    const poll = intervals.mock.calls.findLast(([, ms]) => ms === 15_000)?.[0];
+    expect(poll).toBeTypeOf("function");
+    const row = container.querySelector<HTMLElement>('[data-recording-link="rec-3"]')!;
+
+    for (const [count, padding, touchPadding] of [
+      [1, "pr-11.5", "pointer-coarse:pr-[62px]"],
+      [6, "pr-11.5", "pointer-coarse:pr-[62px]"],
+      [7, "pr-14", "pointer-coarse:pr-[72px]"],
+      [12, "pr-14", "pointer-coarse:pr-[72px]"],
+      [13, "pr-17.5", "pointer-coarse:pr-[86px]"],
+      [0, "pr-9", "pointer-coarse:pr-[52px]"],
+    ] as const) {
+      library[3] = {
+        ...library[3],
+        tags: Array.from({ length: count }, (_, index) => ({
+          id: index + 1,
+          name: `Topic ${index + 1}`,
+          color: "sky",
+          created_at: library[3].created_at,
+          updated_at: library[3].updated_at,
+        })),
+      };
+      cardRenders.length = 0;
+      await act(async () => {
+        (poll as () => void)();
+      });
+      await waitFor(() => {
+        expect(row.querySelectorAll("[data-tag-dot]")).toHaveLength(count > 12 ? 11 : count);
+        expect(row).toHaveClass(padding, touchPadding);
+      });
+
+      expect(rendered()).toEqual(["rec-3"]);
+      expect(row).toHaveClass("pl-9", "pointer-coarse:pl-3");
+      if (count > 12) expect(row).toHaveTextContent("+2");
+      expect(container.querySelector('[data-recording-link="rec-4"]')).toHaveClass(
+        "pr-9", "pointer-coarse:pr-[52px]", "pl-9", "pointer-coarse:pl-3",
+      );
+    }
+  }, 60_000);
+
   it("draws only the card whose selection changed", async () => {
     const { container } = await showRows(LIBRARY_SIZE);
     // The first selection shows every card's checkbox, so every card draws.

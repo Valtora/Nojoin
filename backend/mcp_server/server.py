@@ -34,6 +34,7 @@ from sqlmodel import col, select
 from starlette.applications import Starlette
 from starlette.types import ASGIApp
 
+from backend.api.params import PageOffset, RevisionCursor
 from backend.core.security import MCP_READ_SCOPE, MCP_WRITE_SCOPE
 from backend.mcp_server.auth import (
     MCPAuthMiddleware,
@@ -294,7 +295,7 @@ def _compact_recording(
 @mcp_tool()
 async def list_recordings(
     limit: int = 20,
-    skip: int = 0,
+    skip: PageOffset = 0,
     query: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -476,7 +477,7 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
 @mcp_tool()
 async def get_transcript_utterances(
     recording_id: str,
-    after_revision: Optional[int] = None,
+    after_revision: Optional[RevisionCursor] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:

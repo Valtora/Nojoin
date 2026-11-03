@@ -26,7 +26,7 @@ import { formatTimeZoneDay, formatTimeZoneLocale } from "@/lib/timezone";
 import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 
 import type { TouchLongPress } from "./_hooks/useRecordingSelection";
-import RecordingTagDots from "./RecordingTagDots";
+import RecordingTagDots, { tagDotsLayout } from "./RecordingTagDots";
 
 /** The accessible name of a card's actions button and of the menu it opens. */
 export const rowMenuLabel = (recording: Recording) => `Actions for ${recording.name}`;
@@ -41,6 +41,22 @@ const formatDurationString = (seconds?: number) => {
     return `${hours}hr ${minutes}${minutes === 1 ? "min" : "mins"}`;
   }
   return `${minutes}${minutes === 1 ? "min" : "mins"}`;
+};
+
+// A card's text stops short of the actions button (right-1 and 28px wide, or
+// the 44px touch target) and, on a tagged card, of the dots 4px left of it: a
+// column of 0.375rem dots, two with a 0.25rem gap, and a second one as wide as
+// a two-digit count when its last slot holds one. Index: the number of columns.
+const CARD_RIGHT_PADDING = [
+  "pr-9 pointer-coarse:pr-[52px]",
+  "pr-11.5 pointer-coarse:pr-[62px]",
+  "pr-14 pointer-coarse:pr-[72px]",
+] as const;
+const CARD_RIGHT_PADDING_WITH_COUNT = "pr-17.5 pointer-coarse:pr-[86px]";
+
+const cardRightPadding = (tagCount: number) => {
+  const { columns, more } = tagDotsLayout(tagCount);
+  return more > 0 ? CARD_RIGHT_PADDING_WITH_COUNT : CARD_RIGHT_PADDING[columns];
 };
 
 const formatDate = (dateString: string, timeZone: string) => {
@@ -139,8 +155,6 @@ interface RecordingListRowProps {
   /** The name being typed; empty on every card but the one being renamed. */
   renameValue: string;
   hasUnsentNotes: boolean;
-  /** Some card shows tag dots, so every card keeps the gutter they sit in. */
-  reserveTagGutter: boolean;
   actions: RecordingListRowActions;
 }
 
@@ -160,7 +174,6 @@ function RecordingListRow({
   isRenaming,
   renameValue,
   hasUnsentNotes,
-  reserveTagGutter,
   actions,
 }: RecordingListRowProps) {
   const startDate = parseServerTimestamp(recording.created_at);
@@ -236,11 +249,11 @@ function RecordingListRow({
             }}
             onContextMenu={(e) => actions.onContextMenu(e, recording)}
             {...actions.bindLongPress(recording.id)}
-            // The right padding keeps the text clear of the actions button.
-            className={`block py-3 pr-9 pointer-coarse:pr-[52px] rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
-              isSelecting || reserveTagGutter
-                ? "pl-9"
-                : "pl-3 pointer-fine:pl-9"
+            // The left padding keeps the text clear of the checkbox
+            // wherever it can show, which on touch is only while
+            // selecting; the right of the tag dots and the button.
+            className={`block py-3 ${cardRightPadding(recording.tags?.length ?? 0)} rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
+              isSelecting ? "pl-9" : "pl-9 pointer-coarse:pl-3"
             } ${
               isHighlighted
                 ? isSelected
@@ -291,11 +304,12 @@ function RecordingListRow({
                 </>
               )}
             </div>
-            {/* In the left gutter, below where the selection
-                checkbox appears, so the two never overlap. */}
+            {/* Centred in the right-hand gutter, just left of the
+                actions button, so they never meet it or the
+                selection checkbox. */}
             <RecordingTagDots
               tags={recording.tags}
-              className="absolute left-3 top-8.5 w-4"
+              className="absolute right-9 top-1/2 -translate-y-1/2 pointer-coarse:right-[52px]"
             />
             <RecordingAttentionBadge recordingId={recording.id} className="mt-2" />
             {/* The open recording lists its own unsent notes. */}

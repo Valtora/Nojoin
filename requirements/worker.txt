@@ -64,9 +64,9 @@ pytorch-metric-learning==2.9.0
 scipy==1.18.1
 rich==15.0.0
 safetensors==0.8.0
-# Native Nemotron inference. No broad Transformers extras or NeMo dependency:
-# the immutable asset manifest and golden fixture pin this version together
-# (scripts/check_held_pins.py). Revalidate both before changing it.
+# Native Nemotron inference. No broad Transformers extras or NeMo dependency.
+# Dependabot moves this pin; run the opt-in Nemotron inference regression
+# (docs/DEVELOPMENT.md) to check a bump's outputs.
 transformers==5.21.0
 librosa==1.0.0
 soxr==1.1.0

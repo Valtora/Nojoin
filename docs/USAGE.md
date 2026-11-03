@@ -19,6 +19,8 @@ The dashboard holds:
 - **Processing**, while anything is still being processed.
 - **Recent Meetings**, once you have recordings.
 
+**Recent Meetings** shows meeting tags. It displays up to two tag chips per row, with **+N** for any others; hover over **+N** to see their names.
+
 **Settings > Appearance > Density** sets the spacing. **Automatic (by window size)** uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing elsewhere, **Comfortable** and **Compact** use one spacing at every size, and **Dense** is tighter still for mouse and keyboard while keeping compact-sized controls on a touch screen.
 
 **Settings > Appearance > Style** offers **Default** (the original flat look), **Classic** (bevelled buttons, sunken fields and panes, and your system's interface font) and **Depth** (layered shadows and shaded panels, with a stronger focus ring and control borders where the shading needs them). Classic looks best with **Square** corners; choose those separately under **Corner style**. Style keeps your colour palette and density, supports light and dark, and is saved in this browser only.
@@ -35,13 +37,15 @@ The dashboard holds:
 
 ### Task List
 
-Create, rename, complete, reopen, archive and delete tasks, and give them deadlines. A task with a deadline shows a live time-remaining badge. Archiving a task removes it from the dashboard, whether or not it was completed.
+Create, rename, complete, reopen, archive and delete tasks, and give them deadlines. Open and completed tasks show up to two tag chips, with **+N** for any others. A task with a deadline shows a live time-remaining badge. Archiving a task removes it from the dashboard, whether or not it was completed.
 
 ## Tasks Workspace
 
 The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Create Task** button. A task has a title, a body, a deadline, linked recordings and tags, using the same tags as recordings. **Archive** hides a task and **Restore** brings it back. **Delete** is permanent.
 
 To link a recording, use **Search all recordings** in the task's form. Before you type, it lists your newest recordings, archived ones included, and **Load more recordings** adds older ones. Once you pause typing, it searches your whole library by title, tags, speaker names and transcript text, as the recordings list's search does. Click a recording to link or unlink it, or move to it with the arrow keys and press Enter. Linked recordings stay above the search box whatever it shows, each with a button to unlink it. Recordings in the bin cannot be linked.
+
+Select tags under **Tags** in the navigation to filter tasks, just as in Recordings. Selecting several tags shows tasks with **any** of them, within the current Open, Completed or Archived view. Remove an individual filter using its **×**, or choose **Clear All** to show every task in the current view again.
 
 ## Recordings List
 
@@ -52,7 +56,7 @@ On a phone or a window narrower than 1024 px, **Start** beside **Import** in the
 On desktop, **Collapse recordings list** leaves a narrow rail. In **Recordings**, its microphone button starts a meeting and **Import Audio** imports a file, and each is unavailable whenever its full-size button is. While this tab records or pauses a meeting, the recordings list (expanded or collapsed) and the dashboard's **Meet Now** card show only its state. Use the recording's own controls or the floating recording badge to pause, resume, stop or discard; **Start Meeting** returns after capture ends. In **Archived** and **Deleted**, the archive and bin icons label the view. **Expand recordings list** brings the list back.
 
 - Each recording shows its date, its start and end times and its length. A meeting still recording or paused, or still uploading after **Stop**, shows when it started instead, since its length is known only once all its audio is in.
-- A tagged recording shows its tags as coloured dots down its left edge, in the order they were added. Up to three show as dots; with more, two dots and a count of the rest, such as **+3**. Point at the dots to see the tags' names, which a screen reader reads with the recording's name.
+- A tagged recording shows its tags as coloured dots at its right, just left of the **⋯** button, in the order they were added: one column of up to six, then two columns that share them evenly. Up to twelve show as dots; with more, eleven dots and a count of the rest, such as **+3**. Point at the dots to see the tags' names, which a screen reader reads with the recording's name.
 - The recording controls, **Search...**, the filters and **Select all** stay at the top while the recordings below them scroll. On a short window with the filters open, the top part scrolls on its own so the list keeps some room.
 - The list shows your newest 50 recordings and loads the next 50 as you scroll near its end, or when you choose **Load more recordings** below the last one. **No older recordings.** marks the end. Search and filter results load the same way.
 - **Search...** above the list searches your whole library: meeting titles, tags, the names speakers show under and the words of each transcript, including a phrase that runs from one line into the next. It searches once you pause typing, and a spinner in the box shows while it does. Its filter button adds a date filter (a range, after or before) and a speaker filter, which apply together with the search. Escape in the box clears it.
@@ -83,7 +87,7 @@ The **People** page is your speaker library: the people Nojoin can recognise acr
 
 ## Live Recording
 
-**Start Meeting** on the dashboard begins a recording. Desktop Chromium browsers record the shared tab, window or screen audio together with your microphone, and Chrome on Android and iOS records the phone microphone only. [CAPTURE.md](CAPTURE.md) covers supported browsers, choosing what to share, and the **Pause**, **Resume**, **Stop** and **Discard** controls.
+**Start Meeting** on the dashboard, in the recordings list or its collapsed rail begins a recording. On desktop Chromium, use **Recording source** beside Start (below it on the **Meet Now** card and in the collapsed rail) to choose **Microphone only**, which skips the screen-share picker, or **Microphone and a tab or screen**, which records shared audio together with your microphone. Nojoin remembers the choice in this browser; shared audio remains the default until you choose. Firefox, Safari and mobile browsers always record the microphone only and offer no source selector. [CAPTURE.md](CAPTURE.md) covers supported browsers, choosing what to share, and the **Pause**, **Resume**, **Stop** and **Discard** controls.
 
 A meeting started without a name is named for its day and time of day in your timezone ([Settings](#settings)), such as **Sunday 1st Nov, Night Meeting**. Rename it at any time.
 
@@ -158,6 +162,7 @@ A note can hold one file: a still of the shared screen, or a file you add to it.
 The **Captures** tab lists these files during recording, processing and afterwards, beside the transcript on desktop and in the tab row on a phone. Use the composer beneath **Transcript** to take a still or paste/drop a file; changing tabs keeps the draft you are writing.
 
 - While you record with a tab, window or screen shared, the camera button beside the note box, **Capture the shared screen**, adds a note at that moment, **Screen capture**, holding what the screen shows at full size. So does **Alt+Shift+C** (**Option+Shift+C** on a Mac) while Nojoin's tab is the one in front: the browser sends keys only to the tab you are in, not to the meeting you shared. Edit the note's text to caption it.
+- With **Microphone only**, there is no camera button and the shortcut takes no still. In a browser that can share a tab or screen, the note box explains that screen captures need one; you can still attach files.
 - Paste or drop a file of any type into the note box to attach it to the note you are typing, whose text becomes its caption: a screenshot, a PDF, a slide deck, a ZIP, an audio clip. A picture of another kind than PNG or JPEG is saved as one of those. With nothing typed, the note takes the file's name. This works on any device with the recording open, such as a phone taking notes beside the laptop that records. Text you paste stays text.
 
 The note saves first, then its file uploads. A file that fails to upload shows on its note with the reason, **Retry** and **Discard**, and after **Stop** it is listed with the notes not saved yet until you choose; Discard keeps the note. Nojoin asks before you close the page while a file has not uploaded. The file is held in the tab until then, so closing the tab anyway loses it.

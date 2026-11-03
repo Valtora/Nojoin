@@ -57,7 +57,7 @@ import BatchActionBar from "./BatchActionBar";
 import ReprocessDialog from "./ReprocessDialog";
 import { GlobalSpeaker } from "@/types";
 import { useNavigationStore } from "@/lib/store";
-import { getColorByKey } from "@/lib/constants";
+import ActiveTagFilters from "./ActiveTagFilters";
 import { useViewportDensity } from "./ViewportDensityProvider";
 import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingNotes";
 import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
@@ -744,13 +744,6 @@ export default function Sidebar() {
   // Determine if we should hide the sidebar on mobile
   const isRecordingView = pathname?.startsWith("/recordings/");
 
-  // Tag dots sit in the gutter the hover checkbox keeps on a fine pointer. On
-  // touch that gutter opens only while selecting, so a list holding any
-  // tagged meeting keeps it open on every card and the titles stay aligned.
-  const reserveTagGutter = recordings.some(
-    (recording) => (recording.tags?.length ?? 0) > 0,
-  );
-
   // The cards' handlers, one object for the list's life, so a memoised card
   // draws again only when its own props change (issue #907). Each one runs
   // this render's handler, which reads the current selection, menu and name.
@@ -935,44 +928,12 @@ export default function Sidebar() {
         </div>
 
         {/* Active Tag Filter Pills */}
-        {selectedTagIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            {selectedTagIds.map((tagId) => {
-              const tag = tags.find((t) => t.id === tagId);
-              if (!tag) return null;
-              const color = getColorByKey(tag.color);
-              return (
-                <div
-                  key={tagId}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-status-neutral-bg border border-status-neutral-border text-xs group hover:border-action-border transition-colors"
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full ${color.dot} shrink-0`}
-                  />
-                  <span className="text-status-neutral-fg font-medium">
-                    {tag.name}
-                  </span>
-                  <ButtonBase
-                    onClick={() => toggleTagFilter(tagId)}
-                    className="ml-0.5 text-contrast-icon-muted hover:text-danger-text transition-colors"
-                    title={`Remove ${tag.name} filter`}
-                  >
-                    <X className="w-3 h-3" />
-                  </ButtonBase>
-                </div>
-              );
-            })}
-            <ButtonBase
-              data-ui-hover="status-danger"
-              data-ui-border="full" chrome="action"
-              onClick={clearTagFilters}
-              className="px-2.5 py-1 rounded-pill text-xs font-medium text-danger-text hover:bg-status-danger-bg border border-status-danger-border transition-colors"
-              title="Clear all tag filters"
-            >
-              Clear All
-            </ButtonBase>
-          </div>
-        )}
+        <ActiveTagFilters
+          tags={tags}
+          selectedTagIds={selectedTagIds}
+          toggleTagFilter={toggleTagFilter}
+          clearTagFilters={clearTagFilters}
+        />
 
         {showFilters && (
           <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">
@@ -1184,7 +1145,6 @@ export default function Sidebar() {
                   // Only the card being renamed reads the name being typed.
                   renameValue={isRenaming ? renameValue : ""}
                   hasUnsentNotes={unsentRecordings.includes(recording.id)}
-                  reserveTagGutter={reserveTagGutter}
                   actions={rowActions}
                 />
               );

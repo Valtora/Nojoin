@@ -4,7 +4,9 @@ import { ButtonBase, InputBase, SelectBase } from "@/components/ui/nativeBases";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Mic, RefreshCw } from "lucide-react";
 
+import { startAudioContext } from "@/lib/capture/audioStart";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { AudioNotStartedError } from "@/lib/capture/shared";
 import { getErrorMessage } from "@/lib/errors";
 
 import SettingsBlock from "./SettingsBlock";
@@ -17,7 +19,6 @@ import {
   SETTINGS_SELECT_CLASS,
   SETTINGS_VALUE_CLASS,
 } from "./settingsControls";
-import { loadingButtonProps } from "@/components/ui/loadingButton";
 import { Switch } from "@/components/ui/Switch";
 
 interface MicrophoneOption {
@@ -33,6 +34,10 @@ const clampPreviewLevel = (value: number) =>
   Math.max(0, Math.min(100, Math.round(value)));
 
 const formatGainLabel = (value: number) => `${value.toFixed(2)}x`;
+
+/** The input test's words when the browser does not start audio (issue #925). */
+const PREVIEW_AUDIO_NOT_STARTED_MESSAGE =
+  "The browser did not start audio, so the input test stopped and released the microphone. Select Start input test to try again. If it keeps happening, check that this device can play sound, or use another browser.";
 
 /** The microphone and shared-audio sliders are identical but for their value. */
 const GainSlider = ({
@@ -112,8 +117,6 @@ export default function CaptureSettings() {
   const [previewRawLevel, setPreviewRawLevel] = useState(0);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const previewContextRef = useRef<AudioContext | null>(null);
-  const previewStreamRef = useRef<MediaStream | null>(null);
   const previewGainRef = useRef<GainNode | null>(null);
   const previewAnalyserRef = useRef<AnalyserNode | null>(null);
   const previewRawAnalyserRef = useRef<AnalyserNode | null>(null);
@@ -190,16 +193,20 @@ export default function CaptureSettings() {
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setPreviewError(
-        "This browser cannot open a microphone preview. Use Chrome or another supported Chromium browser.",
+        "This browser cannot open a microphone preview. Use a current version of Chrome, Edge, Firefox or Safari.",
       );
       setPreviewEnabled(false);
       return;
     }
 
     let cancelled = false;
+    // This run's microphone and audio context from the moment each opens, so
+    // its cleanup releases them even while the browser is still starting
+    // audio (issue #925).
     let localStream: MediaStream | null = null;
+    let localContext: AudioContext | null = null;
 
-    const stopPreview = async () => {
+    const stopPreview = () => {
       if (previewFrameRef.current !== null) {
         cancelAnimationFrame(previewFrameRef.current);
         previewFrameRef.current = null;
@@ -207,14 +214,10 @@ export default function CaptureSettings() {
       previewGainRef.current = null;
       previewAnalyserRef.current = null;
       previewRawAnalyserRef.current = null;
-      if (previewStreamRef.current) {
-        previewStreamRef.current.getTracks().forEach((track) => track.stop());
-        previewStreamRef.current = null;
-      }
-      if (previewContextRef.current) {
-        await previewContextRef.current.close().catch(() => {});
-        previewContextRef.current = null;
-      }
+      localStream?.getTracks().forEach((track) => track.stop());
+      localStream = null;
+      void localContext?.close().catch(() => {});
+      localContext = null;
       setPreviewLevel(0);
       setPreviewRawLevel(0);
     };
@@ -222,10 +225,9 @@ export default function CaptureSettings() {
     const startPreview = async () => {
       setPreviewLoading(true);
       setPreviewError(null);
-      await stopPreview();
 
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({
+        const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             deviceId: settings.microphoneDeviceId
               ? { exact: settings.microphoneDeviceId }
@@ -237,20 +239,23 @@ export default function CaptureSettings() {
         });
 
         if (cancelled) {
-          localStream.getTracks().forEach((track) => track.stop());
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        localStream = stream;
+
+        const context = new AudioContext();
+        localContext = context;
+        await startAudioContext(context);
+        if (cancelled) {
           return;
         }
 
-        const localContext = new AudioContext();
-        if (localContext.state === "suspended") {
-          await localContext.resume();
-        }
-
-        const source = localContext.createMediaStreamSource(localStream);
-        const gainNode = localContext.createGain();
+        const source = context.createMediaStreamSource(stream);
+        const gainNode = context.createGain();
         gainNode.gain.value = settings.microphoneGain;
-        const rawAnalyser = localContext.createAnalyser();
-        const analyser = localContext.createAnalyser();
+        const rawAnalyser = context.createAnalyser();
+        const analyser = context.createAnalyser();
         rawAnalyser.fftSize = 256;
         analyser.fftSize = 256;
         rawAnalyser.smoothingTimeConstant = 0.8;
@@ -260,8 +265,6 @@ export default function CaptureSettings() {
         source.connect(gainNode);
         gainNode.connect(analyser);
 
-        previewContextRef.current = localContext;
-        previewStreamRef.current = localStream;
         previewGainRef.current = gainNode;
         previewAnalyserRef.current = analyser;
         previewRawAnalyserRef.current = rawAnalyser;
@@ -289,8 +292,11 @@ export default function CaptureSettings() {
         previewFrameRef.current = requestAnimationFrame(tick);
       } catch (error) {
         if (!cancelled) {
+          stopPreview();
           setPreviewError(
-            getErrorMessage(error, "Failed to start the microphone input test."),
+            error instanceof AudioNotStartedError
+              ? PREVIEW_AUDIO_NOT_STARTED_MESSAGE
+              : getErrorMessage(error, "Failed to start the microphone input test."),
           );
           setPreviewEnabled(false);
         }
@@ -305,7 +311,7 @@ export default function CaptureSettings() {
 
     return () => {
       cancelled = true;
-      void stopPreview();
+      stopPreview();
     };
   }, [
     previewEnabled,
@@ -315,6 +321,10 @@ export default function CaptureSettings() {
     settings.microphoneDeviceId,
     settings.noiseSuppression,
   ]);
+
+  // Turning the test off while it starts leaves previewLoading set, since only
+  // the current run clears it, so the spinner also needs the test on.
+  const previewStarting = previewEnabled && previewLoading;
 
   const refreshDevices = async () => {
     if (!navigator.mediaDevices?.enumerateDevices) {
@@ -351,8 +361,8 @@ export default function CaptureSettings() {
       title="Input"
       description={
         microphoneOnly
-          ? "The phone microphone used for mobile recording. Nojoin balances levels while recording."
-          : "The microphone added to shared audio. Nojoin balances system and microphone levels while recording."
+          ? "The microphone used for recording. This browser records it without shared audio. Nojoin balances levels while recording."
+          : "The microphone used for recording, on its own or alongside shared audio. Nojoin balances levels while recording."
       }
       headerAside={
         <ButtonBase
@@ -388,8 +398,8 @@ export default function CaptureSettings() {
         label="Microphone"
         description={
           microphoneOnly
-            ? "Recorded directly on mobile Chrome."
-            : "Mixed with shared tab or system audio during capture."
+            ? "Recorded on its own: this browser cannot share tab or system audio."
+            : "Recorded on its own or with shared tab or system audio, as chosen at Start."
         }
       >
         <SelectBase
@@ -474,13 +484,16 @@ export default function CaptureSettings() {
             data-ui-border="full"
             chrome="action"
             type="button"
-            {...loadingButtonProps(previewLoading, undefined, () => {
+            // Not a loading button: Stop input test also cancels a start the
+            // browser is slow to finish.
+            aria-busy={previewStarting || undefined}
+            onClick={() => {
               setPreviewError(null);
               setPreviewEnabled((current) => !current);
-            })}
+            }}
             className={SETTINGS_BUTTON_SECONDARY}
           >
-            {previewLoading ? (
+            {previewStarting ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <Mic className="h-4 w-4" aria-hidden="true" />

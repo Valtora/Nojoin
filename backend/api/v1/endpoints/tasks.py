@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import RowId, RowIdsQuery
 from backend.models.tag import Tag, TagRead
 from backend.models.task import (
     UserTask,
@@ -177,15 +178,19 @@ async def _replace_task_recordings(
 @router.get("", response_model=List[UserTaskRead])
 async def read_tasks_root(
     status: TaskStatusFilter = "active",
+    tag_ids: RowIdsQuery = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await read_tasks(status=status, db=db, current_user=current_user)
+    return await read_tasks(
+        status=status, tag_ids=tag_ids, db=db, current_user=current_user
+    )
 
 
 @router.get("/", response_model=List[UserTaskRead])
 async def read_tasks(
     status: TaskStatusFilter = "active",
+    tag_ids: RowIdsQuery = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -199,6 +204,13 @@ async def read_tasks(
             ),
         )
     )
+
+    if tag_ids:
+        statement = statement.where(
+            UserTask.id.in_(
+                select(UserTaskTag.task_id).where(UserTaskTag.tag_id.in_(tag_ids))
+            )
+        )
 
     if status == "active":
         statement = statement.where(UserTask.archived_at.is_(None))
@@ -253,7 +265,7 @@ async def create_task(
 
 @router.patch("/{task_id}", response_model=UserTaskRead)
 async def update_task(
-    task_id: int,
+    task_id: RowId,
     task_update: UserTaskUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -312,7 +324,7 @@ async def update_task(
 
 @router.delete("/{task_id}")
 async def delete_task(
-    task_id: int,
+    task_id: RowId,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
