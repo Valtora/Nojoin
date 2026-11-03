@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
+from backend.api.params import RowId
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
@@ -135,8 +136,8 @@ class SettingsUpdate(BaseModel):
     prefer_short_titles: Optional[bool] = None
     # Notes structure and vocabulary (issue #137). The install_* keys are
     # admin-only and are dropped for everyone else by _build_settings_update_data.
-    notes_template_id: Optional[int] = None
-    install_notes_template_id: Optional[int] = None
+    notes_template_id: Optional[RowId] = None
+    install_notes_template_id: Optional[RowId] = None
     glossary_terms: Optional[str] = None
     install_glossary_terms: Optional[str] = None
     enable_vad: Optional[bool] = None

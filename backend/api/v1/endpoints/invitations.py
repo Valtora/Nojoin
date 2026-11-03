@@ -2,14 +2,14 @@ from datetime import datetime, timedelta
 from typing import Any, List, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
-from backend.api.params import PageLimit, PageOffset, RowId
+from backend.api.params import INTEGER_MAX, PageLimit, PageOffset, RowId
 from backend.models.invitation import Invitation
 from backend.models.user import User, UserRole
 from backend.utils.config_manager import get_trusted_web_origin
@@ -21,12 +21,17 @@ router = APIRouter()
 
 INVITATION_VALIDATE_RATE_LIMIT = 30
 INVITATION_VALIDATE_WINDOW_SECONDS = 10 * 60
+# A century: the settings page offers up to a year, and a few million days
+# puts the expiry past the last date Python holds, which answered 500.
+MAX_INVITATION_DAYS = 36_500
 
 
 class InvitationCreate(BaseModel):
     role: str = "user"
-    expires_in_days: int = 7
-    max_uses: int = 1
+    # 0 for either means no limit: an invitation that never expires, or one
+    # with unlimited uses.
+    expires_in_days: int = Field(default=7, ge=0, le=MAX_INVITATION_DAYS)
+    max_uses: int = Field(default=1, ge=0, le=INTEGER_MAX)
 
 
 class InvitationRead(BaseModel):
