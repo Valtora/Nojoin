@@ -213,6 +213,7 @@ const undone = (count: number, say: (count: number) => string): UndoOutcome =>
 export function useRecordingActions(): RecordingActions {
   const { addNotification } = useNotificationStore();
   const {
+    controller: captureController,
     cancel: cancelCapture,
     ownedRecordingId,
     pausedRecording,
@@ -310,6 +311,7 @@ export function useRecordingActions(): RecordingActions {
       },
 
       discard: async (id, callbacks) => {
+        let throughCapture = false;
         try {
           // If this browser owns the live or paused capture for this recording,
           // route through the capture controller so the MediaRecorder, uploader,
@@ -325,6 +327,7 @@ export function useRecordingActions(): RecordingActions {
           if (ownsLiveCapture || ownsPausedCapture) {
             // The controller announces the removal itself once the capture is
             // torn down, so this branch must not announce it a second time.
+            throughCapture = true;
             await cancelCapture(id);
           } else {
             await discardRecordingCapture(id, "user_discarded");
@@ -339,10 +342,14 @@ export function useRecordingActions(): RecordingActions {
           callbacks?.onSuccess?.();
         } catch (e: unknown) {
           console.error("Failed to discard recording", e);
-          addNotification({
-            message: getErrorDetail(e) ?? "Failed to discard recording.",
-            type: "error",
-          });
+          // A refusal the capture controller reports itself, such as a failed
+          // discard of this tab's capture, is not reported twice (issue #930).
+          if (!(throughCapture && captureController.getState().error)) {
+            addNotification({
+              message: getErrorDetail(e) ?? "Failed to discard recording.",
+              type: "error",
+            });
+          }
           callbacks?.onError?.();
         }
       },
@@ -483,6 +490,7 @@ export function useRecordingActions(): RecordingActions {
     };
   }, [
     addNotification,
+    captureController,
     cancelCapture,
     ownedRecordingId,
     pausedRecording,
