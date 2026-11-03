@@ -64,6 +64,7 @@ files = [
     "backend/services/recording_tag_reads.py",
     # API-facing schema and ORM models (public/cross-module surface).
     "backend/models/base.py",
+    "backend/models/int_bounds.py",
     "backend/models/recording.py",
     "backend/models/recording_public.py",
     "backend/models/analytics_public.py",

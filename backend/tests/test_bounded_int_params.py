@@ -4,9 +4,12 @@ A tag id past the 64-bit maximum answered 500 from ``GET /recordings``: FastAPI
 took it as a Python int, and Postgres refused it for bigint once the query ran.
 Row ids are BIGINT and LIMIT and OFFSET bind as INTEGER, so ids, paging and the
 utterance revision cursor are bounded in validation now, and a value outside
-them gets the 422 any other invalid parameter gets. The MCP tools that hand a
-caller's value on to a route take the same types, since a direct call skips
-FastAPI's validation.
+them gets the 422 any other invalid parameter gets. So are the capture and
+import counters, to the columns that hold them (#927): a segment's sequence to
+BIGINT, the capture epoch and the upload progress to INTEGER. The MCP tools
+that hand a caller's value on to a route take the same types, since a direct
+call skips FastAPI's validation. Request bodies are covered in
+``test_bounded_int_bodies.py``.
 
 Alice (user 1) is signed in. Every name here is made up.
 """
@@ -20,7 +23,7 @@ from types import SimpleNamespace
 from typing import Annotated, Any, get_args, get_origin
 
 import pytest
-from annotated_types import Le
+from annotated_types import Ge, Gt, Le, Lt
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
@@ -34,6 +37,7 @@ from sqlmodel import Session
 from backend.api.deps import (
     get_current_active_superuser,
     get_current_admin_user,
+    get_current_recording_client_user,
     get_current_user,
     get_db,
 )
@@ -61,7 +65,7 @@ ID_OVER = BIGINT_MAX + 1
 PAGE_OVER = INTEGER_MAX + 1
 
 SIGNED_IN = SimpleNamespace(
-    id=ALICE, role=UserRole.OWNER, is_superuser=True, is_active=True
+    id=ALICE, role=UserRole.OWNER, is_superuser=True, is_active=True, settings={}
 )
 
 
@@ -80,6 +84,7 @@ def _app(override_get_db: Any) -> FastAPI:
         get_current_user,
         get_current_admin_user,
         get_current_active_superuser,
+        get_current_recording_client_user,
     ):
         app.dependency_overrides[dependency] = lambda: SIGNED_IN
     return app
@@ -128,6 +133,80 @@ OUT_OF_RANGE = [
     _over("GET", "/recordings/?skip=-1", ["query", "skip"], TOO_SMALL),
     _over("GET", f"/recordings/?limit={PAGE_OVER}", ["query", "limit"], TOO_LARGE),
     _over("GET", "/recordings?limit=-1", ["query", "limit"], TOO_SMALL),
+    # Capture and import (#927): a segment's sequence is a BIGINT chunk
+    # sequence, and the epoch and upload progress are INTEGER columns.
+    _over(
+        "POST",
+        f"/recordings/rec-1/segment?sequence={ID_OVER}",
+        ["query", "sequence"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/rec-1/segment?sequence=1&epoch={PAGE_OVER}",
+        ["query", "epoch"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/rec-1/segment?sequence=1&resume_mark={ID_OVER}",
+        ["query", "resume_mark"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/import/chunked/segment?recording_id=rec-1&sequence={ID_OVER}",
+        ["query", "sequence"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/rec-1/pause?epoch={PAGE_OVER}",
+        ["query", "epoch"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/rec-1/resume?epoch={PAGE_OVER}",
+        ["query", "epoch"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/rec-1/resume?reclaim_epoch={PAGE_OVER}",
+        ["query", "reclaim_epoch"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/rec-1/resume?next_sequence={ID_OVER}",
+        ["query", "next_sequence"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/rec-1/finalize?epoch={PAGE_OVER}",
+        ["query", "epoch"],
+        TOO_LARGE,
+    ),
+    _over(
+        "POST",
+        f"/recordings/rec-1/discard?epoch={PAGE_OVER}",
+        ["query", "epoch"],
+        TOO_LARGE,
+    ),
+    _over(
+        "PUT",
+        f"/recordings/rec-1/client_status?status=RECORDING&upload_progress={PAGE_OVER}",
+        ["query", "upload_progress"],
+        TOO_LARGE,
+    ),
+    _over(
+        "PUT",
+        "/recordings/rec-1/client_status?status=RECORDING&upload_progress=-1",
+        ["query", "upload_progress"],
+        TOO_SMALL,
+    ),
     # The People list and a person's routes.
     _over("GET", f"/speakers/?tags={ID_OVER}", ["query", "tags", 0], TOO_LARGE),
     _over("GET", f"/speakers/?skip={PAGE_OVER}", ["query", "skip"], TOO_LARGE),
@@ -240,6 +319,48 @@ async def test_an_out_of_range_integer_is_refused_in_validation(
     assert refusals[0]["type"] == kind
 
 
+@pytest.mark.parametrize(
+    ("method", "url"),
+    [
+        ("POST", f"/recordings/rec-1/pause?epoch={INTEGER_MAX}"),
+        (
+            "POST",
+            f"/recordings/rec-1/resume?epoch={INTEGER_MAX}&next_sequence={BIGINT_MAX}",
+        ),
+        ("POST", f"/recordings/rec-1/resume?reclaim_epoch={INTEGER_MAX}"),
+        ("POST", f"/recordings/rec-1/finalize?epoch={INTEGER_MAX}"),
+        ("POST", f"/recordings/rec-1/discard?epoch={INTEGER_MAX}"),
+        (
+            "PUT",
+            "/recordings/rec-1/client_status"
+            f"?status=RECORDING&upload_progress={INTEGER_MAX}",
+        ),
+        (
+            "POST",
+            f"/recordings/rec-1/segment?sequence={BIGINT_MAX}"
+            f"&epoch={INTEGER_MAX}&resume_mark={BIGINT_MAX}",
+        ),
+        (
+            "POST",
+            "/recordings/import/chunked/segment"
+            f"?recording_id=rec-1&sequence={BIGINT_MAX}",
+        ),
+    ],
+)
+async def test_a_capture_counter_at_its_bound_reaches_the_route(
+    client: AsyncClient, method: str, url: str
+) -> None:
+    """The largest value the column holds passes validation."""
+    with pytest.raises(AssertionError, match="the route ran"):
+        await client.request(
+            method,
+            f"/api/v1{url}",
+            files={"file": ("1.flac", b"fLaC", "audio/flac")}
+            if "segment" in url
+            else None,
+        )
+
+
 async def test_the_refusal_reads_like_any_other_invalid_parameter(
     client: AsyncClient,
 ) -> None:
@@ -260,23 +381,10 @@ async def test_the_refusal_reads_like_any_other_invalid_parameter(
     assert set(other) <= set(error)
 
 
-# Integer parameters left unbounded, each with its reason. A new integer
-# query or path parameter takes a type from backend/api/params.py, or a bound
-# of its own, or an entry here.
+# Integer parameters left without a floor and a ceiling, each with its
+# reason. A new integer query or path parameter takes a type from
+# backend/api/params.py, or bounds of its own, or an entry here.
 UNBOUNDED = {
-    # The capture and import upload contract: the tab's own counters, sent
-    # back as the server issued them. Left for a capture-aware change.
-    "recordings.routes_capture.pause_upload:epoch",
-    "recordings.routes_capture.resume_upload:epoch",
-    "recordings.routes_capture.resume_upload:reclaim_epoch",
-    "recordings.routes_capture.resume_upload:next_sequence",
-    "recordings.routes_capture.upload_segment:sequence",
-    "recordings.routes_capture.upload_segment:epoch",
-    "recordings.routes_capture.upload_segment:resume_mark",
-    "recordings.routes_capture.finalize_upload:epoch",
-    "recordings.routes_capture.discard_upload:epoch",
-    "recordings.routes_capture.update_client_status:upload_progress",
-    "recordings.routes_import_upload.upload_chunked_segment:sequence",
     # Compared with the stored revision in Python, never bound to SQL.
     "transcripts.routes_timeline_notes.delete_timeline_note:expected_revision",
     "transcripts.routes_utterances.clear_utterance_locks:expected_revision",
@@ -305,26 +413,44 @@ def _mentions_int(annotation: Any) -> bool:
     return annotation is int or any(_mentions_int(arg) for arg in get_args(annotation))
 
 
-def _bounded_above(annotation: Any, metadata: Sequence[Any] = ()) -> bool:
-    if any(isinstance(item, Le) for item in metadata):
+def _has_bound(
+    kinds: tuple[type, ...], annotation: Any, metadata: Sequence[Any] = ()
+) -> bool:
+    if any(isinstance(item, kinds) for item in metadata):
         return True
     if get_origin(annotation) is Annotated:
         base, *extra = get_args(annotation)
-        return _bounded_above(base, extra)
+        return _has_bound(kinds, base, extra)
     args = [arg for arg in get_args(annotation) if arg is not type(None)]
-    return bool(args) and all(_bounded_above(arg) for arg in args)
+    return bool(args) and all(_has_bound(kinds, arg) for arg in args)
+
+
+def _bounded(annotation: Any, metadata: Sequence[Any] = ()) -> bool:
+    """Whether every int the annotation admits has a floor and a ceiling.
+
+    An int past either end of the column's range fails in Postgres alike.
+    """
+    return _has_bound((Ge, Gt), annotation, metadata) and _has_bound(
+        (Le, Lt), annotation, metadata
+    )
+
+
+def _dependants(dependant: Any) -> Iterator[Any]:
+    """A route's dependant and its dependencies', at every depth."""
+    yield dependant
+    for dependency in dependant.dependencies:
+        yield from _dependants(dependency)
 
 
 def _parameters(dependant: Any) -> Iterator[Any]:
     """A route's query and path parameters, its dependencies' included."""
-    yield from dependant.query_params
-    yield from dependant.path_params
-    for dependency in dependant.dependencies:
-        yield from _parameters(dependency)
+    for each in _dependants(dependant):
+        yield from each.query_params
+        yield from each.path_params
 
 
 def _integer_parameters() -> dict[str, bool]:
-    """Each integer query and path parameter, and whether it has an upper bound."""
+    """Each integer query and path parameter, and whether it is bounded."""
     found: dict[str, bool] = {}
     for route in _api_routes(api_router.routes):
         module = route.endpoint.__module__.removeprefix("backend.api.v1.endpoints.")
@@ -332,15 +458,16 @@ def _integer_parameters() -> dict[str, bool]:
             field = param.field_info
             if _mentions_int(field.annotation):
                 key = f"{module}.{route.endpoint.__name__}:{param.name}"
-                found[key] = _bounded_above(field.annotation, field.metadata)
+                found[key] = _bounded(field.annotation, field.metadata)
     return found
 
 
-def test_every_integer_parameter_has_an_upper_bound() -> None:
+def test_every_integer_parameter_is_bounded() -> None:
     found = _integer_parameters()
     # The walk found the routes, so an empty result cannot pass by accident.
     assert found["recordings.routes_query.list_recordings:tag_ids"] is True
     assert found["tags.update_tag:tag_id"] is True
+    assert found["recordings.routes_capture.upload_segment:sequence"] is True
 
     unbounded = {key for key, bounded in found.items() if not bounded}
     assert unbounded - UNBOUNDED == set(), "bound these, or list them in UNBOUNDED"
@@ -363,6 +490,11 @@ def _bind_mcp_identity() -> None:
         ("create_task", {"title": "Send the notes", "tag_ids": [ID_OVER]}),
         ("update_task", {"task_id": ID_OVER, "title": "Send the notes"}),
         ("update_task", {"task_id": 1, "tag_ids": [0]}),
+        (
+            "link_calendar_event",
+            {"recording_id": "rec-1", "calendar_event_id": ID_OVER},
+        ),
+        ("regenerate_notes", {"recording_id": "rec-1", "notes_template_id": 0}),
         (
             "get_transcript_utterances",
             {"recording_id": "rec-1", "after_revision": ID_OVER},

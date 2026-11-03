@@ -43,6 +43,7 @@ from backend.utils.upload_limit import (
     stream_and_validate_upload,
 )
 
+from .capture_queries import SegmentSequence
 from .helpers import (
     _bootstrap_import_audio_windows,
     _find_missing_chunk_sequences,
@@ -313,7 +314,7 @@ async def init_chunked_import(
 @router.post("/import/chunked/segment")
 async def upload_chunked_segment(
     recording_id: str,
-    sequence: int = Query(..., description="Sequence number of the segment", ge=0),
+    sequence: SegmentSequence,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

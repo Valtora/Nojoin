@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_recording_client_user, get_db
 from backend.api.error_handling import sanitized_http_exception
+from backend.api.params import INTEGER_MAX
 from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import (
@@ -51,8 +52,11 @@ from backend.utils.transcript_settling import update_capture_settling_state
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
 from .capture_queries import (
+    ReclaimEpoch,
+    ResumeEpoch,
     ResumeNextSequence,
     SegmentResumeMark,
+    SegmentSequence,
     capture_epoch_query,
 )
 from .capture_settling import (
@@ -225,26 +229,8 @@ async def pause_upload(
 @router.post("/{recording_id}/resume", response_model=RecordingCaptureLifecycleResponse)
 async def resume_upload(
     recording_id: str,
-    epoch: Optional[int] = Query(
-        None,
-        ge=0,
-        description=(
-            "The capture epoch of the tab that holds the capture, when that tab "
-            "carries on with it. Refused with 409 capture_superseded once a "
-            "resume elsewhere has issued a later one. Omitted, the caller takes "
-            "the capture over and is issued the next epoch."
-        ),
-    ),
-    reclaim_epoch: Optional[int] = Query(
-        None,
-        ge=0,
-        description=(
-            "With no epoch: the capture epoch the tab held before its page "
-            "reloaded. A capture still uploading under that epoch is taken over "
-            "at once, without waiting for it to stall. Any other value changes "
-            "nothing."
-        ),
-    ),
+    epoch: ResumeEpoch = None,
+    reclaim_epoch: ReclaimEpoch = None,
     next_sequence: ResumeNextSequence = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
@@ -456,7 +442,7 @@ async def _dispatch_segment_followup(
 async def upload_segment(
     request: Request,
     recording_id: str,
-    sequence: int = Query(..., description="Sequence number of the segment", ge=0),
+    sequence: SegmentSequence,
     epoch: Optional[int] = capture_epoch_query("segment"),
     resume_mark: SegmentResumeMark = None,
     file: UploadFile = File(...),
@@ -933,7 +919,10 @@ async def update_client_status(
     recording_id: str,
     status: ClientStatus = Query(..., description="Current status of the client"),
     upload_progress: Optional[int] = Query(
-        None, description="Upload progress percentage (0-100)"
+        None,
+        ge=0,
+        le=INTEGER_MAX,
+        description="Upload progress percentage (0-100)",
     ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),

@@ -9,6 +9,9 @@ They hold only constraints, so a route keeps a plain default and an MCP tool
 that calls it directly passes plain values. Those calls skip FastAPI's
 validation, so a tool that hands a caller's value on to a route takes the same
 type in its own signature, where the MCP SDK validates it.
+
+``RowId`` and the two maxima come from ``backend/models/int_bounds.py``, where
+request models the worker imports can use them too.
 """
 
 from typing import Annotated
@@ -16,13 +19,17 @@ from typing import Annotated
 from annotated_types import Ge, Le
 from fastapi import Query
 
-# Every primary key is a BIGINT, numbered from 1.
-BIGINT_MAX = 2**63 - 1
-# SQLAlchemy binds LIMIT and OFFSET as INTEGER on Postgres.
-INTEGER_MAX = 2**31 - 1
+from backend.models.int_bounds import BIGINT_MAX, INTEGER_MAX, RowId
 
-RowId = Annotated[int, Ge(1), Le(BIGINT_MAX)]
-"""The id of a row: a person, tag, task, user, document or other record."""
+__all__ = [
+    "BIGINT_MAX",
+    "INTEGER_MAX",
+    "PageLimit",
+    "PageOffset",
+    "RevisionCursor",
+    "RowId",
+    "RowIdsQuery",
+]
 
 RowIdsQuery = Annotated[list[RowId] | None, Query()]
 """A repeated query parameter of row ids, such as ``tag_ids=3&tag_ids=7``."""
