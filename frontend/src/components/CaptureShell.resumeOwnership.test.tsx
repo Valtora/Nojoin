@@ -16,6 +16,7 @@ import CaptureShell from "./CaptureShell";
 import LiveMeetingControls from "./LiveMeetingControls";
 import MeetingControls from "./MeetingControls";
 import ProcessingCard from "./dashboardRecordings/ProcessingCard";
+import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import { DashboardRecordingCard } from "./upcomingMeetings/CalendarCards";
 
 // Browser media and the network are the edges: the provider, controller,
@@ -348,6 +349,108 @@ describe("a Resume from the recovery dialog that fails (issue #926)", () => {
     expect(errors()[0].message).toMatch(message);
     // The recording is offered again, still paused.
     expect(await screen.findByRole("button", { name: "Resume recording" })).toBeEnabled();
+  });
+});
+
+describe("a Stop or Discard that fails (issue #930)", () => {
+  // As for Resume above, the controller's look for the recording to offer
+  // after the failure takes as long as a request does, so the page renders and
+  // shows the state's error before the Stop or Discard rejects.
+  const overTheNetwork = () => new Promise<Recording[]>((resolve) => {
+    setTimeout(() => resolve([paused]), 20);
+  });
+  const busy = () => new AxiosError(
+    "Request failed with status code 503", "ERR_BAD_RESPONSE", undefined, undefined,
+    { status: 503, data: { detail: "The server is busy. Try again shortly." } } as never);
+
+  // The recordings list's Discard, which goes through the capture controller
+  // for a capture this tab holds or is offered.
+  function ListDiscard() {
+    const actions = useRecordingActions();
+    return <button type="button" onClick={() => void actions.discard(paused.id)}>Discard from the list</button>;
+  }
+
+  const renderOffer = () => {
+    api.getUnfinishedCaptures.mockImplementation(overTheNetwork);
+    render(<CaptureProvider><CaptureShell><ListDiscard /></CaptureShell></CaptureProvider>);
+  };
+
+  const startCapture = async () => {
+    pathname = "/";
+    api.getUnfinishedCaptures.mockResolvedValue([]);
+    render(<CaptureProvider><CaptureShell><MeetingEntry /><ListDiscard /></CaptureShell></CaptureProvider>);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+    await screen.findByTitle("Stop recording");
+    // The failure pauses the capture on the server, which then offers it.
+    api.getUnfinishedCaptures.mockImplementation(overTheNetwork);
+  };
+
+  it.each([
+    {
+      action: "Stop and process in the recovery dialog",
+      run: async () => {
+        api.finalizeRecordingCapture.mockRejectedValue(busy());
+        renderOffer();
+        fireEvent.click(await screen.findByRole("button", { name: "Stop and process" }));
+      },
+    },
+    {
+      action: "Stop in the recording controls",
+      run: async () => {
+        await startCapture();
+        api.finalizeRecordingCapture.mockRejectedValue(busy());
+        fireEvent.click(screen.getByTitle("Stop recording"));
+      },
+    },
+    {
+      action: "Discard in the recording controls",
+      run: async () => {
+        await startCapture();
+        api.discardRecordingCapture.mockRejectedValue(busy());
+        fireEvent.click(screen.getByTitle("Discard recording"));
+        fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
+      },
+    },
+    {
+      action: "Discard in the recordings list, of the capture this tab runs",
+      run: async () => {
+        await startCapture();
+        api.discardRecordingCapture.mockRejectedValue(busy());
+        fireEvent.click(screen.getByRole("button", { name: "Discard from the list" }));
+      },
+    },
+    // Neither goes through the controller's settling after a failed stop, so
+    // only the caller reports the refusal.
+    {
+      action: "Discard recording in the recovery dialog",
+      run: async () => {
+        api.discardRecordingCapture.mockRejectedValue(busy());
+        renderOffer();
+        fireEvent.click(await screen.findByRole("button", { name: "Discard recording" }));
+      },
+    },
+    {
+      action: "Discard in the recordings list, of a capture offered for recovery",
+      run: async () => {
+        api.discardRecordingCapture.mockRejectedValue(busy());
+        renderOffer();
+        await screen.findByRole("button", { name: "Discard recording" });
+        fireEvent.click(screen.getByRole("button", { name: "Discard from the list" }));
+      },
+    },
+  ])("says so once after $action", async ({ run }) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await run();
+
+    await waitFor(() => expect(errors()).not.toEqual([]));
+    // Long enough for the refresh to finish and the action to reject.
+    await act(() => new Promise((resolve) => { setTimeout(resolve, 100); }));
+    expect(errors()).toHaveLength(1);
+    expect(errors()[0].message).toBe("The server is busy. Try again shortly.");
+    // The recording is offered again, still paused.
+    expect(await screen.findByRole("button", { name: "Stop and process" })).toBeEnabled();
   });
 });
 
