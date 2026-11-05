@@ -17,6 +17,7 @@ def get_llm_backend(
     api_url=None,
     context_window: int | None = None,
     allow_private_api_url: bool = False,
+    think: bool | None = None,
     cli_user_id: int | None = None,
     cli_provider: str | None = None,
 ):
@@ -60,6 +61,7 @@ def get_llm_backend(
             model=model,
             context_window=context_window,
             allow_private_api_url=allow_private_api_url,
+            think=think,
         )
     elif provider == "cli":
         from backend.processing.cli_backend import CliLLMBackend
@@ -374,6 +376,7 @@ def get_llm_backend_with_secondary(
         model=primary_config.model,
         api_url=primary_config.api_url,
         context_window=primary_config.context_window,
+        think=primary_config.think,
         cli_user_id=primary_config.cli_user_id,
         cli_provider=primary_config.cli_provider,
     )

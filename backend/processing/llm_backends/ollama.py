@@ -75,12 +75,15 @@ _model_facts_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 
 
 class OllamaLLMBackend(LLMBackend):
+    think: bool = False  # Class level: a backend built without __init__ says no.
+
     def __init__(
         self,
         api_url=None,
         model=None,
         context_window: int | None = None,
         allow_private_api_url: bool = False,
+        think: bool | None = None,
     ):
         import requests
 
@@ -99,6 +102,10 @@ class OllamaLLMBackend(LLMBackend):
         self.model = model or config_manager.get("ollama_model")
         self.context_window = context_window or config_manager.get(
             "ollama_context_window"
+        )
+        # A backend built outside the factory follows the primary's setting.
+        self.think = (
+            bool(config_manager.get("ollama_think")) if think is None else think
         )
 
     def _model_facts(self) -> dict:
@@ -165,16 +172,46 @@ class OllamaLLMBackend(LLMBackend):
         # and sending one would override a Modelfile's own limit.
         return {"temperature": temperature, "num_ctx": self._context_window()}
 
+    def supports_thinking(self) -> Optional[bool]:
+        """Whether the model can think (``/api/show``), or None when unknown."""
+        if not self.model:
+            return None
+        try:
+            capabilities = self._model_facts().get("capabilities")
+        except (RequestException, ValueError) as e:
+            logger.debug(f"Ollama capability probe failed for {self.model}: {e}")
+            return None
+        if not isinstance(capabilities, list):
+            return None
+        return "thinking" in {str(c).lower() for c in capabilities}
+
+    def _think_field(self) -> dict[str, bool]:
+        """``think`` as the setting has it, unless the model cannot think.
+
+        Ollama thinks by default, and a reasoning model can take minutes to its
+        first answer token, so the request must say no. A model known not to
+        think gets no key (a server may refuse it); unknown capabilities send it.
+        """
+        if self.supports_thinking() is False:
+            return {}
+        return {"think": self.think}
+
     def _post_chat(self, payload: dict, **kwargs):
         """POST ``/api/chat`` with Ollama as the judge of whether it fits.
 
+        Every chat request carries ``think`` (see ``_think_field``).
         ``truncate: false`` makes Ollama refuse a prompt longer than num_ctx
         instead of cutting it and answering from the rest; ``shift: false``
         makes an answer that fills the window stop with ``done_reason:
         "length"`` instead of shifting the prompt out. Servers before 0.12.6
         ignore both; ``_raise_if_truncated`` covers them.
         """
-        payload = {**payload, "truncate": False, "shift": False}
+        payload = {
+            **payload,
+            "truncate": False,
+            "shift": False,
+            **self._think_field(),
+        }
         resp = self._post("/api/chat", json=payload, **kwargs)
         try:
             resp.raise_for_status()
