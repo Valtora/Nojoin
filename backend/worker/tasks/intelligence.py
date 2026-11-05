@@ -132,6 +132,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             "output_language_instruction": language_preferences.notes_language_instruction,
             "notes_context": notes_context,
         }
+        # Read now: the commit below expires the notes, and one deleted or
+        # edited while the model answers must not fail or change the appendix.
+        appendix = timeline_notes.appendix_lines()
         # Only reads since the claim. Ending their transaction keeps it from
         # staying open for the whole model call, under the steps and claim
         # renewals written from sessions of their own meanwhile.
@@ -161,9 +164,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                     **notes_arguments,
                 )
 
-        transcript.notes = append_user_notes_section(
-            notes, timeline_notes.appendix_lines()
-        )
+        transcript.notes = append_user_notes_section(notes, appendix)
         transcript.notes_status = "completed"
         transcript.notes_progress = None
         # Freshly generated notes reflect every READY document by definition.

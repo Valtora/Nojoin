@@ -319,6 +319,9 @@ def _run_automatic_meeting_intelligence_stage_impl(
     # The notes claim is the stage's own. The recording's status belongs to the
     # pipeline when this runs inline, and to nothing once it is deferred: the
     # pipeline has already finished it (issue #828).
+    # Read now: the commit below expires the notes, and one deleted or edited
+    # while the model answers must not fail or change the appendix.
+    appendix = timeline_notes.appendix_lines()
     claim_generation(transcript, "notes_status")
     transcript.notes_progress = None
     transcript.set_notes_error_message(None)
@@ -359,7 +362,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
         result = dataclasses.replace(
             result,
             notes_markdown=append_user_notes_section(
-                result.notes_markdown, timeline_notes.appendix_lines()
+                result.notes_markdown, appendix
             ),
         )
         _apply_automatic_meeting_intelligence_result(

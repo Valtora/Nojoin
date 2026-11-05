@@ -33,6 +33,7 @@ from backend.api.v1.api import api_router
 from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
+from backend.services.timeline_note_service import load_recording_timeline_notes
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
@@ -172,15 +173,28 @@ def test_a_combined_answer_asked_for_at_half_length_says_so():
 class _ObservedOllama(_Ollama):
     """The fake Ollama, noting the page's view of the run at each request."""
 
-    def __init__(self, database_url: str, *, fail_final: bool = False, **kwargs):
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        fail_final: bool = False,
+        while_answering: str | None = None,
+        **kwargs,
+    ):
         super().__init__(window=WINDOW, **kwargs)
         self.observer = create_engine(database_url, future=True)
         self.fail_final = fail_final
+        # SQL another session runs while the model answers its first request.
+        self.while_answering = while_answering
         self.observed: list[tuple[str, Any, Any]] = []
 
     def post(self, url, **kwargs):
         if url.endswith("/api/chat"):
             prompt = kwargs["json"]["messages"][-1]["content"]
+            if self.while_answering is not None:
+                with self.observer.begin() as connection:
+                    connection.execute(text(self.while_answering))
+                self.while_answering = None
             with self.observer.connect() as connection:
                 progress, step = connection.execute(
                     text(
@@ -306,6 +320,29 @@ def test_a_step_that_cannot_be_written_does_not_fail_the_notes(
     assert progress is None
 
 
+# A note the user deletes, or edits, while the model is answering.
+NOTE_CHANGES = {
+    "deleted": "DELETE FROM timeline_notes WHERE id = 1",
+    "edited": "UPDATE timeline_notes SET body = 'Remember the launch date and the budget' "
+    "WHERE id = 1",
+}
+
+
+@pytest.mark.parametrize("change", list(NOTE_CHANGES))
+def test_regenerated_notes_keep_the_notes_the_model_was_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    fake, (status, _, notes, _) = _regenerate_with(
+        tmp_path, monkeypatch, while_answering=NOTE_CHANGES[change]
+    )
+
+    assert "Remember the launch date" in fake.observed[0][0]
+    assert status == "completed"
+    appendix = notes.split("## User Notes", 1)[1]
+    assert "Remember the launch date" in appendix
+    assert "the budget" not in appendix
+
+
 # --- Automatic notes -------------------------------------------------------
 
 
@@ -319,13 +356,48 @@ def _ollama_config() -> ResolvedLLMConfig:
     )
 
 
-@pytest.mark.parametrize("inline", [True, False], ids=["inline", "deferred"])
-def test_automatic_notes_show_each_step_of_a_long_meeting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inline: bool
-) -> None:
+def _with_timeline_notes(engine: Any) -> None:
+    """The two notes the Regenerate fixture has: a head note and a point."""
+    now = utc_now()
+    with engine.begin() as connection:
+        connection.execute(text(TIMELINE_NOTES_SCHEMA))
+        for note_id, kind, body, anchor_ms in (
+            (1, "head", "Remember the launch date", None),
+            (2, "point", "Ask about QA", 1_000),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO timeline_notes (id, created_at, updated_at, "
+                    "public_id, recording_id, created_by_user_id, kind, body, "
+                    "anchor_ms, revision) VALUES (:id, :now, :now, :public_id, 1, "
+                    "1, :kind, :body, :anchor_ms, 1)"
+                ),
+                {
+                    "id": note_id,
+                    "now": now,
+                    "public_id": f"note-{note_id}",
+                    "kind": kind,
+                    "body": body,
+                    "anchor_ms": anchor_ms,
+                },
+            )
+
+
+def _run_automatic_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    inline: bool = True,
+    with_notes: bool = False,
+    **fake_options: Any,
+) -> tuple[Any, _ObservedOllama, tuple[Any, ...]]:
     engine = _create_worker_ai_database(tmp_path)
     _leave_a_lost_runs_step(engine)
-    fake = _ObservedOllama(str(engine.url), mapping={"SPEAKER_00": "Ana"})
+    if with_notes:
+        _with_timeline_notes(engine)
+    fake = _ObservedOllama(
+        str(engine.url), mapping={"SPEAKER_00": "Ana"}, **fake_options
+    )
     monkeypatch.setattr(
         tasks_module,
         "_llm_backend_from_config",
@@ -352,16 +424,30 @@ def test_automatic_notes_show_each_step_of_a_long_meeting(
                 llm_config=_ollama_config(),
                 prefer_short_titles=True,
                 device_suffix=" (CPU)",
-                timeline_notes=NO_NOTES,
+                timeline_notes=(
+                    load_recording_timeline_notes(session, 1)
+                    if with_notes
+                    else NO_NOTES
+                ),
                 update_processing_status=inline,
             )
         with fake.observer.connect() as connection:
-            status, progress = connection.execute(
-                text("SELECT notes_status, notes_progress FROM transcripts")
+            row = connection.execute(
+                text("SELECT notes_status, notes_progress, notes FROM transcripts")
             ).one()
     finally:
         fake.observer.dispose()
         engine.dispose()
+    return result, fake, tuple(row)
+
+
+@pytest.mark.parametrize("inline", [True, False], ids=["inline", "deferred"])
+def test_automatic_notes_show_each_step_of_a_long_meeting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inline: bool
+) -> None:
+    result, fake, (status, progress, _) = _run_automatic_stage(
+        tmp_path, monkeypatch, inline=inline
+    )
 
     assert result is not None
     whole, *parts = fake.observed
@@ -378,6 +464,22 @@ def test_automatic_notes_show_each_step_of_a_long_meeting(
     )
     assert status == "completed"
     assert progress is None
+
+
+@pytest.mark.parametrize("change", list(NOTE_CHANGES))
+def test_automatic_notes_keep_the_notes_the_model_was_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    result, fake, (status, _, notes) = _run_automatic_stage(
+        tmp_path, monkeypatch, with_notes=True, while_answering=NOTE_CHANGES[change]
+    )
+
+    assert result is not None
+    assert "Remember the launch date" in fake.observed[0][0]
+    assert status == "completed"
+    appendix = notes.split("## User Notes", 1)[1]
+    assert "Remember the launch date" in appendix
+    assert "the budget" not in appendix
 
 
 # --- What the page reads ---------------------------------------------------
