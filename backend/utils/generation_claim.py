@@ -56,3 +56,15 @@ def claim_generation(row: Any, field: str) -> None:
     """
     setattr(row, field, GENERATING)
     row.updated_at = utc_now()
+
+
+def claim_notes_generation(transcript: Any) -> None:
+    """Claim a transcript's notes for a new run, without the last run's error or step.
+
+    Every notes claim goes through here: claiming makes the claim current, so
+    the API would otherwise report a lost run's step again while the new run
+    waits for a worker.
+    """
+    claim_generation(transcript, "notes_status")
+    transcript.notes_progress = None
+    transcript.set_notes_error_message(None)

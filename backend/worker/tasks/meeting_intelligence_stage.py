@@ -11,7 +11,7 @@ import logging
 
 from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.generation_claim import claim_generation
+from backend.utils.generation_claim import claim_notes_generation
 from backend.utils.live_speaker_labels import speaker_prompt_name
 from backend.utils.meeting_notes import append_user_notes_section
 from backend.utils.notes_progress import reporting_notes_progress
@@ -322,9 +322,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
     # Read now: the commit below expires the notes, and one deleted or edited
     # while the model answers must not fail or change the appendix.
     appendix = timeline_notes.appendix_lines()
-    claim_generation(transcript, "notes_status")
-    transcript.notes_progress = None
-    transcript.set_notes_error_message(None)
+    claim_notes_generation(transcript)
     session.add(transcript)
     session.commit()
 
@@ -361,9 +359,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
                 )
         result = dataclasses.replace(
             result,
-            notes_markdown=append_user_notes_section(
-                result.notes_markdown, appendix
-            ),
+            notes_markdown=append_user_notes_section(result.notes_markdown, appendix),
         )
         _apply_automatic_meeting_intelligence_result(
             session,

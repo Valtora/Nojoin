@@ -1,7 +1,7 @@
 from backend.models.recording import is_side_run_hold
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.generation_claim import claim_generation
+from backend.utils.generation_claim import claim_notes_generation
 from backend.utils.live_speaker_labels import (
     prompt_speaker_label,
     speaker_display_name,
@@ -61,9 +61,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         # The run's own claim, renewed while the model works. It never moves the
         # recording: a run lost with its worker then strands only its notes,
         # and only until the claim expires (issue #828).
-        claim_generation(transcript, "notes_status")
-        transcript.notes_progress = None
-        transcript.set_notes_error_message(None)
+        claim_notes_generation(transcript)
         session.add(transcript)
         session.commit()
 

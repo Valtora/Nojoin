@@ -16,7 +16,7 @@ from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transc
 from backend.models.user import User
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
-from backend.utils.generation_claim import claim_generation, generation_active
+from backend.utils.generation_claim import claim_notes_generation, generation_active
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import resolve_notes_template_async
 from backend.utils.reprocess_publication import (
@@ -233,8 +233,7 @@ async def generate_notes(
                 detail="Notes template not found",
             )
 
-    claim_generation(transcript, "notes_status")
-    transcript.set_notes_error_message(None)
+    claim_notes_generation(transcript)
     db.add(transcript)
     await db.commit()
 

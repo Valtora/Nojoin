@@ -6,7 +6,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.capture_resume import with_resume_boundaries
-from backend.utils.generation_claim import claim_generation
+from backend.utils.generation_claim import claim_notes_generation
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
 from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
@@ -391,8 +391,7 @@ def _finalize_transcript_and_notes(
         # the IO image. Free the GPU lane by generating notes on the IO worker.
         # The recording is otherwise finished; only notes remain pending, exactly
         # as in manual regeneration, so the GPU task still marks it Completed.
-        claim_generation(transcript, "notes_status")
-        transcript.set_notes_error_message(None)
+        claim_notes_generation(transcript)
         session.add(transcript)
         session.commit()
         celery_app.send_task(
