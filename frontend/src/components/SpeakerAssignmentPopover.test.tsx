@@ -244,6 +244,47 @@ describe("SpeakerAssignmentPopover", () => {
     targetElement.remove();
   });
 
+  it("treats a final diarisation label as a placeholder, not a name to create", () => {
+    const onSelect = vi.fn();
+    const targetElement = createTargetElement();
+
+    render(
+      <SpeakerAssignmentPopover
+        availableSpeakers={[
+          buildSpeaker({ id: 1, diarization_label: "N:L0", name: "N:L0" }),
+          buildSpeaker({ id: 2, diarization_label: "N:L1", local_name: "Alice Example" }),
+        ]}
+        globalSpeakers={[]}
+        currentSpeakerLabel="N:L1"
+        currentSpeakerName="Alice Example"
+        onSelect={onSelect}
+        onClose={vi.fn()}
+        speakerColors={{}}
+        targetElement={targetElement}
+      />,
+    );
+    const input = screen.getByPlaceholderText("Search or add...");
+    const type = (value: string) => fireEvent.change(input, { target: { value } });
+
+    for (const label of ["N:L7", "C:SPEAKER_03", "New Voice 3"]) {
+      type(label);
+      expect(screen.queryByRole("button", { name: /Create local/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("Type a real name, not a placeholder.");
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(onSelect).not.toHaveBeenCalled();
+    }
+
+    // The unnamed speaker that shows the label is that speaker.
+    type("n:l0");
+    expect(screen.queryByRole("button", { name: /Create local/i })).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith({
+      name: "N:L0", diarizationLabel: "N:L0", scope: "utterance_only",
+    });
+
+    targetElement.remove();
+  });
+
   it("flips above the target when opened near the bottom of the viewport", () => {
     const onSelect = vi.fn();
     const targetElement = createTargetElement({

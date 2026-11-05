@@ -126,16 +126,20 @@ USE_SPEAKER_MAPPING = """Use the speaker mapping to refer to participants by the
 
 PART_INTRO_SPEAKERS = """You are an expert meeting-notes assistant. This meeting is too long to read in one pass, so its transcript has been split into consecutive parts. For the one part given below, write meeting notes in Markdown, then name the unresolved speakers this part gives evidence for. A later step combines the notes of every part into the notes for the whole meeting, working only from what the notes of each part say."""
 
-PART_SPEAKER_RULES = """- Treat any non-generic speaker names already present in the transcript as trusted.
-- In the notes, write every unresolved label exactly as the transcript does, such as SPEAKER_03. Names are put in after the parts are combined.
+
+def part_speaker_rules(example_label: str) -> str:
+    """The speaker rules of a draft, showing the meeting's own label as the example."""
+    return f"""- Treat any non-generic speaker names already present in the transcript as trusted.
+- In the notes, write every unresolved label exactly as the transcript does, such as {example_label}. Names are put in after the parts are combined.
 - After the notes, list each unresolved label this part gives evidence for, such as someone introducing themselves or being addressed by name, one per line between <speaker_names> tags as below. Give the person's name on its own when the meeting gave one, and otherwise their role. Leave out a label you are not confident about, and leave the tags empty when there is none.
 
 <speaker_names>
-SPEAKER_00: Person name or role
+{example_label}: Person name or role
 </speaker_names>"""
 
+
 # The example names above. A model sometimes copies them back as an answer.
-EXAMPLE_NAMES = {"person name or role", "one of the names listed for speaker_00"}
+EXAMPLE_NAMES = {"person name or role", "one of the names listed for that label"}
 
 PART_CLOSING = """Return only the notes for this part, starting directly with the first section and with no preamble or closing commentary."""
 
@@ -148,13 +152,18 @@ MERGE_INTRO_TITLE = """You are an expert meeting-notes assistant. A long meeting
 MERGE_TITLE_RULES = """- Start the answer with the title on its own line between <title> tags, as in <title>Quarterly Budget Review</title>, then the notes in Markdown.
 - The title and the notes must reflect the same meeting interpretation."""
 
-MERGE_LABELS_KEPT = """Leave every diarization label, such as SPEAKER_03, exactly as the notes of the parts write it. Names are put in afterwards."""
 
-SETTLE_SPEAKERS = """The parts named these diarization labels differently. After the notes, give the one name the notes of the parts best support for each, copied exactly from its list, one per line between <speaker_names> tags as below, and prefer a name the meeting itself gave (someone introducing themselves or being addressed by name) over a role. Leave a label out when no name on its list is well supported, and name no other label.
+def merge_labels_kept(example_label: str) -> str:
+    return f"""Leave every diarization label, such as {example_label}, exactly as the notes of the parts write it. Names are put in afterwards."""
+
+
+def settle_speakers(example_label: str) -> str:
+    return f"""The parts named these diarization labels differently. After the notes, give the one name the notes of the parts best support for each, copied exactly from its list, one per line between <speaker_names> tags as below, and prefer a name the meeting itself gave (someone introducing themselves or being addressed by name) over a role. Leave a label out when no name on its list is well supported, and name no other label.
 
 <speaker_names>
-SPEAKER_00: One of the names listed for SPEAKER_00
+{example_label}: One of the names listed for that label
 </speaker_names>"""
+
 
 MERGE_CLOSING = """Return only the combined notes, starting directly with the first section and with no preamble or closing commentary."""
 
@@ -298,7 +307,7 @@ def build_part_prompt(
     elif labels:
         head = [
             (None, PART_INTRO_SPEAKERS),
-            ("# Speaker Rules", PART_SPEAKER_RULES),
+            ("# Speaker Rules", part_speaker_rules(labels[0])),
             ("# Unresolved Speaker Labels", _labels_section(labels)),
         ]
     else:
@@ -394,7 +403,9 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
         if request is None
         else (
             "# Unresolved Speaker Labels",
-            MERGE_LABELS_KEPT if request.unresolved_speakers else None,
+            merge_labels_kept(request.unresolved_speakers[0])
+            if request.unresolved_speakers
+            else None,
         )
     )
     part_notes = "\n\n".join(
@@ -417,7 +428,7 @@ def build_merge_prompt(  # noqa: PLR0913 - the merge's scope, length and speaker
             speakers,
             (
                 "# Speaker Names To Settle",
-                f"{SETTLE_SPEAKERS}\n\nThe names each label was given:\n{settle}"
+                f"{settle_speakers(next(iter(disputed or {})))}\n\nThe names each label was given:\n{settle}"
                 if settle
                 else None,
             ),
@@ -458,33 +469,57 @@ _TAGGED_TITLE = re.compile(r"<title>\s*(.*?)\s*</title>", re.IGNORECASE | re.DOT
 _SPEAKER_BLOCK = re.compile(
     r"<speaker_names>(.*?)(?:</speaker_names>|\Z)", re.IGNORECASE | re.DOTALL
 )
-_SPEAKER_LINE = re.compile(r"^[\s>*-]*([A-Za-z][\w-]*)\s*:\s*(.+?)\s*$", re.MULTILINE)
 _NO_NAME = {"none", "unknown", "n/a", "-", *EXAMPLE_NAMES}
 
 
-def _split_tagged(answer: str) -> tuple[str, dict[str, str]]:
-    """The answer without its <speaker_names> block, and the names in it."""
+def _speaker_line(labels: Sequence[str]) -> Optional[re.Pattern[str]]:
+    """The pattern for one ``label: name`` line, for the labels offered only.
+
+    The labels are matched as given, longest first, rather than guessed from the
+    line's shape: a label can hold a colon (``N:L0``), so ``N:L0: Dana`` could
+    otherwise be read as label ``N`` and name ``L0: Dana``.
+    """
+    if not labels:
+        return None
+    alternatives = "|".join(
+        re.escape(label) for label in sorted(labels, key=len, reverse=True)
+    )
+    return re.compile(rf"^[\s>*-]*({alternatives})\s*:\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _split_tagged(answer: str, labels: Sequence[str]) -> tuple[str, dict[str, str]]:
+    """The answer without its <speaker_names> block, and the names in it.
+
+    Only lines for the offered ``labels`` are names: any other line is a label
+    nobody asked about, which the reconciliation would drop anyway.
+    """
     match = _SPEAKER_BLOCK.search(answer)
     if not match:
         return answer, {}
     names: dict[str, str] = {}
-    for label, name in _SPEAKER_LINE.findall(match.group(1)):
+    line = _speaker_line(labels)
+    for label, name in line.findall(match.group(1)) if line else ():
         name = name.strip(" \"'`*")
         if name and name.casefold() not in _NO_NAME:
             names[label] = name
     return answer[: match.start()] + answer[match.end() :], names
 
 
-def _read_draft(answer: str) -> tuple[dict[str, str], str]:
-    text, names = _split_tagged(answer)
-    return names, _read_markdown(text)
+def _draft_reader(
+    labels: Sequence[str],
+) -> Callable[[str], tuple[dict[str, str], str]]:
+    def read(answer: str) -> tuple[dict[str, str], str]:
+        text, names = _split_tagged(answer, labels)
+        return names, _read_markdown(text)
+
+    return read
 
 
 def _title_and_notes_reader(
     request: AutomaticMeetingIntelligenceRequest,
 ) -> Callable[[str], tuple[str, str, dict[str, str]]]:
     def read(answer: str) -> tuple[str, str, dict[str, str]]:
-        text, names = _split_tagged(answer)
+        text, names = _split_tagged(answer, request.unresolved_speakers)
         match = _TAGGED_TITLE.search(text)
         if match:
             title = match.group(1)
@@ -710,7 +745,9 @@ class _PartsRun:
         prompt = build_part_prompt(self.context, index, self.total, part, self.words)
         if self.context.request is None:
             return self._ask(prompt, _read_markdown)
-        mapping, notes = self._ask(prompt, _read_draft)
+        mapping, notes = self._ask(
+            prompt, _draft_reader(self.context.request.unresolved_speakers)
+        )
         self.mappings.append(mapping)
         return notes
 

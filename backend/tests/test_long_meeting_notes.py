@@ -18,6 +18,7 @@ from backend.utils.long_meeting_notes import (
     context_for_notes,
     generate_meeting_intelligence_in_parts,
     generate_notes_in_parts,
+    introduced_names,
     reconcile_speaker_mappings,
 )
 from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceRequest
@@ -141,6 +142,16 @@ def test_an_utterance_too_long_for_a_part_is_cut_between_sentences():
         for line in part.text.splitlines():
             assert line.startswith("[00:00 - 09:00] Ana: Sentence ")
             assert line.endswith(".")
+
+
+def test_a_long_utterance_keeps_a_label_with_a_colon_in_every_piece():
+    sentences = " ".join(f"Sentence {n} has a few more words in it." for n in range(60))
+    parts = split_transcript(f"[00:00 - 09:00] N:L0: {sentences}", 600)
+
+    assert len(parts) > 2
+    for part in parts:
+        for line in part.text.splitlines():
+            assert line.startswith("[00:00 - 09:00] N:L0: Sentence ")
 
 
 # --- Speaker names ---------------------------------------------------------
@@ -451,3 +462,114 @@ def test_an_empty_draft_is_asked_for_again():
 
     assert result.title == "Budget Review"
     assert sum("This is part 1 of" in p for p in model.drafts()) == 2
+
+
+# --- Labels with a colon (final diarisation with a native engine) ----------
+
+COLON_LABELS = ("N:L0", "N:L1", "N:L2", "N:L3", "N:L10")
+
+
+def _colon_request(transcript: str) -> AutomaticMeetingIntelligenceRequest:
+    return AutomaticMeetingIntelligenceRequest(
+        resolved_transcript=transcript,
+        unresolved_speakers=COLON_LABELS,
+        prefer_short_titles=True,
+    )
+
+
+class _ColonModel(_TaggedModel):
+    """As _TaggedModel, with the final notes writing the colon labels raw."""
+
+    def __call__(self, prompt: str) -> str:
+        answer = super().__call__(prompt)
+        if "# Title Rules" in prompt:
+            notes = "## Summary\nN:L0 and N:L2 agreed, N:L1 and N:L10 did not."
+            return f"{self.title}\n{notes}\n\n{_names(self.settle)}"
+        return answer
+
+
+def test_names_for_labels_with_a_colon_are_read_and_put_into_the_notes():
+    model = _ColonModel(
+        [
+            {"N:L0": "Dana", "N:L2": "Sam: Finance"},
+            {"N:L10": "Ola", "N:L0": "Dana Fox"},
+        ]
+    )
+    result = generate_meeting_intelligence_in_parts(
+        _colon_request(_transcript(60)), model, _budget()
+    )
+
+    # N:L0 is not read as label "N" with the name "L0: Dana", and a colon inside
+    # a name belongs to the name.
+    assert result.speaker_mapping == {
+        "N:L0": "Dana Fox",
+        "N:L2": "Sam: Finance",
+        "N:L10": "Ola",
+    }
+    # N:L1 is a prefix of N:L10 and is left as written, as is any unmapped label.
+    assert result.notes_markdown.startswith(
+        "## Summary\nDana Fox and Sam: Finance agreed, N:L1 and Ola did not."
+    )
+
+
+def test_a_loosely_formatted_name_block_for_colon_labels_is_still_read():
+    class _Loose(_ColonModel):
+        def __call__(self, prompt: str) -> str:
+            answer = super().__call__(prompt)
+            if "# Transcript Part" in prompt:
+                notes = answer.split("<speaker_names>")[0]
+                return (
+                    f"{notes}<speaker_names>\n- N:L0: **Dana**\n> N:L2 : 'Sam'\n"
+                    "N:L3: none\n</speaker_names>"
+                )
+            return answer
+
+    result = generate_meeting_intelligence_in_parts(
+        _colon_request(_transcript(60)), _Loose([]), _budget()
+    )
+
+    assert result.speaker_mapping == {"N:L0": "Dana", "N:L2": "Sam"}
+
+
+def test_the_prompts_show_the_meetings_own_label_as_the_example():
+    model = _ColonModel([{"N:L0": "Bo"}, {"N:L0": "Cy"}])
+    generate_meeting_intelligence_in_parts(
+        _colon_request(_transcript(60)), model, _budget()
+    )
+
+    for prompt in model.drafts():
+        assert "such as N:L0." in prompt
+        assert "N:L0: Person name or role" in prompt
+        assert "SPEAKER_00" not in prompt
+    assert "such as N:L0," in model.merges()[-1]
+    # N:L0 is disputed (Bo against Cy), so it is the final call's example too.
+    assert "N:L0: One of the names listed for that label" in model.merges()[-1]
+
+
+def test_a_self_introduction_on_a_colon_label_line_is_found():
+    transcript = "\n".join(
+        [
+            "[00:00:01 - 00:00:05] N:L0: Hello everyone, my name is Dana Fox.",
+            "[00:00:05 - 00:00:09] N:L2 (with N:L0): Thanks. I'm Sam.",
+            "[00:00:09 - 00:00:12] N:L10: I'm Sorry, go ahead.",
+        ]
+    )
+
+    assert introduced_names(transcript, COLON_LABELS, None) == {
+        "N:L0": "Dana Fox",
+        "N:L2": "Sam",
+    }
+
+
+def test_an_introduction_on_a_colon_label_beats_the_drafts_in_the_long_path():
+    transcript = "\n".join(
+        ["[00:00:01 - 00:00:05] N:L0: Hello everyone, my name is Dana Fox."]
+        + _transcript(60).splitlines()
+    )
+    model = _ColonModel([{"N:L0": "Bo", "N:L2": "Cy"}])
+    result = generate_meeting_intelligence_in_parts(
+        _colon_request(transcript), model, _budget()
+    )
+
+    assert result.speaker_mapping == {"N:L0": "Dana Fox", "N:L2": "Cy"}
+    assert result.notes_markdown.startswith("## Summary\nDana Fox and Cy agreed")
