@@ -100,3 +100,17 @@ describe("NotesView autosave", () => {
     expect(onNotesChange).not.toHaveBeenCalled();
   });
 });
+
+describe("NotesView while notes generate", () => {
+  it("shows the step a long meeting's notes are on", () => {
+    renderNotes(vi.fn(), { isGenerating: true, generatingStep: "Combining notes, parts 1 to 3 of 9" });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Combining notes, parts 1 to 3 of 9");
+  });
+
+  it("drops a step left over once the notes are no longer generating", () => {
+    renderNotes(vi.fn(), { isGenerating: false, generatingStep: "Combining notes" });
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});

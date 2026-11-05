@@ -54,6 +54,8 @@ interface NotesViewProps {
   canUndo: boolean;
   canRedo: boolean;
   isGenerating: boolean;
+  /** The step a long meeting's notes are on while they generate, if any. */
+  generatingStep?: string | null;
   onExport: () => void;
   disableExport?: boolean;
 }
@@ -69,6 +71,7 @@ export default function NotesView({
   canUndo,
   canRedo,
   isGenerating,
+  generatingStep = null,
   onExport,
   disableExport = false,
 }: NotesViewProps) {
@@ -709,6 +712,11 @@ export default function NotesView({
             )}
           </div>
         )}
+        {isGenerating && generatingStep ? (
+          <p role="status" className="px-3 md:px-6 pb-2 text-xs text-contrast-helper">
+            {generatingStep}
+          </p>
+        ) : null}
       </SurfaceBase>
 
       {/* Notes Content */}

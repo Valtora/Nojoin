@@ -102,6 +102,7 @@ export default function NotesSection({
         canUndo={canUndo}
         canRedo={canRedo}
         isGenerating={isGenerating}
+        generatingStep={recording.transcript?.notes_progress}
         onExport={onExport}
         disableExport={!canExport}
       />}
