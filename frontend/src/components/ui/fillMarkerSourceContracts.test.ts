@@ -82,11 +82,12 @@ describe("literal production fill recipes", () => {
     expect(actual).toEqual({
       "components/ChatPanel.tsx": 1, // ChatPanel.test: loaded user and assistant history
       "components/MonthCalendar.tsx": 1, // MonthCalendar.test: select, move selection
-      "components/Sidebar.tsx": 1, // Sidebar.test: ordinary, active, batch-selected
       "components/TableMenu.tsx": 2, // TableMenu.test: the toggle closed and open; hover and leave the size grid
       "components/people/PeopleTable.tsx": 1, // PeopleTable.test: select and deselect
       "components/people/RecalibrateModal.tsx": 3, // RecalibrateModal.test: play, reject, approve, clear
       "components/people/SplitPersonModal.tsx": 2, // SplitPersonModal.test: select, play, stop, deselect
+      // The rail's rows, moved out of Sidebar.tsx; drawn by Sidebar.test.
+      "components/recordings/RecordingRailRow.tsx": 1, // Sidebar.test: ordinary, active, batch-selected
       "components/settings/NotesTemplatesSection.tsx": 1, // NotesTemplatesSection.test: loaded selection
       "components/settings/SettingsBlock.tsx": 1, // fillMarkerContracts.test: inset false/true
       "components/settings/SettingsCallout.tsx": 1, // fillMarkerContracts.test: all five tones
