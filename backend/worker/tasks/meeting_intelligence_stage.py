@@ -14,9 +14,11 @@ from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.generation_claim import claim_generation
 from backend.utils.live_speaker_labels import speaker_prompt_name
 from backend.utils.meeting_notes import append_user_notes_section
+from backend.utils.notes_progress import reporting_notes_progress
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.utils.transcript_change import change_sequence_bump
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
+from backend.worker.tasks.notes_progress import notes_progress_writer
 from backend.worker.tasks.side_runs import claim_heartbeat
 
 logger = logging.getLogger(__name__)
@@ -152,6 +154,7 @@ def _apply_automatic_meeting_intelligence_result(
     _apply_automatic_title(session, recording, result.title)
     transcript.notes = result.notes_markdown
     transcript.notes_status = "completed"
+    transcript.notes_progress = None
     # Freshly generated notes reflect every READY document by definition.
     transcript.notes_stale_documents = False
     transcript.set_notes_error_message(None)
@@ -317,6 +320,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
     # pipeline when this runs inline, and to nothing once it is deferred: the
     # pipeline has already finished it (issue #828).
     claim_generation(transcript, "notes_status")
+    transcript.notes_progress = None
     transcript.set_notes_error_message(None)
     session.add(transcript)
     session.commit()
@@ -324,7 +328,15 @@ def _run_automatic_meeting_intelligence_stage_impl(
     try:
         llm = _llm_backend_from_config(llm_config)
         assert recording.id is not None
-        with claim_heartbeat(recording.id, "notes_status"):
+        progress = notes_progress_writer(
+            session,
+            recording.id,
+            processing_step_suffix=device_suffix if update_processing_status else None,
+        )
+        with (
+            claim_heartbeat(recording.id, "notes_status"),
+            reporting_notes_progress(progress),
+        ):
             try:
                 result = llm.generate_meeting_intelligence(
                     request,

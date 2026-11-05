@@ -92,6 +92,7 @@ CREATE TABLE transcripts (
     notes_template_id INTEGER,
     notes_template_sections TEXT,
     notes_status VARCHAR NOT NULL,
+    notes_progress VARCHAR(255),
     notes_stale_documents BOOLEAN DEFAULT 0,
     transcript_status VARCHAR NOT NULL,
     error_message TEXT,

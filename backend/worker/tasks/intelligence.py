@@ -7,11 +7,13 @@ from backend.utils.live_speaker_labels import (
     speaker_display_name,
     speaker_prompt_name,
 )
+from backend.utils.notes_progress import reporting_notes_progress
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 from backend.utils.transcript_change import change_sequence_bump
 
 from .constants import *
+from .notes_progress import notes_progress_writer
 from .side_runs import claim_heartbeat, hand_back_side_run_hold
 from .speaker_name_apply import apply_inferred_names
 
@@ -60,6 +62,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         # recording: a run lost with its worker then strands only its notes,
         # and only until the claim expires (issue #828).
         claim_generation(transcript, "notes_status")
+        transcript.notes_progress = None
         transcript.set_notes_error_message(None)
         session.add(transcript)
         session.commit()
@@ -129,7 +132,14 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             "output_language_instruction": language_preferences.notes_language_instruction,
             "notes_context": notes_context,
         }
-        with claim_heartbeat(recording_id, "notes_status"):
+        # Only reads since the claim. Ending their transaction keeps it from
+        # staying open for the whole model call, under the steps and claim
+        # renewals written from sessions of their own meanwhile.
+        session.commit()
+        with (
+            claim_heartbeat(recording_id, "notes_status"),
+            reporting_notes_progress(notes_progress_writer(session, recording_id)),
+        ):
             try:
                 notes = llm.generate_meeting_notes(
                     transcript_text, speaker_map, timeout=300, **notes_arguments
@@ -155,6 +165,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             notes, timeline_notes.appendix_lines()
         )
         transcript.notes_status = "completed"
+        transcript.notes_progress = None
         # Freshly generated notes reflect every READY document by definition.
         transcript.notes_stale_documents = False
         transcript.set_notes_error_message(None)
@@ -542,6 +553,7 @@ def _mark_notes_generation_error_impl(
         return
 
     transcript.notes_status = "error"
+    transcript.notes_progress = None
     transcript.set_notes_error_message(_format_notes_generation_error(error))
     session.add(transcript)
     session.commit()
