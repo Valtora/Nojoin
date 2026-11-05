@@ -37,13 +37,15 @@ def notes_progress_writer(
     def write(step: str) -> None:
         try:
             with Session(bind) as progress_session:
-                progress_session.execute(
+                claimed = progress_session.execute(
                     update(Transcript)
                     .where(col(Transcript.recording_id) == recording_id)
                     .where(col(Transcript.notes_status) == GENERATING)
                     .values(notes_progress=step[:STEP_MAX_LENGTH], updated_at=utc_now())
                 )
-                if processing_step_suffix is not None:
+                # A run whose notes have finished or failed no longer owns
+                # the recording's step either.
+                if processing_step_suffix is not None and claimed.rowcount:
                     processing_step = f"{step}...{processing_step_suffix}"
                     progress_session.execute(
                         update(Recording)

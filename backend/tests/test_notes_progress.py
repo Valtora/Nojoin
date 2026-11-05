@@ -482,6 +482,29 @@ def test_automatic_notes_keep_the_notes_the_model_was_given(
     assert "the budget" not in appendix
 
 
+def test_a_run_whose_notes_are_done_leaves_the_recordings_step_alone(
+    tmp_path: Path,
+) -> None:
+    # A late step from an inline run whose notes already finished, while the
+    # pipeline has moved on to its next stage.
+    engine = _create_worker_ai_database(tmp_path)
+    try:
+        with Session(engine) as session:
+            write = notes_progress_writer(session, 1, processing_step_suffix=" (CPU)")
+            write("Combining notes")
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT t.notes_progress, r.processing_step FROM transcripts t "
+                    "JOIN recordings r ON r.id = t.recording_id"
+                )
+            ).one()
+    finally:
+        engine.dispose()
+
+    assert tuple(row) == (None, "Saving transcript...")
+
+
 # --- What the page reads ---------------------------------------------------
 
 
