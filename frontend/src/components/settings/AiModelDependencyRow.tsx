@@ -43,6 +43,9 @@ function ModelBadge({ status }: { status?: ModelStatusInfo }) {
   if (state === "failed") {
     return <SettingsStatusBadge tone="error">Failed</SettingsStatusBadge>;
   }
+  if (state === "retry_wait") {
+    return <SettingsStatusBadge tone="info">Waiting to retry</SettingsStatusBadge>;
+  }
   if (state === "ready") {
     const label = status?.source === "bundled" ? "Bundled"
       : status?.source === "external" ? "External" : "Ready";
@@ -60,7 +63,8 @@ export default function AiModelDependencyRow({
   const busy = deleting === model.id;
   const ready = status?.state ? status.state === "ready" : status?.downloaded;
   const downloading = status?.state === "downloading";
-  const failed = status?.state === "failed";
+  const retryWaiting = status?.state === "retry_wait";
+  const failed = status?.state === "failed" || retryWaiting;
   const preparationBusy = preparationRunning || downloading;
 
   return (
@@ -73,6 +77,11 @@ export default function AiModelDependencyRow({
             <span className="block">Download size: {Math.round(status.size_bytes / 1_000_000)} MB.</span>
           )}
           {status?.unused_reason && <span className="block">{status.unused_reason}</span>}
+          {retryWaiting && (
+            <span className="block">
+              Preparation failed. Automatic requests wait ten minutes before trying again; Retry starts now.
+            </span>
+          )}
           {ready && reason && <span className="block">{reason}</span>}
           {failed && status?.verification_error && (
             <span className="block">

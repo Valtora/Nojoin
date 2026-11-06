@@ -78,7 +78,7 @@ def test_failed_dispatch_clears_only_its_marker(
     assert control.pending_task() is None
     assert not control._control_path("pending.json").exists()
     # The queued progress written before the publish does not linger.
-    progress = json.loads(download_progress_in_memory[PROGRESS_KEY])
+    progress = json.loads(download_progress_in_memory[f"{PROGRESS_KEY}:nemotron"])
     assert (progress["status"], progress["stage"]) == ("error", "nemotron")
 
 
@@ -104,7 +104,7 @@ def test_native_preparation_is_exclusive_and_keeps_retained_caches(
     native_assets: tuple, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = []
-    monkeypatch.setattr(preload_models, "clear_download_progress", lambda: None)
+    monkeypatch.setattr(preload_models, "clear_download_progress", lambda *_args: None)
     monkeypatch.setattr(
         preload_models,
         "set_download_progress",
@@ -134,7 +134,7 @@ def test_native_offline_failure_reports_not_prepared_without_downloading(
 
     updates: list[tuple[tuple, dict]] = []
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    monkeypatch.setattr(preload_models, "clear_download_progress", lambda: None)
+    monkeypatch.setattr(preload_models, "clear_download_progress", lambda *_args: None)
     monkeypatch.setattr(
         preload_models,
         "set_download_progress",
@@ -341,10 +341,10 @@ def test_startup_re_prepares_nemotron_from_an_earlier_manifest_once(
     settings = {"transcription_backend": backend}
     queued = _start_api(monkeypatch, settings)
     assert _nemotron_requests(queued) == [
-        (preparation._PINNED_TASK_KWARGS["nemotron"], "cpu")
+        (preparation._PINNED_TASK_KWARGS["nemotron"], "io")
     ]
     task_id = control.pending_task()["task_id"]
-    # A restart before the CPU lane reaches it queues no second preparation.
+    # A restart before the IO lane reaches it queues no second preparation.
     assert _nemotron_requests(_start_api(monkeypatch, settings)) == []
 
     def offline(*_args: Any, **_kwargs: Any) -> None:
