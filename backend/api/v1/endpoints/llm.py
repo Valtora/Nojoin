@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.processing.llm_services import get_llm_backend
 from backend.utils.config_manager import config_manager
@@ -174,11 +174,14 @@ async def get_vision_support(
 
 @router.get("/thinking-support", response_model=ThinkingSupportRead)
 async def get_thinking_support(
-    model: str = Query(..., min_length=1, description="Ollama model name"),
+    model: str = Query(
+        ..., min_length=1, max_length=256, description="Ollama model name"
+    ),
     secondary: bool = Query(
         False, description="Ask the fallback provider's server instead"
     ),
-    current_user=Depends(get_current_user),
+    # Only the admin-only AI providers page asks.
+    current_user=Depends(get_current_admin_user),
 ):
     """Report whether an Ollama model can think.
 

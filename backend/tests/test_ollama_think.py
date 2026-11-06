@@ -265,16 +265,19 @@ def test_a_streamed_answer_leaves_the_thinking_out(ollama):
 # --- GET /llm/thinking-support -------------------------------------------------
 
 
-async def _thinking_support(model: str, **params) -> tuple[int, dict]:
+OWNER = SimpleNamespace(id=1, role="owner", is_superuser=True)
+
+
+async def _thinking_support(
+    model: str, user: SimpleNamespace = OWNER, **params
+) -> tuple[int, dict]:
     app = create_app(app_lifespan=None)
 
     async def override_get_db() -> AsyncGenerator[object, None]:
         yield object()
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id=1, role="owner", is_superuser=True
-    )
+    app.dependency_overrides[get_current_user] = lambda: user
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="https://test"
     ) as client:
@@ -299,6 +302,47 @@ async def test_thinking_support_reports_what_ollama_says(ollama, model, supporte
 
     assert status == 200
     assert body == {"model": model, "supported": supported}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("role", "status", "asks_ollama"),
+    [("user", 403, False), ("admin", 200, True)],
+    ids=["member", "admin"],
+)
+async def test_only_an_administrator_can_ask(
+    ollama, monkeypatch, role, status, asks_ollama
+):
+    """Only the admin-only AI providers page asks, so a member never reaches Ollama."""
+    asked: list[str] = []
+    real_post = ollama.post
+
+    def post(url, **kwargs):
+        asked.append(url)
+        return real_post(url, **kwargs)
+
+    monkeypatch.setattr(requests, "post", post)
+    user = SimpleNamespace(id=2, role=role, is_superuser=False)
+
+    answer, body = await _thinking_support("think-model", user=user)
+
+    assert answer == status
+    assert bool(asked) is asks_ollama
+    if asks_ollama:
+        assert body == {"model": "think-model", "supported": True}
+
+
+@pytest.mark.anyio
+async def test_an_overlong_model_name_is_refused_before_ollama_is_asked(
+    ollama, monkeypatch
+):
+    asked: list[str] = []
+    monkeypatch.setattr(requests, "post", lambda url, **kw: asked.append(url))
+
+    answer, _ = await _thinking_support("m" * 257)
+
+    assert answer == 422
+    assert asked == []
 
 
 @pytest.mark.anyio
