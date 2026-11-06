@@ -15,8 +15,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
 from backend.utils.config_manager import (
-    DEFAULT_SYSTEM_CONFIG,
     TRANSCRIPTION_BACKENDS,
     TRANSCRIPTION_SETTING_KEYS,
     WHISPER_MODEL_SIZES,

@@ -4,6 +4,7 @@ from sqlalchemy import BigInteger, Column, ForeignKey, Index, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 from .base import BaseDBModel
+from .int_bounds import RowId
 
 if TYPE_CHECKING:
     from .recording import Recording
@@ -55,13 +56,13 @@ class Tag(BaseDBModel, table=True):
 class TagCreate(SQLModel):
     name: str
     color: Optional[str] = None
-    parent_id: Optional[int] = None
+    parent_id: Optional[RowId] = None
 
 
 class TagUpdate(SQLModel):
     name: Optional[str] = None
     color: Optional[str] = None
-    parent_id: Optional[int] = None
+    parent_id: Optional[RowId] = None
 
 
 class TagRead(BaseDBModel):

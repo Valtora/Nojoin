@@ -45,7 +45,8 @@ from backend.tests.sqlite_schemas import (
     TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
 )
-from backend.utils.config_manager import EXPORT_BRANDING_KEY, config_manager
+from backend.utils.config_defaults import EXPORT_BRANDING_KEY
+from backend.utils.config_manager import config_manager
 
 SEGMENTS = [
     {"speaker": "SPEAKER_00", "start": 0.0, "end": 4.0, "text": "Let us begin."},

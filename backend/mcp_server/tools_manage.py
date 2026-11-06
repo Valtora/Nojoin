@@ -16,6 +16,7 @@ from fastapi import HTTPException
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlmodel import select
 
+from backend.api.params import RowId
 from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import (
@@ -317,7 +318,7 @@ async def reprocess_recording(
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)
 async def regenerate_notes(
-    recording_id: str, notes_template_id: Optional[int] = None
+    recording_id: str, notes_template_id: Optional[RowId] = None
 ) -> dict[str, Any]:
     """Regenerate the AI meeting notes for a recording.
 
@@ -719,7 +720,7 @@ async def list_calendar_events(
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)
 async def link_calendar_event(
-    recording_id: str, calendar_event_id: Optional[int] = None
+    recording_id: str, calendar_event_id: Optional[RowId] = None
 ) -> dict[str, Any]:
     """Link a recording to a calendar event, or unlink it.
 
