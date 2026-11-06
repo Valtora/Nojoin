@@ -23,28 +23,6 @@ EXPORT_BRANDING_KEY = "export_branding"
 
 MEETING_EDGE_CONTEXT_LEVEL_DEFAULT = 2
 
-
-def _get_default_models():
-    """Get default models from llm_services to avoid circular imports."""
-    try:
-        from backend.processing.llm_services import get_default_model_for_provider
-
-        return {
-            "gemini_model": get_default_model_for_provider("gemini"),
-            "openai_model": get_default_model_for_provider("openai"),
-            "anthropic_model": get_default_model_for_provider("anthropic"),
-        }
-    except ImportError:
-        # Fallback in case of import issues
-        return {
-            "gemini_model": None,
-            "openai_model": None,
-            "anthropic_model": None,
-        }
-
-
-_default_models = _get_default_models()
-
 DEFAULT_SYSTEM_CONFIG = {
     "worker_url": "redis://localhost:6379/0",  # Default Redis URL for Celery worker
     "web_app_url": "https://localhost:14443",
@@ -127,11 +105,13 @@ DEFAULT_USER_SETTINGS = {
     "openai_api_key": None,
     "anthropic_api_key": None,
     "hf_token": None,  # Hugging Face Token for Pyannote
-    "gemini_model": _default_models["gemini_model"],
+    # No provider has a default model: the administrator chooses one in
+    # Settings, and until then every AI feature reports No model selected.
+    "gemini_model": None,
     "gemini_live_model": None,  # Optional lower-latency Meeting Edge Gemini model
-    "openai_model": _default_models["openai_model"],
+    "openai_model": None,
     "openai_live_model": None,  # Optional lower-latency Meeting Edge OpenAI model
-    "anthropic_model": _default_models["anthropic_model"],
+    "anthropic_model": None,
     "anthropic_live_model": None,  # Optional lower-latency Meeting Edge Anthropic model
     "ollama_model": None,
     "ollama_live_model": None,  # Optional lower-latency Meeting Edge Ollama model
