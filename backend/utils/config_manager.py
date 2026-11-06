@@ -131,6 +131,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "ollama_live_model",
     "ollama_api_url",
     "ollama_context_window",
+    "ollama_think",
     "secondary_llm_provider",
     "secondary_gemini_model",
     "secondary_gemini_live_model",
@@ -142,6 +143,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "secondary_ollama_live_model",
     "secondary_ollama_api_url",
     "secondary_ollama_context_window",
+    "secondary_ollama_think",
     "secondary_gemini_api_key",
     "secondary_openai_api_key",
     "secondary_anthropic_api_key",
@@ -276,6 +278,7 @@ DEFAULT_USER_SETTINGS = {
     "ollama_live_model": None,  # Optional lower-latency Meeting Edge Ollama model
     "ollama_api_url": "http://host.docker.internal:11434",  # Default Ollama API URL
     "ollama_context_window": 32768,  # Ollama num_ctx for full-context meeting chat
+    **dict.fromkeys(("ollama_think", "secondary_ollama_think"), False),
     "secondary_llm_provider": None,  # Secondary LLM provider (used when primary is unavailable)
     "secondary_gemini_model": None,
     "secondary_gemini_live_model": None,  # Optional secondary Meeting Edge Gemini model
