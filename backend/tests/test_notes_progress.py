@@ -65,7 +65,8 @@ from backend.tests.test_recording_pause_resume import (
     TRANSCRIPTS_SCHEMA,
 )
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.generation_claim import GENERATION_CLAIM_EXPIRY
+from backend.utils.generation_claim import GENERATION_CLAIM_EXPIRY, NOTES_RUN
+from backend.utils.generation_run import acquire_run
 from backend.utils.llm_config import ResolvedLLMConfig
 from backend.utils.long_meeting_notes import (
     generate_meeting_intelligence_in_parts,
@@ -406,6 +407,12 @@ def _run_automatic_stage(
 
     try:
         with Session(engine) as session:
+            notes_run_id = None
+            if not inline:
+                claimed = acquire_run(session, 1, NOTES_RUN)
+                assert claimed is not None
+                notes_run_id = str(claimed.notes_run_id)
+                session.commit()
             recording = session.get(Recording, 1)
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == 1)
@@ -430,6 +437,7 @@ def _run_automatic_stage(
                     else NO_NOTES
                 ),
                 update_processing_status=inline,
+                notes_run_id=notes_run_id,
             )
         with fake.observer.connect() as connection:
             row = connection.execute(

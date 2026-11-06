@@ -38,6 +38,7 @@ from backend.models.cli_oauth import (
 from backend.processing.cli.env_scrub import scrubbed_environ, subscription_env_payload
 from backend.services.cli_oauth import codex_oauth, oauth
 from backend.services.cli_oauth.persistence import user_cli_dir
+from backend.utils.notes_cancellation import check_notes_run
 from backend.utils.time import utc_now
 from backend.utils.vision import VisionImage
 
@@ -235,6 +236,7 @@ class CliConversationManager:
         ``--image <FILE>`` arguments, and Claude takes inline content blocks.
         """
         access_token = self._resolve_access_token(user_id)
+        check_notes_run()
         try:
             if self._is_codex():
                 text, usage = asyncio.run(
@@ -276,6 +278,7 @@ class CliConversationManager:
         runs on the calling thread first, so all DB work stays synchronous.
         """
         access_token = self._resolve_access_token(user_id)
+        check_notes_run()
         chunk_queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
         # Populated by the driver thread with the turn's usage on a clean drain;
         # persisted below on this (sync) thread once the stream completes.

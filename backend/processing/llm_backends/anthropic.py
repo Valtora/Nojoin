@@ -24,6 +24,10 @@ from backend.utils.meeting_notes import (
     MeetingEventContext,
     NotesPromptContext,
 )
+from backend.utils.notes_cancellation import (
+    NotesRunCancelled,
+    check_notes_run,
+)
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
 )
@@ -111,6 +115,8 @@ class AnthropicLLMBackend(LLMBackend):
                 return sorted([m.id for m in models if "claude" in m.id])
             else:
                 return []
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: listing is advisory; an unreachable provider lists nothing
             logger.error(f"Anthropic API error (list models): {e}")
             return []
@@ -134,10 +140,13 @@ class AnthropicLLMBackend(LLMBackend):
 
         for max_tokens in ladder:
             try:
+                check_notes_run()
                 with self.client.messages.stream(
                     max_tokens=max_tokens, **kwargs
                 ) as stream:
                     response = stream.get_final_message()
+            except NotesRunCancelled:
+                raise
             except Exception as exc:  # noqa: BLE001 -- boundary: only the ceiling error is handled here; everything else is re-raised
                 if not is_output_ceiling_error(exc):
                     raise
@@ -188,9 +197,12 @@ class AnthropicLLMBackend(LLMBackend):
         last_error: Exception | None = None
 
         for max_tokens in CHAT_MAX_OUTPUT_TOKEN_LADDER:
+            check_notes_run()
             manager = self.client.messages.stream(max_tokens=max_tokens, **kwargs)
             try:
                 return manager.__enter__(), manager
+            except NotesRunCancelled:
+                raise
             except Exception as exc:  # noqa: BLE001 -- boundary: only the ceiling error is handled here; everything else is re-raised
                 if not is_output_ceiling_error(exc):
                     raise
@@ -230,6 +242,7 @@ class AnthropicLLMBackend(LLMBackend):
                 "No Anthropic model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=SPEAKER_SUGGESTIONS_MAX_TOKENS,
@@ -238,6 +251,8 @@ class AnthropicLLMBackend(LLMBackend):
             )
             text = _response_text_or_raise(response, "the speaker suggestions")
             return self.parse_speaker_inference_result(text, eligible_labels)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (speaker suggestions): {e}")
             raise RuntimeError(f"Anthropic API error (speaker suggestions): {e}")
@@ -298,6 +313,8 @@ class AnthropicLLMBackend(LLMBackend):
             # Already a precise, user-facing message; wrapping it as a generic
             # API error would bury the one thing the user can act on.
             raise
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting notes): {e}")
             raise RuntimeError(f"Anthropic API error (meeting notes): {e}")
@@ -322,6 +339,8 @@ class AnthropicLLMBackend(LLMBackend):
             return self.parse_automatic_meeting_intelligence_result(text, request)
         except TruncatedNotesError:
             raise
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting intelligence): {e}")
             raise RuntimeError(f"Anthropic API error (meeting intelligence): {e}")
@@ -344,6 +363,8 @@ class AnthropicLLMBackend(LLMBackend):
             )
             return _response_text(response)
         except TruncatedNotesError:
+            raise
+        except NotesRunCancelled:
             raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (text generation): {e}")
@@ -383,6 +404,8 @@ class AnthropicLLMBackend(LLMBackend):
             return _response_text(response)
         except TruncatedNotesError:
             raise
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; vision refusals are told apart, the rest become one RuntimeError
             if is_vision_unsupported_error(e):
                 raise VisionUnsupportedError(
@@ -421,6 +444,7 @@ class AnthropicLLMBackend(LLMBackend):
             # Claude models (Opus 4.6+, Sonnet 5, Fable 5). The prompt already
             # mandates a JSON object and the tolerant parser handles any
             # fenced/prose wrapping, so raw JSON is not forced by a prefill.
+            check_notes_run()
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=MEETING_EDGE_MAX_TOKENS,
@@ -432,6 +456,8 @@ class AnthropicLLMBackend(LLMBackend):
             )
             text = _response_text_or_raise(response, "the Meeting Edge update")
             return self.parse_meeting_edge_result(text, request)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
             raise RuntimeError(f"Anthropic API error (Meeting Edge): {e}")
@@ -474,6 +500,7 @@ class AnthropicLLMBackend(LLMBackend):
             # No assistant prefill: a last-assistant-turn prefill 400s on
             # current Claude models. The prompt mandates a bare JSON object and
             # the parser tolerates fencing, so nothing is lost.
+            check_notes_run()
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=self.MEETING_ANALYSIS_MAX_OUTPUT_TOKENS,
@@ -487,6 +514,8 @@ class AnthropicLLMBackend(LLMBackend):
                 )
             text = _response_text(response)
             return self.parse_meeting_analysis_result(text, request)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting analysis): {e}")
             raise RuntimeError(f"Anthropic API error (meeting analysis): {e}")
@@ -522,6 +551,8 @@ class AnthropicLLMBackend(LLMBackend):
             )
             return _response_text(response)
         except TruncatedNotesError:
+            raise
+        except NotesRunCancelled:
             raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (chat): {e}")
@@ -617,6 +648,8 @@ class AnthropicLLMBackend(LLMBackend):
             finally:
                 stream_manager.__exit__(None, None, None)
 
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (streaming chat): {e}")
             raise RuntimeError(f"Anthropic API error (streaming chat): {e}")
@@ -638,6 +671,7 @@ class AnthropicLLMBackend(LLMBackend):
             output_language_instruction,
         )
         try:
+            check_notes_run()
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=MEETING_TITLE_MAX_TOKENS,
@@ -646,6 +680,8 @@ class AnthropicLLMBackend(LLMBackend):
             )
             title = self.parse_title(_response_text_or_raise(response, "the title"))
             return title
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting title): {e}")
             raise RuntimeError(f"Anthropic API error (meeting title): {e}")
@@ -667,12 +703,15 @@ class AnthropicLLMBackend(LLMBackend):
                     "No Anthropic model configured. Please select a model in Settings."
                 )
 
+            check_notes_run()
             self.client.messages.create(
                 model=self.model,
                 max_tokens=1,
                 messages=[{"role": "user", "content": "Hi"}],
             )
             return True
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: any failure means the key did not validate
             logger.error(f"Anthropic API validation failed: {e}")
             raise ValueError(f"Anthropic API validation failed: {e}")

@@ -2,7 +2,7 @@
 
 import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 
 import { DEMO_MODE } from "@/lib/demo";
 import { isImeComposing } from "@/lib/imeComposition";
@@ -27,8 +27,7 @@ import {
 import { Editor } from "@tiptap/react";
 import RichTextEditor from "./RichTextEditor";
 import LinkModal from "./LinkModal";
-import NotesTemplatePicker from "./NotesTemplatePicker";
-import GenerateNotesButton from "./GenerateNotesButton";
+import NotesGenerationControl from "./NotesGenerationControl";
 import TableMenu from "./TableMenu";
 import SpellCheckContextMenu from "./SpellCheckContextMenu";
 import Fuse from "fuse.js";
@@ -38,11 +37,15 @@ import { getSettings } from "@/lib/api";
 import type { RecordingId } from "@/types";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
 
+const NotesEditor = memo(RichTextEditor);
+
 interface NotesViewProps {
   recordingId: RecordingId;
   notes: string | null;
   onNotesChange: (notes: string) => void;
   onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
+  onCancelNotes?: (notesRunId: string) => Promise<void>;
+  notesRunId?: string | null;
   /** Template that produced the current notes, for the picker's tick. */
   activeTemplateId?: number | null;
   onFindAndReplace: (
@@ -65,6 +68,8 @@ export default function NotesView({
   notes,
   onNotesChange,
   onGenerateNotes,
+  onCancelNotes,
+  notesRunId,
   activeTemplateId = null,
   onFindAndReplace,
   onUndo,
@@ -130,7 +135,7 @@ export default function NotesView({
     }
   }, [displayNotes]);
 
-  const handleEditorChange = (newContent: string) => {
+  const handleEditorChange = useCallback((newContent: string) => {
     setLocalNotes(newContent);
 
     if (saveTimeoutRef.current) {
@@ -147,7 +152,7 @@ export default function NotesView({
       lastSavedNotes.current = newContent;
       onNotesChange(newContent);
     }, 1000); // 1 second debounce
-  };
+  }, [onNotesChange]);
 
   // Initialise spell check service from user settings
   useEffect(() => {
@@ -481,20 +486,15 @@ export default function NotesView({
             {/* Segmented control. items-stretch so the picker matches the main
                 button's height: its icon is shorter than the button's text line,
                 so equal padding alone leaves the two a few pixels apart. */}
-            <div className="flex min-w-0 max-w-full items-stretch">
-              <GenerateNotesButton
+              <NotesGenerationControl
                 label={generateNotesLabel}
                 isGenerating={isGenerating}
                 step={generatingStep}
                 onGenerate={onGenerateNotes}
-              />
-              {/* Structure picker: the plain button uses the default structure. */}
-              <NotesTemplatePicker
-                disabled={isGenerating}
+                onCancel={onCancelNotes}
+                notesRunId={notesRunId}
                 activeTemplateId={activeTemplateId}
-                onSelect={(templateId) => onGenerateNotes(templateId)}
               />
-            </div>
             <div className="w-px h-4 bg-surface-card mx-1" />
             <ButtonBase
               onClick={onUndo}
@@ -711,7 +711,7 @@ export default function NotesView({
       <div className="flex-1 overflow-y-auto min-h-0">
         {localNotes || isGenerating ? (
           <div className="relative h-full">
-            <RichTextEditor
+            <NotesEditor
               content={localNotes}
               onChange={handleEditorChange}
               onEditorReady={setEditor}

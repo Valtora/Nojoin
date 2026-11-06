@@ -8,12 +8,23 @@ the ``backend.worker.tasks`` package namespace with no call-site changes.
 
 import dataclasses
 import logging
+from uuid import UUID
+
+from sqlmodel import Session
 
 from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.generation_claim import claim_notes_generation
+from backend.utils.generation_claim import NOTES_RUN
+from backend.utils.generation_run import (
+    acquire_run,
+    adopt_run,
+    lock_owned_run,
+    retire_run,
+    run_check,
+)
 from backend.utils.live_speaker_labels import speaker_prompt_name
 from backend.utils.meeting_notes import append_user_notes_section
+from backend.utils.notes_cancellation import NotesRunCancelled, checking_notes_run
 from backend.utils.notes_progress import reporting_notes_progress
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.utils.transcript_change import change_sequence_bump
@@ -99,8 +110,15 @@ def _apply_automatic_meeting_intelligence_result(
     meeting_context: MeetingEventContext | None,
     provider: str | None,
     resolved_template: ResolvedNotesTemplate | None = None,
-) -> None:
+    notes_run_id: str | UUID | None = None,
+) -> bool:
     from backend.processing.embedding import cosine_similarity
+
+    with session.no_autoflush:
+        transcript = lock_owned_run(session, recording.id, notes_run_id, NOTES_RUN)
+    if transcript is None:
+        session.rollback()
+        return False
 
     segments = [
         dict(segment)
@@ -154,6 +172,7 @@ def _apply_automatic_meeting_intelligence_result(
     _apply_automatic_title(session, recording, result.title)
     transcript.notes = result.notes_markdown
     transcript.notes_status = "completed"
+    transcript.notes_run_id = None
     transcript.notes_progress = None
     # Freshly generated notes reflect every READY document by definition.
     transcript.notes_stale_documents = False
@@ -180,6 +199,32 @@ def _apply_automatic_meeting_intelligence_result(
         },
         log=logger,
     )
+    return True
+
+
+def _start_automatic_notes_run(
+    session: Session,
+    recording_id: int,
+    *,
+    inline: bool,
+    notes_run_id: str | UUID | None,
+) -> Transcript | None:
+    transcript = (
+        acquire_run(session, recording_id, NOTES_RUN)
+        if inline
+        else adopt_run(session, recording_id, notes_run_id, NOTES_RUN)
+    )
+    if transcript is None:
+        if not inline:
+            session.rollback()
+        return None
+    if transcript.transcription_failed():
+        retire_run(transcript, NOTES_RUN)
+        transcript.notes_status = "pending"
+        session.add(transcript)
+        session.commit()
+        return None
+    return transcript
 
 
 def _run_automatic_meeting_intelligence_stage_impl(
@@ -197,10 +242,21 @@ def _run_automatic_meeting_intelligence_stage_impl(
     timeline_notes: RecordingTimelineNotes,
     detected_transcription_language: str | None = None,
     update_processing_status: bool = True,
+    notes_run_id: str | UUID | None = None,
 ) -> AutomaticMeetingIntelligenceResult | None:
     # update_processing_status is False when this runs as a deferred IO task: the
     # recording has already been marked Completed by the GPU pipeline, so we must
     # not reset its processing_step/progress back to the "Generating Notes" stage.
+    transcript = _start_automatic_notes_run(
+        session,
+        recording.id,
+        inline=update_processing_status,
+        notes_run_id=notes_run_id,
+    )
+    if transcript is None:
+        return None
+    notes_run_id = transcript.notes_run_id
+
     cleaned_transcript = transcript_text.strip()
     meeting_context = _resolve_meeting_event_context(session, recording)
     deterministic_result = detect_rule_based_speaker_suggestions(
@@ -212,43 +268,12 @@ def _run_automatic_meeting_intelligence_stage_impl(
         unresolved_speakers,
         meeting_context,
     )
-    if not cleaned_transcript:
-        suggestion_count = _persist_generated_speaker_name_suggestions(
-            session,
-            recording=recording,
-            transcript=transcript,
-            speakers=speakers,
-            inference_result=deterministic_result,
-            origin="automatic_meeting_intelligence",
-            provider=None,
-            replaced_reason="automatic_meeting_intelligence_refresh",
-        )
-        if suggestion_count:
-            session.execute(change_sequence_bump(recording.id))
-            session.commit()
-            record_pipeline_metric(
-                stage="speaker_name_suggestions_generated",
-                recording_id=recording.id,
-                payload={
-                    "origin": "automatic_meeting_intelligence",
-                    "suggestion_count": suggestion_count,
-                    "rule_based_count": len(deterministic_result.suggestions),
-                    "llm_count": 0,
-                },
-                log=logger,
-            )
-        logger.info(
-            "Skipping automatic meeting intelligence for recording %s: transcript is empty",
-            recording.id,
-        )
-        return None
-
     missing_llm_config = llm_config.missing_configuration_message()
-    if missing_llm_config:
-        logger.warning(
+    if not cleaned_transcript or missing_llm_config:
+        logger.info(
             "Skipping automatic meeting intelligence for recording %s: %s",
             recording.id,
-            missing_llm_config,
+            missing_llm_config or "transcript is empty",
         )
         suggestion_count = _persist_generated_speaker_name_suggestions(
             session,
@@ -260,9 +285,11 @@ def _run_automatic_meeting_intelligence_stage_impl(
             provider=None,
             replaced_reason="automatic_meeting_intelligence_refresh",
         )
+        retire_run(transcript, NOTES_RUN)
+        session.add(transcript)
+        session.execute(change_sequence_bump(recording.id))
+        session.commit()
         if suggestion_count:
-            session.execute(change_sequence_bump(recording.id))
-            session.commit()
             record_pipeline_metric(
                 stage="speaker_name_suggestions_generated",
                 recording_id=recording.id,
@@ -322,8 +349,6 @@ def _run_automatic_meeting_intelligence_stage_impl(
     # Read now: the commit below expires the notes, and one deleted or edited
     # while the model answers must not fail or change the appendix.
     appendix = timeline_notes.appendix_lines()
-    claim_notes_generation(transcript)
-    session.add(transcript)
     session.commit()
 
     try:
@@ -332,11 +357,15 @@ def _run_automatic_meeting_intelligence_stage_impl(
         progress = notes_progress_writer(
             session,
             recording.id,
+            notes_run_id=notes_run_id,
             processing_step_suffix=device_suffix if update_processing_status else None,
         )
         with (
-            claim_heartbeat(recording.id, "notes_status"),
+            claim_heartbeat(recording.id, NOTES_RUN, run_id=notes_run_id),
             reporting_notes_progress(progress),
+            checking_notes_run(
+                run_check(session, recording.id, notes_run_id, NOTES_RUN)
+            ),
         ):
             try:
                 result = llm.generate_meeting_intelligence(
@@ -361,7 +390,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
             result,
             notes_markdown=append_user_notes_section(result.notes_markdown, appendix),
         )
-        _apply_automatic_meeting_intelligence_result(
+        published = _apply_automatic_meeting_intelligence_result(
             session,
             recording,
             transcript,
@@ -370,19 +399,28 @@ def _run_automatic_meeting_intelligence_stage_impl(
             meeting_context=meeting_context,
             provider=llm_config.provider,
             resolved_template=resolved_template,
+            notes_run_id=notes_run_id,
         )
+        if not published:
+            return None
         logger.info(
             "Generated unified meeting intelligence for recording %s",
             recording.id,
         )
         return result
+    except NotesRunCancelled:
+        session.rollback()
+        return None
     except Exception as exc:  # noqa: BLE001 -- boundary: any failure is recorded on the transcript as a notes error; the recording still completes
         logger.error(
             "Failed to generate automatic meeting intelligence for recording %s: %s",
             recording.id,
             exc,
         )
-        _mark_notes_generation_error(session, recording, transcript, exc)
+        session.rollback()
+        _mark_notes_generation_error(
+            session, recording, transcript, exc, notes_run_id=notes_run_id
+        )
         return None
 
 

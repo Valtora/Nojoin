@@ -63,7 +63,19 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
     ),
     ("/{recording_id}/notes", ("GET",), "get_notes", None),
     ("/{recording_id}/notes", ("PUT",), "update_notes", None),
-    ("/{recording_id}/notes/generate", ("POST",), "generate_notes", None),
+    # Notes cancellation adds an endpoint and types both lifecycle responses.
+    (
+        "/{recording_id}/notes/cancel",
+        ("POST",),
+        "cancel_notes",
+        "NotesRunPublicRead",
+    ),
+    (
+        "/{recording_id}/notes/generate",
+        ("POST",),
+        "generate_notes",
+        "GenerateNotesResponse",
+    ),
     (
         "/{recording_id}/replace",
         ("POST",),

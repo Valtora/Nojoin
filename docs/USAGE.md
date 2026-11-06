@@ -329,6 +329,15 @@ A voiceprint that cannot be rebuilt, because its meeting's audio was removed or 
 - **Analytics** reports how the conversation went, measured from the transcript and audio, with an optional AI reading of what was discussed.
 - **Search** in the recordings list and **Search** and **Find & Replace** in the transcript are covered under [Recordings List](#recordings-list) and [Transcript And Playback](#transcript-and-playback).
 
+While notes generate, **Cancel** replaces the structure arrow beside the busy
+button, including automatic notes during processing. Cancel keeps your current
+notes and edits and restores **Generate Notes** or **Regenerate Notes** immediately.
+The current model request, including its automatic retries, may finish before work
+stops; its answer is discarded. No further parts, repairs or new model requests are
+started. Cancelling automatic notes
+leaves the transcript intact. If the recording itself is still processing, it
+finishes normally after that request returns; you can generate new notes meanwhile.
+
 ### Analytics
 
 The **Analytics** tab is available in every recording state. While recording, paused, uploading, queued or processing, it shows estimated talk time, speaker share, longest turns and transcript-derived words per minute. These provisional figures refresh every three seconds while the tab is open and can change as wording and speakers settle. Words per minute uses the median utterance rate, leaving out short and overlapping speech, and needs at least five eligible utterances per speaker. **Silence**, **Talked over**, audio delivery, pitch and AI analysis say **after processing**. Playback links remain disabled until processing ends.

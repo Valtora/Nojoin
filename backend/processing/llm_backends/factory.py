@@ -5,6 +5,7 @@ from backend.processing.llm_backends.base import LLMBackend
 from backend.processing.llm_backends.gemini import GeminiLLMBackend
 from backend.processing.llm_backends.ollama import OllamaLLMBackend
 from backend.processing.llm_backends.openai import OpenAILLMBackend
+from backend.utils.notes_cancellation import NotesRunCancelled, check_notes_run
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ class SecondaryLLMBackend(LLMBackend):
 
     def _call_with_secondary(self, method_name: str, *args, **kwargs):
         try:
+            check_notes_run()
             result = getattr(self._primary, method_name)(*args, **kwargs)
             logger.info(
                 "Primary LLM (%s) handled %s successfully.",
@@ -92,6 +94,8 @@ class SecondaryLLMBackend(LLMBackend):
                 method_name,
             )
             return result
+        except NotesRunCancelled:
+            raise
         except Exception as primary_exc:  # noqa: BLE001 -- boundary: fall back to secondary LLM on any primary failure
             logger.warning(
                 "Primary LLM (%s) failed on %s: %s. Falling back to secondary (%s).",
@@ -101,12 +105,15 @@ class SecondaryLLMBackend(LLMBackend):
                 getattr(self._secondary, "model", "unknown"),
             )
             try:
+                check_notes_run()
                 result = getattr(self._secondary, method_name)(*args, **kwargs)
                 logger.info(
                     "Secondary LLM call succeeded on %s after primary failure.",
                     method_name,
                 )
                 return result
+            except NotesRunCancelled:
+                raise
             except Exception:  # noqa: BLE001 -- boundary: surface the original primary failure if secondary also fails
                 logger.error("Secondary LLM also failed on %s.", method_name)
                 raise primary_exc
@@ -114,6 +121,7 @@ class SecondaryLLMBackend(LLMBackend):
     def _stream_with_secondary(self, method_name: str, *args, **kwargs):
         has_yielded = False
         try:
+            check_notes_run()
             gen = getattr(self._primary, method_name)(*args, **kwargs)
             first_chunk = next(gen)
             try:
@@ -125,6 +133,8 @@ class SecondaryLLMBackend(LLMBackend):
                     gen.close()
         except StopIteration:
             return
+        except NotesRunCancelled:
+            raise
         except Exception as primary_exc:
             if has_yielded:
                 raise primary_exc
@@ -136,7 +146,10 @@ class SecondaryLLMBackend(LLMBackend):
                 getattr(self._secondary, "model", "unknown"),
             )
             try:
+                check_notes_run()
                 yield from getattr(self._secondary, method_name)(*args, **kwargs)
+            except NotesRunCancelled:
+                raise
             except Exception:  # noqa: BLE001 -- boundary: surface the original primary failure if secondary also fails
                 raise primary_exc
 
@@ -305,6 +318,8 @@ class SecondaryLLMBackend(LLMBackend):
     def validate_api_key(self) -> bool:
         try:
             return self._primary.validate_api_key()
+        except NotesRunCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 -- boundary: fall back to secondary LLM on any primary failure
             logger.debug(
                 "Primary LLM validate_api_key failed: %s. Trying secondary.", exc
@@ -314,6 +329,8 @@ class SecondaryLLMBackend(LLMBackend):
     def list_models(self) -> list:
         try:
             return self._primary.list_models()
+        except NotesRunCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 -- boundary: fall back to secondary LLM on any primary failure
             logger.debug("Primary LLM list_models failed: %s. Trying secondary.", exc)
             return self._secondary.list_models()
@@ -391,6 +408,8 @@ def get_llm_backend_with_secondary(
         # case bottoms out immediately.
         secondary = get_llm_backend_with_secondary(secondary_cfg, purpose)
         return SecondaryLLMBackend(primary=primary, secondary=secondary)
+    except NotesRunCancelled:
+        raise
     except Exception as exc:  # noqa: BLE001 -- boundary: continue with primary only if secondary init fails
         logger.warning(
             "Failed to initialise secondary LLM backend (%s): %s. "

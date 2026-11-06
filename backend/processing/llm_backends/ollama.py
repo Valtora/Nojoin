@@ -30,6 +30,7 @@ from backend.utils.meeting_notes import (
     MeetingEventContext,
     NotesPromptContext,
 )
+from backend.utils.notes_cancellation import NotesRunCancelled, check_notes_run
 from backend.utils.ollama_url_policy import validate_ollama_api_url
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -175,6 +176,7 @@ class OllamaLLMBackend(LLMBackend):
         ignore both; ``_raise_if_truncated`` covers them.
         """
         payload = {**payload, "truncate": False, "shift": False}
+        check_notes_run()
         resp = self._post("/api/chat", json=payload, **kwargs)
         try:
             resp.raise_for_status()
@@ -261,6 +263,8 @@ class OllamaLLMBackend(LLMBackend):
         (notes in parts, chat from excerpts) once the secondary provider has had
         the whole one. Anything else is wrapped with the task it failed.
         """
+        if isinstance(error, NotesRunCancelled):
+            return error
         logger.error(f"Ollama API error ({task}): {error}")
         if isinstance(error, ContextWindowExceededError):
             return error
@@ -349,6 +353,8 @@ class OllamaLLMBackend(LLMBackend):
             data = resp.json()
             self._raise_if_truncated(data)
             return (data.get("message") or {}).get("content", "")
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; vision refusals are told apart, the rest become one RuntimeError
             if is_vision_unsupported_error(e):
                 raise VisionUnsupportedError(

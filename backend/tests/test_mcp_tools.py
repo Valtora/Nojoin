@@ -225,6 +225,7 @@ SCHEMA_STATEMENTS = [
         notes_template_sections TEXT,
         notes_status VARCHAR,
         notes_progress VARCHAR(255),
+        notes_run_id CHAR(32),
         notes_stale_documents BOOLEAN DEFAULT 0,
         transcript_status VARCHAR,
         error_message TEXT,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, List, Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -150,6 +151,7 @@ class TranscriptPublicRead(PublicModel):
     # The step a long meeting's notes run is on, while notes_status is
     # generating, such as "Drafting notes, part 2 of 5".
     notes_progress: Optional[str] = None
+    notes_run_id: Optional[UUID] = None
     # True when a document finished parsing after these notes were written,
     # or a note's file was switched since, so they no longer reflect what
     # notes generation would read.
@@ -402,6 +404,7 @@ def serialize_transcript(
         notes_progress=(
             transcript.notes_progress if notes_status == GENERATING else None
         ),
+        notes_run_id=transcript.notes_run_id if notes_status == GENERATING else None,
         notes_stale_documents=bool(getattr(transcript, "notes_stale_documents", False)),
         transcript_status=transcript.transcript_status,
         error_message=(

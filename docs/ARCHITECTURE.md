@@ -51,6 +51,40 @@ Celery acknowledges a task when a worker takes it, so a task lost with its worke
 - **Notes, AI analysis and delivery.** Each claims its own status on the transcript row (`notes_status`, `analytics_ai_status`, `analytics_status`) and never changes the recording's status, so a lost run strands only its output. A `generating` claim whose row has gone unwritten for 15 minutes reads as failed, with the message "Generation did not finish. Try again." ([backend/utils/generation_claim.py](../backend/utils/generation_claim.py)): in the 409 that refuses a second run, the recording and analytics payloads, MCP and the recording ETag, so a polling page hears of the expiry. Claiming stamps `updated_at`, the worker stamps it again when it starts, and a heartbeat thread renews it every minute while it waits on the model, so a long meeting in parts on a slow model never reads as lost. While notes generate, reprocessing answers 409.
 - **Speaker inference.** **Retry Speaker Inference** holds the finished meeting in `PROCESSING` for its run, with its own task in `celery_task_id`. A finished meeting in `PROCESSING` is recognised by the `processing_completed_at` that only the pipeline clears, or by its step. When an IO worker starts it hands back each hold whose task no worker reports running, to `PROCESSED`, or `ERROR` over a failed transcription. A beat task every five minutes (`release_stale_side_run_holds_task` in [backend/worker/tasks/side_runs.py](../backend/worker/tasks/side_runs.py)) hands back any hold untouched for 15 minutes, which covers a pool child killed mid-run. The GPU worker's sweep hands a hold back too, rather than reprocessing the whole meeting, and a run finishing late leaves a pipeline that started after its hold was released alone.
 
+### Notes Run Ownership And Cancellation
+
+A notes run may mutate generation-owned state only while the transcript's stored
+`notes_status` is `generating` and its stored `notes_run_id` equals the run's token.
+[The shared ownership helper](../backend/utils/generation_run.py) enforces this invariant
+for manual and automatic notes: acquisition is serialised under a transcript row
+lock, queued workers adopt the dispatched UUID rather than claim again, and progress
+and heartbeat updates use the same predicate. Completion and failure refresh and
+lock that row before any ORM mutation or autoflush. Automatic title, speaker
+suggestions, notes, template provenance and document freshness publish within that
+fence; search indexing starts only after successful publication. Reprocessing
+retires old tokens, and final ASR publication preserves a live notes claim.
+The helpers take an explicit run kind describing its fields; notes is the only
+tokenised consumer. Before the fresh inline ownership read, ASR flushes its final
+projection. Skipping an existing run leaves that transaction for the caller to commit.
+
+`POST /transcripts/{id}/notes/cancel` accepts the expected `notes_run_id` within the
+owned-recording boundary. It retires a matching claim, clears progress and the
+notes-owned error, preserves current content and independent edits, and bumps the
+change sequence. Nonblank notes return to `completed`; otherwise they return to
+`pending`. Repeating Cancel is a successful no-op; a stale token cannot cancel a
+different active run and receives 409 with its current lifecycle state. Public
+reads expose the token only while the reported status is `generating`.
+
+Ownership is checked before every application model request, including parts,
+repairs, application retries and secondary providers. SDK retries remain part of
+the in-flight request. Losing ownership is a neutral outcome,
+never a provider failure or a reason to fall back. An in-flight request may finish;
+its result cannot publish. Deferred cancellation leaves the completed recording
+alone. Inline cancellation returns normally from the optional notes stage so the
+pipeline finishes `PROCESSED`/`Completed` once the current request returns. No
+worker termination or HTTP-session closure is used. Upgrades retire legacy
+tokenless claims and require a coordinated worker restart.
+
 ### Dispatching From The API
 
 `send_task` blocks on Redis, and the API dispatches from `async def` handlers. Request paths therefore dispatch through [backend/core/task_dispatch.py](../backend/core/task_dispatch.py), which publishes off the event loop: `dispatch_task`, or `dispatch_task_best_effort` where a failed dispatch must not fail the request. The API also gives up quickly: connects are capped at 2 s and `apply_api_dispatch_limits` cuts publish and result-backend retries to one, so an unreachable broker costs a dispatch about 6 s. Workers keep Celery's default retries and call `send_task` directly.

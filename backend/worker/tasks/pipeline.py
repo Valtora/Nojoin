@@ -6,7 +6,6 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.capture_resume import with_resume_boundaries
-from backend.utils.generation_claim import claim_notes_generation
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
 from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
@@ -24,6 +23,7 @@ from .final_publication import (
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
+from .notes_handoff import defer_automatic_notes
 from .side_runs import release_holds_among
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
@@ -384,6 +384,8 @@ def _finalize_transcript_and_notes(
     transcript_text = _build_automatic_meeting_intelligence_transcript(
         updated_segments, speaker_map, unresolved_speakers, timeline_notes
     )
+    # Preserve the final projection when the ownership lock refreshes this row.
+    session.flush()
 
     if transcript_text.strip() and _meeting_intelligence_runs_on_io(llm_config):
         # Non-local provider (cloud API or CLI OAuth subscription): the LLM call
@@ -391,19 +393,7 @@ def _finalize_transcript_and_notes(
         # the IO image. Free the GPU lane by generating notes on the IO worker.
         # The recording is otherwise finished; only notes remain pending, exactly
         # as in manual regeneration, so the GPU task still marks it Completed.
-        claim_notes_generation(transcript)
-        session.add(transcript)
-        session.commit()
-        celery_app.send_task(
-            "backend.worker.tasks.generate_meeting_intelligence_task",
-            args=[recording.id],
-        )
-        logger.info(
-            "Deferred meeting intelligence for recording %s to the IO lane "
-            "(provider=%s)",
-            recording.id,
-            llm_config.provider,
-        )
+        defer_automatic_notes(session, recording.id, llm_config.provider)
         return
 
     _run_automatic_meeting_intelligence_stage(

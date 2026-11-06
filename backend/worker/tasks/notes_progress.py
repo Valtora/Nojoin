@@ -6,6 +6,7 @@ on the model call, and a step that cannot be written must leave it untouched.
 """
 
 import logging
+from uuid import UUID
 
 from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
@@ -13,7 +14,8 @@ from sqlmodel import Session, col
 
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
-from backend.utils.generation_claim import GENERATING
+from backend.utils.generation_claim import NOTES_RUN
+from backend.utils.generation_run import run_predicate
 from backend.utils.notes_progress import NotesProgressReporter
 from backend.utils.time import utc_now
 
@@ -23,7 +25,11 @@ STEP_MAX_LENGTH = 255
 
 
 def notes_progress_writer(
-    session: Session, recording_id: int, *, processing_step_suffix: str | None = None
+    session: Session,
+    recording_id: int,
+    *,
+    notes_run_id: str | UUID | None = None,
+    processing_step_suffix: str | None = None,
 ) -> NotesProgressReporter:
     """A reporter that records each step on the transcript's notes claim.
 
@@ -39,8 +45,7 @@ def notes_progress_writer(
             with Session(bind) as progress_session:
                 claimed = progress_session.execute(
                     update(Transcript)
-                    .where(col(Transcript.recording_id) == recording_id)
-                    .where(col(Transcript.notes_status) == GENERATING)
+                    .where(run_predicate(recording_id, notes_run_id, NOTES_RUN))
                     .values(notes_progress=step[:STEP_MAX_LENGTH], updated_at=utc_now())
                 )
                 # A run whose notes have finished or failed no longer owns

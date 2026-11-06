@@ -1,12 +1,21 @@
+from uuid import UUID
+
 from backend.models.recording import is_side_run_hold
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
-from backend.utils.generation_claim import claim_notes_generation
+from backend.utils.generation_claim import NOTES_RUN
+from backend.utils.generation_run import (
+    adopt_run,
+    lock_owned_run,
+    retire_run,
+    run_check,
+)
 from backend.utils.live_speaker_labels import (
     prompt_speaker_label,
     speaker_display_name,
     speaker_prompt_name,
 )
+from backend.utils.notes_cancellation import NotesRunCancelled, checking_notes_run
 from backend.utils.notes_progress import reporting_notes_progress
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
@@ -21,14 +30,18 @@ from .speaker_name_apply import apply_inferred_names
 @celery_app.task(
     name="backend.worker.tasks.generate_notes_task", base=DatabaseTask, bind=True
 )
-def generate_notes_task(self, recording_id: int, notes_template_id: int | None = None):
+def generate_notes_task(
+    self,
+    recording_id: int,
+    notes_template_id: int | None = None,
+    notes_run_id: str | UUID | None = None,
+):
     """
     Generate meeting notes for a recording.
 
     ``notes_template_id`` is the template picked for this run (Regenerate Notes).
     ``None`` falls back through the user's default, the install default and then
-    the built-in structure, so an existing queued task with a single argument
-    behaves exactly as before.
+    the built-in structure. Legacy tokenless queued tasks exit without claiming.
     """
     session = self.session
     recording = None
@@ -39,11 +52,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             logger.error(f"Recording {recording_id} not found.")
             return
 
-        transcript = session.exec(
-            select(Transcript).where(Transcript.recording_id == recording_id)
-        ).first()
+        transcript = adopt_run(session, recording_id, notes_run_id, NOTES_RUN)
         if not transcript:
-            logger.error(f"Transcript for recording {recording_id} not found.")
+            session.rollback()
             return
         if transcript.transcription_failed():
             # The API refuses this; a task queued before the failure lands here.
@@ -52,17 +63,13 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 recording_id,
                 TRANSCRIPTION_FAILED_NOTES_MESSAGE,
             )
-            if transcript.notes_status == "generating":
-                transcript.notes_status = "pending"
-                session.add(transcript)
-                session.commit()
+            retire_run(transcript, NOTES_RUN)
+            transcript.notes_status = "pending"
+            session.add(transcript)
+            session.commit()
             return
 
-        # The run's own claim, renewed while the model works. It never moves the
-        # recording: a run lost with its worker then strands only its notes,
-        # and only until the claim expires (issue #828).
-        claim_notes_generation(transcript)
-        session.add(transcript)
+        # Adopt the API's immutable token; a queued worker never claims anew.
         session.commit()
 
         user_settings = {}
@@ -78,7 +85,11 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         if missing_llm_config:
             logger.warning("Cannot generate notes: %s", missing_llm_config)
             _mark_notes_generation_error(
-                session, recording, transcript, missing_llm_config
+                session,
+                recording,
+                transcript,
+                missing_llm_config,
+                notes_run_id=notes_run_id,
             )
             return
 
@@ -89,7 +100,11 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         )
         if not segments:
             _mark_notes_generation_error(
-                session, recording, transcript, "Transcript is empty"
+                session,
+                recording,
+                transcript,
+                "Transcript is empty",
+                notes_run_id=notes_run_id,
             )
             return
 
@@ -138,8 +153,13 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         # renewals written from sessions of their own meanwhile.
         session.commit()
         with (
-            claim_heartbeat(recording_id, "notes_status"),
-            reporting_notes_progress(notes_progress_writer(session, recording_id)),
+            claim_heartbeat(recording_id, NOTES_RUN, run_id=notes_run_id),
+            reporting_notes_progress(
+                notes_progress_writer(session, recording_id, notes_run_id=notes_run_id)
+            ),
+            checking_notes_run(
+                run_check(session, recording_id, notes_run_id, NOTES_RUN)
+            ),
         ):
             try:
                 notes = llm.generate_meeting_notes(
@@ -162,8 +182,13 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                     **notes_arguments,
                 )
 
+        transcript = lock_owned_run(session, recording_id, notes_run_id, NOTES_RUN)
+        if transcript is None:
+            session.rollback()
+            return
         transcript.notes = append_user_notes_section(notes, appendix)
         transcript.notes_status = "completed"
+        transcript.notes_run_id = None
         transcript.notes_progress = None
         # Freshly generated notes reflect every READY document by definition.
         transcript.notes_stale_documents = False
@@ -224,6 +249,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         except Exception as e:
             logger.error(f"Failed to index meeting notes for RAG: {e}", exc_info=True)
 
+    except NotesRunCancelled:
+        session.rollback()
+        return
     except Exception as e:
         logger.error(f"Failed to generate meeting notes: {e}", exc_info=True)
         session.rollback()
@@ -231,7 +259,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == recording_id)
             ).first()
-        _mark_notes_generation_error(session, recording, transcript, e)
+        _mark_notes_generation_error(
+            session, recording, transcript, e, notes_run_id=notes_run_id
+        )
 
 
 @celery_app.task(
@@ -542,18 +572,31 @@ def _mark_notes_generation_error_impl(
     recording: Recording | None,
     transcript: Transcript | None,
     error: Exception | str,
+    *,
+    notes_run_id: str | UUID | None = None,
 ) -> None:
     """Record a notes failure on the notes alone.
 
     The recording's status and step belong to whatever is driving it: the
     pipeline, when the notes ran inline, or nothing at all once it finished.
     """
-    if not transcript or transcript.transcription_failed():
+    if transcript is None:
         return
-
-    transcript.notes_status = "error"
-    transcript.notes_progress = None
-    transcript.set_notes_error_message(_format_notes_generation_error(error))
+    with session.no_autoflush:
+        transcript = lock_owned_run(
+            session, transcript.recording_id, notes_run_id, NOTES_RUN
+        )
+    if transcript is None:
+        session.rollback()
+        return
+    if transcript.transcription_failed():
+        retire_run(transcript, NOTES_RUN)
+        transcript.notes_status = "pending"
+    else:
+        transcript.notes_status = "error"
+        transcript.notes_run_id = None
+        transcript.notes_progress = None
+        transcript.set_notes_error_message(_format_notes_generation_error(error))
     session.add(transcript)
     session.commit()
 
@@ -736,7 +779,9 @@ def _supersede_pending_speaker_name_suggestions_for_labels_impl(
     base=DatabaseTask,
     bind=True,
 )
-def generate_meeting_intelligence_task(self, recording_id: int):
+def generate_meeting_intelligence_task(
+    self, recording_id: int, notes_run_id: str | UUID | None = None
+):
     """Generate unified meeting intelligence (notes, title, speaker suggestions)
     on the IO lane.
 
@@ -754,12 +799,11 @@ def generate_meeting_intelligence_task(self, recording_id: int):
         if not recording:
             logger.error("Recording %s not found.", recording_id)
             return
-        transcript = session.exec(
-            select(Transcript).where(Transcript.recording_id == recording_id)
-        ).first()
+        transcript = adopt_run(session, recording_id, notes_run_id, NOTES_RUN)
         if not transcript:
-            logger.error("Transcript for recording %s not found.", recording_id)
+            session.rollback()
             return
+        session.commit()
 
         user_settings = {}
         if recording.user_id:
@@ -787,7 +831,7 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             segments, speaker_map, unresolved_speakers, timeline_notes
         )
 
-        _run_automatic_meeting_intelligence_stage(
+        result = _run_automatic_meeting_intelligence_stage(
             session=session,
             task=self,
             recording=recording,
@@ -803,11 +847,16 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             timeline_notes=timeline_notes,
             detected_transcription_language=None,
             update_processing_status=False,
+            notes_run_id=notes_run_id,
         )
-        logger.info(
-            "Generated meeting intelligence on the IO lane for recording %s",
-            recording_id,
-        )
+        if result is not None:
+            logger.info(
+                "Generated meeting intelligence on the IO lane for recording %s",
+                recording_id,
+            )
+    except NotesRunCancelled:
+        session.rollback()
+        return
     except Exception as exc:  # noqa: BLE001 -- boundary: intelligence is optional on this lane; the failure is logged with its traceback
         logger.error(
             "Failed to generate meeting intelligence on the IO lane for recording %s: %s",
@@ -820,7 +869,9 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == recording_id)
             ).first()
-        _mark_notes_generation_error(session, recording, transcript, exc)
+        _mark_notes_generation_error(
+            session, recording, transcript, exc, notes_run_id=notes_run_id
+        )
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
