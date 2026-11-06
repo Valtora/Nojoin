@@ -85,15 +85,17 @@ def _normalise_optional_url(url: str | None) -> str | None:
 
 
 def _normalise_url(url: str) -> tuple[str, str]:
-    parsed = urlparse(url)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
-        or not parsed.hostname
-    ):
+    try:
+        # urlparse raises a plain ValueError for an unbalanced or invalid
+        # bracketed host and for a netloc that NFKC normalisation changes.
+        parsed = urlparse(url)
+        raw_hostname = parsed.hostname
+    except ValueError as exc:
+        raise OllamaURLValidationError("Invalid Ollama API URL format.") from exc
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or not raw_hostname:
         raise OllamaURLValidationError("Invalid Ollama API URL format.")
 
-    hostname = parsed.hostname.strip()
+    hostname = raw_hostname.strip()
     if not hostname:
         raise OllamaURLValidationError("Invalid Ollama API URL format.")
 
@@ -106,7 +108,8 @@ def _resolve_hostname(hostname: str) -> list[str]:
     except ValueError:
         try:
             addr_info = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
-        except socket.gaierror as exc:
+        except (socket.gaierror, UnicodeError) as exc:
+            # UnicodeError: the IDNA codec refuses an empty or overlong label.
             raise OllamaURLValidationError(
                 "Could not resolve Ollama hostname."
             ) from exc
