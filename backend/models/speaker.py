@@ -11,6 +11,7 @@ from sqlalchemy.sql.expression import Insert
 from sqlmodel import Field, Relationship, SQLModel
 
 from .base import BaseDBModel
+from .int_bounds import RowId
 
 if TYPE_CHECKING:
     from .recording import Recording
@@ -102,7 +103,7 @@ class GlobalSpeakerCreate(BaseDBModel):
     email: Optional[str] = None
     phone_number: Optional[str] = None
     notes: Optional[str] = None
-    tag_ids: List[int] = []
+    tag_ids: List[RowId] = []
 
 
 class GlobalSpeakerUpdate(BaseDBModel):
@@ -116,7 +117,7 @@ class GlobalSpeakerUpdate(BaseDBModel):
     email: Optional[str] = None
     phone_number: Optional[str] = None
     notes: Optional[str] = None
-    tag_ids: Optional[List[int]] = None
+    tag_ids: Optional[List[RowId]] = None
 
 
 class GlobalSpeakerWithCount(GlobalSpeakerRead):

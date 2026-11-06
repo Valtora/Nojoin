@@ -21,10 +21,8 @@ from backend.processing.llm_backends.factory import (
     get_llm_backend_with_secondary,
 )
 from backend.processing.llm_backends.gemini import GeminiLLMBackend
-from backend.processing.llm_backends.ollama import (
-    OLLAMA_DEFAULT_NUM_CTX,
-    OllamaLLMBackend,
-)
+from backend.processing.llm_backends.ollama import OllamaLLMBackend
+from backend.processing.llm_backends.ollama_model_facts import OLLAMA_DEFAULT_NUM_CTX
 from backend.processing.llm_backends.openai import OpenAILLMBackend
 
 # Retained as module attributes for backward compatibility: some call sites and

@@ -1062,12 +1062,16 @@ export class CaptureController {
       }
       const audioNotStarted = error instanceof AudioNotStartedError;
       const message = audioNotStarted ? AUDIO_NOT_STARTED_ON_RESUME_MESSAGE : formatCaptureError(error);
-      this.setState({ status: "error", error: message });
+      this.setState({ status: "error" });
       // A stalled capture whose own tab came back is refused, and is no longer
       // the user's to decide about here.
       await this.refreshPausedRecording().catch(() => {});
-      // By now the page may have shown and cleared the state's error, and the
-      // caller then shows the thrown one, so it carries the same words.
+      // The error goes in last, straight before the rejection, as Start's does.
+      // The page shows and clears the state's error once it renders, which the
+      // refresh gives it time to do, and the caller reports the thrown error
+      // itself only while the state holds none: set before the refresh, it was
+      // shown twice (issue #926).
+      this.setState({ error: message });
       throw audioNotStarted ? new AudioNotStartedError(message, { cause: error }) : error;
     }
   };
@@ -1280,6 +1284,9 @@ export class CaptureController {
    * still hold this tab's capture as uploading. It is told the capture is
    * paused, as after an upload stall, so the recording is offered for resume,
    * stop or discard rather than read as still in progress.
+   *
+   * `message` goes into the state last, so the caller rejects straight after
+   * this returns.
    */
   private settleAfterFailedStop = async (
     recordingId: RecordingId,
@@ -1306,7 +1313,6 @@ export class CaptureController {
     // false so the transport controls disable and resume re-acquires sources.
     this.setState({
       status: "paused",
-      error: message,
       recordingId,
       finalizeRetry: null,
       stopStage: null,
@@ -1315,6 +1321,12 @@ export class CaptureController {
     });
     void this.sendServerPause({ drainFirst: false });
     await this.refreshPausedRecording().catch(() => {});
+    // The error goes in last, straight before the rejection, as Resume's does.
+    // The page shows and clears the state's error once it renders, which the
+    // refresh gives it time to do, and the caller reports the thrown error
+    // itself only while the state holds none: set before the refresh, a failed
+    // Stop or Discard was shown twice (issue #930).
+    this.setState({ error: message });
   };
 
   private setStopStage = (stage: CaptureStopStage) => {
