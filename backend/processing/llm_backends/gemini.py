@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 from backend.processing.llm_backends.base import (
     LLMBackend,
     TruncatedNotesError,
-    _get_default_model_for_provider,
     is_vision_unsupported_error,
     raise_if_output_truncated,
 )
@@ -52,7 +51,7 @@ class GeminiLLMBackend(LLMBackend):
                 "Google Gemini API key is not set. Please provide it in settings."
             )
         self.api_key = api_key
-        self.model = model or _get_default_model_for_provider("gemini")
+        self.model = model or None
         self.genai = genai
         self.client = genai.Client(api_key=self.api_key)
 
