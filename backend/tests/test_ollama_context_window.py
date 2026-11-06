@@ -17,7 +17,7 @@ import json
 import pytest
 from requests import HTTPError
 
-from backend.processing.llm_backends import ollama as ollama_module
+from backend.processing.llm_backends import ollama_model_facts as ollama_module
 from backend.processing.llm_backends.factory import SecondaryLLMBackend
 from backend.processing.llm_backends.ollama import OllamaLLMBackend
 
