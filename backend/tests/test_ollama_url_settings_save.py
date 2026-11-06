@@ -156,6 +156,46 @@ def test_a_new_loopback_or_internal_address_is_still_refused(
     assert _saved(config)[key] == GONE
 
 
+@pytest.mark.parametrize("key", URL_KEYS)
+@pytest.mark.parametrize(
+    "url",
+    ["http://[::1", "http://[::1]x:11434", "http://[zz]:11434", "http://℀:11434"],
+    ids=["unclosed-bracket", "after-bracket", "bracketed-name", "nfkc"],
+)
+def test_a_malformed_new_address_is_refused_not_a_server_error(
+    tmp_path, monkeypatch, key, url
+):
+    """urlparse raises a plain ValueError for these, which must not reach the client as a 500."""
+    config = _config(tmp_path, monkeypatch, {key: GONE})
+
+    status, body = _save({key: url, "ollama_think": True})
+
+    assert status == 400
+    assert body["detail"].endswith("was not saved. Invalid Ollama API URL format.")
+    saved = _saved(config)
+    assert saved[key] == GONE
+    assert "ollama_think" not in saved
+
+
+@pytest.mark.parametrize("key", URL_KEYS)
+def test_a_name_the_resolver_cannot_encode_is_refused_not_a_server_error(
+    tmp_path, monkeypatch, key
+):
+    """getaddrinfo raises UnicodeError for an empty or overlong label (IDNA)."""
+
+    def refuse_to_encode(host, *args, **kwargs):
+        raise UnicodeError("label empty or too long")
+
+    monkeypatch.setattr(socket, "getaddrinfo", refuse_to_encode)
+    config = _config(tmp_path, monkeypatch, {key: GONE})
+
+    status, body = _save({key: "http://" + "a" * 64 + ".example.test:11434"})
+
+    assert status == 400
+    assert body["detail"].endswith("was not saved. Could not resolve Ollama hostname.")
+    assert _saved(config)[key] == GONE
+
+
 def test_a_member_sending_an_unresolvable_address_saves_their_own_setting(
     tmp_path, monkeypatch
 ):
