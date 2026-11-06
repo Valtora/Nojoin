@@ -54,6 +54,21 @@ DISALLOWED_NAME_TOKENS = {
     "team",
     "thanks",
 }
+# A model asked to name a speaker sometimes answers with what they do
+# ("Industrial Designer", "the project lead"), though the prompt forbids it.
+# With DISALLOWED_NAME_TOKENS these mark an answer as a role, which
+# `is_personal_name` refuses. A backstop for common roles, not a list of them all.
+ROLE_WORDS = frozenset(
+    """
+    accountant administrator adviser advisor analyst architect assistant
+    attorney auditor chair chairman chairperson clerk consultant coordinator
+    designer developer director editor executive expert facilitator founder
+    guest head host intern interviewer lawyer lead leader marketing member
+    moderator officer owner participant planner presenter product programmer
+    recruiter representative researcher sales scientist secretary specialist
+    student supervisor teacher technician user
+    """.split()
+)
 NAME_STOPWORDS = {"at", "for", "from", "in", "on", "with"}
 # Words that follow "I'm", "my name is", "this is", or precede "here"/"speaking",
 # without being a name. They are capitalised in title-case or all-caps
@@ -746,6 +761,22 @@ def _clean_candidate_name(candidate: str) -> str | None:
         return None
 
     return " ".join(part.capitalize() for part in cleaned.split())
+
+
+_NOT_IN_A_NAME = DISALLOWED_NAME_TOKENS | ROLE_WORDS | NAME_STOPWORDS | NON_NAME_WORDS
+
+
+def is_personal_name(name: str) -> bool:
+    """Whether a model's suggested name reads as a person's.
+
+    Any script and any length ("李明", "Ana Maria de Souza"): the rule's own
+    cleaning only fits English introductions. A placeholder ("Speaker 2"), a
+    role ("industrial designer", "the manager") or a phrase is not a name.
+    """
+    if is_placeholder_speaker_name(name):
+        return False
+    words = re.findall(r"\w+", name.casefold())
+    return bool(words) and not _NOT_IN_A_NAME.intersection(words)
 
 
 def _normalize_name(value: str) -> str:

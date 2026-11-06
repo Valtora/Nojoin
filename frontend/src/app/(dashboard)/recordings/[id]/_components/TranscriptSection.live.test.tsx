@@ -25,6 +25,17 @@ const base = (): ComponentProps<typeof TranscriptSection> => ({
 });
 
 describe("shared section in-flight source", () => {
+  it("offers a supplied pending name during capture and removes it once capture stops", () => {
+    const props = base();
+    const liveTranscript = { ...feed, liveSpeakerNames: {}, liveSpeakerSuggestions: { LIVE_PROVISIONAL_1: "Alex" } };
+    const { rerender } = render(<TranscriptSection {...props} speakerMap={{}} liveTranscript={liveTranscript} />);
+    expect(screen.getByText("Alex?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rename Speaker 1" })).toBeInTheDocument();
+    rerender(<TranscriptSection {...props} speakerMap={{}} liveTranscript={liveTranscript}
+      recording={{ ...props.recording, status: RecordingStatus.QUEUED }} />);
+    expect(screen.queryByText("Alex?")).not.toBeInTheDocument();
+  });
+
   it("keeps a retained published transcript read-only under the physical processing guard", () => {
     const props = base();
     render(<TranscriptSection {...props} liveTranscript={undefined} speakerMap={{}}

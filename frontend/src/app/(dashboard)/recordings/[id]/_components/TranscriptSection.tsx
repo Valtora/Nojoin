@@ -130,7 +130,8 @@ export default function TranscriptSection({
     addNotification({ type: "error", message })), [addNotification]);
   const applyLiveNames = liveTranscript?.applyLiveSpeakerNames ?? IGNORE_LIVE_NAMES;
   const liveNaming = useLiveSpeakerNaming(
-    recording.id, applyLiveNames, undefined, liveTranscript?.applyLiveSpeakerMerges,
+    recording.id, applyLiveNames, liveTranscript?.refresh, liveTranscript?.applyLiveSpeakerMerges,
+    liveTranscript?.applyLiveSpeakerSuggestions,
   );
   const activeCapture = isLiveCaptureInProgress(recording);
   // Terminal metadata can precede the replacement read; an open editor can
@@ -218,9 +219,16 @@ export default function TranscriptSection({
     onNoteAtTime: activeCapture ? noteAtTime : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,
     onMergeLiveSpeaker: activeCapture ? liveNaming.mergeLiveSpeaker : undefined,
+    liveSpeakerSuggestions: activeCapture ? liveTranscript?.liveSpeakerSuggestions : undefined,
+    liveSpeakerSuggestionSources: liveTranscript?.liveSpeakerSuggestionSources,
+    liveSpeakerSuggestionStarts: liveTranscript?.liveSpeakerSuggestionStarts,
+    onDismissLiveSpeakerSuggestion: activeCapture ? liveNaming.dismissLiveSpeakerSuggestion : undefined,
     loadPeopleNames: liveNaming.loadPeopleNames,
   }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveBehind, liveLineHandlers, activeCapture,
-    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.mergeLiveSpeaker, liveNaming.loadPeopleNames]);
+    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.mergeLiveSpeaker, liveNaming.loadPeopleNames,
+    liveTranscript?.liveSpeakerSuggestions, liveTranscript?.liveSpeakerSuggestionSources,
+    liveTranscript?.liveSpeakerSuggestionStarts,
+    liveNaming.dismissLiveSpeakerSuggestion]);
   const discardNote = useCallback(
     (key: string) => {
       outbox.discard(key);

@@ -47,6 +47,13 @@ class PublicModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LiveSpeakerSuggestionsRead(BaseModel):
+    """Live names and proposals after dismissing a live suggestion."""
+
+    live_speaker_names: dict[str, str]
+    live_speaker_suggestions: dict[str, str]
+
+
 class LibraryVoiceprintRead(PublicModel):
     """What linking a recording speaker did to the person's library voiceprint."""
 
@@ -357,6 +364,7 @@ def serialize_transcript(
     text_override: Optional[str] = None,
 ) -> TranscriptPublicRead:
     from backend.utils.canonical_pipeline.guards import settling_required
+    from backend.utils.speaker_names.live_suggestions import shown_in_transcript_read
 
     assert transcript.id is not None
     return TranscriptPublicRead(
@@ -385,7 +393,7 @@ def serialize_transcript(
         speaker_name_suggestions=[
             SpeakerNameSuggestionRead.model_validate(item)
             for item in (transcript.speaker_name_suggestions or [])
-            if isinstance(item, dict)
+            if isinstance(item, dict) and shown_in_transcript_read(item)
         ],
         # A claim lost with its worker reads as failed, and says so, so the
         # page offers generation again (issue #828). A failed transcription's

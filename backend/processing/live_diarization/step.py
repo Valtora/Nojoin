@@ -269,20 +269,22 @@ def _recording_lock(live_dir: Path) -> Iterator[bool]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def run_live_speaker_labels(run: LiveLabelRun) -> None:
-    """Label the run's lines. Raises on failure; the live task catches it."""
+def run_live_speaker_labels(run: LiveLabelRun) -> bool:
+    """Label the run's lines; returns whether any line's label changed.
+
+    Raises on failure; the live task catches it.
+    """
     device = live_speaker_labels_device()
     if device is None or (run.live_dir / DISABLED_FILENAME).exists():
-        return
+        return False
     if not _run_is_current(run):
         # Queued behind finalize: no model pass, and no lock file made; any
         # state still here goes.
         _remove_ended_run_state(run)
-        return
+        return False
     with _recording_lock(run.live_dir) as held:
         if held:
-            _label_run(run, device)
-            return
+            return _label_run(run, device)
     # This run's audio is not labelled; the next run bridges the gap.
     record_pipeline_metric(
         stage="live_speaker_labels",
@@ -291,6 +293,7 @@ def run_live_speaker_labels(run: LiveLabelRun) -> None:
         status="skipped",
         log=logger,
     )
+    return False
 
 
 def _run_is_current(run: LiveLabelRun) -> bool:
@@ -303,11 +306,11 @@ def _remove_ended_run_state(run: LiveLabelRun) -> None:
         remove_live_label_state(run.live_dir)
 
 
-def _label_run(run: LiveLabelRun, device: str) -> None:
+def _label_run(run: LiveLabelRun, device: str) -> bool:
     started = time.perf_counter()
     engine = _load_or_disable(run, device)
     if engine is None:
-        return
+        return False
     ended = False
     consumed_saved = False
     feed: FeedResult | None = None
@@ -349,5 +352,7 @@ def _label_run(run: LiveLabelRun, device: str) -> None:
             ended = ended or not _run_is_current(run)
             if ended:
                 _remove_ended_run_state(run)
-    if write is not None and feed is not None and not ended:
-        _record(run, engine, feed, write, started)
+    if write is None or feed is None or ended:
+        return False
+    _record(run, engine, feed, write, started)
+    return write.changed > 0
