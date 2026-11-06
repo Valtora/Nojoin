@@ -46,6 +46,10 @@ updates:
       # numpy 2.5 forces an ancient numba that breaks the openai-whisper resolve.
       - dependency-name: "numpy"
         versions: [">=2.5.0"]
+      # pytorch-metric-learning 3.0 requires numpy>=2.5.3, so it follows the
+      # numpy hold above. Remove both together.
+      - dependency-name: "pytorch-metric-learning"
+        versions: [">=3.0.0"]
       # fastembed 0.9.1, the newest release, declares huggingface-hub<2.0, so a
       # 2.x pin cannot resolve in the worker. Remove when fastembed allows 2.x.
       - dependency-name: "huggingface-hub"
