@@ -28,6 +28,7 @@ import { Editor } from "@tiptap/react";
 import RichTextEditor from "./RichTextEditor";
 import LinkModal from "./LinkModal";
 import NotesTemplatePicker from "./NotesTemplatePicker";
+import GenerateNotesButton from "./GenerateNotesButton";
 import TableMenu from "./TableMenu";
 import SpellCheckContextMenu from "./SpellCheckContextMenu";
 import Fuse from "fuse.js";
@@ -481,20 +482,12 @@ export default function NotesView({
                 button's height: its icon is shorter than the button's text line,
                 so equal padding alone leaves the two a few pixels apart. */}
             <div className="flex items-stretch">
-              <ButtonBase
-                data-ui-fill="action"
-                data-ui-hover="action-hover" chrome="action"
-                {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
-                title="Generate Notes with AI"
-              >
-                {isGenerating ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Sparkles className="w-4 h-4" />
-                )}
-                {isGenerating ? "Generating..." : generateNotesLabel}
-              </ButtonBase>
+              <GenerateNotesButton
+                label={generateNotesLabel}
+                isGenerating={isGenerating}
+                step={generatingStep}
+                onGenerate={onGenerateNotes}
+              />
               {/* Structure picker: the plain button uses the default structure. */}
               <NotesTemplatePicker
                 disabled={isGenerating}
@@ -712,11 +705,6 @@ export default function NotesView({
             )}
           </div>
         )}
-        {isGenerating && generatingStep ? (
-          <p role="status" className="px-3 md:px-6 pb-2 text-xs text-contrast-helper">
-            {generatingStep}
-          </p>
-        ) : null}
       </SurfaceBase>
 
       {/* Notes Content */}

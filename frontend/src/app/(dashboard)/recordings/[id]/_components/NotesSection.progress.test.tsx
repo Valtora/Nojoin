@@ -26,6 +26,7 @@ describe("the notes tab while a long meeting's notes generate", () => {
       onNotesChange={vi.fn()} onGenerateNotes={vi.fn()} onFindAndReplace={vi.fn()}
       onUndo={vi.fn()} onRedo={vi.fn()} onExport={vi.fn()} />);
 
+    expect(screen.getByRole("button", { name: "Drafting notes, part 2 of 5" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Drafting notes, part 2 of 5");
   });
 });
