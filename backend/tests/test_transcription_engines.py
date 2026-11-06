@@ -7,7 +7,8 @@ from backend.processing.engines.errors import TranscriptionError
 
 # validate_config_value is a method on the ConfigManager singleton, not a
 # module-level function, so it is accessed via the exported config_manager instance.
-from backend.utils.config_manager import DEFAULT_SYSTEM_CONFIG, config_manager
+from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
+from backend.utils.config_manager import config_manager
 
 validate_config_value = config_manager.validate_config_value
 
