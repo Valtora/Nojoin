@@ -21,8 +21,8 @@ from backend.api.v1.api import api_router
 from backend.processing import live_persistence
 from backend.processing.live_state import _STATE_FILENAME
 from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
+from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
 from backend.utils.config_manager import (
-    DEFAULT_SYSTEM_CONFIG,
     ConfigManager,
     config_manager,
     get_default_user_settings,

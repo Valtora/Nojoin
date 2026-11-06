@@ -24,7 +24,7 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.api.deps import get_current_user, get_db
 from backend.main import create_app
-from backend.processing.llm_backends import ollama as ollama_module
+from backend.processing.llm_backends import ollama_model_facts as ollama_module
 from backend.processing.llm_backends.factory import (
     SecondaryLLMBackend,
     get_llm_backend_with_secondary,

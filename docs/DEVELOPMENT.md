@@ -707,9 +707,10 @@ x-shared-app-environment: &shared-app-environment
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.docker.internal:11434}
-  # No default here on purpose. config_manager owns the application default and
-  # skips an empty value, so an unset variable falls through to it; repeating a
-  # number here would create a second default to keep in step.
+  # No default here on purpose. config_defaults holds the application default
+  # and config_manager skips an empty value, so an unset variable falls
+  # through to it; repeating a number here would create a second default to
+  # keep in step.
   OLLAMA_CONTEXT_WINDOW: ${OLLAMA_CONTEXT_WINDOW:-}
   SECONDARY_LLM_PROVIDER: ${SECONDARY_LLM_PROVIDER:-}
   SECONDARY_GEMINI_API_KEY: ${SECONDARY_GEMINI_API_KEY:-}

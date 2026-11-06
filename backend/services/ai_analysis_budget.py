@@ -20,8 +20,8 @@ from sqlalchemy import func, select
 
 from backend.models.ai_analysis import AiAnalysisRun
 from backend.models.user import User
+from backend.utils.config_defaults import AI_ANALYSIS_DAILY_LIMIT_KEY
 from backend.utils.config_manager import (
-    AI_ANALYSIS_DAILY_LIMIT_KEY,
     config_manager,
     normalise_ai_analysis_daily_limit,
 )

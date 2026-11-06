@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.processing.llm_backends import ollama as ollama_module
+from backend.processing.llm_backends import ollama_model_facts as ollama_module
 from backend.processing.llm_backends.base import (
     NOTES_MAX_OUTPUT_TOKEN_LADDER,
     NOTES_MAX_OUTPUT_TOKENS,

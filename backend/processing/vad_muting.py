@@ -42,7 +42,7 @@ _UNION_BLOCK_FRAMES = 1 << 20
 VAD_MUTE_TRANSCRIPTION_KEY = "vad_mute_transcription"
 VAD_MUTE_DIARIZATION_KEY = "vad_mute_diarization"
 
-# The shipped defaults, also the user defaults in config_manager. The worker
+# The shipped defaults, also the user defaults in config_defaults. The worker
 # merge does not apply user defaults, so a user with no stored value reaches
 # _switch with the key unset and gets these.
 VAD_MUTE_DEFAULTS: dict[str, bool] = {
