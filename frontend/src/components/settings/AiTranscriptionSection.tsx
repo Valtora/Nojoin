@@ -13,6 +13,7 @@ import SettingsRow from "./SettingsRow";
 import WhisperModelModal from "./WhisperModelModal";
 import ModelDownloadPromptModal from "./ModelDownloadPromptModal";
 import LiveTextSettlingSettings from "./LiveTextSettlingSettings";
+import SentenceStartSettings from "./SentenceStartSettings";
 import type { AISettingsModels } from "./useAISettingsModels";
 import {
   SETTINGS_BUTTON_SECONDARY,
@@ -169,6 +170,7 @@ export default function AiTranscriptionSection({
       )}
 
       <LiveTextSettlingSettings settings={settings} isAdmin={isAdmin} onPersist={onPersist} />
+      <SentenceStartSettings settings={settings} isAdmin={isAdmin} onPersist={onPersist} />
 
       <WhisperModelModal
         isOpen={showWhisperModal}

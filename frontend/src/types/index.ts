@@ -747,6 +747,8 @@ export interface Settings {
   enable_live_transcription?: boolean;
   /** Install-wide, admin-only: provisional labels require CUDA. */
   live_speaker_labels?: "off" | "auto";
+  /** Install-wide, admin-only: a reply's first words go to the person replying, live and final. */
+  sentence_start_correction?: boolean;
   /** Install-wide: rolling word agreement; "auto" (the default) on CUDA, "always" on CPU too. */
   live_text_settling?: LiveTextSettlingMode;
   live_text_settling_k?: number;
@@ -836,6 +838,8 @@ export interface Settings {
   phantom_max_segments?: number | null;
   phantom_embedding_floor?: number | null;
   phantom_merge_threshold?: number | null;
+  // True skips the phantom filter; null or absent runs it.
+  phantom_filter_off?: boolean | null;
   word_flip_max_duration_s?: number | null;
   word_flip_max_gap_s?: number | null;
   line_break_pause_s?: number | null;

@@ -27,7 +27,7 @@ from backend.api.services import oauth_service
 from backend.api.services.oauth_service import OAuthError
 from backend.core.security import SigningKeyUnavailableError
 from backend.models.user import User
-from backend.utils.config_manager import is_mcp_enabled
+from backend.utils.mcp_flags import is_mcp_enabled
 from backend.utils.rate_limit import enforce_rate_limit
 
 logger = logging.getLogger(__name__)

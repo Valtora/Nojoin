@@ -1693,42 +1693,68 @@ def test_muted_transcription_hears_the_turns_diarisation_found(
     assert transcript.text.strip() == text
 
 
-def test_turns_the_phantom_filter_confirmed_as_non_speech_stay_muted(
+def test_a_speaker_the_phantom_filter_reassigns_keeps_their_words(
     monkeypatch, tmp_path
 ):
-    """The filter relabels a noise cluster rather than dropping it, so its
-    turns reach the union (#678). They open nothing: the word ASR places in one
-    goes with the zero-run drop, VAD speech inside one is still heard, and the
-    other speaker's turn still opens."""
+    """The real filter takes a brief cluster whose voice matches no main
+    speaker for noise and gives its turn to the nearest speaker. Its audio is
+    still heard (#813): "Over here.", which VAD muted but the turn covers,
+    survives the zero-run drop under the speaker the filter chose."""
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
     recording = _FakeRecording(736)
     transcript = _FakeTranscript(736)
     session = _FakeSession(recording, transcript)
     _install_happy_path_modules(monkeypatch)
     diarization = _one_turn(13.0, 17.0)
-    diarization[Segment(1.2, 2.5)] = "SPEAKER_01"
     diarization[Segment(9.8, 11.0)] = "SPEAKER_01"
 
-    def _phantom(diarization, *a, non_speech_turns, **k):
-        non_speech_turns.extend(
-            (turn, track)
-            for turn, track, label in diarization.itertracks(yield_label=True)
-            if label == "SPEAKER_01"
-        )
-        return diarization
-
+    # The embedding model is the edge: the happy-path stubs score every pair
+    # of embeddings 0.0, below the filter's non-speech floor.
+    model = Mock()
+    model.crop.side_effect = lambda path, segment: np.ones(4)
+    _install(
+        monkeypatch,
+        "backend.processing.embedding_core",
+        DEFAULT_EMBEDDING_MODEL="model",
+        _embedding_model_cache={("model", "cpu"): model},
+        load_embedding_model=Mock(side_effect=AssertionError("model is cached")),
+        extract_embeddings=lambda *a, **k: {},
+        EMBEDDING_METHOD_VERSION=2,
+        release_embedding_model_cache=lambda: None,
+    )
     seen = _install_real_vad_files(
-        monkeypatch, tmp_path, diarization=diarization, phantom=_phantom
+        monkeypatch, tmp_path, diarization=diarization, phantom=filter_phantom_speakers
+    )
+    combined = []
+    real_combine = tasks_module.pipeline.combine_and_consolidate_segments
+
+    def _combine(transcription, diarization, **kwargs):
+        combined.append(diarization)
+        return real_combine(transcription, diarization, **kwargs)
+
+    monkeypatch.setattr(
+        tasks_module.pipeline, "combine_and_consolidate_segments", _combine
     )
 
-    _run_task(monkeypatch, session, recording_id=736)
+    _run_task(
+        monkeypatch,
+        session,
+        recording_id=736,
+        llm_config=_tuned_llm_config(processing_device="cpu"),
+    )
 
+    assert model.crop.call_count == 2
+    [filtered] = combined
+    assert {label for _, _, label in filtered.itertracks(yield_label=True)} == {
+        "SPEAKER_00"
+    }
+    assert transcript.text.strip() == "Morning. Over here."
     union = str(tmp_path / "recording_vad_union.wav")
     heard, rate = soundfile.read(union)
     assert seen["asr"] == union
-    assert heard[round(15.0 * rate)] != 0
-    assert heard[round(2.0 * rate)] != 0
-    assert not heard[round(3.0 * rate) : round(13.0 * rate)].any()
-    assert transcript.text.strip() == "Morning."
+    assert heard[round(10.0 * rate)] != 0
+    assert not heard[round(3.0 * rate) : round(9.8 * rate)].any()
 
 
 def test_diarisation_runs_before_asr_and_each_frees_the_card_after(

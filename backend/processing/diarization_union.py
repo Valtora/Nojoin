@@ -72,7 +72,8 @@ def native_annotation(
         changes = np.diff(np.r_[0, active, 0])
         starts, ends = np.flatnonzero(changes == 1), np.flatnonzero(changes == -1)
         rows.extend(
-            (float(start * 0.01), float(end * 0.01), f"L{channel}")
+            # Divided, so frame 35 is exactly a word time of 0.35 s.
+            (int(start) / 100, int(end) / 100, f"L{channel}")
             for start, end in zip(starts, ends, strict=True)
         )
     return _annotation(rows, uri=uri)

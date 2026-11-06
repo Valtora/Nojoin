@@ -12,7 +12,7 @@ from typing import Any
 
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.processing.processing_tuning import LINE_BREAK_PAUSE_KEY, resolve_tuning
-from backend.utils.capture_resume import RESUME_BOUNDARIES
+from backend.utils.capture_resume import RESUME_BOUNDARIES, with_resume_boundaries
 from backend.utils.transcript_resume_segments import resume_segment_groups
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,45 @@ def drop_unheard_words(result: dict, audio_path: str, recording_id: int) -> dict
         log=logger,
     )
     return filtered
+
+
+def final_merge_config(
+    config: Mapping[str, Any], transcript: Any, session: Any, recording_id: int
+) -> dict[str, Any]:
+    """The owner's settings plus what the merge needs from the transcript.
+
+    The capture resume cuts, and the spans (ms) of every line a person edited:
+    a chosen speaker or protected wording or splits are applied after the
+    merge, so its sentence-start correction leaves those lines alone
+    (``backend/processing/sentence_start.py``).
+    """
+    from sqlmodel import col, select
+
+    from backend.models.pipeline import TranscriptUtterance as Line
+    from backend.processing.sentence_start import EDITED_LINE_SPANS
+    from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
+
+    # The payload's protection key alone, not the whole payload with its words;
+    # the test is line_is_protected's (canonical_pipeline/preservation.py).
+    lines = session.exec(
+        select(
+            Line.start_ms,
+            Line.end_ms,
+            Line.manual_speaker_locked,
+            Line.manual_text_locked,
+            col(Line.confidence_payload)["human_protection"],
+        )
+        .where(Line.recording_id == recording_id)
+        .where(col(Line.state).in_(ACTIVE_UTTERANCE_STATES))
+    ).all()
+    return {
+        **with_resume_boundaries(dict(config), transcript),
+        EDITED_LINE_SPANS: sorted(
+            (start_ms, end_ms)
+            for start_ms, end_ms, speaker_locked, text_locked, protection in lines
+            if speaker_locked or text_locked or protection
+        ),
+    }
 
 
 def combine_and_consolidate_segments(
