@@ -17,9 +17,9 @@ interface GenerateNotesButtonProps {
 
 /**
  * The Notes toolbar's main button. While notes generate it reads the step they
- * are on. It is drawn at a fixed width then, so a step of another length does
- * not move the toolbar, and a step too long for it is cut short with the whole
- * of it in the tooltip. A step change redraws this button alone.
+ * are on. It is as wide as its text, so it may change width from step to step,
+ * and is cut short only when the toolbar runs out of room, with the whole text
+ * in the tooltip. A step change redraws this button alone.
  */
 function GenerateNotesButton({ label, isGenerating, step, onGenerate }: GenerateNotesButtonProps) {
   const busyText = step ?? "Generating...";
@@ -29,9 +29,7 @@ function GenerateNotesButton({ label, isGenerating, step, onGenerate }: Generate
         data-ui-fill="action"
         data-ui-hover="action-hover" chrome="action"
         {...loadingButtonProps(isGenerating, undefined, () => onGenerate())}
-        className={`flex min-w-0 items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${
-          isGenerating ? "w-56 max-w-full" : ""
-        }`}
+        className="flex min-w-0 max-w-full items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
         title={isGenerating ? busyText : "Generate Notes with AI"}
       >
         {isGenerating ? (

@@ -481,7 +481,7 @@ export default function NotesView({
             {/* Segmented control. items-stretch so the picker matches the main
                 button's height: its icon is shorter than the button's text line,
                 so equal padding alone leaves the two a few pixels apart. */}
-            <div className="flex items-stretch">
+            <div className="flex min-w-0 max-w-full items-stretch">
               <GenerateNotesButton
                 label={generateNotesLabel}
                 isGenerating={isGenerating}
