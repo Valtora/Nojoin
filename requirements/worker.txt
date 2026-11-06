@@ -8,10 +8,10 @@ onnx-asr==0.12.0
 silero-vad==6.2.3
 numpy==2.4.6
 pandas==3.1.0
-openai>=3.41.0
-anthropic>=2.3.0
+openai>=3.42.1
+anthropic>=2.4.0
 google-genai>=2.34.0
-watchdog==6.0.0
+watchdog==7.0.0
 
 # Document parsing. pypdfium2 (PDFium) reads PDF text and renders pages for the
 # vision tier; pdfplumber finds ruled tables, on pdfminer.six, which it pins
@@ -47,18 +47,18 @@ pytorch-lightning==2.6.6
 # import it, and without a pin the venv uses the PyTorch base image's 2026.2.0
 # copy. docker/Dockerfile.worker upgrades that copy too.
 fsspec==2026.9.0
-opentelemetry-api==1.45.1
-opentelemetry-sdk==1.45.1
-opentelemetry-exporter-otlp==1.45.1
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp==1.45.2
 # Arrives with opentelemetry-exporter-otlp. Pinned because 1.84.1 is the first
 # release whose bundled roots.pem drops the distrusted emSign ECC Root CA - G3
 # (#585), and an image built while 1.84.0 was current would otherwise keep it.
-grpcio==1.85.0
+grpcio==1.85.1
 pyannote-core==6.1.0
-pyannote-database==6.1.1
+pyannote-database==6.2.0
 pyannote-metrics==4.2.0
 pyannote-pipeline==4.1.0
-pytorch-metric-learning==2.9.0
+pytorch-metric-learning==3.0.1
 # Imported directly by the live speaker labels (assignment and clustering);
 # pyannote-metrics also pulls it in.
 scipy==1.18.1
@@ -67,14 +67,14 @@ safetensors==0.8.0
 # Native Nemotron inference. No broad Transformers extras or NeMo dependency.
 # Dependabot moves this pin; run the opt-in Nemotron inference regression
 # (docs/DEVELOPMENT.md) to check a bump's outputs.
-transformers==5.21.0
+transformers==5.22.1
 librosa==1.0.0
 soxr==1.1.0
 lazy-loader==0.6
 msgpack==1.2.4
 decorator==5.3.1
 pooch==1.9.0
-platformdirs==4.14.0
+platformdirs==4.14.3
 # Transformers' CLI dependency and its helpers, present in a clean
 # worker-stack resolution even though native inference uses neither CLI.
 typer==0.27.3
