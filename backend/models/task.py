@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Field, Relationship, SQLModel
 
 from backend.models.base import BaseDBModel
+from backend.models.int_bounds import RowId
 from backend.models.tag import TagRead
 
 if TYPE_CHECKING:
@@ -113,7 +114,7 @@ class UserTaskCreate(SQLModel):
     title: str = Field(min_length=1, max_length=255)
     body: Optional[str] = None
     due_at: Optional[datetime] = None
-    tag_ids: list[int] = Field(default_factory=list)
+    tag_ids: list[RowId] = Field(default_factory=list)
     recording_ids: list[str] = Field(default_factory=list)
 
 
@@ -123,7 +124,7 @@ class UserTaskUpdate(SQLModel):
     due_at: Optional[datetime] = None
     completed: Optional[bool] = None
     archived: Optional[bool] = None
-    tag_ids: Optional[list[int]] = None
+    tag_ids: Optional[list[RowId]] = None
     recording_ids: Optional[list[str]] = None
 
 

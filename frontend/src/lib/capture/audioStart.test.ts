@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureAudioGraph } from "./captureAudio.fixtures";
 import { CaptureController } from "./controller";
-import { AUDIO_START_TIMEOUT_MS, createCaptureMixer } from "./mixer";
+import { AUDIO_START_TIMEOUT_MS } from "./audioStart";
+import { createCaptureMixer } from "./mixer";
 import {
   audioTrack, getDisplayMedia, installCaptureBrowser, mediaStream,
 } from "./releaseMicrophone.fixtures";

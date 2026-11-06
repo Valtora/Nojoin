@@ -12,7 +12,7 @@ from backend.tests.test_export_timeline_notes import _note
 from backend.tests.test_transcript_utils import FakeDiarization
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.canonical_pipeline.live_settling_lines import partition_words
-from backend.utils.config_manager import DEFAULT_SYSTEM_CONFIG
+from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
 from backend.utils.transcript_utils import (
     combine_transcription_diarization,
     consolidate_diarized_transcript,

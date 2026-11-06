@@ -265,6 +265,8 @@ The meeting button and the recording header name the stage while stopping. The h
 
 **Start Meeting** waits up to 10 seconds for the browser to start audio for the recording. If it doesn't, Nojoin says so, releases the microphone and any shared tab, and removes the meeting it had begun, so **Start Meeting** works again at once. A **Resume** after a reload gives up the same way and leaves the recording paused, with everything recorded so far.
 
+The microphone input test in **Settings > Recording** waits up to 10 seconds too, then stops, releases the microphone and says the browser did not start audio. **Stop input test**, or leaving the page, releases the microphone at once, even while the test is still starting.
+
 The usual cause is a browser with no working sound output. Check that the device can play sound, for example a video in another tab, then try again. Firefox on Linux needs a sound server such as PipeWire or PulseAudio. If it keeps happening, use another browser.
 
 ### Browser recording unavailable

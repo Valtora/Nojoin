@@ -56,8 +56,8 @@ from backend.preload_models import check_model_status
 from backend.seed_demo import seed_demo_data
 from backend.services.model_preparation import enqueue_model_preparation
 from backend.services.model_status import add_nemotron_preparation_status
+from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
 from backend.utils.config_manager import (
-    DEFAULT_SYSTEM_CONFIG,
     config_manager,
     get_trusted_web_origin,
 )

@@ -84,6 +84,8 @@ const card = async (name: string) =>
 
 const leftPadding = (link: HTMLElement) =>
   link.className.split(/\s+/).filter((name) => /(^|:)pl-/.test(name));
+const rightPadding = (link: HTMLElement) =>
+  link.className.split(/\s+/).filter((name) => /(^|:)pr-/.test(name));
 
 describe("tag dots on the meeting cards", () => {
   beforeEach(() => {
@@ -115,18 +117,27 @@ describe("tag dots on the meeting cards", () => {
     expect(untagged.querySelectorAll("[data-tag-dot]")).toHaveLength(0);
   });
 
-  it("caps a meeting with many tags and still names them all", async () => {
+  it("draws a dot for each of up to twelve tags and counts the rest past that", async () => {
+    const many = Array.from({ length: 13 }, (_, index) =>
+      tag(index + 10, `Topic ${index + 1}`, "sky"),
+    );
     getRecordings.mockResolvedValue([
       meeting("board", "Quarterly planning", [CLIENTS, HIRING, BOARD, Q4, OFFSITE]),
+      meeting("offsite", "Offsite with Bob Example", many),
     ]);
     renderWithProviders(<Sidebar />);
 
-    const row = await card("Quarterly planning");
-    const dots = within(row).getByRole("img", {
+    const five = within(await card("Quarterly planning")).getByRole("img", {
       name: "Tags: Clients, Hiring, Board, Q4, Offsite",
     });
-    expect(dots.querySelectorAll("[data-tag-dot]")).toHaveLength(2);
-    expect(within(dots).getByText("+3")).toBeInTheDocument();
+    expect(five.querySelectorAll("[data-tag-dot]")).toHaveLength(5);
+    expect(within(five).queryByText(/^\+/)).not.toBeInTheDocument();
+
+    const thirteen = within(await card("Offsite with Bob Example")).getByRole("img", {
+      name: `Tags: ${many.map((each) => each.name).join(", ")}`,
+    });
+    expect(thirteen.querySelectorAll("[data-tag-dot]")).toHaveLength(11);
+    expect(within(thirteen).getByText("+2")).toBeInTheDocument();
   });
 
   it("redraws the dots when a tag changes anywhere in the app", async () => {
@@ -189,21 +200,54 @@ describe("tag dots on the meeting cards", () => {
     expect(within(found).getByRole("img", { name: "Tags: Clients, Hiring" })).toBeInTheDocument();
   });
 
-  it("keeps the gutter open on every card while any meeting in the list is tagged", async () => {
+  it("centres the dots in the right-hand gutter, just left of the actions button", async () => {
+    getRecordings.mockResolvedValue([meeting("board", "Board review", [CLIENTS, HIRING])]);
+    renderWithProviders(<Sidebar />);
+
+    const dots = within(await card("Board review")).getByRole("img", {
+      name: "Tags: Clients, Hiring",
+    });
+    expect(dots.className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        "absolute", "right-9", "pointer-coarse:right-[52px]", "top-1/2", "-translate-y-1/2",
+      ]),
+    );
+    expect(dots.className).not.toMatch(/(^|\s)left-/);
+  });
+
+  it("pads the left of every card for the checkbox alone, tagged or not", async () => {
     getRecordings.mockResolvedValue([
       meeting("board", "Board review", [CLIENTS]),
       meeting("standup", "Daily standup", []),
     ]);
     renderWithProviders(<Sidebar />);
 
+    expect(leftPadding(await card("Board review"))).toEqual(["pl-9", "pointer-coarse:pl-3"]);
+    expect(leftPadding(await card("Daily standup"))).toEqual(["pl-9", "pointer-coarse:pl-3"]);
+
+    // Selecting shows the checkbox on touch too, so every card opens for it.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Daily standup" }));
+
     expect(leftPadding(await card("Board review"))).toEqual(["pl-9"]);
     expect(leftPadding(await card("Daily standup"))).toEqual(["pl-9"]);
   });
 
-  it("leaves an untagged list's cards as they were", async () => {
-    getRecordings.mockResolvedValue([meeting("standup", "Daily standup", [])]);
+  it("pads the right of each card as far as its own dots reach", async () => {
+    const topics = (count: number) =>
+      Array.from({ length: count }, (_, index) => tag(index + 10, `Topic ${index + 1}`, "sky"));
+    getRecordings.mockResolvedValue([
+      meeting("standup", "Daily standup", []),
+      meeting("board", "Board review", topics(6)),
+      meeting("planning", "Quarterly planning", topics(7)),
+      meeting("offsite", "Offsite with Bob Example", topics(13)),
+    ]);
     renderWithProviders(<Sidebar />);
 
-    expect(leftPadding(await card("Daily standup"))).toEqual(["pl-3", "pointer-fine:pl-9"]);
+    expect(rightPadding(await card("Daily standup"))).toEqual(["pr-9", "pointer-coarse:pr-[52px]"]);
+    expect(rightPadding(await card("Board review"))).toEqual(["pr-11.5", "pointer-coarse:pr-[62px]"]);
+    expect(rightPadding(await card("Quarterly planning"))).toEqual(["pr-14", "pointer-coarse:pr-[72px]"]);
+    expect(rightPadding(await card("Offsite with Bob Example"))).toEqual([
+      "pr-17.5", "pointer-coarse:pr-[86px]",
+    ]);
   });
 });

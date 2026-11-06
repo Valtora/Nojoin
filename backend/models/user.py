@@ -9,6 +9,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 from backend.core.security import MIN_PASSWORD_LENGTH, validate_password_policy
 from backend.models.base import BaseDBModel
+from backend.models.int_bounds import INTEGER_MAX
 
 if TYPE_CHECKING:
     from backend.models.invitation import Invitation
@@ -86,7 +87,7 @@ class UserUpdate(SQLModel):
     role: Optional[str] = None
     # Applied by the administrator endpoint only; the self-service update
     # reads the username alone, so a user cannot raise their own cap.
-    ai_analysis_daily_limit: Optional[int] = Field(default=None, ge=0)
+    ai_analysis_daily_limit: Optional[int] = Field(default=None, ge=0, le=INTEGER_MAX)
 
     @field_validator("password")
     @classmethod

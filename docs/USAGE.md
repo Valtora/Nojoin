@@ -56,7 +56,7 @@ On a phone or a window narrower than 1024 px, **Start** beside **Import** in the
 On desktop, **Collapse recordings list** leaves a narrow rail. In **Recordings**, its microphone button starts a meeting and **Import Audio** imports a file, and each is unavailable whenever its full-size button is. While this tab records or pauses a meeting, the recordings list (expanded or collapsed) and the dashboard's **Meet Now** card show only its state. Use the recording's own controls or the floating recording badge to pause, resume, stop or discard; **Start Meeting** returns after capture ends. In **Archived** and **Deleted**, the archive and bin icons label the view. **Expand recordings list** brings the list back.
 
 - Each recording shows its date, its start and end times and its length. A meeting still recording or paused, or still uploading after **Stop**, shows when it started instead, since its length is known only once all its audio is in.
-- A tagged recording shows its tags as coloured dots down its left edge, in the order they were added. Up to three show as dots; with more, two dots and a count of the rest, such as **+3**. Point at the dots to see the tags' names, which a screen reader reads with the recording's name.
+- A tagged recording shows its tags as coloured dots at its right, just left of the **⋯** button, in the order they were added: one column of up to six, then two columns that share them evenly. Up to twelve show as dots; with more, eleven dots and a count of the rest, such as **+3**. Point at the dots to see the tags' names, which a screen reader reads with the recording's name.
 - The list shows your newest 50 recordings and loads the next 50 as you scroll near its end, or when you choose **Load more recordings** below the last one. **No older recordings.** marks the end. Search and filter results load the same way.
 - **Search...** above the list searches your whole library: meeting titles, tags, the names speakers show under and the words of each transcript, including a phrase that runs from one line into the next. It searches once you pause typing, and a spinner in the box shows while it does. Its filter button adds a date filter (a range, after or before) and a speaker filter, which apply together with the search.
 - **Tags** in the navigation hold your tags, which can nest. Select a tag to filter the list by it, drag a tag onto another to nest it, and right-click one to rename, add a sub-tag, promote or delete it. Tag a single meeting from its header. When a new tag, sub-tag, rename or move is refused, for example a name you already use or a tag dropped onto its own sub-tag, a notification gives the reason, and a refused name stays typed so you can correct it. In a meeting's header or the batch bar, typing a name you already use adds that tag instead of creating another.
@@ -435,6 +435,18 @@ Generated notes present decisions and action items as tables, which the notes ed
 - Enter inside a cell adds a line break within the cell. Cells cannot be merged, because notes are stored as Markdown.
 - Copying notes into Confluence, Word or another rich-text editor keeps the tables.
 - PDF and Word exports contain real tables whose header row repeats on each page. Text exports keep the Markdown, padded so the columns line up.
+
+### Thinking With Ollama
+
+Many Ollama models (such as `qwen3.5`, `gemma4` and `granite4.2`) can reason before they answer, and Ollama has them do it unless told not to. That can take minutes before the first word, longer than Nojoin waits for notes or chat, so a meeting's notes fail on a model that is otherwise fast enough. An administrator sets **Thinking** under **Settings > AI providers**, which is off unless chosen. Nojoin sends it on every Ollama request, including Meeting Chat, long-meeting notes and Meeting Edge.
+
+The page asks the Ollama server whether the selected model supports thinking, and updates the answer as you change the model, before anything is saved:
+
+- **Supported:** the switch works and the page says so.
+- **Not supported:** the switch is greyed out but keeps its value, and Nojoin leaves thinking out of requests to that model.
+- **Couldn't be checked:** the switch still works. If it is on, the page warns that a model without thinking support may make Ollama refuse requests with an error (HTTP 400). Nojoin sends the setting regardless, since a model that thinks when it should not is the worse failure.
+
+Turning thinking on is only worth it for a model that answers within the time limit. The fallback provider has its own **Thinking** switch.
 
 ### Long Meetings And Ollama
 

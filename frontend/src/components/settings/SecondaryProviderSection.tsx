@@ -5,6 +5,7 @@ import { getSecondaryProviderGap } from "@/lib/aiAvailability";
 import { aiProviderLabel } from "@/lib/aiProviders";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
+import OllamaThinkingRow from "./OllamaThinkingRow";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import type { AISettingsModels } from "./useAISettingsModels";
@@ -208,6 +209,16 @@ export default function SecondaryProviderSection({
               className={SETTINGS_INPUT_CLASS}
             />
           </SettingsRow>
+
+          <OllamaThinkingRow
+            idPrefix="ai-fallback"
+            secondary
+            model={settings.secondary_ollama_model || ""}
+            checked={settings.secondary_ollama_think === true}
+            onCheckedChange={(checked) =>
+              onPersist({ ...settings, secondary_ollama_think: checked })
+            }
+          />
         </>
       )}
 
