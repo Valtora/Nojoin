@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronsRight,
   ChevronUp,
+  ListTodo,
   Images,
   MessageSquare,
   StickyNote,
@@ -27,7 +28,17 @@ const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
   { tab: "my-notes", label: "My notes", icon: StickyNote },
   { tab: "captures", label: "Captures", icon: Images },
   { tab: "meeting-edge", label: "Meeting Edge", icon: Sparkles },
+  { tab: "tasks", label: "Tasks", icon: ListTodo },
 ];
+
+// Where the labels stop fitting: under 25rem for four tabs, under 30rem once
+// Tasks adds a fifth. Tailwind reads whole class names, so both sets are spelled out.
+const NARROW = {
+  four: { open: "@max-[25rem]:px-2", other: "@max-[25rem]:px-1.5", icon: "@max-[25rem]:block",
+    label: "@max-[25rem]:sr-only", collapse: "@max-[25rem]:w-8" },
+  five: { open: "@max-[30rem]:px-2", other: "@max-[30rem]:px-1.5", icon: "@max-[30rem]:block",
+    label: "@max-[30rem]:sr-only", collapse: "@max-[30rem]:w-8" },
+};
 
 interface RecordingSideColumnProps {
   allowChat?: boolean;
@@ -40,6 +51,8 @@ interface RecordingSideColumnProps {
   captures: ReactNode;
   /** The Meeting Edge panel, left out where Meeting Edge is not shown. */
   meetingEdge?: ReactNode;
+  /** Linked tasks, left out when the meeting has none. */
+  tasks?: ReactNode;
   /** Chat's percentage of the column's height. */
   chatPanelHeight: number;
   onChatPanelHeightChange: (height: number) => void;
@@ -48,12 +61,12 @@ interface RecordingSideColumnProps {
 }
 
 /**
- * The top of the side column: Speakers, My notes, Captures and Meeting Edge as tabs (the
+ * The top of the side column: Speakers, My notes, Captures, Meeting Edge and Tasks as tabs (the
  * WAI-ARIA tabs pattern), and the button that collapses it. Every panel stays
  * mounted, so switching tabs keeps a rename or an edit where it was.
  *
- * A narrow column keeps what fits. Under 25rem, where the four labels and
- * the button no longer fit, the open tab shows its icon and label and the
+ * A narrow column keeps what fits. Under 25rem (30rem with Tasks), where the
+ * labels and the button no longer fit, the open tab shows its icon and label and the
  * others only their icons; under 12rem all are icons. A hidden label stays
  * for screen readers, and every tab has its label as a tooltip.
  */
@@ -62,11 +75,13 @@ function SideTabs({
   myNotes,
   captures,
   meetingEdge,
+  tasks,
 }: {
   speakers: ReactNode;
   myNotes: ReactNode;
   captures: ReactNode;
   meetingEdge?: ReactNode;
+  tasks?: ReactNode;
 }) {
   const remembered = useNavigationStore((state) => state.sideTab);
   const setSideTab = useNavigationStore((state) => state.setSideTab);
@@ -74,9 +89,10 @@ function SideTabs({
     (state) => state.setSpeakerPanelCollapsed,
   );
   const tablistRef = useRef<HTMLDivElement>(null);
-  const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes, captures, "meeting-edge": meetingEdge };
+  const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes, captures, "meeting-edge": meetingEdge, tasks };
   const tabs = SIDE_TABS.filter(({ tab }) => panels[tab] !== undefined);
   const sideTab = tabs.some(({ tab }) => tab === remembered) ? remembered : "speakers";
+  const narrow = tasks === undefined ? NARROW.four : NARROW.five;
 
   // Arrow keys move between the tabs and open them, wrapping; Home and End
   // jump to the first and last.
@@ -122,15 +138,15 @@ function SideTabs({
                 className={cn(
                   "flex min-w-0 items-center gap-1 border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action @max-[12rem]:px-1",
                   open
-                    ? "border-action text-action-text @max-[25rem]:px-2"
-                    : "shrink-0 border-transparent text-contrast-helper hover:text-foreground @max-[25rem]:px-1.5",
+                    ? `border-action text-action-text ${narrow.open}`
+                    : `shrink-0 border-transparent text-contrast-helper hover:text-foreground ${narrow.other}`,
                 )}
               >
-                <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[25rem]:block" />
+                <Icon aria-hidden="true" className={`hidden h-4 w-4 shrink-0 ${narrow.icon}`} />
                 <span
                   className={cn(
                     "min-w-0 truncate",
-                    open ? "@max-[12rem]:sr-only" : "@max-[25rem]:sr-only",
+                    open ? "@max-[12rem]:sr-only" : narrow.label,
                   )}
                 >
                   {label}
@@ -145,7 +161,7 @@ function SideTabs({
           aria-label="Collapse side panels"
           title="Collapse side panels"
           onClick={() => setSpeakerPanelCollapsed(true)}
-          className="@max-[25rem]:w-8"
+          className={narrow.collapse}
         />
       </SurfaceBase>
       {tabs.map(({ tab }) => (
@@ -166,7 +182,7 @@ function SideTabs({
 
 /**
  * The recording's desktop side column: Speakers, My notes, Captures and
- * Meeting Edge as tabs on top, and Chat below, each part collapsible, with a handle
+ * Meeting Edge and linked Tasks as tabs on top, and Chat below, each part collapsible, with a handle
  * between them while both are open.
  */
 export default function RecordingSideColumn({
@@ -176,6 +192,7 @@ export default function RecordingSideColumn({
   myNotes,
   captures,
   meetingEdge,
+  tasks,
   chatPanelHeight,
   onChatPanelHeightChange,
   onNotesUpdate,
@@ -205,9 +222,11 @@ export default function RecordingSideColumn({
           aria-controls="side-tabs"
         >
           <Users className="h-3.5 w-3.5" />
-          {meetingEdge === undefined
-            ? "Speakers, My notes and Captures"
-            : "Speakers, My notes, Captures and Meeting Edge"}
+          <span className="truncate">
+            {tasks !== undefined
+              ? `Speakers, My notes, Captures${meetingEdge !== undefined ? ", Meeting Edge" : ""} and Tasks`
+              : meetingEdge === undefined ? "Speakers, My notes and Captures" : "Speakers, My notes, Captures and Meeting Edge"}
+          </span>
           <ChevronDown className="ml-auto h-3.5 w-3.5" />
         </ButtonBase>
         {allowChat && <div className="min-h-0 flex-1">
@@ -222,14 +241,14 @@ export default function RecordingSideColumn({
   }
 
   if (!allowChat) {
-    return <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} />;
+    return <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} tasks={tasks} />;
   }
 
   if (isChatPanelCollapsed) {
     return (
       <div className="flex h-full flex-col">
         <div className="min-h-0 flex-1">
-          <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} />
+          <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} tasks={tasks} />
         </div>
         <ButtonBase
           data-ui-fill="card"
@@ -262,7 +281,7 @@ export default function RecordingSideColumn({
         defaultSize={100 - chatPanelHeight}
         minSize={20}
       >
-        <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} />
+        <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} meetingEdge={meetingEdge} tasks={tasks} />
       </Panel>
 
       <PanelResizeHandle
@@ -293,9 +312,11 @@ export default function RecordingSideColumn({
 export function RecordingSideRail({
   allowChat = true,
   showMeetingEdge,
+  showTasks = false,
 }: {
   allowChat?: boolean;
   showMeetingEdge: boolean;
+  showTasks?: boolean;
 }) {
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
@@ -342,6 +363,13 @@ export function RecordingSideRail({
         aria-label="Show Meeting Edge"
         title="Show Meeting Edge"
         onClick={() => show("meeting-edge")}
+      />}
+      {showTasks && <IconButton
+        size="sm"
+        icon={<ListTodo />}
+        aria-label="Show tasks"
+        title="Show tasks"
+        onClick={() => show("tasks")}
       />}
       {allowChat && <IconButton
         size="sm"
