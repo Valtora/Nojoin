@@ -681,22 +681,6 @@ def migrate_file_if_needed(old_path, new_path):
             shutil.move(old_path, new_path)
 
 
-def get_default_model_for_provider(provider: str) -> str | None:
-    """
-    Get the default model for a specific LLM provider.
-    This imports from llm_services to maintain single source of truth.
-    """
-    try:
-        from backend.processing.llm_services import (
-            get_default_model_for_provider as _get_default,
-        )
-
-        return _get_default(provider)
-    except ImportError:
-        # Fallback values
-        return None
-
-
 def is_llm_available():
     provider = config_manager.get("llm_provider", "gemini")
     api_key = config_manager.get(f"{provider}_api_key")
