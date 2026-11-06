@@ -295,26 +295,6 @@ class SettingsUpdate(BaseModel):
             )
         return value
 
-    @field_validator("ollama_api_url")
-    @classmethod
-    def validate_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
-        if value:
-            try:
-                return validate_ollama_api_url(value, allow_private=True)
-            except OllamaURLValidationError as exc:
-                raise ValueError(str(exc)) from exc
-        return value
-
-    @field_validator("secondary_ollama_api_url")
-    @classmethod
-    def validate_secondary_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
-        if value:
-            try:
-                return validate_ollama_api_url(value, allow_private=True)
-            except OllamaURLValidationError as exc:
-                raise ValueError(str(exc)) from exc
-        return value
-
     @field_validator("ollama_context_window", "secondary_ollama_context_window")
     @classmethod
     def validate_ollama_context_window(cls, value: Optional[int]) -> Optional[int]:
@@ -629,6 +609,46 @@ def _build_settings_update_data(
     return update_data
 
 
+# Install-wide Ollama addresses, with the name the settings page gives each.
+_OLLAMA_URL_FIELDS = {
+    "ollama_api_url": "The Ollama address",
+    "secondary_ollama_api_url": "The fallback Ollama address",
+}
+
+
+def _validate_ollama_url_updates(update_data: dict[str, Any]) -> None:
+    """Check each Ollama address this save sets, and normalise it in place.
+
+    The settings page sends every setting with each save, so the address the
+    install already holds comes back with any unrelated change. That value was
+    checked when it was set, or came from the operator's own .env, so it is not
+    resolved again here: doing so meant a host that had stopped resolving
+    blocked every save on the page (#945). A new address goes through the full
+    outbound policy, and the checks made where an address is used are
+    unchanged.
+    """
+    present = [key for key in _OLLAMA_URL_FIELDS if update_data.get(key)]
+    if not present:
+        return
+
+    # Compare against config.json as it is now, not this process's older copy.
+    config_manager.reload()
+    for key in present:
+        try:
+            update_data[key] = validate_ollama_api_url(
+                str(update_data[key]),
+                allow_private=True,
+                trusted_url=config_manager.get(key),
+            )
+        except OllamaURLValidationError as exc:
+            # The policy's messages are fixed text naming the rule, never the
+            # address or what it resolved to, so they are safe to show.
+            raise HTTPException(
+                status_code=400,
+                detail=f"{_OLLAMA_URL_FIELDS[key]} was not saved. {exc}",
+            ) from exc
+
+
 async def _validate_install_notes_template(
     update_data: dict[str, Any],
     db: AsyncSession,
@@ -703,12 +723,9 @@ async def _save_user_settings(
     is_admin = _is_settings_admin(current_user)
     update_data = _build_settings_update_data(settings, is_admin=is_admin)
 
+    _validate_ollama_url_updates(update_data)
+
     try:
-        if "ollama_api_url" in update_data:
-            update_data["ollama_api_url"] = validate_ollama_api_url(
-                update_data["ollama_api_url"],
-                allow_private=True,
-            )
         for key, value in update_data.items():
             config_manager.validate_config_value(key, value)
         candidate_settings = get_default_user_settings()
