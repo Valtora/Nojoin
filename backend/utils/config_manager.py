@@ -509,12 +509,17 @@ class ConfigManager:
             validate_timezone_name(str(value))
         if key == "ollama_api_url" and value:
             try:
-                validate_ollama_api_url(str(value), allow_private=True)
+                # The address already configured is not resolved again (#945).
+                validate_ollama_api_url(
+                    str(value), allow_private=True, trusted_url=self.get(key)
+                )
             except OllamaURLValidationError as exc:
                 raise ValueError(f"Invalid ollama_api_url: {value}") from exc
         if key == "secondary_ollama_api_url" and value:
             try:
-                validate_ollama_api_url(str(value), allow_private=True)
+                validate_ollama_api_url(
+                    str(value), allow_private=True, trusted_url=self.get(key)
+                )
             except OllamaURLValidationError as exc:
                 raise ValueError(f"Invalid secondary_ollama_api_url: {value}") from exc
         return True
