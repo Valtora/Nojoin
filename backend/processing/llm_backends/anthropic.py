@@ -39,7 +39,6 @@ from backend.processing.llm_backends.base import (
     NOTES_MAX_OUTPUT_TOKEN_LADDER,
     LLMBackend,
     TruncatedNotesError,
-    _get_default_model_for_provider,
     is_output_ceiling_error,
     is_vision_unsupported_error,
     raise_if_output_truncated,
@@ -97,7 +96,7 @@ class AnthropicLLMBackend(LLMBackend):
                 "Anthropic API key is not set. Please provide it in settings."
             )
         self.api_key = api_key
-        self.model = model or _get_default_model_for_provider("anthropic")
+        self.model = model or None
         self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def list_models(self) -> List[str]:

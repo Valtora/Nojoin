@@ -39,6 +39,7 @@ check_untyped_defs = true
 files = [
     # Configuration and core security/persistence contracts.
     "backend/utils/config_manager.py",
+    "backend/utils/config_defaults.py",
     "backend/utils/env_comments.py",
     "backend/utils/time.py",
     "backend/utils/primary_owner.py",
