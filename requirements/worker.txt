@@ -69,7 +69,7 @@ safetensors==0.8.0
 # Native Nemotron inference. No broad Transformers extras or NeMo dependency.
 # Dependabot moves this pin; run the opt-in Nemotron inference regression
 # (docs/DEVELOPMENT.md) to check a bump's outputs.
-transformers==5.21.0
+transformers==5.22.1
 librosa==1.0.0
 soxr==1.1.0
 lazy-loader==0.6
