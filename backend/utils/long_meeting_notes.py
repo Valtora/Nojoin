@@ -484,7 +484,9 @@ def _speaker_line(labels: Sequence[str]) -> Optional[re.Pattern[str]]:
     alternatives = "|".join(
         re.escape(label) for label in sorted(labels, key=len, reverse=True)
     )
-    return re.compile(rf"^[\s>*-]*({alternatives})\s*:\s*(.+?)\s*$", re.MULTILINE)
+    return re.compile(
+        rf"^[ \t>*-]*({alternatives})[ \t]*:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE
+    )
 
 
 def _split_tagged(answer: str, labels: Sequence[str]) -> tuple[str, dict[str, str]]:

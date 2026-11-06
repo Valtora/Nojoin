@@ -357,6 +357,50 @@ class _TaggedModel(_Model):
         return answer
 
 
+@pytest.mark.parametrize(
+    ("labels", "next_name"),
+    [
+        pytest.param(("N:L1", "N:L2"), "Dana", id="colon-named-next"),
+        pytest.param(("SPEAKER_01", "SPEAKER_02"), "Dana", id="speaker-named-next"),
+        pytest.param(("SPEAKER_01", "SPEAKER_02"), "", id="speaker-blank-next"),
+    ],
+)
+def test_blank_draft_names_cannot_swallow_the_next_label(
+    labels: tuple[str, str], next_name: str
+) -> None:
+    first, second = labels
+    model = _TaggedModel([{first: " \t", second: next_name}])
+    request = AutomaticMeetingIntelligenceRequest(
+        resolved_transcript=_transcript(60), unresolved_speakers=labels
+    )
+
+    result = generate_meeting_intelligence_in_parts(request, model, _budget())
+
+    assert result.speaker_mapping == ({second: next_name} if next_name else {})
+    assert "<speaker_names>" not in result.notes_markdown
+
+
+@pytest.mark.parametrize(
+    "labels", [("N:L1", "N:L2"), ("SPEAKER_01", "SPEAKER_02")], ids=["colon", "speaker"]
+)
+def test_blank_final_choices_cannot_swallow_the_next_label(
+    labels: tuple[str, str],
+) -> None:
+    first, second = labels
+    model = _TaggedModel(
+        [{first: "Bo", second: "Dana"}, {first: "Cy", second: "Eve"}],
+        settle={first: " \t", second: "Dana"},
+    )
+    request = AutomaticMeetingIntelligenceRequest(
+        resolved_transcript=_transcript(60), unresolved_speakers=labels
+    )
+
+    result = generate_meeting_intelligence_in_parts(request, model, _budget())
+
+    assert result.speaker_mapping == {second: "Dana"}
+    assert "# Speaker Names To Settle" in model.merges()[-1]
+
+
 def test_the_automatic_pipeline_gets_agreed_names_a_title_and_notes():
     model = _TaggedModel(
         [
