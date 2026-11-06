@@ -191,7 +191,7 @@ docker compose up -d --force-recreate
 
 ### Optional Backend Source-Mount Patch
 
-To run Python changes without rebuilding the API and worker images, patch your `docker-compose.yml` as below. The source mount goes once into the shared `x-worker-runtime` anchor, so every lane picks it up, and each lane's command is wrapped in `watchmedo`, which restarts the worker when a `.py` file under `backend/` changes. The API loads a change on `docker compose restart api`.
+To run Python changes without rebuilding the API and worker images, patch your `docker-compose.yml` as below. The source mount goes once into the shared `x-worker-runtime` anchor, so every lane picks it up, and each lane's command is wrapped in `watchmedo`, which restarts the worker when a `.py` file under `backend/` changes. The pattern is `**/*.py` because watchdog 7 matches it against the whole path: `*.py` matches no file under `backend/`, so the worker would never restart. The API loads a change on `docker compose restart api`.
 
 ```yaml
 x-worker-runtime: &worker-runtime
@@ -210,16 +210,16 @@ services:
       - model_cache:/shared_model_cache:ro
 
   worker-gpu:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q gpu --pool=solo --concurrency=1 --loglevel=info
+    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q gpu --pool=solo --concurrency=1 --loglevel=info
 
   worker-cpu:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q cpu --pool=prefork --concurrency=3 --loglevel=info
+    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q cpu --pool=prefork --concurrency=3 --loglevel=info
 
   worker-io:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q io -B -s /app/data/celerybeat-schedule --pool=prefork --concurrency=4 --loglevel=info
+    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q io -B -s /app/data/celerybeat-schedule --pool=prefork --concurrency=4 --loglevel=info
 
   worker-parse:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q parse --max-tasks-per-child=25 --pool=prefork --concurrency=2 --loglevel=info
+    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q parse --max-tasks-per-child=25 --pool=prefork --concurrency=2 --loglevel=info
 ```
 
 Keep each lane's `-Q`, `--pool`, `--concurrency` and `--max-tasks-per-child` as the template has them, and `-B` on `worker-io` alone. A lane without `-Q` drains the GPU queue, where unrouted tasks land, and a second `-B` fires every periodic job twice. The pool is part of the dispatch model, and the parse lane's recycle limit overrides a global default of 500. See [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes) and [Worker Child Recycling](DEPLOYMENT.md#worker-child-recycling).
@@ -440,7 +440,7 @@ These apply to all tracked source, frontend included.
 - **ORM**: SQLModel, with every model in [backend/models/](../backend/models/).
 - **Datetimes**: the schema stores naive UTC. Produce values with `backend.utils.time.utc_now`, and give every `datetime` field on a table model an explicit naive type, `sa_type=DateTime` or `sa_column=Column(DateTime, ...)`. From sqlmodel 0.0.45 a bare `datetime` maps to the timezone-aware `UTCDateTime`, which disagrees with the migrations and raises `ValueError` on the first naive value. [test_model_datetime_columns.py](../backend/tests/test_model_datetime_columns.py) fails on such a column.
 - **Dependency injection**: take the database session with `Depends(get_db)` and the user with `Depends(get_current_user)` from `backend.api.deps`, or `get_current_admin_user` (owner, admin or superuser) and `get_current_active_superuser` (superuser only) for privileged routes.
-- **Integer parameters**: type a row id in a query or path as `RowId`, a repeated list of them as `RowIdsQuery`, and paging as `PageOffset` and `PageLimit`, all from [backend/api/params.py](../backend/api/params.py). Postgres binds ids as BIGINT and LIMIT and OFFSET as INTEGER, and refuses a larger value only when the query runs, which answers 500; these types refuse it in validation with the usual 422. [test_bounded_int_params.py](../backend/tests/test_bounded_int_params.py) fails on an integer query or path parameter with no upper bound. An MCP tool that hands a caller's value to a route function takes the same type in its own signature, because a direct call skips FastAPI's validation.
+- **Integer parameters and body fields**: type a row id in a query, a path or a request body as `RowId`, a repeated query list of them as `RowIdsQuery`, and paging as `PageOffset` and `PageLimit`, all from [backend/api/params.py](../backend/api/params.py). A request model under `backend/models/` imports `RowId` from [backend/models/int_bounds.py](../backend/models/int_bounds.py) instead, since the worker imports the models and has no FastAPI. Any other integer that reaches a column takes that column's range, `Field(ge=0, le=INTEGER_MAX)` for an INTEGER counter or `le=BIGINT_MAX` for a BIGINT one. Postgres binds ids as BIGINT and LIMIT and OFFSET as INTEGER, and refuses a larger value only when the query runs, which answers 500; these bounds refuse it in validation with the usual 422. [test_bounded_int_params.py](../backend/tests/test_bounded_int_params.py) fails on an integer query or path parameter without both a lower and an upper bound, and [test_bounded_int_bodies.py](../backend/tests/test_bounded_int_bodies.py) on such a field in a request body, unless it is listed with its reason. An MCP tool that hands a caller's value to a route function takes the same type in its own signature, because a direct call skips FastAPI's validation.
 
 ### System Configuration
 
@@ -707,9 +707,10 @@ x-shared-app-environment: &shared-app-environment
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.docker.internal:11434}
-  # No default here on purpose. config_manager owns the application default and
-  # skips an empty value, so an unset variable falls through to it; repeating a
-  # number here would create a second default to keep in step.
+  # No default here on purpose. config_defaults holds the application default
+  # and config_manager skips an empty value, so an unset variable falls
+  # through to it; repeating a number here would create a second default to
+  # keep in step.
   OLLAMA_CONTEXT_WINDOW: ${OLLAMA_CONTEXT_WINDOW:-}
   SECONDARY_LLM_PROVIDER: ${SECONDARY_LLM_PROVIDER:-}
   SECONDARY_GEMINI_API_KEY: ${SECONDARY_GEMINI_API_KEY:-}

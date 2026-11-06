@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from backend.processing.llm_backends import ollama as ollama_module
+from backend.processing.llm_backends import ollama_model_facts as ollama_facts_module
 from backend.processing.llm_backends.base import LLMBackend
 from backend.processing.llm_backends.ollama import OllamaLLMBackend
 from backend.utils.context_window import ContextWindowExceededError
@@ -78,7 +79,7 @@ def make_backend(fake_llm_url, monkeypatch):
     monkeypatch.setattr(
         ollama_module, "validate_ollama_api_url", lambda url, **_: url.rstrip("/")
     )
-    monkeypatch.setattr(ollama_module, "_model_facts_cache", {})
+    monkeypatch.setattr(ollama_facts_module, "_model_facts_cache", {})
 
     def _make(model="fake-llm", context_window=32768):
         return OllamaLLMBackend(

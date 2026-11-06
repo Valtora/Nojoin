@@ -27,7 +27,8 @@ from backend import main
 from backend.models.user import User
 from backend.services import transcription_settings_upgrade as upgrade
 from backend.tests.sqlite_schemas import USERS_SCHEMA
-from backend.utils.config_manager import DEFAULT_SYSTEM_CONFIG, ConfigManager
+from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
+from backend.utils.config_manager import ConfigManager
 
 # The User mapper resolves its relationships by name, so every model has to be
 # registered before the first query, as the API's startup does.

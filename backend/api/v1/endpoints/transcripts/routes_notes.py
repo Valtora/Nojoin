@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import RowId
 from backend.core.task_dispatch import dispatch_task
 from backend.models.recording import Recording, is_live_capture
 from backend.models.speaker import RecordingSpeaker
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 class GenerateNotesRequest(BaseModel):
     """Optional body for Regenerate Notes: which structure to use this run."""
 
-    notes_template_id: Optional[int] = None
+    notes_template_id: Optional[RowId] = None
 
 
 NOTES_DURING_CAPTURE_MESSAGE = "Notes can be generated once the recording has stopped."

@@ -437,6 +437,18 @@ Generated notes present decisions and action items as tables, which the notes ed
 - Copying notes into Confluence, Word or another rich-text editor keeps the tables.
 - PDF and Word exports contain real tables whose header row repeats on each page. Text exports keep the Markdown, padded so the columns line up.
 
+### Thinking With Ollama
+
+Many Ollama models (such as `qwen3.5`, `gemma4` and `granite4.2`) can reason before they answer, and Ollama has them do it unless told not to. That can take minutes before the first word, longer than Nojoin waits for notes or chat, so a meeting's notes fail on a model that is otherwise fast enough. An administrator sets **Thinking** under **Settings > AI providers**, which is off unless chosen. Nojoin sends it on every Ollama request, including Meeting Chat, long-meeting notes and Meeting Edge.
+
+The page asks the Ollama server whether the selected model supports thinking, and updates the answer as you change the model, before anything is saved:
+
+- **Supported:** the switch works and the page says so.
+- **Not supported:** the switch is greyed out but keeps its value, and Nojoin leaves thinking out of requests to that model.
+- **Couldn't be checked:** the switch still works. If it is on, the page warns that a model without thinking support may make Ollama refuse requests with an error (HTTP 400). Nojoin sends the setting regardless, since a model that thinks when it should not is the worse failure.
+
+Turning thinking on is only worth it for a model that answers within the time limit. The fallback provider has its own **Thinking** switch.
+
 ### Long Meetings And Ollama
 
 A hosted provider (Anthropic, OpenAI or Gemini) reads a whole meeting in one call. A local Ollama model reads only what fits its context window, and the default window of 32,768 tokens covers about two hours.

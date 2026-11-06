@@ -140,6 +140,7 @@ describe("api public surface", () => {
         "getTags",
         "getTaskStatus",
         "getTelemetryStatus",
+        "getThinkingSupport",
         "getTlsFingerprint",
         "getTranscriptUtterances",
         "getUnfinishedCaptures",
