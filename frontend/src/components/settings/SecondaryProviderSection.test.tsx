@@ -7,6 +7,7 @@ import type { AISettingsModels } from "./useAISettingsModels";
 
 vi.mock("@/lib/api", () => ({
   listModels: vi.fn().mockResolvedValue({ models: [] }),
+  getThinkingSupport: vi.fn().mockResolvedValue({ model: null, supported: null }),
 }));
 
 const models = {
