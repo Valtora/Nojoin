@@ -14,7 +14,8 @@ import json
 
 import pytest
 
-from backend.utils.config_manager import DEFAULT_LLM_PROVIDER, ConfigManager
+from backend.utils.config_defaults import DEFAULT_LLM_PROVIDER
+from backend.utils.config_manager import ConfigManager
 from backend.utils.llm_config import (
     LLM_PURPOSE_DEFAULT,
     _apply_owner_provider_override,
