@@ -22,7 +22,14 @@ from backend.utils.download_progress import (
     get_download_progress,
     is_download_in_progress,
 )
-from backend.utils.llm_config import resolve_llm_config_async
+from backend.utils.llm_config import (
+    install_wide_ollama_url,
+    resolve_llm_config_async,
+)
+from backend.utils.ollama_url_policy import (
+    OllamaURLValidationError,
+    validate_ollama_api_url,
+)
 from backend.utils.version import get_installed_version
 
 HF_VALIDATE_URL = "https://huggingface.co/api/whoami-v2"
@@ -646,12 +653,47 @@ AI_PROVIDER_LABELS = {
 }
 
 
+def _fallback_ollama_refusal(config) -> str | None:
+    """Why the fallback Ollama's address would be refused where it is used.
+
+    The same check the workers make when they build the fallback, so a refusal
+    that turns the fallback off silently shows here as well as in their log.
+    """
+    secondary = config.secondary_config()
+    if secondary is None or secondary.provider != "ollama" or not secondary.api_url:
+        return None
+    try:
+        validate_ollama_api_url(
+            secondary.api_url, trusted_url=install_wide_ollama_url(secondary)
+        )
+    except OllamaURLValidationError as exc:
+        # Fixed text naming the rule, never the address or what it resolved to.
+        return str(exc)
+    return None
+
+
 async def _get_optional_ai_component(db: AsyncSession) -> dict[str, Any]:
     # Judged on the same resolved server-default config the workers use, so a
     # provider with a credential but no model is not reported as configured.
     config = await resolve_llm_config_async(db)
     label = AI_PROVIDER_LABELS.get(config.provider, config.provider)
     has_credential = config.provider == "ollama" or bool(config.api_key)
+    # An address other than the stored one may need a DNS lookup.
+    fallback_refusal = await asyncio.to_thread(_fallback_ollama_refusal, config)
+    if fallback_refusal:
+        return _build_component(
+            "warning",
+            "Fallback off",
+            f"The fallback Ollama address is refused: {fallback_refusal} "
+            + (
+                f"Every AI request goes to {label} ({config.model}) alone."
+                if has_credential and config.model
+                else f"{label} has no {'model' if has_credential else 'credential'} either, so AI requests fail."
+            ),
+            "Correct SECONDARY_OLLAMA_API_URL in .env, or the fallback address "
+            "in Settings > AI providers.",
+            configured=bool(has_credential and config.model),
+        )
 
     if has_credential and config.model:
         return _build_component(
