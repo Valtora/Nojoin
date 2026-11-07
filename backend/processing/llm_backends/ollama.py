@@ -76,20 +76,28 @@ class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
         context_window: int | None = None,
         allow_private_api_url: bool = False,
         think: bool | None = None,
+        trusted_api_url: str | None = None,
     ):
         import requests
 
         self.requests = requests
-        trusted_api_url = config_manager.get("ollama_api_url")
+        configured_api_url = config_manager.get("ollama_api_url")
         if api_url is None:
-            api_url = trusted_api_url
+            api_url = configured_api_url
         if not api_url:
             api_url = "http://host.docker.internal:11434"
 
+        # Exempt from the outbound check: the primary's stored address, as
+        # always, and the stored address the factory names for this backend's
+        # role, such as the fallback's own (#951). Both are the operator's.
+        trusted_url = configured_api_url
+        role_url = str(trusted_api_url or "").rstrip("/")
+        if role_url and str(api_url).rstrip("/") == role_url:
+            trusted_url = trusted_api_url
         self.api_url = validate_ollama_api_url(
             api_url,
             allow_private=allow_private_api_url,
-            trusted_url=trusted_api_url,
+            trusted_url=trusted_url,
         )
         self.model = model or config_manager.get("ollama_model")
         self.context_window = context_window or config_manager.get(
