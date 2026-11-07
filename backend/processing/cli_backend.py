@@ -31,6 +31,7 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceResult,
 )
 from backend.utils.meeting_notes import MeetingEventContext, NotesPromptContext
+from backend.utils.notes_cancellation import check_notes_run
 from backend.utils.speaker_name_suggestions import SpeakerInferenceResult
 from backend.utils.vision import VisionImage
 
@@ -157,6 +158,7 @@ class CliLLMBackend(LLMBackend):
         # Both subscription CLIs take images without any tool grant: Codex via
         # `--image <FILE>`, Claude via inline content blocks on the streaming
         # input. The manager picks the right one per provider.
+        check_notes_run()
         return self._manager.run_single_turn(
             self.user_id,
             prompt,
@@ -182,6 +184,7 @@ class CliLLMBackend(LLMBackend):
         # resumable session is needed (which would replay unbounded history).
         # self.model is already cli_live_model for the meeting_edge purpose.
         prompt = self.build_meeting_edge_prompt(request, prompt_template)
+        check_notes_run()
         text = self._manager.run_single_turn(
             self.user_id, prompt, model=self.model, timeout=timeout
         )
@@ -198,6 +201,7 @@ class CliLLMBackend(LLMBackend):
         # the tolerant fenced/inline parser handles the rest, which is the same
         # arrangement every other structured call on this backend uses.
         prompt = self.build_meeting_analysis_prompt(request, prompt_template)
+        check_notes_run()
         text = self._manager.run_single_turn(
             self.user_id, prompt, model=self.model, timeout=timeout
         )
@@ -253,6 +257,7 @@ class CliLLMBackend(LLMBackend):
             conversation_history,
             recording_id,
         )
+        check_notes_run()
         yield from self._manager.stream_single_turn(
             self.user_id, prompt, model=self.model
         )
@@ -272,6 +277,7 @@ class CliLLMBackend(LLMBackend):
     # --- helpers ---
 
     def _run(self, prompt: str) -> str:
+        check_notes_run()
         return self._manager.run_single_turn(self.user_id, prompt, model=self.model)
 
     def _chat_prompt(

@@ -276,3 +276,14 @@ describe("keeping the page's transcript change counter", () => {
     expect(keepTranscriptCounter(read, null)).toBe(read);
   });
 });
+
+describe("noticing a long meeting's notes move to their next step in a poll", () => {
+  it("takes the new step, which the notes tab shows", () => {
+    const step = (notes_progress: string | null) =>
+      recordingWith({ transcript: { notes_status: "generating", notes_progress } as Recording["transcript"] });
+    const before = step("Drafting notes, part 2 of 5");
+    expect(hasPolledRecordingChanged(before, step("Drafting notes, part 2 of 5"))).toBe(false);
+    expect(hasPolledRecordingChanged(before, step("Drafting notes, part 3 of 5"))).toBe(true);
+    expect(hasPolledRecordingChanged(before, step(null))).toBe(true);
+  });
+});

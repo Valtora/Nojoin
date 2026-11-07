@@ -118,6 +118,7 @@ export default function RecordingPage({ params }: PageProps) {
     handleTitleSubmit,
     handleColorChange,
     handleGenerateNotes,
+    handleCancelNotes,
     handleNotesChange,
     handleNotesUndo,
     handleNotesRedo,
@@ -259,6 +260,7 @@ export default function RecordingPage({ params }: PageProps) {
       notesCanRedo={notesFuture.length > 0}
       onNotesChange={handleNotesChange}
       onGenerateNotes={handleGenerateNotes}
+      onCancelNotes={handleCancelNotes}
       onNotesUndo={handleNotesUndo}
       onNotesRedo={handleNotesRedo}
     />

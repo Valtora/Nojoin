@@ -100,7 +100,8 @@ vi.mock("@/lib/store", () => ({
   },
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  notesConflictState: (await importOriginal<typeof import("@/lib/api")>()).notesConflictState,
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
   getUserMe: (...args: unknown[]) => getUserMe(...args),
   getRecording: (...args: unknown[]) => getRecording(...args),

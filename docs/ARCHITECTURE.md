@@ -51,6 +51,40 @@ Celery acknowledges a task when a worker takes it, so a task lost with its worke
 - **Notes, AI analysis and delivery.** Each claims its own status on the transcript row (`notes_status`, `analytics_ai_status`, `analytics_status`) and never changes the recording's status, so a lost run strands only its output. A `generating` claim whose row has gone unwritten for 15 minutes reads as failed, with the message "Generation did not finish. Try again." ([backend/utils/generation_claim.py](../backend/utils/generation_claim.py)): in the 409 that refuses a second run, the recording and analytics payloads, MCP and the recording ETag, so a polling page hears of the expiry. Claiming stamps `updated_at`, the worker stamps it again when it starts, and a heartbeat thread renews it every minute while it waits on the model, so a long meeting in parts on a slow model never reads as lost. While notes generate, reprocessing answers 409.
 - **Speaker inference.** **Retry Speaker Inference** holds the finished meeting in `PROCESSING` for its run, with its own task in `celery_task_id`. A finished meeting in `PROCESSING` is recognised by the `processing_completed_at` that only the pipeline clears, or by its step. When an IO worker starts it hands back each hold whose task no worker reports running, to `PROCESSED`, or `ERROR` over a failed transcription. A beat task every five minutes (`release_stale_side_run_holds_task` in [backend/worker/tasks/side_runs.py](../backend/worker/tasks/side_runs.py)) hands back any hold untouched for 15 minutes, which covers a pool child killed mid-run. The GPU worker's sweep hands a hold back too, rather than reprocessing the whole meeting, and a run finishing late leaves a pipeline that started after its hold was released alone.
 
+### Notes Run Ownership And Cancellation
+
+A notes run may mutate generation-owned state only while the transcript's stored
+`notes_status` is `generating` and its stored `notes_run_id` equals the run's token.
+[The shared ownership helper](../backend/utils/generation_run.py) enforces this invariant
+for manual and automatic notes: acquisition is serialised under a transcript row
+lock, queued workers adopt the dispatched UUID rather than claim again, and progress
+and heartbeat updates use the same predicate. Completion and failure refresh and
+lock that row before any ORM mutation or autoflush. Automatic title, speaker
+suggestions, notes, template provenance and document freshness publish within that
+fence; search indexing starts only after successful publication. Reprocessing
+retires old tokens, and final ASR publication preserves a live notes claim.
+The helpers take an explicit run kind describing its fields; notes is the only
+tokenised consumer. Before the fresh inline ownership read, ASR flushes its final
+projection. Skipping an existing run leaves that transaction for the caller to commit.
+
+`POST /transcripts/{id}/notes/cancel` accepts the expected `notes_run_id` within the
+owned-recording boundary. It retires a matching claim, clears progress and the
+notes-owned error, preserves current content and independent edits, and bumps the
+change sequence. Nonblank notes return to `completed`; otherwise they return to
+`pending`. Repeating Cancel is a successful no-op; a stale token cannot cancel a
+different active run and receives 409 with its current lifecycle state. Public
+reads expose the token only while the reported status is `generating`.
+
+Ownership is checked before every application model request, including parts,
+repairs, application retries and secondary providers. SDK retries remain part of
+the in-flight request. Losing ownership is a neutral outcome,
+never a provider failure or a reason to fall back. An in-flight request may finish;
+its result cannot publish. Deferred cancellation leaves the completed recording
+alone. Inline cancellation returns normally from the optional notes stage so the
+pipeline finishes `PROCESSED`/`Completed` once the current request returns. No
+worker termination or HTTP-session closure is used. Upgrades retire legacy
+tokenless claims and require a coordinated worker restart.
+
 ### Dispatching From The API
 
 `send_task` blocks on Redis, and the API dispatches from `async def` handlers. Request paths therefore dispatch through [backend/core/task_dispatch.py](../backend/core/task_dispatch.py), which publishes off the event loop: `dispatch_task`, or `dispatch_task_best_effort` where a failed dispatch must not fail the request. The API also gives up quickly: connects are capped at 2 s and `apply_api_dispatch_limits` cuts publish and result-backend retries to one, so an unreachable broker costs a dispatch about 6 s. Workers keep Celery's default retries and call `send_task` directly.
@@ -444,6 +478,8 @@ For long meetings, use a hosted provider, or Ollama with a hosted secondary that
 5. **Speakers and title** (automatic pipeline). Calls in parts answer in Markdown with tagged lines, because a small model held to `format: json` over dozens of calls often loops or abandons JSON. Each draft lists the unresolved speakers its part gives evidence for in a `<speaker_names>` block. A speaker who introduced themselves is named by `detect_rule_based_speaker_suggestions`, as in a run without AI. A name every part agreed on is kept. For a label the parts disagree on, the final call picks one of their suggestions or none, and only an exact match counts, since names are applied without review. The final call also writes a `<title>` line, and names go into the notes afterwards with `apply_speaker_mapping_to_notes`.
 
 A meeting that fits keeps the single call and a byte-identical prompt.
+
+Each call in parts first reports its step ("Drafting notes, part 2 of 5", "Combining notes, parts 1 to 3 of 5", "Combining notes", with "(retrying)" or "(retrying a shorter answer)" for a re-ask) through `report_notes_progress` (`backend/utils/notes_progress.py`), a context-local reporter the worker sets around the model call. The worker writes it to `transcripts.notes_progress` in a session of its own, only while `notes_status` is still `generating`, which also renews the claim (`backend/worker/tasks/notes_progress.py`). Inside the pipeline, where the stage owns the recording's step, it also becomes `processing_step`; Regenerate Notes never writes the recording. The claim, the finished notes and a notes error each clear it, and the API reports it only while the reported notes status is `generating`, so a lost run's step goes with its claim. A failed write is logged and the run goes on.
 
 When every provider has refused the whole transcript before any text streamed, Meeting Chat asks once more with excerpts. `_transcript_excerpts` in `routes_chat.py` finds this meeting's most relevant transcript chunks by the question's embedding, and `render_transcript_excerpts_for_llm` reads the lines at those times from the canonical transcript, which picks up edits made since indexing. Lines are taken most relevant first up to the room left and shown in time order with `[...]` at each gap. On Ollama that room is the window less the answer room, the notes, the question, and up to an eighth of the window for recent turns. The prompt says the excerpts are partial. With no query embedding or no index for the meeting, chat answers from the notes alone and says so.
 

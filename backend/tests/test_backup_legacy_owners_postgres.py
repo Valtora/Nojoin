@@ -63,6 +63,8 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("timeline_notes", "file_removed"): "BOOLEAN NOT NULL DEFAULT false",
     ("recordings", "first_processed_at"): "TIMESTAMP",
     ("recordings", "title_user_edited"): "BOOLEAN NOT NULL DEFAULT false",
+    ("transcripts", "notes_progress"): "VARCHAR(255)",
+    ("transcripts", "notes_run_id"): "UUID",
 }
 
 

@@ -43,6 +43,8 @@ CREATE TABLE transcripts (
     meeting_edge_status VARCHAR DEFAULT 'idle', meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT, speaker_name_suggestions JSON,
     notes_template_id INTEGER, notes_template_sections TEXT, notes_status VARCHAR,
+    notes_progress VARCHAR(255),
+    notes_run_id CHAR(32),
     notes_stale_documents BOOLEAN DEFAULT 0, transcript_status VARCHAR, error_message TEXT,
     analytics_payload JSON,
     analytics_status VARCHAR NOT NULL DEFAULT 'pending',

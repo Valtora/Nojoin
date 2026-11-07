@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import {
-  getRecordingIfChanged,
   getSettings,
   updateSettings,
   updateSpeaker,
@@ -13,7 +12,6 @@ import {
   findAndReplace,
   getGlobalSpeakers,
   updateSpeakerColor,
-  generateNotes,
   updateNotes,
   updateMeetingEdgeFocus,
   exportContent,
@@ -23,7 +21,7 @@ import {
   clampMeetingEdgeContextLevel,
   DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
 } from "@/lib/meetingEdgeContext";
-import { getErrorDetail, getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
+import { getErrorDetail, getErrorStatus, isAbortError } from "@/lib/errors";
 import { notesErrorDetail } from "@/lib/transcriptErrors";
 import {
   RECORDING_UPDATED_EVENT,
@@ -37,6 +35,7 @@ import {
   GlobalSpeaker,
   RecordingSpeaker,
   TranscriptSpeakerAssignment,
+  NotesLifecycle,
 } from "@/types";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useSessionStore } from "@/lib/session";
@@ -134,6 +133,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const audioRef = useRef<HTMLAudioElement>(null);
   const { addNotification } = useNotificationStore();
   const recordingActions = useRecordingActions();
+  const { generateNotes: generateNotesAction, cancelNotes: cancelNotesAction } = recordingActions;
   const {
     chatPanelHeight, setChatPanelHeight, activePanel: rememberedPanel, setActivePanel: rememberPanel,
   } = useNavigationStore();
@@ -161,6 +161,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   );
 
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
+  const notesMutation = useRef(0);
 
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
@@ -239,7 +240,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       ({ id } = await params);
       const speakersAndSettings = Promise.all([getGlobalSpeakers().catch(() => []), getSettings().catch(() => null)]);
       const recData = await metadataReader.read(id);
-      if (!recData || !metadataReader.isActive()) return null;
+      if (!recData || !metadataReader.isCurrent(recData)) return null;
       recordingNotFound.loaded(id);
       recordingNotFound.found();
       setRecording(recData);
@@ -289,9 +290,10 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     await syncTranscriptState("full").catch((e) => {
       console.error("Failed to refresh transcript state:", e);
       // Not caught up, so the next poll loads it.
+      if (!metadataReader.isCurrent(refreshedRecording)) return;
       setRecording((current) => current && keepTranscriptCounter(current, shown));
     });
-  }, [fetchRecording, syncTranscriptState, refreshInFlightTranscript, hasRetainedPublication]);
+  }, [fetchRecording, syncTranscriptState, refreshInFlightTranscript, hasRetainedPublication, metadataReader]);
 
   // Stores a fresh read of the recording, taking its transcript change counter
   // only once the transcript has caught up with it, as the idle poll does. A
@@ -299,6 +301,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // otherwise, or when that load fails, the read keeps the page's counter and
   // the next poll loads the change rather than take it as seen.
   const storeRecordingRead = useCallback(async (updated: Recording, loadTranscript: boolean) => {
+    if (!metadataReader.isCurrent(updated)) return;
     const shown = recordingRef.current;
     const transcriptMoved = shown?.id === updated.id &&
       updated.transcript?.change_sequence !== shown.transcript?.change_sequence;
@@ -310,14 +313,16 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     if (loadTranscript) {
       try {
         await syncTranscriptState("full");
+        if (!metadataReader.isCurrent(updated)) return;
         setRecording(updated);
         return;
       } catch (e: unknown) {
         console.error("Failed to refresh transcript state:", e);
       }
     }
+    if (!metadataReader.isCurrent(updated)) return;
     setRecording((current) => keepTranscriptCounter(updated, current));
-  }, [hasRetainedPublication, syncTranscriptState]);
+  }, [hasRetainedPublication, syncTranscriptState, metadataReader]);
 
   // Tags and the calendar link change the recording but not its transcript,
   // so after them the transcript is read only if it changed elsewhere.
@@ -327,6 +332,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       const updated = await metadataReader.read(id);
       if (!updated) return;
       await storeRecordingRead(updated, true);
+      if (!metadataReader.isCurrent(updated)) return;
       if (!isEditingTitleRef.current) setTitleValue(updated.name);
     } catch (e: unknown) {
       console.error("Failed to refresh recording:", e);
@@ -394,9 +400,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         const { id } = await params;
         let polled: { recording: Recording; etag: string | null } | null;
         if (idle) {
-          const sentAt = audioClock.stamp();
-          polled = await getRecordingIfChanged(id, idleEtagRef.current);
-          if (polled) audioClock.observe(polled.recording, sentAt);
+          polled = await metadataReader.readIfChanged(id, idleEtagRef.current);
         } else {
           const read = await metadataReader.read(id);
           polled = read && { recording: read, etag: idleEtagRef.current };
@@ -412,6 +416,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         // Taken as seen only once the transcript has caught up: a failed read
         // keeps the old ETag and counter, so the next check tries again.
         if (transcriptMoved) await syncTranscriptState("full");
+        if (!metadataReader.isCurrent(data)) return;
         idleEtagRef.current = polled.etag;
         if (transcriptMoved || hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
@@ -585,9 +590,12 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       // The read's change counter is taken only once the transcript has
       // caught up, so after a failed load the next poll tries again.
       await syncTranscriptState("full").catch((e: unknown) => {
-        setRecording((current) => keepTranscriptCounter(updated, current));
+        if (metadataReader.isCurrent(updated)) {
+          setRecording((current) => keepTranscriptCounter(updated, current));
+        }
         throw e;
       });
+      if (!metadataReader.isCurrent(updated)) return true;
       setRecording(updated);
       for (const message of libraryVoiceprintNotices(renamed)) {
         addNotification({ type: "info", message });
@@ -687,7 +695,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         );
         accepted = true;
         const updated = await metadataReader.read(recording.id);
-        if (!updated) return true;
+        if (!updated || !metadataReader.isCurrent(updated)) return true;
         setRecording(updated);
         const nextSegments = sortTranscriptSegments(updated.transcript?.segments || []);
         setTranscriptState({
@@ -759,7 +767,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       await updateTranscriptSegmentText(recording.id, segmentIndex, text);
       accepted = true;
       const updated = await metadataReader.read(recording.id);
-      if (!updated) return true;
+      if (!updated || !metadataReader.isCurrent(updated)) return true;
       setRecording(updated);
       const nextSegments = sortTranscriptSegments(updated.transcript?.segments || []);
       setTranscriptState({
@@ -798,7 +806,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
 
       await syncTranscriptState("full");
       const updated = await metadataReader.read(recording.id);
-      if (updated) setRecording(updated);
+      if (updated) await storeRecordingRead(updated, false);
 
         } catch (error: unknown) {
       console.error("Failed to find and replace:", error);
@@ -883,40 +891,52 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   // Notes Handlers
-  const handleGenerateNotes = async (notesTemplateId?: number | null) => {
-    if (!recording) return;
+  const applyNotesLifecycle = useCallback((id: string, state: NotesLifecycle, order: number) => {
+    if (notesMutation.current !== order || !metadataReader.isActive()) return;
+    metadataReader.invalidate();
+    setRecording((current) => {
+      if (!current?.transcript || current.id !== id || notesMutation.current !== order) return current;
+      const updated = { ...current, transcript: { ...current.transcript,
+        notes_status: state.notes_status, notes_run_id: state.notes_run_id, notes_progress: state.notes_progress,
+        error_message: state.error_message ?? undefined, notes: state.notes ?? undefined } };
+      recordingRef.current = updated;
+      return updated;
+    });
+  }, [metadataReader]);
+
+  const handleGenerateNotes = useCallback(async (notesTemplateId?: number | null) => {
+    const current = recordingRef.current;
+    if (!current) return;
+    const order = ++notesMutation.current;
+    metadataReader.invalidate();
     setIsGeneratingNotes(true);
     try {
-      // Undefined means "use my default"; an id regenerates with that structure
-      // for this run only, without changing the user's default.
-      await generateNotes(recording.id, notesTemplateId ?? null);
-      const updated = await metadataReader.read(recording.id);
-      if (!updated) return;
-      await storeRecordingRead(updated, true);
-      setActivePanel("notes"); // Switch to notes panel after generation
-
-        } catch (e: unknown) {
-      console.error("Failed to generate notes:", e);
-      try {
-        const updated = await metadataReader.read(recording.id);
-        if (!updated) return;
-        await storeRecordingRead(updated, true);
-        setActivePanel("notes");
-
-            } catch (refreshError: unknown) {
-        console.error("Failed to refresh recording after notes error:", refreshError);
-      }
-      addNotification({
-        type: "error",
-        message:
-          getErrorMessage(e, "Failed to generate notes. Configure an AI provider and model in Settings, then try again."),
-      });
+      const state = await generateNotesAction(current.id, notesTemplateId ?? null);
+      if (state) applyNotesLifecycle(current.id, state, order);
+      if (notesMutation.current === order) setActivePanel("notes");
     } finally {
+      if (notesMutation.current === order) {
+        metadataReader.invalidate();
+        setIsGeneratingNotes(false);
+      }
+    }
+  }, [generateNotesAction, metadataReader, applyNotesLifecycle, setActivePanel]);
+
+  const handleCancelNotes = useCallback(async (notesRunId: string) => {
+    const current = recordingRef.current;
+    if (!current) return;
+    const order = ++notesMutation.current;
+    metadataReader.invalidate();
+    const state = await cancelNotesAction(current.id, notesRunId);
+    if (notesMutation.current === order) {
+      metadataReader.invalidate();
+      if (state) applyNotesLifecycle(current.id, state, order);
       setIsGeneratingNotes(false);
     }
-  };
+  }, [cancelNotesAction, metadataReader, applyNotesLifecycle]);
 
-  const handleNotesChange = async (notes: string) => {
+  const handleNotesChange = useCallback(async (notes: string) => {
+    const recording = recordingRef.current;
     if (!recording) return;
 
     // Always push current notes to history (even if null) before making changes
@@ -936,7 +956,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       console.error("Failed to update notes:", e);
       addNotification({ type: "error", message: "Failed to update notes." });
     }
-  };
+  }, [metadataReader, storeRecordingRead, addNotification]);
 
   const handleNotesUndo = async () => {
     if (notesHistory.length === 0 || !recording) return;
@@ -1116,6 +1136,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     handleTitleSubmit,
     handleColorChange,
     handleGenerateNotes,
+    handleCancelNotes,
     handleNotesChange,
     handleNotesUndo,
     handleNotesRedo,

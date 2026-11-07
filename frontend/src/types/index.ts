@@ -529,6 +529,30 @@ export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
   note: TimelineNote;
 }
 
+export interface NotesLifecycle {
+  notes_status: string;
+  notes_run_id: string | null;
+  notes_progress: string | null;
+  error_message: string | null;
+  notes: string | null;
+}
+
+export interface GenerateNotesRequest {
+  notes_template_id?: number | null;
+}
+
+export interface CancelNotesRequest {
+  notes_run_id: string;
+}
+
+export interface NotesRunPublicRead extends NotesLifecycle {
+  status: string;
+}
+
+export interface GenerateNotesResponse extends NotesRunPublicRead {
+  message: string;
+}
+
 export interface Transcript extends BaseDBModel {
   /** Captured settling policy or settled history; independent of current settings. */
   settling_required?: boolean;
@@ -544,6 +568,10 @@ export interface Transcript extends BaseDBModel {
   meeting_edge_error_message?: string | null;
   speaker_name_suggestions?: SpeakerNameSuggestion[];
   notes_status?: string; // pending, generating, completed, error
+  /** The step a long meeting's notes are on while they generate, such as "Drafting notes, part 2 of 5". */
+  notes_progress?: string | null;
+  /** Identity of the current generation; null unless notes_status is generating. */
+  notes_run_id?: string | null;
   /**
    * A document finished parsing after these notes were generated, so they no
    * longer reflect everything attached to the meeting. Prompts a regenerate;

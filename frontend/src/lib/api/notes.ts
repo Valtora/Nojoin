@@ -1,12 +1,18 @@
 import type {
+  CancelNotesRequest,
+  GenerateNotesRequest,
+  GenerateNotesResponse,
   NoteAttachment,
   NoteFileRemoval,
+  NotesLifecycle,
+  NotesRunPublicRead,
   RecordingId,
   TimelineNote,
   TimelineNoteCreate,
   TimelineNoteUpdate,
 } from "@/types";
 import api, { API_BASE_URL } from "./client";
+import { isAxiosError, isRecord } from "@/lib/errors";
 
 export const getNotes = async (
   recordingId: RecordingId,
@@ -164,23 +170,35 @@ export const updateMeetingEdgeFocus = async (
 export const generateNotes = async (
   recordingId: RecordingId,
   notesTemplateId?: number | null,
-): Promise<{
-  status: string;
-  notes_status?: string;
-  error_message?: string | null;
-  message?: string;
-}> => {
-  const response = await api.post<{
-    status: string;
-    notes_status?: string;
-    error_message?: string | null;
-    message?: string;
-  }>(`/transcripts/${recordingId}/notes/generate`, {
+): Promise<GenerateNotesResponse> => {
+  const body: GenerateNotesRequest = {
     // null when no template was picked, so the backend falls through to the
     // user default, the install default and then the built-in structure.
     notes_template_id: notesTemplateId ?? null,
-  });
+  };
+  const response = await api.post<GenerateNotesResponse>(`/transcripts/${recordingId}/notes/generate`, body);
   return response.data;
+};
+
+export const cancelNotes = async (recordingId: RecordingId, notesRunId: string): Promise<NotesRunPublicRead> => {
+  const body: CancelNotesRequest = {
+    notes_run_id: notesRunId,
+  };
+  const response = await api.post<NotesRunPublicRead>(`/transcripts/${recordingId}/notes/cancel`, body);
+  return response.data;
+};
+
+/** A stale Cancel answers with the replacement run, which the page applies directly. */
+export const notesConflictState = (error: unknown): NotesLifecycle | null => {
+  if (!isAxiosError(error) || error.response?.status !== 409) return null;
+  const payload: unknown = error.response.data;
+  const detail = isRecord(payload) ? payload.detail : null;
+  if (!isRecord(detail) || typeof detail.notes_status !== "string" ||
+    !(detail.notes_run_id === null || typeof detail.notes_run_id === "string") ||
+    !(detail.notes_progress === null || typeof detail.notes_progress === "string") ||
+    !(detail.error_message === null || typeof detail.error_message === "string") ||
+    !(detail.notes === null || typeof detail.notes === "string")) return null;
+  return detail as unknown as NotesLifecycle;
 };
 
 export const findAndReplaceNotes = async (

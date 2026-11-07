@@ -15,6 +15,8 @@ from backend.tests.sqlite_schemas import (
     TIMELINE_NOTES_SCHEMA,
 )
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.generation_claim import NOTES_RUN
+from backend.utils.generation_run import acquire_run
 
 # Generated notes are indexed for search, which embeds them (#689).
 pytestmark = pytest.mark.usefixtures("stub_text_embedding")
@@ -102,6 +104,8 @@ CREATE TABLE transcripts (
     notes_template_id INTEGER,
     notes_template_sections TEXT,
     notes_status VARCHAR NOT NULL,
+    notes_progress VARCHAR(255),
+    notes_run_id CHAR(32),
     notes_stale_documents BOOLEAN DEFAULT 0,
     transcript_status VARCHAR NOT NULL,
     error_message TEXT,
@@ -258,9 +262,16 @@ def _create_notes_task_database(
 
 
 def _run_generate_notes_task(engine: Any) -> None:
+    # Dispatch now carries the claim acquired by the API rather than allowing
+    # the worker to claim again. These worker tests supply that dispatch setup.
+    with Session(engine) as session:
+        transcript = acquire_run(session, 1, NOTES_RUN)
+        assert transcript is not None
+        token = str(transcript.notes_run_id)
+        session.commit()
     tasks_module.generate_notes_task._session = None
     try:
-        tasks_module.generate_notes_task.run(1)
+        tasks_module.generate_notes_task.run(1, None, token)
     finally:
         if tasks_module.generate_notes_task._session is not None:
             tasks_module.generate_notes_task._session.close()

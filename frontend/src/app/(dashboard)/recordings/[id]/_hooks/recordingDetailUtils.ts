@@ -181,6 +181,8 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.transcript?.transcript_status !== current.transcript?.transcript_status ||
   polled.transcript?.settling_required !== current.transcript?.settling_required ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
+  polled.transcript?.notes_run_id !== current.transcript?.notes_run_id ||
+  polled.transcript?.notes_progress !== current.transcript?.notes_progress ||
   polled.transcript?.notes !== current.transcript?.notes ||
   // Changes with the notes list, which the page then fetches.
   polled.timeline_notes_list_signature !== current.timeline_notes_list_signature ||

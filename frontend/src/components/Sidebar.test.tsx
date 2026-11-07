@@ -15,6 +15,7 @@ import ImportAudioHost from "./importAudio/ImportAudioHost";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
 import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 import { activeTransitions, animatesWidth } from "@/test/widthTransition";
+import { renderCounter } from "@/test/renderCounts";
 
 const routerPush = vi.fn();
 const routerReplace = vi.fn();
@@ -907,6 +908,46 @@ describe("Sidebar", () => {
         expect(getRecordings).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 0, limit: 100 })),
       );
       expect(screen.getAllByRole("heading", { name: /^Meeting \d+$/ })).toHaveLength(60);
+    });
+  });
+
+  describe("the 15 s poll at library size", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("redraws only the row whose processing step moved", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const rows = (step: string) =>
+        Array.from({ length: 100 }, (_, i) => ({
+          ...recording,
+          id: `rec-${i}`,
+          name: `Meeting ${i}`,
+          ...(i === 7
+            ? { status: RecordingStatus.PROCESSING, processing_step: step, processing_progress: 97 }
+            : {}),
+        }));
+      // Each read answers with new objects, as a fetch does.
+      let step = "Drafting notes, part 1 of 5... (GPU)";
+      getRecordings.mockImplementation(async () => rows(step));
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Meeting 99" });
+
+      const counter = await renderCounter();
+      try {
+        await counter.take();
+        step = "Drafting notes, part 2 of 5... (GPU)";
+        const calls = getRecordings.mock.calls.length;
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(15_000);
+        });
+        expect(getRecordings.mock.calls.length).toBe(calls + 1);
+        const renders = await counter.take();
+
+        expect(renders("components/recordings/RecordingRailRow.tsx", "RecordingRailRow")).toBe(1);
+      } finally {
+        await counter.stop();
+      }
     });
   });
 });
