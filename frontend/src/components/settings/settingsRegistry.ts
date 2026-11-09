@@ -204,7 +204,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "appearance-style",
     label: "Style",
-    description: "Bevels and layered elevation, saved in this browser. Classic looks best with Square corners.",
+    description: "Bevels and layered elevation, with corners to match, saved in this browser.",
     category: "appearance",
     access: "all",
     scope: "browser",

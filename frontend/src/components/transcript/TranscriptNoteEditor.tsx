@@ -7,7 +7,7 @@ import { holdPendingNoteWrite } from "@/lib/notes/noteOutboxes";
 import type { EditableNote, NoteEditRefusal } from "@/lib/notes/useNoteEdits";
 import type { TimelineNote } from "@/types";
 
-import NoteOnSelectionPopover from "../notes/NoteOnSelectionPopover";
+import NoteOnSelectionPopover, { type NoteEditorMove } from "../notes/NoteOnSelectionPopover";
 
 import { isSavedNote } from "./_hooks/useNoteHighlights";
 import { formatTime } from "./transcriptDisplay";
@@ -15,9 +15,16 @@ import { formatTime } from "./transcriptDisplay";
 /** The note being edited, and what its editor sits against. */
 export interface EditingNote {
   noteId: string;
-  /** The note line's Edit button, or the marked words that were clicked. */
+  /**
+   * The note line's Edit button, or the marked words that were clicked. A
+   * move puts the note on another line, and the editor then sits against
+   * the Edit button there.
+   */
   anchor: HTMLElement;
 }
+
+/** Move up and Move down for the note being edited, where it can move. */
+export type EditorMove = Omit<NoteEditorMove, "place">;
 
 export interface NoteEditHandlers {
   onEditNote: (note: EditableNote, body: string) => Promise<NoteEditRefusal>;
@@ -28,7 +35,11 @@ interface TranscriptNoteEditorProps extends NoteEditHandlers {
   editing: EditingNote | null;
   /** The notes as shown, so the editor always writes against the latest revision. */
   notes: readonly (TimelineNote | InlineNote)[] | null | undefined;
+  /** Move up and Move down, for a point note in the transcript that can move. */
+  move?: EditorMove;
   onClose: () => void;
+  /** Called once focus has gone back after a close that kept the note. */
+  afterReturnFocus?: (noteId: string) => void;
 }
 
 /** Where a note is, for its editor's name: "at 01:05", or on the whole meeting. */
@@ -59,8 +70,16 @@ function Editor({
   anchor,
   onEditNote,
   onDeleteNote,
+  move,
   onClose,
-}: NoteEditHandlers & { note: TimelineNote | InlineNote; anchor: HTMLElement; onClose: () => void }) {
+  afterReturnFocus,
+}: NoteEditHandlers & {
+  note: TimelineNote | InlineNote;
+  anchor: HTMLElement;
+  move?: EditorMove;
+  onClose: () => void;
+  afterReturnFocus?: (noteId: string) => void;
+}) {
   // A deleted note's line is going: the caller has moved focus somewhere that stays.
   const removed = useRef(false);
   // From the first Save or Delete until the editor closes, saved or given up:
@@ -78,7 +97,9 @@ function Editor({
       initialText={note.body}
       anchor={anchor}
       returnFocus={() => {
-        if (!removed.current) focusAfter(anchor);
+        if (removed.current) return;
+        focusAfter(anchor);
+        afterReturnFocus?.(note.id);
       }}
       onSubmit={(body) => holding(() => onEditNote(note, body))}
       onDelete={
@@ -90,19 +111,22 @@ function Editor({
             }
           : undefined
       }
+      move={move ? { ...move, place: note.kind === "point" ? (note.anchor_ms ?? null) : null } : undefined}
       onClose={onClose}
     />
   );
 }
 
 /**
- * The editor of a saved note in the finished view, opened from its note
- * line's Edit button, a click on its marked words, or its row in Your notes:
- * its text to change, and
- * Delete. Writes go against the revision shown now, so a change made
- * elsewhere meanwhile is refused rather than overwritten.
+ * The editor of a saved note, opened from its note line's Edit button, a
+ * click on its marked words, or its row in Your notes: its text to change,
+ * Delete, and on the transcript Move up and Move down for a note that can
+ * move. Writes go against the revision shown now, so a change made elsewhere
+ * meanwhile is refused rather than overwritten.
  */
-export default function TranscriptNoteEditor({ editing, notes, onClose, ...handlers }: TranscriptNoteEditorProps) {
+export default function TranscriptNoteEditor({
+  editing, notes, move, onClose, afterReturnFocus, ...handlers
+}: TranscriptNoteEditorProps) {
   const note = editing ? notes?.find((candidate) => candidate.id === editing.noteId) : undefined;
   if (!editing || !note || !isSavedNote(note)) return null;
   return (
@@ -110,7 +134,9 @@ export default function TranscriptNoteEditor({ editing, notes, onClose, ...handl
       key={note.id}
       note={note}
       anchor={editing.anchor}
+      move={move}
       onClose={onClose}
+      afterReturnFocus={afterReturnFocus}
       {...handlers}
     />
   );

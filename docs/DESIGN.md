@@ -67,12 +67,19 @@ uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts` exec
 | --- | --- | --- |
 | Theme | `.dark` class | follows the system |
 | Palette | `data-palette` = `graphite`, `classic`, `ultraviolet` or `marigold` | no attribute (the `:root` / `.dark` tokens) |
-| Corner style | `data-corners` = `subtle` or `square` | no attribute (rounded) |
+| Corner style | `data-corners` = `subtle` or `square` | Automatic: the style's corners (`STYLE_CORNERS`), which for Default is no attribute (rounded) |
 | Density | `data-ui-density` = `comfortable`, `compact` or `dense` | resolved from the viewport (never `dense`) |
 | Style | `data-style` = `default`, `classic` or `depth` | Default |
 
 A new preference must keep the same property: its default leaves the product exactly as it looks
 without the preference.
+
+Corner style is the one preference that depends on another. Its default, **Automatic (matches
+Style)**, stores no key and takes the corners from `STYLE_CORNERS` in `lib/appearance.ts`: Square
+for Classic, Rounded for Default and Depth. An explicit Rounded, Subtle or Square is stored and
+overrides it under every style. `resolveCornerStyle()` makes the decision and the pre-paint script
+mirrors it. Before Automatic existed, Rounded was stored as no key, so a browser left on Rounded now
+follows Style.
 
 `nojoin-style` is validated by the same storage helpers as the other preferences; Default
 removes the key. The pre-paint script prepares the validated style before first paint, and
@@ -125,8 +132,7 @@ The new Style row is the intentional addition to the Appearance page under every
   pixels inside their existing boxes. Enabled actions press in while active or toggled on;
   disabled and busy actions do not. Fine pointers get tighter vertical field padding; actions
   keep their own spacing, and field icon gutters and touch targets keep their existing dimensions.
-  Classic looks best with **Square**
-  corners, which remains a separate choice.
+  Classic brings **Square** corners while Corner style is Automatic.
 - **Depth** gives inset, card, pane and floating surfaces increasing separation, with a slight
   lift for enabled action buttons and a supplemental focus halo. Transcript bubbles and speaker
   cards use Card elevation; the speaker panel, meeting tab strip and chat use Pane elevation.

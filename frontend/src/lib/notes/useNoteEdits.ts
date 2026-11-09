@@ -83,9 +83,9 @@ export function useNoteEdits(recordingId: RecordingId | null) {
   );
 
   const [moving, setMoving] = useState<ReadonlyMap<string, Move>>(() => new Map());
-  // Per note: the last move sent, and the revision the last answer carried.
+  // Per note: the last move sent, and the note as the last answer carried it.
   const moveQueue = useRef(new Map<string, Promise<unknown>>());
-  const answeredRevision = useRef(new Map<string, number>());
+  const answered = useRef(new Map<string, TimelineNote>());
   const moveSeq = useRef(0);
   // Per note: the last refusal, and the last move asked for when it came.
   const refusedMove = useRef(new Map<string, { through: number; refusal: string }>());
@@ -110,6 +110,25 @@ export function useNoteEdits(recordingId: RecordingId | null) {
     [known, moving],
   );
 
+  /**
+   * Sends an edit or delete of `note` against the right revision. Moves of it
+   * still on their way, such as a step from its editor just before Save, go
+   * first: a move changes only the note's place, so while the text is still
+   * the one shown, the revision it made is the one to write against. With no
+   * move on its way the write is sent at once.
+   */
+  const afterMoves = useCallback(
+    <T,>(note: EditableNote & { revision: number }, write: (expectedRevision: number) => Promise<T>) => {
+      const expected = () => {
+        const last = answered.current.get(note.id);
+        return last && last.body === note.body ? Math.max(note.revision, last.revision) : note.revision;
+      };
+      const queued = moveQueue.current.get(note.id);
+      return queued ? queued.then(() => write(expected())) : write(expected());
+    },
+    [],
+  );
+
   const edit = useCallback(
     async (note: EditableNote, text: string): Promise<NoteEditRefusal> => {
       const body = stripNote(text);
@@ -117,10 +136,8 @@ export function useNoteEdits(recordingId: RecordingId | null) {
       if (noteLength(body) > NOTE_BODY_MAX_CHARS) return NOTE_TOO_LONG_ERROR;
       if (body === note.body) return null;
       try {
-        hold(note.id, await updateTimelineNote(recordingId, note.id, {
-          expected_revision: note.revision,
-          body,
-        }));
+        hold(note.id, await afterMoves({ ...note, revision: note.revision }, (expected) =>
+          updateTimelineNote(recordingId, note.id, { expected_revision: expected, body })));
         return null;
       } catch (error) {
         const current = conflictNote(error);
@@ -131,14 +148,15 @@ export function useNoteEdits(recordingId: RecordingId | null) {
         return isGone(error) ? DELETED_ELSEWHERE : otherFailure(error);
       }
     },
-    [recordingId, hold],
+    [recordingId, hold, afterMoves],
   );
 
   const remove = useCallback(
     async (note: EditableNote): Promise<NoteEditRefusal> => {
       if (note.revision === undefined || recordingId === null) return NOT_SAVED_YET;
       try {
-        await deleteTimelineNote(recordingId, note.id, { expectedRevision: note.revision });
+        await afterMoves({ ...note, revision: note.revision }, (expected) =>
+          deleteTimelineNote(recordingId, note.id, { expectedRevision: expected }));
       } catch (error) {
         const current = conflictNote(error);
         if (current) {
@@ -151,7 +169,7 @@ export function useNoteEdits(recordingId: RecordingId | null) {
       hold(note.id, null);
       return null;
     },
-    [recordingId, hold],
+    [recordingId, hold, afterMoves],
   );
 
   const move = useCallback(
@@ -161,9 +179,9 @@ export function useNoteEdits(recordingId: RecordingId | null) {
       const seq = ++moveSeq.current;
       setMoving((previous) => new Map(previous).set(note.id, { anchorMs, seq }));
       const send = async (): Promise<NoteEditRefusal> => {
-        const expected = Math.max(revision, answeredRevision.current.get(note.id) ?? 0);
+        const expected = Math.max(revision, answered.current.get(note.id)?.revision ?? 0);
         const settle = (answer: TimelineNote) => {
-          answeredRevision.current.set(note.id, answer.revision);
+          answered.current.set(note.id, answer);
           hold(note.id, answer);
         };
         const refuse = (refusal: string) => {
@@ -197,6 +215,10 @@ export function useNoteEdits(recordingId: RecordingId | null) {
       };
       const sent = (moveQueue.current.get(note.id) ?? Promise.resolve()).then(send);
       moveQueue.current.set(note.id, sent);
+      // Once the last move is answered, an edit needn't wait for anything.
+      void sent.then(() => {
+        if (moveQueue.current.get(note.id) === sent) moveQueue.current.delete(note.id);
+      });
       return sent;
     },
     [recordingId, hold],
