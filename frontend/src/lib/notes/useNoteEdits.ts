@@ -65,7 +65,7 @@ const otherFailure = (error: unknown): string => {
  * A note's last known state is held here, over the listed notes (`apply`),
  * since a finished recording isn't polled and its list isn't fetched again: a
  * listing at a later revision wins, and a deleted note stays hidden. The
- * recording page holds one, which its transcript and its My notes list share,
+ * recording page holds one, which its transcript and its Your notes list share,
  * so an edit made in either shows in both.
  *
  * A move of a point note (`move`) shows at once and settles on what Nojoin

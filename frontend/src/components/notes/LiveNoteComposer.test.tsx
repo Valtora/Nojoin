@@ -65,7 +65,7 @@ describe("LiveNoteComposer", () => {
   it.each([true, false])("says nothing under the box until there is news (capturing: %s)", (captureActive) => {
     render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={captureActive} />);
     const composer = screen.getByTestId("live-note-composer");
-    expect(composer).not.toHaveTextContent(/labelled as yours|meeting notes|Also listed in My notes/);
+    expect(composer).not.toHaveTextContent(/labelled as yours|meeting notes|Also listed in (My|Your) notes/);
     expect(composer).not.toHaveTextContent(/Placed|typing start|At send/);
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByTestId("live-note-status")).toHaveTextContent(/^$/);
@@ -85,7 +85,7 @@ describe("LiveNoteComposer", () => {
     type(box, "Agenda");
     pressEnter(box);
     expect(onSubmit).toHaveBeenLastCalledWith({ kind: "head", body: "Agenda", anchorMs: null });
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added before the transcript, and in My notes.");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added before the transcript, and in Your notes.");
     expect(screen.queryByTestId("note-placement-chip")).toBeNull();
 
     audioNowMs = 4_000;

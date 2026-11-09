@@ -4,7 +4,7 @@ import type { ActivePanel, SideTab } from "./store";
 
 /**
  * The recording page's panels the transcript tour opens to describe them. On
- * a phone each is a tab; on desktop Speakers, My notes, Captures and Meeting
+ * a phone each is a tab; on desktop Speakers, Your notes, Captures and Meeting
  * Edge are the side column's tabs, and the page opens them there.
  */
 export type TourPanel = ActivePanel;
@@ -133,7 +133,7 @@ export const transcriptSteps: DriveStep[] = [
   {
     element: '#meeting-notes',
     popover: {
-      title: 'AI Notes',
+      title: 'Meeting notes',
       description: 'Generate and edit AI-powered meeting notes, summaries, and action items.',
       side: 'right',
     },
@@ -169,7 +169,7 @@ export const transcriptSteps: DriveStep[] = [
   {
     element: sidePanel('my-notes'),
     popover: {
-      title: 'My Notes',
+      title: 'Your notes',
       description: 'Every note you wrote during or after the meeting, in transcript order. Select one to find its place in the transcript, or use its pencil to edit it.',
       side: 'left',
     },

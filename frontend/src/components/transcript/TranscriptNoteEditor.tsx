@@ -97,7 +97,7 @@ function Editor({
 
 /**
  * The editor of a saved note in the finished view, opened from its note
- * line's Edit button, a click on its marked words, or its row in My notes:
+ * line's Edit button, a click on its marked words, or its row in Your notes:
  * its text to change, and
  * Delete. Writes go against the revision shown now, so a change made
  * elsewhere meanwhile is refused rather than overwritten.
