@@ -85,6 +85,11 @@ export function useNoteMoves<N extends MovableNote>({
       `[data-testid="timeline-note"][data-note-id="${CSS.escape(next.noteId)}"]`,
     );
     if (next.from === "editor") {
+      // Focus is in the editor, so nothing else brings the note into view: a
+      // few steps would take it off screen with the editor pinned to the edge.
+      // Instant, not smooth, so reduced motion needs nothing more; the editor
+      // sits against the line once it is in view.
+      line?.scrollIntoView?.({ block: "nearest" });
       const editButton = line?.querySelector<HTMLElement>("[data-note-edit]");
       if (editButton) onEditorMoved?.(next.noteId, editButton);
       return;

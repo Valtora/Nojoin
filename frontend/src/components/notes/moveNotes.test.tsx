@@ -241,6 +241,51 @@ describe("Moving a point note with Move up and Move down in its editor", () => {
     expect(document.activeElement).toBe(editButton("n-point"));
   });
 
+  it("brings the note's line into view after each step, since focus stays in the editor", async () => {
+    updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
+    render(<Page notes={[POINT]} />);
+    openEditor("n-point");
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+    scrolled.mockClear();
+
+    pressMove("down");
+
+    await waitFor(() => expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "line:3"]));
+    const line = noteLine("n-point")!;
+    const index = scrolled.mock.contexts.indexOf(line);
+    expect(index).toBeGreaterThanOrEqual(0);
+    expect(scrolled.mock.calls[index]).toEqual([{ block: "nearest" }]);
+    expect(document.activeElement).toBe(moveButton("down"));
+  });
+
+  it("offers no step while a Save is on its way, and offers them again once it is refused", async () => {
+    const save = deferred<TimelineNote>();
+    updateTimelineNote.mockReturnValueOnce(save.promise);
+    render(<Page notes={[POINT]} />);
+    openEditor("n-point");
+    fireEvent.change(within(editor()).getByRole("textbox", { name: "Note" }), {
+      target: { value: "Ask about catering and parking" },
+    });
+
+    fireEvent.click(within(editor()).getByRole("button", { name: "Save note" }));
+
+    expect(moveButton("up")).toBeDisabled();
+    expect(moveButton("down")).toBeDisabled();
+    fireEvent.click(moveButton("down"));
+    expect(transcriptOrder()).toEqual(["line:0", "line:1", "note:n-point", "line:2", "line:3"]);
+    await waitFor(() => expect(updateTimelineNote).toHaveBeenCalledTimes(1));
+    expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-point", {
+      expected_revision: 2, body: "Ask about catering and parking",
+    });
+
+    await act(async () => save.reject(new Error("Network Error")));
+
+    expect(within(editor()).getByRole("alert")).toHaveTextContent("No answer from Nojoin. Try again.");
+    expect(document.activeElement).toBe(within(editor()).getByRole("textbox", { name: "Note" }));
+    expect(moveButton("up")).toBeEnabled();
+    expect(moveButton("down")).toBeEnabled();
+  });
+
   it("saves an edit made after a step against the revision the step made", async () => {
     const step = deferred<TimelineNote>();
     updateTimelineNote.mockReturnValueOnce(step.promise);

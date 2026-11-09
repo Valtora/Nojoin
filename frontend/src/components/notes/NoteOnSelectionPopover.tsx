@@ -115,18 +115,23 @@ export default function NoteOnSelectionPopover({
 
   // A step that reached the first or last place disables its own button,
   // which drops focus: it goes to the step that still works, else the box.
+  // Not while a Save or Delete is on its way, which disables both steps (a
+  // step then would go against the revision the write is about to replace);
+  // that write puts focus back itself when it is refused.
   const canUp = Boolean(move?.onUp);
   const canDown = Boolean(move?.onDown);
   useEffect(() => {
+    if (busy) return;
     const pressed = lastStep.current === "up" ? upRef.current : lastStep.current === "down" ? downRef.current : null;
     if (!pressed || !pressed.disabled) return;
     const active = document.activeElement;
     if (active !== pressed && active !== document.body && active !== null) return;
     const other = lastStep.current === "up" ? downRef.current : upRef.current;
     (other && !other.disabled ? other : boxRef.current)?.focus();
-  }, [canUp, canDown]);
+  }, [canUp, canDown, busy]);
 
   const step = (direction: "up" | "down") => {
+    if (busy) return;
     lastStep.current = direction;
     (direction === "up" ? move?.onUp : move?.onDown)?.();
   };
@@ -245,7 +250,7 @@ export default function NoteOnSelectionPopover({
             variant="ghost"
             data-note-move="up"
             iconLeft={<ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />}
-            disabled={!move.onUp}
+            disabled={!move.onUp || busy}
             onClick={() => step("up")}
             className={NOTE_BUTTON_TOUCH}
           >
@@ -257,7 +262,7 @@ export default function NoteOnSelectionPopover({
             variant="ghost"
             data-note-move="down"
             iconLeft={<ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />}
-            disabled={!move.onDown}
+            disabled={!move.onDown || busy}
             onClick={() => step("down")}
             className={NOTE_BUTTON_TOUCH}
           >
