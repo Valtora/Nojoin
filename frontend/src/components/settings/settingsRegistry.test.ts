@@ -21,6 +21,7 @@ import {
   UNSURFACED_SETTINGS_KEYS,
   categoryUsesAdvancedGate,
   countChangedAdvanced,
+  getMatchingSettingsCategories,
   getRegistryEntriesForCategory,
   partitionByAdvanced,
   searchSettingsRegistry,
@@ -440,8 +441,18 @@ describe("registry search", () => {
 
     expect(find({ transcription_backend: "parakeet" })).toContain("recording-word-length-cap");
     expect(find({ transcription_backend: "whisper" })).not.toContain("recording-word-length-cap");
-    // Without the settings (the navigation's category marks), nothing is hidden.
+    // Without the settings, nothing is hidden.
     expect(find()).toContain("recording-word-length-cap");
+  });
+
+  it("lights no category for the longest word on a non-Parakeet install", () => {
+    const whisper = { transcription_backend: "whisper" };
+
+    expect(searchSettingsRegistry("longest word", USER, 12, whisper)).toEqual([]);
+    expect(getMatchingSettingsCategories("longest word", USER, whisper).size).toBe(0);
+    expect(
+      getMatchingSettingsCategories("longest word", USER, { transcription_backend: "parakeet" }),
+    ).toEqual(new Set(["recording"]));
   });
 
   it("has no entry for the retired transcription muting switch", () => {

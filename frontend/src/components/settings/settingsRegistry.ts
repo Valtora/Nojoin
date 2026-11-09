@@ -1060,9 +1060,10 @@ export function searchSettingsRegistry(
 export function getMatchingSettingsCategories(
   query: string,
   viewer: SettingsViewer,
+  settings?: Settings,
 ): Set<SettingsCategoryId> {
   return new Set(
-    searchSettingsRegistry(query, viewer, SETTINGS_REGISTRY.length).map(
+    searchSettingsRegistry(query, viewer, SETTINGS_REGISTRY.length, settings).map(
       (result) => result.entry.category,
     ),
   );

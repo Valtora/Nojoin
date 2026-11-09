@@ -42,9 +42,9 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
   const matching = useMemo<Set<SettingsCategoryId>>(
     () =>
       searchQuery
-        ? getMatchingSettingsCategories(searchQuery, viewer)
+        ? getMatchingSettingsCategories(searchQuery, viewer, settings)
         : new Set<SettingsCategoryId>(),
-    [searchQuery, viewer],
+    [searchQuery, viewer, settings],
   );
 
   // A category the account cannot see is one whose every action the API
