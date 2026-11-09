@@ -84,7 +84,7 @@ function ComposerOnLine({
 const draftNow = (): ComposerDraft => JSON.parse(screen.getByTestId("draft").textContent ?? "{}");
 
 describe("the note box on a chosen line", () => {
-  const renderOnLine = (mode: ComposerDraft["mode"] = "send") => {
+  const renderOnLine = (mode: ComposerDraft["mode"] = "typing") => {
     const onSubmit = vi.fn<(note: OutboxDraft) => string | null>(() => null);
     render(
       <ComposerOnLine
@@ -95,18 +95,18 @@ describe("the note box on a chosen line", () => {
     return { onSubmit, box: screen.getByRole("textbox", { name: "New note" }) };
   };
 
-  it("shows the quote, reads its mode as on the chosen text, and says where the note goes", () => {
-    renderOnLine();
+  it("shows the quote over the box, and no other place", () => {
+    const { box } = renderOnLine("head");
 
-    expect(screen.getByTestId("note-selection-chip")).toHaveTextContent("00:12 “Forty thousand for the venue”");
-    expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("selection");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent(
-      "On the text at 00:12, which the note quotes.",
-    );
+    const chip = screen.getByTestId("note-selection-chip");
+    expect(chip).toHaveTextContent("00:12 “Forty thousand for the venue”");
+    expect(screen.queryByTestId("note-placement-chip")).toBeNull();
+    expect(box.getAttribute("aria-describedby")).toContain(chip.id);
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent(/^$/);
   });
 
-  it("sends a note on the line, then goes back to the mode before it", () => {
-    const { onSubmit, box } = renderOnLine("send");
+  it("sends a note on the line, then goes back to where typing starts", () => {
+    const { onSubmit, box } = renderOnLine("typing");
     fireEvent.change(box, { target: { value: "Check the figure" } });
     fireEvent.keyDown(box, { key: "Enter" });
 
@@ -118,25 +118,38 @@ describe("the note box on a chosen line", () => {
     });
     expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added at 00:12.");
     expect(screen.queryByTestId("note-selection-chip")).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("send");
+    expect(screen.queryByTestId("note-placement-chip")).not.toBeInTheDocument();
+    expect(draftNow()).toMatchObject({ text: "", mode: "typing", typingStartMs: null });
     expect(draftNow().selection ?? null).toBeNull();
   });
 
-  it("takes the line off with the chip's button, keeping the text and the mode", () => {
+  it("takes the line off with the chip's button, keeping the text and the place before it", () => {
     const { box } = renderOnLine("tail");
     fireEvent.change(box, { target: { value: "Keep me" } });
     fireEvent.click(screen.getByRole("button", { name: "Don't put the note on this text" }));
 
     expect(screen.queryByTestId("note-selection-chip")).not.toBeInTheDocument();
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("After the transcript");
     expect(draftNow()).toMatchObject({ text: "Keep me", mode: "tail", selection: null });
     expect(box).toHaveFocus();
+    // Said, not shown: the chip shows it.
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("The next note goes after the transcript.");
+    expect(screen.getByTestId("live-note-status")).toHaveClass("sr-only");
   });
 
-  it("takes the line off when another place is chosen", () => {
+  it("says where typing starts once the line is taken off", () => {
     renderOnLine("typing");
-    fireEvent.change(screen.getByRole("combobox", { name: "Place note" }), { target: { value: "head" } });
+    fireEvent.click(screen.getByRole("button", { name: "Don't put the note on this text" }));
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("The next note goes where you start typing.");
+  });
+
+  it("takes the line off when the whole meeting is chosen instead", () => {
+    renderOnLine("typing");
+    fireEvent.click(screen.getByRole("button", { name: "Note on the whole meeting" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Before the transcript" }));
 
     expect(screen.queryByTestId("note-selection-chip")).not.toBeInTheDocument();
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("Before the transcript");
     expect(draftNow()).toMatchObject({ mode: "head", selection: null });
   });
 });

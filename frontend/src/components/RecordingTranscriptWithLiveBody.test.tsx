@@ -116,6 +116,7 @@ describe("RecordingTranscriptWithLiveBody shared-shell body", () => {
     show(buildRecording({ status: RecordingStatus.UPLOADING, client_status: undefined }));
     expect(screen.getByText("The meeting continues")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "New note" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("head");
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByRole("button", { name: "Note on the whole meeting" })).toBeInTheDocument();
   });
 });
