@@ -80,7 +80,7 @@ const conflict = (current: TimelineNote) => ({
   },
 });
 
-/** The transcript and My notes sharing one set of edits, as on the recording page. */
+/** The transcript and Your notes sharing one set of edits, as on the recording page. */
 function Page({ notes, segments = SEGMENTS }: { notes: TimelineNote[]; segments?: TranscriptSegment[] }) {
   const noteEdits = useNoteEdits(RECORDING.id);
   return (
@@ -248,7 +248,7 @@ describe("Moving a point note with Move up and Move down", () => {
     expect(moveButton("n-point", "up")).toBeDisabled();
   });
 
-  it("shows the move in My notes, with the note's new time", async () => {
+  it("shows the move in Your notes, with the note's new time", async () => {
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
     const early = note("n-early", "point", "Early note", { anchor_ms: 1_000 });
     render(<Page notes={[POINT, early]} />);

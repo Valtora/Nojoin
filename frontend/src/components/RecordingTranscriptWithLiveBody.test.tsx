@@ -45,7 +45,7 @@ describe("RecordingTranscriptWithLiveBody shared-shell body", () => {
     getDocuments.mockReset().mockResolvedValue([]);
   });
 
-  it("retains Meeting Edge and My notes in their panels while progress occupies the header", () => {
+  it("retains Meeting Edge and Your notes in their panels while progress occupies the header", () => {
     show();
     expect(screen.getByTestId("meeting-edge-panel")).toBeInTheDocument();
     expect(screen.getByTestId("my-notes")).toBeInTheDocument();

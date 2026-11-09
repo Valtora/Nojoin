@@ -155,7 +155,7 @@ const placePhrase = (draft: ComposerDraft, captureActive: boolean, empty: boolea
  * Anything else is chosen where it applies and shown in a chip over the box,
  * whose ✕ goes back to the usual place (issue #959). The ⋯ beside the box
  * puts a note on the whole meeting, before or after the transcript, shown
- * there and in My notes: for the next note during capture, and until changed
+ * there and in Your notes: for the next note during capture, and until changed
  * after it. "Note on this line", from a line's ⋯ menu, puts the next note on
  * that line's text, quoted in the chip until the note is sent or the quote
  * removed, when the place before it comes back. On a line still settling it
@@ -289,7 +289,7 @@ export default function LiveNoteComposer({
     const place = notePlace(note);
     say(
       note.kind === "head" || note.kind === "tail"
-        ? `Note added ${place}, and in My notes.`
+        ? `Note added ${place}, and in Your notes.`
         : `Note added ${place}.`,
       "info",
     );

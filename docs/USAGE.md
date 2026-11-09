@@ -140,7 +140,7 @@ The automatic speaker engine favours small meetings. In larger meetings, or if t
 
 The note composer stays under **Transcript** in every recording state. Enter adds a note and Shift+Enter starts a new line. During recording or a pause, a note goes where the recording was when you typed its first character, however long you take to finish it. Clearing the box starts again. After capture ends, a note goes before the transcript.
 
-To write a note on the whole meeting, choose **⋯** beside the box, then **Before the transcript** or **After the transcript**. The note shows in the transcript and in **My notes**, with the same pencil and save behaviour as a timestamped note. During recording the choice applies to the next note only. After capture, **After the transcript** stays chosen between notes until you remove it.
+To write a note on the whole meeting, choose **⋯** beside the box, then **Before the transcript** or **After the transcript**. The note shows in the transcript and in **Your notes**, with the same pencil and save behaviour as a timestamped note. During recording the choice applies to the next note only. After capture, **After the transcript** stays chosen between notes until you remove it.
 
 Whenever a note will go somewhere other than its usual place, the box shows where above it, with **✕** to put it back. A draft carried through Stop keeps its text, attached file and placement, including a chosen line or selected words, and shows its time above the box.
 
