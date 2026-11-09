@@ -1,6 +1,6 @@
 "use client";
 
-import { SelectBase, TextareaBase } from "@/components/ui/nativeBases";
+import { TextareaBase } from "@/components/ui/nativeBases";
 import {
   useId,
   useLayoutEffect,
@@ -17,11 +17,9 @@ import {
   ArrowDownToLine,
   ArrowUpToLine,
   Camera,
-  ChevronDown,
-  CornerDownLeft,
+  Clock,
   Paperclip,
   SendHorizontal,
-  TextCursorInput,
   TextQuote,
   X,
   type LucideIcon,
@@ -34,7 +32,6 @@ import {
   noteFromDraft,
   noteSnippet,
   type ComposerDraft,
-  type NoteInsertMode,
   type OutboxDraft,
   type OutboxNotice,
 } from "@/lib/notes/noteOutbox";
@@ -43,27 +40,23 @@ import { formatTimelineMs } from "@/lib/notes/placement";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
+import TranscriptActionsMenu, { type TranscriptMenuItem } from "../transcript/TranscriptActionsMenu";
 import IconButton from "../ui/IconButton";
 
-export type { NoteInsertMode };
+const WHOLE_MEETING = {
+  head: { label: "Before the transcript", icon: ArrowUpToLine },
+  tail: { label: "After the transcript", icon: ArrowDownToLine },
+} as const satisfies Record<"head" | "tail", { label: string; icon: LucideIcon }>;
 
-export const MODE_LABELS: Record<NoteInsertMode, string> = {
-  typing: "At typing start",
-  send: "At send",
-  head: "Before the transcript",
-  tail: "After the transcript",
-};
+const NEW_LINE_HINT = "Shift+Enter starts a new line.";
 
-const MODE_ICONS: Record<NoteInsertMode, LucideIcon> = {
-  typing: TextCursorInput,
-  send: CornerDownLeft,
-  head: ArrowUpToLine,
-  tail: ArrowDownToLine,
-};
-
-/** The menu's entry while the next note is on chosen text (`draft.selection`). */
-const ON_SELECTION = "selection";
-const ON_SELECTION_LABEL = "On the chosen text";
+/** What the chip over the box says, and how its button undoes it. */
+interface PlacementChip {
+  testId: string;
+  icon: LucideIcon;
+  text: string;
+  removeLabel: string;
+}
 
 interface LiveNoteComposerProps {
   /** Active and paused captures retain the timeline placement choices. */
@@ -102,23 +95,32 @@ interface Message {
 
 const isBlank = (text: string) => stripNote(text) === "";
 
-const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
-  if (draft.selection) {
-    return `On the text at ${formatTimelineMs(draft.selection.startMs)}, which the note quotes.`;
+/**
+ * The chip over the box, when the next note goes somewhere other than the
+ * usual place: where typing starts during capture, before the transcript
+ * after it. Null when it goes there, which needs no saying (issue #959).
+ */
+const placementChip = (draft: ComposerDraft, captureActive: boolean): PlacementChip | null => {
+  const { selection } = draft;
+  if (selection) {
+    return {
+      testId: "note-selection-chip",
+      icon: TextQuote,
+      text: `${formatTimelineMs(selection.startMs)} “${noteSnippet(selection.quotedText, 80)}”`,
+      removeLabel: "Don't put the note on this text",
+    };
   }
-  switch (draft.mode) {
-    case "typing":
-      if (draft.typingStartMs === null) return "Placed where you start typing. Shift+Enter starts a new line.";
-      return (isBlank(draft.text) && !hasFile) || draft.typingStartFromLine
-        ? `Placed at ${formatTimelineMs(draft.typingStartMs)}.`
-        : `Placed at ${formatTimelineMs(draft.typingStartMs)}, where you started typing.`;
-    case "send":
-      return "Placed where the recording is when you press Enter.";
-    case "head":
-    case "tail":
-      // Nothing to add to the mode's own label (issue #825).
-      return "";
+  if (draft.mode === "tail" || (draft.mode === "head" && captureActive)) {
+    const { label, icon } = WHOLE_MEETING[draft.mode];
+    return { testId: "note-placement-chip", icon, text: label, removeLabel: `Don't put the note ${label.toLowerCase()}` };
   }
+  // A time a line's menu set during capture, or one a draft carried through
+  // Stop: the note goes there rather than where it would otherwise.
+  if (draft.mode === "typing" && draft.typingStartMs !== null && (draft.typingStartFromLine || !captureActive)) {
+    const at = formatTimelineMs(draft.typingStartMs);
+    return { testId: "note-placement-chip", icon: Clock, text: `At ${at}`, removeLabel: `Don't put the note at ${at}` };
+  }
+  return null;
 };
 
 /**
@@ -128,26 +130,28 @@ const modeHint = (draft: ComposerDraft, hasFile: boolean) => {
  * finishes an input method's composition (Japanese, Chinese, Korean...)
  * belongs to the composition and never sends.
  *
- * "At typing start", the default, anchors the note where the recording was
- * when the first character went into the empty box, so a note takes as long
- * to write as it likes and still lands beside what prompted it. Emptying the
- * box drops that anchor; the next character takes a new one. "At send"
- * anchors it on Enter. "Before" and "After the transcript" make a note on
- * the whole meeting, shown before or after its lines and in My notes.
- * "Note on this line", from a line's ⋯ menu, puts the next note on that
- * line's text: the quote shows above the box and the mode reads "On the
- * chosen text" until the note is sent or the quote removed, when the mode
- * before it comes back. On a line still settling it instead sets an
- * "At typing start" anchor at the line's start, which the first character keeps.
+ * During capture a note is anchored where the recording was when the first
+ * character went into the empty box, so a note takes as long to write as it
+ * likes and still lands beside what prompted it. Emptying the box drops that
+ * anchor; the next character takes a new one. After capture there is no
+ * moving clock, and a note is on the whole meeting, before the transcript.
+ *
+ * Anything else is chosen where it applies and shown in a chip over the box,
+ * whose ✕ goes back to the usual place (issue #959). The ⋯ beside the box
+ * puts a note on the whole meeting, before or after the transcript, shown
+ * there and in My notes: for the next note during capture, and until changed
+ * after it. "Note on this line", from a line's ⋯ menu, puts the next note on
+ * that line's text, quoted in the chip until the note is sent or the quote
+ * removed, when the place before it comes back. On a line still settling it
+ * instead anchors the next note at the line's start, which typing keeps.
  *
  * A file pasted or dropped into the box goes with the note being typed, whose
  * text captions it; the note saves first, then the file uploads. The camera
  * button, where this tab shares a screen, makes a note of its own.
  *
- * One row, so it costs the transcript window as little height as it can: the
- * mode is an icon-sized select (its options say the modes in full), and the
- * status line under it says where the note will go. That line is a polite
- * live region, so a refusal, a note added and the outbox's news are read out.
+ * One row, so it costs the transcript window as little height as it can. The
+ * status line under it is empty until there is news: a polite live region,
+ * so a refusal, a note added and the outbox's news are read out.
  */
 export default function LiveNoteComposer({
   captureActive = true,
@@ -169,8 +173,7 @@ export default function LiveNoteComposer({
   // A carried draft keeps its placement. Only a new, blank finished draft
   // defaults to Before; an explicit After choice persists between notes.
   const draft = !captureActive && isBlank(sourceDraft.text) && !draftFile &&
-    !sourceDraft.selection &&
-    (sourceDraft.mode === "typing" || sourceDraft.mode === "send")
+    !sourceDraft.selection && sourceDraft.mode === "typing"
     ? { ...sourceDraft, mode: "head" as const }
     : sourceDraft;
   const setDraft = onDraftChange ?? setOwnDraft;
@@ -179,10 +182,10 @@ export default function LiveNoteComposer({
   const ownBoxRef = useRef<HTMLTextAreaElement>(null);
   const box = boxRef ?? ownBoxRef;
   const keyboardInset = useKeyboardInset();
-  const modeId = useId();
+  const chipId = useId();
+  const statusId = useId();
   const hintId = useId();
-  const { selection } = draft;
-  const ModeIcon = selection ? TextQuote : MODE_ICONS[draft.mode];
+  const chip = placementChip(draft, captureActive);
 
   // Grows with its text, chat-style, up to the cap its classes set.
   useLayoutEffect(() => {
@@ -258,8 +261,9 @@ export default function LiveNoteComposer({
       say(refusal, "error");
       return;
     }
-    // A blank finished draft reads as Before again (above).
-    setDraft({ text: "", mode: draft.mode, typingStartMs: null });
+    // During capture the next note goes where typing starts again; after it,
+    // a blank draft reads as Before (above) and After holds until changed.
+    setDraft({ text: "", mode: captureActive ? "typing" : draft.mode, typingStartMs: null });
     const place = notePlace(note);
     say(
       note.kind === "head" || note.kind === "tail"
@@ -285,11 +289,44 @@ export default function LiveNoteComposer({
     submit();
   };
 
-  const status = showNotice
-    ? { text: notice.text, tone: notice.tone }
-    : (message ?? { text: !captureActive && draft.mode === "send" && !selection
-      ? "At send places this note where capture stopped, at the end of the recording."
-      : modeHint(draft, draftFile !== null), tone: "info" as const });
+  const status = showNotice ? { text: notice.text, tone: notice.tone } : message;
+
+  // Clears the chip's placement: the note goes to the usual place again. A
+  // time a line set gives way to where typing started, now if it has.
+  const removePlacement = () => {
+    if (draft.selection) {
+      setDraft({ ...draft, selection: null });
+    } else if (!captureActive) {
+      setDraft({ ...draft, mode: "head", typingStartMs: null, typingStartFromLine: undefined });
+    } else if (draft.mode === "typing") {
+      setDraft({ ...draft, typingStartMs: empty ? null : readAudioNow(), typingStartFromLine: undefined });
+    } else {
+      setDraft({ ...draft, mode: "typing" });
+    }
+    setMessage(null);
+    box.current?.focus();
+  };
+
+  // A note on the whole meeting, from the ⋯ beside the box. It replaces a
+  // line or text chosen for the note, as any other place does.
+  const wholeMeetingItems: TranscriptMenuItem[] = (["head", "tail"] as const).map((mode) => ({
+    id: mode,
+    label: WHOLE_MEETING[mode].label,
+    icon: WHOLE_MEETING[mode].icon,
+    onSelect: () => {
+      setDraft({
+        ...draft,
+        mode,
+        selection: null,
+        ...(draft.typingStartFromLine
+          ? { typingStartMs: empty ? null : readAudioNow(), typingStartFromLine: undefined }
+          : {}),
+      });
+      setMessage(null);
+      box.current?.focus();
+    },
+  }));
+  const ChipIcon = chip?.icon;
 
   return (
     <form
@@ -308,24 +345,19 @@ export default function LiveNoteComposer({
       className="sticky z-[var(--z-sticky)] mt-2 shrink-0 bg-surface-card pt-1"
       style={{ bottom: `calc(${keyboardInset}px + env(safe-area-inset-bottom, 0px))` }}
     >
-      {selection ? (
+      {chip && ChipIcon ? (
         <div
-          data-testid="note-selection-chip"
+          id={chipId}
+          data-testid={chip.testId}
           className="mb-1.5 flex items-center gap-2 rounded-lg bg-action-tint py-0.5 pl-2 text-xs text-action-tint-fg"
         >
-          <TextQuote aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">
-            {formatTimelineMs(selection.startMs)} “{noteSnippet(selection.quotedText, 80)}”
-          </span>
+          <ChipIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{chip.text}</span>
           <IconButton
             size="sm"
-            aria-label="Don't put the note on this text"
-            title="Don't put the note on this text"
-            onClick={() => {
-              setDraft({ ...draft, selection: null });
-              setMessage(null);
-              box.current?.focus();
-            }}
+            aria-label={chip.removeLabel}
+            title={chip.removeLabel}
+            onClick={removePlacement}
             className="h-7 w-7 text-action-tint-fg hover:bg-action-tint-hover hover:text-action-tint-fg pointer-coarse:h-[44px] pointer-coarse:w-[44px] pointer-coarse:-my-2"
             icon={<X aria-hidden="true" />}
           />
@@ -354,41 +386,13 @@ export default function LiveNoteComposer({
         </div>
       ) : null}
       <div className="flex items-end gap-1.5">
-        <label htmlFor={modeId} className="sr-only">
-          Place note
-        </label>
-        <div className="relative h-[44px] w-[52px] shrink-0">
-          <SelectBase
-            data-ui-fill="control"
-            data-ui-border="full"
-            id={modeId}
-            value={selection ? ON_SELECTION : draft.mode}
-            title={selection ? ON_SELECTION_LABEL : MODE_LABELS[draft.mode]}
-            onChange={(event) => {
-              const { value } = event.target;
-              if (value === ON_SELECTION) return;
-              setDraft({ ...draft, mode: value as NoteInsertMode, selection: null });
-              setMessage(null);
-            }}
-            className="absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-lg border border-control-border bg-control-bg text-transparent outline-none focus:border-action focus:ring-2 focus:ring-action [&>option]:text-foreground"
-          >
-            {selection ? <option value={ON_SELECTION}>{ON_SELECTION_LABEL}</option> : null}
-            {(Object.keys(MODE_LABELS) as NoteInsertMode[])
-              .filter((value) => captureActive || value === "head" || value === "tail" || value === draft.mode)
-              .map((value) => (
-              <option key={value} value={value}>
-                {MODE_LABELS[value]}
-              </option>
-            ))}
-          </SelectBase>
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 flex items-center justify-center gap-0.5 text-contrast-muted"
-          >
-            <ModeIcon className="h-4 w-4" />
-            <ChevronDown className="h-3 w-3" />
-          </span>
-        </div>
+        <TranscriptActionsMenu
+          label="Note on the whole meeting"
+          title="Note on the whole meeting"
+          reveal="always"
+          items={wholeMeetingItems}
+          triggerClassName="h-[44px] w-[44px] shrink-0"
+        />
         <TextareaBase
           data-ui-fill="control"
           data-ui-border="full"
@@ -399,7 +403,7 @@ export default function LiveNoteComposer({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           aria-label="New note"
-          aria-describedby={hintId}
+          aria-describedby={[chip ? chipId : null, statusId, hintId].filter(Boolean).join(" ")}
           aria-invalid={message?.tone === "error" && !showNotice ? true : undefined}
           placeholder="Add a note…"
           className="density-surface-panel max-h-[160px] min-h-[44px] w-full min-w-0 flex-1 resize-none overflow-y-auto border border-control-border bg-control-bg px-3 py-2.5 text-sm leading-5 text-contrast-muted outline-none transition focus:border-action focus:ring-2 focus:ring-action @min-[54rem]:max-h-[80px]"
@@ -425,7 +429,7 @@ export default function LiveNoteComposer({
           type="submit"
           variant="primary"
           aria-label="Add note"
-          title="Add note (Enter)"
+          title={`Add note (Enter). ${NEW_LINE_HINT}`}
           disabled={empty}
           icon={<SendHorizontal aria-hidden="true" />}
           // 44 px in every density, level with the box beside it.
@@ -433,13 +437,18 @@ export default function LiveNoteComposer({
         />
       </div>
       <p
-        id={hintId}
+        id={statusId}
         aria-live="polite"
         data-testid="live-note-status"
-        className={`mt-1 text-xs ${status.tone === "error" ? "text-status-danger-fg" : "text-contrast-helper"}`}
+        className={status
+          ? `mt-1 text-xs ${status.tone === "error" ? "text-status-danger-fg" : "text-contrast-helper"}`
+          : "sr-only"}
       >
-        {status.text}
+        {status?.text}
       </p>
+      {/* Enter and Shift+Enter work as in any chat box, so the hint is the
+          box's description and the Send button's tooltip, not a line. */}
+      <p id={hintId} className="sr-only">{NEW_LINE_HINT}</p>
     </form>
   );
 }

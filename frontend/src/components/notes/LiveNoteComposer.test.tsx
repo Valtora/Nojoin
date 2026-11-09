@@ -21,6 +21,12 @@ const type = (box: HTMLTextAreaElement, value: string) =>
 const pressEnter = (box: HTMLTextAreaElement, init: KeyboardEventInit & { keyCode?: number } = {}) =>
   fireEvent.keyDown(box, { key: "Enter", code: "Enter", ...init });
 
+/** Chooses a whole-meeting place from the ⋯ beside the box. */
+const chooseWholeMeeting = (place: "Before the transcript" | "After the transcript") => {
+  fireEvent.click(screen.getByRole("button", { name: "Note on the whole meeting" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: place }));
+};
+
 describe("LiveNoteComposer", () => {
   beforeEach(() => {
     audioNowMs = 0;
@@ -29,54 +35,117 @@ describe("LiveNoteComposer", () => {
     onSubmit.mockReturnValue(null);
   });
 
-  it("offers Before and After on a finished recording and keeps an explicit After choice for the next note", () => {
+  it("puts a finished recording's notes before the transcript, and keeps After once chosen", () => {
     render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false} />);
     const box = screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement;
-    const mode = screen.getByRole("combobox", { name: "Place note" });
-    expect(mode).toHaveValue("head");
-    expect(Array.from(mode.querySelectorAll("option")).map((option) => option.value)).toEqual(["head", "tail"]);
+    expect(screen.queryByRole("combobox")).toBeNull();
+    // Before is where a finished recording's notes go, so nothing says so.
+    expect(screen.queryByTestId("note-placement-chip")).toBeNull();
     type(box, "Agenda");
     pressEnter(box);
     expect(onSubmit).toHaveBeenLastCalledWith({ kind: "head", body: "Agenda", anchorMs: null });
-    fireEvent.change(mode, { target: { value: "tail" } });
+
+    chooseWholeMeeting("After the transcript");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("After the transcript");
+    expect(box).toHaveFocus();
     type(box, "Follow up");
     pressEnter(box);
     type(box, "Another follow up");
     pressEnter(box);
     expect(onSubmit).toHaveBeenLastCalledWith({ kind: "tail", body: "Another follow up", anchorMs: null });
+
+    fireEvent.click(screen.getByRole("button", { name: "Don't put the note after the transcript" }));
+    expect(screen.queryByTestId("note-placement-chip")).toBeNull();
+    type(box, "Context");
+    pressEnter(box);
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "head", body: "Context", anchorMs: null });
   });
 
-  it.each([true, false])("says nothing about the meeting notes under the box (capturing: %s)", (captureActive) => {
+  it.each([true, false])("says nothing under the box until there is news (capturing: %s)", (captureActive) => {
     render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={captureActive} />);
     const composer = screen.getByTestId("live-note-composer");
-    expect(composer).not.toHaveTextContent(/labelled as yours|meeting notes/);
-    expect(composer).not.toHaveTextContent("Also listed in My notes");
-    // Before the transcript, where a finished recording opens, has no hint;
-    // a timed mode still says where the note lands.
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent(
-      captureActive ? "Placed where you start typing." : /^$/,
+    expect(composer).not.toHaveTextContent(/labelled as yours|meeting notes|Also listed in My notes/);
+    expect(composer).not.toHaveTextContent(/Placed|typing start|At send/);
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent(/^$/);
+    // The Shift+Enter hint is the box's description, not a line on screen.
+    expect(screen.getByText("Shift+Enter starts a new line.")).toHaveClass("sr-only");
+    expect(screen.getByRole("button", { name: "Add note" }))
+      .toHaveAttribute("title", "Add note (Enter). Shift+Enter starts a new line.");
+  });
+
+  it("puts the next note during capture on the whole meeting, then goes back to where typing starts", () => {
+    const box = renderComposer();
+    expect(screen.queryByTestId("note-placement-chip")).toBeNull();
+
+    chooseWholeMeeting("Before the transcript");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("Before the transcript");
+    expect(box).toHaveFocus();
+    type(box, "Agenda");
+    pressEnter(box);
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "head", body: "Agenda", anchorMs: null });
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added before the transcript, and in My notes.");
+    expect(screen.queryByTestId("note-placement-chip")).toBeNull();
+
+    audioNowMs = 4_000;
+    type(box, "Point");
+    pressEnter(box);
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "Point", anchorMs: 4_000 });
+
+    chooseWholeMeeting("After the transcript");
+    type(box, "Follow up Friday");
+    pressEnter(box);
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "tail", body: "Follow up Friday", anchorMs: null });
+  });
+
+  it("takes a whole-meeting place off with the chip's button, back to where typing started", () => {
+    const box = renderComposer();
+    chooseWholeMeeting("After the transcript");
+    audioNowMs = 5_000;
+    type(box, "On second thoughts");
+    audioNowMs = 9_000;
+    fireEvent.click(screen.getByRole("button", { name: "Don't put the note after the transcript" }));
+
+    expect(screen.queryByTestId("note-placement-chip")).toBeNull();
+    expect(box).toHaveFocus();
+    pressEnter(box);
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "On second thoughts", anchorMs: 5_000 });
+  });
+
+  it("shows a time a line's menu set during capture, and takes it off for where typing starts", () => {
+    const onDraftChange = vi.fn();
+    render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} onDraftChange={onDraftChange}
+      draft={{ text: "", mode: "typing", typingStartMs: 60_000, typingStartFromLine: true }} />);
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 01:00");
+    expect(screen.getByRole("textbox", { name: "New note" }).getAttribute("aria-describedby"))
+      .toContain(screen.getByTestId("note-placement-chip").id);
+
+    fireEvent.click(screen.getByRole("button", { name: "Don't put the note at 01:00" }));
+    expect(onDraftChange).toHaveBeenLastCalledWith(
+      { text: "", mode: "typing", typingStartMs: null, typingStartFromLine: undefined },
     );
   });
 
-  it.each([true, false])("adds no hint to After the transcript (capturing: %s)", (captureActive) => {
-    render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={captureActive} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Place note" }), { target: { value: "tail" } });
-    expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("tail");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent(/^$/);
-    expect(screen.getByTestId("live-note-composer")).not.toHaveTextContent(/whole meeting|Also listed/);
-  });
-
-  it("shows a carried send placement after Stop until a deliberate change retargets it", () => {
-    const draft = { text: "Carried thought", mode: "send" as const, typingStartMs: 12_000 };
+  it("places a draft carried through Stop where typing started, showing that time", () => {
+    const draft = { text: "Carried thought", mode: "typing" as const, typingStartMs: 12_000 };
     const onDraftChange = vi.fn();
     render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false}
       draft={draft} onDraftChange={onDraftChange} />);
-    expect(screen.getByRole("combobox", { name: "Place note" })).toHaveValue("send");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("where capture stopped");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 00:12");
     expect(onDraftChange).not.toHaveBeenCalled();
     audioNowMs = 63_000;
     pressEnter(screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement);
-    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "Carried thought", anchorMs: 63_000 });
+    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "Carried thought", anchorMs: 12_000 });
+  });
+
+  it("puts a carried draft before the transcript instead when its time is taken off", () => {
+    const onDraftChange = vi.fn();
+    render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false}
+      draft={{ text: "Carried thought", mode: "typing", typingStartMs: 12_000 }} onDraftChange={onDraftChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "Don't put the note at 00:12" }));
+    expect(onDraftChange).toHaveBeenLastCalledWith(
+      { text: "Carried thought", mode: "head", typingStartMs: null, typingStartFromLine: undefined },
+    );
   });
 
   it("shows the retained time for a carried file without caption after Stop", () => {
@@ -84,7 +153,7 @@ describe("LiveNoteComposer", () => {
     render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false}
       draft={{ text: "", mode: "typing", typingStartMs: 12_000 }} draftFile={file} onDraftFileChange={vi.fn()} />);
     expect(screen.getByTestId("note-draft-file")).toHaveTextContent("context.png");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 00:12");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 00:12");
     fireEvent.click(screen.getByRole("button", { name: "Add note" }));
     expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "", anchorMs: 12_000 });
   });
@@ -107,7 +176,9 @@ describe("LiveNoteComposer", () => {
     // A screen reader hears it went, from a status line that was already there.
     expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added at 01:01.");
     type(box, "N");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:35, where you started typing.");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent(/^$/);
+    // Typing start is where a note goes during capture, so nothing says so.
+    expect(screen.queryByTestId("note-placement-chip")).toBeNull();
   });
 
   it("drops the anchor when the box is emptied, and takes a new one on the next keystroke", () => {
@@ -115,9 +186,7 @@ describe("LiveNoteComposer", () => {
 
     audioNowMs = 10_000;
     type(box, "Wrong");
-    expect(screen.getByText("Placed at 00:10, where you started typing.")).toBeInTheDocument();
     type(box, "");
-    expect(screen.getByText("Placed where you start typing. Shift+Enter starts a new line.")).toBeInTheDocument();
     audioNowMs = 40_000;
     type(box, "  ");
     expect(readAudioNow).toHaveBeenCalledTimes(1);
@@ -126,28 +195,6 @@ describe("LiveNoteComposer", () => {
     pressEnter(box);
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ anchorMs: 42_000 }));
-  });
-
-  it("anchors at send in that mode, and leaves meeting-wide notes unanchored", () => {
-    const box = renderComposer();
-    const mode = screen.getByRole("combobox", { name: "Place note" });
-
-    fireEvent.change(mode, { target: { value: "send" } });
-    audioNowMs = 1_000;
-    type(box, "At send");
-    audioNowMs = 9_000;
-    pressEnter(box);
-    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "At send", anchorMs: 9_000 });
-
-    fireEvent.change(mode, { target: { value: "head" } });
-    type(box, "Agenda");
-    pressEnter(box);
-    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "head", body: "Agenda", anchorMs: null });
-
-    fireEvent.change(mode, { target: { value: "tail" } });
-    type(box, "Follow up Friday");
-    pressEnter(box);
-    expect(onSubmit).toHaveBeenLastCalledWith({ kind: "tail", body: "Follow up Friday", anchorMs: null });
   });
 
   it("never sends on an Enter that belongs to an input method's composition", () => {
@@ -200,14 +247,13 @@ describe("LiveNoteComposer", () => {
     expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ anchorMs: 7_000 }));
   });
 
-  it("says where a note goes in a live region that is there before anything goes wrong", () => {
+  it("says what happened in a live region that is there before anything goes wrong", () => {
     renderComposer();
     const status = screen.getByTestId("live-note-status");
     expect(status).toHaveAttribute("aria-live", "polite");
-    expect(screen.getByRole("textbox", { name: "New note" })).toHaveAttribute(
-      "aria-describedby",
-      status.id,
-    );
+    const box = screen.getByRole("textbox", { name: "New note" });
+    expect(box.getAttribute("aria-describedby")?.split(" ")).toContain(status.id);
+    expect(box).toHaveAccessibleDescription(/Shift\+Enter starts a new line\./);
   });
 
   it("returns focus to the box after sending with the button", () => {
@@ -230,7 +276,8 @@ describe("LiveNoteComposer", () => {
     const box = renderComposer();
     audioNowMs = 3_723_000;
     type(box, "Late");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 1:02:03, where you started typing.");
+    pressEnter(box);
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added at 1:02:03.");
   });
 
   it("says the outbox's news until the next keystroke", () => {
@@ -249,7 +296,7 @@ describe("LiveNoteComposer", () => {
     expect(status).toHaveTextContent("deleted on another device");
 
     type(box, "Next");
-    expect(status).toHaveTextContent("Placed at 00:00, where you started typing.");
+    expect(status).toHaveTextContent(/^$/);
   });
 });
 
