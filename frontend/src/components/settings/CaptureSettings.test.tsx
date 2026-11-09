@@ -10,8 +10,10 @@ import CaptureSettings from "./CaptureSettings";
 
 let controller: CaptureController;
 
+let support: CaptureSupport = { supported: true, mode: "shared_audio" };
+
 vi.mock("@/lib/capture/featureDetect", () => ({
-  detectCaptureSupport: (): CaptureSupport => ({ supported: true, mode: "shared_audio" }),
+  detectCaptureSupport: (): CaptureSupport => support,
 }));
 
 // Keep the real controller/store/settings persistence; avoid provider lifecycle
@@ -37,6 +39,45 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe("Recording source (issue #958)", () => {
+  afterEach(() => {
+    support = { supported: true, mode: "shared_audio" };
+  });
+
+  it("defaults to system audio and keeps the choice for the next page load", async () => {
+    window.localStorage.clear();
+    controller = new CaptureController();
+    const view = render(<CaptureSettings />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh devices" })).toBeEnabled());
+    const select = screen.getByRole("combobox", { name: "Recording source" });
+    expect(select).toHaveValue("shared_audio");
+    expect(select).toHaveAccessibleDescription(/What Start Meeting records in this browser/);
+    expect([...(select as HTMLSelectElement).options].map((option) => option.text)).toEqual([
+      "Microphone and system audio",
+      "Microphone only",
+      "Ask each time",
+    ]);
+
+    fireEvent.change(select, { target: { value: "ask" } });
+    view.unmount();
+
+    controller = new CaptureController();
+    render(<CaptureSettings />);
+    expect(screen.getByRole("combobox", { name: "Recording source" })).toHaveValue("ask");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh devices" })).toBeEnabled());
+  });
+
+  it("offers no choice in a browser that cannot share audio", async () => {
+    support = { supported: true, mode: "microphone_only" };
+    controller = new CaptureController();
+    render(<CaptureSettings />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh devices" })).toBeEnabled());
+    expect(screen.queryByRole("combobox", { name: "Recording source" })).not.toBeInTheDocument();
+    expect(screen.getByText("Microphone only")).toBeInTheDocument();
+    expect(screen.getByText(/can't share system audio/)).toBeInTheDocument();
+  });
 });
 
 describe("microphone release setting", () => {
