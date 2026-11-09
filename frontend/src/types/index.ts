@@ -733,7 +733,7 @@ export interface ActiveRecordingConflictDetail {
   status: RecordingStatus;
 }
 
-/** Off; Auto: GPU only; always: GPU and CPU. */
+/** "Refine live words": off; auto, on with a GPU (the default); always, also without one. */
 export type LiveTextSettlingMode = "off" | "auto" | "always";
 
 export interface Settings {
@@ -825,9 +825,8 @@ export interface Settings {
   glossary_terms?: string;
   install_glossary_terms?: string;
   enable_vad?: boolean;
-  // With VAD on, whether transcription and speaker separation hear the muted
-  // audio. Transcription defaults true, speaker separation false.
-  vad_mute_transcription?: boolean;
+  // "Faster speaker separation": with VAD on, whether speaker separation hears
+  // the muted audio. Default false. Transcription always does (#961).
   vad_mute_diarization?: boolean;
   enable_diarization?: boolean;
   // Processing tuning (lib/processingTuning.ts). null means inherit the

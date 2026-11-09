@@ -143,7 +143,6 @@ class SettingsUpdate(BaseModel):
     glossary_terms: Optional[str] = None
     install_glossary_terms: Optional[str] = None
     enable_vad: Optional[bool] = None
-    vad_mute_transcription: Optional[bool] = None
     vad_mute_diarization: Optional[bool] = None
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
@@ -403,6 +402,11 @@ def _apply_default_user_settings(
 
 
 PHANTOM_PAIR_KEYS = (PHANTOM_EMBEDDING_FLOOR_KEY, PHANTOM_MERGE_THRESHOLD_KEY)
+# The settings page's words for each half of the pair, used in its error.
+_PHANTOM_PAIR_NAMES = {
+    PHANTOM_EMBEDDING_FLOOR_KEY: "the noise limit",
+    PHANTOM_MERGE_THRESHOLD_KEY: "the merge limit",
+}
 # Read-only in GET: the install's flat config.json tuning values the settings
 # page needs, keyed by tuning key (null where unset or unusable). Today that
 # is the phantom pair, so the page runs the floor/merge check on the values
@@ -476,7 +480,7 @@ def _validate_processing_tuning(
         validate_tuning_candidate(_phantom_pair_in_effect(install, candidate))
     except PhantomThresholdConflict as exc:
         inherited = [
-            f"{key} to {value}"
+            f"{_PHANTOM_PAIR_NAMES[key]} to {value}"
             for key in PHANTOM_PAIR_KEYS
             if candidate.get(key) is None
             and (value := normalise_tuning_value(key, install.get(key))) is not None
@@ -534,6 +538,9 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
         merged.update(
             {k: v for k, v in sanitized_user_settings.items() if v is not None}
         )
+    # Never shown, so the page's whole-object save cannot send one back.
+    for key in RETIRED_USER_SETTING_KEYS:
+        merged.pop(key, None)
     _normalise_processing_tuning(merged, config_manager.get_all())
     _normalise_speaker_settings(merged)
     merged.update(
@@ -734,7 +741,7 @@ async def _save_user_settings(
         validate_language_settings(candidate_settings)
         _validate_processing_tuning(candidate_settings, update_data)
     except PhantomThresholdConflict as e:
-        # Only this error's message is shown: it holds key names and numbers,
+        # Only this error's message is shown: it holds fixed wording and numbers,
         # and names an install value the user cannot see on the page.
         raise sanitized_http_exception(
             logger=logger,

@@ -95,8 +95,11 @@ LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
 # on its next save and never shown; config.json drops them on load, as it does
 # every key outside the tables in config_defaults. asr_word_end_padding_s became
 # asr_word_length_cap_s with a new meaning, so a stored value is not carried
-# over.
-RETIRED_USER_SETTING_KEYS = frozenset({"asr_word_end_padding_s"})
+# over. vad_mute_transcription (#961) is fixed at its old default, on: the worker
+# no longer reads it, so a user who had turned it off gets the default.
+RETIRED_USER_SETTING_KEYS = frozenset(
+    {"asr_word_end_padding_s", "vad_mute_transcription"}
+)
 
 # The transcription engine and its model. An administrator picks them under
 # Settings > Transcription, and every recording on the install uses them.
