@@ -21,7 +21,7 @@ export default function AiDecisions({
   if (!decisions.length) {
     return (
       <p className="text-xs text-contrast-helper">
-        No decisions with quotable ownership were identified. The Notes tab
+        No decisions with quotable ownership were identified. The Meeting notes tab
         remains the record of what was decided.
       </p>
     );
@@ -84,7 +84,7 @@ export default function AiDecisions({
 
       <p className="text-xs text-contrast-helper">
         This describes who owned each decision, not what was decided &mdash; the
-        Notes tab is the record of that. Only speakers whose own words show it
+        Meeting notes tab is the record of that. Only speakers whose own words show it
         are listed as agreeing or pushing back, and every entry carries a quote
         you can play back. <span className="font-medium">Unchallenged</span>{" "}
         means nobody objected, which is not the same as agreement.

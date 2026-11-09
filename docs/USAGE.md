@@ -376,7 +376,7 @@ It reports:
 - **Questions asked**: who asked what, who answered, and which went unanswered (listed first).
 - **Who owned each decision**: who proposed it, agreed or pushed back, and whether agreement was spoken.
 
-Every claim about a person carries a quote you can play back. An item the model could not support with a quote is dropped, so a short section means thin evidence. A decision marked **Unchallenged** is one nobody objected to, which is not the same as one people agreed with. After you edit the transcript, a banner offers **Analyse again**; nothing reruns on its own. A meeting too long to send whole is analysed as far as it fits, and the section says where it stopped. The Notes tab stays the record of what was decided; this section shows who drove it.
+Every claim about a person carries a quote you can play back. An item the model could not support with a quote is dropped, so a short section means thin evidence. A decision marked **Unchallenged** is one nobody objected to, which is not the same as one people agreed with. After you edit the transcript, a banner offers **Analyse again**; nothing reruns on its own. A meeting too long to send whole is analysed as far as it fits, and the section says where it stopped. **Meeting notes** stays the record of what was decided; this section shows who drove it.
 
 #### When The Figures Depend On Speaker Attribution
 
@@ -390,7 +390,7 @@ Attach PDF, PowerPoint, Word, Excel, CSV, text, Markdown, PNG or JPEG files, up 
 
 A PDF that is damaged or cut short, for example by an interrupted download, fails to parse and its card shows the error. Download or export it again from its source and attach the new copy.
 
-Meeting notes are generated once, at the end of processing, from every document parsed by then. A document attached during the meeting is normally in time. One attached later is not, so the Notes tab shows a banner offering to regenerate. Regenerating uses your AI provider and overwrites your edits to the notes.
+Meeting notes are generated once, at the end of processing, from every document parsed by then. A document attached during the meeting is normally in time. One attached later is not, so **Meeting notes** shows a banner offering to regenerate. Regenerating uses your AI provider and overwrites your edits to the notes.
 
 #### Visual Analysis
 
