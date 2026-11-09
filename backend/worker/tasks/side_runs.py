@@ -14,6 +14,7 @@ import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from uuid import UUID
 
 from celery.signals import worker_ready
 from sqlalchemy import update
@@ -28,7 +29,8 @@ from backend.models.recording import (
     is_side_run_hold,
 )
 from backend.models.transcript import Transcript
-from backend.utils.generation_claim import GENERATING, GENERATION_CLAIM_EXPIRY
+from backend.utils.generation_claim import GENERATING, GENERATION_CLAIM_EXPIRY, RunKind
+from backend.utils.generation_run import run_predicate
 from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -38,14 +40,19 @@ logger = logging.getLogger(__name__)
 CLAIM_HEARTBEAT_INTERVAL_SECONDS = 60.0
 
 
-def renew_transcript_claim(recording_id: int, field: str) -> None:
+def renew_transcript_claim(
+    recording_id: int, field: str | RunKind, *, run_id: str | UUID | None = None
+) -> None:
     """Stamp a claim that is still generating as alive, in a session of its own."""
     with get_sync_session() as session:
+        predicate = (
+            run_predicate(recording_id, run_id, field)
+            if isinstance(field, RunKind)
+            else (col(Transcript.recording_id) == recording_id)
+            & (getattr(Transcript, field) == GENERATING)
+        )
         session.execute(
-            update(Transcript)
-            .where(col(Transcript.recording_id) == recording_id)
-            .where(getattr(Transcript, field) == GENERATING)
-            .values(updated_at=utc_now())
+            update(Transcript).where(predicate).values(updated_at=utc_now())
         )
         session.commit()
 
@@ -53,9 +60,10 @@ def renew_transcript_claim(recording_id: int, field: str) -> None:
 @contextmanager
 def claim_heartbeat(
     recording_id: int,
-    field: str,
+    field: str | RunKind,
     *,
     interval: float = CLAIM_HEARTBEAT_INTERVAL_SECONDS,
+    run_id: str | UUID | None = None,
 ) -> Iterator[None]:
     """Renew the transcript's ``field`` claim every ``interval`` while the block runs.
 
@@ -70,7 +78,7 @@ def claim_heartbeat(
     def beat() -> None:
         while not stop.wait(interval):
             try:
-                renew_transcript_claim(recording_id, field)
+                renew_transcript_claim(recording_id, field, run_id=run_id)
             except Exception:  # noqa: BLE001 -- boundary: a missed renewal only brings the expiry closer; the run goes on
                 logger.warning(
                     "Could not renew the %s claim of recording %s",

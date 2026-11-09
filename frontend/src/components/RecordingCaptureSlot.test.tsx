@@ -247,4 +247,14 @@ describe("RecordingCaptureSlot", () => {
       window.removeEventListener("recording-documents-updated", updated);
     }
   });
+
+  it("announces each step of a long meeting's notes as it moves", () => {
+    const view = render(<RecordingCaptureSlot
+      recording={recording({ processing_step: "Drafting notes, part 1 of 5... (GPU)", processing_progress: 97 })} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Drafting notes, part 1 of 5... (GPU)");
+
+    view.rerender(<RecordingCaptureSlot
+      recording={recording({ processing_step: "Combining notes... (GPU)", processing_progress: 97 })} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Combining notes... (GPU)");
+  });
 });

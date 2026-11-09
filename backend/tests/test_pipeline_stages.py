@@ -28,6 +28,7 @@ import inspect
 import sys
 import types
 from concurrent.futures import CancelledError
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -91,6 +92,9 @@ class _FakeTranscript:
         self.notes = None
         self.transcript_status = "pending"
         self.notes_status = "pending"
+        self.notes_run_id = None
+        self.notes_progress = None
+        self.updated_at = tasks_module.utc_now()
         self.error_message = None
         self.meeting_edge_status = "idle"
         self.meeting_edge_error_message = None
@@ -124,6 +128,7 @@ class _FakeSession:
         self.committed = 0
         self.speaker_rows: list = []
         self._speaker_seq = 9000
+        self.no_autoflush = nullcontext()
 
     def get(self, model, ident):
         if getattr(model, "__name__", "") == "Recording":
@@ -155,6 +160,8 @@ class _FakeSession:
         if "transcript" in text and "utterance" not in text:
             return _ExecResult(first=self.transcript, all_=[])
         return _ExecResult(first=None, all_=[])
+
+    scalars = exec
 
 
 def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segments=None):
@@ -1102,8 +1109,12 @@ def test_non_local_provider_defers_intelligence_to_io_lane(monkeypatch):
     assert result == {"status": "success", "recording_id": 710}
     assert inline_calls == []  # never ran inline on the GPU worker
     assert dispatched == [
-        ("backend.worker.tasks.generate_meeting_intelligence_task", [710])
+        (
+            "backend.worker.tasks.generate_meeting_intelligence_task",
+            [710, str(transcript.notes_run_id)],
+        )
     ]
+    assert transcript.notes_run_id is not None
     assert transcript.notes_status == "generating"
     assert recording.processing_step == "Completed"
     assert recording.processing_progress == 100

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, List, Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,6 +33,7 @@ from backend.processing.embedding import (
     VoiceprintStatus,
 )
 from backend.utils.generation_claim import (
+    GENERATING,
     reported_generation_error,
     reported_generation_status,
 )
@@ -146,6 +148,10 @@ class TranscriptPublicRead(PublicModel):
         default_factory=list
     )
     notes_status: str = "pending"
+    # The step a long meeting's notes run is on, while notes_status is
+    # generating, such as "Drafting notes, part 2 of 5".
+    notes_progress: Optional[str] = None
+    notes_run_id: Optional[UUID] = None
     # True when a document finished parsing after these notes were written,
     # or a note's file was switched since, so they no longer reflect what
     # notes generation would read.
@@ -359,6 +365,9 @@ def serialize_transcript(
     from backend.utils.canonical_pipeline.guards import settling_required
 
     assert transcript.id is not None
+    notes_status = reported_generation_status(
+        transcript.notes_status, transcript.updated_at
+    )
     return TranscriptPublicRead(
         id=transcript.id,
         created_at=transcript.created_at,
@@ -390,9 +399,12 @@ def serialize_transcript(
         # A claim lost with its worker reads as failed, and says so, so the
         # page offers generation again (issue #828). A failed transcription's
         # message stays its own.
-        notes_status=reported_generation_status(
-            transcript.notes_status, transcript.updated_at
+        notes_status=notes_status,
+        # A lost run's last step goes with its claim.
+        notes_progress=(
+            transcript.notes_progress if notes_status == GENERATING else None
         ),
+        notes_run_id=transcript.notes_run_id if notes_status == GENERATING else None,
         notes_stale_documents=bool(getattr(transcript, "notes_stale_documents", False)),
         transcript_status=transcript.transcript_status,
         error_message=(

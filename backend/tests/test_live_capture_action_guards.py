@@ -24,6 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
@@ -31,6 +32,7 @@ from backend.api.v1.endpoints.transcripts import routes_notes
 from backend.core.security import MCP_READ_SCOPE, MCP_WRITE_SCOPE
 from backend.mcp_server.auth import current_mcp_scopes, current_mcp_user
 from backend.mcp_server.tools_manage import regenerate_notes, reprocess_recording
+from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
@@ -248,7 +250,9 @@ async def test_notes_generation_still_runs_on_a_finished_meeting(
 
     assert response.status_code == 200, response.text
     assert response.json()["notes_status"] == "generating"
-    assert stub_celery_dispatch == [(NOTES_TASK, [1, None], None)]
+    assert stub_celery_dispatch == [
+        (NOTES_TASK, [1, None, response.json()["notes_run_id"]], None)
+    ]
 
 
 @LIVE_CAPTURES
@@ -273,7 +277,7 @@ async def test_mcp_regenerate_notes_gives_the_reason_for_a_live_capture(
 
 
 async def test_mcp_regenerate_notes_still_runs_on_a_finished_meeting(
-    mcp_user: User, seed: Seed, stub_celery_dispatch: list
+    mcp_user: User, seed: Seed, stub_celery_dispatch: list, session_maker
 ) -> None:
     bind_mcp_identity(mcp_user)
     await seed(status="PROCESSED", client_status="IDLE", transcript_status="completed")
@@ -285,7 +289,10 @@ async def test_mcp_regenerate_notes_still_runs_on_a_finished_meeting(
         "notes_status": "generating",
         "message": "Note generation started",
     }
-    assert stub_celery_dispatch == [(NOTES_TASK, [1, None], None)]
+    async with session_maker() as session:
+        token = await session.scalar(select(Transcript.notes_run_id))
+    assert token is not None
+    assert stub_celery_dispatch == [(NOTES_TASK, [1, None, str(token)], None)]
 
 
 @pytest.mark.parametrize("client_status", ["PAUSED", None])
