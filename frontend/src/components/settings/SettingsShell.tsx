@@ -31,7 +31,7 @@ import VersionTag from "./VersionTag";
 export default function SettingsShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { viewer, loading, forcePasswordChange } = useSettingsContext();
+  const { settings, viewer, loading, forcePasswordChange } = useSettingsContext();
   const [searchQuery, setSearchQuery] = useState("");
 
   const groups = useMemo(
@@ -100,6 +100,7 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
             <div className="border-b p-4 contrast-border">
               <SettingsSearch
                 viewer={viewer}
+                settings={settings}
                 onQueryChange={handleQueryChange}
               />
             </div>
@@ -128,6 +129,7 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
                 <div className="space-y-3 border-b p-4 contrast-border lg:hidden">
                   <SettingsSearch
                     viewer={viewer}
+                    settings={settings}
                     onQueryChange={handleQueryChange}
                   />
                   <SettingsAutosaveFooter />

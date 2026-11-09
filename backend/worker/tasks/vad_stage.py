@@ -3,8 +3,9 @@
 Extracted from ``pipeline.py`` to keep that module within its size budget. With
 VAD on, the stage keeps two files of the same length and rate, the normalised
 16 kHz mono file and a copy with non-speech set to exact zeros, and hands each
-later stage the one its setting asks for (``backend/processing/vad_muting.py``,
-#486). Once diarisation has run, muted transcription may read a third file
+later stage its file: transcription the muted one, the speaker side the one
+the "Faster speaker separation" setting picks (``backend/processing/vad_muting.py``,
+#486, #961). Once diarisation has run, muted transcription may read a third file
 instead: the muted one opened inside every diarised turn (#670), less the turns
 the phantom filter confirmed as non-speech (#678), which ``run_phantom_filter``
 keeps on the run's context. The heavy imports stay inside the functions, as
@@ -229,7 +230,7 @@ def transcription_audio_after_diarization(
     non-speech opens nothing, so only VAD's own speech in it is heard (#678).
     The file keeps VAD's zeros everywhere else, so ``VAD_MUTED_INPUT`` still
     holds for it. Every other case reads the file the VAD stage picked:
-    unmuted transcription, diarisation off, failed or with no turns, and
+    VAD off, diarisation off, failed or with no turns, and
     diarisation that heard the muted file itself. If the union cannot be
     written, ASR reads the VAD-muted file, as it did before.
     """

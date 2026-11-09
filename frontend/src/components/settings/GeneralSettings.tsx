@@ -406,7 +406,7 @@ export default function GeneralSettings({
             labelId="recording-vad-label"
             descriptionId="recording-vad-help"
             label="Voice activity detection"
-            description="Filters out silence and background noise before transcription. Disabling it may increase processing time, but can help if quiet speech is being cut off."
+            description="Skips silence and background noise before transcription. Turn it off if quiet or distant speech goes missing; background noise may then turn into stray words, and processing can take longer."
             controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
@@ -420,30 +420,11 @@ export default function GeneralSettings({
           </SettingsRow>
 
           <SettingsRow
-            id="recording-vad-mute-transcription"
-            labelId="recording-vad-mute-transcription-label"
-            descriptionId="recording-vad-mute-transcription-help"
-            label="Mute non-speech for transcription"
-            description="On mutes only audio that neither voice activity detection nor unmuted speaker separation heard as speech. Off lets transcription hear everything, which can recover distant speech but can add words from noise and be less accurate on close microphones. With speaker separation muted too, some recovered words stay unattributed and hidden in the transcript."
-            controlClassName={SETTINGS_CONTROL_END}
-          >
-            <Switch
-              aria-labelledby="recording-vad-mute-transcription-label"
-              aria-describedby="recording-vad-mute-transcription-help"
-              checked={settings.vad_mute_transcription !== false} // Default true
-              disabled={settings.enable_vad === false}
-              onCheckedChange={(checked) =>
-                onUpdate({ ...settings, vad_mute_transcription: checked })
-              }
-            />
-          </SettingsRow>
-
-          <SettingsRow
             id="recording-vad-mute-diarization"
             labelId="recording-vad-mute-diarization-label"
             descriptionId="recording-vad-mute-diarization-help"
-            label="Mute non-speech for speaker separation"
-            description="Off by default: speaker separation hears everything and tells speakers apart better, above all with room or distant microphones. On is faster on long recordings but tells speakers apart less well."
+            label="Faster speaker separation"
+            description="Speaker separation skips what voice activity detection heard as silence. Long recordings finish sooner, up to about a third faster without a GPU, but speakers are told apart less well, especially with one microphone for the room. Needs voice activity detection."
             controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch

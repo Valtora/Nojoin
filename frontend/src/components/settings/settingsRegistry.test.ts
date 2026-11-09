@@ -340,6 +340,23 @@ describe("changed-count badge", () => {
     ).toBe(0);
   });
 
+  it("counts a longest word only while its row is shown", () => {
+    expect(
+      countChangedAdvanced(
+        "recording",
+        { transcription_backend: "parakeet", asr_word_length_cap_s: 0.3 },
+        USER,
+      ),
+    ).toBe(1);
+    expect(
+      countChangedAdvanced(
+        "recording",
+        { transcription_backend: "whisper", asr_word_length_cap_s: 0.3 },
+        USER,
+      ),
+    ).toBe(0);
+  });
+
   it("counts a multi-field tuning entry once however many fields are set", () => {
     expect(
       countChangedAdvanced(
@@ -396,6 +413,43 @@ describe("registry search", () => {
     );
 
     expect(ids).toContain(id);
+  });
+
+  it.each([
+    ["phantom speaker filter", "recording-phantom-filter"],
+    ["single-word flip smoothing", "recording-word-flip"],
+    ["word length cap", "recording-word-length-cap"],
+    ["mute non-speech", "recording-vad-mute-diarization"],
+    ["live word settling", "transcription-live-settling"],
+    ["unchanged comparisons", "transcription-live-settling-k"],
+    ["settling window", "transcription-live-settling-window"],
+  ])("still finds a renamed setting by its old name, %s (#961)", (query, id) => {
+    const viewer = id.startsWith("transcription") ? ADMIN : USER;
+    const ids = searchSettingsRegistry(query, viewer, 12, {
+      transcription_backend: "parakeet",
+    }).map((result) => result.entry.id);
+
+    expect(ids).toContain(id);
+  });
+
+  it("offers the longest word only when Parakeet is the engine", () => {
+    const find = (settings?: { transcription_backend: string }) =>
+      searchSettingsRegistry("longest word", USER, 12, settings).map(
+        (result) => result.entry.id,
+      );
+
+    expect(find({ transcription_backend: "parakeet" })).toContain("recording-word-length-cap");
+    expect(find({ transcription_backend: "whisper" })).not.toContain("recording-word-length-cap");
+    // Without the settings (the navigation's category marks), nothing is hidden.
+    expect(find()).toContain("recording-word-length-cap");
+  });
+
+  it("has no entry for the retired transcription muting switch", () => {
+    expect(
+      SETTINGS_REGISTRY.some((entry) =>
+        entry.settingsKeys?.includes("vad_mute_transcription"),
+      ),
+    ).toBe(false);
   });
 
   it("hides admin-only settings from a non-admin", () => {
