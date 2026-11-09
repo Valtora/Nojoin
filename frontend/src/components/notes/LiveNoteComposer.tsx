@@ -124,6 +124,22 @@ const placementChip = (draft: ComposerDraft, captureActive: boolean): PlacementC
 };
 
 /**
+ * Where the next note goes, as a phrase for a screen reader: said when a
+ * choice or a chip's button moves it, since the chip itself is not a live
+ * region.
+ */
+const placePhrase = (draft: ComposerDraft, captureActive: boolean, empty: boolean): string => {
+  if (draft.selection) return `on the text at ${formatTimelineMs(draft.selection.startMs)}`;
+  if (draft.mode === "head") return "before the transcript";
+  if (draft.mode === "tail") return "after the transcript";
+  if (draft.typingStartMs !== null && (draft.typingStartFromLine || !captureActive)) {
+    return `at ${formatTimelineMs(draft.typingStartMs)}`;
+  }
+  if (!captureActive) return "before the transcript";
+  return empty ? "where you start typing" : "where you started typing";
+};
+
+/**
  * The chat-style note box under the live transcript.
  *
  * Enter adds the note and Shift+Enter starts a new line. An Enter that
@@ -178,6 +194,9 @@ export default function LiveNoteComposer({
     : sourceDraft;
   const setDraft = onDraftChange ?? setOwnDraft;
   const [message, setMessage] = useState<Message | null>(null);
+  // Said in the live region but not shown: where a moved placement now puts
+  // the next note. The chip shows it on screen.
+  const [announcement, setAnnouncement] = useState("");
   const [dismissedNoticeSeq, setDismissedNoticeSeq] = useState(notice?.seq ?? 0);
   const ownBoxRef = useRef<HTMLTextAreaElement>(null);
   const box = boxRef ?? ownBoxRef;
@@ -200,8 +219,10 @@ export default function LiveNoteComposer({
     notice !== null &&
     notice.seq > Math.max(dismissedNoticeSeq, message?.noticeSeq ?? 0);
 
-  const say = (text: string, tone: Message["tone"]) =>
+  const say = (text: string, tone: Message["tone"]) => {
     setMessage({ text, tone, noticeSeq: latestNoticeSeq });
+    setAnnouncement("");
+  };
 
   // A capture's news replaces the line, as a note's does.
   useOnDepsChange([captureMessage?.seq], () => {
@@ -248,6 +269,7 @@ export default function LiveNoteComposer({
     const typingStartFromLine = (typingStartMs !== null && draft.typingStartFromLine) || undefined;
     setDraft({ ...draft, text, typingStartMs, typingStartFromLine });
     setMessage(null);
+    setAnnouncement("");
     setDismissedNoticeSeq(latestNoticeSeq);
   };
 
@@ -291,20 +313,27 @@ export default function LiveNoteComposer({
 
   const status = showNotice ? { text: notice.text, tone: notice.tone } : message;
 
+  // Applies a moved placement and says where the next note now goes.
+  const movePlacement = (next: ComposerDraft) => {
+    setDraft(next);
+    setMessage(null);
+    setDismissedNoticeSeq(latestNoticeSeq);
+    setAnnouncement(`The next note goes ${placePhrase(next, captureActive, empty)}.`);
+    box.current?.focus();
+  };
+
   // Clears the chip's placement: the note goes to the usual place again. A
   // time a line set gives way to where typing started, now if it has.
   const removePlacement = () => {
     if (draft.selection) {
-      setDraft({ ...draft, selection: null });
+      movePlacement({ ...draft, selection: null });
     } else if (!captureActive) {
-      setDraft({ ...draft, mode: "head", typingStartMs: null, typingStartFromLine: undefined });
+      movePlacement({ ...draft, mode: "head", typingStartMs: null, typingStartFromLine: undefined });
     } else if (draft.mode === "typing") {
-      setDraft({ ...draft, typingStartMs: empty ? null : readAudioNow(), typingStartFromLine: undefined });
+      movePlacement({ ...draft, typingStartMs: empty ? null : readAudioNow(), typingStartFromLine: undefined });
     } else {
-      setDraft({ ...draft, mode: "typing" });
+      movePlacement({ ...draft, mode: "typing" });
     }
-    setMessage(null);
-    box.current?.focus();
   };
 
   // A note on the whole meeting, from the ⋯ beside the box. It replaces a
@@ -313,18 +342,14 @@ export default function LiveNoteComposer({
     id: mode,
     label: WHOLE_MEETING[mode].label,
     icon: WHOLE_MEETING[mode].icon,
-    onSelect: () => {
-      setDraft({
-        ...draft,
-        mode,
-        selection: null,
-        ...(draft.typingStartFromLine
-          ? { typingStartMs: empty ? null : readAudioNow(), typingStartFromLine: undefined }
-          : {}),
-      });
-      setMessage(null);
-      box.current?.focus();
-    },
+    onSelect: () => movePlacement({
+      ...draft,
+      mode,
+      selection: null,
+      ...(draft.typingStartFromLine
+        ? { typingStartMs: empty ? null : readAudioNow(), typingStartFromLine: undefined }
+        : {}),
+    }),
   }));
   const ChipIcon = chip?.icon;
 
@@ -378,6 +403,7 @@ export default function LiveNoteComposer({
               onDraftFileChange(null);
               if (isBlank(draft.text) && !draft.typingStartFromLine) setDraft({ ...draft, typingStartMs: null });
               setMessage(null);
+              setAnnouncement("");
               box.current?.focus();
             }}
             className="h-7 w-7 text-action-tint-fg hover:bg-action-tint-hover hover:text-action-tint-fg pointer-coarse:h-[44px] pointer-coarse:w-[44px] pointer-coarse:-my-2"
@@ -444,7 +470,7 @@ export default function LiveNoteComposer({
           ? `mt-1 text-xs ${status.tone === "error" ? "text-status-danger-fg" : "text-contrast-helper"}`
           : "sr-only"}
       >
-        {status?.text}
+        {status?.text ?? announcement}
       </p>
       {/* Enter and Shift+Enter work as in any chat box, so the hint is the
           box's description and the Send button's tooltip, not a line. */}

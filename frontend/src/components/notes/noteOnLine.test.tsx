@@ -132,6 +132,15 @@ describe("the note box on a chosen line", () => {
     expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("After the transcript");
     expect(draftNow()).toMatchObject({ text: "Keep me", mode: "tail", selection: null });
     expect(box).toHaveFocus();
+    // Said, not shown: the chip shows it.
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("The next note goes after the transcript.");
+    expect(screen.getByTestId("live-note-status")).toHaveClass("sr-only");
+  });
+
+  it("says where typing starts once the line is taken off", () => {
+    renderOnLine("typing");
+    fireEvent.click(screen.getByRole("button", { name: "Don't put the note on this text" }));
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("The next note goes where you start typing.");
   });
 
   it("takes the line off when the whole meeting is chosen instead", () => {

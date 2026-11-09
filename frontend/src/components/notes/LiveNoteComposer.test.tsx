@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { OutboxDraft } from "@/lib/notes/noteOutbox";
+import type { ComposerDraft, OutboxDraft } from "@/lib/notes/noteOutbox";
 
 import LiveNoteComposer from "./LiveNoteComposer";
 
@@ -110,6 +111,70 @@ describe("LiveNoteComposer", () => {
     expect(box).toHaveFocus();
     pressEnter(box);
     expect(onSubmit).toHaveBeenLastCalledWith({ kind: "point", body: "On second thoughts", anchorMs: 5_000 });
+  });
+
+  describe("says where the next note goes when its place moves, without showing it", () => {
+    const said = () => {
+      const status = screen.getByTestId("live-note-status");
+      expect(status).toHaveAttribute("aria-live", "polite");
+      expect(status).toHaveClass("sr-only");
+      return status.textContent;
+    };
+
+    it.each([
+      [true, "Before the transcript", "The next note goes before the transcript."],
+      [true, "After the transcript", "The next note goes after the transcript."],
+      [false, "After the transcript", "The next note goes after the transcript."],
+      [false, "Before the transcript", "The next note goes before the transcript."],
+    ] as const)("on choosing a whole-meeting place (capturing: %s, %s)", (captureActive, place, expected) => {
+      render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={captureActive} />);
+      chooseWholeMeeting(place);
+      expect(said()).toBe(expected);
+      // The next keystroke ends it, as it ends any news.
+      type(screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement, "A");
+      expect(screen.getByTestId("live-note-status")).toHaveTextContent(/^$/);
+    });
+
+    it("on taking a whole-meeting place off during capture, before and after typing", () => {
+      const box = renderComposer();
+      chooseWholeMeeting("After the transcript");
+      fireEvent.click(screen.getByRole("button", { name: "Don't put the note after the transcript" }));
+      expect(said()).toBe("The next note goes where you start typing.");
+
+      chooseWholeMeeting("Before the transcript");
+      type(box, "Half a thought");
+      fireEvent.click(screen.getByRole("button", { name: "Don't put the note before the transcript" }));
+      expect(said()).toBe("The next note goes where you started typing.");
+    });
+
+    it("on taking off a time a line's menu set during capture", () => {
+      const Controlled = () => {
+        const [draft, setDraft] = useState<ComposerDraft>(
+          { text: "", mode: "typing", typingStartMs: 60_000, typingStartFromLine: true },
+        );
+        return <LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} draft={draft} onDraftChange={setDraft} />;
+      };
+      render(<Controlled />);
+      fireEvent.click(screen.getByRole("button", { name: "Don't put the note at 01:00" }));
+      expect(said()).toBe("The next note goes where you start typing.");
+    });
+
+    it("on choosing a whole-meeting place over a time a line's menu set", () => {
+      render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} onDraftChange={vi.fn()}
+        draft={{ text: "", mode: "typing", typingStartMs: 60_000, typingStartFromLine: true }} />);
+      chooseWholeMeeting("Before the transcript");
+      expect(said()).toBe("The next note goes before the transcript.");
+    });
+
+    it.each([
+      [{ text: "", mode: "tail", typingStartMs: null }, "Don't put the note after the transcript"],
+      [{ text: "Carried thought", mode: "typing", typingStartMs: 12_000 }, "Don't put the note at 00:12"],
+    ] as const)("on taking a place off after capture: back before the transcript (%#)", (draft, button) => {
+      render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} captureActive={false}
+        draft={draft} onDraftChange={vi.fn()} />);
+      fireEvent.click(screen.getByRole("button", { name: button }));
+      expect(said()).toBe("The next note goes before the transcript.");
+    });
   });
 
   it("shows a time a line's menu set during capture, and takes it off for where typing starts", () => {
