@@ -128,8 +128,22 @@ const noteLine = (id: string) =>
   screen.queryAllByTestId("timeline-note").find((line) => line.dataset.noteId === id);
 const line = (index: number) =>
   scrollRegion().querySelector<HTMLElement>(`[data-order-index="${index}"]`)!;
-const moveButton = (id: string, direction: "up" | "down") =>
-  within(noteLine(id)!).getByRole("button", { name: new RegExp(`^Move note ${direction} `) });
+const editButton = (id: string) =>
+  within(noteLine(id)!).getByRole("button", { name: /^Edit note / });
+const editor = () => screen.getByRole("dialog", { name: /^Edit the note / });
+/** Opens the note's editor, where Move up and Move down are. */
+const openEditor = (id: string) => {
+  fireEvent.click(editButton(id));
+  return editor();
+};
+const moveButton = (direction: "up" | "down") =>
+  within(editor()).getByRole("button", { name: direction === "up" ? "Move up" : "Move down" });
+/** A keyboard press of a step: focus on it, then activate it. */
+const pressMove = (direction: "up" | "down") => {
+  const button = moveButton(direction);
+  button.focus();
+  fireEvent.click(button);
+};
 
 /** The transcript as it reads, top to bottom: `line:i` for a line, `note:id` for a note. */
 const transcriptOrder = () =>
@@ -167,24 +181,35 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("Moving a point note with Move up and Move down", () => {
+describe("Moving a point note with Move up and Move down in its editor", () => {
+  it("shows only Edit on the note line, beside the grip", () => {
+    render(<Page notes={[POINT]} />);
+
+    expect(within(noteLine("n-point")!).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Edit"]);
+    expect(within(noteLine("n-point")!).queryByRole("button", { name: /Move/ })).toBeNull();
+    expect(noteLine("n-point")!.querySelector("[data-note-grip]")).not.toBeNull();
+  });
+
   it("moves it onto a line that is still settling", async () => {
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
     const segments = SEGMENTS.map((segment, index) => ({ ...segment, settling_required: true,
       revision: 8, provisional: true, locked: index !== 2 }));
     render(<Page notes={[POINT]} segments={segments} />);
-    fireEvent.click(moveButton("n-point", "down"));
+    openEditor("n-point");
+    pressMove("down");
     await waitFor(() => expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-point", {
       expected_revision: 2, anchor_ms: 130_000,
     }));
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "line:3"]);
   });
-  it("moves it after the next line, anchored at that line's start, and keeps focus on the button", async () => {
+  it("moves it after the next line, anchored at that line's start, and keeps the editor and its focus", async () => {
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
     render(<Page notes={[POINT]} />);
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "note:n-point", "line:2", "line:3"]);
 
-    fireEvent.click(moveButton("n-point", "down"));
+    openEditor("n-point");
+    pressMove("down");
 
     await waitFor(() =>
       expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-point", {
@@ -194,7 +219,8 @@ describe("Moving a point note with Move up and Move down", () => {
     );
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "line:3"]);
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Note moved after the line at 02:10."));
-    expect(document.activeElement).toBe(moveButton("n-point", "down"));
+    expect(editor()).toHaveAccessibleName("Edit the note at 02:10");
+    expect(document.activeElement).toBe(moveButton("down"));
 
     // Pressing it again carries on, against the revision the first move made.
     fireEvent.click(document.activeElement as HTMLElement);
@@ -205,6 +231,43 @@ describe("Moving a point note with Move up and Move down", () => {
       }),
     );
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "line:3", "note:n-point"]);
+    // At the last place, focus goes to the step that still works.
+    await waitFor(() => expect(moveButton("down")).toBeDisabled());
+    expect(document.activeElement).toBe(moveButton("up"));
+
+    // The editor moved with the note: closing it gives focus to Edit in its new place.
+    fireEvent.click(within(editor()).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(editButton("n-point"));
+  });
+
+  it("saves an edit made after a step against the revision the step made", async () => {
+    const step = deferred<TimelineNote>();
+    updateTimelineNote.mockReturnValueOnce(step.promise);
+    render(<Page notes={[POINT]} />);
+
+    openEditor("n-point");
+    pressMove("down");
+    fireEvent.change(within(editor()).getByRole("textbox", { name: "Note" }), {
+      target: { value: "Ask about catering and parking" },
+    });
+    updateTimelineNote.mockImplementation(async (_recording, _id, update) => ({
+      ...moved(130_000, 4), body: update.body,
+    }));
+    await waitFor(() => expect(updateTimelineNote).toHaveBeenCalledTimes(1));
+    fireEvent.click(within(editor()).getByRole("button", { name: "Save note" }));
+    // The save waits for the step's answer, then goes against its revision.
+    await act(async () => {});
+    expect(updateTimelineNote).toHaveBeenCalledTimes(1);
+    await act(async () => step.resolve(moved(130_000, 3)));
+
+    await waitFor(() => expect(updateTimelineNote).toHaveBeenLastCalledWith("rec-1", "n-point", {
+      expected_revision: 3,
+      body: "Ask about catering and parking",
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(noteLine("n-point")).toHaveTextContent("Ask about catering and parking");
+    expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "line:3"]);
   });
 
   it("sends a second press after the first is answered, against the revision it made", async () => {
@@ -212,8 +275,9 @@ describe("Moving a point note with Move up and Move down", () => {
     updateTimelineNote.mockReturnValueOnce(first.promise);
     render(<Page notes={[POINT]} />);
 
-    fireEvent.click(moveButton("n-point", "down"));
-    fireEvent.click(moveButton("n-point", "down"));
+    openEditor("n-point");
+    pressMove("down");
+    pressMove("down");
     // Both show at once; only the first is on its way.
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "line:3", "note:n-point"]);
     await waitFor(() => expect(updateTimelineNote).toHaveBeenCalledTimes(1));
@@ -234,7 +298,8 @@ describe("Moving a point note with Move up and Move down", () => {
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
     render(<Page notes={[POINT]} />);
 
-    fireEvent.click(moveButton("n-point", "up"));
+    openEditor("n-point");
+    pressMove("up");
 
     await waitFor(() =>
       expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-point", {
@@ -244,8 +309,8 @@ describe("Moving a point note with Move up and Move down", () => {
     );
     expect(transcriptOrder()).toEqual(["line:0", "note:n-point", "line:1", "line:2", "line:3"]);
     // At the top, focus goes to the step that still works.
-    await waitFor(() => expect(document.activeElement).toBe(moveButton("n-point", "down")));
-    expect(moveButton("n-point", "up")).toBeDisabled();
+    await waitFor(() => expect(document.activeElement).toBe(moveButton("down")));
+    expect(moveButton("up")).toBeDisabled();
   });
 
   it("shows the move in Your notes, with the note's new time", async () => {
@@ -255,13 +320,13 @@ describe("Moving a point note with Move up and Move down", () => {
     const listOrder = () => screen.getAllByTestId("my-note").map((row) => row.dataset.noteId);
     expect(listOrder()).toEqual(["n-early", "n-point"]);
 
-    fireEvent.click(moveButton("n-early", "down"));
-    // A second note folds immediately; the chip becomes the keyboard target.
-    const chip = screen.getByRole("button", { name: "2 notes on the line at 01:05" });
-    expect(noteLine("n-early")).toBeUndefined();
-    expect(document.activeElement).toBe(chip);
-    fireEvent.click(chip);
-    fireEvent.click(moveButton("n-early", "down"));
+    openEditor("n-early");
+    pressMove("down");
+    // The note being edited stays out of the fold while its editor is open.
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Note moved after the line at 01:05."));
+    expect(noteLine("n-early")).toBeDefined();
+    expect(myNotesTime("n-early")).toBe("01:05");
+    pressMove("down");
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Note moved after the line at 02:10."));
     expect(myNotesTime("n-early")).toBe("02:10");
 
@@ -269,16 +334,32 @@ describe("Moving a point note with Move up and Move down", () => {
     expect(myNotesTime("n-point")).toBe("01:06");
   });
 
-  it("offers no move while the note's editor is open", () => {
+  it("gives focus to the chip when a note closed after a move folds in with the others", async () => {
+    updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
+    const early = note("n-early", "point", "Early note", { anchor_ms: 1_000 });
+    render(<Page notes={[POINT, early]} />);
+
+    openEditor("n-early");
+    pressMove("down");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Note moved after the line at 01:05."));
+    fireEvent.keyDown(within(editor()).getByRole("button", { name: "Move down" }), { key: "Escape" });
+
+    const chip = screen.getByRole("button", { name: "2 notes on the line at 01:05" });
+    expect(noteLine("n-early")).toBeUndefined();
+    expect(document.activeElement).toBe(chip);
+  });
+
+  it("hides the grip while the note's editor is open, which offers the steps instead", () => {
     render(<Page notes={[POINT]} />);
 
-    fireEvent.click(within(noteLine("n-point")!).getByRole("button", { name: /^Edit note at 01:06/ }));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(within(noteLine("n-point")!).queryByRole("button", { name: /^Move note/ })).toBeNull();
+    openEditor("n-point");
     expect(noteLine("n-point")!.querySelector("[data-note-grip]")).toBeNull();
+    expect(within(editor()).getByRole("group", { name: "Move this note" })).toBeInTheDocument();
+    expect(moveButton("up")).toBeEnabled();
+    expect(moveButton("down")).toBeEnabled();
 
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
-    expect(moveButton("n-point", "down")).toBeInTheDocument();
+    fireEvent.click(within(editor()).getByRole("button", { name: "Cancel" }));
+    expect(noteLine("n-point")!.querySelector("[data-note-grip]")).not.toBeNull();
   });
 
   it("preserves an expanded destination when an optimistic move adds a third note", async () => {
@@ -288,18 +369,27 @@ describe("Moving a point note with Move up and Move down", () => {
       note("n3", "point", "Also there", { anchor_ms: 132_000 })];
     render(<Page notes={[POINT, ...others]} />);
     fireEvent.click(screen.getByRole("button", { name: "2 notes on the line at 02:10" }));
-    fireEvent.click(moveButton(POINT.id, "down"));
-    expect(screen.getByRole("button", { name: "3 notes on the line at 02:10" })).toHaveAttribute("aria-expanded", "true");
-    expect(document.activeElement).toBe(moveButton(POINT.id, "down"));
+    openEditor(POINT.id);
+    pressMove("down");
+    expect(screen.getByRole("button", { name: "2 notes on the line at 02:10" })).toHaveAttribute("aria-expanded", "true");
+    expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "note:n2", "note:n3", "line:3"]);
+    expect(document.activeElement).toBe(moveButton("down"));
     await act(async () => request.resolve(moved(130_000)));
+
+    // Closed, it folds in with them, and the open chip counts it.
+    fireEvent.click(within(editor()).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "3 notes on the line at 02:10" })).toHaveAttribute("aria-expanded", "true");
+    expect(document.activeElement).toBe(editButton(POINT.id));
   });
 
   it("offers no move for a selection note, whose words fix its place", () => {
     render(<Page notes={[POINT, SELECTION]} />);
 
-    expect(within(noteLine("n-sel")!).queryByRole("button", { name: /^Move note/ })).toBeNull();
     expect(noteLine("n-sel")!.querySelector("[data-note-grip]")).toBeNull();
     expect(noteLine("n-point")!.querySelector("[data-note-grip]")).not.toBeNull();
+    openEditor("n-sel");
+    expect(within(editor()).queryByRole("group", { name: "Move this note" })).toBeNull();
+    expect(within(editor()).queryByRole("button", { name: /^Move/ })).toBeNull();
   });
 });
 
@@ -310,19 +400,26 @@ describe("A refused move", () => {
     const others = [note("n2", "point", "First at destination", { anchor_ms: 131_000 }),
       note("n3", "point", "Second at destination", { anchor_ms: 132_000 })];
     render(<Page notes={[POINT, ...others]} />);
-    fireEvent.click(moveButton(POINT.id, "down"));
-    expect(screen.getByRole("button", { name: "3 notes on the line at 02:10" })).toHaveFocus();
+    openEditor(POINT.id);
+    pressMove("down");
+    expect(moveButton("down")).toHaveFocus();
     await act(async () => request.reject(conflict({ ...POINT, anchor_ms: 130_500, revision: 3 })));
     expect(screen.getByRole("button", { name: "2 notes on the line at 02:10" })).toHaveAttribute("aria-expanded", "false");
+    expect(within(editor()).getByTestId("note-editor-move-refused")).toHaveTextContent("This note was changed elsewhere");
+    expect(moveButton("down")).toHaveFocus();
+
+    // Closed, the note keeps the refusal on its line, out of the fold.
+    fireEvent.click(within(editor()).getByRole("button", { name: "Cancel" }));
     expect(noteLine(POINT.id)).toHaveTextContent("This note was changed elsewhere");
-    expect(moveButton(POINT.id, "down")).toHaveFocus();
+    expect(document.activeElement).toBe(editButton(POINT.id));
   });
   it("shows the note at its new place while it saves, and puts it back on a 409 with the note as it is now", async () => {
     const answer = deferred<TimelineNote>();
     updateTimelineNote.mockReturnValueOnce(answer.promise);
     render(<Page notes={[POINT]} />);
 
-    fireEvent.click(moveButton("n-point", "down"));
+    openEditor("n-point");
+    pressMove("down");
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "line:3"]);
 
     // Edited on another device meanwhile: still at 01:06, at revision 3.
@@ -331,11 +428,11 @@ describe("A refused move", () => {
 
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "note:n-point", "line:2", "line:3"]);
     expect(noteLine("n-point")).toHaveTextContent("Ask about catering and drinks");
-    expect(within(noteLine("n-point")!).getByTestId("timeline-note-move-refused")).toHaveTextContent(
+    expect(within(editor()).getByTestId("note-editor-move-refused")).toHaveTextContent(
       "This note was changed elsewhere. It now reads “Ask about catering and drinks”. Move it again if you still want it there.",
     );
     expect(screen.getByRole("status")).toHaveTextContent(/^Note not moved\. This note was changed elsewhere/);
-    expect(document.activeElement).toBe(moveButton("n-point", "down"));
+    expect(document.activeElement).toBe(moveButton("down"));
 
     // A second try goes against the revision the 409 carried.
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => ({
@@ -343,14 +440,14 @@ describe("A refused move", () => {
       anchor_ms: update.anchor_ms,
       revision: 4,
     }));
-    fireEvent.click(moveButton("n-point", "down"));
+    fireEvent.click(moveButton("down"));
     await waitFor(() =>
       expect(updateTimelineNote).toHaveBeenLastCalledWith("rec-1", "n-point", {
         expected_revision: 3,
         anchor_ms: 130_000,
       }),
     );
-    await waitFor(() => expect(noteLine("n-point")!.querySelector('[data-testid="timeline-note-move-refused"]')).toBeNull());
+    await waitFor(() => expect(within(editor()).queryByTestId("note-editor-move-refused")).toBeNull());
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "line:3"]);
   });
 
@@ -359,8 +456,9 @@ describe("A refused move", () => {
     updateTimelineNote.mockReturnValueOnce(answer.promise);
     render(<Page notes={[POINT]} />);
 
-    fireEvent.click(moveButton("n-point", "down"));
-    fireEvent.click(moveButton("n-point", "down"));
+    openEditor("n-point");
+    pressMove("down");
+    pressMove("down");
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "line:3", "note:n-point"]);
 
     updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms, 4));
@@ -369,13 +467,13 @@ describe("A refused move", () => {
 
     expect(updateTimelineNote).toHaveBeenCalledTimes(1);
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "note:n-point", "line:2", "line:3"]);
-    expect(within(noteLine("n-point")!).getByTestId("timeline-note-move-refused")).toHaveTextContent(
+    expect(within(editor()).getByTestId("note-editor-move-refused")).toHaveTextContent(
       /^This note was changed elsewhere/,
     );
     expect(screen.getByRole("status")).toHaveTextContent(/^Note not moved\./);
 
     // A press made once the refusal shows goes ahead.
-    fireEvent.click(moveButton("n-point", "down"));
+    fireEvent.click(moveButton("down"));
     await waitFor(() =>
       expect(updateTimelineNote).toHaveBeenLastCalledWith("rec-1", "n-point", {
         expected_revision: 3,
@@ -388,7 +486,8 @@ describe("A refused move", () => {
     updateTimelineNote.mockRejectedValueOnce(conflict({ ...POINT, anchor_ms: 200_500, revision: 3 }));
     render(<Page notes={[POINT]} />);
 
-    fireEvent.click(moveButton("n-point", "up"));
+    openEditor("n-point");
+    pressMove("up");
 
     await waitFor(() =>
       expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "line:3", "note:n-point"]),
@@ -400,10 +499,11 @@ describe("A refused move", () => {
     updateTimelineNote.mockRejectedValueOnce(new Error("Network Error"));
     render(<Page notes={[POINT]} />);
 
-    fireEvent.click(moveButton("n-point", "down"));
+    openEditor("n-point");
+    pressMove("down");
 
     await waitFor(() =>
-      expect(within(noteLine("n-point")!).getByTestId("timeline-note-move-refused")).toHaveTextContent(
+      expect(within(editor()).getByTestId("note-editor-move-refused")).toHaveTextContent(
         "No answer from Nojoin. Try again.",
       ),
     );

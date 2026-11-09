@@ -133,7 +133,7 @@ export interface RecordingSpeaker extends BaseDBModel {
   /**
    * The name was suggested (by a self-introduction, the AI or a voiceprint)
    * and nobody has confirmed it yet. Strong voice matches are not pending.
-   * Worked out by the backend; the views show it with a "?" and offer
+   * Worked out by the backend; the transcript marks it Suggested and offers
    * Confirm and Not {name}.
    */
   name_pending?: boolean;
