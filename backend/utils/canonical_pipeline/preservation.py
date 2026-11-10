@@ -134,6 +134,8 @@ def timed_word_owners(
 
     An untimed word goes with the timed word before it, or the first timed
     word when none precedes it. ``words`` must hold at least one timed word.
+    This is the rule for speaker ownership only; a protected review applies the
+    stricter ``_untimed_owner``, since it removes words from the transcript text.
     """
     current = next(owner(word) for word in words if has_word_timing(word))
     owners: list[T] = []
