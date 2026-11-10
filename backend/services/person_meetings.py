@@ -3,7 +3,7 @@
 from collections import defaultdict
 from collections.abc import Sequence
 
-from sqlalchemy import RowMapping, and_, func, text
+from sqlalchemy import RowMapping, Select, and_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import Subquery
@@ -16,6 +16,7 @@ from backend.models.speaker_public import (
     PersonMeetingsRead,
     PersonTalkMonthRead,
 )
+from backend.models.transcript import Transcript
 from backend.utils.timezones import utc_naive_to_timezone
 
 # A meeting counts for a person only through a speaker that is neither merged
@@ -36,6 +37,30 @@ def counted_speaker() -> ColumnElement[bool]:
     return and_(
         col(RecordingSpeaker.merged_into_id).is_(None),
         col(RecordingSpeaker.speaker_status) == COUNTED_SPEAKER_STATUS,
+    )
+
+
+def person_sample_sources(person_id: int, user_id: int, scan: int) -> Select:
+    """The person's counted speakers in the user's newest ``scan`` meetings.
+
+    Each row is the speaker, its recording and the recording's transcript, or
+    ``None`` where it has none yet. The voiceprint sample lines read these, so a
+    speaker merged away, or one whose lines all moved to someone else, offers
+    no line, and nor does a recording in the bin or one the user does not own.
+    """
+    return (
+        select(RecordingSpeaker, Recording, Transcript)
+        .join(Recording, col(Recording.id) == col(RecordingSpeaker.recording_id))
+        .outerjoin(
+            Transcript,
+            col(Transcript.recording_id) == col(RecordingSpeaker.recording_id),
+        )
+        .where(col(RecordingSpeaker.global_speaker_id) == person_id)
+        .where(col(Recording.user_id) == user_id)
+        .where(col(Recording.is_deleted).is_(False))
+        .where(counted_speaker())
+        .order_by(col(Recording.created_at).desc())
+        .limit(scan)
     )
 
 
