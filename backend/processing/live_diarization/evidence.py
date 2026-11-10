@@ -12,10 +12,11 @@ import numpy as np
 from backend.processing.sentence_start import NativeActivity, native_activity
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.live_speaker_labels import live_speaker_label
+from backend.utils.time_units import NATIVE_FRAME_MS, frame_range, ms_to_seconds
 
 from .engine import LiveLabelConfig
 from .files import DISABLED_FILENAME
-from .lines import LabelTimeline, native_frame_range
+from .lines import LabelTimeline
 from .state import LiveLabelStateError, _validate, read_snapshot
 
 
@@ -33,12 +34,17 @@ class SpeakerEvidence:
     def decide(self, start_ms: int, end_ms: int) -> LiveLabelDecision:
         """Resolve a word against the same route as normal live labels."""
         if not self.native and not (
-            self.switch_frame is not None and end_ms <= self.native_complete_frame * 10
+            self.switch_frame is not None
+            and end_ms <= self.native_complete_frame * NATIVE_FRAME_MS
         ):
-            return self.timeline.label_line(start_ms / 1000, end_ms / 1000)
-        first, stop = native_frame_range(start_ms, end_ms, self.posterior_first_frame)
+            return self.timeline.label_line(
+                ms_to_seconds(start_ms), ms_to_seconds(end_ms)
+            )
+        first, stop = frame_range(
+            start_ms, end_ms, NATIVE_FRAME_MS, self.posterior_first_frame
+        )
         probabilities = self.posteriors[first:stop]
-        complete = end_ms <= self.native_complete_frame * 10
+        complete = end_ms <= self.native_complete_frame * NATIVE_FRAME_MS
         if not complete:
             return LiveLabelDecision("UNKNOWN", False, None, True)
         if not len(probabilities):

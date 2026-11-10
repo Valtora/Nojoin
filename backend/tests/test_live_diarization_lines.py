@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from backend.processing.live_diarization.lines import LabelTimeline
 
@@ -44,6 +45,19 @@ def test_a_line_split_evenly_between_two_voices_stays_unlabelled():
 
     assert decision.speaker == "UNKNOWN"
     assert decision.locked is True
+
+
+@pytest.mark.parametrize("start_ms", [0, 35, 144, 244])
+def test_a_handover_at_the_middle_of_a_line_is_an_even_split_wherever_it_falls(
+    start_ms,
+):
+    # Pieces end on whole milliseconds, so a 200 ms line handed over at its
+    # middle is half and half. Float seconds can measure the first half a
+    # hair over, which handed the line to the first voice.
+    start, middle, end = ((start_ms + offset) / 1000 for offset in (0, 100, 200))
+    timeline = _timeline([(start, middle, 0, True), (middle, end, 1, True)])
+
+    assert timeline.label_line(start, end).speaker == "UNKNOWN"
 
 
 def test_only_the_part_of_a_piece_inside_the_line_counts():
