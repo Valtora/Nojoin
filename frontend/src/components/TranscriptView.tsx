@@ -176,7 +176,11 @@ export default function TranscriptView({
   const keepLineGroups = isLive || hasPendingDiarisation;
   const LineList = isLive ? "ol" : "div";
   const LineItem = isLive ? "li" : "div";
-  const liveLines = useMemo(() => isLive ? buildLiveTranscriptPresentation(segments) : undefined, [segments, isLive]);
+  const suggestions = live?.liveSpeakerSuggestions;
+  const suggestionStarts = live?.liveSpeakerSuggestionStarts;
+  const liveLines = useMemo(() => isLive
+    ? buildLiveTranscriptPresentation(segments, suggestions, suggestionStarts) : undefined,
+  [segments, isLive, suggestions, suggestionStarts]);
 
   // The recording page's poll hands these over anew every few seconds, most
   // often with the same contents; every line reads them.

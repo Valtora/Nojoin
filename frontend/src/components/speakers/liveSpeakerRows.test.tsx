@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpeakerPanel from "../SpeakerPanel";
+import SharedLiveTranscript from "@/test/SharedLiveTranscript";
 import { line, panelProps, person, speaker } from "../transcript/transcriptTestFixtures";
 
 const mocks = vi.hoisted(() => ({ promote: vi.fn(), rename: vi.fn() }));
@@ -122,5 +123,52 @@ describe("live speaker rows", () => {
   it("does not duplicate live labels with actual speaker records", () => {
     render(<SpeakerPanel {...props()} speakers={[speaker("LIVE_PROVISIONAL_1", "Alex")]} />);
     expect(screen.getAllByRole("button", { name: "Actions for Alex" })).toHaveLength(1);
+  });
+
+  describe("a pending name", () => {
+    const A = "LIVE_PROVISIONAL_1";
+    const lines = [0, 10, 20, 30].map((start, i) => line({
+      id: `live-${i}`, speaker: A, start, end: start + 5, text: `Line ${i}`,
+    }));
+    const pending = { liveSpeakerSuggestions: { [A]: "Alex" }, liveSpeakerSuggestionSources: { [A]: "heuristic" as const } };
+    const dismiss = vi.fn(async () => true);
+    const page = (onShowTranscript = vi.fn()) => <>
+      <SpeakerPanel {...props()} segments={lines} liveSpeakerNames={{}} {...pending}
+        onDismissLiveSpeakerSuggestion={dismiss} onShowTranscript={onShowTranscript} />
+      <div id="panel-transcript">
+        <SharedLiveTranscript segments={lines} hasLoaded {...pending} liveSpeakerSuggestionStarts={{ [A]: 10 }}
+          onRenameLiveSpeaker={mocks.rename} onDismissLiveSpeakerSuggestion={dismiss} />
+      </div>
+    </>;
+    const card = () => screen.getByRole("button", { name: "Actions for Speaker 1" }).closest<HTMLElement>("[data-ui-fill='card']")!;
+
+    beforeEach(() => dismiss.mockClear());
+
+    it("is offered on the speaker's card, with Accept and Dismiss as on the line", async () => {
+      render(page());
+      const row = within(card());
+      expect(row.getByText("Suggested")).toBeInTheDocument();
+      expect(row.getByText("Introduced themselves")).toBeInTheDocument();
+      fireEvent.click(row.getByRole("button", { name: "Accept suggested name Alex" }));
+      await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith(A, "Alex", false));
+      fireEvent.click(row.getByRole("button", { name: "Dismiss suggested name Alex" }));
+      await waitFor(() => expect(dismiss).toHaveBeenCalledWith(A));
+    });
+
+    it("goes to the line where it was heard, after showing the transcript", () => {
+      const onShowTranscript = vi.fn();
+      render(page(onShowTranscript));
+      const region = screen.getByTestId("live-transcript-scroll");
+      const scrollTo = vi.fn();
+      region.scrollTo = scrollTo as unknown as typeof region.scrollTo;
+      const heard = document.querySelector<HTMLElement>("[data-order-index][data-segment-id=\"live-1\"]")!;
+      expect(within(heard).getByText("Suggested")).toBeInTheDocument();
+      heard.getBoundingClientRect = () => ({ top: 640, height: 40 }) as DOMRect;
+
+      fireEvent.click(within(card()).getByRole("button", { name: "Go to the line where Alex was heard" }));
+
+      expect(onShowTranscript).toHaveBeenCalledTimes(1);
+      expect(scrollTo).toHaveBeenCalledWith({ top: 640 - (0 - 40) / 2, behavior: "smooth" });
+    });
   });
 });

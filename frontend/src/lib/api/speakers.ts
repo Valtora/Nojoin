@@ -2,6 +2,7 @@ import type {
   GlobalSpeaker,
   GlobalSpeakerUpdate,
   LiveSpeakerNames,
+  LiveSpeakerSuggestionReview,
   MergedRecordingSpeaker,
   PersonMeetingsRead,
   RecalibrateResult,
@@ -146,6 +147,17 @@ export const mergeLiveSpeaker = async (
   const response = await api.post<LiveSpeakerNames>(
     `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}/merge`,
     { into_label: intoLabel },
+  );
+  return response.data;
+};
+
+/** Dismisses a name heard during capture without naming or linking its speaker. */
+export const dismissLiveSpeakerSuggestion = async (
+  recordingId: RecordingId,
+  label: string,
+): Promise<LiveSpeakerSuggestionReview> => {
+  const response = await api.post<LiveSpeakerSuggestionReview>(
+    `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}/suggestions/reject`,
   );
   return response.data;
 };

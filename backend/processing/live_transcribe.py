@@ -40,6 +40,7 @@ from backend.processing.live_persistence import (
 from backend.processing.live_persistence import (
     _load_recording_audio_window_manifests,
     _persist_live_run,
+    live_naming_wanted_after_labels,
     logger,
 )
 from backend.processing.live_settling import (
@@ -520,6 +521,12 @@ def _dispatch_meeting_edge_refresh_best_effort(recording_id: int) -> None:
         )
 
 
+def _queue_live_naming_check(recording_id: int) -> None:
+    from backend.worker.tasks.live_naming_stage import queue_live_naming_check
+
+    queue_live_naming_check(recording_id)
+
+
 @celery_app.task(bind=True, max_retries=None)
 def transcribe_segment_live_task(self, recording_id: int, sequence: int) -> None:
     """Serialise drains across workers sharing the recording's audio."""
@@ -909,6 +916,8 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         # --- Diarisation dispatch (best-effort Meeting Edge refresh) ---
         if publication.dispatch_meeting_edge:
             _dispatch_meeting_edge_refresh_best_effort(recording_id)
+        if publication.queue_live_naming:
+            _queue_live_naming_check(recording_id)
 
         for consumed_sequence in run:
             _record_live_sequence_outcome(
@@ -960,7 +969,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             ):
                 from backend.processing.live_diarization import step as live_labels
 
-                live_labels.run_live_speaker_labels(
+                labels_changed = live_labels.run_live_speaker_labels(
                     live_labels.LiveLabelRun(
                         recording_id=recording_id,
                         sequence=run[-1],
@@ -973,6 +982,8 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
                         expected_token=expected_token,
                     )
                 )
+                if labels_changed and live_naming_wanted_after_labels(recording_id):
+                    _queue_live_naming_check(recording_id)
         except Exception:  # noqa: BLE001 -- boundary: labels are best-effort
             logger.exception("Live speaker labels failed for %s", recording_id)
         if paused_tail:

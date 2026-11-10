@@ -79,6 +79,7 @@ describe("api public surface", () => {
         "deleteVoiceprint",
         "discardRecordingCapture",
         "disconnectCalendarConnection",
+        "dismissLiveSpeakerSuggestion",
         "dismissSpeakerName",
         "dismissUpdateNotice",
         "documentFileUrl",

@@ -370,12 +370,25 @@ export interface TranscriptUtteranceList {
   live_speaker_merges?: Record<string, string>;
   /** The live lane is behind a running capture's uploads. */
   live_behind?: boolean;
+  /** Pending names heard in this meeting, kept separate from accepted names. Whole on every read. */
+  live_speaker_suggestions?: Record<string, string>;
+  /** Where each pending name came from: "heuristic" (a self-introduction) or "llm". */
+  live_speaker_suggestion_sources?: Record<string, SpeakerNameSource>;
+  /**
+   * Where each pending name's evidence starts, in seconds: the introduction's
+   * line. Left out for a name with no single timed span (most AI names).
+   */
+  live_speaker_suggestion_starts?: Record<string, number>;
 }
 
 /** The answer to naming or merging a live speaker, as the live read gives it. */
 export interface LiveSpeakerNames {
   live_speaker_names: Record<string, string>;
   live_speaker_merges?: Record<string, string>;
+}
+
+export interface LiveSpeakerSuggestionReview extends LiveSpeakerNames {
+  live_speaker_suggestions: Record<string, string>;
 }
 
 export interface TranscriptSegment extends LiveTranscriptSettling {
@@ -793,6 +806,8 @@ export interface Settings {
   auto_analyse_meetings?: boolean;
   /** Take suggested speaker names as given when processing finishes, rather than asking to confirm each. */
   confirm_suggested_names?: boolean;
+  /** Offer names for unnamed speakers while a meeting records (on unless false). */
+  suggest_live_speaker_names?: boolean;
   /**
    * "confirmed" (the default): a person's library voiceprint learns only from
    * names the user gave or confirmed. "automatic": also from voiceprint matches
