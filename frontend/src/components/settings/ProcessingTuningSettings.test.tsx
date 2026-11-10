@@ -103,10 +103,43 @@ describe("ProcessingTuningSettings", () => {
   it("labels each field of a multi-field row within a group named by the row", () => {
     renderTuning({});
 
-    const phantom = screen.getByRole("group", { name: "Phantom speaker filter" });
-    const flip = screen.getByRole("group", { name: "Single-word flip smoothing" });
-    expect(within(phantom).getByRole("spinbutton", { name: "Merge similarity" })).toBeInTheDocument();
-    expect(within(flip).getByRole("spinbutton", { name: "Max gap (seconds)" })).toBeInTheDocument();
+    const brief = screen.getByRole("group", { name: "Speakers heard only briefly" });
+    const stray = screen.getByRole("group", { name: "Stray one-word speaker changes" });
+    expect(within(brief).getAllByRole("spinbutton")).toHaveLength(4);
+    for (const name of [
+      "Check speakers under (seconds)",
+      "And up to (turns)",
+      "Treat as noise below (voice match)",
+      "Merge from (voice match)",
+    ]) {
+      expect(within(brief).getByRole("spinbutton", { name })).toBeInTheDocument();
+    }
+    expect(within(stray).getByRole("spinbutton", { name: "Words up to (seconds)" })).toBeInTheDocument();
+    expect(within(stray).getByRole("spinbutton", { name: "Pause up to (seconds)" })).toBeInTheDocument();
+  });
+
+  it("shows the longest word only when Parakeet is the engine", () => {
+    const { view, onUpdate } = renderTuning({ transcription_backend: "whisper" });
+    expect(screen.queryByText("Longest word (Parakeet only)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "Longest word (seconds)" })).not.toBeInTheDocument();
+
+    view.rerender(
+      <ProcessingTuningSettings settings={{ transcription_backend: "parakeet" }} onUpdate={onUpdate} />,
+    );
+
+    expect(screen.getByText("Longest word (Parakeet only)")).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Longest word (seconds)" })).toHaveAttribute(
+      "placeholder",
+      "Default (0.4)",
+    );
+  });
+
+  it("keeps the old internal names off the card", () => {
+    renderTuning({ transcription_backend: "parakeet" });
+
+    for (const old of [/phantom/i, /flip/i, /similarity/i, /floor/i, /length cap/i, /segments/i]) {
+      expect(screen.queryByText(old)).not.toBeInTheDocument();
+    }
   });
 
   it("describes each field with its row's help text", () => {
@@ -115,8 +148,8 @@ describe("ProcessingTuningSettings", () => {
     expect(
       screen.getByRole("spinbutton", { name: "Speech detection threshold" }),
     ).toHaveAccessibleDescription(/^Lower keeps quiet or distant speech/);
-    expect(screen.getByRole("spinbutton", { name: "Merge similarity" })).toHaveAccessibleDescription(
-      /^A speaker under both limits is checked/,
+    expect(screen.getByRole("spinbutton", { name: "Merge from (voice match)" })).toHaveAccessibleDescription(
+      /^Someone heard for less than both limits is compared/,
     );
   });
 
@@ -149,8 +182,8 @@ describe("ProcessingTuningSettings", () => {
 
   it.each([
     ["Speech detection threshold", "ArrowUp", "vad_threshold", 0.55],
-    ["Merge similarity", "ArrowDown", "phantom_merge_threshold", 0.55],
-    ["Max segments", "ArrowUp", "phantom_max_segments", 4],
+    ["Merge from (voice match)", "ArrowDown", "phantom_merge_threshold", 0.55],
+    ["And up to (turns)", "ArrowUp", "phantom_max_segments", 4],
   ] as const)("steps an empty %s from its default with %s", (name, key, setting, expected) => {
     const state = renderWithState({});
     const input = screen.getByRole("spinbutton", { name });

@@ -116,6 +116,11 @@ class ResolvedLLMConfig:
     # primary first and the server secondary only after that. When set, it takes
     # precedence over the flat secondary_* fields in get_llm_backend_with_secondary.
     secondary_chain: "ResolvedLLMConfig | None" = None
+    # The install-wide setting this config's Ollama address is read from. The
+    # address stored there is the administrator's own and is trusted where it is
+    # used (see install_wide_ollama_url); any other address meets the full
+    # outbound policy.
+    api_url_setting: str = "ollama_api_url"
 
     def missing_configuration_message(self) -> str | None:
         if self.has_secondary:
@@ -161,7 +166,28 @@ class ResolvedLLMConfig:
             context_window=self.secondary_context_window,
             think=self.secondary_think,
             merged_config=self.merged_config,
+            api_url_setting="secondary_ollama_api_url",
         )
+
+
+def install_wide_ollama_url(config: Any) -> str | None:
+    """The stored install-wide address an Ollama config may use without the outbound check.
+
+    The address an administrator set for this config's role (``ollama_api_url``
+    for the primary, ``secondary_ollama_api_url`` for the fallback), in
+    Settings > AI providers, where it is checked on save, or in ``.env``, is
+    the operator's own, so it is trusted where it is used, a private one
+    included (#951). Only the stored value is returned: a config carrying a
+    different address, whatever its source, still meets the full outbound
+    policy.
+    """
+    if getattr(config, "provider", None) != "ollama" or not getattr(
+        config, "api_url", None
+    ):
+        return None
+    setting = getattr(config, "api_url_setting", "ollama_api_url")
+    stored = config_manager.get(setting)
+    return str(stored) if stored else None
 
 
 def _merge_llm_config(

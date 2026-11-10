@@ -197,12 +197,14 @@ def test_a_null_engine_is_not_written_over_the_install_engine(install_config):
 
 
 # Retired settings: the ASR window result ledger switch (issue #428), the GPU
-# transcription window, now a fixed 30 s on every device (issue #445), and the
-# onnx-asr word end padding, replaced by asr_word_length_cap_s.
+# transcription window, now a fixed 30 s on every device (issue #445), the
+# onnx-asr word end padding, replaced by asr_word_length_cap_s, and muting for
+# transcription, now always on with VAD (issue #961).
 RETIRED_KEYS = {
     "enable_asr_window_result_ledger": False,
     "gpu_asr_window_s": 60,
     "asr_word_end_padding_s": 0.2,
+    "vad_mute_transcription": False,
 }
 
 

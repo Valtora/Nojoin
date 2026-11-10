@@ -189,7 +189,7 @@ export default function MyNotesList({
           No notes yet. Add one from a line&apos;s ⋯ menu, or select words in the transcript.
         </p>
       ) : (
-        <ul aria-label="My notes" className="space-y-2">
+        <ul aria-label="Your notes" className="space-y-2">
           {placements.map(renderRow)}
         </ul>
       )}

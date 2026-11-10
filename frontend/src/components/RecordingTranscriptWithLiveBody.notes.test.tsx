@@ -172,7 +172,7 @@ describe("RecordingTranscriptWithLiveBody live notes", () => {
   it("keeps one editable draft, file and placement through Stop and processing without duplicate recovery", async () => {
     const { show } = renderLive();
     await screen.findByText("We need the budget.");
-    fireEvent.change(screen.getByLabelText("Place note"), { target: { value: "send" } });
+    monotonicMs = 2_000;
     fireEvent.change(box(), { target: { value: "Thought with a file" } });
     const file = new File(["capture"], "context.png", { type: "image/png" });
     act(() => noteOutboxFor("rec-1").setDraftFile(file));
@@ -181,13 +181,13 @@ describe("RecordingTranscriptWithLiveBody live notes", () => {
     expect(screen.getAllByRole("textbox", { name: "New note" })).toHaveLength(1);
     expect(box()).toBe(originalBox);
     expect(box()).toHaveValue("Thought with a file");
-    expect(screen.getByLabelText("Place note")).toHaveValue("send");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 01:03");
     expect(screen.getByTestId("note-draft-file")).toHaveTextContent("context.png");
     expect(screen.queryByTestId("unsaved-draft")).toBeNull();
     await show(buildRecording({ status: RecordingStatus.PROCESSED, client_status: undefined, duration_seconds: 600 }));
     expect(box()).toBe(originalBox);
     expect(noteOutboxFor("rec-1").getSnapshot().draftFile).toBe(file);
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("where capture stopped");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 01:03");
   });
 
   it("empties the box in the same change that queues its note", async () => {
@@ -300,7 +300,7 @@ describe("RecordingTranscriptWithLiveBody live notes", () => {
     await show(stopped());
 
     expect(box()).toHaveValue("Half a thought about the budget");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:03");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 01:03");
     fireEvent.click(screen.getByRole("button", { name: "Add note" }));
 
     await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(1));
@@ -353,7 +353,8 @@ describe("RecordingTranscriptWithLiveBody live notes", () => {
     createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
     renderLive();
     await screen.findByText("We need the budget.");
-    fireEvent.change(screen.getByLabelText("Place note"), { target: { value: "tail" } });
+    fireEvent.click(screen.getByRole("button", { name: "Note on the whole meeting" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "After the transcript" }));
     addNote("Follow up with legal");
 
     const pending = await screen.findByTestId("unsaved-notes");
@@ -418,11 +419,10 @@ describe("RecordingTranscriptWithLiveBody live notes", () => {
     fireEvent.click(item);
     expect(box()).toHaveFocus();
     expect(screen.queryByTestId("note-selection-chip")).toBeNull();
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:00.");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 01:00");
     monotonicMs = 9_000; // The clock runs on while the note is typed.
     fireEvent.change(box(), { target: { value: "Who signs?" } });
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:00.");
-    expect(screen.getByTestId("live-note-status")).not.toHaveTextContent("where you started typing");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 01:00");
     fireEvent.keyDown(box(), { key: "Enter" });
 
     await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(1));

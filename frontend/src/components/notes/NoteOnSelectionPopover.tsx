@@ -2,7 +2,8 @@
 
 import { TextareaBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowDown, ArrowUp } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { stripNote } from "@/lib/notes/headNoteSync";
@@ -16,6 +17,20 @@ import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
 /** Why a write was refused, or null once it is done or on its way. */
 type Refusal = string | null;
+
+/** Moving the note being edited a line at a time, for a point note in the transcript. */
+export interface NoteEditorMove {
+  /** A step to the gap above or below; null where there is none. */
+  onUp: (() => void) | null;
+  onDown: (() => void) | null;
+  /** Why the last move was refused, until the next one. */
+  refusal: string | null;
+  /**
+   * Where the note is now, which changes with each step: the popover places
+   * itself against its anchor again when it does.
+   */
+  place: number | null;
+}
 
 interface NoteOnSelectionPopoverProps {
   /** The words the note is on; null for a note on a point in time. */
@@ -39,12 +54,15 @@ interface NoteOnSelectionPopoverProps {
   onSubmit: (body: string) => Refusal | Promise<Refusal>;
   /** Deletes the note, after a second press to confirm; null closes the popover. */
   onDelete?: () => Promise<Refusal>;
+  /** Move up and Move down, for a note that can move; the popover stays open as it moves. */
+  move?: NoteEditorMove;
   onClose: () => void;
 }
 
 /**
  * A note in the finished view: the quote it is on, a box and Save, and for a
- * note being edited, Delete. Enter saves and Shift+Enter starts a new line, as
+ * note being edited, Delete, and Move up and Move down for one that can move.
+ * Enter saves and Shift+Enter starts a new line, as
  * in the live note box; Escape and Cancel close it. A press outside closes it
  * only while the text is as it opened, so a stray tap never throws a note away,
  * and until it is saved, leaving the page asks first (`useUnsavedNoteWarning`).
@@ -57,6 +75,7 @@ export default function NoteOnSelectionPopover({
   returnFocus,
   onSubmit,
   onDelete,
+  move,
   onClose,
 }: NoteOnSelectionPopoverProps) {
   const [text, setText] = useState(initialText);
@@ -64,8 +83,11 @@ export default function NoteOnSelectionPopover({
   const [busy, setBusy] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const anchorRef = useMemo(() => ({ current: anchor }), [anchor]);
-  const { panelRef, panelStyle } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
+  const { panelRef, panelStyle, reposition } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
   const boxRef = useRef<HTMLTextAreaElement>(null);
+  const upRef = useRef<HTMLButtonElement>(null);
+  const downRef = useRef<HTMLButtonElement>(null);
+  const lastStep = useRef<"up" | "down" | null>(null);
   const placed = panelStyle.visibility === "visible";
   const titleId = useId();
   const errorId = useId();
@@ -84,6 +106,35 @@ export default function NoteOnSelectionPopover({
   useEffect(() => {
     if (placed) boxRef.current?.focus();
   }, [placed]);
+
+  // A step moved the note, and with it the anchor: the popover follows.
+  const place = move?.place;
+  useLayoutEffect(() => {
+    if (place !== undefined) reposition();
+  }, [place, reposition]);
+
+  // A step that reached the first or last place disables its own button,
+  // which drops focus: it goes to the step that still works, else the box.
+  // Not while a Save or Delete is on its way, which disables both steps (a
+  // step then would go against the revision the write is about to replace);
+  // that write puts focus back itself when it is refused.
+  const canUp = Boolean(move?.onUp);
+  const canDown = Boolean(move?.onDown);
+  useEffect(() => {
+    if (busy) return;
+    const pressed = lastStep.current === "up" ? upRef.current : lastStep.current === "down" ? downRef.current : null;
+    if (!pressed || !pressed.disabled) return;
+    const active = document.activeElement;
+    if (active !== pressed && active !== document.body && active !== null) return;
+    const other = lastStep.current === "up" ? downRef.current : upRef.current;
+    (other && !other.disabled ? other : boxRef.current)?.focus();
+  }, [canUp, canDown, busy]);
+
+  const step = (direction: "up" | "down") => {
+    if (busy) return;
+    lastStep.current = direction;
+    (direction === "up" ? move?.onUp : move?.onDown)?.();
+  };
 
   // Escape, a press outside and a Tab out of it, while the box is as it
   // opened; with a note typed in the box, Tab wraps.
@@ -190,6 +241,40 @@ export default function NoteOnSelectionPopover({
         <p id={errorId} role="alert" className="mt-1 text-xs text-status-danger-fg">
           {error}
         </p>
+      ) : null}
+      {move ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2" role="group" aria-label="Move this note">
+          <Button
+            ref={upRef}
+            size="sm"
+            variant="ghost"
+            data-note-move="up"
+            iconLeft={<ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />}
+            disabled={!move.onUp || busy}
+            onClick={() => step("up")}
+            className={NOTE_BUTTON_TOUCH}
+          >
+            Move up
+          </Button>
+          <Button
+            ref={downRef}
+            size="sm"
+            variant="ghost"
+            data-note-move="down"
+            iconLeft={<ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />}
+            disabled={!move.onDown || busy}
+            onClick={() => step("down")}
+            className={NOTE_BUTTON_TOUCH}
+          >
+            Move down
+          </Button>
+          {/* The announcement is the page's; this is for the eye. */}
+          {move.refusal ? (
+            <p data-testid="note-editor-move-refused" className="basis-full text-xs text-status-danger-fg">
+              {move.refusal}
+            </p>
+          ) : null}
+        </div>
       ) : null}
       <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
         {onDelete ? (
