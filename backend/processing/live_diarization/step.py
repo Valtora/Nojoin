@@ -29,6 +29,7 @@ from backend.utils.canonical_pipeline.live_labels import (
     apply_live_speaker_labels,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.time_units import ms_to_seconds
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     load_capture_publication,
@@ -147,7 +148,7 @@ def _write_labels(
     )
 
     def decide(start_ms: int, end_ms: int) -> LiveLabelDecision:
-        return label_line(start_ms / 1000.0, end_ms / 1000.0)
+        return label_line(ms_to_seconds(start_ms), ms_to_seconds(end_ms))
 
     # Read from the engine before the Transcript lock is taken.
     activity = (

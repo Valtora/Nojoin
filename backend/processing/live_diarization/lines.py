@@ -12,31 +12,17 @@ its speech holds the majority.
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.live_speaker_labels import live_speaker_label
+from backend.utils.time_units import seconds_to_ms
 
 from .engine import LiveLabelEngine
 
 UNKNOWN_SPEAKER = "UNKNOWN"
-# Share of a line's diarised speech the winning label must exceed.
-LINE_MAJORITY = 0.5
-
-
-def native_frame_range(start_ms: int, end_ms: int, first_frame: int) -> tuple[int, int]:
-    """Rows of a 10 ms posterior array a word covers, from integer milliseconds.
-
-    Every native label path uses this, so float rounding of a word's seconds
-    (``ceil(1041.16 * 100)`` is 104117) can't make two paths read different frames.
-    """
-    return (
-        max(0, math.floor(start_ms / 10) - first_frame),
-        max(0, math.ceil(end_ms / 10) - first_frame),
-    )
 
 
 @dataclass(frozen=True)
@@ -48,6 +34,16 @@ class LabelTimeline:
     label: np.ndarray
     locked: np.ndarray
     complete_until_s: float
+    start_ms: np.ndarray = field(init=False, repr=False, compare=False)
+    end_ms: np.ndarray = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # Pieces end on whole milliseconds, so a line's shares are compared in
+        # integers: an even split is exactly even.
+        for name, seconds in (("start_ms", self.start), ("end_ms", self.end)):
+            object.__setattr__(
+                self, name, np.array([seconds_to_ms(v) for v in seconds], np.int64)
+            )
 
     @classmethod
     def from_engine(cls, engine: LiveLabelEngine) -> LabelTimeline:
@@ -68,21 +64,29 @@ class LabelTimeline:
         complete = end_s <= self.complete_until_s
         if not complete:
             return LiveLabelDecision(UNKNOWN_SPEAKER, False, None, True)
-        overlap = np.minimum(self.end, end_s) - np.maximum(self.start, start_s)
+        line_start, line_end = seconds_to_ms(start_s), seconds_to_ms(end_s)
+        overlap = np.minimum(self.end_ms, line_end) - np.maximum(
+            self.start_ms, line_start
+        )
         inside = overlap > 0
         if not inside.any():
             return LiveLabelDecision(UNKNOWN_SPEAKER, locked=complete, share=None)
-        seconds = overlap[inside]
+        durations = overlap[inside]
         labels = self.label[inside]
         labelled = labels >= 0
         locked = complete and bool(self.locked[inside].all())
         if not labelled.any():
             return LiveLabelDecision(UNKNOWN_SPEAKER, locked=locked, share=0.0)
-        per_label = np.bincount(labels[labelled], weights=seconds[labelled])
+        per_label = np.zeros(int(labels.max()) + 1, np.int64)
+        np.add.at(per_label, labels[labelled], durations[labelled])
         winner = int(np.argmax(per_label))
-        share = float(per_label[winner] / seconds.sum())
+        held_by_winner, total = int(per_label[winner]), int(durations.sum())
         speaker = (
-            # Slot 0 is LIVE_PROVISIONAL_1, shown as "Speaker 1".
-            live_speaker_label(winner + 1) if share > LINE_MAJORITY else UNKNOWN_SPEAKER
+            # A strict majority; slot 0 is LIVE_PROVISIONAL_1, "Speaker 1".
+            live_speaker_label(winner + 1)
+            if 2 * held_by_winner > total
+            else UNKNOWN_SPEAKER
         )
-        return LiveLabelDecision(speaker, locked=locked, share=round(share, 3))
+        return LiveLabelDecision(
+            speaker, locked=locked, share=round(held_by_winner / total, 3)
+        )

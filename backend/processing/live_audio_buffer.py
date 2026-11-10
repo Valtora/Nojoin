@@ -17,6 +17,7 @@ from backend.processing.browser_live_audio import (
     LIVE_SOURCE_AUTHORITY_NONE,
     LIVE_SOURCE_AUTHORITY_OVERLAP,
 )
+from backend.utils.time_units import samples_to_seconds, seconds_to_samples
 
 # Sample rate of the canonical browser live-capture WAV.
 LIVE_SAMPLE_RATE = BROWSER_LIVE_SAMPLE_RATE_HZ
@@ -383,13 +384,17 @@ def _carry_over_live_buffer(
 
     Writes the carry-over buffer (audio past ``cut_point``) and the rolling
     left-context run-up (the last ``context_window_samples`` of consumed audio),
-    removing either file when its content is empty. Returns the new
-    ``buffer_abs_start`` for the next run.
+    removing either file when its content is empty. The cut lands on the nearest
+    sample no later than the buffer's end, and the returned ``buffer_abs_start``
+    for the next run is that sample, so no sample is carried that the origin
+    has already passed. A cut that is the whole buffer carries nothing.
     """
     from backend.processing.vad import silero_vad
 
     W = context_window_samples
-    cut_sample = int(cut_point * LIVE_SAMPLE_RATE)
+    cut_sample = min(
+        seconds_to_samples(cut_point, LIVE_SAMPLE_RATE), combined_channels.shape[-1]
+    )
     new_buffer_channels = combined_channels[:, cut_sample:]
     if new_buffer_channels.numel() > 0:
         tensor = (
@@ -403,7 +408,9 @@ def _carry_over_live_buffer(
             os.remove(buffer_path)
         except OSError:
             pass
-    new_abs_start = combined_abs_start + cut_point
+    new_abs_start = combined_abs_start + samples_to_seconds(
+        cut_sample, LIVE_SAMPLE_RATE
+    )
 
     # consumed = the already-consumed audio immediately preceding the new
     # buffer; its last W samples become run-up for the next run.

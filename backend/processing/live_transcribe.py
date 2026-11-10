@@ -71,6 +71,7 @@ from backend.utils.audio_windows import infer_resume_state_from_manifests
 from backend.utils.capture_resume import load_resume_boundaries, split_resume_regions
 from backend.utils.config_manager import config_manager
 from backend.utils.recording_storage import recording_upload_temp_dir
+from backend.utils.time_units import seconds_to_samples
 from backend.utils.transcript_settling import capture_publication_token
 
 # Tolerance (seconds) for treating a speech region as touching the buffer end.
@@ -381,8 +382,8 @@ def _transcribe_live_regions(
     W = context_window_samples
     new_segments: list[dict] = []
     for sp in complete:
-        start_sample = int(sp["start"] * LIVE_SAMPLE_RATE)
-        end_sample = int(sp["end"] * LIVE_SAMPLE_RATE)
+        start_sample = seconds_to_samples(sp["start"], LIVE_SAMPLE_RATE)
+        end_sample = seconds_to_samples(sp["end"], LIVE_SAMPLE_RATE)
         region = combined[start_sample:end_sample]
         region_channels = combined_channels[:, start_sample:end_sample]
         if region.numel() == 0:
@@ -928,7 +929,8 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             )
         state["next_expected"] = run[-1] + 1
         state["buffer_abs_start"] = new_abs_start
-        state["buffer_len_s"] = combined_len - cut_point
+        # What the carry holds: from the snapped origin, not the requested cut.
+        state["buffer_len_s"] = combined_len - (new_abs_start - combined_abs_start)
         write_live_state(live_dir, state)
         _report_gap_skip(recording_id, gap)
         labels_ready = True
