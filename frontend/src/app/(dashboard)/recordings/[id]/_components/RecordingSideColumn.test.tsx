@@ -10,13 +10,14 @@ vi.mock("@/components/ChatPanel", () => ({
   default: () => <div data-testid="chat-panel" />,
 }));
 
-const column = (allowChat = true) =>
+const column = (allowChat = true, showTasks = false) =>
     <RecordingSideColumn
       allowChat={allowChat}
       speakers={<div data-testid="speaker-panel" />}
       myNotes={<div data-testid="my-notes-list" />}
       captures={<div data-testid="captures-list" />}
       meetingEdge={<div data-testid="meeting-edge" />}
+      tasks={showTasks ? <div data-testid="linked-tasks" /> : undefined}
       chatPanelHeight={40}
       onChatPanelHeightChange={vi.fn()}
       onNotesUpdate={vi.fn()}
@@ -150,6 +151,23 @@ describe("the side column's Speakers, Your notes, Captures and Meeting Edge tabs
     }
   });
 
+  it("includes linked Tasks in keyboard navigation and falls back when they are absent", () => {
+    const { rerender } = render(column(true, true));
+    // A fifth tab needs a wider column before the other labels give way to icons.
+    expect(tab("Tasks").querySelector("span")).toHaveClass("@max-[30rem]:sr-only");
+    fireEvent.keyDown(tab("Speakers"), { key: "End" });
+    expect(tab("Tasks")).toHaveFocus();
+    expect(tab("Tasks")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("linked-tasks")).toBeVisible();
+    fireEvent.keyDown(tab("Tasks"), { key: "ArrowRight" });
+    expect(tab("Speakers")).toHaveFocus();
+    fireEvent.click(tab("Tasks"));
+
+    rerender(column(true, false));
+    expect(screen.queryByRole("tab", { name: "Tasks" })).not.toBeInTheDocument();
+    expect(tab("Speakers")).toHaveAttribute("aria-selected", "true");
+  });
+
   it("collapses both tabs together, and the bar left brings them back", () => {
     renderColumn();
 
@@ -175,6 +193,15 @@ describe("the side column's Speakers, Your notes, Captures and Meeting Edge tabs
     );
 
     expect(screen.getByRole("button", { name: "Speakers, Your notes and Captures" })).toBeInTheDocument();
+  });
+
+  it("names Tasks in the collapsed bar only where the meeting has linked tasks", () => {
+    useNavigationStore.setState({ isSpeakerPanelCollapsed: true });
+    const { rerender } = render(column(true, true));
+    expect(screen.getByRole("button", { name: "Speakers, Your notes, Captures, Meeting Edge and Tasks" })).toBeInTheDocument();
+
+    rerender(column(true, false));
+    expect(screen.getByRole("button", { name: "Speakers, Your notes, Captures and Meeting Edge" })).toBeInTheDocument();
   });
 
   it("shows the tabs over Chat's bar when Chat is collapsed", () => {

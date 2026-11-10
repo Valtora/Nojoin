@@ -1,18 +1,22 @@
-import type { UserTask } from "@/types";
+import type { RecordingId, UserTask, UserTaskListParams } from "@/types";
 import api from "./client";
 
-export type UserTaskStatusFilter =
-  | "active"
-  | "open"
-  | "completed"
-  | "archived"
-  | "all";
+export type UserTaskStatusFilter = NonNullable<UserTaskListParams["status"]>;
+
+export interface UserTaskListOptions {
+  /** Only tasks linked to this meeting. */
+  recordingId?: RecordingId;
+  /** Only tasks with any of these tags. */
+  tagIds?: number[];
+}
 
 export const getUserTasks = async (
   status: UserTaskStatusFilter = "active",
-  tagIds: number[] = [],
+  { recordingId, tagIds = [] }: UserTaskListOptions = {},
 ): Promise<UserTask[]> => {
+  // URLSearchParams repeats tag_ids=1&tag_ids=2, the form FastAPI reads as a list.
   const params = new URLSearchParams({ status });
+  if (recordingId !== undefined) params.set("recording_id", recordingId);
   tagIds.forEach((id) => params.append("tag_ids", id.toString()));
   const response = await api.get<UserTask[]>("/tasks/", {
     params,

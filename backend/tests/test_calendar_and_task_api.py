@@ -4,8 +4,8 @@ import importlib
 import json
 import logging
 import pkgutil
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Callable
 
 import httpx
 import pytest
@@ -1648,6 +1648,233 @@ async def test_read_tasks_returns_only_current_users_tasks(
 
 
 @pytest.mark.anyio
+async def test_read_tasks_filters_recording_and_task_ownership(
+    client: AsyncClient,
+    override_current_user: Callable[[int], None],
+    test_session_maker: sessionmaker,
+) -> None:
+    for recording_id in (401, 402):
+        await seed_recording(
+            test_session_maker,
+            recording_id=recording_id,
+            user_id=1,
+            name=f"Meeting {recording_id}",
+            public_id=f"rec-{recording_id}",
+            created_at=TEST_TIMESTAMP,
+        )
+    for task_id, user_id, recording_id in (
+        (101, 1, 401),
+        (102, 1, 402),
+        (103, 2, 401),
+        (104, 1, None),
+    ):
+        await seed_task(
+            test_session_maker, task_id=task_id, user_id=user_id, title="Follow up"
+        )
+        if recording_id is not None:
+            await seed_user_task_recording(
+                test_session_maker,
+                row_id=task_id,
+                task_id=task_id,
+                recording_id=recording_id,
+            )
+    override_current_user(1)
+
+    for path in ("/api/v1/tasks", "/api/v1/tasks/"):
+        response = await client.get(path, params={"recording_id": "rec-401"})
+        assert response.status_code == 200
+        assert [task["id"] for task in response.json()] == [101]
+    unfiltered = await client.get("/api/v1/tasks/")
+    assert unfiltered.status_code == 200
+    assert {task["id"] for task in unfiltered.json()} == {101, 102, 104}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("public_id", "owner_id"), [("rec-foreign", 2), ("missing", None)]
+)
+async def test_read_tasks_requires_owned_recording(
+    client: AsyncClient,
+    override_current_user: Callable[[int], None],
+    test_session_maker: sessionmaker,
+    public_id: str,
+    owner_id: int | None,
+) -> None:
+    if owner_id is not None:
+        await seed_recording(
+            test_session_maker,
+            recording_id=401,
+            user_id=owner_id,
+            name="Someone else's meeting",
+            public_id=public_id,
+            created_at=TEST_TIMESTAMP,
+        )
+    override_current_user(1)
+
+    response = await client.get("/api/v1/tasks/", params={"recording_id": public_id})
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Recording not found"}
+
+
+# (title, completed, archived, linked recording) for the status-filter test.
+RECORDING_FILTER_TASKS: dict[int, tuple[str, bool, bool, int | None]] = {
+    101: ("Draft the minutes", False, False, 401),
+    102: ("Send the slides", True, False, 401),
+    103: ("Book the venue", False, True, 401),
+    104: ("Unlinked follow-up", False, False, None),
+    105: ("Other meeting's archived task", True, True, 402),
+    106: ("Other meeting's completed task", True, False, 402),
+}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "expected_ids"),
+    [
+        ("open", {101}),
+        ("completed", {102}),
+        ("archived", {103}),
+        ("all", {101, 102, 103}),
+    ],
+)
+async def test_read_tasks_recording_filter_preserves_statuses(
+    client: AsyncClient,
+    override_current_user: Callable[[int], None],
+    test_session_maker: sessionmaker,
+    status: str,
+    expected_ids: set[int],
+) -> None:
+    for recording_id, public_id in ((401, "rec-meeting"), (402, "rec-other")):
+        await seed_recording(
+            test_session_maker,
+            recording_id=recording_id,
+            user_id=1,
+            name="Meeting",
+            public_id=public_id,
+            created_at=TEST_TIMESTAMP,
+        )
+    for task_id, (title, completed, archived, linked) in RECORDING_FILTER_TASKS.items():
+        await seed_task(
+            test_session_maker,
+            task_id=task_id,
+            user_id=1,
+            title=title,
+            completed_at=TEST_TIMESTAMP if completed else None,
+            archived_at=TEST_TIMESTAMP if archived else None,
+        )
+        if linked is not None:
+            await seed_user_task_recording(
+                test_session_maker,
+                row_id=task_id,
+                task_id=task_id,
+                recording_id=linked,
+            )
+    override_current_user(1)
+
+    response = await client.get(
+        "/api/v1/tasks/", params={"recording_id": "rec-meeting", "status": status}
+    )
+
+    assert response.status_code == 200
+    assert {task["id"] for task in response.json()} == expected_ids
+    # The recording view renders these three fields from the list response.
+    stamp = "2026-04-12T10:00:00Z"
+    assert {
+        task["id"]: (task["title"], task["completed_at"], task["archived_at"])
+        for task in response.json()
+    } == {
+        task_id: (title, stamp if completed else None, stamp if archived else None)
+        for task_id, (title, completed, archived, _) in RECORDING_FILTER_TASKS.items()
+        if task_id in expected_ids
+    }
+
+
+@pytest.mark.anyio
+async def test_recording_tasks_preserve_multiple_links_through_completion_and_reopening(
+    client: AsyncClient,
+    override_current_user: Callable[[int], None],
+    test_session_maker: sessionmaker,
+) -> None:
+    for recording_id in (401, 402, 403):
+        await seed_recording(
+            test_session_maker,
+            recording_id=recording_id,
+            user_id=1,
+            name=f"Meeting {recording_id}",
+            public_id=f"rec-{recording_id}",
+            created_at=TEST_TIMESTAMP,
+        )
+    override_current_user(1)
+    created = await client.post(
+        "/api/v1/tasks/",
+        json={"title": "Shared follow-up", "recording_ids": ["rec-401", "rec-402"]},
+    )
+    assert created.status_code == 200
+    task_id = created.json()["id"]
+    # Tasks on another meeting, one active and one archived, must stay off both lists.
+    for title in ("Other meeting's task", "Other meeting's archived task"):
+        other = await client.post(
+            "/api/v1/tasks/", json={"title": title, "recording_ids": ["rec-403"]}
+        )
+        assert other.status_code == 200
+    archived_other = await client.patch(
+        f"/api/v1/tasks/{other.json()['id']}", json={"archived": True}
+    )
+    assert archived_other.status_code == 200
+
+    async def listed_for(public_id: str, status: str | None = None) -> list[dict]:
+        params = {"recording_id": public_id}
+        if status is not None:
+            params["status"] = status
+        listed = await client.get("/api/v1/tasks/", params=params)
+        assert listed.status_code == 200
+        return listed.json()
+
+    for completed in (True, False):
+        updated = await client.patch(
+            f"/api/v1/tasks/{task_id}", json={"completed": completed}
+        )
+        assert updated.status_code == 200
+        # The recording view replaces its row with this response body.
+        saved = updated.json()
+        assert saved["id"] == task_id
+        assert saved["title"] == "Shared follow-up"
+        assert (saved["completed_at"] is not None) is completed
+        assert saved["archived_at"] is None
+        assert {link["id"] for link in saved["linked_recordings"]} == {
+            "rec-401",
+            "rec-402",
+        }
+        for public_id in ("rec-401", "rec-402"):
+            for status in (None, "all"):
+                tasks = await listed_for(public_id, status)
+                assert [task["id"] for task in tasks] == [task_id]
+                task = tasks[0]
+                assert (task["completed_at"] is not None) is completed
+                assert task["completed_at"] == saved["completed_at"]
+                assert {link["id"] for link in task["linked_recordings"]} == {
+                    "rec-401",
+                    "rec-402",
+                }
+
+    # An archived linked task stays on the recording view and keeps its archive
+    # state when it is completed there.
+    archived = await client.patch(f"/api/v1/tasks/{task_id}", json={"archived": True})
+    assert archived.status_code == 200
+    archived_at = archived.json()["archived_at"]
+    assert archived_at is not None
+    completed = await client.patch(f"/api/v1/tasks/{task_id}", json={"completed": True})
+    assert completed.status_code == 200
+    assert completed.json()["completed_at"] is not None
+    assert completed.json()["archived_at"] == archived_at
+    tasks = await listed_for("rec-401", "all")
+    assert [(task["id"], task["archived_at"]) for task in tasks] == [
+        (task_id, archived_at)
+    ]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("path", ["/api/v1/tasks", "/api/v1/tasks/"])
 @pytest.mark.parametrize(
     ("tag_ids", "expected_ids"),
@@ -1737,6 +1964,54 @@ async def test_task_tag_filter_keeps_owner_and_status_scope(
     response = await client.get(path, params={"tag_ids": 302, "status": "all"})
     assert response.status_code == 200
     assert response.json() == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/api/v1/tasks", "/api/v1/tasks/"])
+async def test_read_tasks_applies_recording_and_tag_filters_together(
+    client: AsyncClient,
+    override_current_user: Callable[..., None],
+    test_session_maker: sessionmaker,
+    path: str,
+) -> None:
+    for recording_id in (401, 402):
+        await seed_recording(
+            test_session_maker,
+            recording_id=recording_id,
+            user_id=1,
+            name=f"Meeting {recording_id}",
+            public_id=f"rec-{recording_id}",
+            created_at=TEST_TIMESTAMP,
+        )
+    await seed_tag(test_session_maker, tag_id=301, name="Planning")
+    # 101: meeting 401 + tag; 102: meeting 401 only; 103: meeting 402 + tag;
+    # 104: tag only.
+    for task_id, recording_id, tagged in (
+        (101, 401, True),
+        (102, 401, False),
+        (103, 402, True),
+        (104, None, True),
+    ):
+        await seed_task(test_session_maker, task_id=task_id, user_id=1, title="Task")
+        if recording_id is not None:
+            await seed_user_task_recording(
+                test_session_maker,
+                row_id=task_id,
+                task_id=task_id,
+                recording_id=recording_id,
+            )
+        if tagged:
+            await seed_user_task_tag(
+                test_session_maker, row_id=task_id, task_id=task_id, tag_id=301
+            )
+    override_current_user(1)
+
+    response = await client.get(
+        path, params=[("recording_id", "rec-401"), ("tag_ids", 301)]
+    )
+
+    assert response.status_code == 200
+    assert [task["id"] for task in response.json()] == [101]
 
 
 @pytest.mark.anyio
