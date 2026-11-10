@@ -89,20 +89,31 @@ describe("recording linked tasks", () => {
     expect(api.updateUserTask).toHaveBeenCalledTimes(2);
   });
 
-  it("disables every checkbox while a save is pending and restores them afterwards", async () => {
+  it("holds the other checkboxes while a save is pending and keeps focus on the one being saved", async () => {
     const save = deferred<UserTask>();
     api.getUserTasks.mockResolvedValue([task(), task({ id: 8, title: "Book a room" })]);
     api.updateUserTask.mockReturnValue(save.promise);
     render(<LinkedTasks recordingId="rec-planning" />);
     const first = await screen.findByRole("checkbox", { name: "Mark Send the agenda complete" });
+    const other = screen.getByRole("checkbox", { name: "Mark Book a room complete" });
+    first.focus();
     fireEvent.click(first);
 
-    for (const checkbox of screen.getAllByRole("checkbox")) expect(checkbox).toBeDisabled();
+    expect(other).toBeDisabled();
+    // A disabled control loses keyboard focus, so the one being saved stays enabled.
+    expect(first).toBeEnabled();
+    expect(first).toHaveAttribute("aria-busy", "true");
+    expect(first).toHaveFocus();
     expect(first).not.toBeChecked();
+    fireEvent.click(first);
+    expect(api.updateUserTask).toHaveBeenCalledTimes(1);
     await act(async () => save.resolve(task({ completed_at: "2026-10-22T09:00:00Z" })));
 
     for (const checkbox of screen.getAllByRole("checkbox")) expect(checkbox).toBeEnabled();
-    expect(screen.getByRole("checkbox", { name: "Mark Send the agenda incomplete" })).toBeChecked();
+    const saved = screen.getByRole("checkbox", { name: "Mark Send the agenda incomplete" });
+    expect(saved).toBeChecked();
+    expect(saved).toHaveFocus();
+    expect(saved).toHaveAttribute("aria-busy", "false");
   });
 
   it("labels archived tasks and links each title to that task in Tasks", async () => {

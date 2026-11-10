@@ -18,7 +18,10 @@ export default function RecordingTasks({ tasks, busyTaskId, onToggle }: {
             <InputBase
               type="checkbox"
               checked={Boolean(task.completed_at)}
-              disabled={busyTaskId !== null}
+              // The box being saved stays enabled: disabling it would drop
+              // keyboard focus to the page. The hook ignores a second toggle.
+              disabled={busyTaskId !== null && busyTaskId !== task.id}
+              aria-busy={busyTaskId === task.id}
               aria-label={`Mark ${task.title} ${task.completed_at ? "incomplete" : "complete"}`}
               onChange={() => void onToggle(task)}
               className="mt-1 h-4 w-4 shrink-0 accent-action"
