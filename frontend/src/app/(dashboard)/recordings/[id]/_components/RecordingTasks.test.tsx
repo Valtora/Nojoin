@@ -126,6 +126,61 @@ describe("recording linked tasks", () => {
     expect(within(screen.getByRole("listitem")).getByText("Archived")).toBeInTheDocument();
   });
 
+  it("disables an archived task's checkbox, keeps its state, and describes it as archived", async () => {
+    api.getUserTasks.mockResolvedValue([
+      task(),
+      task({ id: 8, title: "Book a room", completed_at: "2026-10-21T09:00:00Z" }),
+      task({ id: 9, title: "Order lunch", completed_at: "2026-10-21T10:00:00Z", archived_at: "2026-10-22T09:00:00Z" }),
+      task({ id: 10, title: "Chase the minutes", archived_at: "2026-10-22T09:00:00Z" }),
+    ]);
+    api.updateUserTask.mockResolvedValueOnce(task({ completed_at: "2026-10-22T09:00:00Z" }));
+    render(<LinkedTasks recordingId="rec-planning" />);
+
+    const archivedDone = await screen.findByRole("checkbox", { name: "Mark Order lunch incomplete" });
+    const archivedOpen = screen.getByRole("checkbox", { name: "Mark Chase the minutes complete" });
+    expect(archivedDone).toBeDisabled();
+    expect(archivedDone).toBeChecked();
+    expect(archivedDone).toHaveAccessibleDescription("Archived");
+    expect(archivedOpen).toBeDisabled();
+    expect(archivedOpen).not.toBeChecked();
+    expect(archivedOpen).toHaveAccessibleDescription("Archived");
+    expect(archivedDone.getAttribute("aria-describedby")).not.toBe(archivedOpen.getAttribute("aria-describedby"));
+
+    fireEvent.click(archivedDone);
+    fireEvent.click(archivedOpen);
+    // A disabled box cannot take focus, so Space never reaches it.
+    archivedOpen.focus();
+    expect(archivedOpen).not.toHaveFocus();
+    expect(api.updateUserTask).not.toHaveBeenCalled();
+    expect(archivedDone).toBeChecked();
+    expect(archivedOpen).not.toBeChecked();
+
+    const done = screen.getByRole("checkbox", { name: "Mark Book a room incomplete" });
+    expect(done).toBeEnabled();
+    expect(done).not.toHaveAttribute("aria-describedby");
+    const open = screen.getByRole("checkbox", { name: "Mark Send the agenda complete" });
+    expect(open).toBeEnabled();
+    expect(open).not.toHaveAttribute("aria-describedby");
+    fireEvent.click(open);
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Mark Send the agenda incomplete" }))
+      .toBeChecked());
+    expect(api.updateUserTask).toHaveBeenCalledExactlyOnceWith(7, { completed: true });
+    expect(archivedDone).toBeDisabled();
+    expect(archivedOpen).toBeDisabled();
+  });
+
+  it("never passes an archived task to the toggle", () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    render(<RecordingTasks
+      tasks={[task(), task({ id: 9, title: "Order lunch", archived_at: "2026-10-22T09:00:00Z" })]}
+      busyTaskId={null} onToggle={onToggle} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mark Order lunch complete" }));
+    expect(onToggle).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mark Send the agenda complete" }));
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 7 }));
+  });
+
   it("ignores a read that finishes after navigation to another recording", async () => {
     const previous = deferred<UserTask[]>();
     api.getUserTasks.mockReturnValueOnce(previous.promise)
