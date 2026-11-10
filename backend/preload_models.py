@@ -426,9 +426,9 @@ def preparation_failure_message(stage: str | None) -> str:
 
 
 def _hand_off_aligner() -> bool:
-    """Queue the aligner on the IO lane; whether it is now queued or running.
+    """Queue the aligner on the CPU lane; whether it is now queued or running.
 
-    The aligner only downloads and hashes, so it goes to the IO lane rather
+    The aligner only downloads and hashes, so it goes to the CPU lane rather
     than holding live ASR's GPU queue behind 1.8 GB. One already pending, from
     first use say, is shown as queued instead of this run's completion, unless
     its own task is already reporting.
@@ -554,7 +554,7 @@ def download_models(
             _prepare_onnx_asr_model(onnx_model_id)
 
         # A Nemotron copy prepared under an earlier manifest reads as invalid
-        # after an upgrade. Re-queue it on the IO lane, as the aligner below
+        # after an upgrade. Re-queue it on the CPU lane, as the aligner below
         # is, so live labels do not wait for a final pass or Retry to repair it.
         request_stale_nemotron_preparation()
         if not engine_has_native_word_timestamps(transcription_backend):

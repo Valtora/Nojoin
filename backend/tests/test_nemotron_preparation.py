@@ -341,10 +341,10 @@ def test_startup_re_prepares_nemotron_from_an_earlier_manifest_once(
     settings = {"transcription_backend": backend}
     queued = _start_api(monkeypatch, settings)
     assert _nemotron_requests(queued) == [
-        (preparation._PINNED_TASK_KWARGS["nemotron"], "io")
+        (preparation._PINNED_TASK_KWARGS["nemotron"], "cpu")
     ]
     task_id = control.pending_task()["task_id"]
-    # A restart before the IO lane reaches it queues no second preparation.
+    # A restart before the CPU lane reaches it queues no second preparation.
     assert _nemotron_requests(_start_api(monkeypatch, settings)) == []
 
     def offline(*_args: Any, **_kwargs: Any) -> None:

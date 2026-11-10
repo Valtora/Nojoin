@@ -155,7 +155,7 @@ def test_only_canary_preparation_requests_word_timing_assets(
     preload_models.download_models(
         transcription_backend=backend, include_core=include_core
     )
-    expected = [(model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "io")]
+    expected = [(model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "cpu")]
     assert routed == (expected if backend == "canary" else [])
     # Once Canary is ready, its queued aligner is what Settings shows.
     assert (progress["stage"], progress["status"]) == (
@@ -185,7 +185,7 @@ def test_settings_progress_shows_the_queued_aligner_after_canary_is_ready(
         response = client.get("/system/download-progress")
     assert response.status_code == 200, response.text
     shown = response.json()
-    # Until the IO lane starts the transfer, the bar shows it queued, not 100%.
+    # Until the CPU lane starts the transfer, the bar shows it queued, not 100%.
     assert (shown["stage"], shown["status"], shown["progress"]) == (
         "forced_aligner",
         "downloading",
@@ -228,7 +228,7 @@ def test_engine_preparation_keeps_an_already_queued_aligner_shown_as_queued(
     )
 
 
-def test_startup_on_a_canary_install_prepares_the_aligner_on_the_io_lane(
+def test_startup_on_a_canary_install_prepares_the_aligner_on_the_cpu_lane(
     model_cache_env: Path,
     progress: dict[str, Any],
     routed: list[tuple[dict[str, Any] | None, str]],
@@ -255,10 +255,10 @@ def test_startup_on_a_canary_install_prepares_the_aligner_on_the_io_lane(
     assert core_kwargs is not None and core_kwargs["include_core"] is True
     assert core_queue == "gpu"
     # The core run prepares Canary and the speaker models on the GPU lane,
-    # then hands the aligner to the IO lane instead of downloading it.
+    # then hands the aligner to the CPU lane instead of downloading it.
     _run_preparation_task(core_kwargs, "startup-core")
     assert routed[1:] == [
-        (model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "io")
+        (model_preparation._PINNED_TASK_KWARGS["forced_aligner"], "cpu")
     ]
     assert assets.control.pending_task() is not None
 
@@ -470,14 +470,14 @@ def test_offline_failure_holds_off_live_requests_until_the_backoff_passes(
 @pytest.mark.parametrize(
     "case",
     [
-        ("first_use", "forced_aligner", "io"),
-        ("first_use", "nemotron", "io"),
-        ("settings", "forced_aligner", "io"),
-        ("settings", "nemotron", "io"),
+        ("first_use", "forced_aligner", "cpu"),
+        ("first_use", "nemotron", "cpu"),
+        ("settings", "forced_aligner", "cpu"),
+        ("settings", "nemotron", "cpu"),
         ("settings", "active", "gpu"),
     ],
 )
-def test_pinned_preparation_leaves_cpu_transcodes_and_gpu_asr_available(
+def test_pinned_preparation_runs_on_the_cpu_lane(
     case: tuple[str, Any, str],
     model_cache_env: Path,
     progress: dict[str, Any],
@@ -502,8 +502,6 @@ def test_pinned_preparation_leaves_cpu_transcodes_and_gpu_asr_available(
         for key, value in sent[0].items()
         if key not in {"args", "kwargs", "connection"}
     }
-    # Pinned transfers intentionally use IO, preserving CPU transcode slots;
-    # core preparation retains the GPU lane's inference precision selection.
     # Resolve the destination the way Celery does when it publishes.
     route = model_preparation.celery_app.amqp.router.route(
         options, model_preparation.MODEL_PREPARATION_TASK

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from kombu.exceptions import KombuError
 
-from backend.celery_app import IO_QUEUE, celery_app
+from backend.celery_app import CPU_QUEUE, celery_app
 from backend.core.task_dispatch import dispatch_task
 from backend.services.model_status import nemotron_unused_reason
 from backend.utils import forced_aligner_model_utils as aligner_assets
@@ -21,8 +21,8 @@ from backend.utils.nemotron_model_utils import (
 logger = logging.getLogger(__name__)
 
 MODEL_PREPARATION_TASK = "backend.worker.tasks.download_models_task"
-# Pinned targets only download and hash. The IO lane shares the model cache
-# and leaves live ASR's GPU queue and segment transcodes' CPU slots available.
+# Pinned targets only download and hash, so they run on the CPU lane, which
+# mounts the same model cache, rather than holding live ASR's GPU queue.
 _PINNED_TASK_KWARGS: dict[str, dict[str, Any]] = {
     "nemotron": {"nemotron_only": True, "include_core": False},
     "forced_aligner": {"pinned_model": "forced_aligner", "include_core": False},
@@ -60,7 +60,7 @@ async def enqueue_model_preparation(
     options: dict[str, Any] = {}
     if target in _PINNED_TASK_KWARGS:
         kwargs = dict(_PINNED_TASK_KWARGS[target])
-        options["queue"] = IO_QUEUE
+        options["queue"] = CPU_QUEUE
     task = await dispatch_task(
         MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True, **options
     )
@@ -93,7 +93,7 @@ def request_stale_nemotron_preparation() -> str | None:
     the API queues at startup, calls this once the engine is ready. Nothing is
     queued when the model was never prepared or the install leaves it unused.
     Inspection reads the receipt and file metadata only; the queued task on
-    the IO lane does the hashing.
+    the CPU lane does the hashing.
     """
     if nemotron_unused_reason() is not None:
         return None
@@ -179,7 +179,7 @@ def _publish_pinned_preparation(target: str, task_id: str) -> None:
             MODEL_PREPARATION_TASK,
             kwargs=dict(_PINNED_TASK_KWARGS[target]),
             task_id=task_id,
-            queue=IO_QUEUE,
+            queue=CPU_QUEUE,
             connection=connection,
             retry=False,
             ignore_result=True,
