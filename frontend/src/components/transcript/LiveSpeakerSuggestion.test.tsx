@@ -41,7 +41,8 @@ describe("live speaker suggestions", () => {
     const lines = screen.getAllByTestId("live-transcript-line");
     expect(screen.getAllByText("Suggested")).toHaveLength(1);
     expect(within(lines[1]).getByText("Suggested")).toBeInTheDocument();
-    expect(within(lines[1]).getByLabelText("Suggested name Alex")).toHaveTextContent(/^Alex/);
+    // A name on an element with no role is not announced.
+    expect(within(lines[1]).getByRole("group", { name: "Suggested name Alex" })).toHaveTextContent(/^Alex/);
     expect(screen.queryByText(/Alex\?/)).not.toBeInTheDocument();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Accept suggested name Alex" })));
     expect(mocks.rename).toHaveBeenCalledWith("r1", "LIVE_PROVISIONAL_1", "Alex", false);
