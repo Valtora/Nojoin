@@ -54,7 +54,7 @@ interface TranscriptSectionProps {
   hasRetainedPublication?: boolean;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes?: readonly TimelineNote[] | null;
-  /** The page's note edits, which My notes shares. */
+  /** The page's note edits, which Your notes shares. */
   noteEdits: NoteEdits;
   transcriptSegments: TranscriptSegment[];
   currentTime: number;
@@ -163,7 +163,7 @@ export default function TranscriptSection({
   // A note added here from a line's menu shows on its line while it saves;
   // the others still on their way are listed above the transcript.
   const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id, selectNoteList);
-  // Edits, moves and deletes made here or in My notes show at once: a finished
+  // Edits, moves and deletes made here or in Your notes show at once: a finished
   // recording's list is not fetched again.
   const { apply: applyEdits, edit: editNote, remove: removeNote, move: moveNote } = noteEdits;
   const notes = useMemo(

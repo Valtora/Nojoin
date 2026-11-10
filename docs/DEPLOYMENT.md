@@ -366,16 +366,16 @@ First-run setup can pre-fill values from environment variables, and that prefill
 
 Speech and speaker tuning is per user (**Settings > Recording > Advanced**, **Speech and speaker tuning**), and each value inherits by default. Set an installation default for any key as a flat entry in `data/config.json`. It applies to every user who has not set their own:
 
-| Key | Shipped default | Accepted range |
-| --- | --- | --- |
-| `vad_threshold` | 0.5 | 0.15 to 0.90 |
-| `asr_word_length_cap_s` | 0.4 | 0.2 to 0.45 |
-| `phantom_max_duration_s` | 3.0 | 0 to 10 |
-| `phantom_max_segments` | 3 | 0 to 20 (whole number) |
-| `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
-| `phantom_merge_threshold` | 0.60 | 0.05 to 1.0 |
-| `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
-| `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
+| Key | Field on the settings page | Shipped default | Accepted range |
+| --- | --- | --- | --- |
+| `vad_threshold` | Speech detection threshold | 0.5 | 0.15 to 0.90 |
+| `asr_word_length_cap_s` | Longest word (Parakeet only) | 0.4 | 0.2 to 0.45 |
+| `phantom_max_duration_s` | Speakers heard only briefly: Check speakers under (seconds) | 3.0 | 0 to 10 |
+| `phantom_max_segments` | Speakers heard only briefly: And up to (turns) | 3 | 0 to 20 (whole number) |
+| `phantom_embedding_floor` | Speakers heard only briefly: Treat as noise below (voice match) | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
+| `phantom_merge_threshold` | Speakers heard only briefly: Merge from (voice match) | 0.60 | 0.05 to 1.0 |
+| `word_flip_max_duration_s` | Stray one-word speaker changes: Words up to (seconds) | 0.45 | 0 to 2.0 |
+| `word_flip_max_gap_s` | Stray one-word speaker changes: Pause up to (seconds) | 0.25 | 0 to 1.0 |
 
 `asr_word_length_cap_s` is the longest a Parakeet word can last. Its maximum is the default `word_flip_max_duration_s`, so at default smoothing every capped word is short enough to smooth. It replaces the retired `asr_word_end_padding_s` ([Version Notes](#version-notes)).
 
@@ -649,6 +649,8 @@ These run on the first start after the upgrade and need no action unless a note 
 
 #### Upgrading From Before 3.1.0
 
+- **Muting for transcription is no longer a setting (#961).** **Mute non-speech for transcription** (`vad_mute_transcription`) is retired and fixed at its default: with voice activity detection on, transcription always hears what it kept plus what speaker separation heard as speech. Anyone who had turned it off gets the default from the next recording processed or reprocessed. To have transcription hear the whole recording again, turn off **Voice activity detection** under **Settings > Recording > Advanced**. A stored value is ignored, dropped from a user's settings on their next save, and dropped from `config.json` like any key it no longer reads. An older settings page that still sends it is ignored. **Mute non-speech for speaker separation** keeps its key, `vad_mute_diarization`, and its default, off, as **Faster speaker separation**.
+- **Settings renamed (#961).** **Live word settling** is now **Refine live words**, with **Off**, **On with a GPU** (`auto`) and **On, also without a GPU (heavy)** (`always`), and its two timing values sit under **Fine-tune**. The tuning rows **Word length cap**, **Phantom speaker filter** and **Single-word flip smoothing** are now **Longest word (Parakeet only)**, **Speakers heard only briefly** and **Stray one-word speaker changes**. No key, value or default changes.
 - **Beat schedule kept in a JSON file (#917).** Celery Beat on `worker-io` now keeps its schedule in `data/celerybeat-schedule.json`. It used to be a Berkeley DB file, `data/celerybeat-schedule.db`, which a `worker-io` killed at the end of `docker stop`'s grace period could leave unreadable; beat then deleted it and every periodic job waited a full interval again. The first start carries each job's last run over from the old file and deletes it. If the old file is unreadable, every interval starts again this once, and the `worker-io` log says so. The `-s /app/data/celerybeat-schedule` argument in `docker-compose.yml` stays as it is. A downgrade ignores the JSON file and starts a new schedule.
 
 #### Upgrading From Before 3.0.0

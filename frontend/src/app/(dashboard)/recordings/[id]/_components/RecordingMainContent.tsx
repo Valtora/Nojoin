@@ -30,6 +30,7 @@ import TranscriptSection from "./TranscriptSection";
 import NotesSection from "./NotesSection";
 import DocumentsSection from "./DocumentsSection";
 import AnalyticsSection from "./AnalyticsSection";
+import { PANEL_LABELS } from "./panelLabels";
 import { useScrollEdges } from "../_hooks/useScrollEdges";
 
 interface RecordingMainContentProps {
@@ -48,7 +49,7 @@ interface RecordingMainContentProps {
   hasRetainedPublication?: boolean;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes: readonly TimelineNote[] | null;
-  /** The page's note edits, shared by the transcript and My notes. */
+  /** The page's note edits, shared by the transcript and Your notes. */
   noteEdits: NoteEdits;
   isMobile: boolean;
   activePanel: ActivePanel;
@@ -121,21 +122,14 @@ const tabClassName = (active: boolean, isMobile: boolean) =>
       : "border-transparent text-contrast-helper hover:text-foreground hover:bg-surface-inset"
   }`;
 
-// On desktop Speakers and My notes live in the side column, so they have no tab.
-const TABS: { panel: ActivePanel; label: string }[] = [
-  { panel: "transcript", label: "Transcript" },
-  { panel: "notes", label: "Notes" },
-  { panel: "documents", label: "Documents" },
-  { panel: "analytics", label: "Analytics" },
-];
-const MOBILE_TABS: { panel: ActivePanel; label: string }[] = [
-  ...TABS.slice(0, 2),
-  { panel: "my-notes", label: "My notes" },
-  { panel: "captures", label: "Captures" },
-  ...TABS.slice(2),
-  { panel: "speakers", label: "Speakers" },
-  { panel: "meeting-edge", label: "Meeting Edge" },
-];
+const tabsFor = (panels: ActivePanel[]) =>
+  panels.map((panel) => ({ panel, label: PANEL_LABELS[panel] }));
+// On desktop Speakers, Your notes, Captures and Meeting Edge live in the side
+// column, so they have no tab here: each layout shows them in one place.
+const TABS = tabsFor(["transcript", "notes", "documents", "analytics"]);
+const MOBILE_TABS = tabsFor([
+  "transcript", "notes", "my-notes", "captures", "documents", "analytics", "speakers", "meeting-edge",
+]);
 
 // Marks a side of the mobile tab row with tabs scrolled out of view. Decorative:
 // the tabs themselves stay reachable, and a tap passes through to the one below.
@@ -300,7 +294,7 @@ export default function RecordingMainContent({
         }
       />
 
-      {/* Panel Tabs. On mobile, My notes and Speakers have tabs too and the
+      {/* Panel Tabs. On mobile, Your notes and Speakers have tabs too and the
           row scrolls sideways; on desktop both live in the side column. */}
       <div className="relative shrink-0 bg-surface-inset">
         {tabsOutOfView.left && <MoreTabsHint side="left" />}
