@@ -12,7 +12,7 @@ import numpy as np
 from backend.processing.sentence_start import NativeActivity, native_activity
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.live_speaker_labels import live_speaker_label
-from backend.utils.time_units import NATIVE_FRAME_MS, frame_range
+from backend.utils.time_units import NATIVE_FRAME_MS, frame_range, ms_to_seconds
 
 from .engine import LiveLabelConfig
 from .files import DISABLED_FILENAME
@@ -37,7 +37,9 @@ class SpeakerEvidence:
             self.switch_frame is not None
             and end_ms <= self.native_complete_frame * NATIVE_FRAME_MS
         ):
-            return self.timeline.label_line(start_ms / 1000, end_ms / 1000)
+            return self.timeline.label_line(
+                ms_to_seconds(start_ms), ms_to_seconds(end_ms)
+            )
         first, stop = frame_range(
             start_ms, end_ms, NATIVE_FRAME_MS, self.posterior_first_frame
         )

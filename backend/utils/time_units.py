@@ -3,22 +3,27 @@
 Times cross module boundaries as integer milliseconds. The units below it stay
 inside the code that owns them: audio samples inside audio handling, model
 frames inside inference, float seconds where a library or the browser speaks
-them. A time changes unit only through this module, so one rule decides each
-direction and no path picks its own rounding.
+them. New and changed code converts through this module, so one rule decides
+each direction; conversions still written in place elsewhere move over as they
+are touched.
 
 The rules, one per direction:
 
-* Float seconds, samples or an integer ratio to an integer: the nearest value,
-  ties to the even one (Python's ``round``). Sample counts and milliseconds
-  convert with integer arithmetic, so a sample count that lasts a whole number
-  of milliseconds converts to exactly that number.
+* To an integer from a sample count: the nearest value, an exact half going to
+  the even one. Integer arithmetic does it, so a sample count that lasts a
+  whole number of milliseconds converts to exactly that number.
+* To an integer from float seconds: Python's ``round`` of the float product.
+  That is the nearest value, but the float decides its own ties: 0.0005 s
+  times 1000 is not exactly 0.5.
 * Integer to float seconds: one division.
 * Milliseconds to model frames: a frame range covers every frame the interval
   touches, so its start rounds down and its end rounds up.
 
-An interval is half-open, ``[start, end)``. Converting never clamps or widens
-an interval; a caller that treats an instant or an empty span specially says so
-itself.
+An interval is half-open, ``[start, end)``. Converting a time between units
+does not move it past the nearest unit; a caller that treats an instant or an
+empty span specially says so itself. ``frame_range`` alone changes an
+interval, by design: it covers every frame the interval touches and stops at
+the first frame still held.
 
 A float second time is only as exact as the float: ``0.1 + 0.2`` is
 ``0.30000000000000004``. Convert it once, at the boundary, and compare the
@@ -49,7 +54,7 @@ def _require_rate(sample_rate_hz: int) -> None:
 
 
 def seconds_to_ms(seconds: float) -> int:
-    """Float seconds to integer milliseconds, nearest."""
+    """Float seconds to integer milliseconds, nearest (see the module note on ties)."""
     return round(seconds * MS_PER_SECOND)
 
 
