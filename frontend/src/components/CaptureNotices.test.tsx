@@ -61,6 +61,7 @@ const recording = (): CaptureState => ({
   coverageWarning: null,
   coverageWarningDismissedAt: null,
   uploadQueue: { segments: 0, seconds: 0 },
+  sourceChoice: null,
 });
 
 describe("CaptureNotices", () => {

@@ -374,11 +374,11 @@ describe("a note outbox kept in the browser", () => {
   it("never keeps a sent note together with the text it was sent from", async () => {
     const { writes } = watchWrites(store);
     const outbox = await openPageAndRead(store);
-    outbox.setDraft({ ...DRAFT, text: "Budget agreed", mode: "send" });
+    outbox.setDraft({ ...DRAFT, text: "Budget agreed", mode: "tail" });
     await vi.waitFor(() => expect(writes).toHaveLength(1));
 
-    outbox.submit({ kind: "point", body: "Budget agreed", anchorMs: 1_000 }, { clearDraft: true });
-    expect(outbox.getSnapshot().draft).toEqual({ text: "", mode: "send", typingStartMs: null });
+    outbox.submit({ kind: "tail", body: "Budget agreed", anchorMs: null }, { clearDraft: true });
+    expect(outbox.getSnapshot().draft).toEqual({ text: "", mode: "tail", typingStartMs: null });
     await vi.waitFor(() => expect(server.notes.size).toBe(1));
     await vi.waitFor(async () => expect(await stored(store)).toBeUndefined());
 
@@ -794,13 +794,24 @@ describe("records of another version", () => {
   });
 
   it("keeps each draft mode it knows", () => {
-    for (const mode of ["typing", "send", "head", "tail"] as const) {
+    for (const mode of ["typing", "head", "tail"] as const) {
       const read = readStoredOutbox({
         version: NOTE_RECORD_VERSION,
         draft: { text: "x", mode, typingStartMs: 5 },
       });
       expect(restoredOf(read)).toMatchObject({ draft: { text: "x", mode, typingStartMs: 5 } });
     }
+  });
+
+  it("reads a kept \"send\" draft, a mode since dropped, as placed where typing started", () => {
+    const read = readStoredOutbox({
+      version: NOTE_RECORD_VERSION,
+      draft: { text: "Carried thought", mode: "send", typingStartMs: 12_000 },
+    });
+
+    expect(restoredOf(read)).toMatchObject({
+      draft: { text: "Carried thought", mode: "typing", typingStartMs: 12_000 },
+    });
   });
 
   it("sends a restored note's discard to the server under its own token only", async () => {

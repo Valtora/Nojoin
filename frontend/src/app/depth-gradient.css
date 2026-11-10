@@ -180,7 +180,7 @@ html[data-style="depth"] [data-ui-resize-handle] > [data-ui-resize-grip] {
 html[data-style="depth"] [data-ui-resize-handle] {
   border-color: var(--surface-card-border);
 }
-/* My notes is an unmarked, flat inset; keep its adjoining strip flat too. */
+/* Your notes is an unmarked, flat inset; keep its adjoining strip flat too. */
 html[data-style="depth"] [data-ui-resize-group="vertical"]:has(
   [data-ui-side-tab="my-notes"][aria-selected="true"]
 ) > [data-ui-resize-handle] {

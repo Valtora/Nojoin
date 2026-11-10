@@ -63,7 +63,7 @@ export const noteFileTimeMs = (note: Pick<TimelineNote, "kind" | "anchor_ms" | "
       : null;
 
 /**
- * Where a note sits, as My notes and the transcript name it: its time, or
+ * Where a note sits, as Your notes and the transcript name it: its time, or
  * "Before the transcript" and "After the transcript" for a note on the whole
  * meeting. `place` reads inside a sentence ("at 01:05", "before the transcript").
  */

@@ -23,12 +23,14 @@ import IconButton from "@/components/ui/IconButton";
 import { cn } from "@/lib/cn";
 import { useNavigationStore, type SideTab } from "@/lib/store";
 
+import { PANEL_LABELS, sidePanelsPhrase } from "./panelLabels";
+
 const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
-  { tab: "speakers", label: "Speakers", icon: Users },
-  { tab: "my-notes", label: "My notes", icon: StickyNote },
-  { tab: "captures", label: "Captures", icon: Images },
-  { tab: "meeting-edge", label: "Meeting Edge", icon: Sparkles },
-  { tab: "tasks", label: "Tasks", icon: ListTodo },
+  { tab: "speakers", label: PANEL_LABELS.speakers, icon: Users },
+  { tab: "my-notes", label: PANEL_LABELS["my-notes"], icon: StickyNote },
+  { tab: "captures", label: PANEL_LABELS.captures, icon: Images },
+  { tab: "meeting-edge", label: PANEL_LABELS["meeting-edge"], icon: Sparkles },
+  { tab: "tasks", label: PANEL_LABELS.tasks, icon: ListTodo },
 ];
 
 // Where the labels stop fitting: under 25rem for four tabs, under 30rem once
@@ -40,12 +42,29 @@ const NARROW = {
     label: "@max-[30rem]:sr-only", collapse: "@max-[30rem]:w-8" },
 };
 
+/** Each side panel's content; a panel the meeting doesn't offer is undefined. */
+function sidePanelNodes({
+  speakers,
+  myNotes,
+  captures,
+  meetingEdge,
+  tasks,
+}: {
+  speakers: ReactNode;
+  myNotes: ReactNode;
+  captures: ReactNode;
+  meetingEdge?: ReactNode;
+  tasks?: ReactNode;
+}): Record<SideTab, ReactNode> {
+  return { speakers, "my-notes": myNotes, captures, "meeting-edge": meetingEdge, tasks };
+}
+
 interface RecordingSideColumnProps {
   allowChat?: boolean;
   inFlight?: boolean;
   /** The speaker panel, as the page builds it. */
   speakers: ReactNode;
-  /** The My notes list, as the page builds it. */
+  /** The user's own notes (Your notes), as the page builds them. */
   myNotes: ReactNode;
   /** The Captures list, as the page builds it. */
   captures: ReactNode;
@@ -61,7 +80,7 @@ interface RecordingSideColumnProps {
 }
 
 /**
- * The top of the side column: Speakers, My notes, Captures, Meeting Edge and Tasks as tabs (the
+ * The top of the side column: Speakers, Your notes, Captures, Meeting Edge and Tasks as tabs (the
  * WAI-ARIA tabs pattern), and the button that collapses it. Every panel stays
  * mounted, so switching tabs keeps a rename or an edit where it was.
  *
@@ -89,7 +108,7 @@ function SideTabs({
     (state) => state.setSpeakerPanelCollapsed,
   );
   const tablistRef = useRef<HTMLDivElement>(null);
-  const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes, captures, "meeting-edge": meetingEdge, tasks };
+  const panels = sidePanelNodes({ speakers, myNotes, captures, meetingEdge, tasks });
   const tabs = SIDE_TABS.filter(({ tab }) => panels[tab] !== undefined);
   const sideTab = tabs.some(({ tab }) => tab === remembered) ? remembered : "speakers";
   const narrow = tasks === undefined ? NARROW.four : NARROW.five;
@@ -181,8 +200,8 @@ function SideTabs({
 }
 
 /**
- * The recording's desktop side column: Speakers, My notes, Captures and
- * Meeting Edge and linked Tasks as tabs on top, and Chat below, each part collapsible, with a handle
+ * The recording's desktop side column: Speakers, Your notes, Captures,
+ * Meeting Edge and Tasks as tabs on top, and Chat below, each part collapsible, with a handle
  * between them while both are open.
  */
 export default function RecordingSideColumn({
@@ -212,6 +231,7 @@ export default function RecordingSideColumn({
   );
 
   if (isSpeakerPanelCollapsed) {
+    const offered = sidePanelNodes({ speakers, myNotes, captures, meetingEdge, tasks });
     return (
       <div className="flex h-full flex-col">
         <ButtonBase
@@ -223,9 +243,9 @@ export default function RecordingSideColumn({
         >
           <Users className="h-3.5 w-3.5" />
           <span className="truncate">
-            {tasks !== undefined
-              ? `Speakers, My notes, Captures${meetingEdge !== undefined ? ", Meeting Edge" : ""} and Tasks`
-              : meetingEdge === undefined ? "Speakers, My notes and Captures" : "Speakers, My notes, Captures and Meeting Edge"}
+            {sidePanelsPhrase(
+              SIDE_TABS.map(({ tab }) => tab).filter((tab) => offered[tab] !== undefined),
+            )}
           </span>
           <ChevronDown className="ml-auto h-3.5 w-3.5" />
         </ButtonBase>
@@ -346,8 +366,8 @@ export function RecordingSideRail({
       <IconButton
         size="sm"
         icon={<StickyNote />}
-        aria-label="Show my notes"
-        title="Show my notes"
+        aria-label="Show your notes"
+        title="Show your notes"
         onClick={() => show("my-notes")}
       />
       <IconButton

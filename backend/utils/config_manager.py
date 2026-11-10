@@ -95,8 +95,11 @@ LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
 # on its next save and never shown; config.json drops them on load, as it does
 # every key outside the tables in config_defaults. asr_word_end_padding_s became
 # asr_word_length_cap_s with a new meaning, so a stored value is not carried
-# over.
-RETIRED_USER_SETTING_KEYS = frozenset({"asr_word_end_padding_s"})
+# over. vad_mute_transcription (#961) is fixed at its old default, on: the worker
+# no longer reads it, so a user who had turned it off gets the default.
+RETIRED_USER_SETTING_KEYS = frozenset(
+    {"asr_word_end_padding_s", "vad_mute_transcription"}
+)
 
 # The transcription engine and its model. An administrator picks them under
 # Settings > Transcription, and every recording on the install uses them.
@@ -509,12 +512,17 @@ class ConfigManager:
             validate_timezone_name(str(value))
         if key == "ollama_api_url" and value:
             try:
-                validate_ollama_api_url(str(value), allow_private=True)
+                # The address already configured is not resolved again (#945).
+                validate_ollama_api_url(
+                    str(value), allow_private=True, trusted_url=self.get(key)
+                )
             except OllamaURLValidationError as exc:
                 raise ValueError(f"Invalid ollama_api_url: {value}") from exc
         if key == "secondary_ollama_api_url" and value:
             try:
-                validate_ollama_api_url(str(value), allow_private=True)
+                validate_ollama_api_url(
+                    str(value), allow_private=True, trusted_url=self.get(key)
+                )
             except OllamaURLValidationError as exc:
                 raise ValueError(f"Invalid secondary_ollama_api_url: {value}") from exc
         return True
@@ -679,22 +687,6 @@ def migrate_file_if_needed(old_path, new_path):
             import shutil
 
             shutil.move(old_path, new_path)
-
-
-def get_default_model_for_provider(provider: str) -> str | None:
-    """
-    Get the default model for a specific LLM provider.
-    This imports from llm_services to maintain single source of truth.
-    """
-    try:
-        from backend.processing.llm_services import (
-            get_default_model_for_provider as _get_default,
-        )
-
-        return _get_default(provider)
-    except ImportError:
-        # Fallback values
-        return None
 
 
 def is_llm_available():

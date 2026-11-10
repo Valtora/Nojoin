@@ -115,7 +115,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     recording,
     recording ? shouldPollRecordingUpdates(recording) : false,
   );
-  // Edits and deletes of saved notes, shared by the transcript and My notes.
+  // Edits and deletes of saved notes, shared by the transcript and Your notes.
   const noteEdits = useNoteEdits(recording?.id ?? null);
   // A note's file switched on keeps the recording polled until it is read.
   const filesBeingRead = noteFilesBeingRead(timelineNotes);
