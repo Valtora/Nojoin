@@ -29,15 +29,28 @@ export type Palette = (typeof PALETTES)[number];
 export const CORNER_STYLES = ["rounded", "subtle", "square"] as const;
 export type CornerStyle = (typeof CORNER_STYLES)[number];
 
+/** The Corner style setting: Automatic follows Style; the rest override it. */
+export const CORNER_PREFERENCES = ["auto", ...CORNER_STYLES] as const;
+export type CornerPreference = (typeof CORNER_PREFERENCES)[number];
+
 export const UI_STYLES = ["default", "classic", "depth"] as const;
 export type UiStyle = (typeof UI_STYLES)[number];
+
+/** The corners each style brings while Corner style is Automatic. */
+export const STYLE_CORNERS: Record<UiStyle, CornerStyle> = {
+  default: "rounded",
+  classic: "square",
+  depth: "rounded",
+};
 
 export const DENSITY_PREFERENCES = ["auto", "comfortable", "compact", "dense"] as const;
 export type DensityPreference = (typeof DENSITY_PREFERENCES)[number];
 
 export const DEFAULT_THEME: Theme = "system";
 export const DEFAULT_PALETTE: Palette = "default";
+/** The corners with no attribute on <html>: the original look. */
 export const DEFAULT_CORNER_STYLE: CornerStyle = "rounded";
+export const DEFAULT_CORNER_PREFERENCE: CornerPreference = "auto";
 export const DEFAULT_UI_STYLE: UiStyle = "default";
 export const DEFAULT_DENSITY_PREFERENCE: DensityPreference = "auto";
 
@@ -57,7 +70,8 @@ export const PALETTE_LABELS: Record<Palette, string> = {
   marigold: "Marigold (forest and gold)",
 };
 
-export const CORNER_STYLE_LABELS: Record<CornerStyle, string> = {
+export const CORNER_PREFERENCE_LABELS: Record<CornerPreference, string> = {
+  auto: "Automatic (matches Style)",
   rounded: "Rounded",
   subtle: "Subtle",
   square: "Square",
@@ -119,8 +133,18 @@ export function readStoredPalette(): Palette {
   return readStored(APPEARANCE_STORAGE_KEYS.palette, PALETTES, DEFAULT_PALETTE);
 }
 
-export function readStoredCornerStyle(): CornerStyle {
-  return readStored(APPEARANCE_STORAGE_KEYS.corners, CORNER_STYLES, DEFAULT_CORNER_STYLE);
+/**
+ * The stored Corner style. Before Automatic existed, Rounded was stored as no
+ * key at all, so a browser left on Rounded now follows Style; an explicit
+ * Subtle or Square is kept as it was.
+ */
+export function readStoredCornerPreference(): CornerPreference {
+  return readStored(APPEARANCE_STORAGE_KEYS.corners, CORNER_PREFERENCES, DEFAULT_CORNER_PREFERENCE);
+}
+
+/** The corners that show: the explicit choice, or under Automatic the style's own. */
+export function resolveCornerStyle(preference: CornerPreference, style: UiStyle): CornerStyle {
+  return preference === "auto" ? STYLE_CORNERS[style] : preference;
 }
 
 export function readStoredUiStyle(): UiStyle {
@@ -139,8 +163,8 @@ export function storePalette(palette: Palette) {
   writeStored(APPEARANCE_STORAGE_KEYS.palette, palette, palette === DEFAULT_PALETTE);
 }
 
-export function storeCornerStyle(corners: CornerStyle) {
-  writeStored(APPEARANCE_STORAGE_KEYS.corners, corners, corners === DEFAULT_CORNER_STYLE);
+export function storeCornerPreference(corners: CornerPreference) {
+  writeStored(APPEARANCE_STORAGE_KEYS.corners, corners, corners === DEFAULT_CORNER_PREFERENCE);
 }
 
 export function storeUiStyle(style: UiStyle) {

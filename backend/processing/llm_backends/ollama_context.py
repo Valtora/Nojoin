@@ -15,15 +15,21 @@ context and the question on the last message are never cut.
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional, Sequence
 
 from backend.utils.context_window import ContextWindowExceededError
 
 # Ollama 0.12.6 (and Ollama's own runners) refuse with this plain message and no
 # counts. 0.34 and later relay llama-server's error as a JSON string, with type
-# "exceed_context_size_error", "n_prompt_tokens" and "n_ctx".
+# "exceed_context_size_error", "n_prompt_tokens" and "n_ctx". 0.40.11 sends
+# llama-server's message alone, with both counts in the text.
 _RUNNER_OVERFLOW = "the input length exceeds the context length"
 _LLAMA_SERVER_OVERFLOW = "exceed_context_size_error"
+_LLAMA_SERVER_MESSAGE = re.compile(
+    r"request \((\d+) tokens\) exceeds the available context size \((\d+) tokens\)",
+    re.IGNORECASE,
+)
 
 # Prose and transcripts run 2.6 (short timestamped turns) to 5 UTF-8 bytes per
 # token, measured on Ollama, so this estimate over-counts them and history
@@ -107,6 +113,9 @@ def context_overflow_from_response(
             return None
         prompt_tokens = _count(detail.get("n_prompt_tokens"))
         window = _count(detail.get("n_ctx")) or sent_window
+    elif message := _LLAMA_SERVER_MESSAGE.search(error):
+        prompt_tokens = _count(int(message[1]))
+        window = _count(int(message[2])) or sent_window
     elif _RUNNER_OVERFLOW in error.lower():
         prompt_tokens, window = None, sent_window
     else:

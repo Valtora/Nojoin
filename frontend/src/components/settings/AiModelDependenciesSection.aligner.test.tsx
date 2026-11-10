@@ -35,10 +35,21 @@ describe("Forced aligner model downloads", () => {
   it.each([
     ["absent", "Download"],
     ["failed", "Retry"],
+    ["retry_wait", "Retry"],
   ] as const)("repairs only the aligner from its %s row", (state, label) => {
     const { row, startPreparation } = renderAligner({ state });
     expect(row.getByText("Download size: 1839 MB.")).toBeTruthy();
     fireEvent.click(row.getByRole("button", { name: label }));
+    expect(startPreparation).toHaveBeenCalledExactlyOnceWith("forced_aligner");
+  });
+
+  it("explains automatic retry backoff while allowing an immediate explicit retry", () => {
+    const { row, startPreparation } = renderAligner({ state: "retry_wait" });
+    expect(row.getByText("Waiting to retry")).toBeTruthy();
+    expect(row.getByText(/Automatic requests wait ten minutes/)).toBeTruthy();
+    const retry = row.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(false);
+    fireEvent.click(retry);
     expect(startPreparation).toHaveBeenCalledExactlyOnceWith("forced_aligner");
   });
 

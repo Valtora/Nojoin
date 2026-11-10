@@ -12,7 +12,6 @@ from backend.processing.llm_backends.base import (
     JSON_CONTRACT_ERRORS,
     LLMBackend,
     build_eligible_speaker_labels_prompt_section,
-    get_default_model_for_provider,
     summarize_llm_response_shape,
 )
 from backend.processing.llm_backends.factory import (
@@ -42,7 +41,6 @@ __all__ = [
     "OpenAILLMBackend",
     "SecondaryLLMBackend",
     "build_eligible_speaker_labels_prompt_section",
-    "get_default_model_for_provider",
     "get_llm_backend",
     "get_llm_backend_with_secondary",
     "summarize_llm_response_shape",

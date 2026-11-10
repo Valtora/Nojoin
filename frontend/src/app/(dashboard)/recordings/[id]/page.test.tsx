@@ -393,7 +393,7 @@ describe("RecordingPage (detail)", () => {
     await screen.findByRole("heading", { name: /Quarterly sync/ });
     expect(screen.getAllByRole("textbox", { name: "New note" })).toHaveLength(1);
     const tabs = within(screen.getByRole("tablist", { name: "Side panels" })).getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Speakers", "My notes", "Captures", "Meeting Edge"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Speakers", "Your notes", "Captures", "Meeting Edge"]);
     expect(screen.getByTestId("speaker-panel")).toBeInTheDocument();
   });
 
@@ -422,7 +422,7 @@ describe("RecordingPage (detail)", () => {
     renderPage();
     const sideTabs = await screen.findByRole("tablist", { name: "Side panels" });
     await waitFor(() => expect(within(sideTabs).getAllByRole("tab").map((tab) => tab.textContent))
-      .toEqual(["Speakers", "My notes", "Captures"]));
+      .toEqual(["Speakers", "Your notes", "Captures"]));
     // The remembered Meeting Edge tab falls back to Speakers.
     expect(within(sideTabs).getByRole("tab", { name: "Speakers" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("speaker-panel")).toBeVisible();
@@ -586,7 +586,7 @@ describe("RecordingPage (detail)", () => {
       expect(screen.queryByRole("tablist", { name: "Side panels" })).not.toBeInTheDocument();
       expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes, Captures and Meeting Edge" }));
+      fireEvent.click(screen.getByRole("button", { name: "Speakers, Your notes, Captures and Meeting Edge" }));
       expect(setSpeakerPanelCollapsed).toHaveBeenLastCalledWith(false);
       view.rerender(<RecordingPage params={params} />);
       fireEvent.click(screen.getByRole("tab", { name: "Captures" }));
@@ -1090,13 +1090,13 @@ describe("RecordingPage (detail)", () => {
 
   // On a phone the speaker panel opens in the tab area, so it has a tab of its
   // own: with none, no tab shows as current and nothing leads back (#650).
-  // My notes, in the desktop side column too, has one after Notes.
-  it("gives the speaker panel, My notes and Captures tabs on a phone, Speakers current while it is open", async () => {
+  // Your notes, in the desktop side column too, has one after Meeting notes.
+  it("gives the speaker panel, Your notes and Captures tabs on a phone, Speakers current while it is open", async () => {
     activePanel = "speakers";
     const tablist = await openTabs(360);
 
     expect(tabLabels(tablist)).toEqual([
-      "Transcript", "Notes", "My notes", "Captures", "Documents", "Analytics", "Speakers", "Meeting Edge",
+      "Transcript", "Meeting notes", "Your notes", "Captures", "Documents", "Analytics", "Speakers", "Meeting Edge",
     ]);
     expect(within(tablist).getAllByRole("tab", { selected: true })).toEqual([
       within(tablist).getByRole("tab", { name: "Speakers" }),
@@ -1175,7 +1175,7 @@ describe("RecordingPage (detail)", () => {
 
     fireEvent.click(within(tablist).getByRole("tab", { name: "Speakers" }));
     expect(setActivePanel).toHaveBeenLastCalledWith("speakers");
-    fireEvent.click(within(tablist).getByRole("tab", { name: "Notes" }));
+    fireEvent.click(within(tablist).getByRole("tab", { name: "Meeting notes" }));
     expect(setActivePanel).toHaveBeenLastCalledWith("notes");
 
     expect(fillMarkerViolations(document.querySelector("header")!)).toEqual([]);
@@ -1184,7 +1184,7 @@ describe("RecordingPage (detail)", () => {
     expect(screen.queryByRole("button", { name: "Speakers" })).toBeNull();
   });
 
-  it("opens the transcript from a note in My notes on a phone, and focus goes with it", async () => {
+  it("opens the transcript from a note in Your notes on a phone, and focus goes with it", async () => {
     activePanel = "my-notes";
     listTimelineNotes.mockResolvedValue([
       {
@@ -1231,7 +1231,23 @@ describe("RecordingPage (detail)", () => {
       listTimelineNotes.mockResolvedValue([POINT]);
     });
 
-    it("opens the transcript from a note in the side column's My notes", async () => {
+    // Desktop lists the user's notes in the side column alone, and a phone in
+    // its tab row alone (#960).
+    it.each([
+      [360, "panel-my-notes", "Meeting panels"],
+      [1440, "side-panel-my-notes", "Side panels"],
+    ])("shows Your notes in one place at %i px", async (width, panelId, tablistName) => {
+      await openTabs(width);
+
+      const lists = await screen.findAllByTestId("my-notes");
+      expect(lists).toHaveLength(1);
+      expect(document.getElementById(panelId)).toContainElement(lists[0]);
+      expect(screen.getAllByRole("tab", { name: "Your notes" })).toEqual([
+        within(screen.getByRole("tablist", { name: tablistName })).getByRole("tab", { name: "Your notes" }),
+      ]);
+    });
+
+    it("opens the transcript from a note in the side column's Your notes", async () => {
       activePanel = "notes";
       await openTabs(1440);
       const panel = await sideNotes();
@@ -1243,7 +1259,7 @@ describe("RecordingPage (detail)", () => {
       expect(setActivePanel).toHaveBeenLastCalledWith("transcript");
     });
 
-    it("shows an edit made in the side column's My notes in the transcript", async () => {
+    it("shows an edit made in the side column's Your notes in the transcript", async () => {
       updateTimelineNote.mockResolvedValue({ ...POINT, body: "Ask about lunch", revision: 2 });
       await openTabs(1440);
       const panel = await sideNotes();
@@ -1314,7 +1330,7 @@ describe("RecordingPage (detail)", () => {
     const tablist = await openTabs(1440);
 
     expect(tabLabels(tablist)).toEqual([
-      "Transcript", "Notes", "Documents", "Analytics",
+      "Transcript", "Meeting notes", "Documents", "Analytics",
     ]);
     expect(
       within(tablist).getByRole("tab", { name: "Transcript", selected: true }),
