@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.processing.sentence_start import native_activity
 from backend.utils.canonical_pipeline.live_labels import (
     LiveLabelDecision,
     LiveLabelWrite,
@@ -148,6 +149,18 @@ def _write_labels(
     def decide(start_ms: int, end_ms: int) -> LiveLabelDecision:
         return label_line(start_ms / 1000.0, end_ms / 1000.0)
 
+    # Read from the engine before the Transcript lock is taken.
+    activity = (
+        native_activity(
+            engine.posteriors,
+            engine.posterior_first_frame,
+            engine.native_complete_frame,
+            native=engine.route == "nemotron",
+            switched=engine.switch_emitted_at_n is not None,
+        )
+        if isinstance(engine, HybridLiveState)
+        else None
+    )
     session = get_sync_session()
     try:
         # Lifecycle changes share Transcript; Recording stays available to uploads.
@@ -160,6 +173,7 @@ def _write_labels(
             recording_id=recording_id,
             settled_ms=engine.settled_ms,
             decide=decide,
+            activity=activity,
         )
         session.commit()
         return write

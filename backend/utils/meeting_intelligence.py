@@ -59,6 +59,20 @@ AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA = """{
 }"""
 
 
+def build_json_schema(request: AutomaticMeetingIntelligenceRequest) -> str:
+    """The schema shown to the model, with the meeting's own first label as its example.
+
+    The label is JSON-quoted as it would be in an answer, so a label holding a
+    colon or a quote stays one valid key.
+    """
+    if not request.unresolved_speakers:
+        return AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA
+    example = json.dumps(request.unresolved_speakers[0], ensure_ascii=False)
+    return AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA.replace(
+        '"SPEAKER_00"', example, 1
+    )
+
+
 class MeetingIntelligenceContractError(ValueError):
     """Raised when a unified meeting-intelligence payload breaks the contract."""
 
@@ -325,7 +339,7 @@ def build_automatic_meeting_intelligence_prompt(
                     request.output_language_instruction
                 ),
             ),
-            ("# Required JSON Schema", AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA),
+            ("# Required JSON Schema", build_json_schema(request)),
             (
                 "# Notes Markdown Requirements",
                 build_notes_body_spec(request.notes_sections),

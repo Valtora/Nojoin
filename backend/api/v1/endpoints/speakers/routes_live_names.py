@@ -52,6 +52,7 @@ from backend.utils.speaker_names.live_suggestions import (
     follow_live_merge,
     live_speaker_suggestions,
 )
+from backend.utils.speaker_names.placeholder import is_placeholder_speaker_name
 from backend.utils.transcript_settling import (
     load_capture_publication,
     publication_is_current,
@@ -59,7 +60,6 @@ from backend.utils.transcript_settling import (
 
 from .helpers import _get_owned_recording
 from .router import router
-from .routes_recording import PLACEHOLDER_NAME_PATTERN
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,7 @@ def _validate_name_update(update: LiveSpeakerNameUpdate, label: str) -> str:
     name = update.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Enter a name")
-    if PLACEHOLDER_NAME_PATTERN.match(name):
+    if is_placeholder_speaker_name(name):
         raise HTTPException(status_code=422, detail=PLACEHOLDER_NAME_DETAIL)
     if live_speaker_display_name(label) is None:
         raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)

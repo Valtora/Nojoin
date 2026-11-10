@@ -54,11 +54,13 @@ describe("ProcessingTuningSettings", () => {
       vad_threshold: 0.3,
       phantom_merge_threshold: 0.7,
       line_break_pause_s: 2,
+      phantom_filter_off: true,
     });
 
     fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
 
     const next = onUpdate.mock.calls[0][0] as Settings;
+    expect(next.phantom_filter_off).toBeNull();
     expect(next.theme).toBe("dark");
     expect(next.line_break_pause_s).toBe(2);
     for (const key of PROCESSING_TUNING_KEYS) {
@@ -140,6 +142,50 @@ describe("ProcessingTuningSettings", () => {
     for (const old of [/phantom/i, /flip/i, /similarity/i, /floor/i, /length cap/i, /segments/i]) {
       expect(screen.queryByText(old)).not.toBeInTheDocument();
     }
+  });
+
+  it.each([
+    ["absent", {}],
+    ["null", { phantom_filter_off: null }],
+    ["false", { phantom_filter_off: false }],
+  ])("ticks the brief-speaker check and shows its settings when the switch is %s", (_name, settings) => {
+    renderTuning(settings as Settings);
+
+    expect(screen.getByRole("checkbox", { name: "Check speakers heard only briefly" })).toBeChecked();
+    expect(screen.getByRole("group", { name: "Speakers heard only briefly" })).toBeVisible();
+  });
+
+  it("unticking hides the brief-speaker limits and saves the check as off", () => {
+    const state = renderWithState({ phantom_max_segments: 2, phantom_merge_threshold: 0.7 });
+    const checkbox = screen.getByRole("checkbox", { name: "Check speakers heard only briefly" });
+    expect(checkbox).toHaveAttribute(
+      "aria-controls",
+      screen.getByRole("group", { name: "Speakers heard only briefly" }).id,
+    );
+
+    fireEvent.click(checkbox);
+
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByRole("group", { name: "Speakers heard only briefly" })).toBeNull();
+    expect(screen.queryByRole("spinbutton", { name: "And up to (turns)" })).toBeNull();
+    // The other rows stay.
+    expect(screen.getByRole("group", { name: "Stray one-word speaker changes" })).toBeVisible();
+    expect(state.latest().phantom_filter_off).toBe(true);
+    expect(state.latest().phantom_max_segments).toBe(2);
+    expect(state.latest().phantom_merge_threshold).toBe(0.7);
+  });
+
+  it("ticking again shows the brief-speaker limits with their values and clears the switch", () => {
+    const state = renderWithState({ phantom_filter_off: true, phantom_max_segments: 2 });
+    const checkbox = screen.getByRole("checkbox", { name: "Check speakers heard only briefly" });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByRole("spinbutton", { name: "And up to (turns)" })).toBeNull();
+
+    fireEvent.click(checkbox);
+
+    expect(checkbox).toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "And up to (turns)" })).toHaveValue(2);
+    expect(state.latest().phantom_filter_off).toBeNull();
   });
 
   it("describes each field with its row's help text", () => {

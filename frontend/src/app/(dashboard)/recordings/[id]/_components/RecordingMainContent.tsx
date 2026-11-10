@@ -42,6 +42,8 @@ interface RecordingMainContentProps {
   speakersContent?: ReactNode;
   myNotesContent?: ReactNode;
   meetingEdgeContent?: ReactNode;
+  tasksContent?: ReactNode;
+  tasksLoading?: boolean;
   inFlight?: boolean;
   canPlayback?: boolean;
   canExport?: boolean;
@@ -128,7 +130,7 @@ const tabsFor = (panels: ActivePanel[]) =>
 // column, so they have no tab here: each layout shows them in one place.
 const TABS = tabsFor(["transcript", "notes", "documents", "analytics"]);
 const MOBILE_TABS = tabsFor([
-  "transcript", "notes", "my-notes", "captures", "documents", "analytics", "speakers", "meeting-edge",
+  "transcript", "notes", "my-notes", "captures", "documents", "analytics", "speakers", "meeting-edge", "tasks",
 ]);
 
 // Marks a side of the mobile tab row with tabs scrolled out of view. Decorative:
@@ -160,6 +162,8 @@ export default function RecordingMainContent({
   speakersContent,
   myNotesContent,
   meetingEdgeContent,
+  tasksContent,
+  tasksLoading = false,
   inFlight = false,
   canPlayback = true,
   canExport = true,
@@ -218,14 +222,21 @@ export default function RecordingMainContent({
   const setSpeakerReviewPending = useNavigationStore((state) => state.setSpeakerReviewPending);
   const tablistRef = useRef<HTMLDivElement>(null);
   const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
-  const tabs = !isMobile ? TABS
-    : meetingEdgeContent ? MOBILE_TABS : MOBILE_TABS.filter(({ panel }) => panel !== "meeting-edge");
+  const hasTasks = Boolean(tasksContent);
+  const hasMeetingEdge = Boolean(meetingEdgeContent);
+  const tabs = !isMobile ? TABS : MOBILE_TABS.filter(({ panel }) =>
+    (panel !== "meeting-edge" || hasMeetingEdge) && (panel !== "tasks" || hasTasks));
   // The tab that Tab and the arrow keys start from: the current panel's, or the
   // first when it has no tab here (desktop holds "speakers" for one render
   // before useRecordingDetail falls back to the transcript).
   const current = tabs.some(({ panel }) => panel === activePanel)
     ? activePanel
     : tabs[0].panel;
+
+  // A phone's remembered Tasks tab waits for the tasks, then falls back if there are none.
+  useEffect(() => {
+    if (isMobile && activePanel === "tasks" && !tasksLoading && !tasksContent) setActivePanel("transcript");
+  }, [activePanel, isMobile, tasksContent, tasksLoading, setActivePanel]);
 
   // Arrow keys move between tabs and open them, wrapping at the ends; Home and
   // End jump to the first and last (the WAI-ARIA tabs pattern).
@@ -258,7 +269,7 @@ export default function RecordingMainContent({
     tablistRef.current
       ?.querySelector(`#tab-${activePanel}`)
       ?.scrollIntoView({ inline: "nearest", block: "nearest" });
-  }, [isMobile, activePanel]);
+  }, [isMobile, activePanel, hasTasks, hasMeetingEdge]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full">
@@ -451,6 +462,12 @@ export default function RecordingMainContent({
           className={`absolute inset-0 flex flex-col overflow-y-auto ${activePanel === "meeting-edge" ? "z-10 visible" : "z-0 invisible"}`}>
           {meetingEdgeContent}
         </div>}
+        {isMobile && tasksContent && <div role="tabpanel" id="panel-tasks" aria-labelledby="tab-tasks"
+          className={`absolute inset-0 flex flex-col ${activePanel === "tasks" ? "z-10 visible" : "z-0 invisible"}`}>
+          {tasksContent}
+        </div>}
+        {isMobile && tasksLoading && activePanel === "tasks" &&
+          <p role="status" className="p-4 text-sm text-contrast-helper">Loading linked tasks...</p>}
       </SurfaceBase>
     </div>
   );

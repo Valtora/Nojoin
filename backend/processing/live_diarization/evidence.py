@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,12 +9,13 @@ from zipfile import BadZipFile
 
 import numpy as np
 
+from backend.processing.sentence_start import NativeActivity, native_activity
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.live_speaker_labels import live_speaker_label
 
 from .engine import LiveLabelConfig
 from .files import DISABLED_FILENAME
-from .lines import LabelTimeline
+from .lines import LabelTimeline, native_frame_range
 from .state import LiveLabelStateError, _validate, read_snapshot
 
 
@@ -36,8 +36,7 @@ class SpeakerEvidence:
             self.switch_frame is not None and end_ms <= self.native_complete_frame * 10
         ):
             return self.timeline.label_line(start_ms / 1000, end_ms / 1000)
-        first = max(0, math.floor(start_ms / 10) - self.posterior_first_frame)
-        stop = max(0, math.ceil(end_ms / 10) - self.posterior_first_frame)
+        first, stop = native_frame_range(start_ms, end_ms, self.posterior_first_frame)
         probabilities = self.posteriors[first:stop]
         complete = end_ms <= self.native_complete_frame * 10
         if not complete:
@@ -51,6 +50,16 @@ class SpeakerEvidence:
         winner = int(np.argmax(totals))
         return LiveLabelDecision(
             live_speaker_label(winner + 1), complete, float(totals[winner] / total)
+        )
+
+    def native_activity(self) -> NativeActivity | None:
+        """Native speaker activity for the sentence-start correction."""
+        return native_activity(
+            self.posteriors,
+            self.posterior_first_frame,
+            self.native_complete_frame,
+            native=self.native,
+            switched=self.switch_frame is not None,
         )
 
     def speech_spans(self) -> list[tuple[float, float]]:

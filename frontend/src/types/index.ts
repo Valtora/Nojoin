@@ -79,6 +79,30 @@ export interface GlobalSpeaker extends BaseDBModel {
   tags?: PeopleTag[];
 }
 
+export interface PersonMeetingRead {
+  recording_id: RecordingId;
+  title: string;
+  date: string;
+  duration_seconds: number | null;
+  talk_time_seconds: number;
+}
+
+export interface PersonTalkMonthRead {
+  /** Calendar month in the user's time-zone setting, formatted YYYY-MM. */
+  month: string;
+  talk_time_seconds: number;
+}
+
+/** Full-history figures alongside the newest 50 owned, linked meetings. */
+export interface PersonMeetingsRead {
+  meetings: PersonMeetingRead[];
+  meeting_count: number;
+  total_talk_time_seconds: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  talk_time_by_month: PersonTalkMonthRead[];
+}
+
 /**
  * The fields a person update changes; an absent field is left as it is.
  * Mirrors `GlobalSpeakerUpdate` in backend/models/speaker.py.
@@ -579,6 +603,12 @@ export interface Tag extends BaseDBModel {
   children?: Tag[];
 }
 
+export interface UserTaskListParams {
+  status?: "active" | "open" | "completed" | "archived" | "all";
+  recording_id?: RecordingId;
+  tag_ids?: number[];
+}
+
 export interface UserTask extends BaseDBModel {
   title: string;
   body?: string | null;
@@ -760,6 +790,8 @@ export interface Settings {
   enable_live_transcription?: boolean;
   /** Install-wide, admin-only: provisional labels require CUDA. */
   live_speaker_labels?: "off" | "auto";
+  /** Install-wide, admin-only: a reply's first words go to the person replying, live and final. */
+  sentence_start_correction?: boolean;
   /** Install-wide: rolling word agreement; "auto" (the default) on CUDA, "always" on CPU too. */
   live_text_settling?: LiveTextSettlingMode;
   live_text_settling_k?: number;
@@ -852,6 +884,8 @@ export interface Settings {
   phantom_max_segments?: number | null;
   phantom_embedding_floor?: number | null;
   phantom_merge_threshold?: number | null;
+  // True skips the phantom filter; null or absent runs it.
+  phantom_filter_off?: boolean | null;
   word_flip_max_duration_s?: number | null;
   word_flip_max_gap_s?: number | null;
   line_break_pause_s?: number | null;
@@ -1168,7 +1202,7 @@ export interface ModelStatusInfo {
   path: string | null;
   checked_paths: string[];
   /** Optional assets report their preparation lifecycle separately from presence. */
-  state?: "absent" | "downloading" | "ready" | "failed" | null;
+  state?: "absent" | "downloading" | "ready" | "failed" | "retry_wait" | null;
   /** Total expected download size from the model's asset manifest. */
   size_bytes?: number | null;
   unused_reason?: string | null;

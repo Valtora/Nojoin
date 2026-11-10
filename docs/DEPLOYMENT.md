@@ -374,6 +374,7 @@ Speech and speaker tuning is per user (**Settings > Recording > Advanced**, **Sp
 | `phantom_max_segments` | Speakers heard only briefly: And up to (turns) | 3 | 0 to 20 (whole number) |
 | `phantom_embedding_floor` | Speakers heard only briefly: Treat as noise below (voice match) | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
 | `phantom_merge_threshold` | Speakers heard only briefly: Merge from (voice match) | 0.60 | 0.05 to 1.0 |
+| `phantom_filter_off` | Speakers heard only briefly: Check speakers heard only briefly (unticked sets it) | unset (the check runs) | `true` skips the check; unset, `null` or `false` runs it |
 | `word_flip_max_duration_s` | Stray one-word speaker changes: Words up to (seconds) | 0.45 | 0 to 2.0 |
 | `word_flip_max_gap_s` | Stray one-word speaker changes: Pause up to (seconds) | 0.25 | 0 to 1.0 |
 
@@ -393,6 +394,8 @@ A user's own value replaces the flat key entirely, so an unusable per-user value
 An existing `config.json` without `live_speaker_labels` inherits `auto`; a stored `off` stays off. CPU workers may import the label engine, but do no label-model inference or live clustering.
 
 Any other value is off. Workers re-read `config.json` before each task, so changing the master switch reaches the next live segment. Turning labels on after a capture has begun uses clustering if the earlier audio is unavailable to the label engine.
+
+`sentence_start_correction` (`true` by default, with no setting on the page) moves the first words of a reply from the previous speaker to the person replying, in live labels and in processed transcripts ([ADMIN.md](ADMIN.md#transcription)). `false` turns it off; a configuration without the key keeps it on.
 
 The install-wide `speaker_engine` key selects the speaker engine independently of that master switch:
 

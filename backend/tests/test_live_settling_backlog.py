@@ -73,7 +73,9 @@ def test_backlog_speech_survives_silent_newest_chunk(
     monkeypatch.setattr(
         worker,
         "_speaker_evidence",
-        lambda _: SimpleNamespace(speech_spans=lambda: spans, decide=None),
+        lambda _: SimpleNamespace(
+            speech_spans=lambda: spans, decide=None, native_activity=lambda: None
+        ),
     )
     snapshot = worker.EpisodeSnapshot({"enabled": True, "window_s": 10, "k": 3}, [])
     monkeypatch.setattr(
@@ -189,6 +191,7 @@ def test_speech_left_in_the_window_keeps_getting_comparisons(
         lambda _: SimpleNamespace(
             speech_spans=lambda: [(0.2, 1.0)],
             decide=None,
+            native_activity=lambda: None,
         ),
     )
     assert worker.run_settling_step(

@@ -10,8 +10,8 @@ separation" setting, is on. Transcription's own switch,
 ``vad_mute_transcription``, was retired by #961: a stored value is ignored.
 
 Diarisation runs first, so muted transcription can hear a third file (#670):
-the muted one with the unmuted audio put back inside every diarised turn but
-those the phantom filter confirmed as non-speech (#678). It is zero only where
+the muted one with the unmuted audio put back inside every diarised turn,
+including those the phantom filter relabelled (#813). It is zero only where
 neither VAD nor diarisation heard speech.
 
 Free of heavy imports, so the API can name the keys without loading torch.
@@ -20,14 +20,14 @@ Free of heavy imports, so the API can name the keys without loading torch.
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Hashable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
-    from pyannote.core import Annotation, Segment
+    from pyannote.core import Annotation
 
 logger = logging.getLogger(__name__)
 
@@ -92,19 +92,10 @@ def muted_stages(config: Mapping[str, object] | None) -> MutedStages:
     )
 
 
-def diarised_turns(
-    diarization: Annotation, excluding: Collection[tuple[Segment, Hashable]] = ()
-) -> list[tuple[float, float]]:
-    """(start, end) seconds of every turn in a pyannote ``Annotation``.
-
-    ``excluding`` names turns to leave out by their ``(segment, track)`` key, so
-    another speaker's turn with the same bounds is kept.
-    """
-    left_out = set(excluding)
+def diarised_turns(diarization: Annotation) -> list[tuple[float, float]]:
+    """(start, end) seconds of every turn in a pyannote ``Annotation``."""
     return [
-        (float(turn.start), float(turn.end))
-        for turn, track in diarization.itertracks()
-        if (turn, track) not in left_out
+        (float(turn.start), float(turn.end)) for turn, _ in diarization.itertracks()
     ]
 
 
