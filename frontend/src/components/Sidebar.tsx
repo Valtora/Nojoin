@@ -67,7 +67,7 @@ import BatchActionBar from "./BatchActionBar";
 import ReprocessDialog from "./ReprocessDialog";
 import { GlobalSpeaker } from "@/types";
 import { useNavigationStore } from "@/lib/store";
-import { getColorByKey } from "@/lib/constants";
+import ActiveTagFilters from "./ActiveTagFilters";
 import { useViewportDensity } from "./ViewportDensityProvider";
 import { Badge } from "./ui/Badge";
 import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingNotes";
@@ -76,7 +76,7 @@ import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordin
 import { useRecordingListPages } from "./recordings/_hooks/useRecordingListPages";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
 import RecordingAttentionBadge from "./RecordingAttentionBadge";
-import RecordingTagDots from "./recordings/RecordingTagDots";
+import RecordingTagDots, { tagDotsLayout } from "./recordings/RecordingTagDots";
 import RecordingListFooter from "./recordings/RecordingListFooter";
 import { RECORDINGS_PAGE_SIZE } from "./recordings/recordingListPages";
 import { useCapture } from "@/lib/capture/CaptureProvider";
@@ -97,6 +97,22 @@ const formatDurationString = (seconds?: number) => {
     return `${hours}hr ${minutes}${minutes === 1 ? "min" : "mins"}`;
   }
   return `${minutes}${minutes === 1 ? "min" : "mins"}`;
+};
+
+// A card's text stops short of the actions button (right-1 and 28px wide, or
+// the 44px touch target) and, on a tagged card, of the dots 4px left of it: a
+// column of 0.375rem dots, two with a 0.25rem gap, and a second one as wide as
+// a two-digit count when its last slot holds one. Index: the number of columns.
+const CARD_RIGHT_PADDING = [
+  "pr-9 pointer-coarse:pr-[52px]",
+  "pr-11.5 pointer-coarse:pr-[62px]",
+  "pr-14 pointer-coarse:pr-[72px]",
+] as const;
+const CARD_RIGHT_PADDING_WITH_COUNT = "pr-17.5 pointer-coarse:pr-[86px]";
+
+const cardRightPadding = (tagCount: number) => {
+  const { columns, more } = tagDotsLayout(tagCount);
+  return more > 0 ? CARD_RIGHT_PADDING_WITH_COUNT : CARD_RIGHT_PADDING[columns];
 };
 
 const formatDate = (dateString: string, timeZone: string) => {
@@ -820,13 +836,6 @@ export default function Sidebar() {
   // Determine if we should hide the sidebar on mobile
   const isRecordingView = pathname?.startsWith("/recordings/");
 
-  // Tag dots sit in the gutter the hover checkbox keeps on a fine pointer. On
-  // touch that gutter opens only while selecting, so a list holding any
-  // tagged meeting keeps it open on every card and the titles stay aligned.
-  const reserveTagGutter = recordings.some(
-    (recording) => (recording.tags?.length ?? 0) > 0,
-  );
-
   // Collapse and expand animate the width. A drag sets it on every pointer
   // move, so it goes without a transition and the edge stays on the pointer.
   const widthTransition = isResizing
@@ -964,44 +973,12 @@ export default function Sidebar() {
         </div>
 
         {/* Active Tag Filter Pills */}
-        {selectedTagIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            {selectedTagIds.map((tagId) => {
-              const tag = tags.find((t) => t.id === tagId);
-              if (!tag) return null;
-              const color = getColorByKey(tag.color);
-              return (
-                <div
-                  key={tagId}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-status-neutral-bg border border-status-neutral-border text-xs group hover:border-action-border transition-colors"
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full ${color.dot} shrink-0`}
-                  />
-                  <span className="text-status-neutral-fg font-medium">
-                    {tag.name}
-                  </span>
-                  <ButtonBase
-                    onClick={() => toggleTagFilter(tagId)}
-                    className="ml-0.5 text-contrast-icon-muted hover:text-danger-text transition-colors"
-                    title={`Remove ${tag.name} filter`}
-                  >
-                    <X className="w-3 h-3" />
-                  </ButtonBase>
-                </div>
-              );
-            })}
-            <ButtonBase
-              data-ui-hover="status-danger"
-              data-ui-border="full" chrome="action"
-              onClick={clearTagFilters}
-              className="px-2.5 py-1 rounded-pill text-xs font-medium text-danger-text hover:bg-status-danger-bg border border-status-danger-border transition-colors"
-              title="Clear all tag filters"
-            >
-              Clear All
-            </ButtonBase>
-          </div>
-        )}
+        <ActiveTagFilters
+          tags={tags}
+          selectedTagIds={selectedTagIds}
+          toggleTagFilter={toggleTagFilter}
+          clearTagFilters={clearTagFilters}
+        />
 
         {showFilters && (
           <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">
@@ -1267,11 +1244,11 @@ export default function Sidebar() {
                         }}
                         onContextMenu={(e) => handleContextMenu(e, recording)}
                         {...longPress.bind(recording.id)}
-                        // The right padding keeps the text clear of the actions button.
-                        className={`block py-3 pr-9 pointer-coarse:pr-[52px] rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
-                          selection.isSelecting || reserveTagGutter
-                            ? "pl-9"
-                            : "pl-3 pointer-fine:pl-9"
+                        // The left padding keeps the text clear of the checkbox
+                        // wherever it can show, which on touch is only while
+                        // selecting; the right of the tag dots and the button.
+                        className={`block py-3 ${cardRightPadding(recording.tags?.length ?? 0)} rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
+                          selection.isSelecting ? "pl-9" : "pl-9 pointer-coarse:pl-3"
                         } ${
                           isHighlighted
                             ? isSelected
@@ -1322,11 +1299,12 @@ export default function Sidebar() {
                             </>
                           )}
                         </div>
-                        {/* In the left gutter, below where the selection
-                            checkbox appears, so the two never overlap. */}
+                        {/* Centred in the right-hand gutter, just left of the
+                            actions button, so they never meet it or the
+                            selection checkbox. */}
                         <RecordingTagDots
                           tags={recording.tags}
-                          className="absolute left-3 top-8.5 w-4"
+                          className="absolute right-9 top-1/2 -translate-y-1/2 pointer-coarse:right-[52px]"
                         />
                         <RecordingAttentionBadge recordingId={recording.id} className="mt-2" />
                         {/* The open recording lists its own unsent notes. */}

@@ -24,6 +24,29 @@ export const listModels = async (
   return response.data;
 };
 
+export interface ThinkingSupport {
+  model: string | null;
+  /**
+   * null means Ollama could not be asked or did not say. Treat it as unknown,
+   * never as a refusal.
+   */
+  supported: boolean | null;
+}
+
+/**
+ * Whether an Ollama model can think. The server asks Ollama; `secondary` asks
+ * the fallback provider's server instead of the default one.
+ */
+export const getThinkingSupport = async (
+  model: string,
+  secondary = false,
+): Promise<ThinkingSupport> => {
+  const response = await api.get<ThinkingSupport>("/llm/thinking-support", {
+    params: { model, ...(secondary ? { secondary: true } : {}) },
+  });
+  return response.data;
+};
+
 export const fetchProxyModels = async (
   provider: string,
   apiUrl?: string,

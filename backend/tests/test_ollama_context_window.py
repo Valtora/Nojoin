@@ -17,9 +17,13 @@ import json
 import pytest
 from requests import HTTPError
 
-from backend.processing.llm_backends import ollama as ollama_module
+from backend.processing.llm_backends import ollama_model_facts as ollama_module
 from backend.processing.llm_backends.factory import SecondaryLLMBackend
 from backend.processing.llm_backends.ollama import OllamaLLMBackend
+from backend.processing.llm_backends.ollama_context import (
+    OllamaContextOverflowError,
+    context_overflow_from_response,
+)
 
 
 def _llama_server_overflow(prompt_tokens: int, n_ctx: int) -> dict:
@@ -41,6 +45,14 @@ def _llama_server_overflow(prompt_tokens: int, n_ctx: int) -> dict:
 
 OVERFLOW_0_40 = _llama_server_overflow(2622, 512)
 OVERFLOW_0_12_6 = {"error": "the input length exceeds the context length"}
+# Recorded from Ollama 0.40.11 (truncate false, num_ctx 2048): llama-server's
+# message alone, not wrapped in its JSON envelope.
+OVERFLOW_0_40_11 = {
+    "error": (
+        "request (6010 tokens) exceeds the available context size (2048 tokens), "
+        "try increasing it"
+    )
+}
 FITS = {"done": True, "done_reason": "stop", "prompt_eval_count": 318, "eval_count": 7}
 WINDOW_FILLED_0_40 = {
     "done": True,
@@ -478,3 +490,52 @@ def test_a_streaming_overflow_is_refused_before_any_text_and_falls_back():
 
     primary.requests.chat_responses.append(_refusal(OVERFLOW_0_40))
     assert _stream(SecondaryLLMBackend(primary, secondary)) == ["Friday."]
+
+
+def test_ollama_0_40_11_overflow_refusal_carries_both_counts():
+    overflow = context_overflow_from_response(
+        OVERFLOW_0_40_11, sent_window=2048, configured_window=2048
+    )
+
+    assert isinstance(overflow, OllamaContextOverflowError)
+    assert overflow.prompt_tokens == 6010
+    assert overflow.window == 2048
+    assert "the window is 2,048 tokens and the prompt is 6,010 tokens" in str(overflow)
+
+
+def test_the_window_in_a_0_40_11_refusal_wins_and_marks_the_model_maximum():
+    # num_ctx 8192 was sent, but Ollama ran 2048: the model's own limit.
+    overflow = context_overflow_from_response(
+        OVERFLOW_0_40_11, sent_window=8192, configured_window=32768
+    )
+
+    assert overflow is not None
+    assert overflow.window == 2048
+    assert "this model's maximum context is 2,048 tokens" in str(overflow)
+    assert "Increase the Ollama context window" not in str(overflow)
+
+
+def test_a_0_40_11_refusal_keeps_its_type_through_the_backend():
+    fake = _FakeOllama(_refusal(OVERFLOW_0_40_11))
+    backend = _backend(fake, context_window=2048)
+
+    with pytest.raises(OllamaContextOverflowError) as error:
+        _notes(backend)
+
+    assert (error.value.prompt_tokens, error.value.window) == (6010, 2048)
+    assert len(fake.chat_payloads) == 1
+
+
+def test_chat_trims_again_by_the_count_in_a_0_40_11_refusal():
+    # Ollama ran a 2048 window although 8192 was sent, so history that fitted
+    # the estimate still does not fit its count and more turns go.
+    fake = _FakeOllama(_refusal(OVERFLOW_0_40_11), _answer(FITS, content="Friday."))
+    backend = _backend(fake, context_window=8192)
+
+    assert _chat(backend, _turns(4, 2600)) == "Friday."
+
+    first, retry = (p["messages"] for p in fake.chat_payloads)
+    assert len(first) == 5
+    # The one turn Ollama's count leaves room for is an answer, which goes too.
+    assert retry == [first[-1]]
+    assert retry[-1] == first[-1]

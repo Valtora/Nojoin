@@ -10,6 +10,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 import backend.api.v1.endpoints.speakers as speakers_module
+from backend.api.params import RowId
 from backend.models.recording import (
     LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL,
     Recording,
@@ -494,8 +495,8 @@ class SpeakerUpdate(BaseModel):
 
 
 class MergeRequest(BaseModel):
-    source_speaker_id: int
-    target_speaker_id: int
+    source_speaker_id: RowId
+    target_speaker_id: RowId
 
 
 class MergeRequestLabels(BaseModel):
@@ -519,7 +520,7 @@ class MergedRecordingSpeakerRead(BaseModel):
 
 class VoiceprintAction(BaseModel):
     action: str  # "create_new", "link_existing", "local_only", "force_link"
-    global_speaker_id: Optional[int] = (
+    global_speaker_id: Optional[RowId] = (
         None  # Required for "link_existing" and "force_link"
     )
     new_speaker_name: Optional[str] = None  # Required for "create_new"

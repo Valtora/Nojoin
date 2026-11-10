@@ -18,7 +18,6 @@ def write_manifest(path: Path, payloads: dict[str, bytes]) -> None:
         "schema_version": 1,
         "repository": manifest.REPOSITORY,
         "revision": manifest.REVISION,
-        "transformers_version": "5.21.0",
         "files": [
             {
                 "filename": name,

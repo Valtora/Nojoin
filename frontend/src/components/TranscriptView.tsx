@@ -66,7 +66,7 @@ interface TranscriptViewProps {
   ) => void | boolean | Promise<void | boolean>;
   /**
    * Confirms or dismisses a speaker's suggested name; without it, lines show
-   * no "?" for one.
+   * no Suggested chip for one.
    */
   onReviewSpeakerName?: (
     label: string,
@@ -272,7 +272,7 @@ export default function TranscriptView({
   }, [displaySegments]);
 
   // Each speaker's first final line, the one that offers a suggested name's
-  // "?" (a provisional line offers none).
+  // Suggested chip (a provisional line offers none).
   const speakerFirstLines = useMemo(() => {
     const firstLines = new Map<string, string>();
     for (const { segment, segmentId } of displaySegments) {
@@ -298,16 +298,21 @@ export default function TranscriptView({
   );
   const headNotes = notePlacements.filter((placement) => placement.slot === "head").map(({ note }) => note);
   const tailNotes = notePlacements.filter((placement) => placement.slot === "tail").map(({ note }) => note);
+  const [editingNote, setEditingNote] = useState<EditingNote | null>(null);
+  // A step from the editor put its note on another line: the editor follows.
+  const followMovedNote = useCallback((noteId: string, anchor: HTMLElement) =>
+    setEditingNote((open) => (open?.noteId === noteId && open.anchor !== anchor ? { noteId, anchor } : open)),
+  [setEditingNote]);
   const moves = useNoteMoves({
     segments,
     visibleIndexes,
     placements: notePlacements,
     regionRef: scrollContainerRef,
     onMoveNote,
+    onEditorMoved: followMovedNote,
   });
   // Each saved selection note's words, found in the lines as they read now.
   const { noteDecorations, wordsChanged } = useNoteHighlights(segments, timelineNotes);
-  const [editingNote, setEditingNote] = useState<EditingNote | null>(null);
   // The editor shows only while its note is a saved one in the list.
   const shownEditor =
     editingNote !== null &&
@@ -326,7 +331,14 @@ export default function TranscriptView({
   const discardNote = useStableCallback((key: string) => onDiscardNote?.(key));
   const canEditNote = useCallback((note: TimelineNote | InlineNote) =>
     hasNoteEditor && isSavedNote(note) && note.revision !== undefined, [hasNoteEditor]);
-  const { controlsFor, gapOf, focusAfterRetry, hasRefusal } = moves;
+  const { controlsFor, gapOf, focusAfterRetry, focusAfterEditorClose, hasRefusal } = moves;
+  const canMoveNote = useCallback((note: TimelineNote | InlineNote) =>
+    live ? isSavedNote(note) && note.revision !== undefined : canEditNote(note), [live, canEditNote]);
+  // The editor's Move up and Move down, for the note it is open on.
+  const editorNote = shownEditor
+    ? notePlacements.find((placement) => placement.note.id === shownEditor.noteId)?.note
+    : undefined;
+  const editorMove = editorNote ? controlsFor(editorNote, canMoveNote(editorNote)) : undefined;
   const isFoldable = useCallback((note: TimelineNote | InlineNote) =>
     (!("status" in note) || note.status !== "failed") && !hasRefusal(note.id) && shownEditor?.noteId !== note.id,
   [hasRefusal, shownEditor]);
@@ -365,14 +377,14 @@ export default function TranscriptView({
           error={"error" in note ? note.error : null}
           onRetry={canRetryNote ? () => { focusAfterRetry(note.id); retryNote(key); } : undefined}
           onDiscard={canDiscardNote ? () => discardNote(key) : undefined}
-          // Not while its editor is open: a move would take the pencil it sits against.
-          move={controlsFor(note, (live ? isSavedNote(note) && note.revision !== undefined : canEditNote(note)) && shownEditor?.noteId !== note.id)}
+          // No grip while its editor is open, which has Move up and Move down.
+          move={controlsFor(note, canMoveNote(note) && shownEditor?.noteId !== note.id)}
           attachment={note.attachment}
         />
       </LineItem>
     );
   }, [LineItem, live, gapOf, wordsChanged, canEditNote, openNoteEditor, canRetryNote, canDiscardNote,
-    retryNote, discardNote, focusAfterRetry, controlsFor, shownEditor]);
+    retryNote, discardNote, focusAfterRetry, controlsFor, canMoveNote, shownEditor]);
 
   // --- Grouping Logic ---
   const trackGroups = useMemo(
@@ -627,9 +639,13 @@ export default function TranscriptView({
         <TranscriptNoteEditor
           editing={shownEditor}
           notes={timelineNotes}
+          move={editorMove
+            ? { onUp: editorMove.onUp, onDown: editorMove.onDown, refusal: editorMove.refusal }
+            : undefined}
           onEditNote={onEditNote}
           onDeleteNote={onDeleteNote}
           onClose={() => setEditingNote(null)}
+          afterReturnFocus={focusAfterEditorClose}
         />
       ) : null}
     </div>

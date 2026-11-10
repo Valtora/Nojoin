@@ -862,17 +862,3 @@ Preserve the same schema and do not invent facts not supported by the original t
                 logger.error(
                     f"Could not find transcript for recording {recording_id} to update notes"
                 )
-
-
-def _get_default_model_for_provider(provider: str) -> Optional[str]:
-    """Return the recommended default model for a provider."""
-    # No provider has a server-side default: the user selects a model in Settings.
-    return None
-
-
-def get_default_model_for_provider(provider: str) -> Optional[str]:
-    """
-    Public function to get the default model for a provider.
-    This is the single source of truth for default model names.
-    """
-    return _get_default_model_for_provider(provider)

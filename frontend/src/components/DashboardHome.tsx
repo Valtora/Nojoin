@@ -59,6 +59,12 @@ export default function DashboardHome() {
           account gets a two-column layout rather than a column holding one
           lonely button.
 
+          With no third column the grid is two rows, `auto` then `1fr`. Meet
+          Now keeps its height in the first and the task list takes all the rest
+          in the second, one gap below it. Without the explicit rows both rows
+          are `auto` and the spare height splits between them, which leaves an
+          empty band under Meet Now.
+
           `items-stretch` makes the columns end level: with `items-start` each
           would end wherever its content did, leaving an empty L-shape under the
           shorter one. A module that overflows scrolls inside itself rather than
@@ -97,7 +103,7 @@ export default function DashboardHome() {
           className={`flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1.1fr)_minmax(20rem,1fr)] @min-[54rem]:items-stretch ${
             hasThirdColumn
               ? "@min-[74rem]:grid-cols-[minmax(0,1.25fr)_minmax(18rem,1fr)_minmax(16rem,0.85fr)]"
-              : ""
+              : "@min-[54rem]:grid-rows-[auto_1fr]"
           }`}
         >
           {/* The calendar column. `row-span-2`, not `row-end-[-1]`: a negative

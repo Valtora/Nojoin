@@ -1,5 +1,6 @@
 import {
   DEFAULT_CAPTURE_SETTINGS,
+  type CaptureDisplaySurface,
   type CaptureMode,
   type CaptureSettings,
 } from "./shared";
@@ -23,16 +24,20 @@ export type PickSourceErrorCode =
 export class PickSourceError extends Error {
   code: PickSourceErrorCode;
   captureReport: CaptureSourceReportSnapshot | null;
+  /** For `missing_display_audio`, what the user shared, when the browser said. */
+  displaySurface: CaptureDisplaySurface | null;
 
   constructor(
     code: PickSourceErrorCode,
     message: string,
     captureReport: CaptureSourceReportSnapshot | null = null,
+    displaySurface: CaptureDisplaySurface | null = null,
   ) {
     super(message);
     this.message = message;
     this.code = code;
     this.captureReport = captureReport;
+    this.displaySurface = displaySurface;
     this.name = "PickSourceError";
     Object.setPrototypeOf(this, PickSourceError.prototype);
   }
@@ -73,12 +78,31 @@ const isDisplayCaptureCancellation = (error: unknown) => {
       ? candidate.message.toLowerCase()
       : "";
 
+  // Chromium refuses with NotAllowedError for a Cancel in the picker and for
+  // an operating system that denies screen recording, such as macOS without
+  // the permission. Only the message tells them apart, and the second needs
+  // the user to change a setting rather than pick again (issue #958).
+  if (message.includes("by system")) {
+    return false;
+  }
+
   return (
     name === "AbortError" ||
     name === "NotAllowedError" ||
     message.includes("permission denied by user") ||
     message.includes("cancelled before the recording started")
   );
+};
+
+const DISPLAY_SURFACES: readonly CaptureDisplaySurface[] = ["browser", "window", "monitor"];
+
+const readDisplaySurface = (stream: MediaStream): CaptureDisplaySurface | null => {
+  const track = stream.getVideoTracks?.()[0];
+  const surface =
+    typeof track?.getSettings === "function" ? track.getSettings().displaySurface : undefined;
+  return DISPLAY_SURFACES.includes(surface as CaptureDisplaySurface)
+    ? (surface as CaptureDisplaySurface)
+    : null;
 };
 
 const isUnavailableDeviceError = (error: unknown) => {
@@ -244,6 +268,31 @@ export const pickCaptureSource = async (
         }),
       );
     }
+  }
+
+  // A share without sound would record the microphone alone while the user
+  // believes the meeting is captured. Nothing reports whether a share will
+  // carry sound before it is made, but one without an audio track is known
+  // now, before the microphone is asked for (issue #958).
+  if (displayStream && displayStream.getAudioTracks().length === 0) {
+    const captureReport = buildCaptureReportSnapshot({
+      mode,
+      requestedMicrophoneDeviceId: options.microphoneDeviceId ?? null,
+      requestedMicrophoneLabel,
+      availableMicrophones,
+      displayStream,
+      microphoneStream: null,
+      settings: options.settings,
+      notes: ["display_capture_without_audio"],
+    });
+    const displaySurface = readDisplaySurface(displayStream);
+    stopTracks(displayStream);
+    throw new PickSourceError(
+      "missing_display_audio",
+      "The share has no sound, so only the microphone would be recorded.",
+      captureReport,
+      displaySurface,
+    );
   }
 
   try {

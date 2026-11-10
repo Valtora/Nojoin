@@ -195,11 +195,11 @@ An administrator can prepare it ahead of the first recording, or repair it, thro
 
 The three official files occupy **396,956,673 bytes**, including **396,954,592 bytes** of safetensors weights, under `$HF_HOME/hub/models--nvidia--Nemotron-3-Diarization/snapshots/f667ed73aee57d40cc39428eb768b4fd87a0a29e/`. `HF_HUB_CACHE` overrides the hub root when set. Keep that directory on the existing `model_cache` volume. Its `nojoin-verification.json` receipt sits in the repository directory, outside the upstream snapshot. A completed receipt and unchanged file metadata indicate completed preparation; the worker rehashes the actual files before its first model load. An interrupted download or a changed file is never reported as verified. Explicit preparation repairs it.
 
-The worker pins Transformers **5.21.0**, loads only the verified local safetensors snapshot with remote code disabled, and uses fp32/SDPA on CUDA. No checkpoint is baked into an image or fetched by settings saves or health polling, and startup never makes a first download. The clean worker build adds **55,894,050 bytes** of installed package payload, excluding bytecode and console scripts; this is not a compressed image-layer measurement. The API has no Transformers dependency, and CPU-only workers do not import the native runtime's ML dependencies.
+The worker pins Transformers in `requirements/worker.txt`, loads only the verified local safetensors snapshot with remote code disabled, and uses fp32/SDPA on CUDA. No checkpoint is baked into an image or fetched by settings saves or health polling, and startup never makes a first download. The clean worker build adds **55,894,050 bytes** of installed package payload, excluding bytecode and console scripts; this is not a compressed image-layer measurement. The API has no Transformers dependency, and CPU-only workers do not import the native runtime's ML dependencies.
 
 If verified assets are missing when live labels start, the worker uses clustering for the whole capture without requesting preparation. After a capture ends, an eligible CUDA final pass requests preparation when assets are absent and keeps community-1 for that recording. Imports and reprocessing use the same final-pass request, independently of the live-label setting. Requests are deduplicated: another recording does not queue a second download while one is pending. The final pass does not wait for the download; a later eligible capture can use Nemotron for live labels, and a later eligible final pass can use the union once preparation completes. CPU processing and `classic` mode do not request final-pass preparation. A recording with a speaker cap requests it as any other does. A failed request needs administrator repair or another eligible recording's request. Preparation runs on `worker-cpu`, and administrators can prepare ahead to avoid first-use fallback. Native packet timing measures neither the complete live lane nor final processing.
 
-An installed copy that no longer verifies is prepared again at startup. An upgrade that changes the asset manifest, as a new pinned Transformers version does, leaves a receipt naming the old manifest, which reads as `invalid`. The preparation the API queues when it starts sees that once the transcription engine is ready and queues Nemotron's preparation on `worker-cpu`, as it does the [forced aligner's](#forced-aligner-assets). That task re-hashes the unchanged files and writes a new receipt without downloading them, so live labels and the final pass use Nemotron again once it finishes. It is queued only for a copy prepared before, with `speaker_engine` on `auto` and `processing_device` other than `cpu`; a missing or interrupted copy still waits for a final pass or an administrator, as above.
+An installed copy that no longer verifies is prepared again at startup. An upgrade that changes the asset manifest, such as a new checkpoint revision, leaves a receipt naming the old manifest, which reads as `invalid`. A Transformers update leaves the manifest unchanged; only the upgrade that removed the Transformers version from it re-verifies once this way. The preparation the API queues when it starts sees that once the transcription engine is ready and queues Nemotron's preparation on `worker-cpu`, as it does the [forced aligner's](#forced-aligner-assets). That task re-hashes the unchanged files and writes a new receipt without downloading them, so live labels and the final pass use Nemotron again once it finishes. It is queued only for a copy prepared before, with `speaker_engine` on `auto` and `processing_device` other than `cpu`; a missing or interrupted copy still waits for a final pass or an administrator, as above.
 
 ### Worker Concurrency Lanes
 
@@ -366,16 +366,16 @@ First-run setup can pre-fill values from environment variables, and that prefill
 
 Speech and speaker tuning is per user (**Settings > Recording > Advanced**, **Speech and speaker tuning**), and each value inherits by default. Set an installation default for any key as a flat entry in `data/config.json`. It applies to every user who has not set their own:
 
-| Key | Shipped default | Accepted range |
-| --- | --- | --- |
-| `vad_threshold` | 0.5 | 0.15 to 0.90 |
-| `asr_word_length_cap_s` | 0.4 | 0.2 to 0.45 |
-| `phantom_max_duration_s` | 3.0 | 0 to 10 |
-| `phantom_max_segments` | 3 | 0 to 20 (whole number) |
-| `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
-| `phantom_merge_threshold` | 0.60 | 0.05 to 1.0 |
-| `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
-| `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
+| Key | Field on the settings page | Shipped default | Accepted range |
+| --- | --- | --- | --- |
+| `vad_threshold` | Speech detection threshold | 0.5 | 0.15 to 0.90 |
+| `asr_word_length_cap_s` | Longest word (Parakeet only) | 0.4 | 0.2 to 0.45 |
+| `phantom_max_duration_s` | Speakers heard only briefly: Check speakers under (seconds) | 3.0 | 0 to 10 |
+| `phantom_max_segments` | Speakers heard only briefly: And up to (turns) | 3 | 0 to 20 (whole number) |
+| `phantom_embedding_floor` | Speakers heard only briefly: Treat as noise below (voice match) | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
+| `phantom_merge_threshold` | Speakers heard only briefly: Merge from (voice match) | 0.60 | 0.05 to 1.0 |
+| `word_flip_max_duration_s` | Stray one-word speaker changes: Words up to (seconds) | 0.45 | 0 to 2.0 |
+| `word_flip_max_gap_s` | Stray one-word speaker changes: Pause up to (seconds) | 0.25 | 0 to 1.0 |
 
 `asr_word_length_cap_s` is the longest a Parakeet word can last. Its maximum is the default `word_flip_max_duration_s`, so at default smoothing every capped word is short enough to smooth. It replaces the retired `asr_word_end_padding_s` ([Version Notes](#version-notes)).
 
@@ -649,6 +649,8 @@ These run on the first start after the upgrade and need no action unless a note 
 
 #### Upgrading From Before 3.1.0
 
+- **Muting for transcription is no longer a setting (#961).** **Mute non-speech for transcription** (`vad_mute_transcription`) is retired and fixed at its default: with voice activity detection on, transcription always hears what it kept plus what speaker separation heard as speech. Anyone who had turned it off gets the default from the next recording processed or reprocessed. To have transcription hear the whole recording again, turn off **Voice activity detection** under **Settings > Recording > Advanced**. A stored value is ignored, dropped from a user's settings on their next save, and dropped from `config.json` like any key it no longer reads. An older settings page that still sends it is ignored. **Mute non-speech for speaker separation** keeps its key, `vad_mute_diarization`, and its default, off, as **Faster speaker separation**.
+- **Settings renamed (#961).** **Live word settling** is now **Refine live words**, with **Off**, **On with a GPU** (`auto`) and **On, also without a GPU (heavy)** (`always`), and its two timing values sit under **Fine-tune**. The tuning rows **Word length cap**, **Phantom speaker filter** and **Single-word flip smoothing** are now **Longest word (Parakeet only)**, **Speakers heard only briefly** and **Stray one-word speaker changes**. No key, value or default changes.
 - **Beat schedule kept in a JSON file (#917).** Celery Beat on `worker-io` now keeps its schedule in `data/celerybeat-schedule.json`. It used to be a Berkeley DB file, `data/celerybeat-schedule.db`, which a `worker-io` killed at the end of `docker stop`'s grace period could leave unreadable; beat then deleted it and every periodic job waited a full interval again. The first start carries each job's last run over from the old file and deletes it. If the old file is unreadable, every interval starts again this once, and the `worker-io` log says so. The `-s /app/data/celerybeat-schedule` argument in `docker-compose.yml` stays as it is. A downgrade ignores the JSON file and starts a new schedule.
 
 #### Upgrading From Before 3.0.0

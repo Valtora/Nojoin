@@ -119,7 +119,7 @@ it("a note-box keystroke executes no file components or transcript lines", async
     } });
     rerender(<CaptureProvider><Page listed={withFile} /></CaptureProvider>);
     const attached = await counter.take();
-    expect(attached("components/notes/NoteFiles.tsx", "NoteFile")).toBe(2); // Transcript and My notes; the other 29 mount none.
+    expect(attached("components/notes/NoteFiles.tsx", "NoteFile")).toBe(2); // Transcript and Your notes; the other 29 mount none.
     fireEvent.change(screen.getByRole("textbox", { name: /note/i }), { target: { value: "ab" } });
     const nextKey = await counter.take();
     expect(nextKey("components/notes/NoteFiles.tsx", "NoteFile")).toBe(0);

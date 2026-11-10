@@ -3,15 +3,15 @@ import type { ChangeEvent } from "react";
 
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
 import {
-  CORNER_STYLES,
-  CORNER_STYLE_LABELS,
+  CORNER_PREFERENCES,
+  CORNER_PREFERENCE_LABELS,
   DENSITY_PREFERENCES,
   DENSITY_PREFERENCE_LABELS,
   PALETTES,
   PALETTE_LABELS,
   UI_STYLES,
   UI_STYLE_LABELS,
-  type CornerStyle,
+  type CornerPreference,
   type DensityPreference,
   type Palette,
   type UiStyle,
@@ -42,8 +42,9 @@ function PaletteSwatch() {
  * moment it changes and never reaches the autosave.
  */
 export default function AppearanceSettings() {
-  const { theme, setTheme, palette, setPalette, cornerStyle, setCornerStyle, uiStyle, setUiStyle } =
-    useTheme();
+  const {
+    theme, setTheme, palette, setPalette, cornerPreference, setCornerPreference, uiStyle, setUiStyle,
+  } = useTheme();
   const { densityPreference, setDensityPreference } = useViewportDensity();
 
   return (
@@ -100,7 +101,7 @@ export default function AppearanceSettings() {
         id="appearance-style"
         label="Style"
         controlId="appearance-style-select"
-        description="The shape and depth of controls and panels. Classic looks best with Square corners."
+        description="The shape and depth of controls and panels, with corners to match."
       >
         <SelectBase
           data-ui-fill="control"
@@ -125,22 +126,22 @@ export default function AppearanceSettings() {
       <SettingsRow
         controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
         label="Corner style"
-        description="How rounded cards, buttons and fields are. Avatars and status dots stay round."
+        description="How rounded cards, buttons and fields are. Automatic takes them from Style. Avatars and status dots stay round."
       >
         <SelectBase
           data-ui-fill="control"
           data-ui-disabled-fill="control-disabled"
           data-ui-border="full"
           aria-label="Corner style"
-          value={cornerStyle}
+          value={cornerPreference}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-            setCornerStyle(event.target.value as CornerStyle)
+            setCornerPreference(event.target.value as CornerPreference)
           }
           className={SETTINGS_SELECT_CLASS}
         >
-          {CORNER_STYLES.map((option) => (
+          {CORNER_PREFERENCES.map((option) => (
             <option key={option} value={option}>
-              {CORNER_STYLE_LABELS[option]}
+              {CORNER_PREFERENCE_LABELS[option]}
             </option>
           ))}
         </SelectBase>
@@ -149,7 +150,7 @@ export default function AppearanceSettings() {
       <SettingsRow
         controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
         label="Density"
-        description="Automatic uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing everywhere else. Dense is tighter still for mouse and keyboard; on a touch screen it keeps compact-sized controls."
+        description="How closely lists, panels and controls are spaced. Automatic fits the spacing to your window."
       >
         <SelectBase
           data-ui-fill="control"

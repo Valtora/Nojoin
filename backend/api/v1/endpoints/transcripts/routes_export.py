@@ -31,7 +31,8 @@ from backend.services.timeline_note_service import (
     load_recording_timeline_notes_async,
 )
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
-from backend.utils.config_manager import EXPORT_BRANDING_KEY, config_manager
+from backend.utils.config_defaults import EXPORT_BRANDING_KEY
+from backend.utils.config_manager import config_manager
 from backend.utils.note_attachments import is_image, render_for_export
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.stored_paths import confined_document_path

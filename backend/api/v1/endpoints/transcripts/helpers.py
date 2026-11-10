@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
+from backend.api.params import RowId
 from backend.core.task_dispatch import dispatch_task_best_effort
 from backend.models.live_settling_public import LiveSettlingPublicRead
 from backend.models.pipeline import SpeakerCorrectionScope
@@ -139,7 +140,7 @@ class TranscriptSegmentTextUpdate(BaseModel):
 
 class TranscriptSegmentSpeakerUpdate(BaseModel):
     new_speaker_name: str
-    global_speaker_id: Optional[int] = None
+    global_speaker_id: Optional[RowId] = None
     diarization_label: Optional[str] = None
 
 
@@ -161,7 +162,7 @@ class TranscriptUtteranceTextPatch(BaseModel):
 
 class TranscriptUtteranceSpeakerPatch(BaseModel):
     new_speaker_name: str
-    global_speaker_id: Optional[int] = None
+    global_speaker_id: Optional[RowId] = None
     diarization_label: Optional[str] = None
     scope: SpeakerCorrectionScope = (
         SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING
@@ -252,7 +253,7 @@ class MeetingEdgeFocusUpdate(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    tag_ids: Optional[List[int]] = None
+    tag_ids: Optional[List[RowId]] = None
 
 
 def _build_speaker_map(speakers) -> dict:

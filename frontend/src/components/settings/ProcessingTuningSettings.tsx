@@ -18,6 +18,7 @@ import type { Settings } from "@/types";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import { SETTINGS_BUTTON_SECONDARY, SETTINGS_INPUT_CLASS } from "./settingsControls";
+import { usesParakeet } from "./settingsRegistry";
 
 interface ProcessingTuningSettingsProps {
   settings: Settings;
@@ -216,22 +217,25 @@ export default function ProcessingTuningSettings({
         {input("recording-vad-threshold", "vad_threshold")}
       </SettingsRow>
 
-      <SettingsRow
-        id="recording-word-length-cap"
-        labelId={labelId("recording-word-length-cap")}
-        descriptionId={descriptionId("recording-word-length-cap")}
-        label="Word length cap (Parakeet)"
-        description="The longest, in seconds, a word lasts. A word also ends where the next one starts. Longer gives a short reply more chance to land on its speaker. Canary and Whisper ignore it."
-      >
-        {input("recording-word-length-cap", "asr_word_length_cap_s")}
-      </SettingsRow>
+      {/* Only Parakeet's word timings are capped, so other engines hide it. */}
+      {usesParakeet(settings) && (
+        <SettingsRow
+          id="recording-word-length-cap"
+          labelId={labelId("recording-word-length-cap")}
+          descriptionId={descriptionId("recording-word-length-cap")}
+          label="Longest word (Parakeet only)"
+          description="How long, in seconds, one word can last; a word also ends where the next one starts. Raise it if one-word replies land on the wrong speaker; lower it if the last word of a sentence goes to whoever speaks next."
+        >
+          {input("recording-word-length-cap", "asr_word_length_cap_s")}
+        </SettingsRow>
+      )}
 
       <SettingsRow
         id="recording-phantom-filter"
         labelId={labelId("recording-phantom-filter")}
         descriptionId={descriptionId("recording-phantom-filter")}
-        label="Phantom speaker filter"
-        description="A speaker under both limits is checked: below the floor it is treated as noise and reassigned, at or above the merge similarity it joins the closest speaker, and in between it is kept. Lower limits or a higher merge similarity keep more brief speakers. A limit of 0 turns the filter off. Turn it off if short replies from people who barely speak, such as a single 'yes' or 'agreed', go missing: the filter treats someone who says very little in the whole recording as noise, so their words can be merged into another speaker or dropped from the transcript."
+        label="Speakers heard only briefly"
+        description="Someone heard for less than both limits is compared with the other voices. A voice that matches no one below the noise limit is treated as noise and its words go to the nearest speaker; one that matches someone at or above the merge limit joins that person; anything between stays a separate speaker. Lower limits or a higher merge limit keep more brief speakers, and a limit of 0 keeps them all. Do that if a person who says only 'yes' or 'agreed' goes missing from the transcript."
       >
         {group("recording-phantom-filter", [
           "phantom_max_duration_s",
@@ -245,8 +249,8 @@ export default function ProcessingTuningSettings({
         id="recording-word-flip"
         labelId={labelId("recording-word-flip")}
         descriptionId={descriptionId("recording-word-flip")}
-        label="Single-word flip smoothing"
-        description="A word up to this long, this close to its neighbours, is given back to the speaker on both sides of it. Lower values keep more one-word interjections; 0 turns smoothing off."
+        label="Stray one-word speaker changes"
+        description="A word up to this long, with no more than this pause either side, is given to the person who speaks before and after it. This removes stray one-word speaker changes but can erase a real interjection. Lower values keep more interjections; a word length of 0 keeps them all."
       >
         {group("recording-word-flip", ["word_flip_max_duration_s", "word_flip_max_gap_s"])}
       </SettingsRow>

@@ -74,7 +74,7 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
     | null;
   /**
    * The first line of its speaker among those shown, the one that offers a
-   * suggested name's "?": once per speaker, not on every line.
+   * suggested name's Suggested chip: once per speaker, not on every line.
    */
   isSpeakersFirstLine: boolean;
   hasPendingRemoteUpdate: boolean;
@@ -176,7 +176,7 @@ function TranscriptLine({
   // once the line is final.
   const canReviewName =
     isSpeakersFirstLine && !isSegmentReadOnly && !isProvisional && !isEditingSpeaker;
-  // A decision drops the "?", so focus goes to the speaker's name beside it.
+  // A decision drops the chip, so focus goes to the speaker's name beside it.
   const speakerButtonRef = useRef<HTMLButtonElement>(null);
   const speakerColor = getColorByKey(speakerColors[segment.speaker] || "gray");
   const bubbleColor = pendingDiarisation

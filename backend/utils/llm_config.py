@@ -27,6 +27,7 @@ SYSTEM_LLM_FIELDS = (
     "ollama_live_model",
     "ollama_api_url",
     "ollama_context_window",
+    "ollama_think",
     "secondary_llm_provider",
     "secondary_gemini_model",
     "secondary_gemini_live_model",
@@ -38,6 +39,7 @@ SYSTEM_LLM_FIELDS = (
     "secondary_ollama_live_model",
     "secondary_ollama_api_url",
     "secondary_ollama_context_window",
+    "secondary_ollama_think",
     "secondary_gemini_api_key",
     "secondary_openai_api_key",
     "secondary_anthropic_api_key",
@@ -94,11 +96,14 @@ class ResolvedLLMConfig:
     api_url: str | None
     merged_config: dict[str, Any]
     context_window: int | None = None
+    # Ollama only: None for every other provider.
+    think: bool | None = None
     secondary_provider: str | None = None
     secondary_api_key: str | None = None
     secondary_model: str | None = None
     secondary_api_url: str | None = None
     secondary_context_window: int | None = None
+    secondary_think: bool | None = None
     secondary_live_model: str | None = None
     # Per-user id carried only on cli configs, so the CLI backend can load the
     # user's encrypted subscription credential (which is not in merged_config).
@@ -111,6 +116,11 @@ class ResolvedLLMConfig:
     # primary first and the server secondary only after that. When set, it takes
     # precedence over the flat secondary_* fields in get_llm_backend_with_secondary.
     secondary_chain: "ResolvedLLMConfig | None" = None
+    # The install-wide setting this config's Ollama address is read from. The
+    # address stored there is the administrator's own and is trusted where it is
+    # used (see install_wide_ollama_url); any other address meets the full
+    # outbound policy.
+    api_url_setting: str = "ollama_api_url"
 
     def missing_configuration_message(self) -> str | None:
         if self.has_secondary:
@@ -154,8 +164,30 @@ class ResolvedLLMConfig:
             model=self.secondary_model,
             api_url=self.secondary_api_url,
             context_window=self.secondary_context_window,
+            think=self.secondary_think,
             merged_config=self.merged_config,
+            api_url_setting="secondary_ollama_api_url",
         )
+
+
+def install_wide_ollama_url(config: Any) -> str | None:
+    """The stored install-wide address an Ollama config may use without the outbound check.
+
+    The address an administrator set for this config's role (``ollama_api_url``
+    for the primary, ``secondary_ollama_api_url`` for the fallback), in
+    Settings > AI providers, where it is checked on save, or in ``.env``, is
+    the operator's own, so it is trusted where it is used, a private one
+    included (#951). Only the stored value is returned: a config carrying a
+    different address, whatever its source, still meets the full outbound
+    policy.
+    """
+    if getattr(config, "provider", None) != "ollama" or not getattr(
+        config, "api_url", None
+    ):
+        return None
+    setting = getattr(config, "api_url_setting", "ollama_api_url")
+    stored = config_manager.get(setting)
+    return str(stored) if stored else None
 
 
 def _merge_llm_config(
@@ -210,12 +242,14 @@ def _merge_llm_config(
         if provider == "ollama"
         else None
     )
+    think = _think_setting(merged, provider, "ollama_think")
 
     secondary_provider = merged.get("secondary_llm_provider") or None
     secondary_api_key = None
     secondary_model = None
     secondary_api_url = None
     secondary_context_window = None
+    secondary_think = None
     secondary_live_model = None
 
     if secondary_provider:
@@ -233,6 +267,9 @@ def _merge_llm_config(
             if secondary_provider == "ollama"
             else None
         )
+        secondary_think = _think_setting(
+            merged, secondary_provider, "secondary_ollama_think"
+        )
         secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(
             secondary_provider
         )
@@ -245,12 +282,14 @@ def _merge_llm_config(
         model=str(model) if model else None,
         api_url=str(api_url) if api_url else None,
         context_window=context_window,
+        think=think,
         merged_config=merged,
         secondary_provider=secondary_provider,
         secondary_api_key=str(secondary_api_key) if secondary_api_key else None,
         secondary_model=str(secondary_model) if secondary_model else None,
         secondary_api_url=str(secondary_api_url) if secondary_api_url else None,
         secondary_context_window=secondary_context_window,
+        secondary_think=secondary_think,
         secondary_live_model=str(secondary_live_model)
         if secondary_live_model
         else None,
@@ -286,6 +325,11 @@ def _resolve_secondary_model_for_purpose(
 
     main_model_field = f"secondary_{secondary_provider}_model"
     return merged.get(main_model_field)
+
+
+def _think_setting(merged: Mapping[str, Any], provider: str, key: str) -> bool | None:
+    """The Ollama thinking choice, or None for a provider that has none."""
+    return merged.get(key) is True if provider == "ollama" else None
 
 
 def _normalise_context_window(value: Any) -> int | None:
@@ -329,12 +373,14 @@ def _apply_owner_provider_override(
         if provider == "ollama"
         else None
     )
+    think = _think_setting(merged, provider, "ollama_think")
 
     secondary_provider = merged.get("secondary_llm_provider") or None
     secondary_api_key = None
     secondary_model = None
     secondary_api_url = None
     secondary_context_window = None
+    secondary_think = None
     secondary_live_model = None
 
     if secondary_provider:
@@ -352,6 +398,9 @@ def _apply_owner_provider_override(
             if secondary_provider == "ollama"
             else None
         )
+        secondary_think = _think_setting(
+            merged, secondary_provider, "secondary_ollama_think"
+        )
         secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(
             secondary_provider
         )
@@ -364,12 +413,14 @@ def _apply_owner_provider_override(
         model=str(model) if model else None,
         api_url=str(api_url) if api_url else None,
         context_window=context_window,
+        think=think,
         merged_config=merged,
         secondary_provider=secondary_provider,
         secondary_api_key=str(secondary_api_key) if secondary_api_key else None,
         secondary_model=str(secondary_model) if secondary_model else None,
         secondary_api_url=str(secondary_api_url) if secondary_api_url else None,
         secondary_context_window=secondary_context_window,
+        secondary_think=secondary_think,
         secondary_live_model=str(secondary_live_model)
         if secondary_live_model
         else None,

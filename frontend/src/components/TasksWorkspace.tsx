@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 
 import Workspace from "./Workspace";
+import ActiveTagFilters from "./ActiveTagFilters";
+import { useNavigationStore } from "@/lib/store";
 import {
   createUserTask,
   deleteUserTask,
@@ -214,43 +216,34 @@ export default function TasksWorkspace() {
     null,
   );
   const addNotification = useNotificationStore((state) => state.addNotification);
+  const selectedTagIds = useNavigationStore((state) => state.selectedTagIds);
+  const toggleTagFilter = useNavigationStore((state) => state.toggleTagFilter);
+  const clearTagFilters = useNavigationStore((state) => state.clearTagFilters);
 
   useEffect(() => {
     let cancelled = false;
-
-    const load = async () => {
+    // A tag edit elsewhere reloads quietly: the list stays up, and on failure
+    // it keeps what it last showed.
+    const loadTasks = async (quiet: boolean) => {
+      if (!quiet) setLoading(true);
       try {
-        const [taskData, tagData] = await Promise.all([
-          getUserTasks("all"),
-          getTags(),
-        ]);
-        if (!cancelled) {
-          setTasks(sortTasks(taskData));
-          setTags(tagData);
-        }
+        const taskData = await getUserTasks("all", selectedTagIds);
+        if (!cancelled) setTasks(sortTasks(taskData));
       } catch (error: unknown) {
         if (!cancelled) {
+          if (!quiet) setTasks([]);
           addNotification({
             type: "error",
             message: getErrorMessage(error, "Failed to load tasks."),
           });
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [addNotification]);
-
-  useEffect(() => {
+    void loadTasks(false);
     const handleTagsUpdated = () => {
+      void loadTasks(true);
       getTags()
         .then(setTags)
         .catch((error: unknown) => {
@@ -260,9 +253,37 @@ export default function TasksWorkspace() {
           });
         });
     };
-
     window.addEventListener("tags-updated", handleTagsUpdated);
-    return () => window.removeEventListener("tags-updated", handleTagsUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("tags-updated", handleTagsUpdated);
+    };
+  }, [addNotification, selectedTagIds]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const tagData = await getTags();
+        if (!cancelled) {
+          setTags(tagData);
+        }
+      } catch (error: unknown) {
+        if (!cancelled) {
+          addNotification({
+            type: "error",
+            message: getErrorMessage(error, "Failed to load tags."),
+          });
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [addNotification]);
 
   const taskGroups = useMemo(() => {
@@ -474,6 +495,16 @@ export default function TasksWorkspace() {
           </div>
         </div>
 
+        <p className="mt-4 text-sm text-contrast-helper">
+          Select tags in the navigation to show tasks matching any selected tag.
+        </p>
+        <ActiveTagFilters
+          tags={tags}
+          selectedTagIds={selectedTagIds}
+          toggleTagFilter={toggleTagFilter}
+          clearTagFilters={clearTagFilters}
+        />
+
         {isCreateOpen && (
           <form
             onSubmit={handleCreateTask}
@@ -565,7 +596,9 @@ export default function TasksWorkspace() {
           </SurfaceBase>
         ) : visibleTasks.length === 0 ? (
           <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="density-surface-subtle border border-dashed border-control-border bg-surface-card p-8 text-center text-sm text-contrast-helper">
-            No {view} tasks.
+            {selectedTagIds.length > 0
+              ? `No ${view} tasks match the selected tags.`
+              : `No ${view} tasks.`}
           </SurfaceBase>
         ) : (
           visibleTasks.map((task) => {

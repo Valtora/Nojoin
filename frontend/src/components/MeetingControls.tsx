@@ -3,19 +3,19 @@
 import { ButtonBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Mic } from "lucide-react";
-import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { isCaptureInterrupted } from "@/lib/capture/recovery";
+import type { CaptureStartMode } from "@/lib/capture/shared";
 import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
-import { useNotificationStore } from "@/lib/notificationStore";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import { CaptureNotices } from "./LiveMeetingControls";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
+import { useStartMeeting } from "./useStartMeeting";
 
 type MeetingControlsProps =
   | {
@@ -35,6 +35,12 @@ type MeetingControlsProps =
 
 type ButtonMode = "start" | "open-settings" | "wait";
 
+const START_TOOLTIPS: Record<CaptureStartMode, string> = {
+  shared_audio: "Start recording your microphone and the meeting's system audio.",
+  microphone_only: "Start recording your microphone only.",
+  ask: "Start a recording and choose what to record.",
+};
+
 interface MeetingSurfaceState {
   buttonLabel: string;
   buttonMode: ButtonMode;
@@ -49,19 +55,16 @@ export default function MeetingControls({
 }: MeetingControlsProps) {
   const backend = useConnectivityStore((state) => isReachable(state.status));
   const {
-    controller,
     finalizeRetry,
     pausedRecording,
     runtimeActive,
-    start,
+    settings,
     status,
     stopStage,
     support,
   } = useCapture();
   const uploadQueue = useCaptureState((state) => state.uploadQueue);
-
-  const { addNotification } = useNotificationStore();
-  const router = useRouter();
+  const startMeeting = useStartMeeting(onMeetingEnd);
   const hasLiveRecording =
     runtimeActive && (status === "recording" || status === "paused");
   const hasPausedBlock = Boolean(pausedRecording && (!runtimeActive || status === "error"));
@@ -103,7 +106,7 @@ export default function MeetingControls({
             buttonMode: "wait",
             buttonDisabled: true,
             buttonTooltip:
-              "Use Chrome on desktop for browser capture, or Chrome on Android/iOS for microphone-only capture.",
+              "Open Nojoin in a current version of Chrome, Edge, Firefox or Safari to record.",
           }
         : hasPausedBlock
           ? pausedRecording && isCaptureInterrupted(pausedRecording)
@@ -156,42 +159,15 @@ export default function MeetingControls({
               buttonLabel: "Start Meeting",
               buttonMode: "start",
               buttonDisabled: false,
+              // What Start does follows Recording source in Settings (#958).
               buttonTooltip: microphoneOnly
-                ? "Start a phone microphone recording."
-                : "Start a new meeting recording.",
+                ? "Start a microphone-only recording."
+                : START_TOOLTIPS[settings.startMode],
             };
-
-  const sendStart = async () => {
-    try {
-      return await start("");
-    } catch (err: unknown) {
-      console.error("Failed to start browser recording:", err);
-      if (!controller.getState().error) {
-        addNotification({
-          type: "error",
-          message:
-            err instanceof Error && err.message
-              ? err.message
-              : err
-                ? String(err)
-                : "Failed to start browser recording.",
-        });
-      }
-      return null;
-    }
-  };
-
-  const handleStart = async () => {
-    const response = await sendStart();
-    if (response && response.recordingId) {
-      router.push(`/recordings/${response.recordingId}`);
-      if (onMeetingEnd) onMeetingEnd();
-    }
-  };
 
   const handlePrimaryAction = () => {
     if (meetingSurfaceState.buttonMode === "start") {
-      void handleStart();
+      void startMeeting();
     }
   };
 
@@ -261,14 +237,14 @@ export default function MeetingControls({
           </div>
 
           {unsupported ? (
-            <CaptureUnsupportedNotice reason={support.reason} />
+            <CaptureUnsupportedNotice />
           ) : null}
 
           {microphoneOnly ? (
             <div className="rounded-2xl border border-status-info-border bg-status-info-bg px-4 py-3 text-sm text-status-info-fg">
-              <p className="font-medium">Phone microphone recording</p>
+              <p className="font-medium">Microphone-only recording</p>
               <p className="mt-1 leading-5 opacity-90">
-                Mobile Chrome records the phone microphone only. Keep this tab open and the phone awake.
+                This browser records your microphone only, not audio from other tabs or apps. Keep this tab open and the device awake.
               </p>
             </div>
           ) : null}
@@ -313,13 +289,13 @@ export default function MeetingControls({
       <div className="w-full">
         {unsupported ? (
           <div className="mb-2">
-            <CaptureUnsupportedNotice reason={support.reason} compact />
+            <CaptureUnsupportedNotice compact />
           </div>
         ) : null}
 
         {microphoneOnly ? (
           <div className="mb-2 rounded-lg border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-fg">
-            Phone microphone only. Keep this tab open.
+            Microphone only, not other tabs or apps. Keep this tab open.
           </div>
         ) : null}
 

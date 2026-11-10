@@ -9,7 +9,6 @@ from typing import Any
 
 from backend.utils.forced_aligner_manifest import ForcedAlignerError
 
-TRANSFORMERS_VERSION = "5.21.0"
 KEY_MAPPING = {
     r"^thinker\.audio_tower\.proj1\.": "model.multi_modal_projector.linear_1.",
     r"^thinker\.audio_tower\.proj2\.": "model.multi_modal_projector.linear_2.",
@@ -81,10 +80,8 @@ def verify_weight_mapping(path: Path, config: Any, model_class: Any) -> None:
 def load_native_model(path: Path) -> Any:
     """Load explicit native safetensors only after complete mapping validation."""
     import torch
-    import transformers
     from transformers import Qwen3ASRConfig, Qwen3ASRForTokenClassification
 
-    require_transformers_version(transformers.__version__)
     config = native_config(path, Qwen3ASRConfig)
     verify_weight_mapping(path, config, Qwen3ASRForTokenClassification)
     dtype = torch.float32
@@ -108,18 +105,10 @@ def load_native_model(path: Path) -> Any:
     return model.eval().to("cpu")
 
 
-def require_transformers_version(version: str) -> None:
-    """Refuse silent drift from the evaluated native implementation."""
-    if version != TRANSFORMERS_VERSION:
-        raise ForcedAlignerError("Forced alignment requires Transformers 5.21.0")
-
-
 def load_native_processor(path: Path) -> Any:
     """Read the verified local processor with the evaluated native class."""
-    import transformers
     from transformers import Qwen3ASRFeatureExtractor, Qwen3ASRProcessor
 
-    require_transformers_version(transformers.__version__)
     processor = Qwen3ASRProcessor.from_pretrained(
         str(path), local_files_only=True, trust_remote_code=False
     )

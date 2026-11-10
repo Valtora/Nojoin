@@ -6,6 +6,7 @@ import MeetingControls from "./MeetingControls";
 const routerPush = vi.fn();
 const addNotification = vi.fn();
 const start = vi.fn();
+const updateSettings = vi.fn();
 let connectivityStatus = "online";
 
 const captureState = {
@@ -17,6 +18,8 @@ const captureState = {
   uploadQueue: { segments: 0, seconds: 0 },
   coverageWarning: null,
   dismissCoverageWarning: vi.fn(),
+  settings: { startMode: "shared_audio" },
+  updateSettings,
   start: (...args: unknown[]) => start(...args),
   refreshPausedRecording: vi.fn(async () => null),
   status: "idle",
@@ -57,6 +60,8 @@ describe("MeetingControls", () => {
     addNotification.mockReset();
     start.mockReset();
     captureState.refreshPausedRecording.mockClear();
+    updateSettings.mockReset();
+    captureState.settings = { startMode: "shared_audio" };
     connectivityStatus = "online";
     captureState.controller.getState = () => ({ error: null });
     captureState.runtimeActive = false;
@@ -120,7 +125,7 @@ describe("MeetingControls", () => {
 
     const button = screen.getByRole("button", { name: "Start Meeting" });
     expect(button).toBeEnabled();
-    expect(button).toHaveAttribute("title", "Start a new meeting recording.");
+    expect(button).toHaveAttribute("title", "Start recording your microphone and the meeting's system audio.");
     fireEvent.click(button);
 
     await waitFor(() => {
@@ -159,6 +164,49 @@ describe("MeetingControls", () => {
     });
   });
 
+  // Recording source lives in Settings > Recording (#958). What each setting
+  // does at Start runs for real in MeetingCaptureSource.integration.test.tsx;
+  // here every surface has no source select and names what Start records.
+  it.each(["sidebar", "dashboard", "rail", "compact"] as const)("has no source select beside %s Start", (variant) => {
+    render(<MeetingControls variant={variant} />);
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recording source")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { startMode: "shared_audio", title: "Start recording your microphone and the meeting's system audio." },
+    { startMode: "microphone_only", title: "Start recording your microphone only." },
+    { startMode: "ask", title: "Start a recording and choose what to record." },
+  ])("names what Start records under $startMode", async ({ startMode, title }) => {
+    captureState.settings = { startMode };
+    render(<MeetingControls variant="sidebar" />);
+    const button = screen.getByRole("button", { name: "Start Meeting" });
+    expect(button).toHaveAttribute("title", title);
+    fireEvent.click(button);
+    await waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(""));
+  });
+
+  it.each(["sidebar", "dashboard", "rail", "compact"] as const)("keeps phone %s Start microphone-only whatever the setting", async (variant) => {
+    captureState.support.mode = "microphone_only";
+    captureState.settings.startMode = "ask";
+    render(<MeetingControls variant={variant} />);
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Start Meeting" });
+    expect(button).toHaveAttribute("title", "Start a microphone-only recording.");
+    fireEvent.click(button);
+    await waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(""));
+  });
+
+  it("starts nothing and opens nothing when Start only asks", async () => {
+    captureState.settings = { startMode: "ask" };
+    start.mockResolvedValue(null);
+    render(<MeetingControls variant="dashboard" />);
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+    await waitFor(() => expect(start).toHaveBeenCalledOnce());
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+  });
+
   describe.each(["sidebar", "rail", "compact"] as const)("%s start availability", (variant) => {
     it.each([
       { state: "paused", label: "Paused recording needs attention", paused: "PAUSED" },
@@ -179,6 +227,7 @@ describe("MeetingControls", () => {
       const button = screen.getByRole("button", { name: label });
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute("title");
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
       fireEvent.click(button);
       expect(start).not.toHaveBeenCalled();
       expect(routerPush).not.toHaveBeenCalled();
@@ -195,6 +244,7 @@ describe("MeetingControls", () => {
       // The capture's own controls announce its state; this is no second live region.
       expect(screen.queryByRole("status")).not.toBeInTheDocument();
       expect(screen.queryByRole("button")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
       expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
       expect(start).not.toHaveBeenCalled();
 
