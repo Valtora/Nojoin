@@ -12,6 +12,7 @@ its speech holds the majority.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -24,6 +25,18 @@ from .engine import LiveLabelEngine
 UNKNOWN_SPEAKER = "UNKNOWN"
 # Share of a line's diarised speech the winning label must exceed.
 LINE_MAJORITY = 0.5
+
+
+def native_frame_range(start_ms: int, end_ms: int, first_frame: int) -> tuple[int, int]:
+    """Rows of a 10 ms posterior array a word covers, from integer milliseconds.
+
+    Every native label path uses this, so float rounding of a word's seconds
+    (``ceil(1041.16 * 100)`` is 104117) can't make two paths read different frames.
+    """
+    return (
+        max(0, math.floor(start_ms / 10) - first_frame),
+        max(0, math.ceil(end_ms / 10) - first_frame),
+    )
 
 
 @dataclass(frozen=True)

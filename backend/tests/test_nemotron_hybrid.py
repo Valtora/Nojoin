@@ -9,8 +9,10 @@ from typing import Any
 import numpy as np
 import pytest
 
+from backend.processing.live_diarization import evidence
 from backend.processing.live_diarization.engine import Piece
 from backend.processing.live_diarization.hybrid import HybridLiveState
+from backend.processing.live_diarization.lines import LabelTimeline
 from backend.processing.live_diarization.nemotron import NemotronStream
 from backend.processing.live_diarization.state import new_engine
 from backend.processing.live_diarization.step import CONFIG
@@ -283,3 +285,32 @@ def test_unfinished_prefix_line_keeps_native_after_handback_but_straddler_uses_s
     straddler = engine.label_line(2, 4)
     assert prefix.speaker == "LIVE_PROVISIONAL_3" and prefix.locked
     assert straddler.speaker == "LIVE_PROVISIONAL_9" and straddler.locked
+
+
+def test_both_native_label_paths_read_the_same_frames_for_a_float_rounded_word(
+    tmp_path: Path,
+) -> None:
+    """``ceil(1041.16 * 100)`` is 104117 in floats but 104116 from milliseconds."""
+    assert np.ceil(1041.16 * 100) == 104117
+    rows = np.zeros((104200, 8), np.float32)
+    rows[104050:104116, 0] = 0.5
+    rows[104050:104116, 1] = 0.5
+    rows[104050, 0] = 0.51
+    rows[104116, 1] = 0.9
+    engine = hybrid(tmp_path)
+    engine.accept_blocks([ProbabilityBlock(0, rows, 104200 * 160)])
+    empty = np.zeros(0)
+    snapshot = evidence.SpeakerEvidence(
+        timeline=LabelTimeline(
+            empty, empty, empty.astype(np.int64), empty.astype(bool), 0.0
+        ),
+        posteriors=rows,
+        posterior_first_frame=0,
+        native_complete_frame=104200,
+        native=True,
+        switch_frame=None,
+    )
+    live = engine.label_line(1040.5, 1041.16)
+    saved = snapshot.decide(1040500, 1041160)
+    assert live.locked and saved.locked
+    assert live.speaker == saved.speaker == "LIVE_PROVISIONAL_1"

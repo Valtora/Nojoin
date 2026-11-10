@@ -78,6 +78,10 @@ TUNING_SPECS: dict[str, TuningSpec] = {
 
 TUNING_KEYS: tuple[str, ...] = tuple(TUNING_SPECS)
 
+# True skips the phantom filter entirely (#813). Unset or null means inherit,
+# as for the values above, and the shipped default is off: the filter runs.
+PHANTOM_FILTER_OFF_KEY = "phantom_filter_off"
+
 
 class PhantomThresholdConflict(ValueError):
     """The phantom floor is not below the phantom merge threshold.
@@ -137,6 +141,25 @@ def resolve_tuning(config: Mapping[str, object] | None, key: str) -> float:
             TUNING_SPECS[key].default,
         )
     return _effective(config, key)
+
+
+def phantom_filter_turned_off(config: Mapping[str, object] | None) -> bool:
+    """Whether the settings turn the phantom filter off.
+
+    Only a bool counts. Any other value is logged and ignored, so the filter
+    runs: a processing run must not fail over a setting.
+    """
+    value = config.get(PHANTOM_FILTER_OFF_KEY) if config else None
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    logger.warning(
+        "Ignoring invalid %s=%r; the phantom filter runs.",
+        PHANTOM_FILTER_OFF_KEY,
+        value,
+    )
+    return False
 
 
 def phantom_thresholds_conflict(config: Mapping[str, object] | None) -> bool:

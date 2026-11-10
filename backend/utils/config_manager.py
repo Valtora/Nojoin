@@ -42,6 +42,7 @@ from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
 )
+from backend.utils.sentence_start_settings import SENTENCE_START_CORRECTION_KEY
 from backend.utils.timezones import get_default_timezone_name
 
 from .path_manager import path_manager
@@ -156,6 +157,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     # Not an AI setting: listed for the same admin-only, install-wide handling.
     _EXPORT_BRANDING_KEY,
     "live_speaker_labels",
+    SENTENCE_START_CORRECTION_KEY,
     *LIVE_SETTLING_KEYS,
     "speaker_engine",
     *TRANSCRIPTION_SETTING_KEYS,
@@ -468,6 +470,7 @@ class ConfigManager:
             "telemetry_enabled",
             "telemetry_notice_acknowledged",
             _EXPORT_BRANDING_KEY,
+            SENTENCE_START_CORRECTION_KEY,
         }:
             return isinstance(value, bool)
         if key in {"live_context_window_s", "live_forced_max_s", "live_max_segment_s"}:
@@ -790,40 +793,3 @@ def get_trusted_host_list() -> list[str]:
 
 def get_trusted_web_origin() -> str:
     return get_configured_web_origin()
-
-
-MCP_ENABLED_ENV_KEY = "MCP_ENABLED"
-_FALSY_FLAG_VALUES = {"0", "false", "no", "off"}
-
-
-def is_mcp_enabled() -> bool:
-    """Master switch for the MCP connector surface. Defaults to enabled.
-
-    When disabled, the OAuth authorization-server endpoints, the discovery
-    documents, and the /mcp endpoint all respond 404. Changing the value
-    requires an API container restart, like other environment settings.
-    """
-    raw = os.environ.get(MCP_ENABLED_ENV_KEY)
-    if raw is None or not raw.strip():
-        return True
-    return raw.strip().lower() not in _FALSY_FLAG_VALUES
-
-
-MCP_ANONYMOUS_DISCOVERY_ENV_KEY = "MCP_ANONYMOUS_DISCOVERY"
-
-
-def is_mcp_anonymous_discovery_enabled() -> bool:
-    """Compatibility switch for MCP clients that cannot start OAuth from a 401.
-
-    When enabled (the default), the /mcp endpoint answers a fixed allowlist
-    of protocol-bootstrap JSON-RPC methods anonymously: the handshake and
-    tool listing succeed without a token, and tool calls return an in-band
-    authentication challenge instead of an HTTP error. Every actual
-    operation still requires an authenticated user. When disabled, every
-    unauthenticated request gets the strict 401 challenge. Has no effect
-    while MCP_ENABLED is false, which removes the surface entirely.
-    """
-    raw = os.environ.get(MCP_ANONYMOUS_DISCOVERY_ENV_KEY)
-    if raw is None or not raw.strip():
-        return True
-    return raw.strip().lower() not in _FALSY_FLAG_VALUES

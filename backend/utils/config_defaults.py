@@ -1,13 +1,17 @@
 """Shipped system and user configuration defaults."""
 
 from backend.processing.live_limits import DEFAULT_MAX_SEGMENT_S
-from backend.processing.processing_tuning import TUNING_KEYS
+from backend.processing.processing_tuning import PHANTOM_FILTER_OFF_KEY, TUNING_KEYS
 from backend.processing.vad_muting import (
     VAD_MUTE_DEFAULTS,
     VAD_MUTE_DIARIZATION_KEY,
 )
 from backend.utils.languages import AUTO_TRANSCRIPTION_LANGUAGE, DEFAULT_NOTES_LANGUAGE
 from backend.utils.live_settling_settings import LIVE_SETTLING_DEFAULTS
+from backend.utils.sentence_start_settings import (
+    SENTENCE_START_CORRECTION_DEFAULT,
+    SENTENCE_START_CORRECTION_KEY,
+)
 
 # Install-wide cap on AI analysis runs per user per UTC day. Null or 0 means
 # no cap. An administrator may override it per user on the user record.
@@ -43,6 +47,7 @@ DEFAULT_SYSTEM_CONFIG = {
     # No cap unless an administrator sets one.
     AI_ANALYSIS_DAILY_LIMIT_KEY: None,
     EXPORT_BRANDING_KEY: True,
+    SENTENCE_START_CORRECTION_KEY: SENTENCE_START_CORRECTION_DEFAULT,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,
     "live_max_segment_s": DEFAULT_MAX_SEGMENT_S,
@@ -158,6 +163,7 @@ DEFAULT_USER_SETTINGS = {
     # A non-None default here would be stamped onto every row by the settings
     # page's whole-object autosave and shadow both.
     **dict.fromkeys(TUNING_KEYS),
+    PHANTOM_FILTER_OFF_KEY: None,  # True skips the filter for speakers heard only briefly (#813)
     "spellcheck_language": "en-GB",  # Default spell check language for meeting notes
     "timezone": "UTC",  # Default user timezone for calendar and task rendering
 }
