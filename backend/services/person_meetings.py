@@ -17,12 +17,21 @@ from backend.models.speaker_public import (
 )
 from backend.utils.timezones import utc_naive_to_timezone
 
+# A meeting counts for a person only through a speaker that is neither merged
+# away nor inactive (every line reassigned to someone else). The status is an
+# allow-list, so a status added later counts nowhere until someone decides it
+# should, and the history and the People list count share it.
+COUNTED_SPEAKER_STATUS = "active"
+
 # `links` holds the person's active speakers in meetings the user still owns;
 # matching against it keeps several labels for one person from multiplying
 # meetings or speech. A meeting with any active line is canonical, even when
 # none is this person's, so stale JSON never gives them reassigned speech.
 # Transcripts with no lines yet (the demo meeting until its lines are first
-# read, a restore still rebuilding) fall back to their JSON segments. Only segments
+# read, a restore still rebuilding) fall back to their JSON segments. A speaker
+# only becomes inactive while its meeting has lines, and keeps that status when
+# the lines go (a restore, every line deleted), so its JSON speech stays out as
+# the lines last had it; new lines set the status afresh. Only segments
 # with numeric times are summed, so one malformed row counts as no speech
 # instead of failing the whole history. Only scalar aggregates leave Postgres,
 # even for history beyond the fifty displayed meetings.
@@ -32,7 +41,7 @@ _MEETINGS = text("""
         FROM recording_speakers rs
         JOIN recordings r ON r.id = rs.recording_id
         WHERE rs.global_speaker_id = :speaker_id
-          AND rs.merged_into_id IS NULL AND rs.speaker_status <> 'merged'
+          AND rs.merged_into_id IS NULL AND rs.speaker_status = :counted_status
           AND r.user_id = :user_id AND NOT r.is_deleted
     ), meetings AS (
         SELECT r.id, r.public_id, r.name, r.created_at, r.duration_seconds
@@ -87,7 +96,7 @@ _MEETINGS = text("""
     LEFT JOIN canonical c ON c.recording_id = m.id
     LEFT JOIN legacy ON legacy.recording_id = m.id
     ORDER BY m.created_at DESC, m.id DESC
-""")
+""").bindparams(counted_status=COUNTED_SPEAKER_STATUS)
 
 
 def person_meeting_counts(user_id: int | None) -> Subquery:
@@ -108,7 +117,7 @@ def person_meeting_counts(user_id: int | None) -> Subquery:
             Recording.user_id == user_id,
             col(Recording.is_deleted).is_(False),
             col(RecordingSpeaker.merged_into_id).is_(None),
-            RecordingSpeaker.speaker_status != "merged",
+            RecordingSpeaker.speaker_status == COUNTED_SPEAKER_STATUS,
         )
         .group_by(col(RecordingSpeaker.global_speaker_id))
         .subquery()

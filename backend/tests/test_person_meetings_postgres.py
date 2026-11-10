@@ -29,6 +29,9 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.services.meeting_analytics.query import compute_recording_analytics
 from backend.tests.postgres_setup import fresh_schema
+from backend.utils.canonical_pipeline.speaker import (
+    refresh_recording_speaker_usage_state,
+)
 
 SCHEMA = "person_meetings_test"
 JANUARY = datetime(2026, 1, 1, 12)
@@ -140,25 +143,43 @@ def _line(
     speaker: RecordingSpeaker,
     seconds: float,
     state: TranscriptUtteranceState = TranscriptUtteranceState.FINALIZED,
-) -> None:
-    session.add(
-        TranscriptUtterance(
-            recording_id=speaker.recording_id,
-            recording_speaker_id=speaker.id,
-            speaker_label=speaker.diarization_label,
-            sort_key="0001",
-            start_ms=0,
-            end_ms=round(seconds * 1000),
-            text="speech",
-            state=state,
-        )
+) -> TranscriptUtterance:
+    utterance = TranscriptUtterance(
+        recording_id=speaker.recording_id,
+        recording_speaker_id=speaker.id,
+        speaker_label=speaker.diarization_label,
+        sort_key="0001",
+        start_ms=0,
+        end_ms=round(seconds * 1000),
+        text="speech",
+        state=state,
     )
+    session.add(utterance)
+    return utterance
 
 
 async def _read(client: AsyncClient, person: GlobalSpeaker) -> dict[str, Any]:
     response = await client.get(f"/api/v1/speakers/{person.id}/meetings")
     assert response.status_code == 200, response.text
     return response.json()
+
+
+async def _listed_count(client: AsyncClient, person: GlobalSpeaker) -> int:
+    """The meeting count the People list shows for this person."""
+    response = await client.get("/api/v1/speakers/")
+    assert response.status_code == 200, response.text
+    return next(
+        row["recording_count"] for row in response.json() if row["id"] == person.id
+    )
+
+
+def _settle_statuses(session: Session, *recording_ids: int | None) -> None:
+    """Set speaker statuses from the lines, as every line change does."""
+    session.flush()
+    for recording_id in recording_ids:
+        assert recording_id is not None
+        refresh_recording_speaker_usage_state(session, recording_id)
+    session.commit()
 
 
 @pytest.mark.anyio
@@ -578,6 +599,158 @@ async def test_merged_away_links_do_not_keep_a_meeting_in_person_history(
     assert result["meetings"] == []
     assert result["meeting_count"] == 0
     assert result["total_talk_time_seconds"] == 0
+
+
+@pytest.mark.anyio
+async def test_meeting_whose_lines_all_moved_to_someone_else_stops_counting(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    with Session(history.engine) as session:
+        moved = _meeting(session, history.owner, "moved", duration_seconds=30)
+        ours = _link(session, moved, history.person)
+        stranger = _link(session, moved, history.foreign_person, "SPEAKER_01")
+        line = _line(session, ours, 5)
+        session.add(
+            Transcript(
+                recording_id=moved.id,
+                segments=[
+                    {
+                        "start": 0,
+                        "end": 800,
+                        "speaker": "SPEAKER_00",
+                        "recording_speaker_id": ours.id,
+                        "text": "old",
+                    },
+                ],
+            )
+        )
+        kept = _meeting(session, history.owner, "kept", created_at=FEBRUARY)
+        _line(session, _link(session, kept, history.person), 2)
+        session.flush()
+        line.recording_speaker_id = stranger.id
+        session.add(line)
+        _settle_statuses(session, moved.id, kept.id)
+        assert ours.speaker_status == "inactive"
+        expected = [kept.public_id]
+    result = await _read(client, history.person)
+    assert [row["recording_id"] for row in result["meetings"]] == expected
+    assert result["meeting_count"] == 1
+    assert result["total_talk_time_seconds"] == 2
+    assert datetime.fromisoformat(result["first_seen"]).replace(tzinfo=None) == FEBRUARY
+    assert result["first_seen"] == result["last_seen"]
+    assert result["talk_time_by_month"] == [
+        {"month": "2026-02", "talk_time_seconds": 2}
+    ]
+    assert await _listed_count(client, history.person) == 1
+
+
+@pytest.mark.anyio
+async def test_active_label_keeps_a_meeting_once_with_only_its_own_speech(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    with Session(history.engine) as session:
+        processed = _meeting(session, history.owner, "processed")
+        _line(session, _link(session, processed, history.person), 3)
+        _link(session, processed, history.person, "SPEAKER_01")
+        # A restored meeting has its speakers' statuses but no lines until
+        # they are rebuilt from the JSON segments.
+        restored = _meeting(session, history.owner, "restored", created_at=FEBRUARY)
+        active = _link(session, restored, history.person)
+        inactive = _link(session, restored, history.person, "SPEAKER_01")
+        inactive.speaker_status = "inactive"
+        session.add(inactive)
+        session.add(
+            Transcript(
+                recording_id=restored.id,
+                segments=[
+                    {
+                        "start": 0,
+                        "end": 2,
+                        "speaker": "SPEAKER_00",
+                        "recording_speaker_id": active.id,
+                    },
+                    {
+                        "start": 0,
+                        "end": 5,
+                        "speaker": "SPEAKER_01",
+                        "recording_speaker_id": inactive.id,
+                    },
+                    {"start": 0, "end": 7, "speaker": "SPEAKER_01"},
+                ],
+            )
+        )
+        _settle_statuses(session, processed.id, restored.id)
+        assert [
+            speaker.speaker_status
+            for speaker in sorted(processed.speakers, key=lambda s: s.id or 0)
+        ] == ["active", "inactive"]
+    result = await _read(client, history.person)
+    assert result["meeting_count"] == 2
+    assert [(row["title"], row["talk_time_seconds"]) for row in result["meetings"]] == [
+        ("restored", 2),
+        ("processed", 3),
+    ]
+    assert result["total_talk_time_seconds"] == 5
+    assert await _listed_count(client, history.person) == 2
+
+
+@pytest.mark.anyio
+async def test_meeting_counts_again_once_a_line_is_moved_back(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    with Session(history.engine) as session:
+        recording = _meeting(session, history.owner, "back-and-forth")
+        ours = _link(session, recording, history.person)
+        stranger = _link(session, recording, history.foreign_person, "SPEAKER_01")
+        line = _line(session, ours, 4)
+        _line(session, stranger, 9)
+        session.flush()
+        recording_id, ours_id, line_id = recording.id, ours.id, line.id
+        line.recording_speaker_id = stranger.id
+        session.add(line)
+        _settle_statuses(session, recording_id)
+    moved_away = await _read(client, history.person)
+    assert moved_away["meetings"] == []
+    assert moved_away["meeting_count"] == 0
+    assert moved_away["first_seen"] is None
+    assert await _listed_count(client, history.person) == 0
+    with Session(history.engine) as session:
+        moved = session.get(TranscriptUtterance, line_id)
+        assert moved is not None
+        moved.recording_speaker_id = ours_id
+        session.add(moved)
+        _settle_statuses(session, recording_id)
+    moved_back = await _read(client, history.person)
+    assert moved_back["meeting_count"] == 1
+    assert moved_back["total_talk_time_seconds"] == 4
+    assert moved_back["meetings"][0]["talk_time_seconds"] == 4
+    assert await _listed_count(client, history.person) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "counted"),
+    [("active", 1), ("inactive", 0), ("merged", 0), ("unrecognised", 0)],
+)
+async def test_history_and_people_list_count_the_same_speaker_statuses(
+    history: HistoryDatabase, client: AsyncClient, status: str, counted: int
+) -> None:
+    with Session(history.engine) as session:
+        recording = _meeting(session, history.owner, status)
+        speaker = _link(session, recording, history.person)
+        speaker.speaker_status = status
+        session.add(speaker)
+        session.add(
+            Transcript(
+                recording_id=recording.id,
+                segments=[{"start": 0, "end": 3, "speaker": "SPEAKER_00"}],
+            )
+        )
+        session.commit()
+    result = await _read(client, history.person)
+    assert result["meeting_count"] == len(result["meetings"]) == counted
+    assert result["total_talk_time_seconds"] == 3 * counted
+    assert await _listed_count(client, history.person) == counted
 
 
 async def _select_count(client: AsyncClient, history: HistoryDatabase) -> int:
