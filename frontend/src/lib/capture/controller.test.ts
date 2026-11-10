@@ -131,9 +131,15 @@ vi.mock("./pickSource", () => ({
   PickSourceError: class PickSourceError extends Error {
     code: string;
 
-    constructor(code: string, message: string) {
+    captureReport: unknown;
+
+    displaySurface: string | null;
+
+    constructor(code: string, message: string, captureReport: unknown = null, displaySurface: string | null = null) {
       super(message);
       this.code = code;
+      this.captureReport = captureReport;
+      this.displaySurface = displaySurface;
       this.name = "PickSourceError";
     }
   },
@@ -155,19 +161,10 @@ const sharedMocks = vi.hoisted(() => ({
   readPausedCaptureContext: vi.fn(() => null as unknown),
 }));
 
-vi.mock("./shared", () => ({
+vi.mock("./shared", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./shared")>()),
   clearPausedCaptureContext: vi.fn(),
-  DEFAULT_CAPTURE_LEVELS: { system: 0, microphone: 0, mixed: 0 },
-  readCaptureSettings: vi.fn(() => ({
-    microphoneDeviceId: null,
-    microphoneGain: 1,
-    systemGain: 1,
-    echoCancellation: true,
-    noiseSuppression: false,
-    autoGainControl: true,
-  })),
   readPausedCaptureContext: sharedMocks.readPausedCaptureContext,
-  writeCaptureSettings: vi.fn(),
   writePausedCaptureContext: vi.fn(),
 }));
 
@@ -524,7 +521,9 @@ describe("capture controller", () => {
       mode: "microphone_only",
       microphoneDeviceId: null,
       settings: {
+        startMode: "shared_audio",
         microphoneDeviceId: null,
+        releaseMicrophoneOnPause: false,
         microphoneGain: 1,
         systemGain: 1,
         echoCancellation: true,
@@ -540,6 +539,77 @@ describe("capture controller", () => {
       captureReport: sources.captureReport,
       elapsedSeconds: 0,
     });
+  });
+
+  it("remembers Recording source through the controller when microphone settings change", async () => {
+    const controller = new CaptureController();
+    controller.updateSettings({ startMode: "ask" });
+    controller.updateSettings({ microphoneDeviceId: "usb-mic" });
+
+    const reloaded = new CaptureController();
+    expect(reloaded.getState().settings).toMatchObject({
+      startMode: "ask", microphoneDeviceId: "usb-mic",
+    });
+    await controller.destroy();
+    await reloaded.destroy();
+  });
+
+  it("asks before reserving anything under Ask each time", async () => {
+    const controller = new CaptureController();
+    controller.updateSettings({ startMode: "ask" });
+
+    await expect(controller.start("")).resolves.toBeNull();
+
+    expect(apiMocks.initRecording).not.toHaveBeenCalled();
+    expect(pickSourceMocks.pickCaptureSource).not.toHaveBeenCalled();
+    expect(controller.getState()).toMatchObject({
+      status: "idle",
+      sourceChoice: { action: "start", reason: "ask" },
+    });
+    controller.dismissSourceChoice();
+    expect(controller.getState().sourceChoice).toBeNull();
+    await controller.destroy();
+  });
+
+  it.each([
+    {
+      error: new PickSourceError("display_cancelled", "Cancelled"),
+      startMode: "shared_audio",
+      choice: { action: "start", reason: "cancelled" },
+      discardReason: "display_picker_cancelled",
+    },
+    {
+      error: new PickSourceError("display_cancelled", "Cancelled"),
+      startMode: "ask",
+      choice: { action: "start", reason: "ask" },
+      discardReason: "display_picker_cancelled",
+    },
+    {
+      error: new PickSourceError("display_denied", "Permission denied by system"),
+      startMode: "shared_audio",
+      choice: { action: "start", reason: "refused" },
+      discardReason: "display_capture_refused",
+    },
+    {
+      error: new PickSourceError("missing_display_audio", "No sound", null, "window"),
+      startMode: "ask",
+      choice: { action: "start", reason: "no_audio", displaySurface: "window" },
+      discardReason: "display_audio_missing",
+    },
+  ] as const)("asks again after $error.code under $startMode, with no error", async ({ error, startMode, choice, discardReason }) => {
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Meeting", capture_epoch: 3 });
+    pickSourceMocks.pickCaptureSource.mockRejectedValue(error);
+    const controller = new CaptureController();
+    controller.updateSettings({ startMode });
+
+    await expect(controller.start("", { mode: "shared_audio" })).resolves.toBeNull();
+
+    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1", discardReason, { epoch: 3 });
+    expect(controller.getState()).toMatchObject({
+      status: "idle", error: null, recordingId: null, sourceChoice: choice,
+    });
+    expect(notificationMocks.addNotification).not.toHaveBeenCalled();
+    await controller.destroy();
   });
 
   it("silently rolls back when the display picker is cancelled", async () => {

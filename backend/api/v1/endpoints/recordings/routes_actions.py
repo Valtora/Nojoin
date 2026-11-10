@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
+from backend.api.params import RowId
 from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import CalendarEvent
 from backend.models.recording import (
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 
 class CalendarEventLink(BaseModel):
-    calendar_event_id: int | None = None
+    calendar_event_id: RowId | None = None
 
 
 @router.put("/{recording_id}/calendar-event", response_model=RecordingPublicRead)

@@ -1410,36 +1410,35 @@ def _capture_stage_audio(monkeypatch) -> dict:
 
 
 @pytest.mark.parametrize(
-    ("mute_transcription", "mute_diarization"),
-    [(True, True), (True, False), (False, True), (False, False)],
+    ("stored_transcription", "mute_diarization"),
+    [(None, True), (None, False), (False, True), (False, False)],
 )
 def test_each_stage_reads_the_audio_its_own_switch_picks(
-    monkeypatch, mute_transcription, mute_diarization
+    monkeypatch, stored_transcription, mute_diarization
 ):
-    """Diarisation, the phantom filter and voiceprints follow their own switch,
-    whatever transcription's holds. Muted transcription reads the union of VAD
-    speech and the turns found on the unmuted file, or the VAD-muted file when
-    diarisation heard that file itself (#670). The engine is told its audio is
-    muted only when it is."""
+    """Diarisation, the phantom filter and voiceprints follow the "Faster
+    speaker separation" switch. Transcription is always muted: it reads the
+    union of VAD speech and the turns found on the unmuted file, or the
+    VAD-muted file when diarisation heard that file itself (#670). A retired
+    vad_mute_transcription still on a user's row changes nothing (#961)."""
     recording = _FakeRecording(724)
     session = _FakeSession(recording, _FakeTranscript(724))
     _install_happy_path_modules(monkeypatch)
     seen = _capture_stage_audio(monkeypatch)
+    retired = {} if stored_transcription is None else {"vad_mute_transcription": False}
     llm_config = _tuned_llm_config(
         enable_auto_voiceprints=True,
-        vad_mute_transcription=mute_transcription,
         vad_mute_diarization=mute_diarization,
+        **retired,
     )
 
     _run_task(monkeypatch, session, recording_id=724, llm_config=llm_config)
 
     speaker_side = _MUTED if mute_diarization else _UNMUTED
-    transcribed = _UNION if mute_transcription else _UNMUTED
-    if mute_transcription and mute_diarization:
-        transcribed = _MUTED
+    transcribed = _MUTED if mute_diarization else _UNION
     assert seen["asr"] == transcribed
     assert ("union" in seen) is (transcribed == _UNION)
-    assert seen["vad_muted_input"] is mute_transcription
+    assert seen["vad_muted_input"] is True
     assert seen["diarize"] == speaker_side
     assert seen["phantom"] == speaker_side
     assert seen["voiceprints"] == speaker_side
@@ -1464,7 +1463,7 @@ def test_a_user_with_neither_switch_stored_diarises_the_unmuted_file(monkeypatch
     assert seen["diarize"] == seen["phantom"] == seen["voiceprints"] == _UNMUTED
 
 
-def test_vad_off_unmutes_both_stages_whatever_the_switches_hold(monkeypatch):
+def test_vad_off_unmutes_both_stages_whatever_the_switch_holds(monkeypatch):
     recording = _FakeRecording(725)
     session = _FakeSession(recording, _FakeTranscript(725))
     _install_happy_path_modules(monkeypatch)
@@ -1477,7 +1476,6 @@ def test_vad_off_unmutes_both_stages_whatever_the_switches_hold(monkeypatch):
     llm_config = _tuned_llm_config(
         enable_vad=False,
         enable_auto_voiceprints=True,
-        vad_mute_transcription=True,
         vad_mute_diarization=True,
     )
 
@@ -1488,8 +1486,9 @@ def test_vad_off_unmutes_both_stages_whatever_the_switches_hold(monkeypatch):
     assert seen["vad_muted_input"] is False
 
 
-def test_no_speech_still_completes_empty_with_both_stages_unmuted(monkeypatch):
-    """VAD still runs with both switches off, so its short-circuit holds."""
+def test_no_speech_still_completes_empty_with_the_speaker_side_unmuted(monkeypatch):
+    """VAD runs whichever audio speaker separation hears, so its short-circuit
+    holds."""
     recording = _FakeRecording(726)
     transcript = _FakeTranscript(726)
     session = _FakeSession(recording, transcript)
@@ -1509,9 +1508,7 @@ def test_no_speech_still_completes_empty_with_both_stages_unmuted(monkeypatch):
         "backend.processing.vad",
         mute_non_speech_segments=lambda *a, **k: (True, 0.0),
     )
-    llm_config = _tuned_llm_config(
-        vad_mute_transcription=False, vad_mute_diarization=False
-    )
+    llm_config = _tuned_llm_config(vad_mute_diarization=False)
 
     result = _run_task(monkeypatch, session, recording_id=726, llm_config=llm_config)
 
@@ -1521,16 +1518,20 @@ def test_no_speech_still_completes_empty_with_both_stages_unmuted(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("mute_transcription", "expected_text"),
-    [(False, "Over here."), (True, "")],
+    ("settings", "expected_text"),
+    [
+        ({"enable_vad": False}, "Over here."),
+        ({}, ""),
+        ({"vad_mute_transcription": False}, ""),
+    ],
 )
 def test_the_zero_run_drop_reads_the_file_transcription_heard(
-    monkeypatch, tmp_path, mute_transcription, expected_text
+    monkeypatch, tmp_path, settings, expected_text
 ):
-    """With transcription unmuted, the zero-run drop reads the unmuted file, so a
-    word where VAD heard no speech is kept: often it is speech VAD missed. With
-    it muted, the same word lies in exact zeros and goes, so both files were
-    read."""
+    """With VAD off, the zero-run drop reads the unmuted file, so a word where
+    VAD would have heard no speech is kept: often it is speech VAD missed. With
+    VAD on, the same word lies in exact zeros and goes, so both files were read,
+    whatever a retired vad_mute_transcription holds (#961)."""
     recording = _FakeRecording(727)
     transcript = _FakeTranscript(727)
     session = _FakeSession(recording, transcript)
@@ -1571,7 +1572,7 @@ def test_the_zero_run_drop_reads_the_file_transcription_heard(
         },
         release_model_cache=lambda: None,
     )
-    llm_config = _tuned_llm_config(vad_mute_transcription=mute_transcription)
+    llm_config = _tuned_llm_config(**settings)
 
     _run_task(monkeypatch, session, recording_id=727, llm_config=llm_config)
 
@@ -1660,7 +1661,8 @@ def _install_real_vad_files(
     [
         ({}, "union", "Morning. Over here."),
         ({"enable_diarization": False}, "muted", "Morning."),
-        ({"vad_mute_transcription": False}, "unmuted", "Morning. Over here."),
+        # Retired by #961: a stored value is not read.
+        ({"vad_mute_transcription": False}, "union", "Morning. Over here."),
         ({"enable_vad": False}, "unmuted", "Morning. Over here."),
         ({"vad_mute_diarization": True}, "muted", "Morning."),
     ],
@@ -1672,8 +1674,8 @@ def test_muted_transcription_hears_the_turns_diarisation_found(
     read the muted file opened inside every turn, so a word VAD muted but a turn
     covers is kept, and the engine is still told its audio is VAD-muted. With
     diarisation off, or diarisation that heard the muted file, it is the
-    VAD-muted file; with transcription unmuted or VAD off, the unmuted one, as
-    before. The union file is cleaned up."""
+    VAD-muted file; with VAD off, the unmuted one, as before. The union file is
+    cleaned up."""
     recording = _FakeRecording(730)
     transcript = _FakeTranscript(730)
     session = _FakeSession(recording, transcript)

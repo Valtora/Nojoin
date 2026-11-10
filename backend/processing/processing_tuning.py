@@ -86,7 +86,7 @@ PHANTOM_FILTER_OFF_KEY = "phantom_filter_off"
 class PhantomThresholdConflict(ValueError):
     """The phantom floor is not below the phantom merge threshold.
 
-    Its message holds only key names and numbers, so the API may show it.
+    Its message holds only fixed wording and numbers, so the API may show it.
     """
 
 
@@ -194,7 +194,8 @@ def validate_tuning_candidate(candidate: Mapping[str, object]) -> None:
     if phantom_thresholds_conflict(candidate):
         floor = _effective(candidate, PHANTOM_EMBEDDING_FLOOR_KEY)
         merge = _effective(candidate, PHANTOM_MERGE_THRESHOLD_KEY)
+        # The settings page's words for the pair, not the key names.
         raise PhantomThresholdConflict(
-            f"{PHANTOM_EMBEDDING_FLOOR_KEY} ({floor}) must be lower than "
-            f"{PHANTOM_MERGE_THRESHOLD_KEY} ({merge})."
+            f"Speakers heard only briefly: the noise limit ({floor}) must be "
+            f"lower than the merge limit ({merge})."
         )

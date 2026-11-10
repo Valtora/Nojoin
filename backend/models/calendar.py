@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlmodel import Field, Relationship, SQLModel
 
 from backend.models.base import BaseDBModel
+from backend.models.int_bounds import RowId
 
 
 class CalendarProvider(str, Enum):
@@ -387,7 +388,7 @@ class CalendarOverviewRead(SQLModel):
 
 
 class CalendarSelectionUpdate(SQLModel):
-    selected_calendar_ids: List[int]
+    selected_calendar_ids: List[RowId]
 
 
 class CalendarSourceColourUpdate(SQLModel):

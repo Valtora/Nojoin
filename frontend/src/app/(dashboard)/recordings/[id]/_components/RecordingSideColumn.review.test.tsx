@@ -56,7 +56,7 @@ describe("Review speakers reaching the side column", () => {
 
   it.each<[string, SideTab, boolean]>([
     ["Speakers, already open", "speakers", false],
-    ["My notes", "my-notes", false],
+    ["Your notes", "my-notes", false],
     ["the collapsed rail", "my-notes", true],
   ])("focuses the speaker list with its ring from %s", (_, sideTab, collapsed) => {
     useNavigationStore.setState({ sideTab, isSpeakerPanelCollapsed: collapsed });

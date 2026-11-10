@@ -9,8 +9,8 @@ numpy==2.4.6
 # Decodes the FLAC segments browser capture uploads and writes the FLAC master
 # at finalize, in process. Pinned with worker.txt.
 soundfile==0.14.0
-openai>=3.41.0
-anthropic>=2.3.0
+openai>=3.42.1
+anthropic>=2.4.0
 google-genai>=2.34.0
 # Exports (backend/services/exports): ReportLab lays out PDFs, python-docx
 # writes DOCX, and markdown-it-py parses the stored Markdown notes for all

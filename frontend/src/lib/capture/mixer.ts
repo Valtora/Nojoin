@@ -5,6 +5,7 @@ import {
   PCM_TAP_PROCESSOR_NAME,
   type PcmSource,
 } from "./pcm/tapSource";
+import { resumeWithin, startAudioContext } from "./audioStart";
 
 export interface CaptureMixer {
   context: AudioContext;
@@ -154,9 +155,7 @@ export const createCaptureMixer = async (
   options: CreateCaptureMixerOptions,
 ): Promise<CaptureMixer> => {
   const context = options.audioContextFactory?.() ?? new AudioContext();
-  if (context.state === "suspended") {
-    await context.resume();
-  }
+  await startAudioContext(context);
 
   const hasDisplayAudio = Boolean(
     options.displayStream &&
@@ -246,18 +245,7 @@ export const createCaptureMixer = async (
     microphoneSource = null;
   };
 
-  const resumeContext = async (timeoutMs: number) => {
-    if (context.state !== "running") {
-      // An interrupted context (iOS during a call) can leave resume() pending.
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        context.resume().catch(() => {}),
-        new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
-      ]);
-      clearTimeout(timer);
-    }
-    return context.state === "running";
-  };
+  const resumeContext = (timeoutMs: number) => resumeWithin(context, timeoutMs);
 
   const replaceMicrophone = (stream: MediaStream) => {
     const replacement = context.createMediaStreamSource(stream);

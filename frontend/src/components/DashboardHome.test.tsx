@@ -106,6 +106,25 @@ describe("DashboardHome", () => {
     expect(moduleIds(container)).toHaveLength(6);
   });
 
+  it("shows two recent-meeting tag chips and counts the remaining tags", () => {
+    useDashboardRecordings.mockReturnValue({
+      recent: [{
+        ...recording("1"),
+        tags: ["Planning", "Product", "Research", "Review"].map((name, id) => ({ id, name })),
+      }],
+      processing: [],
+    });
+
+    renderWithProviders(<DashboardHome />);
+
+    expect(screen.getByText("Planning")).toBeInTheDocument();
+    expect(screen.getByText("Product")).toBeInTheDocument();
+    expect(screen.queryByText("Research")).not.toBeInTheDocument();
+    expect(screen.queryByText("Review")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("2 more tags: Research, Review")).toHaveTextContent("+2");
+    expect(screen.getByRole("link", { name: /Recording 1/ })).toHaveAttribute("href", "/recordings/1");
+  });
+
   it("puts the month grid above the agenda on a desktop, but not on a phone", () => {
     useDashboardRecordings.mockReturnValue({ recent: [], processing: [] });
 
@@ -118,6 +137,25 @@ describe("DashboardHome", () => {
     // in the calendar column with the grid on top.
     expect(grid).toHaveClass("order-6", "@min-[54rem]:order-1");
     expect(agenda).toHaveClass("order-3", "@min-[54rem]:order-2");
+  });
+
+  it("sizes the two rows only when there is no third column", () => {
+    useDashboardRecordings.mockReturnValue({ recent: [], processing: [] });
+    const { container, unmount } = renderWithProviders(<DashboardHome />);
+
+    // Without it both rows are auto and the spare height splits between them,
+    // leaving a band under Meet Now.
+    expect(container.querySelector("section")).toHaveClass(
+      "@min-[54rem]:grid-rows-[auto_1fr]",
+    );
+    unmount();
+
+    useDashboardRecordings.mockReturnValue({ recent: [recording("1")], processing: [] });
+    const withRecents = renderWithProviders(<DashboardHome />);
+
+    expect(withRecents.container.querySelector("section")).not.toHaveClass(
+      "@min-[54rem]:grid-rows-[auto_1fr]",
+    );
   });
 
   it("puts the action first on a phone, and the month grid last", () => {

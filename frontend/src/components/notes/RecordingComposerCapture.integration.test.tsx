@@ -12,7 +12,9 @@ import RecordingNoteComposer from "./RecordingNoteComposer";
 const track = { readyState: "live" } as MediaStreamTrack;
 const capture = {
   runtimeActive: true,
+  recordingId: "capture-integration",
   displayVideoTrack: vi.fn((): MediaStreamTrack | null => track),
+  support: { supported: true, mode: "shared_audio" },
 };
 const grabDisplayFrame = vi.fn(async () => new Blob(["frame"], { type: "image/png" }));
 const createTimelineNote = vi.fn(() => new Promise<never>(() => {}));
@@ -95,7 +97,7 @@ describe("the recording's composed capture ownership", () => {
     expect(screen.getByTestId("desktop-presentation")).toBeInTheDocument();
     expect(activeKeyListeners()).toHaveLength(1);
     act(() => {
-      outbox.setDraft({ text: "A carried thought", mode: "send", typingStartMs: 12_000 });
+      outbox.setDraft({ text: "A carried thought", mode: "typing", typingStartMs: 12_000 });
       outbox.setDraftFile(file);
     });
     await shortcut();
@@ -123,15 +125,14 @@ describe("the recording's composed capture ownership", () => {
     expect(activeKeyListeners()).toHaveLength(0);
     expect(screen.queryByRole("button", { name: "Capture the shared screen" })).toBeNull();
     expect(screen.getByRole("textbox", { name: "New note" })).toHaveValue("A carried thought");
-    expect(screen.getByLabelText("Place note")).toHaveValue("send");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 00:12");
     expect(screen.getByTestId("note-draft-file")).toHaveTextContent("context.png");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("where capture stopped");
     await shortcut();
     expect(grabDisplayFrame).toHaveBeenCalledTimes(3);
     expect(outbox.getSnapshot().entries).toHaveLength(3);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Add note" })));
     expect(outbox.getSnapshot().entries).toHaveLength(4);
-    expect(outbox.getSnapshot().entries[3]).toMatchObject({ body: "A carried thought", anchorMs: 65_000 });
+    expect(outbox.getSnapshot().entries[3]).toMatchObject({ body: "A carried thought", anchorMs: 12_000 });
     expect(outbox.getSnapshot().uploads.get(outbox.getSnapshot().entries[3].id)).toMatchObject({ fileName: "context.png" });
   });
 
@@ -148,5 +149,19 @@ describe("the recording's composed capture ownership", () => {
     await shortcut();
     expect(grabDisplayFrame).toHaveBeenCalledOnce();
     expect(noteOutboxFor(LIVE.id).getSnapshot().entries).toHaveLength(count);
+  });
+
+  it("keeps notes available but hides still capture and explains why without a shared picture", async () => {
+    capture.displayVideoTrack.mockReturnValue(null);
+    const clock = new AudioClock(() => 0);
+    clock.observe(LIVE);
+    render(<Presentation recording={LIVE} mobile={false} clock={clock} />);
+
+    expect(screen.queryByRole("button", { name: "Capture the shared screen" })).not.toBeInTheDocument();
+    expect(screen.getByText("Screen captures need a shared tab, window or screen.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "New note" })).toBeEnabled();
+    await shortcut();
+    expect(grabDisplayFrame).not.toHaveBeenCalled();
+    expect(noteOutboxFor(LIVE.id).getSnapshot().entries).toHaveLength(0);
   });
 });

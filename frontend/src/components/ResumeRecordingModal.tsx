@@ -132,7 +132,7 @@ export default function ResumeRecordingModal({
 
       {support.supported ? null : (
         <div className="mt-4">
-          <CaptureUnsupportedNotice reason={support.reason} compact />
+          <CaptureUnsupportedNotice compact />
         </div>
       )}
     </Modal>

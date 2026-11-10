@@ -6,7 +6,7 @@ The shortest path from a fresh checkout to your first processed meeting. [DEPLOY
 
 - Docker with Compose.
 - An NVIDIA GPU is strongly recommended for transcription and speaker separation: GTX 16 or RTX 20 series or newer, on driver 580 or newer ([GPU requirements](DEPLOYMENT.md#gpu-requirements)). CPU-only works, more slowly.
-- A browser that can record: Chrome on Windows, Linux or macOS, or another Chromium-family browser on Windows or Linux, for shared audio; Chrome on Android or iOS for the microphone only. [CAPTURE.md](CAPTURE.md#supported-environments) has the full list. Other browsers can review recordings but cannot record.
+- A browser that can record: Chrome on Windows, Linux or macOS, or another Chromium-family browser on Windows or Linux, for shared audio; Firefox, Safari or a mobile browser for the microphone only. [CAPTURE.md](CAPTURE.md#supported-environments) has the full list. Other browsers can review recordings but cannot record.
 
 ## 1. Start the Stack
 
@@ -62,7 +62,7 @@ Open Nojoin in a browser that can record. To use a microphone other than the sys
 ## 5. Make Your First Recording
 
 1. On the dashboard, select **Start Meeting** in the **Meet Now** card.
-2. On desktop, pick the meeting tab, window or screen in the browser's share picker, turn on its audio option if offered, and allow microphone access. On a phone, allow microphone access and keep the phone awake. Nojoin then opens the recording's page.
+2. In desktop Chromium, pick the meeting tab, window or screen in the browser's share picker, turn on its audio option if offered, and allow microphone access. In Firefox, Safari or on a phone, allow microphone access, and keep a phone awake. Nojoin then opens the recording's page.
 3. Speak briefly and check that the live waveform moves.
 4. Stop the recording. The page shows processing progress until transcription and speaker separation finish.
 

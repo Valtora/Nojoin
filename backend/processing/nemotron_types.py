@@ -11,8 +11,6 @@ from typing import Any, Protocol
 
 import numpy as np
 
-NEMOTRON_TRANSFORMERS_VERSION = "5.21.0"
-
 
 class NemotronStateError(RuntimeError):
     """Audio, scheduling or a returned native state violates the runtime contract."""

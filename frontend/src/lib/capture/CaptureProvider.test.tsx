@@ -58,6 +58,7 @@ const initialState = (): CaptureState => ({
   coverageWarning: null,
   coverageWarningDismissedAt: null,
   uploadQueue: { segments: 0, seconds: 0 },
+  sourceChoice: null,
 });
 
 // Each consumer counts its own renders, from an effect that runs after every one.
