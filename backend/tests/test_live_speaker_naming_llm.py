@@ -1,9 +1,10 @@
 """Asking the AI provider to name a live speaker, from the live naming check.
 
 The real naming check runs against the live lines of ``live_naming_fixtures``
-(``LIVE_PROVISIONAL_1`` speaks 16.5 s), with the provider configured in the
-owner's settings. The ask it queues runs as the worker would run it, and only
-the LLM backend, Celery dispatch and Redis are replaced.
+(``LIVE_PROVISIONAL_1`` speaks 16.5 s, ``LIVE_PROVISIONAL_2`` 4 s), with the
+provider configured in the owner's settings. The ask it queues runs as the
+worker would run it, and only the LLM backend, Celery dispatch and Redis are
+replaced.
 """
 
 from __future__ import annotations
@@ -159,6 +160,33 @@ async def _talk_until(session_maker: Any, end_ms: int) -> None:
     )
 
 
+async def _speak_for(session_maker: Any, seconds: float) -> None:
+    """Stretch the 9.5 s turn until the label has spoken ``seconds`` in all."""
+    await _talk_until(session_maker, round((seconds - 6 + 9.5) * 1000))
+
+
+async def _ask_records(session_maker: Any) -> dict[str, dict[str, Any]]:
+    async with session_maker() as db:
+        return {
+            item["diarization_label"]: item
+            for item in load_transcript_speaker_suggestions(await db.get(Transcript, 1))
+            if item.get("origin") == "live_llm_ask"
+        }
+
+
+async def _set_ask_records(session_maker: Any, records: list[dict[str, Any]]) -> None:
+    """Replace the ask records, as earlier asks would have left them."""
+    async with session_maker() as db:
+        transcript = await db.get(Transcript, 1)
+        transcript.speaker_name_suggestions = [
+            item
+            for item in load_transcript_speaker_suggestions(transcript)
+            if item.get("origin") != "live_llm_ask"
+        ] + records
+        db.add(transcript)
+        await db.commit()
+
+
 async def _run_task(session_maker: Any, task: Any) -> None:
     """Run a task on the worker's own kind of session."""
 
@@ -224,20 +252,71 @@ async def test_little_speech_and_no_introduction_prompts_no_ask(
     assert llm.asks == []
 
 
-async def test_each_further_minute_of_speech_prompts_one_ask(
+async def test_the_speech_between_asks_doubles_up_to_eight_minutes(
     session_maker: Any, llm: FakeLLM
 ) -> None:
     await _seed_owner(session_maker, AI_SETTINGS)
-    await _talk_until(session_maker, 64_000)  # 60.5 s in all
+    asked_at = 0
+    for asks, gap in enumerate((60, 120, 240, 480, 480)):
+        await _speak_for(session_maker, asked_at + gap - 1)
+        await _refresh(session_maker, llm)
+        assert len(llm.asks) == asks, f"asked before {gap} s more"
+        asked_at += gap + 1
+        await _speak_for(session_maker, asked_at)
+        await _refresh(session_maker, llm)
+        assert llm.asks == [[ONE]] * (asks + 1), f"not asked after {gap} s more"
+
+    assert (await _ask_records(session_maker))[ONE]["asks"] == 5
+
+
+async def test_an_ask_recorded_before_asks_were_counted_counts_as_one(
+    session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _set_ask_records(
+        session_maker,
+        [
+            {
+                "origin": "live_llm_ask",
+                "diarization_label": ONE,
+                "speech_seconds": 61.0,
+                "asked_at": "2026-01-01T09:00:00+00:00",
+            }
+        ],
+    )
+
+    await _speak_for(session_maker, 61 + 119)
+    await _refresh(session_maker, llm)
+    assert llm.asks == []
+    await _speak_for(session_maker, 61 + 121)
+    await _refresh(session_maker, llm)
+
+    assert llm.asks == [[ONE]]
+    assert (await _ask_records(session_maker))[ONE]["asks"] == 2
+
+
+async def test_a_new_introduction_asks_at_once_however_often_asked_before(
+    session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _set_ask_records(
+        session_maker,
+        [
+            {
+                "origin": "live_llm_ask",
+                "diarization_label": ONE,
+                "speech_seconds": 16.5,
+                "asked_at": "2026-01-01T09:00:00+00:00",
+                "asks": 7,
+            }
+        ],
+    )
+    await _say(session_maker, ONE, "I'm Alex.")
 
     await _refresh(session_maker, llm)
-    await _refresh(session_maker, llm)
-    await _talk_until(session_maker, 110_000)  # 46 s more: not yet
-    await _refresh(session_maker, llm)
-    await _talk_until(session_maker, 125_000)  # 61 s more
-    await _refresh(session_maker, llm)
 
-    assert llm.asks == [[ONE], [ONE]]
+    assert llm.asks == [[ONE]]
+    assert (await _ask_records(session_maker))[ONE]["asks"] == 8
 
 
 @pytest.mark.parametrize(
@@ -280,29 +359,154 @@ async def test_an_ai_name_shows_as_suggested_by_ai_and_replaces_the_rules(
     ]
 
 
-async def test_a_repeated_answer_shows_once_and_a_newer_one_replaces_it(
+async def test_a_pending_ai_name_is_not_asked_about_again(
     client: AsyncClient, session_maker: Any, llm: FakeLLM
 ) -> None:
     await _seed_owner(session_maker, AI_SETTINGS)
-    llm.names = {ONE: "Priya"}
-    await _talk_until(session_maker, 64_000)
+    llm.names = {ONE: "Alex"}
+    await _speak_for(session_maker, 61)
     await _refresh(session_maker, llm)
-    await _talk_until(session_maker, 125_000)
-    await _refresh(session_maker, llm)
-    assert len(await _review(session_maker)) == 1
+    assert llm.asks == [[ONE]]
 
-    llm.names = {ONE: "Priya Raman"}
-    await _talk_until(session_maker, 186_000)
-    await _refresh(session_maker, llm)
-    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Priya Raman"}
+    llm.names = {ONE: "Blair"}
+    for speech in (200, 1000, 3000):
+        await _speak_for(session_maker, speech)
+        await _refresh(session_maker, llm)
 
-    dismissed = await client.post(
-        f"/api/v1/speakers/recordings/{REC}/live/{ONE}/suggestions/reject"
-    )
-    assert dismissed.status_code == 200, dismissed.text
-    # The older answer was closed, so nothing resurfaces once the newer goes.
+    assert llm.asks == [[ONE]]
+    read = await _read(client)
+    assert read["live_speaker_suggestions"] == {ONE: "Alex"}
+    assert read["live_speaker_suggestion_sources"] == {ONE: "llm"}
+
+
+async def test_a_late_answer_leaves_a_pending_ai_name(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    llm.names = {ONE: "Alex"}
+    await _speak_for(session_maker, 61)
+    await _refresh(session_maker, llm)
+    engine = session_maker.kw["bind"]
+    # An answer to an ask already in flight when that name was offered.
+    answer = SpeakerInferenceResult((SpeakerInferenceSuggestion(ONE, "Blair", 0.9),))
+    async with AsyncSession(engine, sync_session_class=Session) as db:
+        added = await db.run_sync(
+            lambda sync: store_live_llm_suggestions(sync, 1, answer, "test")
+        )
+
+    assert added == 0
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Alex"}
+    assert [item["status"] for item in await _review(session_maker)] == ["pending"]
+
+
+async def test_an_introduction_already_asked_about_is_not_asked_about_again(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _say(session_maker, ONE, "I'm Alex.")
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE]]
+
+    for speech in (200, 1000, 3000):
+        await _speak_for(session_maker, speech)
+        await _refresh(session_maker, llm)
+
+    assert llm.asks == [[ONE]]
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Alex"}
+
+
+async def test_a_retired_name_leaves_the_label_due_after_its_next_window(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _say(session_maker, ONE, "I'm Alex.")
+    await _refresh(session_maker, llm)
+    await _speak_for(session_maker, 500)
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE]]
+
+    # The words change, so the rule's name is retired with nobody deciding.
+    await _say(session_maker, ONE, "Thanks, carry on.")
+    await _refresh(session_maker, llm)
     assert (await _read(client))["live_speaker_suggestions"] == {}
-    assert len(llm.asks) == 3
+    assert llm.asks == [[ONE]]
+
+    # One ask so far: the next needs 120 s more speech, counted from then.
+    await _speak_for(session_maker, 500 + 119)
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE]]
+    await _speak_for(session_maker, 500 + 121)
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE], [ONE]]
+
+
+async def test_a_merge_carries_the_merged_labels_asks_to_the_label_joined(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _speak_for(session_maker, 61)
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE]]
+
+    merged = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/live/{ONE}/merge",
+        json={"into_label": TWO},
+    )
+    assert merged.status_code == 200, merged.text
+    await _refresh(session_maker, llm)
+
+    # The group's 65 s are not a fresh label's first minute.
+    assert llm.asks == [[ONE]]
+    records = await _ask_records(session_maker)
+    assert set(records) == {TWO}
+    assert (records[TWO]["asks"], records[TWO]["speech_seconds"]) == (1, 61.0)
+
+    # It is asked after the label's next window: 120 s more of the group's
+    # speech, which counts the joined label's 4 s.
+    await _speak_for(session_maker, 61 + 119 - 4)
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE]]
+    await _speak_for(session_maker, 61 + 121 - 4)
+    await _refresh(session_maker, llm)
+    assert llm.asks == [[ONE], [TWO]]
+
+
+async def test_a_merge_of_two_asked_labels_keeps_the_longer_wait(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _speak_for(session_maker, 61)
+    await _set_ask_records(
+        session_maker,
+        [
+            {
+                "origin": "live_llm_ask",
+                "diarization_label": ONE,
+                "speech_seconds": 61.0,
+                "asked_at": "2026-01-01T09:00:00+00:00",
+                "asks": 1,
+            },
+            {
+                "origin": "live_llm_ask",
+                "diarization_label": TWO,
+                "speech_seconds": 4.0,
+                "asked_at": "2026-01-01T09:05:00+00:00",
+                "asks": 3,
+            },
+        ],
+    )
+
+    merged = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/live/{ONE}/merge",
+        json={"into_label": TWO},
+    )
+    assert merged.status_code == 200, merged.text
+
+    records = await _ask_records(session_maker)
+    assert set(records) == {TWO}
+    assert {
+        key: records[TWO][key] for key in ("asks", "speech_seconds", "asked_at")
+    } == {"asks": 3, "speech_seconds": 65.0, "asked_at": "2026-01-01T09:05:00+00:00"}
 
 
 NO_PROVIDER = {"llm_provider": "openai"}
@@ -563,7 +767,7 @@ async def test_an_ai_name_is_placed_only_by_a_single_timed_span(
     ],
     ids=["provider-timeout", "unreadable-answer"],
 )
-async def test_a_failed_ask_gives_up_quietly_until_the_next_window(
+async def test_a_failed_ask_gives_up_quietly_and_counts_as_an_ask(
     client: AsyncClient,
     session_maker: Any,
     llm: FakeLLM,
@@ -571,7 +775,7 @@ async def test_a_failed_ask_gives_up_quietly_until_the_next_window(
     error: Exception,
 ) -> None:
     await _seed_owner(session_maker, AI_SETTINGS)
-    await _say_at(session_maker, 9500, "Hello, I'm Alex.")
+    await _speak_for(session_maker, 61)
     llm.error = error
 
     with caplog.at_level(logging.INFO, logger=live_naming_stage.__name__):
@@ -583,20 +787,19 @@ async def test_a_failed_ask_gives_up_quietly_until_the_next_window(
         for record in caplog.records
         if record.name == live_naming_stage.__name__
     ] == [("WARNING", True)]
-    # The rule's proposal stands.
-    read = await _read(client)
-    assert read["live_speaker_suggestions"] == {ONE: "Alex"}
-    assert read["live_speaker_suggestion_sources"] == {ONE: "heuristic"}
+    assert (await _read(client))["live_speaker_suggestions"] == {}
 
-    # No retry within the same window, however many checks run.
+    # No retry within the next window, however many checks run: the failed
+    # ask counts, so that window is 120 s.
     llm.error = None
     llm.names = {ONE: "Priya Raman"}
+    await _speak_for(session_maker, 61 + 119)
+    await _refresh(session_maker, llm)
     await _refresh(session_maker, llm)
     assert llm.asks == [[ONE]]
 
-    # Another minute of speech is the next window, and it asks again: the
-    # failed ask released its slot.
-    await _talk_until(session_maker, 90_000)
+    # Past it, the label is asked again: the failed ask released its slot.
+    await _speak_for(session_maker, 61 + 121)
     await _refresh(session_maker, llm)
     assert llm.asks == [[ONE], [ONE]]
     assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Priya Raman"}

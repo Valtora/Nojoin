@@ -12,12 +12,16 @@ With the owner's ``suggest_live_speaker_names`` setting off, nothing is
 queued and a check already queued does nothing.
 
 The check runs the self-introduction rule, then queues an AI ask when a label
-is due one (``refresh_live_speaker_suggestions``) and a provider is set up.
-The ask's slot is held until the ask ends, so a second is never queued while
-one is in flight. An ask that times out or fails gives up with a warning; it
-was recorded before the call, so the label's next window asks again. The model is not told what the rule heard: it gets the
-finalisation speaker-suggestion prompt over the due labels' lines and their
-neighbours, and may leave a label out when it is unsure.
+is due one (``refresh_live_speaker_suggestions``) and a provider is set up: a
+new self-introduction asks at once, and otherwise each ask of a label doubles
+the speech it needs before the next, from 60 s up to 480 s. A label with a
+pending name is not asked about again. The ask's slot is held until the ask
+ends, so a second is never queued while one is in flight. An ask that times
+out or fails gives up with a warning; it was recorded before the call, so it
+counts as an ask and the label waits for its next window. The model is not
+told what the rule heard: it gets the finalisation speaker-suggestion prompt
+over the due labels' lines and their neighbours, and may leave a label out
+when it is unsure.
 """
 
 import logging
@@ -134,8 +138,8 @@ def _ask(session: Any, recording_id: int) -> None:
         # Providers raise a timeout, an HTTP error or an unreadable answer as
         # a RuntimeError; OpenAI's wrong model and a CLI subscription's
         # unreadable answer are ValueErrors. The ask is already recorded, so
-        # the next window (a newer introduction or another minute of speech)
-        # asks again.
+        # the next window (a newer introduction, or the label's next stretch
+        # of speech) asks again.
         logger.warning(
             "Live naming ask for recording %s gave up: %s", recording_id, exc
         )

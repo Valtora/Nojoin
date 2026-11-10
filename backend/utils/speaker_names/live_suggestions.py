@@ -48,11 +48,14 @@ from .sources import suggestion_source
 LIVE_SUGGESTION_ORIGIN = "live_self_introduction"
 LIVE_LLM_SUGGESTION_ORIGIN = "live_llm"
 LIVE_PROPOSAL_ORIGINS = (LIVE_SUGGESTION_ORIGIN, LIVE_LLM_SUGGESTION_ORIGIN)
-# One bookkeeping entry per label: when it was last asked about, and how much
-# it had said by then.
+# One bookkeeping entry per label: how often it has been asked about, when
+# last, and the speech its next window counts from (what it had said at that
+# ask, or when its pending name was retired since).
 LIVE_ASK_ORIGIN = "live_llm_ask"
-# A label is asked about again once it has said this much more.
+# A label is first asked about once it has said this much. Each ask doubles
+# the further speech needed before the next, up to the most below.
 NEW_SPEECH_PER_ASK_SECONDS = 60.0
+MAX_SPEECH_PER_ASK_SECONDS = 480.0
 
 
 def suggest_live_speaker_names(
@@ -64,7 +67,8 @@ def suggest_live_speaker_names(
     """Review current evidence for unnamed labels, under the capture fence."""
     suggestions = load_transcript_speaker_suggestions(transcript)
     candidates = _live_candidates(session, transcript, segments, meeting_context)
-    changed = _retire_stale_proposals(transcript, suggestions, candidates)
+    retired = _retire_stale_proposals(transcript, suggestions, candidates)
+    _restart_ask_windows(transcript, retired, _speech_by_label(segments))
     pending = _pending_live_proposals(transcript)
     additions = [
         build_persisted_speaker_suggestion(item, origin=LIVE_SUGGESTION_ORIGIN)
@@ -75,7 +79,7 @@ def suggest_live_speaker_names(
         transcript.speaker_name_suggestions = (
             load_transcript_speaker_suggestions(transcript) + additions
         )
-    if changed or additions:
+    if retired or additions:
         session.add(transcript)
     return len(additions)
 
@@ -160,12 +164,14 @@ def _pending_live_entries(
 
 
 def follow_live_merge(transcript: Transcript, label: str, into: str) -> None:
-    """A merged label's pending proposal moves to the label it joined.
+    """A merged label's pending proposal and ask record move to the label it
+    joined.
 
     The live read shows a group under the label it joined, so a proposal left
     on the merged label would vanish until the next naming check, and a
     paused capture runs none. One the joined label already has stands.
     """
+    _merge_live_asks(transcript, label, into)
     pending = _pending_live_entries(transcript)
     if label not in pending:
         return
@@ -184,13 +190,48 @@ def follow_live_merge(transcript: Transcript, label: str, into: str) -> None:
     ]
 
 
+def _merge_live_asks(transcript: Transcript, label: str, into: str) -> None:
+    """The group's speech counts both labels' lines, so its next window counts
+    from both labels' starting points added together. It keeps the higher ask
+    count and the later ask, so a merge neither restarts the back-off nor
+    reopens an introduction either label was asked about."""
+    asks = _live_asks(transcript)
+    moved = asks.get(label)
+    if moved is None:
+        return
+    kept = asks.get(into)
+    merged = {**moved, "diarization_label": into}
+    if kept is not None:
+        merged = {
+            **kept,
+            "speech_seconds": round(
+                float(kept.get("speech_seconds") or 0.0)
+                + float(moved.get("speech_seconds") or 0.0),
+                3,
+            ),
+            "asks": max(_ask_count(kept), _ask_count(moved)),
+            "asked_at": max(kept.get("asked_at", ""), moved.get("asked_at", "")),
+        }
+    transcript.speaker_name_suggestions = [
+        item
+        for item in load_transcript_speaker_suggestions(transcript)
+        if not (
+            item.get("origin") == LIVE_ASK_ORIGIN
+            and item.get("diarization_label") in (label, into)
+        )
+    ] + [merged]
+
+
 def _retire_stale_proposals(
     transcript: Transcript,
     suggestions: list[dict[str, Any]],
     candidates: dict[str, SpeakerInferenceSuggestion],
-) -> bool:
-    """Unlocked words and labels can move; their old proposal must not linger."""
-    changed = False
+) -> set[str]:
+    """Unlocked words and labels can move; their old proposal must not linger.
+
+    Returns the labels whose proposal was retired.
+    """
+    retired: set[str] = set()
     for item in suggestions:
         if item.get("origin") != LIVE_SUGGESTION_ORIGIN:
             continue
@@ -206,8 +247,39 @@ def _retire_stale_proposals(
             resolution=SPEAKER_SUGGESTION_STATUS_SUPERSEDED,
             reason="live_evidence_changed",
         )
-        changed = True
-    return changed
+        retired.add(label)
+    return retired
+
+
+def _restart_ask_windows(
+    transcript: Transcript, labels: set[str], speech: dict[str, float]
+) -> None:
+    """A label whose pending name went with nobody deciding counts its next
+    window from now: it was not asked while the name was pending, and the
+    speech it said then does not make it due at once.
+
+    Only a label already asked about has a window to restart; one never asked
+    is due after its first ``NEW_SPEECH_PER_ASK_SECONDS``, as before. A start
+    never moves back, though lines that moved away can leave less speech.
+    """
+    asks = _live_asks(transcript)
+    starts = {
+        label: round(
+            max(speech.get(label, 0.0), float(asks[label].get("speech_seconds") or 0)),
+            3,
+        )
+        for label in labels
+        if label in asks
+    }
+    if not starts:
+        return
+    transcript.speaker_name_suggestions = [
+        {**item, "speech_seconds": starts[item["diarization_label"]]}
+        if item.get("origin") == LIVE_ASK_ORIGIN
+        and item.get("diarization_label") in starts
+        else item
+        for item in load_transcript_speaker_suggestions(transcript)
+    ]
 
 
 def refresh_live_speaker_suggestions(
@@ -239,23 +311,52 @@ def refresh_live_speaker_suggestions(
 def _due_for_ask(
     session: Any, transcript: Transcript, segments: Sequence[dict[str, Any]]
 ) -> dict[str, float]:
-    """Unanswered labels with a rule proposal newer than their last ask, or
-    ``NEW_SPEECH_PER_ASK_SECONDS`` more speech since it, with their speech."""
+    """Unanswered labels due an ask, with their speech.
+
+    A label is due when its pending rule proposal is newer than its last ask,
+    whatever its count. Otherwise a label with a pending proposal is not due,
+    and one without is due once it has said ``_speech_for_next_ask`` more
+    since its window started.
+    """
     asks = _live_asks(transcript)
     introduced = _introduced_since_ask(transcript)
+    pending = _pending_live_entries(transcript)
+    speech = _speech_by_label(segments)
+    return {
+        label: speech.get(label, 0.0)
+        for label in _unanswered_labels(session, transcript, _live_labels(segments))
+        if label in introduced
+        or (
+            label not in pending
+            and speech.get(label, 0.0)
+            - float(asks.get(label, {}).get("speech_seconds") or 0.0)
+            >= _speech_for_next_ask(_ask_count(asks.get(label)))
+        )
+    }
+
+
+def _speech_by_label(segments: Sequence[dict[str, Any]]) -> dict[str, float]:
     speech: dict[str, float] = {}
     for segment in segments:
         label = str(segment.get("speaker", ""))
         length = float(segment.get("end") or 0.0) - float(segment.get("start") or 0.0)
         speech[label] = speech.get(label, 0.0) + max(length, 0.0)
-    return {
-        label: speech.get(label, 0.0)
-        for label in _unanswered_labels(session, transcript, _live_labels(segments))
-        if label in introduced
-        or speech.get(label, 0.0)
-        - float(asks.get(label, {}).get("speech_seconds") or 0.0)
-        >= NEW_SPEECH_PER_ASK_SECONDS
-    }
+    return speech
+
+
+def _ask_count(record: Mapping[str, Any] | None) -> int:
+    """How often a label has been asked about. A record written before asks
+    were counted stands for one."""
+    if record is None:
+        return 0
+    return int(record.get("asks", 1))
+
+
+def _speech_for_next_ask(asks: int) -> float:
+    """60 s before the first ask, then 120, 240, and 480 from then on."""
+    return min(
+        NEW_SPEECH_PER_ASK_SECONDS * 2.0 ** min(asks, 16), MAX_SPEECH_PER_ASK_SECONDS
+    )
 
 
 def _live_asks(transcript: Transcript) -> dict[str, dict[str, Any]]:
@@ -283,13 +384,15 @@ def mark_live_asks(
 ) -> tuple[list[str], list[dict[str, Any]], MeetingEventContext | None] | None:
     """Record an ask for the labels due one, under the capture fence.
 
-    Recorded before the call, so a failing provider is tried again only after
-    more speech. Returns the labels with the lines and context to ask about.
+    Recorded before the call, so a failed ask counts like any other and the
+    label waits for its next window. Returns the labels with the lines and
+    context to ask about.
     """
     evidence = _live_evidence(session, recording_id, lock=True)
     due = _due_for_ask(session, *evidence[:2]) if evidence is not None else {}
     if evidence is not None and due:
         transcript = evidence[0]
+        asks = _live_asks(transcript)
         now = datetime.now(UTC).isoformat()
         transcript.speaker_name_suggestions = [
             item
@@ -304,6 +407,7 @@ def mark_live_asks(
                 "diarization_label": label,
                 "speech_seconds": round(speech, 3),
                 "asked_at": now,
+                "asks": _ask_count(asks.get(label)) + 1,
             }
             for label, speech in due.items()
         ]
@@ -323,9 +427,11 @@ def store_live_llm_suggestions(
     """Offer the model's names, under the capture fence; returns how many.
 
     An omitted label or a role is no proposal. A name that agrees with the
-    label's pending one leaves it as it is; another replaces it, unless the
-    rule heard an introduction after the ask: that proposal stays, due an ask
-    of its own.
+    label's pending one leaves it as it is. Another replaces a pending rule
+    proposal made before the ask, but not one the rule heard after it (that
+    stays, due an ask of its own), and never a pending AI name: an answer to
+    an ask still in flight when that name was offered is dropped, so the name
+    the user is reading does not change.
     """
     evidence = _live_evidence(session, recording_id, lock=True)
     if evidence is None:
@@ -334,6 +440,7 @@ def store_live_llm_suggestions(
     transcript, segments, _ = evidence
     eligible = set(_unanswered_labels(session, transcript, _live_labels(segments)))
     eligible -= _introduced_since_ask(transcript)
+    eligible -= set(_pending_live_proposals(transcript, (LIVE_LLM_SUGGESTION_ORIGIN,)))
     pending = _pending_live_proposals(transcript, LIVE_PROPOSAL_ORIGINS)
     added = [
         item
