@@ -13,7 +13,7 @@ from typing import Any, Callable, Literal
 
 from backend.utils.model_cache_paths import hf_hub_cache_root, hf_repo_dirname
 from backend.utils.nemotron_download import download_asset
-from backend.utils.nemotron_lock import atomic_json, clear_pending, model_lock
+from backend.utils.nemotron_lock import atomic_json, clear_pending, control, model_lock
 from backend.utils.nemotron_manifest import (
     FILENAMES,
     REPOSITORY,
@@ -139,6 +139,7 @@ def prepare_nemotron_model(
         if inspect_nemotron_model().state == "verified":
             try:
                 verify_nemotron_model(snapshot)
+                control.clear_failure()
                 report("Native speaker assets are verified.", 100)
                 return snapshot
             except NemotronModelError:
@@ -176,4 +177,5 @@ def _prepare_files(
             "files": before,
         },
     )
+    control.clear_failure()
     report("Native speaker assets are verified.", 100)

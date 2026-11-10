@@ -1,5 +1,4 @@
 import logging
-import re
 
 from fastapi import Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -26,6 +25,7 @@ from backend.processing.embedding import (
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.utils.speaker_names.events import UserNameAct, record_user_link
+from backend.utils.speaker_names.placeholder import is_placeholder_speaker_name
 from backend.utils.transcript_change import change_sequence_bump
 
 from .helpers import (
@@ -263,10 +263,7 @@ async def apply_voiceprint_action(
                 detail="new_speaker_name is required for create_new action",
             )
 
-        placeholder_pattern = re.compile(
-            r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE
-        )
-        if placeholder_pattern.match(action.new_speaker_name):
+        if is_placeholder_speaker_name(action.new_speaker_name):
             raise HTTPException(
                 status_code=400,
                 detail="Cannot use a placeholder name for Global Speaker",

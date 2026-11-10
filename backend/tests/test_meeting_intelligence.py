@@ -6,6 +6,7 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
     MeetingIntelligenceContractError,
+    apply_speaker_mapping_to_notes,
     build_automatic_meeting_intelligence_prompt,
     build_automatic_meeting_intelligence_request,
     finalise_automatic_meeting_intelligence_result,
@@ -439,3 +440,76 @@ def test_is_placeholder_speaker_name_detects_generic_names() -> None:
     assert is_placeholder_speaker_name("Speaker 3") is True
     assert is_placeholder_speaker_name("Unknown") is True
     assert is_placeholder_speaker_name("Alex") is False
+
+
+def test_speaker_mapping_is_applied_to_labels_with_a_colon_and_shared_prefixes() -> (
+    None
+):
+    notes = "N:L1 asked, N:L10 answered, then (N:L1) and **N:L0** agreed. N:L100 left."
+
+    assert (
+        apply_speaker_mapping_to_notes(
+            notes, {"N:L1": "Ana", "N:L10": "Bo", "N:L0": "Cy"}
+        )
+        == "Ana asked, Bo answered, then (Ana) and **Cy** agreed. N:L100 left."
+    )
+
+
+def test_the_json_answer_for_colon_labels_is_read_and_filtered_to_offered_labels() -> (
+    None
+):
+    request = AutomaticMeetingIntelligenceRequest(
+        resolved_transcript="[00:00 - 00:05] N:L0: Status update.",
+        unresolved_speakers=("N:L0", "N:L1"),
+    )
+    response = json.dumps(
+        {
+            "speaker_mapping": {"N:L0": "Dana", "N:L1": "Sam", "N": "Nobody"},
+            "title": "Status",
+            "notes_markdown": "## Summary\nN:L0 spoke to N:L1.",
+        }
+    )
+
+    result = finalise_automatic_meeting_intelligence_result(
+        parse_automatic_meeting_intelligence_response(response, request=request)
+    )
+
+    assert result.speaker_mapping == {"N:L0": "Dana", "N:L1": "Sam"}
+    assert result.notes_markdown == "## Summary\nDana spoke to Sam."
+
+
+def test_the_unified_prompt_shows_the_first_offered_label_as_the_schema_example() -> (
+    None
+):
+    request = AutomaticMeetingIntelligenceRequest(
+        resolved_transcript="[00:00 - 00:05] N:L2: Status update.",
+        unresolved_speakers=("N:L2", "N:L3"),
+    )
+
+    prompt = build_automatic_meeting_intelligence_prompt(request)
+
+    assert '"N:L2": "Person name or role"' in prompt
+    assert "SPEAKER_00" not in prompt
+
+
+def test_an_unnamed_final_diarisation_speaker_is_offered_to_the_model() -> None:
+    def speaker(label: str, name: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            diarization_label=label,
+            local_name=None,
+            name=name,
+            global_speaker_id=None,
+            global_speaker=None,
+            merged_into_id=None,
+        )
+
+    labels = get_speakers_eligible_for_llm_renaming(
+        [
+            speaker("N:L0", "N:L0"),
+            speaker("C:SPEAKER_03", "C:SPEAKER_03"),
+            speaker("N:L1", "Jordan"),
+        ]
+    )
+
+    assert labels == ("N:L0", "C:SPEAKER_03")
+    assert is_placeholder_speaker_name("N:L7")
