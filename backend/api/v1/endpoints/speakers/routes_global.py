@@ -44,6 +44,7 @@ from backend.processing.embedding import (
     too_little_speech_detail,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
+from backend.services.person_meetings import person_meeting_counts
 from backend.services.recording_identity_service import get_recordings_by_public_ids
 from backend.services.tag_ownership import require_own_tag_ids
 from backend.utils.canonical_pipeline import (
@@ -93,13 +94,12 @@ async def list_global_speakers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all global speakers (People) with filtering."""
-    # Query with left join to count recordings
+    """List all global speakers (People), each with their distinct owned meetings."""
+    counts = person_meeting_counts(current_user.id)
+    recording_count = func.coalesce(counts.c.meeting_count, 0).label("recording_count")
     query = (
-        select(GlobalSpeaker, func.count(RecordingSpeaker.id).label("recording_count"))
-        .outerjoin(
-            RecordingSpeaker, GlobalSpeaker.id == RecordingSpeaker.global_speaker_id
-        )
+        select(GlobalSpeaker, recording_count)
+        .outerjoin(counts, counts.c.global_speaker_id == GlobalSpeaker.id)
         .where(GlobalSpeaker.user_id == current_user.id)
     )
 
@@ -122,7 +122,7 @@ async def list_global_speakers(
         )
 
     query = (
-        query.group_by(GlobalSpeaker.id)
+        query.group_by(GlobalSpeaker.id, counts.c.meeting_count)
         .order_by(GlobalSpeaker.name)
         .offset(skip)
         .limit(limit)

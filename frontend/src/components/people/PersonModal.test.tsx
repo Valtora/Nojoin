@@ -5,6 +5,7 @@ import { PersonModal } from "./PersonModal";
 import { pressWhileComposing } from "@/test/composition";
 import { httpError } from "@/test/httpErrors";
 import type { GlobalSpeaker } from "@/types";
+import { getPersonMeetings } from "@/lib/api";
 
 const addNotification = vi.fn();
 const updateGlobalSpeaker = vi.fn();
@@ -17,10 +18,16 @@ vi.mock("@/lib/notificationStore", () => ({
   }),
 }));
 
+vi.mock("@/lib/useUserTimeZone", () => ({ useUserTimeZone: () => "UTC" }));
+
 vi.mock("@/lib/api", () => ({
   getPeopleTags: vi.fn().mockResolvedValue([]),
   createPeopleTag: (...a: unknown[]) => createPeopleTag(...a),
   getGlobalSpeakers: vi.fn().mockResolvedValue([]),
+  getPersonMeetings: vi.fn().mockResolvedValue({
+    meetings: [], meeting_count: 0, total_talk_time_seconds: 0,
+    first_seen: null, last_seen: null, talk_time_by_month: [],
+  }),
   mergeSpeakers: vi.fn(),
   deleteGlobalSpeakerEmbedding: (...a: unknown[]) =>
     deleteGlobalSpeakerEmbedding(...a),
@@ -71,6 +78,22 @@ const answerLater = () => {
   );
   return (value: GlobalSpeaker) => act(async () => answer(value));
 };
+
+describe("PersonModal meeting history lifecycle", () => {
+  beforeEach(() => { vi.mocked(getPersonMeetings).mockClear(); });
+
+  it("requests an existing person's history only when opened and refreshes after reopening", async () => {
+    const props = { person: dana(true, false), onClose: vi.fn(), onSave: vi.fn() };
+    const view = render(<PersonModal {...props} isOpen={false} />);
+    expect(getPersonMeetings).not.toHaveBeenCalled();
+    view.rerender(<PersonModal {...props} isOpen />);
+    await screen.findByText(/No linked meetings yet/);
+    expect(getPersonMeetings).toHaveBeenCalledExactlyOnceWith(7);
+    view.rerender(<PersonModal {...props} isOpen={false} />);
+    view.rerender(<PersonModal {...props} isOpen />);
+    await waitFor(() => expect(getPersonMeetings).toHaveBeenCalledTimes(2));
+  });
+});
 
 describe("PersonModal voiceprint lock", () => {
   beforeEach(() => {
