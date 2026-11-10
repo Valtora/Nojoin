@@ -65,7 +65,7 @@ export default function SpeakerNamesSection({ settings, onPersist }: SpeakerName
         label="Suggest speaker names during a meeting"
         labelId="notes-suggest-live-names-label"
         descriptionId="notes-suggest-live-names-help"
-        description="Offers a name for an unnamed speaker when they introduce themselves, and asks your AI provider when one may have been said. Nothing is applied until you accept it."
+        description="Offers a name for an unnamed speaker when they introduce themselves. With an AI provider set up, recent transcript lines are also sent to it to ask for a name, whether Meeting Edge is on or off. Nothing is applied until you accept it."
         controlClassName={SETTINGS_CONTROL_END}
       >
         <Switch

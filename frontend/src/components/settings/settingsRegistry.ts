@@ -662,7 +662,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     id: "notes-suggest-live-names",
     label: "Suggest speaker names during a meeting",
     description:
-      "Offer a name for an unnamed speaker while the meeting records, from a self-introduction or your AI provider.",
+      "Offer a name for an unnamed speaker while the meeting records, from a self-introduction or by sending recent transcript lines to your AI provider, whether Meeting Edge is on or off.",
     category: "notes",
     access: "all",
     settingsKeys: ["suggest_live_speaker_names"],
