@@ -275,15 +275,23 @@ export const normaliseSpeakerName = (name: string): string => {
   return name.trim().toLocaleLowerCase();
 };
 
-const PLACEHOLDER_SPEAKER_NAME = /^(speaker[\s_]*\d+|unknown)$/i;
+// Mirrors backend/utils/speaker_names/placeholder.py, the one rule for a name
+// that is only a placeholder: change them together. "N:L0" and "C:SPEAKER_00"
+// are the labels final diarisation with a native engine gives an unnamed
+// speaker; a real name that starts with "N:" or "C:" is still a name.
+const PLACEHOLDER_SPEAKER_NAME =
+  /^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*|N:L\d+|C:SPEAKER_\d+)$/i;
 
 /**
- * A fallback label such as "Speaker 2" or "Unknown", never a person's name.
- * The server refuses these as names: processing merges speakers that share
- * a name, so one would join its voice to the speaker the label belongs to.
+ * A fallback label such as "Speaker 2", "Unknown" or "N:L0", or no name at
+ * all: never a person's name. The server refuses these as names: processing
+ * merges speakers that share a name, so one would join its voice to the
+ * speaker the label belongs to.
  */
-export const isPlaceholderSpeakerName = (name: string): boolean =>
-  PLACEHOLDER_SPEAKER_NAME.test(name.trim());
+export const isPlaceholderSpeakerName = (name: string): boolean => {
+  const cleaned = name.trim();
+  return cleaned === "" || PLACEHOLDER_SPEAKER_NAME.test(cleaned);
+};
 
 export const buildGlobalSpeakerById = (
   globalSpeakers: GlobalSpeaker[],
