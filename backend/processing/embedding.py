@@ -1,5 +1,4 @@
 import logging
-import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, List, Optional
@@ -10,6 +9,7 @@ from backend.processing.embedding_version import (
     EMBEDDING_METHOD_VERSION,
     LEGACY_EMBEDDING_METHOD_VERSION,
 )
+from backend.utils.speaker_names.placeholder import is_placeholder_speaker_name
 
 logger = logging.getLogger(__name__)
 
@@ -638,11 +638,6 @@ def fold_recording_voiceprint(
     return speech_seconds
 
 
-_PLACEHOLDER_NAME_PATTERN = re.compile(
-    r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE
-)
-
-
 def _rank_global_speakers(
     embedding: List[float],
     global_speakers: List,
@@ -655,7 +650,7 @@ def _rank_global_speakers(
     ranked: List[tuple[Any, float]] = []
     skipped_stale = 0
     for gs in global_speakers:
-        if not gs.embedding or _PLACEHOLDER_NAME_PATTERN.match(gs.name):
+        if not gs.embedding or is_placeholder_speaker_name(gs.name):
             continue
         if embedding_version_of(gs) != method_version:
             skipped_stale += 1

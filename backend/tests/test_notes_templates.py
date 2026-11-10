@@ -380,6 +380,25 @@ def test_meeting_metadata_drops_placeholder_speaker_names():
     assert metadata.duration == "1 hour 2 minutes"
 
 
+def test_participants_leave_out_an_unnamed_final_diarisation_label():
+    class _Recording:
+        name = "Sync"
+        created_at = None
+        duration_seconds = None
+
+    class _Speaker:
+        def __init__(self, name):
+            self.local_name = name
+            self.diarization_label = name
+            self.global_speaker = None
+
+    metadata = build_meeting_metadata(
+        _Recording(), [_Speaker("N:L0"), _Speaker("Sam"), _Speaker("C:SPEAKER_01")]
+    )
+
+    assert metadata.participants == ["Sam"]
+
+
 @pytest.mark.parametrize(
     ("seconds", "expected"),
     [
