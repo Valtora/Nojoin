@@ -39,11 +39,13 @@ describe("live speaker suggestions", () => {
   it("offers the name once, on the speaker's latest line, and accepts it through normal naming", async () => {
     render(<Harness />);
     const lines = screen.getAllByTestId("live-transcript-line");
-    expect(screen.getAllByText("Alex?")).toHaveLength(1);
-    expect(within(lines[1]).getByText("Alex?")).toBeInTheDocument();
+    expect(screen.getAllByText("Suggested")).toHaveLength(1);
+    expect(within(lines[1]).getByText("Suggested")).toBeInTheDocument();
+    expect(within(lines[1]).getByLabelText("Suggested name Alex")).toHaveTextContent(/^Alex/);
+    expect(screen.queryByText(/Alex\?/)).not.toBeInTheDocument();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Accept suggested name Alex" })));
     expect(mocks.rename).toHaveBeenCalledWith("r1", "LIVE_PROVISIONAL_1", "Alex", false);
-    expect(screen.queryByText("Alex?")).not.toBeInTheDocument();
+    expect(screen.queryByText("Suggested")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("live-transcript-speaker").map((chip) => chip.textContent)).toEqual(["Alex", "Alex"]);
     expect(screen.getAllByTestId("live-transcript-speaker")[1]).toHaveFocus();
   });
@@ -58,16 +60,16 @@ describe("live speaker suggestions", () => {
   it("moves the name to the speaker's new line after someone else has spoken", () => {
     const other = { id: "c", start: 4, end: 5, text: "Hello", speaker: "LIVE_PROVISIONAL_2", speaker_state: "stable" };
     const { rerender } = render(<Harness lines={[segments[1], other]} />);
-    expect(within(screen.getAllByTestId("live-transcript-line")[0]).getByText("Alex?")).toBeInTheDocument();
+    expect(within(screen.getAllByTestId("live-transcript-line")[0]).getByText("Suggested")).toBeInTheDocument();
     rerender(<Harness lines={[segments[1], other, { ...segments[1], id: "d", start: 6, end: 7 }]} />);
-    expect(screen.getAllByText("Alex?")).toHaveLength(1);
-    expect(within(screen.getAllByTestId("live-transcript-line")[2]).getByText("Alex?")).toBeInTheDocument();
+    expect(screen.getAllByText("Suggested")).toHaveLength(1);
+    expect(within(screen.getAllByTestId("live-transcript-line")[2]).getByText("Suggested")).toBeInTheDocument();
   });
 
   it("dismisses the suggestion while keeping manual renaming available", async () => {
     render(<Harness />);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Dismiss suggested name Alex" })));
-    expect(screen.queryByText("Alex?")).not.toBeInTheDocument();
+    expect(screen.queryByText("Suggested")).not.toBeInTheDocument();
     expect(mocks.rename).not.toHaveBeenCalled();
     expect(screen.getAllByRole("button", { name: "Rename Speaker 1" })[1]).toHaveFocus();
     fireEvent.click(screen.getAllByRole("button", { name: "Rename Speaker 1" })[0]);
@@ -81,14 +83,14 @@ describe("live speaker suggestions", () => {
     render(<Harness />);
     const label = decision === "accept" ? "Accept suggested name Alex" : "Dismiss suggested name Alex";
     await act(async () => fireEvent.click(screen.getByRole("button", { name: label })));
-    expect(screen.getAllByText("Alex?")).toHaveLength(1);
+    expect(screen.getAllByText("Suggested")).toHaveLength(1);
     expect(screen.getByRole("button", { name: label })).toBeEnabled();
     expect(mocks.notify).toHaveBeenCalledWith({ type: "error", message: "The meeting has stopped" });
   });
 
   it("offers no pending name for a named label or when capture naming is unavailable", () => {
     const { unmount } = render(<Harness named />);
-    expect(screen.queryByText("Alex?")).not.toBeInTheDocument();
+    expect(screen.queryByText("Suggested")).not.toBeInTheDocument();
     unmount();
     render(<Harness editable={false} />);
     expect(screen.getAllByTestId("live-transcript-speaker")[0]).toHaveTextContent("Speaker 1");

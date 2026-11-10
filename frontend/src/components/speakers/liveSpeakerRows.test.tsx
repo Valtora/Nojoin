@@ -147,7 +147,7 @@ describe("live speaker rows", () => {
     it("is offered on the speaker's card, with Accept and Dismiss as on the line", async () => {
       render(page());
       const row = within(card());
-      expect(row.getByText("Alex?")).toBeInTheDocument();
+      expect(row.getByText("Suggested")).toBeInTheDocument();
       expect(row.getByText("Introduced themselves")).toBeInTheDocument();
       fireEvent.click(row.getByRole("button", { name: "Accept suggested name Alex" }));
       await waitFor(() => expect(mocks.rename).toHaveBeenCalledWith(A, "Alex", false));
@@ -162,7 +162,7 @@ describe("live speaker rows", () => {
       const scrollTo = vi.fn();
       region.scrollTo = scrollTo as unknown as typeof region.scrollTo;
       const heard = document.querySelector<HTMLElement>("[data-order-index][data-segment-id=\"live-1\"]")!;
-      expect(within(heard).getByText("Alex?")).toBeInTheDocument();
+      expect(within(heard).getByText("Suggested")).toBeInTheDocument();
       heard.getBoundingClientRect = () => ({ top: 640, height: 40 }) as DOMRect;
 
       fireEvent.click(within(card()).getByRole("button", { name: "Go to the line where Alex was heard" }));

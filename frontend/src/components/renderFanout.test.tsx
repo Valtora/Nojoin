@@ -172,7 +172,7 @@ it("a new live name proposal executes only its speaker's latest line", async () 
       liveSpeakerSuggestionSources: { LIVE_PROVISIONAL_1: "heuristic" } }} />);
     const proposed = await counter.take();
     expect(proposed("components/transcript/TranscriptLine.tsx", "TranscriptLine")).toBe(1);
-    expect(screen.getAllByText("Alex?")).toHaveLength(1);
+    expect(screen.getAllByText("Suggested")).toHaveLength(1);
   } finally { await counter.stop(); }
 });
 
@@ -195,7 +195,7 @@ it("a proposal heard on an earlier line executes only that line, and later lines
       liveSpeakerSuggestionStarts: { LIVE_PROVISIONAL_1: 200 } }} />);
     const proposed = await counter.take();
     expect(proposed("components/transcript/TranscriptLine.tsx", "TranscriptLine")).toBe(1);
-    const offered = screen.getByText("Alex?").closest("[data-order-index]");
+    const offered = screen.getByText("Suggested").closest("[data-order-index]");
     expect(offered).toHaveAttribute("data-segment-id", "line-50");
 
     // The speaker says more: the proposal stays on line 50, and only the new line draws.
@@ -204,7 +204,7 @@ it("a proposal heard on an earlier line executes only that line, and later lines
       liveSpeakerSuggestionStarts: { LIVE_PROVISIONAL_1: 200 } }} />);
     const added = await counter.take();
     expect(added("components/transcript/TranscriptLine.tsx", "TranscriptLine")).toBe(1);
-    expect(screen.getByText("Alex?").closest("[data-order-index]")).toHaveAttribute("data-segment-id", "line-50");
+    expect(screen.getByText("Suggested").closest("[data-order-index]")).toHaveAttribute("data-segment-id", "line-50");
   } finally { await counter.stop(); }
 });
 
@@ -223,6 +223,6 @@ it("a new live name proposal executes only its speaker's card in the speaker pan
       onShowTranscript={() => {}} />);
     const proposed = await counter.take();
     expect(proposed("components/speakers/LiveSpeakerRows.tsx", "LiveSpeakerRow")).toBe(1);
-    expect(screen.getAllByText("Alex?")).toHaveLength(1);
+    expect(screen.getAllByText("Suggested")).toHaveLength(1);
   } finally { await counter.stop(); }
 });
