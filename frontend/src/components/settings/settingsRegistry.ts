@@ -126,8 +126,9 @@ export function usesParakeet(settings: Settings): boolean {
  *  - theme is written by ThemeProvider into local storage, not through settings;
  *  - processing_tuning_install is read-only context the API supplies (the
  *    installation's tuning values) for validation, not a value anyone sets;
- *  - live_speaker_labels and speaker_engine are install-wide settings managed
- *    through config.json or the administrator API, without frontend controls;
+ *  - live_speaker_labels, speaker_engine and sentence_start_correction are
+ *    install-wide settings managed through config.json or the administrator
+ *    API, without frontend controls;
  *  - the rest are read by the backend and have never had a frontend control.
  */
 export const UNSURFACED_SETTINGS_KEYS = [
@@ -136,6 +137,7 @@ export const UNSURFACED_SETTINGS_KEYS = [
   "enable_live_transcription",
   "live_speaker_labels",
   "speaker_engine",
+  "sentence_start_correction",
   "processing_device",
   "worker_url",
   "processing_tuning_install",
@@ -552,18 +554,6 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     settingsKeys: ["live_text_settling_window_s"],
     defaultValue: 10,
     keywords: ["settling window", "live", "settling", "window", "seconds", "fine-tune"],
-  },
-  {
-    id: "transcription-sentence-start",
-    label: "Reply starts",
-    description: "Give the first words of a reply to the person replying when the speaker model hears them late.",
-    category: "transcription",
-    access: "admin",
-    scope: "everyone",
-    advanced: "can-degrade",
-    settingsKeys: ["sentence_start_correction"],
-    defaultValue: true,
-    keywords: ["reply", "speaker", "sentence", "start", "interjection", "labels", "live", "diarisation"],
   },
   {
     id: "transcription-engine",
