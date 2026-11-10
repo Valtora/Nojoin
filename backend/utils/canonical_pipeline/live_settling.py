@@ -51,7 +51,7 @@ from .live_settling_projection import (
     PartitionWrite,
     lead_speaker,
     live_rows,
-    locked_line_before,
+    locked_context,
     mutable_row,
     partition_words,
     row_words,
@@ -589,12 +589,14 @@ def project_live_settling_speakers(
     """Repartition marked mutable lines per word, independent of the legacy cursor."""
     activity = _correcting(activity)
     rows = live_rows(session, transcript.recording_id, lock=True)
-    # This read leaves out locked lines; the one before the open lines may hold
-    # the sentence end that starts their first speaker change.
-    previous = (
-        locked_line_before(session, transcript.recording_id, rows)
+    # This read leaves out locked lines. The one before the open lines may hold
+    # the sentence end that starts their first speaker change, and one a person
+    # locked among them bounds the words either side of it, as it does in
+    # publication, which reads it.
+    context = (
+        locked_context(session, transcript.recording_id, rows)
         if activity is not None
-        else None
+        else ()
     )
     result = _project(
         session,
@@ -603,7 +605,7 @@ def project_live_settling_speakers(
             rows,
             decide,
             activity=activity,
-            context=(previous,) if previous is not None else (),
+            context=context,
         ),
         [word for row in rows for word in row_words(row)],
     )

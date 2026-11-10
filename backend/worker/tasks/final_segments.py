@@ -67,7 +67,8 @@ def final_merge_config(
     from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
     # The payload's protection key alone, not the whole payload with its words;
-    # the test is line_is_protected's (canonical_pipeline/preservation.py).
+    # the test is line_is_protected's (canonical_pipeline/preservation.py), or
+    # a speaker a person chose.
     lines = session.exec(
         select(
             Line.start_ms,

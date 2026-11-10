@@ -44,6 +44,7 @@ from backend.utils.speaker_names.events import (
     record_user_link,
     record_user_name_events,
 )
+from backend.utils.speaker_names.placeholder import is_placeholder_speaker_name
 from backend.utils.speaker_names.sources import SOURCE_USER
 from backend.utils.transcript_change import change_sequence_bump
 
@@ -66,11 +67,6 @@ from .helpers import (
 from .router import router
 
 logger = logging.getLogger(__name__)
-
-# A name that reads like a fallback label: never a person's name.
-PLACEHOLDER_NAME_PATTERN = re.compile(
-    r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE
-)
 
 
 @router.put(
@@ -412,7 +408,7 @@ async def promote_speaker_to_global(
         or recording_speaker.diarization_label
     )
 
-    if PLACEHOLDER_NAME_PATTERN.match(speaker_name):
+    if is_placeholder_speaker_name(speaker_name):
         raise HTTPException(
             status_code=400,
             detail="Cannot promote a speaker with a placeholder name. Please rename them first.",
