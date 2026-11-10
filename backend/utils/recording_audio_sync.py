@@ -32,6 +32,7 @@ from backend.utils.config_manager import config_manager
 from backend.utils.db_batching import bind_batches
 from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.time import utc_now
+from backend.utils.time_units import samples_to_ms, seconds_to_ms
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ def _read_wav_chunk_metadata(path: Path) -> tuple[int, int, int]:
 
     if sample_rate_hz <= 0:
         return 0, channel_count, 0
-    duration_ms = int((frame_count / sample_rate_hz) * 1000)
+    duration_ms = samples_to_ms(frame_count, sample_rate_hz)
     return sample_rate_hz, channel_count, duration_ms
 
 
@@ -140,8 +141,8 @@ def build_recording_audio_chunk_fields(
         )
     if duration_ms <= 0 and source_kind != IMPORT_PART_SOURCE_KIND:
         try:
-            duration_ms = int(
-                round(float(get_audio_duration(str(storage_path)) or 0.0) * 1000.0)
+            duration_ms = seconds_to_ms(
+                float(get_audio_duration(str(storage_path)) or 0.0)
             )
         except Exception:  # noqa: BLE001 -- boundary: the duration is advisory; ffprobe failures must not fail the sync
             duration_ms = 0
