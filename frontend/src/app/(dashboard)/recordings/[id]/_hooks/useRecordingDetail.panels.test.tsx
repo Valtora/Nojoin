@@ -120,12 +120,12 @@ describe("recording page panels (#834)", () => {
     expect(takeTour(result)).toEqual([
       ["Transcript View", "transcript", "captures"],
       ["Audio Controls", "transcript", "captures"],
-      ["AI Notes", "notes", "captures"],
+      ["Meeting notes", "notes", "captures"],
       ["Documents", "documents", "captures"],
       ["Analytics", "analytics", "captures"],
       // Desktop opens these in the side column, beside the panel last shown.
       ["Speakers", "analytics", "speakers"],
-      ["My Notes", "analytics", "my-notes"],
+      ["Your notes", "analytics", "my-notes"],
       ["Captures", "analytics", "captures"],
       ["Meeting Edge", "analytics", "meeting-edge"],
       ["Meeting Chat", "analytics", "meeting-edge"],

@@ -216,7 +216,7 @@ def test_the_fallback_follows_its_own_setting(ollama):
     backend = _backend(
         secondary_llm_provider="ollama",
         secondary_ollama_model="think-model",
-        secondary_ollama_api_url=URL,  # Same server: a second private address is refused.
+        secondary_ollama_api_url=URL,  # The primary's server, which is trusted too.
         secondary_ollama_think=True,
         ollama_think=False,
     )

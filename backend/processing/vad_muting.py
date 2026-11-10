@@ -3,10 +3,11 @@
 With ``enable_vad`` on, the VAD stage writes two files of the same length and
 rate: the normalised 16 kHz mono file, and a copy with every sample outside
 speech set to zero. Muting never cuts audio, so both share one time base, and
-each stage may read either. Transcription and the speaker side (diarisation,
-the phantom filter and final-pass voiceprints) each have their own switch.
-Transcription hears the muted file by default and the speaker side the
-unmuted one.
+each stage may read either. Transcription always hears the muted file. The
+speaker side (diarisation, the phantom filter and final-pass voiceprints)
+hears the unmuted one unless ``vad_mute_diarization``, the "Faster speaker
+separation" setting, is on. Transcription's own switch,
+``vad_mute_transcription``, was retired by #961: a stored value is ignored.
 
 Diarisation runs first, so muted transcription can hear a third file (#670):
 the muted one with the unmuted audio put back inside every diarised turn but
@@ -39,14 +40,12 @@ VAD_EDGE_MUTE_MS = 1000
 # held in memory whole: about 65 s at 16 kHz.
 _UNION_BLOCK_FRAMES = 1 << 20
 
-VAD_MUTE_TRANSCRIPTION_KEY = "vad_mute_transcription"
 VAD_MUTE_DIARIZATION_KEY = "vad_mute_diarization"
 
-# The shipped defaults, also the user defaults in config_defaults. The worker
+# The shipped default, also the user default in config_defaults. The worker
 # merge does not apply user defaults, so a user with no stored value reaches
-# _switch with the key unset and gets these.
+# _switch with the key unset and gets this.
 VAD_MUTE_DEFAULTS: dict[str, bool] = {
-    VAD_MUTE_TRANSCRIPTION_KEY: True,
     VAD_MUTE_DIARIZATION_KEY: False,
 }
 
@@ -80,13 +79,15 @@ def _switch(config: Mapping[str, object], key: str) -> bool:
 def muted_stages(config: Mapping[str, object] | None) -> MutedStages:
     """The stages that read muted audio under ``config``.
 
-    With ``enable_vad`` off nothing is muted, whatever the switches hold.
+    With ``enable_vad`` off nothing is muted, whatever the switch holds. With
+    it on, transcription always is: a retired ``vad_mute_transcription`` still
+    on a user's row is not read.
     """
     config = config or {}
     if not config.get("enable_vad", True):
         return MutedStages(transcription=False, diarization=False)
     return MutedStages(
-        transcription=_switch(config, VAD_MUTE_TRANSCRIPTION_KEY),
+        transcription=True,
         diarization=_switch(config, VAD_MUTE_DIARIZATION_KEY),
     )
 

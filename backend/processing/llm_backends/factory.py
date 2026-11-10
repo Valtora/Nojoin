@@ -5,6 +5,9 @@ from backend.processing.llm_backends.base import LLMBackend
 from backend.processing.llm_backends.gemini import GeminiLLMBackend
 from backend.processing.llm_backends.ollama import OllamaLLMBackend
 from backend.processing.llm_backends.openai import OpenAILLMBackend
+from backend.utils.config_manager import ENV_OVERRIDES
+from backend.utils.llm_config import install_wide_ollama_url
+from backend.utils.ollama_url_policy import OllamaURLValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,7 @@ def get_llm_backend(
     think: bool | None = None,
     cli_user_id: int | None = None,
     cli_provider: str | None = None,
+    trusted_api_url: str | None = None,
 ):
     """
     Factory function to instantiate the appropriate LLM backend.
@@ -29,6 +33,8 @@ def get_llm_backend(
         api_key (str): API key for the provider (optional)
         model (str): Model name (optional)
         api_url (str): API URL for local providers (optional)
+        trusted_api_url (str): Ollama only: a stored install-wide address
+            exempt from the outbound check besides the primary's own.
     Returns:
         Instance of the appropriate LLMBackend subclass.
     Raises:
@@ -62,6 +68,7 @@ def get_llm_backend(
             context_window=context_window,
             allow_private_api_url=allow_private_api_url,
             think=think,
+            trusted_api_url=trusted_api_url,
         )
     elif provider == "cli":
         from backend.processing.cli_backend import CliLLMBackend
@@ -379,6 +386,9 @@ def get_llm_backend_with_secondary(
         think=primary_config.think,
         cli_user_id=primary_config.cli_user_id,
         cli_provider=primary_config.cli_provider,
+        # Each Ollama in the chain trusts the address stored for its own role,
+        # so a private fallback beside a primary elsewhere is not refused.
+        trusted_api_url=install_wide_ollama_url(primary_config),
     )
 
     secondary_cfg = primary_config.secondary_config()
@@ -394,6 +404,17 @@ def get_llm_backend_with_secondary(
         # case bottoms out immediately.
         secondary = get_llm_backend_with_secondary(secondary_cfg, purpose)
         return SecondaryLLMBackend(primary=primary, secondary=secondary)
+    except OllamaURLValidationError as exc:
+        setting = getattr(secondary_cfg, "api_url_setting", "ollama_api_url")
+        logger.warning(
+            "The Ollama address in %s was refused where it is used: %s "
+            "Requests run on %s alone. Correct the address in .env or in "
+            "Settings > AI providers.",
+            ENV_OVERRIDES.get(setting, setting),
+            exc,
+            primary_config.provider,
+        )
+        return primary
     except Exception as exc:  # noqa: BLE001 -- boundary: continue with primary only if secondary init fails
         logger.warning(
             "Failed to initialise secondary LLM backend (%s): %s. "

@@ -22,11 +22,13 @@ import IconButton from "@/components/ui/IconButton";
 import { cn } from "@/lib/cn";
 import { useNavigationStore, type SideTab } from "@/lib/store";
 
+import { PANEL_LABELS, sidePanelsPhrase } from "./panelLabels";
+
 const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
-  { tab: "speakers", label: "Speakers", icon: Users },
-  { tab: "my-notes", label: "My notes", icon: StickyNote },
-  { tab: "captures", label: "Captures", icon: Images },
-  { tab: "meeting-edge", label: "Meeting Edge", icon: Sparkles },
+  { tab: "speakers", label: PANEL_LABELS.speakers, icon: Users },
+  { tab: "my-notes", label: PANEL_LABELS["my-notes"], icon: StickyNote },
+  { tab: "captures", label: PANEL_LABELS.captures, icon: Images },
+  { tab: "meeting-edge", label: PANEL_LABELS["meeting-edge"], icon: Sparkles },
 ];
 
 interface RecordingSideColumnProps {
@@ -34,7 +36,7 @@ interface RecordingSideColumnProps {
   inFlight?: boolean;
   /** The speaker panel, as the page builds it. */
   speakers: ReactNode;
-  /** The My notes list, as the page builds it. */
+  /** The user's own notes (Your notes), as the page builds them. */
   myNotes: ReactNode;
   /** The Captures list, as the page builds it. */
   captures: ReactNode;
@@ -48,7 +50,7 @@ interface RecordingSideColumnProps {
 }
 
 /**
- * The top of the side column: Speakers, My notes, Captures and Meeting Edge as tabs (the
+ * The top of the side column: Speakers, Your notes, Captures and Meeting Edge as tabs (the
  * WAI-ARIA tabs pattern), and the button that collapses it. Every panel stays
  * mounted, so switching tabs keeps a rename or an edit where it was.
  *
@@ -165,7 +167,7 @@ function SideTabs({
 }
 
 /**
- * The recording's desktop side column: Speakers, My notes, Captures and
+ * The recording's desktop side column: Speakers, Your notes, Captures and
  * Meeting Edge as tabs on top, and Chat below, each part collapsible, with a handle
  * between them while both are open.
  */
@@ -205,9 +207,9 @@ export default function RecordingSideColumn({
           aria-controls="side-tabs"
         >
           <Users className="h-3.5 w-3.5" />
-          {meetingEdge === undefined
-            ? "Speakers, My notes and Captures"
-            : "Speakers, My notes, Captures and Meeting Edge"}
+          {sidePanelsPhrase(
+            SIDE_TABS.map(({ tab }) => tab).filter((tab) => tab !== "meeting-edge" || meetingEdge !== undefined),
+          )}
           <ChevronDown className="ml-auto h-3.5 w-3.5" />
         </ButtonBase>
         {allowChat && <div className="min-h-0 flex-1">
@@ -325,8 +327,8 @@ export function RecordingSideRail({
       <IconButton
         size="sm"
         icon={<StickyNote />}
-        aria-label="Show my notes"
-        title="Show my notes"
+        aria-label="Show your notes"
+        title="Show your notes"
         onClick={() => show("my-notes")}
       />
       <IconButton

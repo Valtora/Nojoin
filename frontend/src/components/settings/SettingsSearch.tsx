@@ -9,6 +9,7 @@ import { Search } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { isImeComposing } from "@/lib/imeComposition";
+import type { Settings } from "@/types";
 
 import {
   SETTINGS_CATEGORIES,
@@ -22,6 +23,8 @@ import { SETTINGS_INPUT_CLASS } from "./settingsControls";
 
 interface SettingsSearchProps {
   viewer: SettingsViewer;
+  /** The settings the page is showing, so a hidden row is not offered. */
+  settings?: Settings;
   /** Lets the shell dot-mark matching categories in the navigation. */
   onQueryChange?: (query: string) => void;
   onNavigate?: () => void;
@@ -40,6 +43,7 @@ interface SettingsSearchProps {
  */
 export default function SettingsSearch({
   viewer,
+  settings,
   onQueryChange,
   onNavigate,
 }: SettingsSearchProps) {
@@ -50,8 +54,8 @@ export default function SettingsSearch({
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const results = useMemo(
-    () => searchSettingsRegistry(query, viewer),
-    [query, viewer],
+    () => searchSettingsRegistry(query, viewer, undefined, settings),
+    [query, viewer, settings],
   );
 
   useEffect(() => {
