@@ -195,6 +195,15 @@ describe("the side column's Speakers, Your notes, Captures and Meeting Edge tabs
     expect(screen.getByRole("button", { name: "Speakers, Your notes and Captures" })).toBeInTheDocument();
   });
 
+  it("names Tasks in the collapsed bar only where the meeting has linked tasks", () => {
+    useNavigationStore.setState({ isSpeakerPanelCollapsed: true });
+    const { rerender } = render(column(true, true));
+    expect(screen.getByRole("button", { name: "Speakers, Your notes, Captures, Meeting Edge and Tasks" })).toBeInTheDocument();
+
+    rerender(column(true, false));
+    expect(screen.getByRole("button", { name: "Speakers, Your notes, Captures and Meeting Edge" })).toBeInTheDocument();
+  });
+
   it("shows the tabs over Chat's bar when Chat is collapsed", () => {
     useNavigationStore.setState({ isChatPanelCollapsed: true, sideTab: "my-notes" });
     renderColumn();
