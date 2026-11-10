@@ -18,6 +18,14 @@ const TOUR_DELAY_MS = 1500;
 // keystroke-level model), so a tour does not land on the click or key that
 // follows leaving a field, such as a click back into it.
 const TOUR_IDLE_MS = 1500;
+// For this long after a tour opens, a click on its overlay is taken to be one
+// that was already on its way to the page, and is ignored (#984). The overlay
+// takes 400 ms to fade in, and stopping a click already started takes about
+// another quarter of a second (the stop-signal reaction time), so a click
+// before about 0.65 s cannot be called off. Deciding to dismiss the tour takes
+// longer than a second (1.35 s of mental preparation in the keystroke-level
+// model), so a click that means to close it still does.
+const TOUR_CLICK_GRACE_MS = 1000;
 
 function useTourUserId(enabled = true) {
   const [userId, setUserId] = useState<number | null>(null);
@@ -60,6 +68,7 @@ function useScheduledTour(
         typeof step.element !== 'string' || document.querySelector(step.element),
       );
       if (validSteps.length === 0) return;
+      const openedAt = Date.now();
       activeDriver = driver({
         showProgress: true,
         steps: validSteps,
@@ -67,7 +76,12 @@ function useScheduledTour(
         nextBtnText: 'Next',
         prevBtnText: 'Previous',
         doneBtnText: 'Done',
-        // Escape, the close button, the overlay and Done all arrive here.
+        // A click on the overlay comes here instead of closing the tour. Once
+        // the grace has passed it closes the tour as anything else does.
+        overlayClickBehavior: () => {
+          if (Date.now() - openedAt >= TOUR_CLICK_GRACE_MS) end(true);
+        },
+        // Escape, the close button and Done arrive here, at any time.
         // driver.js skips onDestroyed when a tour closes in the 400 ms a step
         // takes to animate in, so the end can't wait for it (#915).
         onDestroyStarted: () => end(true),
