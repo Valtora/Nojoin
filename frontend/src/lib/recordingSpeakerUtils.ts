@@ -276,10 +276,11 @@ export const normaliseSpeakerName = (name: string): string => {
 };
 
 // Mirrors backend/utils/speaker_names/placeholder.py, the one rule for a name
-// that is only a placeholder: change them together. "N:L0" and "C:<label>" are
-// the labels final diarisation with a native engine gives an unnamed speaker.
+// that is only a placeholder: change them together. "N:L0" and "C:SPEAKER_00"
+// are the labels final diarisation with a native engine gives an unnamed
+// speaker; a real name that starts with "N:" or "C:" is still a name.
 const PLACEHOLDER_SPEAKER_NAME =
-  /^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*|[NC]:\S+)$/i;
+  /^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*|N:L\d+|C:SPEAKER_\d+)$/i;
 
 /**
  * A fallback label such as "Speaker 2", "Unknown" or "N:L0", or no name at

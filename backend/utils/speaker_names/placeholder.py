@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import re
 
-# ``N:L0`` and ``C:<label>`` are the labels final diarisation with a native
+# ``N:L0`` and ``C:SPEAKER_00`` are the labels final diarisation with a native
 # engine gives a speaker (``processing/diarization_union.py``); until named, they
-# are as much a placeholder as ``SPEAKER_00``. "New Voice N" is a name earlier
-# releases gave unmatched voices.
+# are as much a placeholder as ``SPEAKER_00``. Only those two shapes count, so a
+# real name that happens to start with ``N:`` or ``C:`` stays a name. "New Voice
+# N" is a name earlier releases gave unmatched voices.
 PLACEHOLDER_SPEAKER_PATTERN = re.compile(
-    r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*|[NC]:\S+)$",
+    r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*|N:L\d+|C:SPEAKER_\d+)$",
     re.IGNORECASE,
 )
 
