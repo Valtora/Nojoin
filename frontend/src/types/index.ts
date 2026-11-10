@@ -79,6 +79,30 @@ export interface GlobalSpeaker extends BaseDBModel {
   tags?: PeopleTag[];
 }
 
+export interface PersonMeetingRead {
+  recording_id: RecordingId;
+  title: string;
+  date: string;
+  duration_seconds: number | null;
+  talk_time_seconds: number;
+}
+
+export interface PersonTalkMonthRead {
+  /** Calendar month in the user's time-zone setting, formatted YYYY-MM. */
+  month: string;
+  talk_time_seconds: number;
+}
+
+/** Full-history figures alongside the newest 50 owned, linked meetings. */
+export interface PersonMeetingsRead {
+  meetings: PersonMeetingRead[];
+  meeting_count: number;
+  total_talk_time_seconds: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  talk_time_by_month: PersonTalkMonthRead[];
+}
+
 /**
  * The fields a person update changes; an absent field is left as it is.
  * Mirrors `GlobalSpeakerUpdate` in backend/models/speaker.py.
@@ -564,6 +588,12 @@ export interface Tag extends BaseDBModel {
   color?: string;
   parent_id?: number;
   children?: Tag[];
+}
+
+export interface UserTaskListParams {
+  status?: "active" | "open" | "completed" | "archived" | "all";
+  recording_id?: RecordingId;
+  tag_ids?: number[];
 }
 
 export interface UserTask extends BaseDBModel {
@@ -1153,7 +1183,7 @@ export interface ModelStatusInfo {
   path: string | null;
   checked_paths: string[];
   /** Optional assets report their preparation lifecycle separately from presence. */
-  state?: "absent" | "downloading" | "ready" | "failed" | null;
+  state?: "absent" | "downloading" | "ready" | "failed" | "retry_wait" | null;
   /** Total expected download size from the model's asset manifest. */
   size_bytes?: number | null;
   unused_reason?: string | null;

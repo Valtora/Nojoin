@@ -41,7 +41,7 @@ describe("Tasks tag filters", () => {
     api.getTags.mockResolvedValue(tags);
     api.getRecordings.mockResolvedValue([]);
     // Stand in for the server's any-of tag filter.
-    api.getUserTasks.mockImplementation(async (_status: string, tagIds: number[] = []) =>
+    api.getUserTasks.mockImplementation(async (_status: string, { tagIds = [] }: { tagIds?: number[] } = {}) =>
       tagIds.length === 0 ? tasks : tasks.filter((item) => item.tags?.some((tag) => tagIds.includes(tag.id))),
     );
   });
@@ -52,14 +52,14 @@ describe("Tasks tag filters", () => {
 
     act(() => useNavigationStore.getState().toggleTagFilter(1));
     await screen.findByRole("heading", { name: "Plan release" });
-    expect(api.getUserTasks).toHaveBeenLastCalledWith("all", [1]);
+    expect(api.getUserTasks).toHaveBeenLastCalledWith("all", { tagIds: [1] });
     expect(screen.queryByRole("heading", { name: "Review product" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Unlabelled task" })).not.toBeInTheDocument();
 
     act(() => useNavigationStore.getState().toggleTagFilter(2));
     await screen.findByRole("heading", { name: "Review product" });
     expect(screen.getByRole("heading", { name: "Plan release" })).toBeInTheDocument();
-    expect(api.getUserTasks).toHaveBeenLastCalledWith("all", [1, 2]);
+    expect(api.getUserTasks).toHaveBeenLastCalledWith("all", { tagIds: [1, 2] });
 
     fireEvent.click(screen.getByTitle("Remove Planning filter"));
     await screen.findByRole("heading", { name: "Review product" });
