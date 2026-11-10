@@ -44,7 +44,10 @@ from backend.processing.embedding import (
     too_little_speech_detail,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
-from backend.services.person_meetings import person_meeting_counts
+from backend.services.person_meetings import (
+    person_meeting_counts,
+    person_sample_sources,
+)
 from backend.services.recording_identity_service import get_recordings_by_public_ids
 from backend.services.tag_ownership import require_own_tag_ids
 from backend.utils.canonical_pipeline import (
@@ -462,16 +465,8 @@ async def get_speaker_segments(
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
 
-    statement = (
-        select(RecordingSpeaker, Recording, Transcript)
-        .join(Recording, Recording.id == RecordingSpeaker.recording_id)
-        .outerjoin(Transcript, Transcript.recording_id == RecordingSpeaker.recording_id)
-        .where(RecordingSpeaker.global_speaker_id == speaker_id)
-        .where(Recording.is_deleted == False)
-        .order_by(Recording.created_at.desc())
-        .limit(20)  # Scan last 20 recordings
-    )
-    result = await db.execute(statement)
+    # Scan the last 20 recordings.
+    result = await db.execute(person_sample_sources(speaker_id, current_user.id, 20))
     rows = result.all()
 
     segments = []
