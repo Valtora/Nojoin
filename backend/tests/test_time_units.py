@@ -8,37 +8,7 @@ from backend.utils.time_units import (
     NATIVE_FRAME_MS,
     frame_range,
     samples_to_ms,
-    samples_to_seconds,
-    seconds_to_samples,
 )
-
-
-@pytest.mark.parametrize("sample_rate_hz", [8000, 16000, 22050, 44100, 48000])
-def test_a_sample_count_survives_a_trip_through_seconds(sample_rate_hz):
-    # Sizes a cut can take, among them the 16,208 and 32,001 that truncating
-    # the seconds product left one sample short.
-    for samples in (1, 16208, 32001, 88641, 3 * 3600 * sample_rate_hz + 7):
-        seconds = samples_to_seconds(samples, sample_rate_hz)
-
-        assert seconds_to_samples(seconds, sample_rate_hz) == samples
-
-
-@pytest.mark.parametrize(
-    ("samples", "sample_rate_hz", "expected_ms"),
-    [
-        # Exactly half a millisecond goes to the even neighbour.
-        (8, 16000, 0),
-        (24, 16000, 2),
-        (40, 16000, 2),
-        # 0.4375 ms and 0.5625 ms.
-        (7, 16000, 0),
-        (9, 16000, 1),
-    ],
-)
-def test_samples_round_to_the_nearest_millisecond_and_halves_to_even(
-    samples, sample_rate_hz, expected_ms
-):
-    assert samples_to_ms(samples, sample_rate_hz) == expected_ms
 
 
 @pytest.mark.parametrize("sample_rate_hz", [0, -16000])

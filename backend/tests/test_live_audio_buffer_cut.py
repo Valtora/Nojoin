@@ -46,10 +46,12 @@ def test_consuming_the_whole_buffer_leaves_nothing_to_replay(
         assert staged.new_abs_start == pytest.approx(10.0 + samples / LIVE_SAMPLE_RATE)
 
 
-def test_a_cut_inside_the_buffer_carries_the_samples_after_it(
+def test_a_cut_inside_the_buffer_lands_on_the_nearest_sample(
     tmp_path: Path, saved: dict[str, int]
 ) -> None:
-    """The next run's origin is the first carried sample, not the requested cut."""
+    """Sample 16,000 starts at exactly 1 s and sample 16,001 62.5 microseconds
+    later, so a cut 30 microseconds past 1 s is nearest sample 16,000: the
+    carry holds the other 16,000 samples and the next run starts at 1 s."""
     audio = torch.zeros(1, 32000)
 
     with stage_live_audio(
@@ -58,15 +60,12 @@ def test_a_cut_inside_the_buffer_carries_the_samples_after_it(
         context_path=str(tmp_path / "context.wav"),
         combined_channels=audio,
         combined_abs_start=0.0,
-        # 1.00003 s is between samples 16000 and 16001.
         cut_point=1.00003,
         prev_context_channels=torch.zeros(1, 0),
         context_window_samples=0,
     ) as staged:
-        carried = saved["buffer.wav"]
-        assert staged.new_abs_start == pytest.approx(
-            (32000 - carried) / LIVE_SAMPLE_RATE
-        )
+        assert saved["buffer.wav"] == 16000
+        assert staged.new_abs_start == pytest.approx(1.0)
 
 
 def test_a_cut_just_past_the_buffer_does_not_advance_beyond_it(
