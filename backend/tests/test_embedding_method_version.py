@@ -202,3 +202,24 @@ def test_rank_global_speakers_orders_comparable_people_best_first():
     )
     assert match is close
     assert score == pytest.approx(ranking[0][1])
+
+
+@pytest.mark.parametrize("name", ["N:L0", "C:SPEAKER_03", "New Voice 3"])
+def test_a_person_named_for_a_placeholder_label_is_left_out_of_the_ranking(name):
+    probe = _vec(1.0, 0.0, 0.0)
+    real = FakeGlobalSpeaker(
+        id=1,
+        name="Alice",
+        embedding=_vec(0.9, 0.1, 0.0),
+        embedding_version=EMBEDDING_METHOD_VERSION,
+    )
+    placeholder = FakeGlobalSpeaker(
+        id=2,
+        name=name,
+        embedding=_vec(1.0, 0.0, 0.0),
+        embedding_version=EMBEDDING_METHOD_VERSION,
+    )
+
+    ranking = rank_global_speakers(probe, [placeholder, real])
+
+    assert [person.name for person, _ in ranking] == ["Alice"]

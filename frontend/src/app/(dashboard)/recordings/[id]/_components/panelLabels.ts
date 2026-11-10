@@ -16,6 +16,7 @@ export const PANEL_LABELS: Record<ActivePanel, string> = {
   "my-notes": "Your notes",
   captures: "Captures",
   "meeting-edge": "Meeting Edge",
+  tasks: "Tasks",
 };
 
 /** The side panels' names as one phrase, as in "Speakers, Your notes and Captures". */
