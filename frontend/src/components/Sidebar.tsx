@@ -360,6 +360,14 @@ export default function Sidebar() {
   const listRef = useRef<HTMLUListElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // A new search, filter or view starts at the top of its results. Left at
+  // the end of the old list, the scroller stays at the end of the new one
+  // and the footer loads page after page. Keyed as the list hook keys its
+  // requests, so filters rebuilt with the same values leave the list alone.
+  const listFiltersKey = JSON.stringify(listFilters);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [listFiltersKey]);
   // Where focus goes once the rows an action took away have gone, or the
   // batch bar holding focus has closed: a row link by id, or the search box.
   const pendingFocusRef = useRef<RecordingId | "search" | null>(null);
@@ -1120,7 +1128,7 @@ export default function Sidebar() {
         </div>
       )}
       {recordings.length > 0 && (
-        // Escape anywhere in the list, header checkbox included, clears the selection.
+        // Escape anywhere in the list clears the selection.
         <div onKeyDown={handleListKeyDown}>
           <ul
             id="recordings-list"

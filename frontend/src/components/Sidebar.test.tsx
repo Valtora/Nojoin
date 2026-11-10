@@ -895,6 +895,48 @@ describe("Sidebar", () => {
       }
     });
 
+    it("starts a new search at the top of its results, not where the old list was left", async () => {
+      const roots: (Element | Document | null | undefined)[] = [];
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          constructor(_callback: unknown, options?: IntersectionObserverInit) {
+            roots.push(options?.root);
+          }
+          observe = vi.fn();
+          disconnect = vi.fn();
+        },
+      );
+      try {
+        serveLibrary();
+        renderWithProviders(<Sidebar />);
+        await screen.findByRole("heading", { name: "Meeting 49" });
+        await waitFor(() => expect(roots.length).toBeGreaterThan(0));
+        const scroller = roots.at(-1) as HTMLElement;
+        scroller.scrollTop = 4000;
+
+        fireEvent.change(screen.getByRole("textbox", { name: "Search recordings" }), {
+          target: { value: "budget" },
+        });
+
+        await waitFor(() =>
+          expect(getRecordings).toHaveBeenLastCalledWith(
+            expect.objectContaining({ q: "budget", skip: 0 }),
+          ),
+        );
+        expect(scroller.scrollTop).toBe(0);
+
+        // Choosing a date mode with no date set asks for the same list, so it stays put.
+        scroller.scrollTop = 4000;
+        fireEvent.click(screen.getByRole("button", { name: "Filter recordings" }));
+        fireEvent.click(screen.getByRole("button", { name: "After" }));
+        expect(screen.getByRole("button", { name: "After" })).toHaveClass("bg-action-tint");
+        expect(scroller.scrollTop).toBe(4000);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it("clears the search with Escape, keeps focus, and leaves a composition's Escape alone", async () => {
       renderWithProviders(<Sidebar />);
       await screen.findByRole("heading", { name: "Latest meeting" });
