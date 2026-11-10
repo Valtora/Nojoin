@@ -87,7 +87,7 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. `name_pending` marks a suggested name nobody has confirmed yet, which the app shows as `Alice?`. A voice match scoring 0.85 or more shows as a plain name in the app, so it reads `false` here although nobody has confirmed it. |
 | `list_tags` | `mcp:read` | Your tags, usable as search terms. |
 | `list_people` | `mcp:read` | Your People library: names, contact details, notes and tags. |
-| `get_person` | `mcp:read` | One person, with the meetings they appear in. |
+| `get_person` | `mcp:read` | One person, with the meetings they appear in, newest first. These are the meetings their **Person Details** counts: deleted meetings and any where all of their lines were moved to other speakers are left out. |
 | `list_calendar_events` | `mcp:read` | Your synced calendar events, for linking recordings to meetings. |
 | `list_tasks` | `mcp:read` | Your tasks. |
 | `rename_recording` | `mcp:write` | Rename a recording. The name counts as the user's, so a generated title never replaces it. |

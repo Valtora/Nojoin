@@ -3,8 +3,9 @@
 from collections import defaultdict
 from collections.abc import Sequence
 
-from sqlalchemy import RowMapping, func, text
+from sqlalchemy import RowMapping, and_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import Subquery
 from sqlmodel import col, select
 
@@ -20,8 +21,23 @@ from backend.utils.timezones import utc_naive_to_timezone
 # A meeting counts for a person only through a speaker that is neither merged
 # away nor inactive (every line reassigned to someone else). The status is an
 # allow-list, so a status added later counts nowhere until someone decides it
-# should, and the history and the People list count share it.
+# should. Every reader of a person's meetings shares it: the history and the
+# People list count here, the recordings list's person filter and the MCP
+# get_person tool through counted_speaker().
 COUNTED_SPEAKER_STATUS = "active"
+
+
+def counted_speaker() -> ColumnElement[bool]:
+    """A ``RecordingSpeaker`` row through which its meeting counts for its person.
+
+    The caller joins the recording and decides which recordings it reads; the
+    raw-SQL history query applies the same two tests to ``rs``.
+    """
+    return and_(
+        col(RecordingSpeaker.merged_into_id).is_(None),
+        col(RecordingSpeaker.speaker_status) == COUNTED_SPEAKER_STATUS,
+    )
+
 
 # `links` holds the person's active speakers in meetings the user still owns;
 # matching against it keeps several labels for one person from multiplying
@@ -116,8 +132,7 @@ def person_meeting_counts(user_id: int | None) -> Subquery:
         .where(
             Recording.user_id == user_id,
             col(Recording.is_deleted).is_(False),
-            col(RecordingSpeaker.merged_into_id).is_(None),
-            RecordingSpeaker.speaker_status == COUNTED_SPEAKER_STATUS,
+            counted_speaker(),
         )
         .group_by(col(RecordingSpeaker.global_speaker_id))
         .subquery()

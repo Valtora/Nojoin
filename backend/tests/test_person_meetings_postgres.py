@@ -22,6 +22,9 @@ from sqlmodel import Session
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.core.db import driver_urls
+from backend.core.security import MCP_READ_SCOPE
+from backend.mcp_server.auth import current_mcp_scopes, current_mcp_user
+from backend.mcp_server.tools_people import get_person
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
@@ -751,6 +754,192 @@ async def test_history_and_people_list_count_the_same_speaker_statuses(
     assert result["meeting_count"] == len(result["meetings"]) == counted
     assert result["total_talk_time_seconds"] == 3 * counted
     assert await _listed_count(client, history.person) == counted
+
+
+@pytest.fixture
+def mcp_db(monkeypatch: pytest.MonkeyPatch, history: HistoryDatabase) -> None:
+    """Point the MCP tools' lazily imported session maker at this schema."""
+    import backend.core.db as core_db
+
+    monkeypatch.setattr(core_db, "async_session_maker", history.sessions)
+
+
+async def _filtered(client: AsyncClient, *people: GlobalSpeaker) -> list[str]:
+    """The recordings list filtered to these people, newest first."""
+    response = await client.get(
+        "/api/v1/recordings/", params={"speaker_ids": [person.id for person in people]}
+    )
+    assert response.status_code == 200, response.text
+    return [item["id"] for item in response.json()]
+
+
+async def _get_person_meetings(
+    history: HistoryDatabase, person: GlobalSpeaker
+) -> list[str]:
+    """The meetings the MCP get_person tool lists, as the owner sees them."""
+    current_mcp_user.set(history.owner)
+    current_mcp_scopes.set(frozenset({MCP_READ_SCOPE}))
+    result = await get_person(person.id)
+    return [meeting["id"] for meeting in result["meetings"]]
+
+
+async def _readers(
+    client: AsyncClient, history: HistoryDatabase, person: GlobalSpeaker
+) -> dict[str, Any]:
+    """What each reader of a person's meetings says, to compare in one assert."""
+    read = await _read(client, person)
+    return {
+        "history": [row["recording_id"] for row in read["meetings"]],
+        "history_count": read["meeting_count"],
+        "people_count": await _listed_count(client, person),
+        "filter": await _filtered(client, person),
+        "get_person": await _get_person_meetings(history, person),
+    }
+
+
+def _agreeing(expected: list[str]) -> dict[str, Any]:
+    return {
+        "history": expected,
+        "history_count": len(expected),
+        "people_count": len(expected),
+        "filter": expected,
+        "get_person": expected,
+    }
+
+
+@pytest.mark.anyio
+async def test_every_reader_skips_meetings_their_lines_left_or_merged_away(
+    history: HistoryDatabase, client: AsyncClient, mcp_db: None
+) -> None:
+    with Session(history.engine) as session:
+        kept = _meeting(session, history.owner, "kept", created_at=FEBRUARY)
+        _line(session, _link(session, kept, history.person), 2)
+        moved = _meeting(session, history.owner, "moved")
+        ours = _link(session, moved, history.person)
+        stranger = _link(session, moved, history.foreign_person, "SPEAKER_01")
+        line = _line(session, ours, 5)
+        merged = _meeting(session, history.owner, "merged")
+        source = _link(session, merged, history.person)
+        target = _link(session, merged, history.foreign_person, "SPEAKER_01")
+        _line(session, target, 3)
+        session.flush()
+        line.recording_speaker_id = stranger.id
+        source.merged_into_id = target.id
+        session.add_all([line, source])
+        _settle_statuses(session, kept.id, moved.id, merged.id)
+        assert (ours.speaker_status, source.speaker_status) == ("inactive", "merged")
+        expected = [kept.public_id]
+    assert await _readers(client, history, history.person) == _agreeing(expected)
+
+
+@pytest.mark.anyio
+async def test_every_reader_lists_a_meeting_again_once_a_line_moves_back(
+    history: HistoryDatabase, client: AsyncClient, mcp_db: None
+) -> None:
+    with Session(history.engine) as session:
+        recording = _meeting(session, history.owner, "back-and-forth")
+        ours = _link(session, recording, history.person)
+        stranger = _link(session, recording, history.foreign_person, "SPEAKER_01")
+        line = _line(session, ours, 4)
+        _line(session, stranger, 9)
+        session.flush()
+        recording_id, ours_id, line_id = recording.id, ours.id, line.id
+        public_id = recording.public_id
+        line.recording_speaker_id = stranger.id
+        session.add(line)
+        _settle_statuses(session, recording_id)
+    assert await _readers(client, history, history.person) == _agreeing([])
+    with Session(history.engine) as session:
+        moved = session.get(TranscriptUtterance, line_id)
+        assert moved is not None
+        moved.recording_speaker_id = ours_id
+        session.add(moved)
+        _settle_statuses(session, recording_id)
+    assert await _readers(client, history, history.person) == _agreeing([public_id])
+
+
+@pytest.mark.anyio
+async def test_an_active_and_an_inactive_label_in_one_meeting_match_it_once(
+    history: HistoryDatabase, client: AsyncClient, mcp_db: None
+) -> None:
+    with Session(history.engine) as session:
+        recording = _meeting(session, history.owner, "two-labels")
+        _line(session, _link(session, recording, history.person), 3)
+        silent = _link(session, recording, history.person, "SPEAKER_01")
+        _settle_statuses(session, recording.id)
+        assert silent.speaker_status == "inactive"
+        expected = [recording.public_id]
+    assert await _readers(client, history, history.person) == _agreeing(expected)
+
+
+@pytest.mark.anyio
+async def test_filtering_by_two_people_lists_meetings_that_count_for_either(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    # Alice is read after the session closes.
+    with Session(history.engine, expire_on_commit=False) as session:
+        alice = GlobalSpeaker(name="Alice Example", user_id=history.owner.id)
+        session.add(alice)
+        session.flush()
+        first = _meeting(session, history.owner, "first", created_at=JANUARY)
+        _line(session, _link(session, first, history.person), 1)
+        second = _meeting(session, history.owner, "second", created_at=FEBRUARY)
+        _line(session, _link(session, second, alice), 1)
+        both = _meeting(session, history.owner, "both", created_at=datetime(2026, 3, 1))
+        _line(session, _link(session, both, history.person), 1)
+        _line(session, _link(session, both, alice, "SPEAKER_01"), 1)
+        # Dana's line here moved to someone outside the filter.
+        left = _meeting(session, history.owner, "left", created_at=datetime(2026, 4, 1))
+        dana = _link(session, left, history.person)
+        stranger = _link(session, left, history.foreign_person, "SPEAKER_01")
+        line = _line(session, dana, 2)
+        unrelated = _meeting(session, history.owner, "unrelated")
+        _line(session, _link(session, unrelated, history.foreign_person), 1)
+        session.flush()
+        line.recording_speaker_id = stranger.id
+        session.add(line)
+        _settle_statuses(session, first.id, second.id, both.id, left.id, unrelated.id)
+        expected = [both.public_id, second.public_id, first.public_id]
+    assert await _filtered(client, history.person, alice) == expected
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "counted"),
+    [("active", 1), ("inactive", 0), ("merged", 0), ("unrecognised", 0)],
+)
+async def test_person_filter_and_get_person_count_the_same_speaker_statuses(
+    history: HistoryDatabase,
+    client: AsyncClient,
+    mcp_db: None,
+    status: str,
+    counted: int,
+) -> None:
+    with Session(history.engine) as session:
+        recording = _meeting(session, history.owner, status)
+        speaker = _link(session, recording, history.person)
+        speaker.speaker_status = status
+        session.add(speaker)
+        expected = [recording.public_id] * counted
+        session.commit()
+    assert await _readers(client, history, history.person) == _agreeing(expected)
+
+
+@pytest.mark.anyio
+async def test_get_person_lists_only_the_users_own_meetings(
+    history: HistoryDatabase, client: AsyncClient, mcp_db: None
+) -> None:
+    with Session(history.engine) as session:
+        owned = _meeting(session, history.owner, "owned")
+        _link(session, owned, history.person)
+        # A foreign recording can carry an inconsistent link to our own person.
+        foreign = _meeting(
+            session, history.other, "foreign", created_at=datetime(2030, 1, 1)
+        )
+        _link(session, foreign, history.person)
+        expected = [owned.public_id]
+        session.commit()
+    assert await _readers(client, history, history.person) == _agreeing(expected)
 
 
 async def _select_count(client: AsyncClient, history: HistoryDatabase) -> int:
