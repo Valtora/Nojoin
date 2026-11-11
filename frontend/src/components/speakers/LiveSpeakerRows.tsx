@@ -172,16 +172,18 @@ const LiveSpeakerRow = memo(function LiveSpeakerRow({ label, name, needsName, of
     </ButtonBase>
     <TranscriptActionsMenu label={`Actions for ${name}`} title="Speaker actions" reveal="always"
       items={items} active={menuActive} />
-    {/* A pending name wraps under the name and its menu. */}
-    {suggestion && onDismissSuggestion && <div className="flex basis-full flex-wrap items-center gap-1">
-      <LiveSpeakerSuggestion label={label} name={suggestion} source={suggestionSource}
+    {/* A pending name wraps under the name and its menu, with its actions
+        on a row of their own beneath it. */}
+    {suggestion && onDismissSuggestion && <div className="basis-full">
+      <LiveSpeakerSuggestion label={label} name={suggestion} source={suggestionSource} layout="below"
         onAccept={(speaker, suggested) => onAssign(speaker, suggested, false)} onDismiss={onDismissSuggestion}
-        focusAfterDecision={() => nameRef.current?.focus()} />
-      <ButtonBase type="button" onClick={() => onShowLine(label)}
-        className={`rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT}`}
-        aria-label={`Go to the line where ${suggestion} was heard`}>
-        Go to line
-      </ButtonBase>
+        focusAfterDecision={() => nameRef.current?.focus()}>
+        <ButtonBase type="button" onClick={() => onShowLine(label)}
+          className={`rounded px-2 text-xs text-action-text hover:bg-action-tint ${TOUCH_TARGET_HEIGHT}`}
+          aria-label={`Go to the line where ${suggestion} was heard`}>
+          Go to line
+        </ButtonBase>
+      </LiveSpeakerSuggestion>
     </div>}
   </SurfaceBase>;
 });

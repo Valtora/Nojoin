@@ -34,6 +34,7 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.user import User
 from backend.utils.live_speaker_labels import live_speaker_display_name
 from backend.utils.speaker_name_suggestions import (
+    MAX_PERSONAL_NAME_LENGTH,
     SPEAKER_SUGGESTION_STATUS_ACCEPTED,
     SPEAKER_SUGGESTION_STATUS_REJECTED,
     SPEAKER_SUGGESTION_STATUS_SUPERSEDED,
@@ -75,7 +76,9 @@ SAME_SPEAKER_DETAIL = "These lines already belong to one speaker"
 
 
 class LiveSpeakerNameUpdate(BaseModel):
-    name: str = Field(max_length=255)
+    # The longest AI name a live suggestion offers is the same, so Accept can
+    # always send it.
+    name: str = Field(max_length=MAX_PERSONAL_NAME_LENGTH)
     create_person: bool = False
     model_config = ConfigDict(extra="ignore")
 
