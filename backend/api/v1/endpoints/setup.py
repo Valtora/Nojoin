@@ -426,25 +426,20 @@ def _validate_llm_provider(
     include_detail: bool = False,
 ) -> dict:
     llm = _build_setup_llm_backend(provider, model, provider_role)
+    # Hosted providers list their models with the key, and Ollama lists its
+    # own: the provider answered, and with no model to probe that is all a
+    # request shows.
     llm.validate_api_key()
 
+    response: dict = {}
     if provider == "ollama":
-        response: dict = {
-            "valid": True,
-            "message": "Connected to Ollama successfully.",
-            "models": llm.list_models(),
-        }
-    else:
-        provider_name = provider.capitalize() if provider else "LLM"
-        response = {"valid": True, "message": f"{provider_name} API key is valid."}
+        response["models"] = llm.list_models()
 
     planned = model_probe.plan_probes(
         (entry.model, entry.role) for entry in probe_models or ()
     )
-    if not planned:
-        response["results"] = []
-        return response
-
+    # With nothing planned this runs nothing, and summarise says the provider
+    # is reachable and asks for a model (#1005).
     results = model_probe.run_probes(
         lambda probe_model: _build_setup_llm_backend(
             provider, probe_model, provider_role
