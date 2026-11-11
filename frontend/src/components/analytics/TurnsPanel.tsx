@@ -27,7 +27,7 @@ export default function TurnsPanel({
 }: TurnsPanelProps) {
   return (
     <div>
-      <div className="@container overflow-x-auto">
+      <div className="@container relative overflow-x-auto">
         <table className="analytics-table w-full text-sm">
           <thead>
             <tr className="border-b border-surface-divider text-left text-xs text-contrast-helper">

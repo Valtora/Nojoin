@@ -93,7 +93,7 @@ class CliLLMBackend(LLMBackend):
         self,
         transcript: str,
         prompt_template: str = None,
-        timeout: int = 60,
+        timeout: Optional[int] = None,
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         eligible_labels: Optional[Sequence[str]] = None,
@@ -101,7 +101,7 @@ class CliLLMBackend(LLMBackend):
         prompt = self.build_speaker_suggestion_prompt(
             prompt_template, transcript, eligible_labels, user_notes, meeting_context
         )
-        text = self._run(prompt)
+        text = self._run(prompt, timeout)
         return self.parse_speaker_inference_result(text, eligible_labels)
 
     def generate_meeting_notes(  # noqa: PLR0913 - matches the LLMBackend contract
@@ -109,7 +109,7 @@ class CliLLMBackend(LLMBackend):
         transcript: str,
         speaker_mapping: Dict[str, str],
         prompt_template: str = None,
-        timeout: int = 60,
+        timeout: Optional[int] = None,
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         output_language_instruction: Optional[str] = None,
@@ -124,34 +124,34 @@ class CliLLMBackend(LLMBackend):
             output_language_instruction,
             notes_context,
         )
-        text = self._run(prompt)
+        text = self._run(prompt, timeout)
         return self.finalise_meeting_notes(self.parse_notes(text))
 
     def generate_meeting_intelligence(
         self,
         request: AutomaticMeetingIntelligenceRequest,
         prompt_template: str = None,
-        timeout: int = 60,
+        timeout: Optional[int] = None,
     ) -> AutomaticMeetingIntelligenceResult:
         prompt = self.build_automatic_meeting_intelligence_prompt(
             request, prompt_template
         )
-        text = self._run(prompt)
+        text = self._run(prompt, timeout)
         return self.parse_automatic_meeting_intelligence_result(text, request)
 
     def generate_text(
         self,
         prompt: str,
-        timeout: int = 60,
+        timeout: Optional[int] = None,
         max_tokens: int = 4096,
     ) -> str:
-        return self._run(prompt)
+        return self._run(prompt, timeout)
 
     def generate_text_from_images(
         self,
         prompt: str,
         images: Sequence[VisionImage],
-        timeout: int = 120,
+        timeout: Optional[int] = None,
         max_tokens: int = 8192,
     ) -> str:
         # Both subscription CLIs take images without any tool grant: Codex via
@@ -175,39 +175,33 @@ class CliLLMBackend(LLMBackend):
         self,
         request: MeetingEdgeRequest,
         prompt_template: str = None,
-        timeout: int = 60,
+        timeout: Optional[int] = None,
     ) -> MeetingEdgeResult:
         # Stateless single-turn, like the other backends: the bounded rolling
         # summary carried in the request provides cross-refresh context, so no
         # resumable session is needed (which would replay unbounded history).
         # self.model is already cli_live_model for the meeting_edge purpose.
         prompt = self.build_meeting_edge_prompt(request, prompt_template)
-        text = self._manager.run_single_turn(
-            self.user_id, prompt, model=self.model, timeout=timeout
-        )
-        return self.parse_meeting_edge_result(text, request)
+        return self.parse_meeting_edge_result(self._run(prompt, timeout), request)
 
     def generate_meeting_analysis(
         self,
         request: MeetingAnalysisRequest,
         prompt_template: str = None,
-        timeout: int = 300,
+        timeout: Optional[int] = None,
     ) -> MeetingAnalysisResult:
         # No provider-native JSON mode exists here: a subscription CLI returns
         # whatever the model wrote. The prompt mandates a bare JSON object and
         # the tolerant fenced/inline parser handles the rest, which is the same
         # arrangement every other structured call on this backend uses.
         prompt = self.build_meeting_analysis_prompt(request, prompt_template)
-        text = self._manager.run_single_turn(
-            self.user_id, prompt, model=self.model, timeout=timeout
-        )
-        return self.parse_meeting_analysis_result(text, request)
+        return self.parse_meeting_analysis_result(self._run(prompt, timeout), request)
 
     def infer_meeting_title(
         self,
         transcript: str,
         prompt_template: str = None,
-        timeout: int = 60,
+        timeout: Optional[int] = None,
         output_language_instruction: Optional[str] = None,
     ) -> str:
         prompt = self.build_title_prompt(
@@ -215,7 +209,7 @@ class CliLLMBackend(LLMBackend):
             transcript,
             output_language_instruction,
         )
-        return self.parse_title(self._run(prompt))
+        return self.parse_title(self._run(prompt, timeout))
 
     # --- chat ---
 
@@ -225,7 +219,7 @@ class CliLLMBackend(LLMBackend):
         meeting_notes: str,
         diarized_transcript: str | None,
         conversation_history: list = None,
-        timeout: int = 60,
+        timeout: Optional[int] = None,
         recording_id: str = None,
     ):
         prompt = self._chat_prompt(
@@ -235,7 +229,7 @@ class CliLLMBackend(LLMBackend):
             conversation_history,
             recording_id,
         )
-        return self._run(prompt)
+        return self._run(prompt, timeout)
 
     def ask_question_streaming(  # noqa: PLR0913 - matches the LLMBackend contract
         self,
@@ -243,7 +237,7 @@ class CliLLMBackend(LLMBackend):
         meeting_notes: str,
         diarized_transcript: str | None,
         conversation_history: list = None,
-        timeout: int = 60,
+        timeout: Optional[int] = None,
         recording_id: str = None,
     ) -> Generator[str, None, None]:
         prompt = self._chat_prompt(
@@ -254,7 +248,7 @@ class CliLLMBackend(LLMBackend):
             recording_id,
         )
         yield from self._manager.stream_single_turn(
-            self.user_id, prompt, model=self.model
+            self.user_id, prompt, model=self.model, timeout=timeout
         )
 
     # --- misc contract methods ---
@@ -266,13 +260,19 @@ class CliLLMBackend(LLMBackend):
 
     def validate_api_key(self) -> bool:
         # A minimal single-turn round-trip proves the subscription token works.
+        # It takes no limit, so the manager's default applies.
         self._run("Reply with exactly: OK")
         return True
 
     # --- helpers ---
 
-    def _run(self, prompt: str) -> str:
-        return self._manager.run_single_turn(self.user_id, prompt, model=self.model)
+    def _run(self, prompt: str, timeout: Optional[int] = None) -> str:
+        # An explicit limit bounds the whole CLI turn (#980). Every method
+        # defaults to None, not to the hosted backends' per-request defaults,
+        # so a caller that gives none gets the manager's DEFAULT_TIMEOUT_SECONDS.
+        return self._manager.run_single_turn(
+            self.user_id, prompt, model=self.model, timeout=timeout
+        )
 
     def _chat_prompt(
         self,

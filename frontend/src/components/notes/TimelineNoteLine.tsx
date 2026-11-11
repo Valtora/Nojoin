@@ -1,21 +1,22 @@
 "use client";
 
 import { useRef, type PointerEvent as ReactPointerEvent } from "react";
-import { ChevronDown, ChevronUp, GripVertical, Pencil, StickyNote } from "lucide-react";
+import { GripVertical, Pencil, StickyNote } from "lucide-react";
 
 import { noteSnippet } from "@/lib/notes/noteOutbox";
 import type { NoteAttachment } from "@/types";
 
 import Button from "../ui/Button";
-import IconButton from "../ui/IconButton";
-import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
 import { NoteFile, useNoteUpload } from "./NoteFiles";
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
-/** Moving a saved point note between transcript lines. */
+/**
+ * Moving a saved point note between transcript lines: the line has the grip,
+ * and the note's editor has Move up and Move down.
+ */
 export interface NoteLineMove {
-  /** A step to the gap above or below; null where there is none. */
+  /** A step to the gap above or below, offered in the editor; null where there is none. */
   onUp: (() => void) | null;
   onDown: (() => void) | null;
   /** Starts a drag from the grip, with a mouse or pen. */
@@ -49,7 +50,7 @@ interface TimelineNoteLineProps {
   onDiscard?: () => void;
   /** Width of the time column, matching the transcript it sits in. */
   timeColumnClassName?: string;
-  /** Move up, Move down and a grip to drag; without it, the note stays put. */
+  /** A grip to drag; without it, the note has none. */
   move?: NoteLineMove;
   /** The note's file, shown under its text; one on its way shows from the outbox. */
   attachment?: NoteAttachment | null;
@@ -103,7 +104,7 @@ export default function TimelineNoteLine({
         <div className="min-w-0 flex-1 border-l-2 border-action-border pl-3">
           <div className="flex flex-wrap items-center gap-x-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
             {move ? (
-              // A mouse's drag handle; the keyboard and touch have Move up and Move down.
+              // A mouse's drag handle; the keyboard and touch have Move up and Move down in Edit.
               <span
                 aria-hidden="true"
                 data-note-grip
@@ -182,43 +183,21 @@ export default function TimelineNoteLine({
           ) : null}
         </div>
       </div>
-      {/* Beside the note, or under it where they would leave it too narrow, as on a phone. */}
-      {move || (onEdit && status === "saved") ? (
+      {/* Beside the note, or under it where it would leave the note too narrow, as on a phone.
+          Edit holds the rest: the text, Delete, and Move up and Move down. */}
+      {onEdit && status === "saved" ? (
         <div className="ml-auto flex shrink-0 items-start pl-3">
-          {move ? (
-            <>
-              <IconButton
-                size="sm"
-                data-note-move="up"
-                aria-label={`Move note up ${name}`}
-                title="Move up a line"
-                icon={<ChevronUp aria-hidden="true" />}
-                disabled={!move.onUp}
-                onClick={() => move.onUp?.()}
-                className={`shrink-0 -my-1 ${TOUCH_TARGET_SQUARE}`}
-              />
-              <IconButton
-                size="sm"
-                data-note-move="down"
-                aria-label={`Move note down ${name}`}
-                title="Move down a line"
-                icon={<ChevronDown aria-hidden="true" />}
-                disabled={!move.onDown}
-                onClick={() => move.onDown?.()}
-                className={`shrink-0 -my-1 ${TOUCH_TARGET_SQUARE}`}
-              />
-            </>
-          ) : null}
-          {onEdit && status === "saved" ? (
-            <IconButton
-              size="sm"
-              aria-label={`Edit note ${name}`}
-              title="Edit or delete this note"
-              icon={<Pencil aria-hidden="true" />}
-              onClick={(event) => onEdit(event.currentTarget)}
-              className={`shrink-0 -my-1 ${TOUCH_TARGET_SQUARE}`}
-            />
-          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            data-note-edit
+            aria-label={`Edit note ${name}`}
+            iconLeft={<Pencil className="h-3.5 w-3.5" aria-hidden="true" />}
+            onClick={(event) => onEdit(event.currentTarget)}
+            className={`shrink-0 -my-1 ${NOTE_BUTTON_TOUCH}`}
+          >
+            Edit
+          </Button>
         </div>
       ) : null}
     </div>

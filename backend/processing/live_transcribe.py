@@ -40,6 +40,7 @@ from backend.processing.live_persistence import (
 from backend.processing.live_persistence import (
     _load_recording_audio_window_manifests,
     _persist_live_run,
+    live_naming_wanted_after_labels,
     logger,
 )
 from backend.processing.live_settling import (
@@ -70,6 +71,7 @@ from backend.utils.audio_windows import infer_resume_state_from_manifests
 from backend.utils.capture_resume import load_resume_boundaries, split_resume_regions
 from backend.utils.config_manager import config_manager
 from backend.utils.recording_storage import recording_upload_temp_dir
+from backend.utils.time_units import seconds_to_samples
 from backend.utils.transcript_settling import capture_publication_token
 
 # Tolerance (seconds) for treating a speech region as touching the buffer end.
@@ -380,8 +382,8 @@ def _transcribe_live_regions(
     W = context_window_samples
     new_segments: list[dict] = []
     for sp in complete:
-        start_sample = int(sp["start"] * LIVE_SAMPLE_RATE)
-        end_sample = int(sp["end"] * LIVE_SAMPLE_RATE)
+        start_sample = seconds_to_samples(sp["start"], LIVE_SAMPLE_RATE)
+        end_sample = seconds_to_samples(sp["end"], LIVE_SAMPLE_RATE)
         region = combined[start_sample:end_sample]
         region_channels = combined_channels[:, start_sample:end_sample]
         if region.numel() == 0:
@@ -517,6 +519,12 @@ def _dispatch_meeting_edge_refresh_best_effort(recording_id: int) -> None:
             recording_id,
             exc,
         )
+
+
+def _queue_live_naming_check(recording_id: int) -> None:
+    from backend.worker.tasks.live_naming_stage import queue_live_naming_check
+
+    queue_live_naming_check(recording_id)
 
 
 @celery_app.task(bind=True, max_retries=None)
@@ -908,6 +916,8 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
         # --- Diarisation dispatch (best-effort Meeting Edge refresh) ---
         if publication.dispatch_meeting_edge:
             _dispatch_meeting_edge_refresh_best_effort(recording_id)
+        if publication.queue_live_naming:
+            _queue_live_naming_check(recording_id)
 
         for consumed_sequence in run:
             _record_live_sequence_outcome(
@@ -919,7 +929,8 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             )
         state["next_expected"] = run[-1] + 1
         state["buffer_abs_start"] = new_abs_start
-        state["buffer_len_s"] = combined_len - cut_point
+        # What the carry holds: from the snapped origin, not the requested cut.
+        state["buffer_len_s"] = combined_len - (new_abs_start - combined_abs_start)
         write_live_state(live_dir, state)
         _report_gap_skip(recording_id, gap)
         labels_ready = True
@@ -958,7 +969,7 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
             ):
                 from backend.processing.live_diarization import step as live_labels
 
-                live_labels.run_live_speaker_labels(
+                labels_changed = live_labels.run_live_speaker_labels(
                     live_labels.LiveLabelRun(
                         recording_id=recording_id,
                         sequence=run[-1],
@@ -971,6 +982,8 @@ def _transcribe_segment_live(recording_id: int, sequence: int) -> None:
                         expected_token=expected_token,
                     )
                 )
+                if labels_changed and live_naming_wanted_after_labels(recording_id):
+                    _queue_live_naming_check(recording_id)
         except Exception:  # noqa: BLE001 -- boundary: labels are best-effort
             logger.exception("Live speaker labels failed for %s", recording_id)
         if paused_tail:

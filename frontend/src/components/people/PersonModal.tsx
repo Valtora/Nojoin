@@ -29,6 +29,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAnchoredPanel } from "@/components/ui/useAnchoredPanel";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { notifyRequestError } from "@/lib/notifyRequestError";
+import { PersonMeetings } from "./PersonMeetings";
 
 interface PersonModalProps {
   person: GlobalSpeaker | null; // If null, creating new
@@ -345,7 +346,7 @@ interface TagNode extends PeopleTag {
       onClose={onClose}
       size="lg"
       className="max-h-[90dvh]"
-      title={person ? "Edit Person" : "Add Person"}
+      title={person ? "Person Details" : "Add Person"}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -363,6 +364,7 @@ interface TagNode extends PeopleTag {
         </>
       }
     >
+          {person && isOpen && <PersonMeetings key={person.id} personId={person.id} />}
           <form id="person-form" onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -614,7 +616,7 @@ interface TagNode extends PeopleTag {
                                 kind="float"
                                 ref={speakerResultsRef}
                                 style={speakerResultsStyle}
-                                className="z-10 bg-control-bg rounded-md shadow-float border border-surface-border overflow-y-auto"
+                                className="fixed z-10 bg-control-bg rounded-md shadow-float border border-surface-border overflow-y-auto"
                               >
                                 {filteredSpeakers.length === 0 ? (
                                   <div className="px-3 py-2 text-sm text-contrast-helper">

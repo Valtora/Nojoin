@@ -12,6 +12,7 @@ from backend.processing.processing_tuning import (
     line_break_pause_exceeded,
     resolve_tuning,
 )
+from backend.processing.sentence_start import correct_word_assignments
 from backend.utils.partial_word_segments import (
     normalise_partial_word_segments,
     timed_word_groups,
@@ -297,6 +298,13 @@ def _combine_word_level(segments, speaker_turns, config=None):
         max_gap_s=resolve_tuning(config, WORD_FLIP_MAX_GAP_KEY),
     )
     line_config = {LINE_BREAK_PAUSE_KEY: resolve_tuning(config, LINE_BREAK_PAUSE_KEY)}
+    correct_word_assignments(
+        word_assignments,
+        groups,
+        speaker_turns,
+        config,
+        line_config[LINE_BREAK_PAUSE_KEY],
+    )
 
     for i, assignment in enumerate(word_assignments):
         word_data = assignment["word"]
@@ -580,11 +588,20 @@ def _speaker_overlap_is_significant(
     min_duration_s: float,
     min_ratio: float,
 ) -> bool:
-    if overlap_duration_s < min_duration_s:
-        return False
+    """Whether a secondary speaker's overlap meets both inclusive limits.
+
+    An overlap that is exactly a limit counts, however float error leaves it:
+    a word's 140 ms against a 400 ms word and a 35% limit measured
+    0.3499999999999998 in one place in a meeting and 0.35000000000000037 1.2 s
+    later.
+    The ratio is compared as a duration, ``min_ratio`` of the target, so both
+    limits use word_times.falls_short.
+    """
     if target_duration_s <= 0:
         return False
-    return (overlap_duration_s / target_duration_s) >= min_ratio
+    if falls_short(overlap_duration_s, min_duration_s):
+        return False
+    return not falls_short(overlap_duration_s, min_ratio * target_duration_s)
 
 
 def _smooth_isolated_word_speaker_flips(

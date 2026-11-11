@@ -473,3 +473,15 @@ async def test_an_export_during_capture_shows_the_live_names(
     ]
     assert speakers[:4] == ["Alex", "Alex", "Speaker 2", "Alex"]
     assert "LIVE_" not in response.text
+
+
+@pytest.mark.parametrize("name", ["N:L0", "C:SPEAKER_03", "New Voice 3"])
+async def test_a_final_diarisation_label_is_not_a_name_for_a_live_speaker(
+    client, session_maker, name
+) -> None:
+    await _seed(session_maker)
+
+    response = await _name(client, ONE, name)
+
+    assert (response.status_code, response.json()["detail"]) == PLACEHOLDER
+    assert await _events(session_maker) == []

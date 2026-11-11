@@ -26,7 +26,7 @@ Set `MCP_ANONYMOUS_DISCOVERY=false` and restart to answer `401` to every unauthe
 1. In Claude, open **Settings → Connectors → Add custom connector**.
 2. Enter a name such as `Nojoin` and the URL `https://your-nojoin-domain/mcp`.
 3. Leave the OAuth Client ID and Client Secret empty. Claude registers itself with Nojoin.
-4. Select **Add**, then **Connect**. On Nojoin's consent page, sign in if asked, review the access (it includes the write tools), and select **Allow**. If your account must change its password first, Nojoin takes you to do that and then back to the consent page. The change signs out every session, so sign in there with the new password.
+4. Select **Add**, then **Connect**. On Nojoin's consent page, sign in if asked, review the access (it includes the write tools), and select **Allow**. If your account must change its password first, Nojoin takes you to do that and then back to the consent page. The change signs out every session, so sign in there with the new password. If you have not yet accepted Nojoin's terms of use, the consent page shows them first and carries on once you accept.
 
 A connector added to a claude.ai account also works in Claude Desktop and Cowork on the same account.
 
@@ -87,7 +87,7 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. `name_pending` marks a suggested name nobody has confirmed yet, which the app shows as `Alice?`. A voice match scoring 0.85 or more shows as a plain name in the app, so it reads `false` here although nobody has confirmed it. |
 | `list_tags` | `mcp:read` | Your tags, usable as search terms. |
 | `list_people` | `mcp:read` | Your People library: names, contact details, notes and tags. |
-| `get_person` | `mcp:read` | One person, with the meetings they appear in. |
+| `get_person` | `mcp:read` | One person, with the meetings they appear in, newest first. These are the meetings their **Person Details** counts: deleted meetings and any where all of their lines were moved to other speakers are left out. |
 | `list_calendar_events` | `mcp:read` | Your synced calendar events, for linking recordings to meetings. |
 | `list_tasks` | `mcp:read` | Your tasks. |
 | `rename_recording` | `mcp:write` | Rename a recording. The name counts as the user's, so a generated title never replaces it. |

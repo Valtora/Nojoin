@@ -30,6 +30,7 @@ import TranscriptSection from "./TranscriptSection";
 import NotesSection from "./NotesSection";
 import DocumentsSection from "./DocumentsSection";
 import AnalyticsSection from "./AnalyticsSection";
+import { PANEL_LABELS } from "./panelLabels";
 import { useScrollEdges } from "../_hooks/useScrollEdges";
 
 interface RecordingMainContentProps {
@@ -41,6 +42,8 @@ interface RecordingMainContentProps {
   speakersContent?: ReactNode;
   myNotesContent?: ReactNode;
   meetingEdgeContent?: ReactNode;
+  tasksContent?: ReactNode;
+  tasksLoading?: boolean;
   inFlight?: boolean;
   canPlayback?: boolean;
   canExport?: boolean;
@@ -48,7 +51,7 @@ interface RecordingMainContentProps {
   hasRetainedPublication?: boolean;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes: readonly TimelineNote[] | null;
-  /** The page's note edits, shared by the transcript and My notes. */
+  /** The page's note edits, shared by the transcript and Your notes. */
   noteEdits: NoteEdits;
   isMobile: boolean;
   activePanel: ActivePanel;
@@ -121,21 +124,14 @@ const tabClassName = (active: boolean, isMobile: boolean) =>
       : "border-transparent text-contrast-helper hover:text-foreground hover:bg-surface-inset"
   }`;
 
-// On desktop Speakers and My notes live in the side column, so they have no tab.
-const TABS: { panel: ActivePanel; label: string }[] = [
-  { panel: "transcript", label: "Transcript" },
-  { panel: "notes", label: "Notes" },
-  { panel: "documents", label: "Documents" },
-  { panel: "analytics", label: "Analytics" },
-];
-const MOBILE_TABS: { panel: ActivePanel; label: string }[] = [
-  ...TABS.slice(0, 2),
-  { panel: "my-notes", label: "My notes" },
-  { panel: "captures", label: "Captures" },
-  ...TABS.slice(2),
-  { panel: "speakers", label: "Speakers" },
-  { panel: "meeting-edge", label: "Meeting Edge" },
-];
+const tabsFor = (panels: ActivePanel[]) =>
+  panels.map((panel) => ({ panel, label: PANEL_LABELS[panel] }));
+// On desktop Speakers, Your notes, Captures and Meeting Edge live in the side
+// column, so they have no tab here: each layout shows them in one place.
+const TABS = tabsFor(["transcript", "notes", "documents", "analytics"]);
+const MOBILE_TABS = tabsFor([
+  "transcript", "notes", "my-notes", "captures", "documents", "analytics", "speakers", "meeting-edge", "tasks",
+]);
 
 // Marks a side of the mobile tab row with tabs scrolled out of view. Decorative:
 // the tabs themselves stay reachable, and a tap passes through to the one below.
@@ -166,6 +162,8 @@ export default function RecordingMainContent({
   speakersContent,
   myNotesContent,
   meetingEdgeContent,
+  tasksContent,
+  tasksLoading = false,
   inFlight = false,
   canPlayback = true,
   canExport = true,
@@ -224,14 +222,21 @@ export default function RecordingMainContent({
   const setSpeakerReviewPending = useNavigationStore((state) => state.setSpeakerReviewPending);
   const tablistRef = useRef<HTMLDivElement>(null);
   const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
-  const tabs = !isMobile ? TABS
-    : meetingEdgeContent ? MOBILE_TABS : MOBILE_TABS.filter(({ panel }) => panel !== "meeting-edge");
+  const hasTasks = Boolean(tasksContent);
+  const hasMeetingEdge = Boolean(meetingEdgeContent);
+  const tabs = !isMobile ? TABS : MOBILE_TABS.filter(({ panel }) =>
+    (panel !== "meeting-edge" || hasMeetingEdge) && (panel !== "tasks" || hasTasks));
   // The tab that Tab and the arrow keys start from: the current panel's, or the
   // first when it has no tab here (desktop holds "speakers" for one render
   // before useRecordingDetail falls back to the transcript).
   const current = tabs.some(({ panel }) => panel === activePanel)
     ? activePanel
     : tabs[0].panel;
+
+  // A phone's remembered Tasks tab waits for the tasks, then falls back if there are none.
+  useEffect(() => {
+    if (isMobile && activePanel === "tasks" && !tasksLoading && !tasksContent) setActivePanel("transcript");
+  }, [activePanel, isMobile, tasksContent, tasksLoading, setActivePanel]);
 
   // Arrow keys move between tabs and open them, wrapping at the ends; Home and
   // End jump to the first and last (the WAI-ARIA tabs pattern).
@@ -264,7 +269,7 @@ export default function RecordingMainContent({
     tablistRef.current
       ?.querySelector(`#tab-${activePanel}`)
       ?.scrollIntoView({ inline: "nearest", block: "nearest" });
-  }, [isMobile, activePanel]);
+  }, [isMobile, activePanel, hasTasks, hasMeetingEdge]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full">
@@ -300,7 +305,7 @@ export default function RecordingMainContent({
         }
       />
 
-      {/* Panel Tabs. On mobile, My notes and Speakers have tabs too and the
+      {/* Panel Tabs. On mobile, Your notes and Speakers have tabs too and the
           row scrolls sideways; on desktop both live in the side column. */}
       <div className="relative shrink-0 bg-surface-inset">
         {tabsOutOfView.left && <MoreTabsHint side="left" />}
@@ -312,7 +317,7 @@ export default function RecordingMainContent({
           data-ui-reading="pane"
           // The scroll padding is the hints' width: a tab scrolled into view
           // stops clear of the arrow over either edge.
-          className={`${isMobile ? "flex overflow-x-auto scroll-px-8" : "grid grid-cols-4"} border-b-2 border-surface-border`}
+          className={`relative ${isMobile ? "flex overflow-x-auto scroll-px-8" : "grid grid-cols-4"} border-b-2 border-surface-border`}
         >
           {tabs.map(({ panel, label }) => (
             <ButtonBase
@@ -457,6 +462,12 @@ export default function RecordingMainContent({
           className={`absolute inset-0 flex flex-col overflow-y-auto ${activePanel === "meeting-edge" ? "z-10 visible" : "z-0 invisible"}`}>
           {meetingEdgeContent}
         </div>}
+        {isMobile && tasksContent && <div role="tabpanel" id="panel-tasks" aria-labelledby="tab-tasks"
+          className={`absolute inset-0 flex flex-col ${activePanel === "tasks" ? "z-10 visible" : "z-0 invisible"}`}>
+          {tasksContent}
+        </div>}
+        {isMobile && tasksLoading && activePanel === "tasks" &&
+          <p role="status" className="p-4 text-sm text-contrast-helper">Loading linked tasks...</p>}
       </SurfaceBase>
     </div>
   );

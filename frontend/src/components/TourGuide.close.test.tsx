@@ -134,4 +134,60 @@ describe.each(tours)('the $name tour', (tour) => {
       await open();
     });
   });
+
+  // A click aimed at the page as the tour opens lands on its overlay (#984).
+  describe('a click on the overlay', () => {
+    const clickOverlay = () => {
+      const overlay = document.querySelector('svg.driver-overlay path');
+      if (!overlay) throw new Error('no overlay on the page');
+      act(() => { fireEvent.click(overlay); });
+    };
+
+    it.each([
+      ['as the overlay fades in', 20],
+      ['just inside the first second', 990],
+    ])('made %s leaves the tour open and unseen', async (_, after) => {
+      const view = render(tour.page());
+      await open();
+      await advance(after);
+      clickOverlay();
+
+      expect(popover()).not.toBeNull();
+      expect(document.body.classList.contains('driver-active')).toBe(true);
+      expect(tour.seen()).toBeUndefined();
+      expect(restored).not.toHaveBeenCalled();
+
+      // The tour still closes on purpose, and is then marked seen.
+      act(() => { fireEvent.click(button('.driver-popover-close-btn')); });
+      expect(popover()).toBeNull();
+      expect(tour.seen()).toBe(true);
+      view.rerender(tour.page());
+      await advance(5000);
+      expect(popover()).toBeNull();
+    });
+
+    it.each([
+      ['once the first second has passed', 1000, false],
+      ['after an early click was ignored', 1000, true],
+    ])('made %s closes the tour and marks it seen', async (_, after, earlyClick) => {
+      const view = render(tour.page());
+      await open();
+      if (earlyClick) {
+        await advance(20);
+        clickOverlay();
+        await advance(after - 20);
+      } else await advance(after);
+      clickOverlay();
+
+      expect(popover()).toBeNull();
+      expect(document.body.classList.contains('driver-active')).toBe(false);
+      expect(document.querySelector('svg.driver-overlay')).toBeNull();
+      expect(tour.seen()).toBe(true);
+      expect(restored).toHaveBeenCalledTimes(tour.name === 'transcript' ? 1 : 0);
+
+      view.rerender(tour.page());
+      await advance(5000);
+      expect(popover()).toBeNull();
+    });
+  });
 });

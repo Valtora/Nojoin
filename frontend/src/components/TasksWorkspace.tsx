@@ -3,7 +3,7 @@
 import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -200,7 +200,7 @@ function DeadlinePickerButton({
   );
 }
 
-export default function TasksWorkspace() {
+export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: number }) {
   const timeZone = useUserTimeZone();
   const [tasks, setTasks] = useState<UserTask[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -219,6 +219,7 @@ export default function TasksWorkspace() {
   const selectedTagIds = useNavigationStore((state) => state.selectedTagIds);
   const toggleTagFilter = useNavigationStore((state) => state.toggleTagFilter);
   const clearTagFilters = useNavigationStore((state) => state.clearTagFilters);
+  const viewPickedForTaskId = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,8 +228,17 @@ export default function TasksWorkspace() {
     const loadTasks = async (quiet: boolean) => {
       if (!quiet) setLoading(true);
       try {
-        const taskData = await getUserTasks("all", selectedTagIds);
-        if (!cancelled) setTasks(sortTasks(taskData));
+        const taskData = await getUserTasks("all", { tagIds: selectedTagIds });
+        if (!cancelled) {
+          const target = taskData.find((task) => task.id === initialTaskId);
+          setTasks(sortTasks(taskData));
+          // Only a linked task picks the view, once; otherwise keep any view chosen
+          // while loading, and don't override the view when tag filters reload.
+          if (target && viewPickedForTaskId.current !== initialTaskId) {
+            viewPickedForTaskId.current = initialTaskId;
+            setView(target.archived_at ? "archived" : target.completed_at ? "completed" : "open");
+          }
+        }
       } catch (error: unknown) {
         if (!cancelled) {
           if (!quiet) setTasks([]);
@@ -258,7 +268,7 @@ export default function TasksWorkspace() {
       cancelled = true;
       window.removeEventListener("tags-updated", handleTagsUpdated);
     };
-  }, [addNotification, selectedTagIds]);
+  }, [addNotification, initialTaskId, selectedTagIds]);
 
   useEffect(() => {
     let cancelled = false;

@@ -5,6 +5,7 @@ import { getSecondaryProviderGap } from "@/lib/aiAvailability";
 import { aiProviderLabel } from "@/lib/aiProviders";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
+import OllamaThinkingRow from "./OllamaThinkingRow";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import type { AISettingsModels } from "./useAISettingsModels";
@@ -75,7 +76,7 @@ export default function SecondaryProviderSection({
   const refreshModels = () => {
     const url = isOllama ? settings.secondary_ollama_api_url : undefined;
     models.setSecondaryFetchingModels(true);
-    listModels(provider, "", url)
+    listModels(provider, "", url, undefined, "secondary")
       .then((res) => models.setSecondaryAvailableModels(res.models))
       .catch(console.error)
       .finally(() => models.setSecondaryFetchingModels(false));
@@ -208,13 +209,23 @@ export default function SecondaryProviderSection({
               className={SETTINGS_INPUT_CLASS}
             />
           </SettingsRow>
+
+          <OllamaThinkingRow
+            idPrefix="ai-fallback"
+            secondary
+            model={settings.secondary_ollama_model || ""}
+            checked={settings.secondary_ollama_think === true}
+            onCheckedChange={(checked) =>
+              onPersist({ ...settings, secondary_ollama_think: checked })
+            }
+          />
         </>
       )}
 
       {hasCredential && (
         <SettingsRow
           label="Connection"
-          description="Checks the fallback's key or address and reloads its model list. Nothing is saved."
+          description="Checks the fallback's key or address, runs a short test on its models, and reloads its model list. Nothing is saved."
           descriptionId="ai-fallback-test-help"
         >
           <TestConnection
@@ -222,7 +233,8 @@ export default function SecondaryProviderSection({
             provider={provider}
             validating={models.validating}
             message={models.validationMsg}
-            onTest={() => void models.handleValidate(provider)}
+            role="secondary"
+            onTest={() => void models.handleValidate(provider, "secondary")}
           />
         </SettingsRow>
       )}

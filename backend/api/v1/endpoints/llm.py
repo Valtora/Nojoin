@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.processing.llm_services import get_llm_backend
 from backend.utils.config_manager import config_manager
@@ -27,6 +27,17 @@ class VisionSupportRead(BaseModel):
     """
 
     provider: str
+    model: Optional[str] = None
+    supported: Optional[bool] = None
+
+
+class ThinkingSupportRead(BaseModel):
+    """Whether an Ollama model can think, as its ``/api/show`` capabilities say.
+
+    ``supported`` is ``None`` when they could not be read, which the settings
+    page treats as unknown rather than as a refusal.
+    """
+
     model: Optional[str] = None
     supported: Optional[bool] = None
 
@@ -68,6 +79,17 @@ def _probe_vision_support(
         provider=provider, api_key=api_key, api_url=api_url, model=model
     )
     return backend.supports_vision()
+
+
+def _probe_thinking_support(model: str, secondary: bool) -> Optional[bool]:
+    url_key = "secondary_ollama_api_url" if secondary else "ollama_api_url"
+    api_url = validate_ollama_api_url(config_manager.get(url_key), allow_private=True)
+    # The address is the operator's own, so a private one is as welcome here as
+    # it is in the settings page's model list.
+    backend = get_llm_backend(
+        provider="ollama", api_url=api_url, model=model, allow_private_api_url=True
+    )
+    return backend.supports_thinking()
 
 
 @router.get("/models", response_model=List[str])
@@ -148,3 +170,34 @@ async def get_vision_support(
         # cannot answer, and neither should block an upload.
         logger.debug(f"Vision-support probe failed for provider '{provider}': {e}")
         return VisionSupportRead(provider=provider, model=model, supported=None)
+
+
+@router.get("/thinking-support", response_model=ThinkingSupportRead)
+async def get_thinking_support(
+    model: str = Query(
+        ..., min_length=1, max_length=256, description="Ollama model name"
+    ),
+    secondary: bool = Query(
+        False, description="Ask the fallback provider's server instead"
+    ),
+    # Only the admin-only AI providers page asks.
+    current_user=Depends(get_current_admin_user),
+):
+    """Report whether an Ollama model can think.
+
+    The settings page shows it beside the thinking switch. The server asks
+    Ollama (cached for five minutes per server and model), never the browser.
+    An unreachable server is not an error: it resolves to ``supported: null``.
+    """
+    try:
+        # Off the event loop for the reason given in list_models.
+        supported = await asyncio.to_thread(_probe_thinking_support, model, secondary)
+    except ValueError as e:
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message="Invalid AI provider configuration.",
+            log_message="Rejected thinking-support probe.",
+            exc=e,
+        )
+    return ThinkingSupportRead(model=model, supported=supported)

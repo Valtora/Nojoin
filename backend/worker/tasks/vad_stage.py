@@ -3,12 +3,12 @@
 Extracted from ``pipeline.py`` to keep that module within its size budget. With
 VAD on, the stage keeps two files of the same length and rate, the normalised
 16 kHz mono file and a copy with non-speech set to exact zeros, and hands each
-later stage the one its setting asks for (``backend/processing/vad_muting.py``,
-#486). Once diarisation has run, muted transcription may read a third file
-instead: the muted one opened inside every diarised turn (#670), less the turns
-the phantom filter confirmed as non-speech (#678), which ``run_phantom_filter``
-keeps on the run's context. The heavy imports stay inside the functions, as
-they were in the pipeline, so the stage tests can stub those modules per test.
+later stage its file: transcription the muted one, the speaker side the one
+the "Faster speaker separation" setting picks (``backend/processing/vad_muting.py``,
+#486, #961). Once diarisation has run, muted transcription may read a third file
+instead: the muted one opened inside every diarised turn (#670). The heavy
+imports stay inside the functions, as they were in the pipeline, so the stage
+tests can stub those modules per test.
 """
 
 from dataclasses import dataclass
@@ -189,31 +189,24 @@ def run_vad_stage(
 def run_phantom_filter(
     ctx: "_PipelineRunContext", diarization: "Annotation", audio_path: str
 ) -> "Annotation":
-    """The phantom-filtered diarisation, keeping on ``ctx`` the turns it
-    confirmed as non-speech.
+    """The phantom-filtered diarisation.
 
-    The filter relabels such a cluster to the nearest speaker rather than
-    dropping it, so the transcript's attribution is unchanged, but the union
-    leaves its turns muted (#678). Best effort: if the filter fails, the
-    unfiltered diarisation is used and every turn opens, as before.
+    The filter relabels a brief cluster rather than dropping it, so its turns
+    still open the union transcription reads: the words in them are kept,
+    under the speaker the filter gave them to (#813). Best effort: if the
+    filter fails, the unfiltered diarisation is used.
     """
     from backend.processing.phantom_filter import filter_phantom_speakers
 
-    non_speech: list = []
     try:
-        filtered = filter_phantom_speakers(
-            diarization,
-            audio_path,
-            config=ctx.merged_config,
-            non_speech_turns=non_speech,
+        return filter_phantom_speakers(
+            diarization, audio_path, config=ctx.merged_config
         )
     except Exception as e:  # noqa: BLE001 -- boundary: phantom filter is best-effort
         logger.warning(
             f"Phantom speaker filter failed, continuing with unfiltered result: {e}"
         )
         return diarization
-    ctx.non_speech_turns = tuple(non_speech)
-    return filtered
 
 
 def transcription_audio_after_diarization(
@@ -225,13 +218,12 @@ def transcription_audio_after_diarization(
 
     Muted transcription hears the muted file with the unmuted audio put back
     inside every diarised turn, so it mutes only where neither VAD nor
-    diarisation heard speech. A turn the phantom filter confirmed as
-    non-speech opens nothing, so only VAD's own speech in it is heard (#678).
-    The file keeps VAD's zeros everywhere else, so ``VAD_MUTED_INPUT`` still
-    holds for it. Every other case reads the file the VAD stage picked:
-    unmuted transcription, diarisation off, failed or with no turns, and
-    diarisation that heard the muted file itself. If the union cannot be
-    written, ASR reads the VAD-muted file, as it did before.
+    diarisation heard speech. That includes the turns the phantom filter
+    relabelled, so their words are kept (#813). The file keeps VAD's zeros
+    everywhere else, so ``VAD_MUTED_INPUT`` still holds for it. Every other
+    case reads the file the VAD stage picked: VAD off, diarisation off, failed
+    or with no turns, and diarisation that heard the muted file itself. If the
+    union cannot be written, ASR reads the VAD-muted file, as it did before.
     """
     path, restored_s = _union_or_vad_file(ctx, vad_result, diarization)
     if restored_s is None:
@@ -261,7 +253,7 @@ def _union_or_vad_file(
         or muted_stages(ctx.merged_config).diarization
     ):
         return vad_path, None
-    turns = diarised_turns(diarization, excluding=ctx.non_speech_turns)
+    turns = diarised_turns(diarization)
     if not turns:
         return vad_path, None
     union_path = f"{os.path.splitext(unmuted_path)[0]}_union.wav"

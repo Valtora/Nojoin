@@ -56,8 +56,8 @@ from backend.preload_models import check_model_status
 from backend.seed_demo import seed_demo_data
 from backend.services.model_preparation import enqueue_model_preparation
 from backend.services.model_status import add_nemotron_preparation_status
+from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
 from backend.utils.config_manager import (
-    DEFAULT_SYSTEM_CONFIG,
     config_manager,
     get_trusted_web_origin,
 )
@@ -66,6 +66,7 @@ from backend.utils.download_progress import (
     is_download_in_progress,
 )
 from backend.utils.model_utils import WHISPER_MODEL_SIZES_MB
+from backend.utils.time import utc_now
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -502,6 +503,9 @@ async def setup_system(
         is_superuser=True,
         force_password_change=False,  # First user sets their own password, so no need to force change
         role="owner",
+        # The owner accepted the legal disclaimer on the wizard's Legal step,
+        # which comes before this one (#1004).
+        legal_accepted_at=utc_now(),
         settings=settings,
         # Opting out marks the demo as already seen so startup seeding also
         # skips it; Settings > Help can still force-recreate it later.
@@ -555,12 +559,13 @@ async def setup_system(
 
 @router.get("/download-progress")
 async def get_download_progress_endpoint(
+    model: str | None = None,
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
     Get current automatic model preparation progress.
     """
-    progress = get_download_progress()
+    progress = get_download_progress(model)
     if progress is None:
         return {
             "progress": 0,
@@ -571,7 +576,7 @@ async def get_download_progress_endpoint(
             "stage": None,
             "in_progress": False,
         }
-    progress["in_progress"] = is_download_in_progress()
+    progress["in_progress"] = is_download_in_progress(model)
     return progress
 
 

@@ -54,11 +54,13 @@ describe("ProcessingTuningSettings", () => {
       vad_threshold: 0.3,
       phantom_merge_threshold: 0.7,
       line_break_pause_s: 2,
+      phantom_filter_off: true,
     });
 
     fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
 
     const next = onUpdate.mock.calls[0][0] as Settings;
+    expect(next.phantom_filter_off).toBeNull();
     expect(next.theme).toBe("dark");
     expect(next.line_break_pause_s).toBe(2);
     for (const key of PROCESSING_TUNING_KEYS) {
@@ -103,10 +105,87 @@ describe("ProcessingTuningSettings", () => {
   it("labels each field of a multi-field row within a group named by the row", () => {
     renderTuning({});
 
-    const phantom = screen.getByRole("group", { name: "Phantom speaker filter" });
-    const flip = screen.getByRole("group", { name: "Single-word flip smoothing" });
-    expect(within(phantom).getByRole("spinbutton", { name: "Merge similarity" })).toBeInTheDocument();
-    expect(within(flip).getByRole("spinbutton", { name: "Max gap (seconds)" })).toBeInTheDocument();
+    const brief = screen.getByRole("group", { name: "Speakers heard only briefly" });
+    const stray = screen.getByRole("group", { name: "Stray one-word speaker changes" });
+    expect(within(brief).getAllByRole("spinbutton")).toHaveLength(4);
+    for (const name of [
+      "Check speakers under (seconds)",
+      "And up to (turns)",
+      "Treat as noise below (voice match)",
+      "Merge from (voice match)",
+    ]) {
+      expect(within(brief).getByRole("spinbutton", { name })).toBeInTheDocument();
+    }
+    expect(within(stray).getByRole("spinbutton", { name: "Words up to (seconds)" })).toBeInTheDocument();
+    expect(within(stray).getByRole("spinbutton", { name: "Pause up to (seconds)" })).toBeInTheDocument();
+  });
+
+  it("shows the longest word only when Parakeet is the engine", () => {
+    const { view, onUpdate } = renderTuning({ transcription_backend: "whisper" });
+    expect(screen.queryByText("Longest word (Parakeet only)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "Longest word (seconds)" })).not.toBeInTheDocument();
+
+    view.rerender(
+      <ProcessingTuningSettings settings={{ transcription_backend: "parakeet" }} onUpdate={onUpdate} />,
+    );
+
+    expect(screen.getByText("Longest word (Parakeet only)")).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Longest word (seconds)" })).toHaveAttribute(
+      "placeholder",
+      "Default (0.4)",
+    );
+  });
+
+  it("keeps the old internal names off the card", () => {
+    renderTuning({ transcription_backend: "parakeet" });
+
+    for (const old of [/phantom/i, /flip/i, /similarity/i, /floor/i, /length cap/i, /segments/i]) {
+      expect(screen.queryByText(old)).not.toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ["absent", {}],
+    ["null", { phantom_filter_off: null }],
+    ["false", { phantom_filter_off: false }],
+  ])("ticks the brief-speaker check and shows its settings when the switch is %s", (_name, settings) => {
+    renderTuning(settings as Settings);
+
+    expect(screen.getByRole("checkbox", { name: "Check speakers heard only briefly" })).toBeChecked();
+    expect(screen.getByRole("group", { name: "Speakers heard only briefly" })).toBeVisible();
+  });
+
+  it("unticking hides the brief-speaker limits and saves the check as off", () => {
+    const state = renderWithState({ phantom_max_segments: 2, phantom_merge_threshold: 0.7 });
+    const checkbox = screen.getByRole("checkbox", { name: "Check speakers heard only briefly" });
+    expect(checkbox).toHaveAttribute(
+      "aria-controls",
+      screen.getByRole("group", { name: "Speakers heard only briefly" }).id,
+    );
+
+    fireEvent.click(checkbox);
+
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByRole("group", { name: "Speakers heard only briefly" })).toBeNull();
+    expect(screen.queryByRole("spinbutton", { name: "And up to (turns)" })).toBeNull();
+    // The other rows stay.
+    expect(screen.getByRole("group", { name: "Stray one-word speaker changes" })).toBeVisible();
+    expect(state.latest().phantom_filter_off).toBe(true);
+    expect(state.latest().phantom_max_segments).toBe(2);
+    expect(state.latest().phantom_merge_threshold).toBe(0.7);
+  });
+
+  it("ticking again shows the brief-speaker limits with their values and clears the switch", () => {
+    const state = renderWithState({ phantom_filter_off: true, phantom_max_segments: 2 });
+    const checkbox = screen.getByRole("checkbox", { name: "Check speakers heard only briefly" });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByRole("spinbutton", { name: "And up to (turns)" })).toBeNull();
+
+    fireEvent.click(checkbox);
+
+    expect(checkbox).toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "And up to (turns)" })).toHaveValue(2);
+    expect(state.latest().phantom_filter_off).toBeNull();
   });
 
   it("describes each field with its row's help text", () => {
@@ -115,8 +194,8 @@ describe("ProcessingTuningSettings", () => {
     expect(
       screen.getByRole("spinbutton", { name: "Speech detection threshold" }),
     ).toHaveAccessibleDescription(/^Lower keeps quiet or distant speech/);
-    expect(screen.getByRole("spinbutton", { name: "Merge similarity" })).toHaveAccessibleDescription(
-      /^A speaker under both limits is checked/,
+    expect(screen.getByRole("spinbutton", { name: "Merge from (voice match)" })).toHaveAccessibleDescription(
+      /^Someone heard for less than both limits is compared/,
     );
   });
 
@@ -149,8 +228,8 @@ describe("ProcessingTuningSettings", () => {
 
   it.each([
     ["Speech detection threshold", "ArrowUp", "vad_threshold", 0.55],
-    ["Merge similarity", "ArrowDown", "phantom_merge_threshold", 0.55],
-    ["Max segments", "ArrowUp", "phantom_max_segments", 4],
+    ["Merge from (voice match)", "ArrowDown", "phantom_merge_threshold", 0.55],
+    ["And up to (turns)", "ArrowUp", "phantom_max_segments", 4],
   ] as const)("steps an empty %s from its default with %s", (name, key, setting, expected) => {
     const state = renderWithState({});
     const input = screen.getByRole("spinbutton", { name });

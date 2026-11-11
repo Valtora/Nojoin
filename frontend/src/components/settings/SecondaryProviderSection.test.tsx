@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
+import { listModels } from "@/lib/api";
 import type { Settings } from "@/types";
 import SecondaryProviderSection from "./SecondaryProviderSection";
 import type { AISettingsModels } from "./useAISettingsModels";
 
 vi.mock("@/lib/api", () => ({
   listModels: vi.fn().mockResolvedValue({ models: [] }),
+  getThinkingSupport: vi.fn().mockResolvedValue({ model: null, supported: null }),
 }));
 
 const models = {
@@ -72,5 +74,19 @@ describe("SecondaryProviderSection", () => {
     const main = screen.getByRole("combobox", { name: "Model" });
     const required = main.querySelector('option[value=""]') as HTMLOptionElement;
     expect(required.disabled).toBe(true);
+  });
+
+  it("reloads the fallback's list with the fallback's own key and address", () => {
+    renderSection({ ...OLLAMA_FALLBACK, secondary_ollama_model: "qwen-x" });
+
+    screen.getByRole("button", { name: "Reload the model list" }).click();
+
+    expect(vi.mocked(listModels)).toHaveBeenCalledWith(
+      "ollama",
+      "",
+      "http://ollama:11434",
+      undefined,
+      "secondary",
+    );
   });
 });

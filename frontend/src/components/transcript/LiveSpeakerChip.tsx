@@ -6,6 +6,8 @@ import { Pencil } from "lucide-react";
 
 import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 import { isImeComposing } from "@/lib/imeComposition";
+import type { SpeakerNameSource } from "@/types";
+import LiveSpeakerSuggestion from "./LiveSpeakerSuggestion";
 
 interface LiveSpeakerChipProps {
   /** The stored live label, `LIVE_PROVISIONAL_<n>`. */
@@ -21,6 +23,9 @@ interface LiveSpeakerChipProps {
   onRename?: (label: string, name: string) => Promise<void | boolean>;
   /** The People names offered while typing, read when the rename opens. */
   loadPeopleNames?: () => Promise<readonly string[]>;
+  suggestion?: string;
+  suggestionSource?: SpeakerNameSource;
+  onDismissSuggestion?: (label: string) => Promise<boolean>;
 }
 
 // The finished transcript's speaker name (`TranscriptLine`): same size and
@@ -46,6 +51,9 @@ export default function LiveSpeakerChip({
   locked,
   onRename,
   loadPeopleNames,
+  suggestion,
+  suggestionSource,
+  onDismissSuggestion,
 }: LiveSpeakerChipProps) {
   // The label is kept from when the box opened: a provisional line can move
   // to another label while the name is typed, and the name is for this one.
@@ -171,7 +179,7 @@ export default function LiveSpeakerChip({
     // The margin sits on a wrapper: on a touch screen the button is a full
     // 44 px target, and its own negative margin keeps it from pushing the
     // line down.
-    <div className="mb-1">
+    <div className="mb-1 inline-flex flex-wrap items-center gap-2">
       <ButtonBase
         ref={buttonRef}
         type="button"
@@ -191,6 +199,8 @@ export default function LiveSpeakerChip({
           className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/chip:opacity-100 group-focus-visible/chip:opacity-100 pointer-coarse:opacity-100"
         />
       </ButtonBase>
+      {suggestion && onDismissSuggestion && <LiveSpeakerSuggestion label={label} name={suggestion}
+        source={suggestionSource} onAccept={onRename} onDismiss={onDismissSuggestion} focusAfterDecision={() => buttonRef.current?.focus()} />}
     </div>
   );
 }

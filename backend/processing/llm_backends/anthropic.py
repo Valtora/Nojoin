@@ -39,7 +39,6 @@ from backend.processing.llm_backends.base import (
     NOTES_MAX_OUTPUT_TOKEN_LADDER,
     LLMBackend,
     TruncatedNotesError,
-    _get_default_model_for_provider,
     is_output_ceiling_error,
     is_vision_unsupported_error,
     raise_if_output_truncated,
@@ -97,7 +96,7 @@ class AnthropicLLMBackend(LLMBackend):
                 "Anthropic API key is not set. Please provide it in settings."
             )
         self.api_key = api_key
-        self.model = model or _get_default_model_for_provider("anthropic")
+        self.model = model or None
         self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def list_models(self) -> List[str]:
@@ -649,6 +648,20 @@ class AnthropicLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting title): {e}")
             raise RuntimeError(f"Anthropic API error (meeting title): {e}")
+
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The Meeting Edge request, with low effort for a model that thinks.
+        if not self.model:
+            raise ValueError("No Anthropic model configured.")
+        # No SDK retries: one probe is one request, and a timeout is one timeout.
+        response = self.client.with_options(max_retries=0).messages.create(
+            model=self.model,
+            max_tokens=max_output_tokens,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=timeout,
+            **self._brief_reply_kwargs(),
+        )
+        return _response_text_or_raise(response, "the test reply")
 
     def validate_api_key(self) -> bool:
         """

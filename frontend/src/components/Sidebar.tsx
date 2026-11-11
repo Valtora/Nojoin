@@ -2,16 +2,11 @@
 
 import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Recording, RecordingId, RecordingStatus, Tag } from "@/types";
 
 import {
   Loader2,
-  AlertCircle,
-  HelpCircle,
-  Pause,
-  UploadCloud,
   Search,
   Filter,
   X,
@@ -19,12 +14,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
-  NotebookPen,
-  MoreHorizontal,
 } from "lucide-react";
-import { cn } from "@/lib/cn";
 import IconButton from "./ui/IconButton";
-import { TOUCH_TARGET_SQUARE } from "./ui/touchTarget";
 import ImportAudioButton from "./importAudio/ImportAudioButton";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
@@ -56,9 +47,8 @@ import {
   withRecordingName,
 } from "@/lib/recordingEvents";
 import MonthCalendar from "./MonthCalendar";
-import { formatTimeZoneDay, formatTimeZoneLocale, localDayRangeToUtc } from "@/lib/timezone";
+import { localDayRangeToUtc } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
-import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { format, startOfMonth } from "date-fns";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
@@ -69,114 +59,26 @@ import { GlobalSpeaker } from "@/types";
 import { useNavigationStore } from "@/lib/store";
 import ActiveTagFilters from "./ActiveTagFilters";
 import { useViewportDensity } from "./ViewportDensityProvider";
-import { Badge } from "./ui/Badge";
 import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingNotes";
 import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useRecordingListPages } from "./recordings/_hooks/useRecordingListPages";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
-import RecordingAttentionBadge from "./RecordingAttentionBadge";
-import RecordingTagDots, { tagDotsLayout } from "./recordings/RecordingTagDots";
+import RecordingListRow, {
+  rowMenuLabel,
+  type RecordingListRowActions,
+} from "./recordings/RecordingListRow";
+import { useStableCallback } from "./transcript/_hooks/useStableCallback";
 import RecordingListFooter from "./recordings/RecordingListFooter";
 import { RECORDINGS_PAGE_SIZE } from "./recordings/recordingListPages";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { isImeComposing } from "@/lib/imeComposition";
 
 interface RowMenuItem {
   label: string;
   onClick: () => void;
   className?: string;
 }
-
-const formatDurationString = (seconds?: number) => {
-  if (!seconds) return "0s";
-  if (seconds < 60) return `${Math.floor(seconds)}s`;
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-
-  if (hours > 0) {
-    return `${hours}hr ${minutes}${minutes === 1 ? "min" : "mins"}`;
-  }
-  return `${minutes}${minutes === 1 ? "min" : "mins"}`;
-};
-
-// A card's text stops short of the actions button (right-1 and 28px wide, or
-// the 44px touch target) and, on a tagged card, of the dots 4px left of it: a
-// column of 0.375rem dots, two with a 0.25rem gap, and a second one as wide as
-// a two-digit count when its last slot holds one. Index: the number of columns.
-const CARD_RIGHT_PADDING = [
-  "pr-9 pointer-coarse:pr-[52px]",
-  "pr-11.5 pointer-coarse:pr-[62px]",
-  "pr-14 pointer-coarse:pr-[72px]",
-] as const;
-const CARD_RIGHT_PADDING_WITH_COUNT = "pr-17.5 pointer-coarse:pr-[86px]";
-
-const cardRightPadding = (tagCount: number) => {
-  const { columns, more } = tagDotsLayout(tagCount);
-  return more > 0 ? CARD_RIGHT_PADDING_WITH_COUNT : CARD_RIGHT_PADDING[columns];
-};
-
-const formatDate = (dateString: string, timeZone: string) => {
-  const date = parseServerTimestamp(dateString);
-  if (!date) return "Unknown date";
-  return formatTimeZoneDay(date, timeZone);
-};
-
-const formatTime = (date: Date, timeZone: string) => {
-  return formatTimeZoneLocale(date, timeZone, "time", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-};
-
-const StatusIcon = ({ recording }: { recording: Recording }) => {
-  if (recording.import_stalled) {
-    return (
-      <span className="cursor-help" title="This import did not finish uploading.">
-        <AlertCircle className="w-3 h-3 text-status-warning-fg" />
-      </span>
-    );
-  }
-  switch (recording.status) {
-    case RecordingStatus.PROCESSED:
-      return null;
-    case RecordingStatus.QUEUED:
-      return (
-        <span
-          className="cursor-help"
-          title="Meeting is in queue to be processed..."
-        >
-          <Loader2 className="w-3 h-3 text-status-info-fg animate-spin" />
-        </span>
-      );
-    case RecordingStatus.PROCESSING:
-      return (
-        <span
-          className="cursor-help"
-          title="Processing: transcription, diarization, voiceprints."
-        >
-          <Loader2 className="w-3 h-3 text-status-info-fg animate-spin" />
-        </span>
-      );
-    case RecordingStatus.UPLOADING:
-      return <UploadCloud className="w-3 h-3 text-action-text animate-pulse" />;
-    case RecordingStatus.PAUSED:
-      return <Pause className="w-3 h-3 text-status-warning-fg" />;
-    case RecordingStatus.ERROR:
-      return (
-        <span
-          role="img"
-          aria-label="Processing failed"
-          className="cursor-help"
-          title="Processing failed. Open the recording to see why and retry."
-        >
-          <AlertCircle className="w-3 h-3 text-danger-text" />
-        </span>
-      );
-    default:
-      return <HelpCircle className="w-3 h-3 text-rail-fg-muted" />;
-  }
-};
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -420,8 +322,6 @@ export default function Sidebar() {
     clearSelection();
   }, [currentView, clearSelection]);
 
-  const rowMenuLabel = (recording: Recording) => `Actions for ${recording.name}`;
-
   const handleContextMenu = (e: React.MouseEvent<HTMLElement>, recording: Recording) => {
     e.preventDefault();
     // A touch held on a row selects it; Android raises contextmenu for it.
@@ -460,6 +360,14 @@ export default function Sidebar() {
   const listRef = useRef<HTMLUListElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // A new search, filter or view starts at the top of its results. Left at
+  // the end of the old list, the scroller stays at the end of the new one
+  // and the footer loads page after page. Keyed as the list hook keys its
+  // requests, so filters rebuilt with the same values leave the list alone.
+  const listFiltersKey = JSON.stringify(listFilters);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [listFiltersKey]);
   // Where focus goes once the rows an action took away have gone, or the
   // batch bar holding focus has closed: a row link by id, or the search box.
   const pendingFocusRef = useRef<RecordingId | "search" | null>(null);
@@ -702,6 +610,14 @@ export default function Sidebar() {
     }
   };
 
+  /** Escape empties a search box that holds text; focus stays in the box. */
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Escape" || !searchQuery || isImeComposing(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSearchQuery("");
+  };
+
   const getContextMenuItems = (recording: Recording) => {
     const items: RowMenuItem[] = [];
 
@@ -836,6 +752,52 @@ export default function Sidebar() {
   // Determine if we should hide the sidebar on mobile
   const isRecordingView = pathname?.startsWith("/recordings/");
 
+  // The cards' handlers, one object for the list's life, so a memoised card
+  // draws again only when its own props change (issue #907). Each one runs
+  // this render's handler, which reads the current selection, menu and name.
+  const onRowClick = useStableCallback(handleRecordingClick);
+  const onRowKeyDown = useStableCallback(handleRecordingKeyDown);
+  const onRowContextMenu = useStableCallback(handleContextMenu);
+  const onRowToggleMenu = useStableCallback(toggleRowMenu);
+  const onRowRenameStart = useStableCallback(handleRenameStart);
+  const onRowRenameSubmit = useStableCallback((id: RecordingId) => {
+    void handleRenameSubmit(id);
+  });
+  const onRowToggleSelect = useStableCallback((id: RecordingId, extend: boolean) => {
+    if (extend) {
+      selection.extendTo(id);
+    } else {
+      selection.toggle(id);
+    }
+  });
+  const onRowRenameCancel = useCallback(() => setRenamingId(null), []);
+  const bindLongPress = longPress.bind;
+  const rowActions = useMemo<RecordingListRowActions>(
+    () => ({
+      onClick: onRowClick,
+      onKeyDown: onRowKeyDown,
+      onContextMenu: onRowContextMenu,
+      onToggleSelect: onRowToggleSelect,
+      onToggleMenu: onRowToggleMenu,
+      onRenameStart: onRowRenameStart,
+      onRenameChange: setRenameValue,
+      onRenameSubmit: onRowRenameSubmit,
+      onRenameCancel: onRowRenameCancel,
+      bindLongPress,
+    }),
+    [
+      onRowClick,
+      onRowKeyDown,
+      onRowContextMenu,
+      onRowToggleSelect,
+      onRowToggleMenu,
+      onRowRenameStart,
+      onRowRenameSubmit,
+      onRowRenameCancel,
+      bindLongPress,
+    ],
+  );
+
   // Collapse and expand animate the width. A drag sets it on every pointer
   // move, so it goes without a transition and the edge stays on the pointer.
   const widthTransition = isResizing
@@ -889,11 +851,11 @@ export default function Sidebar() {
         </div>
       )}
       {!isCollapsed && (
-      // `relative` keeps absolutely positioned descendants, such as the batch
-      // bar's sr-only status line, inside this scroller. Without it their
-      // containing block is the aside, and the full list's height leaks out
-      // as scrollable overflow on the app shell.
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col">
+      {/* The head (meeting controls, search, filters and Select all) stays
+          put while the cards scroll beneath it. It gives way, and scrolls on
+          its own, only when open filters would leave the cards too little room. */}
+      <div className="relative min-h-0 shrink overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
           <MeetingControls
@@ -948,6 +910,7 @@ export default function Sidebar() {
                 aria-label="Search recordings"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 className="w-full pl-9 pr-9 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
               />
               <ButtonBase
@@ -1100,6 +1063,32 @@ export default function Sidebar() {
         )}
       </div>
 
+      {recordings.length > 0 && (
+        // Escape here, as in the list, clears the selection.
+        <div onKeyDown={handleListKeyDown} className="pb-2">
+          <label className="flex w-fit cursor-pointer items-center gap-2 px-5 pt-2 text-xs text-rail-fg-muted pointer-coarse:min-h-[44px] pointer-coarse:pt-0">
+            <InputBase
+              type="checkbox"
+              aria-controls="recordings-list"
+              checked={selection.headerState === "all"}
+              ref={(input) => {
+                if (input) input.indeterminate = selection.headerState === "some";
+              }}
+              onChange={selection.toggleAll}
+              className="h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            />
+            Select all
+          </label>
+        </div>
+      )}
+      </div>
+
+      {/* Only the cards scroll. `relative` keeps absolutely positioned
+          descendants, such as the batch bar's sr-only status line, inside
+          this scroller. Without it their containing block is the aside, and
+          the full list's height leaks out as scrollable overflow on the app
+          shell. */}
+      <div ref={scrollRef} className="relative min-h-32 flex-1 basis-0 overflow-y-auto">
       {/* Recording List */}
       {recordings.length === 0 && (
         <div className="text-center p-4 m-2 text-rail-fg-muted text-sm">
@@ -1139,21 +1128,8 @@ export default function Sidebar() {
         </div>
       )}
       {recordings.length > 0 && (
-        // Escape anywhere in the list, header checkbox included, clears the selection.
+        // Escape anywhere in the list clears the selection.
         <div onKeyDown={handleListKeyDown}>
-          <label className="flex w-fit cursor-pointer items-center gap-2 px-5 pt-2 text-xs text-rail-fg-muted pointer-coarse:min-h-[44px] pointer-coarse:pt-0">
-            <InputBase
-              type="checkbox"
-              aria-controls="recordings-list"
-              checked={selection.headerState === "all"}
-              ref={(input) => {
-                if (input) input.indeterminate = selection.headerState === "some";
-              }}
-              onChange={selection.toggleAll}
-              className="h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-            />
-            Select all
-          </label>
           <ul
             id="recordings-list"
             ref={listRef}
@@ -1163,190 +1139,22 @@ export default function Sidebar() {
           >
             {recordings.map((recording) => {
               const isActive = pathname === `/recordings/${recording.id}`;
-              const startDate = parseServerTimestamp(recording.created_at);
-              // A capture's length is known only once Stop has joined its
-              // audio, so until then the row shows when it started and no
-              // length, rather than 0s and an end time equal to the start.
-              const lengthPending = !recording.duration_seconds &&
-                recording.status !== RecordingStatus.PROCESSED;
-              const endDate = startDate && !lengthPending
-                ? new Date(startDate.getTime() + (recording.duration_seconds || 0) * 1000)
-                : null;
               const isRenaming = renamingId === recording.id;
-              const isSelected = selection.isSelected(recording.id);
-              const isHighlighted = isSelected || (isActive && !selection.isSelecting);
-              const isMenuOpen = contextMenu?.buttonFor === recording.id;
-
               return (
-                <li key={recording.id} className="relative group">
-                  {isRenaming ? (
-                    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 rounded-lg border bg-surface-card border-action">
-                      <InputBase
-                        autoFocus
-                        type="text"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onBlur={() => handleRenameSubmit(recording.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleRenameSubmit(recording.id);
-                          if (e.key === "Escape") {
-                            e.stopPropagation();
-                            setRenamingId(null);
-                          }
-                        }}
-                        className="w-full text-sm font-semibold bg-transparent focus:outline-none"
-                      />
-                    </SurfaceBase>
-                  ) : (
-                    <>
-                      {/* Shown on hover or focus where there is a pointer that
-                          hovers, and on every row once anything is selected.
-                          On touch it stays hidden, but readable by a screen
-                          reader, until a long press starts a selection. */}
-                      <InputBase
-                        type="checkbox"
-                        aria-label={`Select ${recording.name}`}
-                        checked={isSelected}
-                        // Handled on click, which knows whether Shift is held.
-                        onChange={() => undefined}
-                        onClick={(e) => {
-                          if (e.shiftKey) {
-                            selection.extendTo(recording.id);
-                          } else {
-                            selection.toggle(recording.id);
-                          }
-                        }}
-                        className={`absolute left-3 top-3.5 z-10 h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
-                          selection.isSelecting
-                            ? ""
-                            : "pointer-coarse:sr-only pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100"
-                        }`}
-                      />
-                      <Link
-                        data-ui-fill={isHighlighted ? "action-tint" : "card"}
-                        data-ui-hover={isHighlighted ? undefined : "action-tint"}
-                        data-ui-border="full"
-                        data-ui="surface"
-                        data-ui-surface="card"
-                        data-recording-link={recording.id}
-                        href={`/recordings/${recording.id}`}
-                        id={
-                          recording.name === "Welcome to Nojoin"
-                            ? "demo-recording-card"
-                            : undefined
-                        }
-                        aria-current={isActive ? "page" : undefined}
-                        onClick={(e) => handleRecordingClick(e, recording.id)}
-                        onKeyDown={(e) => handleRecordingKeyDown(e, recording.id)}
-                        onMouseDown={(e) => {
-                          // Shift-click extends the selection, not a text selection.
-                          if (e.shiftKey) e.preventDefault();
-                        }}
-                        onContextMenu={(e) => handleContextMenu(e, recording)}
-                        {...longPress.bind(recording.id)}
-                        // The left padding keeps the text clear of the checkbox
-                        // wherever it can show, which on touch is only while
-                        // selecting; the right of the tag dots and the button.
-                        className={`block py-3 ${cardRightPadding(recording.tags?.length ?? 0)} rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
-                          selection.isSelecting ? "pl-9" : "pl-9 pointer-coarse:pl-3"
-                        } ${
-                          isHighlighted
-                            ? isSelected
-                              ? "bg-action-tint border-action-border"
-                              : "bg-action-tint border-action"
-                            : "bg-surface-card border-surface-border hover:border-action-border hover:bg-action-tint"
-                        }`}
-                      >
-                        <div className="flex justify-between items-start mb-1">
-                          <h3
-                            className={`min-w-0 text-sm font-semibold line-clamp-2 ${isActive && !selection.isSelecting ? "text-action-text" : "text-foreground"}`}
-                            title="Double-click to rename"
-                            onDoubleClick={(e) => {
-                              if (selection.isSelecting) return;
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleRenameStart(recording.id, recording.name);
-                            }}
-                          >
-                            {recording.name}
-                          </h3>
-                          <StatusIcon recording={recording} />
-                        </div>
-
-                        <div className="flex items-center overflow-hidden text-xs text-contrast-helper gap-2">
-                          <span className="whitespace-nowrap">
-                            {formatDate(recording.created_at, userTimeZone)}
-                          </span>
-                          {/* The time range yields first when the rail narrows; date and duration stay. */}
-                          <span className="hidden whitespace-nowrap text-contrast-icon-muted @min-[19rem]:inline">
-                            |
-                          </span>
-                          <span className="hidden whitespace-nowrap @min-[19rem]:inline">
-                            {!startDate
-                              ? "Time unavailable"
-                              : endDate
-                                ? `${formatTime(startDate, userTimeZone)} - ${formatTime(endDate, userTimeZone)}`
-                                : `Started ${formatTime(startDate, userTimeZone)}`}
-                          </span>
-                          {!lengthPending && (
-                            <>
-                              <span className="whitespace-nowrap text-contrast-icon-muted">
-                                |
-                              </span>
-                              <span className="whitespace-nowrap">
-                                {formatDurationString(recording.duration_seconds)}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        {/* Centred in the right-hand gutter, just left of the
-                            actions button, so they never meet it or the
-                            selection checkbox. */}
-                        <RecordingTagDots
-                          tags={recording.tags}
-                          className="absolute right-9 top-1/2 -translate-y-1/2 pointer-coarse:right-[52px]"
-                        />
-                        <RecordingAttentionBadge recordingId={recording.id} className="mt-2" />
-                        {/* The open recording lists its own unsent notes. */}
-                        {!isActive && unsentRecordings.includes(recording.id) && (
-                          <Badge
-                            tone="warning"
-                            size="sm"
-                            icon={<NotebookPen aria-hidden="true" />}
-                            className="mt-2"
-                          >
-                            Unsent notes
-                          </Badge>
-                        )}
-                      </Link>
-                      {/* Beside the link, not in it, so a press here never
-                          opens, selects or long-presses the row. Shown on hover
-                          or focus where the pointer hovers, and always on touch. */}
-                      <IconButton
-                        size="sm"
-                        icon={<MoreHorizontal aria-hidden="true" />}
-                        aria-label={rowMenuLabel(recording)}
-                        title="Recording actions"
-                        aria-haspopup="menu"
-                        aria-expanded={isMenuOpen}
-                        onClick={(e) => toggleRowMenu(e.currentTarget, recording)}
-                        onKeyDown={(e) => {
-                          if (e.key === "ArrowDown" && !isMenuOpen) {
-                            e.preventDefault();
-                            toggleRowMenu(e.currentTarget, recording);
-                          }
-                        }}
-                        className={cn(
-                          "absolute right-1 top-1/2 z-10 h-7 w-7 -translate-y-1/2",
-                          TOUCH_TARGET_SQUARE,
-                          isMenuOpen
-                            ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
-                        )}
-                      />
-                    </>
-                  )}
-                </li>
+                <RecordingListRow
+                  key={recording.id}
+                  recording={recording}
+                  timeZone={userTimeZone}
+                  isActive={isActive}
+                  isSelected={selection.isSelected(recording.id)}
+                  isSelecting={selection.isSelecting}
+                  isMenuOpen={contextMenu?.buttonFor === recording.id}
+                  isRenaming={isRenaming}
+                  // Only the card being renamed reads the name being typed.
+                  renameValue={isRenaming ? renameValue : ""}
+                  hasUnsentNotes={unsentRecordings.includes(recording.id)}
+                  actions={rowActions}
+                />
               );
             })}
           </ul>
@@ -1434,6 +1242,7 @@ export default function Sidebar() {
           onClose={() => setReprocessRecordingId(null)}
         />
       )}
+      </div>
       </div>
       )}
 

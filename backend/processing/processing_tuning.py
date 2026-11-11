@@ -78,11 +78,15 @@ TUNING_SPECS: dict[str, TuningSpec] = {
 
 TUNING_KEYS: tuple[str, ...] = tuple(TUNING_SPECS)
 
+# True skips the phantom filter entirely (#813). Unset or null means inherit,
+# as for the values above, and the shipped default is off: the filter runs.
+PHANTOM_FILTER_OFF_KEY = "phantom_filter_off"
+
 
 class PhantomThresholdConflict(ValueError):
     """The phantom floor is not below the phantom merge threshold.
 
-    Its message holds only key names and numbers, so the API may show it.
+    Its message holds only fixed wording and numbers, so the API may show it.
     """
 
 
@@ -139,6 +143,25 @@ def resolve_tuning(config: Mapping[str, object] | None, key: str) -> float:
     return _effective(config, key)
 
 
+def phantom_filter_turned_off(config: Mapping[str, object] | None) -> bool:
+    """Whether the settings turn the phantom filter off.
+
+    Only a bool counts. Any other value is logged and ignored, so the filter
+    runs: a processing run must not fail over a setting.
+    """
+    value = config.get(PHANTOM_FILTER_OFF_KEY) if config else None
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    logger.warning(
+        "Ignoring invalid %s=%r; the phantom filter runs.",
+        PHANTOM_FILTER_OFF_KEY,
+        value,
+    )
+    return False
+
+
 def phantom_thresholds_conflict(config: Mapping[str, object] | None) -> bool:
     """Whether the effective phantom floor is not below the merge threshold.
 
@@ -171,7 +194,8 @@ def validate_tuning_candidate(candidate: Mapping[str, object]) -> None:
     if phantom_thresholds_conflict(candidate):
         floor = _effective(candidate, PHANTOM_EMBEDDING_FLOOR_KEY)
         merge = _effective(candidate, PHANTOM_MERGE_THRESHOLD_KEY)
+        # The settings page's words for the pair, not the key names.
         raise PhantomThresholdConflict(
-            f"{PHANTOM_EMBEDDING_FLOOR_KEY} ({floor}) must be lower than "
-            f"{PHANTOM_MERGE_THRESHOLD_KEY} ({merge})."
+            f"Speakers heard only briefly: the noise limit ({floor}) must be "
+            f"lower than the merge limit ({merge})."
         )

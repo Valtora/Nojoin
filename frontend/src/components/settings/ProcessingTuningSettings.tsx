@@ -18,6 +18,7 @@ import type { Settings } from "@/types";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import { SETTINGS_BUTTON_SECONDARY, SETTINGS_INPUT_CLASS } from "./settingsControls";
+import { usesParakeet } from "./settingsRegistry";
 
 interface ProcessingTuningSettingsProps {
   settings: Settings;
@@ -27,6 +28,10 @@ interface ProcessingTuningSettingsProps {
 function formatValue(value: number | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
+
+// As the checkboxes in SearchSettingsMenu.
+const CHECKBOX_CLASS =
+  "h-4 w-4 rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 
 // The native spinner steps an empty field from its minimum rather than from
 // the default shown, and looks foreign in both themes (as in SpeakerCapField).
@@ -158,6 +163,9 @@ export default function ProcessingTuningSettings({
   // Row ids are unique registry ids, so ids derived from them are too.
   const labelId = (rowId: string) => `${rowId}-label`;
   const descriptionId = (rowId: string) => `${rowId}-description`;
+  const groupId = (rowId: string) => `${rowId}-fields`;
+  // Stored as an off switch, so an absent value keeps the filter running.
+  const briefSpeakerCheckOn = settings.phantom_filter_off !== true;
 
   const input = (rowId: string, key: ProcessingTuningKey, labelled = false) => (
     <TuningInput
@@ -172,8 +180,15 @@ export default function ProcessingTuningSettings({
 
   // A row with several fields names them as one group, so "Merge similarity"
   // is announced as part of the phantom speaker filter.
-  const group = (rowId: string, keys: ProcessingTuningKey[]) => (
-    <div role="group" aria-labelledby={labelId(rowId)} className="grid grid-cols-2 gap-3">
+  // A hidden group stays mounted, so its fields come back as they were.
+  const group = (rowId: string, keys: ProcessingTuningKey[], hidden = false) => (
+    <div
+      role="group"
+      id={groupId(rowId)}
+      aria-labelledby={labelId(rowId)}
+      hidden={hidden}
+      className="grid grid-cols-2 gap-3"
+    >
       {keys.map((key) => (
         <Fragment key={key}>{input(rowId, key, true)}</Fragment>
       ))}
@@ -197,7 +212,7 @@ export default function ProcessingTuningSettings({
             const reset = processingTuningReset();
             // The pause belongs to Transcription, outside this card's reset.
             delete reset.line_break_pause_s;
-            onUpdate({ ...settings, ...reset });
+            onUpdate({ ...settings, ...reset, phantom_filter_off: null });
           }}
           className={SETTINGS_BUTTON_SECONDARY}
         >
@@ -216,37 +231,58 @@ export default function ProcessingTuningSettings({
         {input("recording-vad-threshold", "vad_threshold")}
       </SettingsRow>
 
-      <SettingsRow
-        id="recording-word-length-cap"
-        labelId={labelId("recording-word-length-cap")}
-        descriptionId={descriptionId("recording-word-length-cap")}
-        label="Word length cap (Parakeet)"
-        description="The longest, in seconds, a word lasts. A word also ends where the next one starts. Longer gives a short reply more chance to land on its speaker. Canary and Whisper ignore it."
-      >
-        {input("recording-word-length-cap", "asr_word_length_cap_s")}
-      </SettingsRow>
+      {/* Only Parakeet's word timings are capped, so other engines hide it. */}
+      {usesParakeet(settings) && (
+        <SettingsRow
+          id="recording-word-length-cap"
+          labelId={labelId("recording-word-length-cap")}
+          descriptionId={descriptionId("recording-word-length-cap")}
+          label="Longest word (Parakeet only)"
+          description="How long, in seconds, one word can last; a word also ends where the next one starts. Raise it if one-word replies land on the wrong speaker; lower it if the last word of a sentence goes to whoever speaks next."
+        >
+          {input("recording-word-length-cap", "asr_word_length_cap_s")}
+        </SettingsRow>
+      )}
 
       <SettingsRow
         id="recording-phantom-filter"
         labelId={labelId("recording-phantom-filter")}
         descriptionId={descriptionId("recording-phantom-filter")}
-        label="Phantom speaker filter"
-        description="A speaker under both limits is checked: below the floor it is treated as noise and reassigned, at or above the merge similarity it joins the closest speaker, and in between it is kept. Lower limits or a higher merge similarity keep more brief speakers. A limit of 0 turns the filter off. Turn it off if short replies from people who barely speak, such as a single 'yes' or 'agreed', go missing: the filter treats someone who says very little in the whole recording as noise, so their words can be merged into another speaker or dropped from the transcript."
+        label="Speakers heard only briefly"
+        badge={
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs contrast-helper">
+            <InputBase
+              type="checkbox"
+              checked={briefSpeakerCheckOn}
+              aria-controls={groupId("recording-phantom-filter")}
+              onChange={(event) =>
+                onUpdate({
+                  ...settings,
+                  // Ticked clears the switch back to inherit, as a reset does.
+                  phantom_filter_off: event.target.checked ? null : true,
+                })
+              }
+              className={CHECKBOX_CLASS}
+            />
+            Check speakers heard only briefly
+          </label>
+        }
+        description="Someone heard for less than both limits is compared with the other voices. A voice that matches no one below the noise limit is treated as noise and its words go to the nearest speaker; one that matches someone at or above the merge limit joins that person; anything between stays a separate speaker. Lower limits or a higher merge limit keep more brief speakers, and a limit of 0 keeps them all. Do that, or untick Check speakers heard only briefly to skip the check altogether, if a person who says only 'yes' or 'agreed' goes missing from the transcript."
       >
         {group("recording-phantom-filter", [
           "phantom_max_duration_s",
           "phantom_max_segments",
           "phantom_embedding_floor",
           "phantom_merge_threshold",
-        ])}
+        ], !briefSpeakerCheckOn)}
       </SettingsRow>
 
       <SettingsRow
         id="recording-word-flip"
         labelId={labelId("recording-word-flip")}
         descriptionId={descriptionId("recording-word-flip")}
-        label="Single-word flip smoothing"
-        description="A word up to this long, this close to its neighbours, is given back to the speaker on both sides of it. Lower values keep more one-word interjections; 0 turns smoothing off."
+        label="Stray one-word speaker changes"
+        description="A word up to this long, with no more than this pause either side, is given to the person who speaks before and after it. This removes stray one-word speaker changes but can erase a real interjection. Lower values keep more interjections; a word length of 0 keeps them all."
       >
         {group("recording-word-flip", ["word_flip_max_duration_s", "word_flip_max_gap_s"])}
       </SettingsRow>

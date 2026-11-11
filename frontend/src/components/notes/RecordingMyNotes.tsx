@@ -12,7 +12,7 @@ type Props = Omit<ComponentProps<typeof MyNotesList>, "recordingId" | "timelineN
 
 /** One list of the recording's notes; the shared composer stays under Transcript. */
 export default function RecordingMyNotes({ recording, timelineNotes, className = "", ...listProps }: Props) {
-  return <div className={`flex h-full min-h-0 flex-col overflow-y-auto ${className}`}>
+  return <div className={`relative flex h-full min-h-0 flex-col overflow-y-auto ${className}`}>
     <MyNotesList {...listProps} recordingId={recording.id} timelineNotes={timelineNotes} className="min-h-0 flex-1" />
   </div>;
 }

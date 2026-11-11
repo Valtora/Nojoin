@@ -21,8 +21,8 @@ from backend.api.v1.api import api_router
 from backend.processing import live_persistence
 from backend.processing.live_state import _STATE_FILENAME
 from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
+from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
 from backend.utils.config_manager import (
-    DEFAULT_SYSTEM_CONFIG,
     ConfigManager,
     config_manager,
     get_default_user_settings,
@@ -233,6 +233,7 @@ CREATE TABLE recording_audio_window_manifests (
 def build_test_user(
     user_id: int = 1, username: str = "alice", settings: dict | None = None
 ):
+    from datetime import datetime
     from types import SimpleNamespace
 
     return SimpleNamespace(
@@ -240,6 +241,9 @@ def build_test_user(
         username=username,
         force_password_change=False,
         settings=settings or {},
+        is_superuser=False,
+        # Accepted the terms of use, so a capture may start (#1004).
+        legal_accepted_at=datetime(2026, 11, 1),
     )
 
 
@@ -1497,6 +1501,47 @@ def test_live_carry_over_across_seam(monkeypatch, tmp_path):
     # Run 2 completes exactly one provisional segment.
     assert len(transcript.segments) == 1
     assert transcript.segments[0]["provisional"] is True
+
+
+def test_a_speech_region_ends_on_the_sample_the_buffer_is_cut_at(monkeypatch, tmp_path):
+    """No sample falls in neither the region sent to the engine nor the carry.
+
+    Speech runs for 32,001 samples of a 3 s buffer. Truncating the region's end
+    (``int(32001 / 16000 * 16000)`` is 32000) dropped the 32,001st sample from
+    the region while the carry started after it.
+    """
+    import silero_vad
+    import torch
+
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    temp_dir = tmp_path / "13"
+    temp_dir.mkdir()
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+    speech_samples = 32001
+    audio_store = _patch_live_deps(
+        monkeypatch,
+        speech_map=lambda audio: [{"start": 0.0, "end": speech_samples / 16000}],
+    )
+    saved_lengths: dict[str, int] = {}
+    save_audio = audio_store.save_audio
+
+    def recording_save_audio(path, tensor, sampling_rate=16000):
+        saved_lengths[Path(path).name] = tensor.shape[-1]
+        save_audio(path, tensor, sampling_rate=sampling_rate)
+
+    monkeypatch.setattr(silero_vad, "save_audio", recording_save_audio)
+    audio_store.save_audio(str(temp_dir / "0.wav"), torch.zeros(3 * 16000))
+    session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, _FakeTranscript()))
+
+    _run_live_task(monkeypatch, 13, 0, session)
+
+    clip = next(n for n in saved_lengths if n.startswith("nojoin-live-"))
+    assert saved_lengths[clip] == speech_samples
+    assert saved_lengths["buffer.wav"] == 3 * 16000 - speech_samples
 
 
 def test_live_forced_cut(monkeypatch, tmp_path):

@@ -294,6 +294,46 @@ def test_word_level_combination_smooths_isolated_speaker_flip():
     assert result[0]["text"] == "one two three"
 
 
+@pytest.mark.parametrize("offset_s", [0.0, 1.2])
+def test_a_word_sharing_exactly_the_overlap_ratio_decides_the_same_wherever_it_falls(
+    offset_s,
+):
+    """Speaker A holds 140 ms of the 400 ms middle word: exactly the 35% a
+    secondary speaker needs to count as overlapping, so the word is not an
+    isolated flip and keeps B. In float seconds that share measures
+    0.3499999999999998 at the start of a meeting and 0.35000000000000037
+    1.2 s in, and the decision used to follow the rounding."""
+
+    def at(seconds: float) -> float:
+        return seconds + offset_s
+
+    transcription = {
+        "segments": [
+            {
+                "start": at(0.6),
+                "end": at(1.4),
+                "text": " a b c",
+                "words": [
+                    {"start": at(0.6), "end": at(0.8), "word": " a"},
+                    {"start": at(0.8), "end": at(1.2), "word": " b"},
+                    {"start": at(1.2), "end": at(1.4), "word": " c"},
+                ],
+            }
+        ]
+    }
+    diarization = FakeDiarization(
+        [
+            (at(0.6), at(0.8), "A"),
+            (at(0.8), at(1.06), "B"),
+            (at(1.06), at(1.4), "A"),
+        ]
+    )
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert [segment["speaker"] for segment in result] == ["A", "B", "A"]
+
+
 def _flip_transcription(gap_s: float = 0.0) -> dict:
     """one (A), two (B, 0.3 s), three (A), ``gap_s`` apart."""
     two_start = 0.3 + gap_s

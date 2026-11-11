@@ -451,6 +451,15 @@ class LLMBackend:
         """
         raise NotImplementedError
 
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        """Send Test connection's probe to ``self.model`` and return the raw reply.
+
+        Uses the client, options and JSON mode of the backend's Meeting Edge
+        call, so the probe fails where real calls would. SDK errors propagate
+        unwrapped: ``model_probe.classify_probe_error`` reads their status.
+        """
+        raise NotImplementedError
+
     def _build_chat_prompt(
         self,
         user_question: str,
@@ -505,6 +514,7 @@ class LLMBackend:
 - Omit a label entirely if the transcript evidence is weak or ambiguous.
 - Each suggestion must include at least one direct evidence span quoted from the transcript.
 - Prefer names already present in the transcript or linked meeting attendees. Do not invent names.
+- `suggested_name` must be the person's name. Never a role, job title or description such as "Accountant" or "the project lead"; if only a role is known, omit the label.
 - Be conservative. If you are unsure, omit the suggestion instead of guessing.
 - `confidence` must be between 0.0 and 1.0."""
 
@@ -861,17 +871,3 @@ Preserve the same schema and do not invent facts not supported by the original t
                 logger.error(
                     f"Could not find transcript for recording {recording_id} to update notes"
                 )
-
-
-def _get_default_model_for_provider(provider: str) -> Optional[str]:
-    """Return the recommended default model for a provider."""
-    # No provider has a server-side default: the user selects a model in Settings.
-    return None
-
-
-def get_default_model_for_provider(provider: str) -> Optional[str]:
-    """
-    Public function to get the default model for a provider.
-    This is the single source of truth for default model names.
-    """
-    return _get_default_model_for_provider(provider)

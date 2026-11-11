@@ -20,6 +20,12 @@ vi.mock("@/lib/api", () => ({
 
 const addNotification = vi.fn();
 
+// Dates read in the viewer's Nojoin timezone, as the invitations above them do.
+let viewerTimeZone = "Asia/Tokyo";
+vi.mock("@/lib/useUserTimeZone", () => ({
+  useUserTimeZone: () => viewerTimeZone,
+}));
+
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
 }));
@@ -234,5 +240,66 @@ describe("UsersTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(screen.getByRole("button", { name: "Edit bob.example" }));
     expect(await screen.findByLabelText("Active account")).toBeEnabled();
+  });
+});
+
+describe("UsersTab terms of use column (#1004)", () => {
+  const row = (username: string) => screen.getByText(username).closest("tr") as HTMLElement;
+
+  beforeEach(() => {
+    viewerTimeZone = "Asia/Tokyo";
+    context.isSuperuser = true;
+    context.role = UserRole.OWNER;
+    getUsers.mockReset().mockResolvedValue({
+      items: [
+        {
+          ...account(1, "owner.example", UserRole.OWNER),
+          is_superuser: true,
+          legal_accepted_at: null,
+          legal_acceptance_required: false,
+        },
+        {
+          ...account(2, "alice.example", UserRole.USER),
+          // Naive UTC, as the API gives it: 23:30 on the 2nd is the 3rd in Tokyo.
+          legal_accepted_at: "2026-11-02T23:30:00",
+          legal_acceptance_required: false,
+        },
+        {
+          ...account(3, "bob.example", UserRole.ADMIN),
+          legal_accepted_at: null,
+          legal_acceptance_required: true,
+        },
+      ],
+      total: 3,
+    });
+  });
+
+  it.each([
+    // Ahead of UTC, 23:30 on the 2nd is already the 3rd; behind it, still the 2nd.
+    ["Asia/Tokyo", "3 Nov 2026"],
+    ["America/Los_Angeles", "2 Nov 2026"],
+  ])("shows each acceptance date in the viewer's timezone, %s", async (zone, day) => {
+    viewerTimeZone = zone;
+    render(<UsersTab />);
+    await screen.findByText("bob.example");
+
+    expect(screen.getByRole("columnheader", { name: "Terms accepted" })).toBeInTheDocument();
+    expect(within(row("alice.example")).getByText(day)).toBeInTheDocument();
+  });
+
+  it("reads a user who has not accepted as not yet accepted", async () => {
+    render(<UsersTab />);
+    await screen.findByText("bob.example");
+
+    expect(within(row("bob.example")).getByText("Not yet accepted")).toBeInTheDocument();
+  });
+
+  it("shows no date for the setup account of an older install", async () => {
+    render(<UsersTab />);
+    await screen.findByText("bob.example");
+
+    const cell = within(row("owner.example"));
+    expect(cell.getByText("No date recorded")).toHaveClass("sr-only");
+    expect(cell.queryByText("Not yet accepted")).not.toBeInTheDocument();
   });
 });

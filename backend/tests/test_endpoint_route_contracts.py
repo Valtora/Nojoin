@@ -176,6 +176,12 @@ SPEAKERS_ROUTE_CONTRACT = [
         "LiveSpeakerNamesRead",
     ),
     (
+        "/recordings/{recording_id}/live/{label}/suggestions/reject",
+        ("POST",),
+        "dismiss_live_speaker_suggestion",
+        "LiveSpeakerSuggestionsRead",
+    ),
+    (
         "/recordings/{recording_id}/merge",
         ("POST",),
         "merge_recording_speakers",
@@ -260,6 +266,12 @@ SPEAKERS_ROUTE_CONTRACT = [
         ("DELETE",),
         "delete_global_speaker_embedding",
         None,
+    ),
+    (
+        "/{speaker_id}/meetings",
+        ("GET",),
+        "get_person_meetings",
+        "PersonMeetingsRead",
     ),
     ("/{speaker_id}/recalibrate", ("POST",), "recalibrate_voiceprint", None),
     ("/{speaker_id}/scan-matches", ("POST",), "scan_for_matches", None),

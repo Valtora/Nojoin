@@ -138,6 +138,23 @@ describe("themeScript appearance preferences", () => {
     expect(root.dataset.corners).toBe("square");
   });
 
+  it.each([
+    [null, null, null],
+    [null, "classic", "square"],
+    [null, "depth", null],
+    ["rounded", "classic", null],
+    ["subtle", "classic", "subtle"],
+    ["square", "default", "square"],
+    ["auto", "classic", "square"],
+  ])("stamps corners %s under style %s as %s before paint", (corners, style, expected) => {
+    if (corners !== null) localStorage.setItem("nojoin-corners", corners);
+    if (style !== null) localStorage.setItem("nojoin-style", style);
+
+    runScript();
+
+    expect(root.getAttribute("data-corners")).toBe(expected);
+  });
+
   // Every palette the settings offer must survive the pre-paint script, or
   // choosing it flashes the default palette on each load.
   it.each(PALETTES.filter((palette) => palette !== DEFAULT_PALETTE))(

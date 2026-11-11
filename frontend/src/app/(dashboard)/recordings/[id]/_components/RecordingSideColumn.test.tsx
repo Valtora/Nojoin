@@ -10,13 +10,14 @@ vi.mock("@/components/ChatPanel", () => ({
   default: () => <div data-testid="chat-panel" />,
 }));
 
-const column = (allowChat = true) =>
+const column = (allowChat = true, showTasks = false) =>
     <RecordingSideColumn
       allowChat={allowChat}
       speakers={<div data-testid="speaker-panel" />}
       myNotes={<div data-testid="my-notes-list" />}
       captures={<div data-testid="captures-list" />}
       meetingEdge={<div data-testid="meeting-edge" />}
+      tasks={showTasks ? <div data-testid="linked-tasks" /> : undefined}
       chatPanelHeight={40}
       onChatPanelHeightChange={vi.fn()}
       onNotesUpdate={vi.fn()}
@@ -34,7 +35,7 @@ function ResponsiveSideColumn({ allowChat }: { allowChat: boolean }) {
 const tablist = () => screen.getByRole("tablist", { name: "Side panels" });
 const tab = (name: string) => within(tablist()).getByRole("tab", { name });
 
-describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs", () => {
+describe("the side column's Speakers, Your notes, Captures and Meeting Edge tabs", () => {
   beforeEach(() => {
     useNavigationStore.setState({
       sideTab: "speakers",
@@ -43,7 +44,7 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
     });
   });
 
-  it.each([false, true])("matches the real splitter and grip, flattening only beside selected My notes (dark=%s)", (dark) => {
+  it.each([false, true])("matches the real splitter and grip, flattening only beside selected Your notes (dark=%s)", (dark) => {
     const { container } = renderColumn();
     const handle = container.querySelector('[data-ui-resize-handle="vertical"]')!;
     const grip = handle.querySelector("[data-ui-resize-grip]")!;
@@ -56,8 +57,8 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
     expect(matchesStyleDeclaration(handle, "depth-gradient.css", "--depth-split-fill",
       "var(--surface-inset)", appearance)).toBe(false);
 
-    fireEvent.click(tab("My notes"));
-    expect(tab("My notes")).toHaveAttribute("data-ui-side-tab", "my-notes");
+    fireEvent.click(tab("Your notes"));
+    expect(tab("Your notes")).toHaveAttribute("data-ui-side-tab", "my-notes");
     expect(matchesStyleDeclaration(handle, "depth-gradient.css", "--depth-split-fill",
       "var(--surface-inset)", appearance)).toBe(true);
 
@@ -66,12 +67,12 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
       "var(--surface-inset)", appearance)).toBe(false);
   });
 
-  it("opens on Speakers, with My notes and Captures beside it, each tied to its panel", () => {
+  it("opens on Speakers, with Your notes and Captures beside it, each tied to its panel", () => {
     renderColumn();
 
     expect(within(tablist()).getAllByRole("tab").map((each) => each.textContent)).toEqual([
       "Speakers",
-      "My notes",
+      "Your notes",
       "Captures",
       "Meeting Edge",
     ]);
@@ -86,12 +87,12 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
     }
   });
 
-  it("switches to My notes on a click, keeping Speakers mounted, and remembers it", () => {
+  it("switches to Your notes on a click, keeping Speakers mounted, and remembers it", () => {
     renderColumn();
 
-    fireEvent.click(tab("My notes"));
+    fireEvent.click(tab("Your notes"));
 
-    expect(tab("My notes")).toHaveAttribute("aria-selected", "true");
+    expect(tab("Your notes")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("my-notes-list")).toBeVisible();
     expect(screen.getByTestId("speaker-panel")).not.toBeVisible();
     expect(useNavigationStore.getState().sideTab).toBe("my-notes");
@@ -109,7 +110,7 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
   });
 
   it.each([
-    ["speakers", "ArrowRight", "My notes"],
+    ["speakers", "ArrowRight", "Your notes"],
     ["speakers", "ArrowLeft", "Meeting Edge"],
     ["my-notes", "ArrowRight", "Captures"],
     ["captures", "ArrowRight", "Meeting Edge"],
@@ -138,16 +139,33 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
       ["12rem", "25rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
 
     expect(hidesBelow("Speakers")).toEqual(["12rem"]);
-    expect(hidesBelow("My notes")).toEqual(["25rem"]);
+    expect(hidesBelow("Your notes")).toEqual(["25rem"]);
     expect(hidesBelow("Captures")).toEqual(["25rem"]);
     expect(hidesBelow("Meeting Edge")).toEqual(["25rem"]);
-    fireEvent.click(tab("My notes"));
+    fireEvent.click(tab("Your notes"));
     expect(hidesBelow("Speakers")).toEqual(["25rem"]);
-    expect(hidesBelow("My notes")).toEqual(["12rem"]);
-    for (const name of ["Speakers", "My notes", "Captures", "Meeting Edge"]) {
+    expect(hidesBelow("Your notes")).toEqual(["12rem"]);
+    for (const name of ["Speakers", "Your notes", "Captures", "Meeting Edge"]) {
       expect(tab(name)).toHaveAttribute("title", name);
       expect(tab(name).querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     }
+  });
+
+  it("includes linked Tasks in keyboard navigation and falls back when they are absent", () => {
+    const { rerender } = render(column(true, true));
+    // A fifth tab needs a wider column before the other labels give way to icons.
+    expect(tab("Tasks").querySelector("span")).toHaveClass("@max-[30rem]:sr-only");
+    fireEvent.keyDown(tab("Speakers"), { key: "End" });
+    expect(tab("Tasks")).toHaveFocus();
+    expect(tab("Tasks")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("linked-tasks")).toBeVisible();
+    fireEvent.keyDown(tab("Tasks"), { key: "ArrowRight" });
+    expect(tab("Speakers")).toHaveFocus();
+    fireEvent.click(tab("Tasks"));
+
+    rerender(column(true, false));
+    expect(screen.queryByRole("tab", { name: "Tasks" })).not.toBeInTheDocument();
+    expect(tab("Speakers")).toHaveAttribute("aria-selected", "true");
   });
 
   it("collapses both tabs together, and the bar left brings them back", () => {
@@ -155,9 +173,35 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse side panels" }));
     expect(screen.queryByRole("tablist")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes, Captures and Meeting Edge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Speakers, Your notes, Captures and Meeting Edge" }));
 
     expect(tab("Speakers")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("leaves Meeting Edge out of the collapsed bar's name where it is not shown", () => {
+    useNavigationStore.setState({ isSpeakerPanelCollapsed: true });
+    render(
+      <RecordingSideColumn
+        speakers={<div />}
+        myNotes={<div />}
+        captures={<div />}
+        chatPanelHeight={40}
+        onChatPanelHeightChange={vi.fn()}
+        onNotesUpdate={vi.fn()}
+        onResizeDragging={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Speakers, Your notes and Captures" })).toBeInTheDocument();
+  });
+
+  it("names Tasks in the collapsed bar only where the meeting has linked tasks", () => {
+    useNavigationStore.setState({ isSpeakerPanelCollapsed: true });
+    const { rerender } = render(column(true, true));
+    expect(screen.getByRole("button", { name: "Speakers, Your notes, Captures, Meeting Edge and Tasks" })).toBeInTheDocument();
+
+    rerender(column(true, false));
+    expect(screen.getByRole("button", { name: "Speakers, Your notes, Captures and Meeting Edge" })).toBeInTheDocument();
   });
 
   it("shows the tabs over Chat's bar when Chat is collapsed", () => {
@@ -170,7 +214,7 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
 
   it.each([
     ["Show speakers panel", "speakers"],
-    ["Show my notes", "my-notes"],
+    ["Show your notes", "my-notes"],
     ["Show captures", "captures"],
     ["Show Meeting Edge", "meeting-edge"],
   ] as const)("opens the tab the rail's %s button names", (name, sideTab) => {
@@ -193,7 +237,7 @@ describe("the side column's Speakers, My notes, Captures and Meeting Edge tabs",
     fireEvent.click(screen.getByRole("button", { name: "Collapse side panels" }));
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryByTestId("chat-panel")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes, Captures and Meeting Edge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Speakers, Your notes, Captures and Meeting Edge" }));
     expect(tab("Meeting Edge")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("meeting-edge")).toBeVisible();
   });

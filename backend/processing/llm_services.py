@@ -12,7 +12,6 @@ from backend.processing.llm_backends.base import (
     JSON_CONTRACT_ERRORS,
     LLMBackend,
     build_eligible_speaker_labels_prompt_section,
-    get_default_model_for_provider,
     summarize_llm_response_shape,
 )
 from backend.processing.llm_backends.factory import (
@@ -21,10 +20,8 @@ from backend.processing.llm_backends.factory import (
     get_llm_backend_with_secondary,
 )
 from backend.processing.llm_backends.gemini import GeminiLLMBackend
-from backend.processing.llm_backends.ollama import (
-    OLLAMA_DEFAULT_NUM_CTX,
-    OllamaLLMBackend,
-)
+from backend.processing.llm_backends.ollama import OllamaLLMBackend
+from backend.processing.llm_backends.ollama_model_facts import OLLAMA_DEFAULT_NUM_CTX
 from backend.processing.llm_backends.openai import OpenAILLMBackend
 
 # Retained as module attributes for backward compatibility: some call sites and
@@ -44,7 +41,6 @@ __all__ = [
     "OpenAILLMBackend",
     "SecondaryLLMBackend",
     "build_eligible_speaker_labels_prompt_section",
-    "get_default_model_for_provider",
     "get_llm_backend",
     "get_llm_backend_with_secondary",
     "summarize_llm_response_shape",

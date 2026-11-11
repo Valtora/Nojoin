@@ -230,7 +230,7 @@ export default function TaskRecordingPicker({
         {status}
       </p>
 
-      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="max-h-48 overflow-y-auto rounded-2xl border border-surface-border bg-surface-card p-2">
+      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="relative max-h-48 overflow-y-auto rounded-2xl border border-surface-border bg-surface-card p-2">
         <ul
           id={listId}
           role="listbox"

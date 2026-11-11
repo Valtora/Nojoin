@@ -39,8 +39,10 @@ check_untyped_defs = true
 files = [
     # Configuration and core security/persistence contracts.
     "backend/utils/config_manager.py",
+    "backend/utils/config_defaults.py",
     "backend/utils/env_comments.py",
     "backend/utils/time.py",
+    "backend/utils/time_units.py",
     "backend/utils/primary_owner.py",
     "backend/utils/url_redaction.py",
     "backend/core/exceptions.py",
@@ -86,6 +88,8 @@ files = [
     "backend/processing/vad_muting.py",
     "backend/processing/documents/vision_input.py",
     "backend/processing/unheard_words.py",
+    "backend/processing/sentence_start.py",
+    "backend/utils/canonical_pipeline/live_sentence_start.py",
     "backend/processing/live_diarization",
     "backend/utils/canonical_pipeline/live_labels.py",
     "backend/utils/canonical_pipeline/manual_speaker_parts.py",

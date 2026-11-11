@@ -1,35 +1,44 @@
+import { noteLegalAcceptance } from "@/lib/legalAcceptance";
 import { clearStoredNotes, storedNotesSignedIn } from "@/lib/notes/noteStore";
 import { noteSignedIn } from "@/lib/session";
 import type { User } from "@/types";
 import api from "./client";
 
+/** What the sign-in endpoint answers: UI metadata, never the session token. */
+export interface LoginResponse {
+  force_password_change: boolean;
+  is_superuser: boolean;
+  username: string;
+  /** Whether the account must accept the terms of use first (#1004). */
+  legal_acceptance_required?: boolean;
+}
+
 /**
  * Records who the browser is signed in as. Once the account's id is known,
  * notes kept in this browser for any other account are removed, so they are
- * never shown or sent as this one (`storedNotesSignedIn`).
+ * never shown or sent as this one (`storedNotesSignedIn`). Whether it must
+ * accept the terms of use comes with it.
  */
-const signedInAs = (user: { username: string; force_password_change: boolean; id?: number }) => {
+const signedInAs = (user: {
+  username: string;
+  force_password_change: boolean;
+  id?: number;
+  legal_acceptance_required?: boolean;
+}) => {
   noteSignedIn(user);
+  noteLegalAcceptance(user);
   void storedNotesSignedIn(user.id);
 };
 
 export const login = async (
   username: string,
   password: string,
-): Promise<{
-  force_password_change: boolean;
-  is_superuser: boolean;
-  username: string;
-}> => {
+): Promise<LoginResponse> => {
   const formData = new FormData();
   formData.append("username", username);
   formData.append("password", password);
 
-  const response = await api.post<{
-    force_password_change: boolean;
-    is_superuser: boolean;
-    username: string;
-  }>("/login/session", formData, {
+  const response = await api.post<LoginResponse>("/login/session", formData, {
     headers: {
       "Content-Type": "multipart/form-data",
     },

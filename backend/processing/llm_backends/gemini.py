@@ -28,10 +28,16 @@ logger = logging.getLogger(__name__)
 from backend.processing.llm_backends.base import (
     LLMBackend,
     TruncatedNotesError,
-    _get_default_model_for_provider,
     is_vision_unsupported_error,
     raise_if_output_truncated,
 )
+
+# The Gemini API version every request names. This backend was written against
+# v1beta, which serves the -latest model aliases (gemini-flash-latest and the
+# rest) and the features it uses. google-genai 3.0.0 moved the default for an
+# API-key client to v1, where those aliases answer 404 (#990). A per-call
+# HttpOptions, such as a timeout, keeps the client's version.
+GEMINI_API_VERSION = "v1beta"
 
 
 class GeminiLLMBackend(LLMBackend):
@@ -52,9 +58,12 @@ class GeminiLLMBackend(LLMBackend):
                 "Google Gemini API key is not set. Please provide it in settings."
             )
         self.api_key = api_key
-        self.model = model or _get_default_model_for_provider("gemini")
+        self.model = model or None
         self.genai = genai
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = genai.Client(
+            api_key=self.api_key,
+            http_options=genai.types.HttpOptions(api_version=GEMINI_API_VERSION),
+        )
 
     @staticmethod
     def _raise_if_truncated(response) -> None:
@@ -499,6 +508,24 @@ class GeminiLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (meeting title): {e}")
             raise RuntimeError(f"Gemini API error (meeting title): {e}")
+
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The Meeting Edge request. No output cap, as real calls send none: a
+        # thinking model that spent a cap on thought would read as a bad reply.
+        if not self.model:
+            raise ValueError("No Gemini model configured.")
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=self.genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+                http_options=self.genai.types.HttpOptions(
+                    timeout=int(timeout * 1000),
+                ),
+            ),
+        )
+        return self._extract_text_from_response(response)
 
     def validate_api_key(self) -> bool:
         """

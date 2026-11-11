@@ -1,7 +1,8 @@
 "use client";
 
 import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
-import { Info, Minus, Plus, Users } from "lucide-react";
+import { InfoTip } from "@/components/ui/Tooltip";
+import { Minus, Plus, Users } from "lucide-react";
 import { useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
@@ -23,17 +24,17 @@ interface SpeakerCapFieldProps {
   disabled?: boolean;
   size?: "compact" | "full";
   /**
-   * "stacked" puts the label above a full-width control with the hint beneath,
-   * which suits the import and reprocess dialogs. "inline" collapses the whole
-   * thing to a right-aligned row sized to its content, with the hint behind an
-   * info affordance, for the live capture card where a full-width field spans
-   * the entire workspace for a two-character value.
+   * "stacked" puts the label above a full-width control, which suits the
+   * import and reprocess dialogs. "inline" collapses the whole thing to a row
+   * sized to its content, for the live capture toolbar where a full-width
+   * field spans the entire workspace for a two-character value. Either way
+   * the hint is behind an "i" beside the box (#1000), and only a rejected
+   * entry's message takes a line under it.
    */
   layout?: "stacked" | "inline";
   /**
-   * Set when the field is shown during an active capture. Its hint is then
-   * shown beneath the field in either layout, not left to a tooltip, because
-   * it explains why the live labels can show more speakers than the cap.
+   * Set when the field is shown during an active capture: the hint then says
+   * why the live labels can show more speakers than the cap.
    */
   liveHint?: boolean;
   idPrefix?: string;
@@ -121,14 +122,14 @@ export default function SpeakerCapField({
 
   const inputId = `${idPrefix}-input`;
   const hintId = `${idPrefix}-hint`;
+  const errorId = `${idPrefix}-error`;
   const inline = layout === "inline";
   const compact = size === "compact";
 
-  const hintText = invalid
-    ? `Enter a whole number between ${MIN_SPEAKER_CAP} and ${MAX_SPEAKER_CAP}, or leave empty for auto-detect.`
-    : liveHint
-      ? "Applied when you stop. Live labels are a preview and can show more speakers than this."
-      : "Leave empty to auto-detect. Set this only if the meeting is split into more speakers than there were people.";
+  const hintText = liveHint
+    ? "Applied when you stop. Live labels are a preview and can show more speakers than this."
+    : "Leave empty to auto-detect. Set this only if the meeting is split into more speakers than there were people.";
+  const errorText = `Enter a whole number between ${MIN_SPEAKER_CAP} and ${MAX_SPEAKER_CAP}, or leave empty for auto-detect.`;
 
   const canDecrement = !disabled && steppedSpeakerCap(value, -1) !== undefined;
   const canIncrement = !disabled && steppedSpeakerCap(value, 1) !== undefined;
@@ -146,7 +147,7 @@ export default function SpeakerCapField({
         compact ? "h-8" : "h-9"
         // Wide enough for the "Auto-detect" placeholder plus both step buttons;
         // 9.5rem clips the last letter.
-      } ${inline ? "w-[11.5rem]" : "w-full"} ${
+      } ${inline ? "w-[11.5rem]" : "min-w-0 flex-1"} ${
         invalid
           ? "border-status-danger-border"
           : "border-control-border"
@@ -173,7 +174,7 @@ export default function SpeakerCapField({
         disabled={disabled}
         placeholder="Auto-detect"
         aria-invalid={invalid || undefined}
-        aria-describedby={hintId}
+        aria-describedby={invalid ? `${errorId} ${hintId}` : hintId}
         onFocus={() => {
           setEditing(true);
         }}
@@ -211,8 +212,15 @@ export default function SpeakerCapField({
     </div>
   );
 
+  // The hint is the input's description whether or not its bubble shows.
+  const field = (
+    <div className="flex items-center gap-1">
+      {stepper}
+      <InfoTip id={hintId} label="About the speaker limit" content={hintText} />
+    </div>
+  );
+
   if (inline) {
-    const hintShown = invalid || liveHint;
     return (
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <label
@@ -222,39 +230,19 @@ export default function SpeakerCapField({
           <Users className="h-3.5 w-3.5" aria-hidden="true" />
           Max Speakers
         </label>
-        {/* The icon wraps with the stepper, so a narrow toolbar puts the
+        {/* The "i" wraps with the stepper, so a narrow toolbar puts the
             label on a line of its own rather than the icon (#538). */}
-        <div className="flex items-center gap-2">
-          {stepper}
-          {/* The rail's copy of this control drops the hint icon, which would
-              wrap onto a row of its own there, and a hint already shown
-              beneath needs no icon. */}
-          {compact || hintShown ? null : (
-            <span
-              className="text-contrast-icon-muted"
-              title={hintText}
-              aria-hidden="true"
-            >
-              <Info className="h-3.5 w-3.5" />
-            </span>
-          )}
-        </div>
-        {/* Present for screen readers, and shown for a rejected entry and
-            during a capture, where a tooltip alone would leave the reader
-            without it. Its own width does not count, so it wraps to the
-            field's rather than widening the toolbar. */}
-        <p
-          id={hintId}
-          className={
-            invalid
-              ? "w-full text-right text-[11px] leading-snug text-status-danger-fg [contain:inline-size]"
-              : hintShown
-                ? "w-full text-[11px] leading-snug text-contrast-helper [contain:inline-size]"
-                : "sr-only"
-          }
-        >
-          {hintText}
-        </p>
+        {field}
+        {/* An error to act on stays in view. Its own width does not count,
+            so it wraps to the field's rather than widening the toolbar. */}
+        {invalid ? (
+          <p
+            id={errorId}
+            className="w-full text-right text-[11px] leading-snug text-status-danger-fg [contain:inline-size]"
+          >
+            {errorText}
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -271,13 +259,12 @@ export default function SpeakerCapField({
           (optional)
         </span>
       </label>
-      {stepper}
-      <p
-        id={hintId}
-        className="text-[11px] leading-snug text-contrast-helper"
-      >
-        {hintText}
-      </p>
+      {field}
+      {invalid ? (
+        <p id={errorId} className="text-[11px] leading-snug text-status-danger-fg">
+          {errorText}
+        </p>
+      ) : null}
     </div>
   );
 }

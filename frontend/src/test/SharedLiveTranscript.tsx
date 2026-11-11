@@ -5,7 +5,7 @@ import type { LiveLineHandlers } from "@/components/transcript/LiveLineEditor";
 import type { MoveNoteHandler } from "@/components/transcript/_hooks/useNoteMoves";
 import type { InlineNote, NoteSelection } from "@/lib/notes/noteOutbox";
 import { buildMeetingSpeakerColors, getRecordingSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
-import type { RecordingSpeaker, TimelineNote, TranscriptSegment } from "@/types";
+import type { RecordingSpeaker, SpeakerNameSource, TimelineNote, TranscriptSegment } from "@/types";
 
 interface SharedLiveTranscriptProps {
   lineHandlers?: LiveLineHandlers;
@@ -23,6 +23,10 @@ interface SharedLiveTranscriptProps {
   onNoteOnLine?: (selection: NoteSelection) => void;
   onNoteAtTime?: (atMs: number) => void;
   liveSpeakerNames?: Readonly<Record<string, string>>;
+  liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
+  liveSpeakerSuggestionStarts?: Readonly<Record<string, number>>;
+  onDismissLiveSpeakerSuggestion?: (label: string) => Promise<boolean>;
   onRenameLiveSpeaker?: (label: string, name: string) => Promise<boolean>;
   loadPeopleNames?: () => Promise<readonly string[]>;
 }
@@ -33,7 +37,8 @@ const noop = () => {};
 export default function SharedLiveTranscript({
   segments, hasLoaded, capturing = true, isPaused, lineHandlers, speakers = [], notes, onRetryNote,
   onDiscardNote, onMoveNote, footer, onNoteOnLine, onNoteAtTime, liveSpeakerNames = {},
-  onRenameLiveSpeaker, loadPeopleNames,
+  onRenameLiveSpeaker, loadPeopleNames, liveSpeakerSuggestions, onDismissLiveSpeakerSuggestion,
+  liveSpeakerSuggestionSources, liveSpeakerSuggestionStarts,
 }: SharedLiveTranscriptProps) {
   const speakerMap = {
     ...Object.fromEntries(speakers.map((speaker) => [
@@ -50,7 +55,9 @@ export default function SharedLiveTranscript({
       onUndo={noop} onRedo={noop} canUndo={false} canRedo={false} onExport={noop}
       disableSegmentPlayback disableExport timelineNotes={notes} onRetryNote={onRetryNote}
       onDiscardNote={onDiscardNote} onMoveNote={onMoveNote}
-      live={{ hasLoaded, capturing, isPaused, lineHandlers, onNoteOnLine, onNoteAtTime, onRenameLiveSpeaker, loadPeopleNames }} />
+      live={{ hasLoaded, capturing, isPaused, lineHandlers, onNoteOnLine, onNoteAtTime, onRenameLiveSpeaker, loadPeopleNames,
+        liveSpeakerSuggestions, liveSpeakerSuggestionSources, liveSpeakerSuggestionStarts,
+        onDismissLiveSpeakerSuggestion }} />
     {footer}
   </>;
 }

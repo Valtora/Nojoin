@@ -99,6 +99,8 @@ class SettingsUpdate(BaseModel):
     enable_live_transcription: Optional[bool] = None
     # Install-wide, admin-only; selection is frozen when capture labels start.
     live_speaker_labels: Optional[str] = None
+    # Install-wide, admin-only: reply starts go to the speaker who says them.
+    sentence_start_correction: Optional[bool] = None
     live_text_settling: Optional[Literal["off", "auto", "always"]] = None
     live_text_settling_k: Optional[int] = Field(default=None, strict=True, ge=1, le=10)
     live_text_settling_window_s: Optional[float] = Field(
@@ -116,6 +118,7 @@ class SettingsUpdate(BaseModel):
     ollama_live_model: Optional[str] = None
     ollama_api_url: Optional[str] = None
     ollama_context_window: Optional[int] = None
+    ollama_think: Optional[bool] = None
     secondary_llm_provider: Optional[str] = None
     secondary_gemini_model: Optional[str] = None
     secondary_gemini_live_model: Optional[str] = None
@@ -127,11 +130,13 @@ class SettingsUpdate(BaseModel):
     secondary_ollama_live_model: Optional[str] = None
     secondary_ollama_api_url: Optional[str] = None
     secondary_ollama_context_window: Optional[int] = None
+    secondary_ollama_think: Optional[bool] = None
     secondary_gemini_api_key: Optional[str] = None
     secondary_openai_api_key: Optional[str] = None
     secondary_anthropic_api_key: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
     confirm_suggested_names: Optional[bool] = None
+    suggest_live_speaker_names: Optional[bool] = None
     voiceprint_learning: Optional[str] = None
     prefer_short_titles: Optional[bool] = None
     # Notes structure and vocabulary (issue #137). The install_* keys are
@@ -141,7 +146,6 @@ class SettingsUpdate(BaseModel):
     glossary_terms: Optional[str] = None
     install_glossary_terms: Optional[str] = None
     enable_vad: Optional[bool] = None
-    vad_mute_transcription: Optional[bool] = None
     vad_mute_diarization: Optional[bool] = None
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
@@ -154,6 +158,7 @@ class SettingsUpdate(BaseModel):
     phantom_max_segments: Optional[int] = None
     phantom_embedding_floor: Optional[float] = None
     phantom_merge_threshold: Optional[float] = None
+    phantom_filter_off: Optional[bool] = None
     word_flip_max_duration_s: Optional[float] = None
     word_flip_max_gap_s: Optional[float] = None
     line_break_pause_s: Optional[float] = None
@@ -293,26 +298,6 @@ class SettingsUpdate(BaseModel):
             )
         return value
 
-    @field_validator("ollama_api_url")
-    @classmethod
-    def validate_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
-        if value:
-            try:
-                return validate_ollama_api_url(value, allow_private=True)
-            except OllamaURLValidationError as exc:
-                raise ValueError(str(exc)) from exc
-        return value
-
-    @field_validator("secondary_ollama_api_url")
-    @classmethod
-    def validate_secondary_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
-        if value:
-            try:
-                return validate_ollama_api_url(value, allow_private=True)
-            except OllamaURLValidationError as exc:
-                raise ValueError(str(exc)) from exc
-        return value
-
     @field_validator("ollama_context_window", "secondary_ollama_context_window")
     @classmethod
     def validate_ollama_context_window(cls, value: Optional[int]) -> Optional[int]:
@@ -421,6 +406,11 @@ def _apply_default_user_settings(
 
 
 PHANTOM_PAIR_KEYS = (PHANTOM_EMBEDDING_FLOOR_KEY, PHANTOM_MERGE_THRESHOLD_KEY)
+# The settings page's words for each half of the pair, used in its error.
+_PHANTOM_PAIR_NAMES = {
+    PHANTOM_EMBEDDING_FLOOR_KEY: "the noise limit",
+    PHANTOM_MERGE_THRESHOLD_KEY: "the merge limit",
+}
 # Read-only in GET: the install's flat config.json tuning values the settings
 # page needs, keyed by tuning key (null where unset or unusable). Today that
 # is the phantom pair, so the page runs the floor/merge check on the values
@@ -494,7 +484,7 @@ def _validate_processing_tuning(
         validate_tuning_candidate(_phantom_pair_in_effect(install, candidate))
     except PhantomThresholdConflict as exc:
         inherited = [
-            f"{key} to {value}"
+            f"{_PHANTOM_PAIR_NAMES[key]} to {value}"
             for key in PHANTOM_PAIR_KEYS
             if candidate.get(key) is None
             and (value := normalise_tuning_value(key, install.get(key))) is not None
@@ -552,6 +542,9 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
         merged.update(
             {k: v for k, v in sanitized_user_settings.items() if v is not None}
         )
+    # Never shown, so the page's whole-object save cannot send one back.
+    for key in RETIRED_USER_SETTING_KEYS:
+        merged.pop(key, None)
     _normalise_processing_tuning(merged, config_manager.get_all())
     _normalise_speaker_settings(merged)
     merged.update(
@@ -625,6 +618,46 @@ def _build_settings_update_data(
             del update_data[key]
 
     return update_data
+
+
+# Install-wide Ollama addresses, with the name the settings page gives each.
+_OLLAMA_URL_FIELDS = {
+    "ollama_api_url": "The Ollama address",
+    "secondary_ollama_api_url": "The fallback Ollama address",
+}
+
+
+def _validate_ollama_url_updates(update_data: dict[str, Any]) -> None:
+    """Check each Ollama address this save sets, and normalise it in place.
+
+    The settings page sends every setting with each save, so the address the
+    install already holds comes back with any unrelated change. That value was
+    checked when it was set, or came from the operator's own .env, so it is not
+    resolved again here: doing so meant a host that had stopped resolving
+    blocked every save on the page (#945). A new address goes through the full
+    outbound policy, and the checks made where an address is used are
+    unchanged.
+    """
+    present = [key for key in _OLLAMA_URL_FIELDS if update_data.get(key)]
+    if not present:
+        return
+
+    # Compare against config.json as it is now, not this process's older copy.
+    config_manager.reload()
+    for key in present:
+        try:
+            update_data[key] = validate_ollama_api_url(
+                str(update_data[key]),
+                allow_private=True,
+                trusted_url=config_manager.get(key),
+            )
+        except OllamaURLValidationError as exc:
+            # The policy's messages are fixed text naming the rule, never the
+            # address or what it resolved to, so they are safe to show.
+            raise HTTPException(
+                status_code=400,
+                detail=f"{_OLLAMA_URL_FIELDS[key]} was not saved. {exc}",
+            ) from exc
 
 
 async def _validate_install_notes_template(
@@ -701,12 +734,9 @@ async def _save_user_settings(
     is_admin = _is_settings_admin(current_user)
     update_data = _build_settings_update_data(settings, is_admin=is_admin)
 
+    _validate_ollama_url_updates(update_data)
+
     try:
-        if "ollama_api_url" in update_data:
-            update_data["ollama_api_url"] = validate_ollama_api_url(
-                update_data["ollama_api_url"],
-                allow_private=True,
-            )
         for key, value in update_data.items():
             config_manager.validate_config_value(key, value)
         candidate_settings = get_default_user_settings()
@@ -715,7 +745,7 @@ async def _save_user_settings(
         validate_language_settings(candidate_settings)
         _validate_processing_tuning(candidate_settings, update_data)
     except PhantomThresholdConflict as e:
-        # Only this error's message is shown: it holds key names and numbers,
+        # Only this error's message is shown: it holds fixed wording and numbers,
         # and names an install value the user cannot see on the page.
         raise sanitized_http_exception(
             logger=logger,

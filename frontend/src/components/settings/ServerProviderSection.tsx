@@ -5,6 +5,7 @@ import { getServerProviderGap } from "@/lib/aiAvailability";
 import { aiProviderLabel } from "@/lib/aiProviders";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
+import OllamaThinkingRow from "./OllamaThinkingRow";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import type { AISettingsModels } from "./useAISettingsModels";
@@ -161,13 +162,22 @@ export default function ServerProviderSection({
               className={SETTINGS_INPUT_CLASS}
             />
           </SettingsRow>
+
+          <OllamaThinkingRow
+            idPrefix="ai-primary"
+            model={settings.ollama_model || ""}
+            checked={settings.ollama_think === true}
+            onCheckedChange={(checked) =>
+              onPersist({ ...settings, ollama_think: checked })
+            }
+          />
         </>
       )}
 
       {hasCredential && (
         <SettingsRow
           label="Connection"
-          description="Checks the key or address and reloads the model list. Nothing is saved."
+          description="Checks the key or address, runs a short test on the default and Meeting Edge models, and reloads the model list. Nothing is saved."
           descriptionId="ai-primary-test-help"
         >
           <TestConnection

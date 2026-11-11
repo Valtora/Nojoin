@@ -150,6 +150,7 @@ export function useCapture() {
     refreshPausedRecording: controller.refreshPausedRecording,
     discardEmptyInterruptedRecording: controller.discardEmptyInterruptedRecording,
     dismissRecoveryOffer: controller.dismissRecoveryOffer,
+    dismissSourceChoice: controller.dismissSourceChoice,
     updateSettings: controller.updateSettings,
     dismissCoverageWarning: controller.dismissCoverageWarning,
     displayVideoTrack: controller.displayVideoTrack,
@@ -165,5 +166,6 @@ export function useCapture() {
     finalizeRetry: state.finalizeRetry,
     stopStage: state.stopStage,
     coverageWarning: state.coverageWarning,
+    sourceChoice: state.sourceChoice,
   };
 }

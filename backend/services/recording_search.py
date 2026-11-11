@@ -20,6 +20,7 @@ from backend.models.recording import Recording
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.tag import RecordingTag, Tag
 from backend.models.transcript import Transcript
+from backend.services.person_meetings import counted_speaker
 from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
 _ACTIVE_STATES = sorted(ACTIVE_UTTERANCE_STATES)
@@ -185,11 +186,19 @@ def recording_search_condition(query: str) -> ColumnElement[bool] | None:
 
 
 def has_any_speaker(speaker_ids: Sequence[int]) -> ColumnElement[bool]:
-    """Meetings in which any of these People spoke."""
+    """Meetings that count for any of these People.
+
+    A meeting counts through a speaker the People count reads
+    (``counted_speaker``), so the filter lists the meetings Person Details
+    counts: not one where all of a person's lines moved to someone else, nor
+    one where their speaker was merged away. Ownership, archive and bin are
+    the outer query's.
+    """
     return exists(
         select(col(RecordingSpeaker.id))
         .where(col(RecordingSpeaker.recording_id) == col(Recording.id))
         .where(col(RecordingSpeaker.global_speaker_id).in_(list(speaker_ids)))
+        .where(counted_speaker())
         .correlate(Recording)
     )
 

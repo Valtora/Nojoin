@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 from backend.processing.llm_backends.base import (
     LLMBackend,
     TruncatedNotesError,
-    _get_default_model_for_provider,
     is_vision_unsupported_error,
     raise_if_output_truncated,
 )
@@ -50,7 +49,7 @@ class OpenAILLMBackend(LLMBackend):
                 "OpenAI API key is not set. Please provide it in settings."
             )
         self.api_key = api_key
-        self.model = model or _get_default_model_for_provider("openai")
+        self.model = model or None
         self.client = openai.OpenAI(api_key=self.api_key)
 
     def list_models(self) -> List[str]:
@@ -573,6 +572,35 @@ class OpenAILLMBackend(LLMBackend):
                 )
             logger.error(f"OpenAI API error (meeting title): {e}")
             raise RuntimeError(f"OpenAI API error (meeting title): {e}")
+
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The Meeting Edge request, JSON mode first. No output cap: real calls
+        # send none, and OpenAI-compatible servers disagree on its name.
+        from backend.processing.llm_backends.model_probe import is_request_refusal
+
+        if not self.model:
+            raise ValueError("No OpenAI model configured.")
+        request_kwargs = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "timeout": timeout,
+        }
+        if "gpt" in self.model:
+            request_kwargs["temperature"] = 0.2
+        # No SDK retries: one probe is one request, and a timeout is one timeout.
+        client = self.client.with_options(max_retries=0)
+        try:
+            response = client.chat.completions.create(
+                **request_kwargs, response_format={"type": "json_object"}
+            )
+        except Exception as json_mode_error:  # noqa: BLE001 -- boundary: retried without JSON mode only when the server refused the request itself
+            # Meeting Edge retries without response_format. Only a server that
+            # refuses the request (400 or 422, as one without JSON mode does)
+            # gets the plain retry: anything else would only fail again.
+            if not is_request_refusal(json_mode_error):
+                raise
+            response = client.chat.completions.create(**request_kwargs)
+        return response.choices[0].message.content or ""
 
     def validate_api_key(self) -> bool:
         """

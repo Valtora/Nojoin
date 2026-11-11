@@ -366,16 +366,17 @@ First-run setup can pre-fill values from environment variables, and that prefill
 
 Speech and speaker tuning is per user (**Settings > Recording > Advanced**, **Speech and speaker tuning**), and each value inherits by default. Set an installation default for any key as a flat entry in `data/config.json`. It applies to every user who has not set their own:
 
-| Key | Shipped default | Accepted range |
-| --- | --- | --- |
-| `vad_threshold` | 0.5 | 0.15 to 0.90 |
-| `asr_word_length_cap_s` | 0.4 | 0.2 to 0.45 |
-| `phantom_max_duration_s` | 3.0 | 0 to 10 |
-| `phantom_max_segments` | 3 | 0 to 20 (whole number) |
-| `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
-| `phantom_merge_threshold` | 0.60 | 0.05 to 1.0 |
-| `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
-| `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
+| Key | Field on the settings page | Shipped default | Accepted range |
+| --- | --- | --- | --- |
+| `vad_threshold` | Speech detection threshold | 0.5 | 0.15 to 0.90 |
+| `asr_word_length_cap_s` | Longest word (Parakeet only) | 0.4 | 0.2 to 0.45 |
+| `phantom_max_duration_s` | Speakers heard only briefly: Check speakers under (seconds) | 3.0 | 0 to 10 |
+| `phantom_max_segments` | Speakers heard only briefly: And up to (turns) | 3 | 0 to 20 (whole number) |
+| `phantom_embedding_floor` | Speakers heard only briefly: Treat as noise below (voice match) | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
+| `phantom_merge_threshold` | Speakers heard only briefly: Merge from (voice match) | 0.60 | 0.05 to 1.0 |
+| `phantom_filter_off` | Speakers heard only briefly: Check speakers heard only briefly (unticked sets it) | unset (the check runs) | `true` skips the check; unset, `null` or `false` runs it |
+| `word_flip_max_duration_s` | Stray one-word speaker changes: Words up to (seconds) | 0.45 | 0 to 2.0 |
+| `word_flip_max_gap_s` | Stray one-word speaker changes: Pause up to (seconds) | 0.25 | 0 to 1.0 |
 
 `asr_word_length_cap_s` is the longest a Parakeet word can last. Its maximum is the default `word_flip_max_duration_s`, so at default smoothing every capped word is short enough to smooth. It replaces the retired `asr_word_end_padding_s` ([Version Notes](#version-notes)).
 
@@ -393,6 +394,8 @@ A user's own value replaces the flat key entirely, so an unusable per-user value
 An existing `config.json` without `live_speaker_labels` inherits `auto`; a stored `off` stays off. CPU workers may import the label engine, but do no label-model inference or live clustering.
 
 Any other value is off. Workers re-read `config.json` before each task, so changing the master switch reaches the next live segment. Turning labels on after a capture has begun uses clustering if the earlier audio is unavailable to the label engine.
+
+`sentence_start_correction` (`true` by default, with no setting on the page) moves the first words of a reply from the previous speaker to the person replying, in live labels and in processed transcripts ([ADMIN.md](ADMIN.md#transcription)). `false` turns it off; a configuration without the key keeps it on.
 
 The install-wide `speaker_engine` key selects the speaker engine independently of that master switch:
 
@@ -647,9 +650,20 @@ If your `docker-compose.yml` has its own `build:` directives, run `docker compos
 
 These run on the first start after the upgrade and need no action unless a note says so.
 
+#### Upgrading From Before 3.2.0
+
+- **Each user accepts the terms of use (#1004).** Alembic revision `ed5d42732014` adds the nullable `users.legal_accepted_at`, a naive UTC timestamp like the schema's others, with no backfill. From the upgrade, every account except the setup account is shown the terms of use once, at its next page load, and the API refuses it a new capture or import until it accepts ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)). A capture or import already under way finishes normally. The setup account is not asked again and keeps an empty date, since none was recorded when it accepted during setup. A downgrade drops the column and every recorded acceptance. A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.
+
 #### Upgrading From Before 3.1.0
 
+- **Live speaker name suggestions (#803).** A new per-user setting, `suggest_live_speaker_names`, on by default, shown as **Suggest speaker names during a meeting** under **Settings > Notes and live assistance** ([USAGE.md](USAGE.md#live-transcription)). From the first capture after the upgrade, Nojoin checks unnamed live speakers for a self-introduction and, with an AI provider set up, sends recent transcript lines to it whether Meeting Edge is on or off. A user who does not want that turns the setting off before recording.
+- **Reply starts and the brief-speaker check (#922).** A new install-wide key, `sentence_start_correction` in `data/config.json`, `true` by default, has no setting on the page ([ADMIN.md](ADMIN.md#transcription)). On, processing and live Nemotron labels move the first words of a reply that the speaker model gave to the previous speaker to the person replying. A new per-user setting, `phantom_filter_off`, empty by default, shows as **Check speakers heard only briefly**, ticked while it is empty or `false`; unticking it stores `true` and skips the check ([USAGE.md](USAGE.md#tuning-speech-detection-and-speaker-separation)). A speaker the check folds into another now keeps their words. Reprocess a recording to apply both to it.
+- **Muting for transcription is no longer a setting (#961).** **Mute non-speech for transcription** (`vad_mute_transcription`) is retired and fixed at its default: with voice activity detection on, transcription always hears what it kept plus what speaker separation heard as speech. Anyone who had turned it off gets the default from the next recording processed or reprocessed. To have transcription hear the whole recording again, turn off **Voice activity detection** under **Settings > Recording > Advanced**. A stored value is ignored, dropped from a user's settings on their next save, and dropped from `config.json` like any key it no longer reads. An older settings page that still sends it is ignored. **Mute non-speech for speaker separation** keeps its key, `vad_mute_diarization`, and its default, off, as **Faster speaker separation**.
+- **Settings renamed (#961).** **Live word settling** is now **Refine live words**, with **Off**, **On with a GPU** (`auto`) and **On, also without a GPU (heavy)** (`always`), and its two timing values sit under **Fine-tune**. The tuning rows **Word length cap**, **Phantom speaker filter** and **Single-word flip smoothing** are now **Longest word (Parakeet only)**, **Speakers heard only briefly** and **Stray one-word speaker changes**. No key, value or default changes.
+- **Ollama thinking (#937).** New install-wide keys `ollama_think` and `secondary_ollama_think`, `false` by default, set as **Thinking** on the default and fallback provider cards in **Settings > AI providers** ([ADMIN.md](ADMIN.md#ai-providers)), with no environment variable. Ollama makes every model that can think do so unless told not to, so from the upgrade a thinking model answers without reasoning until an administrator turns **Thinking** on.
+- **Model files checked again (#868, #896).** The worker moves to Transformers 5.21.0, and the Nemotron and forced aligner asset manifests no longer name a Transformers version, so a copy prepared on 3.0.0 no longer matches its manifest. On the first start the API queues a repair that hashes the unchanged files again and downloads nothing.
 - **Beat schedule kept in a JSON file (#917).** Celery Beat on `worker-io` now keeps its schedule in `data/celerybeat-schedule.json`. It used to be a Berkeley DB file, `data/celerybeat-schedule.db`, which a `worker-io` killed at the end of `docker stop`'s grace period could leave unreadable; beat then deleted it and every periodic job waited a full interval again. The first start carries each job's last run over from the old file and deletes it. If the old file is unreadable, every interval starts again this once, and the `worker-io` log says so. The `-s /app/data/celerybeat-schedule` argument in `docker-compose.yml` stays as it is. A downgrade ignores the JSON file and starts a new schedule.
+- **Chosen meeting names (#889).** Alembic revision `bb518dd1f469` adds `recordings.title_user_edited`, `false` by default and set by a rename or a name given at import or capture start; processing writes the AI title over a recording's name only while it is false. Nothing recorded which existing names were chosen, so the revision sets it on every recording whose name is not a default one such as `Monday 2nd Nov, Morning Meeting`. A meeting renamed before the upgrade then keeps its name through a reprocess, at the cost of an older AI title staying where a reprocess would have written a new one. Restoring an archive from an earlier release applies the same rule. A downgrade drops the column, and 3.0.0 writes the AI title over every name again.
 
 #### Upgrading From Before 3.0.0
 

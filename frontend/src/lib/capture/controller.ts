@@ -20,6 +20,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import { getErrorStatus } from "@/lib/errors";
+import { isLegalAcceptanceRefusal, legalRefusalMessage } from "@/lib/legalAcceptance";
 import {
   holdSignInInPlace,
   noteSignedIn,
@@ -81,8 +82,11 @@ import {
   type CaptureCoverageWarning,
   type CaptureMode,
   type CaptureSettings,
+  type CaptureSourceChoice,
+  type CaptureStartMode,
   type CaptureState,
   type CaptureStopStage,
+  type PausedCaptureContext,
   type StartCaptureResponse,
   type StartCaptureResult,
   readCaptureSettings,
@@ -410,13 +414,47 @@ const formatCaptureError = (error: unknown) => {
 const UNSUPPORTED_MESSAGE =
   "This browser does not support the capture APIs required for recording.";
 
-// A browser that cannot share audio records its microphone; desktop Chromium
-// uses the source chosen at Start.
+// A browser that cannot share audio records its microphone, whatever was asked
+// for. Desktop Chromium records from the source asked for, else the meeting's
+// own after a reload, else Recording source in Settings, which may be to ask.
 const resolveCaptureMode = (
   support: CaptureState["support"],
   settings: CaptureSettings,
-): CaptureMode =>
-  support.mode === "microphone_only" ? "microphone_only" : settings.startMode;
+  ...preferred: (CaptureMode | undefined)[]
+): CaptureStartMode =>
+  support.mode === "microphone_only"
+    ? "microphone_only"
+    : preferred.find((mode) => mode !== undefined) ?? settings.startMode;
+
+/**
+ * What to ask after a share that did not start a capture, or null for a
+ * failure that is reported as an error instead. Under Ask each time a Cancel
+ * goes back to the chooser.
+ */
+const sourceChoiceAfter = (
+  error: unknown,
+  settings: CaptureSettings,
+): Pick<CaptureSourceChoice, "reason" | "displaySurface"> | null => {
+  if (!(error instanceof PickSourceError)) return null;
+  switch (error.code) {
+    case "display_cancelled":
+      return { reason: settings.startMode === "ask" ? "ask" : "cancelled" };
+    case "display_denied":
+      return { reason: "refused" };
+    case "missing_display_audio":
+      return { reason: "no_audio", displaySurface: error.displaySurface };
+    default:
+      return null;
+  }
+};
+
+/** The discard reason the server logs for a Start that asked again. */
+const SOURCE_CHOICE_DISCARD_REASONS: Record<CaptureSourceChoice["reason"], string> = {
+  ask: "display_picker_cancelled",
+  cancelled: "display_picker_cancelled",
+  refused: "display_capture_refused",
+  no_audio: "display_audio_missing",
+};
 
 export class CaptureController {
   private state: CaptureState;
@@ -520,6 +558,7 @@ export class CaptureController {
       coverageWarning: null,
       coverageWarningDismissedAt: null,
       uploadQueue: EMPTY_UPLOAD_QUEUE,
+      sourceChoice: null,
     };
 
     this.lifecycle = new CaptureLifecycle({
@@ -555,6 +594,24 @@ export class CaptureController {
    */
   dismissRecoveryOffer = () => {
     this.setState({ pausedRecording: null });
+  };
+
+  /** Closes the source question, starting and resuming nothing. */
+  dismissSourceChoice = () => {
+    if (this.state.sourceChoice) this.setState({ sourceChoice: null });
+  };
+
+  /**
+   * Remembers what this tab is capturing, for a Resume after a reload, with
+   * the source it records from.
+   */
+  private rememberPausedCapture = (context: Omit<PausedCaptureContext, "mode">) => {
+    const runtimeMode = this.runtime?.recordingId === context.recordingId
+      ? this.runtime.sources?.mode : undefined;
+    const stored = runtimeMode ? null : readPausedCaptureContext();
+    const mode = runtimeMode ??
+      (stored?.recordingId === context.recordingId ? stored.mode : undefined);
+    writePausedCaptureContext(mode ? { ...context, mode } : context);
   };
 
   /**
@@ -713,7 +770,15 @@ export class CaptureController {
     }
   };
 
-  start = async (name?: string): Promise<StartCaptureResponse> => {
+  /**
+   * Starts a new recording. `mode` is the source the user picked in the
+   * capture dialog; without it Recording source decides, and Ask each time
+   * opens the chooser and starts nothing yet.
+   */
+  start = async (
+    name?: string,
+    options: { mode?: CaptureMode } = {},
+  ): Promise<StartCaptureResponse> => {
     if (this.state.status === "starting" || this.state.status === "finalizing") return null;
     if (this.runtime) {
       // Only a failed stop or discard leaves Start enabled over this tab's own
@@ -734,14 +799,27 @@ export class CaptureController {
       throw new Error(UNSUPPORTED_MESSAGE);
     }
 
-    const mode = resolveCaptureMode(support, this.state.settings);
-    this.setState({ status: "starting", error: null });
+    const mode = resolveCaptureMode(support, this.state.settings, options.mode);
+    if (mode === "ask") {
+      // No request yet: the chooser's own click opens the share picker, with
+      // the user activation the picker needs.
+      this.setState({ sourceChoice: { action: "start", reason: "ask" } });
+      return null;
+    }
+    this.setState({ status: "starting", error: null, sourceChoice: null });
 
     let initResponse;
     try {
       initResponse = await initRecording(name);
 
     } catch (error: unknown) {
+      if (isLegalAcceptanceRefusal(error)) {
+        // Refused until the terms of use are accepted (#1004). The API client
+        // has asked for the notice, which takes the page; nothing started,
+        // so this is no failure to report.
+        this.setState({ status: "idle", error: legalRefusalMessage("record") });
+        return null;
+      }
       const detail =
         error instanceof AxiosError ? error.response?.data?.detail : null;
 
@@ -783,13 +861,6 @@ export class CaptureController {
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });
-
-      if (sources.displayStream && sources.displayStream.getAudioTracks().length === 0) {
-        useNotificationStore.getState().addNotification({
-          type: "warning",
-          message: "No system/tab audio detected. Only microphone audio will be recorded.",
-        });
-      }
 
       await this.activateRuntime({
         recordingId: initResponse.id,
@@ -834,26 +905,28 @@ export class CaptureController {
         );
       }
       sources?.release();
-      const cancelledByUser =
-        error instanceof PickSourceError && error.code === "display_cancelled";
+      // A share cancelled, refused or without sound asks what to record
+      // instead of reporting an error (issue #958).
+      const choice = sourceChoiceAfter(error, this.state.settings);
       const audioNotStarted = error instanceof AudioNotStartedError;
       // Fenced with the init epoch: a picker left open long enough for the
       // reservation to stall may have seen another device take it over.
       await discardRecordingCapture(
         initResponse.id,
-        cancelledByUser
-          ? "display_picker_cancelled"
+        choice
+          ? SOURCE_CHOICE_DISCARD_REASONS[choice.reason]
           : audioNotStarted ? "audio_not_started" : undefined,
         { epoch: initResponse.capture_epoch },
       ).catch(() => {});
 
-      if (cancelledByUser) {
+      if (choice) {
         this.setState({
           status: "idle",
           error: null,
           recordingId: null,
           lastSequence: -1,
           elapsedSeconds: 0,
+          sourceChoice: { action: "start", ...choice },
         });
         await this.refreshPausedRecording().catch(() => {});
         return null;
@@ -900,7 +973,7 @@ export class CaptureController {
     }
     releasePausedMicrophone(runtime, this.state.settings.releaseMicrophoneOnPause);
     this.stopElapsedTimer();
-    writePausedCaptureContext({
+    this.rememberPausedCapture({
       recordingId,
       lastSequence: this.state.lastSequence,
       persistedAt: Date.now(),
@@ -927,7 +1000,17 @@ export class CaptureController {
     throw new Error(formatCaptureError(error));
   };
 
-  resume = async (recordingId?: RecordingId): Promise<StartCaptureResult> => {
+  /**
+   * Resumes a paused recording. A live pause keeps its tracks. Otherwise the
+   * capture opens its sources again: from `mode`, the source the user picked
+   * in the capture dialog, else the one the meeting recorded from, else
+   * Recording source. Resolves to null when nothing resumed because the user
+   * is being asked which source to record from (issue #958).
+   */
+  resume = async (
+    recordingId?: RecordingId,
+    options: { mode?: CaptureMode } = {},
+  ): Promise<StartCaptureResult | null> => {
     const targetRecordingId =
       recordingId ?? this.state.pausedRecording?.id ?? this.state.recordingId;
     if (!targetRecordingId) {
@@ -962,32 +1045,43 @@ export class CaptureController {
       throw new Error(UNSUPPORTED_MESSAGE);
     }
 
-    this.setState({
-      status: "starting",
-      recordingId: targetRecordingId,
-      error: null,
-    });
-
     // After a failed stop this tab still holds the capture, with its media
     // released. It resumes as the holder, so its own uploads, which may still
     // be sending, are not refused as a takeover's would be.
     const heldRuntime = this.runtime?.recordingId === targetRecordingId ? this.runtime : null;
+    const remembered = readPausedCaptureContext();
+    const mode = resolveCaptureMode(
+      support,
+      this.state.settings,
+      options.mode,
+      heldRuntime?.sources?.mode,
+      remembered?.recordingId === targetRecordingId ? remembered.mode : undefined,
+    );
+    if (mode === "ask") {
+      this.setState({
+        sourceChoice: { action: "resume", reason: "ask", recordingId: targetRecordingId },
+      });
+      return null;
+    }
+
+    // A share that is cancelled, refused or silent puts these back.
+    const before = { status: this.state.status, recordingId: this.state.recordingId };
+    this.setState({
+      status: "starting",
+      recordingId: targetRecordingId,
+      error: null,
+      sourceChoice: null,
+    });
+
     let sources: PickedCaptureSources | null = null;
     let resumeResponse: Awaited<ReturnType<typeof resumeRecordingCapture>> | null = null;
 
     try {
       sources = await pickCaptureSource({
-        mode: resolveCaptureMode(support, this.state.settings),
+        mode,
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
         settings: this.state.settings,
       });
-
-      if (sources.displayStream && sources.displayStream.getAudioTracks().length === 0) {
-        useNotificationStore.getState().addNotification({
-          type: "warning",
-          message: "No system/tab audio detected. Only microphone audio will be recorded.",
-        });
-      }
 
       const reloaded = heldRuntime ? null : readPausedCaptureContext();
       const reclaimEpoch = reloaded?.recordingId === targetRecordingId ? reloaded.epoch : undefined;
@@ -1053,6 +1147,18 @@ export class CaptureController {
         );
       }
       sources?.release();
+      // The share comes before the server is told anything, so a share that
+      // did not happen leaves the recording paused as it was, and asks what
+      // to record instead of reporting an error (issue #958).
+      const choice = resumeResponse ? null : sourceChoiceAfter(error, this.state.settings);
+      if (choice) {
+        this.setState({
+          ...before,
+          sourceChoice: { action: "resume", recordingId: targetRecordingId, ...choice },
+        });
+        await this.refreshPausedRecording().catch(() => {});
+        return null;
+      }
       if (isEndedForThisTab(error)) {
         throw await this.ifEndedElsewhere(error, heldRuntime);
       }
@@ -1300,7 +1406,7 @@ export class CaptureController {
     }
 
     if (hadRuntime) {
-      writePausedCaptureContext({
+      this.rememberPausedCapture({
         recordingId,
         lastSequence: this.state.lastSequence,
         persistedAt: Date.now(),
@@ -1982,7 +2088,7 @@ export class CaptureController {
     }
     releasePausedMicrophone(runtime, this.state.settings.releaseMicrophoneOnPause);
     this.stopElapsedTimer();
-    writePausedCaptureContext({
+    this.rememberPausedCapture({
       recordingId,
       lastSequence: this.state.lastSequence,
       persistedAt: Date.now(),
@@ -2052,7 +2158,7 @@ export class CaptureController {
       }
       this.forgetUnconfirmedPause();
       const lastSequence = Math.max(response.last_sequence, this.state.lastSequence);
-      writePausedCaptureContext({
+      this.rememberPausedCapture({
         recordingId: response.recording_id,
         lastSequence,
         persistedAt: Date.now(),
@@ -2568,7 +2674,7 @@ export class CaptureController {
     // load to tell an interruption worth resuming from one worth clearing.
     // The epoch lets this tab take the capture straight back after a reload,
     // when the pause below never reached the server (issue #778).
-    writePausedCaptureContext({
+    this.rememberPausedCapture({
       recordingId,
       lastSequence,
       epoch,

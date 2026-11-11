@@ -9,7 +9,7 @@ import {
   applyTranscriptDelta,
   LocalTranscriptState,
 } from "@/lib/transcriptState";
-import { Recording, RecordingSpeaker, TranscriptSegment } from "@/types";
+import { Recording, RecordingSpeaker, SpeakerNameSource, TranscriptSegment } from "@/types";
 
 /**
  * Poll interval while a capture is running.
@@ -79,24 +79,29 @@ export interface LiveTranscript {
    * have not found it caught up for {@link LIVE_BEHIND_CLEAR_MS}.
    */
   liveBehind?: boolean;
+  liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
+  /** Where each pending name was heard, in seconds, when the read says. */
+  liveSpeakerSuggestionStarts?: Readonly<Record<string, number>>;
+  applyLiveSpeakerSuggestions?: (suggestions: Record<string, string>) => void;
 }
 
-const NO_NAMES: Readonly<Record<string, string>> = {};
+const NO_NAMES: Readonly<Record<string, never>> = {};
 
 /**
  * `next`, or `previous` when it holds the same names: every poll answers with
  * a new object, and a new one would re-render the panel each time.
  */
-function sameOrNext(
-  previous: Readonly<Record<string, string>>,
-  next: Readonly<Record<string, string>> | undefined,
-): Readonly<Record<string, string>> {
+function sameOrNext<T extends string | number>(
+  previous: Readonly<Record<string, T>>,
+  next: Readonly<Record<string, T>> | undefined,
+): Readonly<Record<string, T>> {
   const entries = Object.entries(next ?? {});
   if (entries.length === 0) return NO_NAMES;
   const unchanged =
     entries.length === Object.keys(previous).length &&
     entries.every(([label, name]) => previous[label] === name);
-  return unchanged ? previous : (next as Readonly<Record<string, string>>);
+  return unchanged ? previous : (next as Readonly<Record<string, T>>);
 }
 
 /**
@@ -133,6 +138,12 @@ export function useLiveTranscript(
     useState<Readonly<Record<string, string>>>(NO_NAMES);
   const [liveSpeakerMerges, setLiveSpeakerMerges] =
     useState<Readonly<Record<string, string>>>(NO_NAMES);
+  const [liveSpeakerSuggestions, setLiveSpeakerSuggestions] =
+    useState<Readonly<Record<string, string>>>(NO_NAMES);
+  const [liveSpeakerSuggestionSources, setLiveSpeakerSuggestionSources] =
+    useState<Readonly<Record<string, SpeakerNameSource>>>(NO_NAMES);
+  const [liveSpeakerSuggestionStarts, setLiveSpeakerSuggestionStarts] =
+    useState<Readonly<Record<string, number>>>(NO_NAMES);
   const stateRef = useRef<LocalTranscriptState | null>(null);
 
   // A feed that starts, or restarts for another recording, shows nothing until
@@ -144,6 +155,9 @@ export function useLiveTranscript(
       setLiveBehind(false);
       setLiveSpeakerNames(NO_NAMES);
       setLiveSpeakerMerges(NO_NAMES);
+      setLiveSpeakerSuggestions(NO_NAMES);
+      setLiveSpeakerSuggestionSources(NO_NAMES);
+      setLiveSpeakerSuggestionStarts(NO_NAMES);
       setSpeakers([]);
     }
   });
@@ -213,6 +227,15 @@ export function useLiveTranscript(
         caughtUpSince ??= now;
         if (now - caughtUpSince >= LIVE_BEHIND_CLEAR_MS) setLiveBehind(false);
       }
+      setLiveSpeakerSuggestions((previous) =>
+        sameOrNext(previous, delta.live_speaker_suggestions),
+      );
+      setLiveSpeakerSuggestionSources((previous) =>
+        sameOrNext(previous, delta.live_speaker_suggestion_sources),
+      );
+      setLiveSpeakerSuggestionStarts((previous) =>
+        sameOrNext(previous, delta.live_speaker_suggestion_starts),
+      );
       setHasLoaded(true);
     };
 
@@ -260,8 +283,16 @@ export function useLiveTranscript(
   }, [recordingId, enabled]);
 
   const applyLiveSpeakerNames = useCallback(
-    (names: Record<string, string>) =>
-      setLiveSpeakerNames((previous) => sameOrNext(previous, names)),
+    (names: Record<string, string>) => {
+      setLiveSpeakerNames((previous) => sameOrNext(previous, names));
+      setLiveSpeakerSuggestions((previous) => sameOrNext(previous,
+        Object.fromEntries(Object.entries(previous).filter(([label]) => !names[label]))));
+    },
+    [],
+  );
+  const applyLiveSpeakerSuggestions = useCallback(
+    (suggestions: Record<string, string>) =>
+      setLiveSpeakerSuggestions((previous) => sameOrNext(previous, suggestions)),
     [],
   );
 
@@ -290,6 +321,8 @@ export function useLiveTranscript(
   return {
     segments: shown, speakers, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames,
     liveSpeakerMerges, applyLiveSpeakerMerges, refresh, liveBehind,
+    liveSpeakerSuggestions, liveSpeakerSuggestionSources, liveSpeakerSuggestionStarts,
+    applyLiveSpeakerSuggestions,
   };
 }
 

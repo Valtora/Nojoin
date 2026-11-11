@@ -95,7 +95,27 @@ export interface SettingsRegistryEntry {
    * a warning is never hidden behind it.
    */
   needsAttention?: (settings: Settings) => boolean;
+  /**
+   * Present when the page shows the setting only in some states, such as a
+   * value one transcription engine alone reads. Search leaves the entry out,
+   * and the changed count skips it, while it returns false, so neither points
+   * at a row the page is not showing.
+   */
+  shownWhen?: (settings: Settings) => boolean;
   keywords: string[];
+}
+
+/** Whether the page shows `entry` for these settings. */
+export function isRegistryEntryShown(
+  entry: SettingsRegistryEntry,
+  settings: Settings | undefined,
+): boolean {
+  return !entry.shownWhen || !settings || entry.shownWhen(settings);
+}
+
+/** The engine whose word timings "Longest word" caps. */
+export function usesParakeet(settings: Settings): boolean {
+  return settings.transcription_backend === "parakeet";
 }
 
 /**
@@ -106,8 +126,9 @@ export interface SettingsRegistryEntry {
  *  - theme is written by ThemeProvider into local storage, not through settings;
  *  - processing_tuning_install is read-only context the API supplies (the
  *    installation's tuning values) for validation, not a value anyone sets;
- *  - live_speaker_labels and speaker_engine are install-wide settings managed
- *    through config.json or the administrator API, without frontend controls;
+ *  - live_speaker_labels, speaker_engine and sentence_start_correction are
+ *    install-wide settings managed through config.json or the administrator
+ *    API, without frontend controls;
  *  - the rest are read by the backend and have never had a frontend control.
  */
 export const UNSURFACED_SETTINGS_KEYS = [
@@ -116,6 +137,7 @@ export const UNSURFACED_SETTINGS_KEYS = [
   "enable_live_transcription",
   "live_speaker_labels",
   "speaker_engine",
+  "sentence_start_correction",
   "processing_device",
   "worker_url",
   "processing_tuning_install",
@@ -184,7 +206,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "appearance-style",
     label: "Style",
-    description: "Bevels and layered elevation, saved in this browser. Classic looks best with Square corners.",
+    description: "Bevels and layered elevation, with corners to match, saved in this browser.",
     category: "appearance",
     access: "all",
     scope: "browser",
@@ -263,9 +285,19 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["input", "audio input", "levels", "refresh devices"],
   },
   {
+    id: "recording-source",
+    label: "Recording source",
+    description: "What Start Meeting records in this browser: your microphone and system audio, your microphone only, or a choice at every Start.",
+    category: "recording",
+    access: "all",
+    scope: "browser",
+    defaultValue: DEFAULT_CAPTURE_SETTINGS.startMode,
+    keywords: ["recording source", "system audio", "share", "share picker", "screen share", "tab audio", "microphone only", "mic only", "in-room", "ask each time", "capture source"],
+  },
+  {
     id: "recording-microphone",
     label: "Microphone",
-    description: "Recorded on its own or with shared tab or system audio, as chosen at Start.",
+    description: "Recorded with system audio, or on its own, as Recording source sets.",
     category: "recording",
     access: "all",
     scope: "browser",
@@ -375,37 +407,25 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     id: "recording-vad",
     label: "Voice activity detection",
     description:
-      "Filters silence and background noise before transcription. Disabling it can help if quiet speech is being cut off.",
+      "Skips silence and background noise before transcription. Turn it off if quiet or distant speech goes missing.",
     category: "recording",
     access: "all",
     advanced: "safe-default",
     settingsKeys: ["enable_vad"],
     defaultValue: true,
-    keywords: ["vad", "voice activity detection", "silence", "filter", "processing"],
-  },
-  {
-    id: "recording-vad-mute-transcription",
-    label: "Mute non-speech for transcription",
-    description:
-      "On mutes only audio that neither voice activity detection nor unmuted speaker separation heard as speech. Off lets transcription hear everything: it can recover distant speech but can add words from noise.",
-    category: "recording",
-    access: "all",
-    advanced: "safe-default",
-    settingsKeys: ["vad_mute_transcription"],
-    defaultValue: true,
-    keywords: ["vad", "mute", "unmuted", "silence", "transcription", "distant", "far-field"],
+    keywords: ["vad", "voice activity detection", "silence", "filter", "processing", "quiet speech", "distant", "far-field", "mute non-speech", "unmuted"],
   },
   {
     id: "recording-vad-mute-diarization",
-    label: "Mute non-speech for speaker separation",
+    label: "Faster speaker separation",
     description:
-      "On limits speaker separation to the filtered speech: faster on long recordings, but worse at telling speakers apart.",
+      "Speaker separation skips silence: long recordings finish sooner, but speakers are told apart less well.",
     category: "recording",
     access: "all",
     advanced: "safe-default",
     settingsKeys: ["vad_mute_diarization"],
     defaultValue: false,
-    keywords: ["vad", "mute", "unmuted", "silence", "diarization", "speaker separation", "short replies"],
+    keywords: ["faster", "speed", "long recordings", "vad", "mute", "mute non-speech", "silence", "diarization", "speaker separation", "short replies"],
   },
   {
     id: "recording-remeasure-delivery",
@@ -446,21 +466,22 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "recording-word-length-cap",
-    label: "Word length cap",
+    label: "Longest word (Parakeet only)",
     description:
-      "The longest a Parakeet word lasts, which decides whether a short word reaches a speaker turn.",
+      "How long one word can last, which decides whether a one-word reply lands on its speaker.",
     category: "recording",
     access: "all",
     advanced: "can-degrade",
     settingsKeys: ["asr_word_length_cap_s"],
     defaultValue: null,
-    keywords: ["word padding", "word end", "word length", "parakeet", "timing", "brief speaker", "tuning"],
+    shownWhen: usesParakeet,
+    keywords: ["word length cap", "word padding", "word end", "word length", "longest word", "parakeet", "timing", "brief speaker", "tuning"],
   },
   {
     id: "recording-phantom-filter",
-    label: "Phantom speaker filter",
+    label: "Speakers heard only briefly",
     description:
-      "Which brief speakers count as noise to reassign, or as an existing speaker to merge, rather than a real person.",
+      "Whether someone heard only for a moment is treated as noise, merged into a matching speaker, or kept.",
     category: "recording",
     access: "all",
     advanced: "can-degrade",
@@ -469,21 +490,22 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "phantom_max_segments",
       "phantom_embedding_floor",
       "phantom_merge_threshold",
+      "phantom_filter_off",
     ],
     defaultValue: null,
-    keywords: ["phantom speaker", "brief speaker", "short speaker", "noise", "chime", "large meeting", "tuning"],
+    keywords: ["phantom speaker filter", "phantom speaker", "brief speaker", "short speaker", "noise", "chime", "merge", "large meeting", "tuning", "turn off"],
   },
   {
     id: "recording-word-flip",
-    label: "Single-word flip smoothing",
+    label: "Stray one-word speaker changes",
     description:
-      "Gives a very short word inside one speaker's run back to that speaker. Loosening it can erase brief interjections.",
+      "Gives a short word between two lines from one person to that person. Loosening it can erase brief interjections.",
     category: "recording",
     access: "all",
     advanced: "can-degrade",
     settingsKeys: ["word_flip_max_duration_s", "word_flip_max_gap_s"],
     defaultValue: null,
-    keywords: ["word flip", "smoothing", "interjection", "brief speaker", "speaker change", "tuning"],
+    keywords: ["single-word flip smoothing", "word flip", "smoothing", "interjection", "brief speaker", "speaker change", "tuning"],
   },
 
   // ---------------------------------------------------------- transcription
@@ -499,39 +521,39 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "transcription-live-settling",
-    label: "Live word settling",
-    description: "Revise the newest live words, then lock them: on a GPU server, or on a CPU-only one too.",
+    label: "Refine live words",
+    description: "Correct the newest live words as more speech arrives, then fix them: with a GPU, or without one too.",
     category: "transcription",
     access: "admin",
     scope: "everyone",
     advanced: "can-degrade",
     settingsKeys: ["live_text_settling"],
     defaultValue: "auto",
-    keywords: ["live", "settling", "word", "GPU", "CPU"],
+    keywords: ["live word settling", "live", "settling", "refine", "word", "GPU", "CPU"],
   },
   {
     id: "transcription-live-settling-k",
-    label: "Unchanged comparisons",
-    description: "How many unchanged repeats a live word needs before it locks.",
+    label: "How soon a word is fixed",
+    description: "How many matching checks a live word needs before it is fixed. Under Fine-tune.",
     category: "transcription",
     access: "admin",
     scope: "everyone",
     advanced: "can-degrade",
     settingsKeys: ["live_text_settling_k"],
     defaultValue: 3,
-    keywords: ["live", "settling", "comparisons", "agreement"],
+    keywords: ["unchanged comparisons", "live", "settling", "comparisons", "agreement", "fine-tune", "lock"],
   },
   {
     id: "transcription-live-settling-window",
-    label: "Settling window",
-    description: "How much recent audio is transcribed again each time while live words settle.",
+    label: "Audio checked again",
+    description: "How much recent audio is transcribed again on each check while live words settle. Under Fine-tune.",
     category: "transcription",
     access: "admin",
     scope: "everyone",
     advanced: "can-degrade",
     settingsKeys: ["live_text_settling_window_s"],
     defaultValue: 10,
-    keywords: ["live", "settling", "window", "seconds"],
+    keywords: ["settling window", "live", "settling", "window", "seconds", "fine-tune"],
   },
   {
     id: "transcription-engine",
@@ -637,6 +659,17 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["speaker names", "suggested names", "confirm names", "speakers", "voiceprint", "introduction", "identify", "automatic"],
   },
   {
+    id: "notes-suggest-live-names",
+    label: "Suggest speaker names during a meeting",
+    description:
+      "Offer a name for an unnamed speaker while the meeting records, from a self-introduction or by sending recent transcript lines to your AI provider, whether Meeting Edge is on or off.",
+    category: "notes",
+    access: "all",
+    settingsKeys: ["suggest_live_speaker_names"],
+    defaultValue: true,
+    keywords: ["speaker names", "suggested names", "live", "during meeting", "introduction", "ai", "speakers", "identify"],
+  },
+  {
     id: "notes-voiceprint-learning",
     label: "Learn voiceprints from unconfirmed names",
     description:
@@ -718,12 +751,12 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "ai-providers-ollama",
-    label: "Ollama address and context window",
-    description: "The Ollama endpoint and context window used when Ollama is the provider.",
+    label: "Ollama address, context window and thinking",
+    description: "The Ollama endpoint, context window and thinking choice used when Ollama is the provider.",
     category: "ai-providers",
     access: "admin",
-    settingsKeys: ["ollama_api_url", "ollama_context_window"],
-    keywords: ["ollama", "api url", "endpoint", "context window", "local model", "self hosted"],
+    settingsKeys: ["ollama_api_url", "ollama_context_window", "ollama_think"],
+    keywords: ["ollama", "api url", "endpoint", "context window", "local model", "self hosted", "thinking", "reasoning", "think"],
   },
   {
     id: "ai-providers-meeting-edge",
@@ -769,6 +802,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "secondary_ollama_live_model",
       "secondary_ollama_api_url",
       "secondary_ollama_context_window",
+      "secondary_ollama_think",
       "secondary_gemini_api_key",
       "secondary_openai_api_key",
       "secondary_anthropic_api_key",
@@ -972,6 +1006,9 @@ export function countChangedAdvanced(
     if (entry.defaultValue === undefined || !entry.settingsKeys?.length) {
       return false;
     }
+    if (!isRegistryEntryShown(entry, values as Settings)) {
+      return false;
+    }
 
     return entry.settingsKeys.some((key) => {
       const value = values[key];
@@ -1008,14 +1045,17 @@ export function searchSettingsRegistry(
   query: string,
   viewer: SettingsViewer,
   limit = 12,
+  settings?: Settings,
 ): SettingsSearchResult[] {
   const trimmed = query.trim();
   if (!trimmed) {
     return [];
   }
 
-  return SETTINGS_REGISTRY.filter((entry) =>
-    canViewSettings(entry.access, viewer),
+  return SETTINGS_REGISTRY.filter(
+    (entry) =>
+      canViewSettings(entry.access, viewer) &&
+      isRegistryEntryShown(entry, settings),
   )
     .map((entry) => ({
       entry,
@@ -1034,9 +1074,10 @@ export function searchSettingsRegistry(
 export function getMatchingSettingsCategories(
   query: string,
   viewer: SettingsViewer,
+  settings?: Settings,
 ): Set<SettingsCategoryId> {
   return new Set(
-    searchSettingsRegistry(query, viewer, SETTINGS_REGISTRY.length).map(
+    searchSettingsRegistry(query, viewer, SETTINGS_REGISTRY.length, settings).map(
       (result) => result.entry.category,
     ),
   );

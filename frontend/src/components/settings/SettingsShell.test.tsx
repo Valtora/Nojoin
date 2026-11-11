@@ -61,6 +61,17 @@ describe("SettingsShell", () => {
     expect(screen.getByText("Category page")).toBeInTheDocument();
   });
 
+  it("contains the category's positioned content in the column that scrolls it", () => {
+    renderAt("/settings/appearance", { isAdmin: true, isSuperuser: false });
+
+    // An absolute element, such as screen-reader-only text, resolves against
+    // its nearest positioned ancestor. If that is <main> rather than this
+    // column, the column does not scroll it and <main> grows past the last card.
+    const column = screen.getByText("Category page").parentElement;
+    expect(column).toHaveClass("overflow-y-auto");
+    expect(column).toHaveClass("relative");
+  });
+
   it("leaves categories an administrator can see alone", () => {
     renderAt("/settings/system", { isAdmin: true, isSuperuser: false });
 

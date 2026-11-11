@@ -105,6 +105,42 @@ def single_flight(name: str, *, ttl_seconds: int) -> Iterator[bool]:
             _close(client)
 
 
+_CLAIM_TOKEN = "claimed"
+
+
+def claim(name: str, *, ttl_seconds: int) -> bool:
+    """Hold `name` until `release_claim` or the TTL; False when already held.
+
+    For work that is queued, not run, one at a time: the dispatcher claims
+    before queueing and the task releases as it starts, so at most one waits
+    in the queue. Fails open, like the guard.
+    """
+    client = None
+    try:
+        client = _open_client()
+        key = f"{KEY_PREFIX}{name}"
+        return bool(client.set(key, _CLAIM_TOKEN, nx=True, ex=ttl_seconds))
+    except Exception as exc:  # noqa: BLE001 -- boundary: the claim fails open
+        logger.warning("Claim %s could not reach Redis, queueing anyway: %s", name, exc)
+        return True
+    finally:
+        if client is not None:
+            _close(client)
+
+
+def release_claim(name: str) -> None:
+    """Let the next dispatcher queue `name` again; the TTL is the backstop."""
+    client = None
+    try:
+        client = _open_client()
+        client.eval(_RELEASE_SCRIPT, 1, f"{KEY_PREFIX}{name}", _CLAIM_TOKEN)
+    except Exception as exc:  # noqa: BLE001 -- boundary: the TTL is the backstop
+        logger.warning("Claim %s could not be released: %s", name, exc)
+    finally:
+        if client is not None:
+            _close(client)
+
+
 def _close(client) -> None:
     # redis.from_url builds a fresh connection pool per call, so a client that
     # is not closed leaks one for the life of the process.

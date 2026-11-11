@@ -451,7 +451,9 @@ def test_worker_confirms_trailing_silence_before_locking_and_reopening_same_spea
     def decide(_start: int, _end: int) -> LiveLabelDecision:
         return LiveLabelDecision("A", True, 1.0)
 
-    evidence = SimpleNamespace(decide=decide, speech_spans=lambda: spans)
+    evidence = SimpleNamespace(
+        decide=decide, speech_spans=lambda: spans, native_activity=lambda: None
+    )
     monkeypatch.setattr(worker, "_speaker_evidence", lambda _step: evidence)
     decoded = _continuous(2000)
     monkeypatch.setattr(

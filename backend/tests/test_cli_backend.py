@@ -7,12 +7,15 @@ The manager is faked, so no Claude Agent SDK / io image is needed.
 
 from __future__ import annotations
 
+import pytest
+
 from backend.processing.cli_backend import (
     _CLAUDE_CLI_MODELS,
     _CODEX_CLI_MODELS,
     CliLLMBackend,
 )
 from backend.utils.meeting_edge import MeetingEdgeRequest
+from backend.utils.vision import VisionImage
 
 
 class _FakeManager:
@@ -22,12 +25,18 @@ class _FakeManager:
         self.calls: list[dict] = []
         self.stream_calls: list[dict] = []
 
-    def run_single_turn(self, user_id, prompt, *, model=None, timeout=300):
-        self.calls.append({"user_id": user_id, "prompt": prompt, "model": model})
+    def run_single_turn(
+        self, user_id, prompt, *, model=None, timeout=None, images=None
+    ):
+        self.calls.append(
+            {"user_id": user_id, "prompt": prompt, "model": model, "timeout": timeout}
+        )
         return self.response
 
-    def stream_single_turn(self, user_id, prompt, *, model=None, timeout=300):
-        self.stream_calls.append({"user_id": user_id, "prompt": prompt, "model": model})
+    def stream_single_turn(self, user_id, prompt, *, model=None, timeout=None):
+        self.stream_calls.append(
+            {"user_id": user_id, "prompt": prompt, "model": model, "timeout": timeout}
+        )
         yield from self.chunks
 
 
@@ -128,3 +137,90 @@ def test_validate_api_key_roundtrips():
     backend = _backend(response="OK")
     assert backend.validate_api_key() is True
     assert backend._manager.calls[0]["prompt"] == "Reply with exactly: OK"
+
+
+def _plumbing_only(backend):
+    """Stub the inherited prompt builders and parsers: only the call matters here."""
+    for name in (
+        "build_speaker_suggestion_prompt",
+        "build_notes_prompt",
+        "build_automatic_meeting_intelligence_prompt",
+        "build_meeting_edge_prompt",
+        "build_meeting_analysis_prompt",
+        "build_title_prompt",
+    ):
+        setattr(backend, name, lambda *args, **kwargs: "prompt")
+    for name in (
+        "parse_speaker_inference_result",
+        "parse_automatic_meeting_intelligence_result",
+        "parse_meeting_edge_result",
+        "parse_meeting_analysis_result",
+        "parse_title",
+        "parse_notes",
+        "finalise_meeting_notes",
+    ):
+        setattr(backend, name, lambda text, *args, **kwargs: text)
+    return backend
+
+
+# Each inference method, called with whatever limit the test gives (#980).
+_CALLS = {
+    "infer_speaker_suggestions": lambda b, **t: b.infer_speaker_suggestions(
+        "transcript", **t
+    ),
+    "generate_meeting_notes": lambda b, **t: b.generate_meeting_notes(
+        "transcript", {}, **t
+    ),
+    "generate_meeting_intelligence": lambda b, **t: b.generate_meeting_intelligence(
+        object(), **t
+    ),
+    "generate_text": lambda b, **t: b.generate_text("prompt", **t),
+    "generate_text_from_images": lambda b, **t: b.generate_text_from_images(
+        "prompt", [VisionImage(data=b"png", media_type="image/png")], **t
+    ),
+    "generate_meeting_edge": lambda b, **t: b.generate_meeting_edge(object(), **t),
+    "generate_meeting_analysis": lambda b, **t: b.generate_meeting_analysis(
+        object(), **t
+    ),
+    "infer_meeting_title": lambda b, **t: b.infer_meeting_title("transcript", **t),
+    "ask_question_about_meeting": lambda b, **t: b.ask_question_about_meeting(
+        "question", "", "transcript", **t
+    ),
+    "ask_question_streaming": lambda b, **t: list(
+        b.ask_question_streaming("question", "", "transcript", **t)
+    ),
+}
+
+
+def _manager_timeouts(backend):
+    manager = backend._manager
+    return [call["timeout"] for call in manager.calls + manager.stream_calls]
+
+
+@pytest.mark.parametrize("method", sorted(_CALLS))
+@pytest.mark.parametrize("timeout", [90, 180])
+def test_an_explicit_limit_reaches_the_manager(method, timeout):
+    backend = _plumbing_only(_backend(response="answer", chunks=["answer"]))
+
+    _CALLS[method](backend, timeout=timeout)
+
+    assert _manager_timeouts(backend) == [timeout]
+
+
+@pytest.mark.parametrize("method", sorted(_CALLS))
+def test_an_omitted_limit_leaves_the_managers_default(method):
+    # Not the hosted backends' per-request default of 60 s: on a CLI the limit
+    # covers the whole answer, so a caller that gives none gets the manager's.
+    backend = _plumbing_only(_backend(response="answer", chunks=["answer"]))
+
+    _CALLS[method](backend)
+
+    assert _manager_timeouts(backend) == [None]
+
+
+def test_the_key_check_leaves_the_managers_default():
+    backend = _backend(response="OK")
+
+    backend.validate_api_key()
+
+    assert _manager_timeouts(backend) == [None]

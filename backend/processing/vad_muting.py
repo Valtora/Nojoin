@@ -3,14 +3,15 @@
 With ``enable_vad`` on, the VAD stage writes two files of the same length and
 rate: the normalised 16 kHz mono file, and a copy with every sample outside
 speech set to zero. Muting never cuts audio, so both share one time base, and
-each stage may read either. Transcription and the speaker side (diarisation,
-the phantom filter and final-pass voiceprints) each have their own switch.
-Transcription hears the muted file by default and the speaker side the
-unmuted one.
+each stage may read either. Transcription always hears the muted file. The
+speaker side (diarisation, the phantom filter and final-pass voiceprints)
+hears the unmuted one unless ``vad_mute_diarization``, the "Faster speaker
+separation" setting, is on. Transcription's own switch,
+``vad_mute_transcription``, was retired by #961: a stored value is ignored.
 
 Diarisation runs first, so muted transcription can hear a third file (#670):
-the muted one with the unmuted audio put back inside every diarised turn but
-those the phantom filter confirmed as non-speech (#678). It is zero only where
+the muted one with the unmuted audio put back inside every diarised turn,
+including those the phantom filter relabelled (#813). It is zero only where
 neither VAD nor diarisation heard speech.
 
 Free of heavy imports, so the API can name the keys without loading torch.
@@ -19,14 +20,14 @@ Free of heavy imports, so the API can name the keys without loading torch.
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Hashable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
-    from pyannote.core import Annotation, Segment
+    from pyannote.core import Annotation
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +40,12 @@ VAD_EDGE_MUTE_MS = 1000
 # held in memory whole: about 65 s at 16 kHz.
 _UNION_BLOCK_FRAMES = 1 << 20
 
-VAD_MUTE_TRANSCRIPTION_KEY = "vad_mute_transcription"
 VAD_MUTE_DIARIZATION_KEY = "vad_mute_diarization"
 
-# The shipped defaults, also the user defaults in config_manager. The worker
+# The shipped default, also the user default in config_defaults. The worker
 # merge does not apply user defaults, so a user with no stored value reaches
-# _switch with the key unset and gets these.
+# _switch with the key unset and gets this.
 VAD_MUTE_DEFAULTS: dict[str, bool] = {
-    VAD_MUTE_TRANSCRIPTION_KEY: True,
     VAD_MUTE_DIARIZATION_KEY: False,
 }
 
@@ -80,30 +79,23 @@ def _switch(config: Mapping[str, object], key: str) -> bool:
 def muted_stages(config: Mapping[str, object] | None) -> MutedStages:
     """The stages that read muted audio under ``config``.
 
-    With ``enable_vad`` off nothing is muted, whatever the switches hold.
+    With ``enable_vad`` off nothing is muted, whatever the switch holds. With
+    it on, transcription always is: a retired ``vad_mute_transcription`` still
+    on a user's row is not read.
     """
     config = config or {}
     if not config.get("enable_vad", True):
         return MutedStages(transcription=False, diarization=False)
     return MutedStages(
-        transcription=_switch(config, VAD_MUTE_TRANSCRIPTION_KEY),
+        transcription=True,
         diarization=_switch(config, VAD_MUTE_DIARIZATION_KEY),
     )
 
 
-def diarised_turns(
-    diarization: Annotation, excluding: Collection[tuple[Segment, Hashable]] = ()
-) -> list[tuple[float, float]]:
-    """(start, end) seconds of every turn in a pyannote ``Annotation``.
-
-    ``excluding`` names turns to leave out by their ``(segment, track)`` key, so
-    another speaker's turn with the same bounds is kept.
-    """
-    left_out = set(excluding)
+def diarised_turns(diarization: Annotation) -> list[tuple[float, float]]:
+    """(start, end) seconds of every turn in a pyannote ``Annotation``."""
     return [
-        (float(turn.start), float(turn.end))
-        for turn, track in diarization.itertracks()
-        if (turn, track) not in left_out
+        (float(turn.start), float(turn.end)) for turn, _ in diarization.itertracks()
     ]
 
 

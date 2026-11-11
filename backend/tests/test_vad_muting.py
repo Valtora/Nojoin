@@ -19,57 +19,56 @@ from backend.utils.config_manager import get_default_user_settings
 
 
 def test_only_transcription_is_muted_by_default():
-    """An install upgraded from before the switches has neither key stored, so
-    its speaker side hears the unmuted file."""
+    """An install upgraded from before the switch has no key stored, so its
+    speaker side hears the unmuted file."""
     default = MutedStages(transcription=True, diarization=False)
     assert muted_stages({}) == default
     assert muted_stages(None) == default
-    unset = {"vad_mute_transcription": None, "vad_mute_diarization": None}
-    assert muted_stages(unset) == default
+    assert muted_stages({"vad_mute_diarization": None}) == default
 
 
-def test_the_user_defaults_match_the_stages_defaults():
+def test_the_user_default_matches_the_stages_default():
     defaults = get_default_user_settings()
 
-    assert defaults["vad_mute_transcription"] is True
     assert defaults["vad_mute_diarization"] is False
+    # Retired by #961: not offered as a default, so never stamped on a row.
+    assert "vad_mute_transcription" not in defaults
 
 
-@pytest.mark.parametrize(
-    ("transcription", "diarization"),
-    [(True, False), (False, True), (False, False)],
-)
-def test_each_switch_sets_only_its_own_stage(transcription, diarization):
-    config = {
-        "enable_vad": True,
-        "vad_mute_transcription": transcription,
-        "vad_mute_diarization": diarization,
-    }
+@pytest.mark.parametrize("diarization", [True, False])
+def test_faster_speaker_separation_mutes_only_the_speaker_side(diarization):
+    config = {"enable_vad": True, "vad_mute_diarization": diarization}
 
-    assert muted_stages(config) == MutedStages(transcription, diarization)
+    assert muted_stages(config) == MutedStages(True, diarization)
 
 
-def test_vad_off_mutes_nothing_whatever_the_switches_hold():
-    config = {
-        "enable_vad": False,
-        "vad_mute_transcription": True,
-        "vad_mute_diarization": True,
-    }
+@pytest.mark.parametrize("stored", [False, True, "false", None])
+def test_a_retired_transcription_switch_is_not_read(stored, caplog):
+    """#961: a user who had turned transcription muting off gets the default."""
+    config = {"enable_vad": True, "vad_mute_transcription": stored}
+
+    with caplog.at_level(logging.WARNING, logger="backend.processing.vad_muting"):
+        stages = muted_stages(config)
+
+    assert stages == MutedStages(transcription=True, diarization=False)
+    assert caplog.text == ""
+
+
+def test_vad_off_mutes_nothing_whatever_the_switch_holds():
+    config = {"enable_vad": False, "vad_mute_diarization": True}
 
     assert muted_stages(config) == MutedStages(transcription=False, diarization=False)
 
 
 @pytest.mark.parametrize("value", ["false", "true", 0, 1])
 def test_a_value_that_is_not_a_bool_falls_back_to_the_default(value, caplog):
-    """A processing run never fails over a setting: each stage takes its
-    shipped default."""
-    config = {"vad_mute_transcription": value, "vad_mute_diarization": value}
+    """A processing run never fails over a setting: it takes the shipped default."""
+    config = {"vad_mute_diarization": value}
 
     with caplog.at_level(logging.WARNING, logger="backend.processing.vad_muting"):
         stages = muted_stages(config)
 
     assert stages == MutedStages(transcription=True, diarization=False)
-    assert "vad_mute_transcription" in caplog.text
     assert "vad_mute_diarization" in caplog.text
 
 
@@ -195,11 +194,3 @@ def test_turns_are_read_from_a_pyannote_annotation():
 
     assert sorted(diarised_turns(annotation)) == [(1.5, 2.25), (2.0, 4.0)]
     assert diarised_turns(Annotation()) == []
-
-    # Left out by key (#678): another track with the same bounds is kept.
-    annotation[Segment(1.5, 2.25), "c"] = "SPEAKER_02"
-    left_out = [(Segment(1.5, 2.25), "_")]
-    assert sorted(diarised_turns(annotation, excluding=left_out)) == [
-        (1.5, 2.25),
-        (2.0, 4.0),
-    ]
