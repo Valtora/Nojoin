@@ -49,7 +49,7 @@ The wizard then has five steps:
 
 ### Choosing an AI route
 
-- **This server's AI provider** uses the provider credential in the server's `.env` (`LLM_PROVIDER` and its key, or `OLLAMA_API_URL` for Ollama). With `LLM_PROVIDER` empty, a single key in `.env` selects its own provider. The wizard validates it and lets you pick the default model. Every account on the server shares it.
+- **This server's AI provider** uses the provider credential in the server's `.env` (`LLM_PROVIDER` and its key, or `OLLAMA_API_URL` for Ollama). With `LLM_PROVIDER` empty, a single key in `.env` selects its own provider. The wizard validates it and lets you pick the default model. **Test connection** runs one short request on the chosen model and says whether it answered; you can finish setup either way. Every account on the server shares it.
 - **My own Claude or ChatGPT subscription** connects your Claude Pro or Max, or ChatGPT Plus or Pro, plan with no API key. This is per user: each account chooses its own. See [Your own subscription (CLI OAuth)](USAGE.md#your-own-subscription-cli-oauth).
 - **Decide later.** Recording, transcription, speaker separation, the speaker library, search, tags, tasks, documents, calendar sync and the sample meeting all work without AI. Generated notes and titles, meeting chat, automatic speaker naming and Meeting Edge wait until you set AI up, and can then run on meetings recorded before that.
 

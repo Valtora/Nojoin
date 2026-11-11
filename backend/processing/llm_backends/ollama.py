@@ -875,6 +875,13 @@ class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
         except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting title", e)
 
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The JSON chat request the Meeting Edge and analysis calls send. No
+        # output cap: Ollama is local, and real calls send none.
+        if not self.model:
+            raise ValueError("No Ollama model configured.")
+        return self._chat_json(prompt, timeout)
+
     def validate_api_key(self) -> bool:
         # Not list_models, which answers [] for any failure: validation has to
         # see the error, as the hosted backends' raw models.list() calls do.

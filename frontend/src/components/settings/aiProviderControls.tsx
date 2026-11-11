@@ -5,7 +5,9 @@ import { estimateContextVramGiB } from "@/lib/aiProviders";
 import type { ProviderConfigGap } from "@/lib/aiAvailability";
 import { cn } from "@/lib/cn";
 import SettingsStatusBadge from "./SettingsStatusBadge";
-import type { ValidationMessage } from "./useAISettingsModels";
+import ModelProbeResults from "./ModelProbeResults";
+import type { ProviderRole } from "./aiSettingsModels";
+import { validationKey, type ValidationMessage } from "./useAISettingsModels";
 import {
   SETTINGS_BUTTON_SECONDARY,
   SETTINGS_SELECT_CLASS,
@@ -128,22 +130,28 @@ export function ContextWindowHelp({ tokens }: { tokens: number }) {
   );
 }
 
-/** Tests a provider and reports the result in a live region. */
+/**
+ * Tests a provider, running each of its selected models once, and reports the
+ * result in a live region: a summary, then a line per model.
+ */
 export function TestConnection({
   id,
   provider,
+  role = "primary",
   validating,
   message,
   onTest,
 }: {
   id: string;
   provider: string;
+  role?: ProviderRole;
   validating: string | null;
   message: ValidationMessage | null;
   onTest: () => void;
 }) {
-  const busy = validating === provider;
-  const result = message?.provider === provider ? message : null;
+  const key = validationKey(provider, role);
+  const busy = validating === key;
+  const result = message?.key === key ? message : null;
 
   return (
     <div className="flex flex-col gap-2 @min-[26rem]:items-end">
@@ -166,16 +174,27 @@ export function TestConnection({
         )}
         {busy ? "Testing..." : "Test connection"}
       </ButtonBase>
-      <p
-        role="status"
-        className={cn(
-          "text-xs @min-[26rem]:text-right",
-          result?.type === "success" && "text-status-success-fg",
-          result?.type === "error" && "text-status-danger-fg",
+      <div role="status" className="space-y-1 @min-[26rem]:text-right">
+        {busy && (
+          <p className="text-xs text-contrast-helper">
+            Running a short test on each selected model...
+          </p>
         )}
-      >
-        {result?.msg}
-      </p>
+        {result && (
+          <>
+            <p
+              className={cn(
+                "text-xs",
+                result.type === "success" && "text-status-success-fg",
+                result.type === "error" && "text-status-danger-fg",
+              )}
+            >
+              {result.msg}
+            </p>
+            <ModelProbeResults results={result.results} className="text-left" />
+          </>
+        )}
+      </div>
     </div>
   );
 }
