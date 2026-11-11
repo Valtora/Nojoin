@@ -20,6 +20,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import { getErrorStatus } from "@/lib/errors";
+import { isLegalAcceptanceRefusal, legalRefusalMessage } from "@/lib/legalAcceptance";
 import {
   holdSignInInPlace,
   noteSignedIn,
@@ -812,6 +813,13 @@ export class CaptureController {
       initResponse = await initRecording(name);
 
     } catch (error: unknown) {
+      if (isLegalAcceptanceRefusal(error)) {
+        // Refused until the terms of use are accepted (#1004). The API client
+        // has asked for the notice, which takes the page; nothing started,
+        // so this is no failure to report.
+        this.setState({ status: "idle", error: legalRefusalMessage("record") });
+        return null;
+      }
       const detail =
         error instanceof AxiosError ? error.response?.data?.detail : null;
 

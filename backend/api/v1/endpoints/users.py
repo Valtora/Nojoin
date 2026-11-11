@@ -1,13 +1,19 @@
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import col, select
 
-from backend.api.deps import get_current_active_superuser, get_current_user, get_db
+from backend.api.deps import (
+    get_current_active_superuser,
+    get_current_session_id,
+    get_current_user,
+    get_db,
+)
 from backend.api.error_handling import sanitized_http_exception
 from backend.api.params import PageLimit, PageOffset, RowId
 from backend.core.security import hash_user_password, verify_password
@@ -484,6 +490,48 @@ async def update_user_me(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
+    return current_user
+
+
+LEGAL_ACCEPTANCE_SESSION_ONLY_DETAIL = (
+    "Accept the terms of use in the Nojoin web app, which shows them."
+)
+
+
+@router.post("/me/legal-acceptance", response_model=UserRead)
+async def accept_legal_terms(
+    *,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    session_id: Optional[str] = Depends(get_current_session_id),
+) -> Any:
+    """
+    Record that the signed-in user accepted the legal disclaimer (#1004).
+
+    For the caller alone: no route accepts for someone else, and no user update
+    sets or clears the time. Only a browser session may accept, from the page
+    that shows the terms; an API token gets 403. The time comes from the
+    server's clock in UTC and is written once. Accepting again changes nothing
+    and answers as the first time did.
+    """
+    if session_id is None:
+        raise HTTPException(
+            status_code=403, detail=LEGAL_ACCEPTANCE_SESSION_ONLY_DETAIL
+        )
+
+    if current_user.legal_accepted_at is None:
+        # Conditional on the time still being empty, so two tabs accepting at
+        # once cannot overwrite each other's time.
+        await db.execute(
+            update(User)
+            .where(
+                col(User.id) == current_user.id,
+                col(User.legal_accepted_at).is_(None),
+            )
+            .values(legal_accepted_at=datetime.now(UTC))
+        )
+        await db.commit()
+        await db.refresh(current_user)
     return current_user
 
 

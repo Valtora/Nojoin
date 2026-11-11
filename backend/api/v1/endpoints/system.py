@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import logging
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from celery.exceptions import TimeoutError as CeleryTimeoutError
@@ -502,6 +503,9 @@ async def setup_system(
         is_superuser=True,
         force_password_change=False,  # First user sets their own password, so no need to force change
         role="owner",
+        # The owner accepted the legal disclaimer on the wizard's Legal step,
+        # which comes before this one (#1004).
+        legal_accepted_at=datetime.now(UTC),
         settings=settings,
         # Opting out marks the demo as already seen so startup seeding also
         # skips it; Settings > Help can still force-recreate it later.

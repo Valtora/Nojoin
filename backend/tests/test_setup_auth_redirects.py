@@ -149,6 +149,7 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(
             is_superuser=True,
             is_active=True,
             token_version=0,
+            legal_accepted_at=None,
         )
 
     monkeypatch.setattr(login, "enforce_rate_limit", _allow_request)

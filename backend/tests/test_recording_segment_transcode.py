@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import time
 import wave
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -154,6 +155,8 @@ def build_test_user() -> SimpleNamespace:
         role="user",
         is_superuser=False,
         force_password_change=False,
+        # Accepted the terms of use, so a capture may start (#1004).
+        legal_accepted_at=datetime(2026, 11, 1, tzinfo=UTC),
         is_active=True,
         token_version=0,
         settings={},

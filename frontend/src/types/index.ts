@@ -31,6 +31,14 @@ export interface User {
   force_password_change: boolean;
   /** Per-user cap on AI analysis runs per UTC day. Null inherits the install default; 0 is no cap. */
   ai_analysis_daily_limit?: number | null;
+  /**
+   * When the user accepted the terms of use, with its UTC offset. Null until
+   * they do, and for the setup account of an install set up before the time
+   * was recorded.
+   */
+  legal_accepted_at?: string | null;
+  /** Whether the user must accept the terms of use before recording. */
+  legal_acceptance_required?: boolean;
 }
 
 export interface Invitation {

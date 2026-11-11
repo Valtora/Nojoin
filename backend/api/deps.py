@@ -18,7 +18,7 @@ from backend.core.security import (
     decode_access_token,
 )
 from backend.models.revoked_jwt import RevokedJwt
-from backend.models.user import User
+from backend.models.user import User, needs_legal_acceptance
 from backend.utils.config_manager import LOCAL_WEB_ORIGINS, get_trusted_web_origin
 
 reusable_oauth2 = OAuth2PasswordBearer(
@@ -150,6 +150,41 @@ def enforce_password_change_policy(user: User, *, path: str, method: str) -> Non
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Password change required",
     )
+
+
+# The refusal of a new capture or import from a user who has not accepted the
+# legal disclaimer (#1004). The code is the stable part: the web app answers it
+# by showing the notice, and an API client can match it. Only routes that
+# create a recording from audio refuse; reading, every other feature and a
+# capture or import that already exists carry on.
+LEGAL_ACCEPTANCE_REQUIRED_CODE = "legal_acceptance_required"
+LEGAL_ACCEPTANCE_REQUIRED_MESSAGE = (
+    "Accept Nojoin's terms of use in the web app before you start a recording "
+    "or import audio."
+)
+
+
+def legal_acceptance_refusal() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": LEGAL_ACCEPTANCE_REQUIRED_CODE,
+            "message": LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
+        },
+    )
+
+
+def enforce_legal_acceptance(user: User) -> None:
+    """Refuse a new recording from a user who has not accepted the terms.
+
+    Called in the body of each route that creates a recording from audio, not
+    as a dependency, so a caller that invokes the route function directly, as
+    the MCP tools do with the routes they wrap, cannot skip it.
+    """
+    if needs_legal_acceptance(
+        is_superuser=user.is_superuser, legal_accepted_at=user.legal_accepted_at
+    ):
+        raise legal_acceptance_refusal()
 
 
 async def get_authenticated_token_details(

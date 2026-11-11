@@ -24,6 +24,12 @@ Registration is by invitation only. **Settings > Users and access** has three pa
 
 Passwords need at least 8 characters, and one made entirely of whitespace is refused. Passwords set before this rule keep working until they are next changed or reset.
 
+### Terms of Use
+
+Every account except the setup account accepts the [terms of use](LEGAL.md) for itself the first time it signs in, Owners and Admins included, whether it joined through an invitation or was created in the users table. Someone with a temporary password changes it first. Accounts that existed before 3.2.0 are asked at their next visit; the setup account accepted during setup and is not asked again. Until an account accepts, it sees the terms in place of every page, with **Sign out** the only other choice, and Nojoin refuses to start a recording or import audio for it, through the API too ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)). A recording already running carries on.
+
+The users table's **Terms accepted** column shows the day each account accepted, in your timezone, or **Not yet accepted**. The setup account of an installation set up before 3.2.0 has no recorded date and shows a dash. Nobody can accept for someone else, and no setting changes or clears the date.
+
 ## Settings Structure
 
 Settings is grouped by subject. The setup account sees fourteen categories, other Owners and Admins thirteen, and everyone else nine. A link to a category the account cannot see opens the settings index instead.

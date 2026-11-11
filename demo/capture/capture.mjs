@@ -164,8 +164,11 @@ async function rewrite(key, change) {
 
 // The seeded account owns the library, so it is the instance's administrator.
 // The demo account is not, and the demo frontend must not offer admin pages.
+// Nor may it meet the terms of use notice: the fixture API refuses the
+// acceptance like every other write, so a visitor could never get past it.
 await rewrite("/api/v1/users/me?", (user) => {
   user.is_superuser = false;
+  user.legal_acceptance_required = false;
 });
 
 // A refresh captures with the seed's workers stopped so it never touches the

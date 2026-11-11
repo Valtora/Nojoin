@@ -65,6 +65,16 @@ These endpoints are rate limited per client address:
 | Anonymous MCP requests | 30 per minute |
 | Calendar webhooks, per provider | 300 per minute |
 
+## Terms of Use Acceptance
+
+Every account except the setup account accepts the terms of use ([LEGAL.md](LEGAL.md)) once, before it can record ([ADMIN.md](ADMIN.md#terms-of-use)). The setup account is told apart by its superuser rights. The web app cannot grant them, and a superuser who grants them to another account through the API exempts that account as well.
+
+- Until an account has accepted, the API refuses it a new capture or import with `403` and the detail `{"code": "legal_acceptance_required", "message": "..."}`, whether it presents the session cookie or an API token. The refused routes are `POST /api/v1/recordings/init`, `/recordings/import`, `/recordings/import/chunked/init` and `/recordings/upload`, the four that create a recording from audio. The check runs in each route's body, so code that calls a route function directly cannot skip it.
+- Everything else stays open to the account, reading included. So do the segments, pause, resume, finalize and discard of a capture or import that already exists, and a capture running when an installation upgrades ends normally. MCP tokens never reach these routes, and no MCP tool records or imports.
+- `POST /api/v1/users/me/legal-acceptance` records the acceptance, for the signed-in account only and from a browser session only, where the terms are shown; an API token gets `403`. It stamps the server's clock in UTC once, in `users.legal_accepted_at`, and a repeat changes nothing. No other route, an administrator's included, sets or clears the time.
+- An account with a temporary password changes it first: the API refuses the acceptance until it does, so the terms are accepted under the account's own password.
+- `/users/me`, the users list and both sign-in responses carry `legal_acceptance_required`, so an API client can tell before it tries.
+
 ## Browser Session Request Protection
 
 The browser session is a `Secure`, `HttpOnly`, `SameSite=Lax` cookie that lasts 12 hours. A cookie-authenticated request with an unsafe method (anything but `GET`, `HEAD` or `OPTIONS`) must carry an `Origin` header, or failing that a `Referer`, that matches the trusted web origin, `WEB_APP_URL` ([DEPLOYMENT.md](DEPLOYMENT.md#remote-access-and-trusted-public-origin)). Otherwise it is refused with `403`. Session sign-in is held to the same rule. Requests that present a bearer token are not origin-checked.
@@ -140,7 +150,7 @@ Each user can route their AI inference through their own **Claude** (Pro/Max) or
 
 ## Browser Capture Security
 
-- Capture endpoints authenticate with the session cookie or an API token, apply the origin check above to the cookie, and enforce recording ownership on every init, segment, pause, resume, discard and finalize request.
+- Capture endpoints authenticate with the session cookie or an API token, apply the origin check above to the cookie, and enforce recording ownership on every init, segment, pause, resume, discard and finalize request. Init is refused until the account has accepted the terms of use ([above](#terms-of-use-acceptance)).
 - The browser mediates capture permissions. Nojoin cannot capture the screen, a tab, system audio or the microphone unless the user grants it in the browser's picker.
 - Each user can have one capture in progress or paused at a time. When a tab loses its own capture before any audio reached the server, Nojoin discards it through the same ownership-checked endpoint as a manual discard, so it never touches another user's recording. A tab that lost it to a reload or a close sends the capture epoch it held, so the server refuses the discard once another tab or device has taken the capture over.
 - A capture still marked as uploading can be resumed from another tab or device only once the server has received nothing from it for two minutes (`capture_looks_stalled` in `backend/models/recording.py`), so a capture that is uploading cannot be taken over by mistake. A resume that sends the current capture epoch (below) as `reclaim_epoch` takes it over at once. That is an operation the owner's session is authorised for, not a privilege: the epoch is a small counter, not a secret, and any client of the owner's could send it. The client uses it only as a reload convention, keeping the epoch it held in per-tab `sessionStorage` and offering the capture back at once only while the recording's `capture_epoch` still matches. It never authenticates a tab or device. What it does is fence stale pages: the takeover issues the next epoch, so the old page's late requests and any duplicate tab holding the old epoch are refused. The Web Locks that keep a second tab of the same browser from offering the capture are browser-local hints, which the server never sees. Nothing pauses, finalizes or discards such a capture automatically; its owner chooses in the resume-or-discard dialog.
