@@ -9,7 +9,11 @@ image — the SDK is imported lazily inside the manager's inference methods only
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
+import time
+import types
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -549,3 +553,109 @@ def test_codex_model_catalog_parse_filters_and_sorts():
     ]
     # Unparseable output -> empty (the API then serves the curated fallback).
     assert _parse_catalog("not json at all") == []
+
+
+# --- the caller's timeout (#980) ---
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [({}, 300), ({"timeout": None}, 300), ({"timeout": 90}, 90)],
+)
+def test_a_turn_runs_to_the_callers_timeout_or_the_default(
+    monkeypatch, given, expected
+):
+    manager = CliConversationManager()
+    seen: list = []
+
+    async def _turn(  # noqa: PLR0913 - the driver's signature
+        user_id, prompt, access_token, model, timeout, images=None
+    ):
+        seen.append(timeout)
+        return "answer", _TurnUsage()
+
+    async def _stream(  # noqa: PLR0913 - the driver's signature
+        user_id, prompt, access_token, model, timeout, usage_sink
+    ):
+        seen.append(timeout)
+        yield "answer"
+
+    monkeypatch.setattr(manager, "_resolve_access_token", lambda user_id: "token")
+    monkeypatch.setattr(manager, "_arun_single_turn", _turn)
+    monkeypatch.setattr(manager, "_astream_for", _stream)
+
+    assert manager.run_single_turn(1, "prompt", **given) == "answer"
+    assert list(manager.stream_single_turn(1, "prompt", **given)) == ["answer"]
+    assert seen == [expected, expected]
+
+
+def _fake_claude_sdk(children: list) -> types.ModuleType:
+    """A claude_agent_sdk whose query starts a CLI child that never answers.
+
+    Like the real query, it stops its child in its own cleanup, which runs as a
+    timeout unwinds it (SubprocessCLITransport.close() terminates the real CLI).
+    """
+    sdk = types.ModuleType("claude_agent_sdk")
+    for name in (
+        "AssistantMessage",
+        "RateLimitEvent",
+        "ResultMessage",
+        "StreamEvent",
+        "TextBlock",
+    ):
+        setattr(sdk, name, type(name, (), {}))
+    sdk.ClaudeSDKError = type("ClaudeSDKError", (Exception,), {})
+    sdk.ClaudeAgentOptions = lambda **kwargs: SimpleNamespace(**kwargs)
+
+    async def query(*, prompt, options):
+        child = await asyncio.create_subprocess_exec("/bin/sleep", "60")
+        children.append(child)
+        try:
+            await child.wait()
+            yield None
+        finally:
+            if child.returncode is None:
+                child.terminate()
+                await child.wait()
+
+    sdk.query = query
+    return sdk
+
+
+def test_a_claude_turn_that_times_out_stops_its_cli_process(monkeypatch, tmp_path):
+    children: list = []
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", _fake_claude_sdk(children))
+    manager = CliConversationManager()
+    monkeypatch.setattr(manager, "_resolve_access_token", lambda user_id: "token")
+    monkeypatch.setattr(manager, "_user_cwd", lambda user_id: str(tmp_path))
+
+    started = time.monotonic()
+    with pytest.raises(CliOAuthUnavailableError, match="timed out after 1s"):
+        manager.run_single_turn(1, "prompt", timeout=1)
+
+    assert time.monotonic() - started < 10
+    [child] = children
+    # Stopped and reaped before the call returned, not left to the worker.
+    assert child.returncode is not None
+
+
+def test_a_codex_turn_that_times_out_kills_its_cli_process(monkeypatch, tmp_path):
+    from backend.processing.cli import codex_driver
+
+    pid_file = tmp_path / "codex.pid"
+    fake_codex = tmp_path / "codex"
+    fake_codex.write_text(f"#!/bin/sh\necho $$ > {pid_file}\nexec /bin/sleep 60\n")
+    fake_codex.chmod(0o755)
+    monkeypatch.setattr(codex_driver, "CODEX_PATH", str(fake_codex))
+    monkeypatch.setattr(codex_driver, "user_cli_dir", lambda user_id: tmp_path / "cli")
+    manager = CliConversationManager(provider="codex")
+    monkeypatch.setattr(manager, "_resolve_access_token", lambda user_id: "{}")
+    monkeypatch.setattr(manager, "_finalize_codex_auth", lambda user_id, blob: None)
+
+    started = time.monotonic()
+    with pytest.raises(CliOAuthUnavailableError, match="timed out after 1s"):
+        manager.run_single_turn(1, "prompt", timeout=1)
+
+    assert time.monotonic() - started < 10
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)

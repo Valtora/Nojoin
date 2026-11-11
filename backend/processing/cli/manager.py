@@ -225,15 +225,22 @@ class CliConversationManager:
         prompt: str,
         *,
         model: Optional[str] = None,
-        timeout: int = DEFAULT_TIMEOUT_SECONDS,
+        timeout: Optional[int] = None,
         images: Optional[Sequence[VisionImage]] = None,
     ) -> str:
         """Resolve a fresh token, run one non-streaming turn, return the text.
+
+        ``timeout`` bounds the whole turn, subprocess start included;
+        ``DEFAULT_TIMEOUT_SECONDS`` applies when it is None. A turn that runs
+        out of time stops its CLI process before this raises: Codex's is
+        killed, and the Claude SDK's query closes its own as the timeout
+        unwinds it.
 
         ``images`` attaches one or more images to the turn. Both providers
         support this without loosening the tools-off posture: Codex takes
         ``--image <FILE>`` arguments, and Claude takes inline content blocks.
         """
+        timeout = _turn_timeout(timeout)
         access_token = self._resolve_access_token(user_id)
         try:
             if self._is_codex():
@@ -267,14 +274,17 @@ class CliConversationManager:
         prompt: str,
         *,
         model: Optional[str] = None,
-        timeout: int = DEFAULT_TIMEOUT_SECONDS,
+        timeout: Optional[int] = None,
     ) -> Iterator[str]:
         """Yield text chunks for one streaming turn (chat).
+
+        ``timeout`` bounds the whole turn, as in ``run_single_turn``.
 
         The SDK's async generator is driven on a background thread that pushes
         chunks onto a queue; this sync generator relays them. Token resolution
         runs on the calling thread first, so all DB work stays synchronous.
         """
+        timeout = _turn_timeout(timeout)
         access_token = self._resolve_access_token(user_id)
         chunk_queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
         # Populated by the driver thread with the turn's usage on a clean drain;
@@ -687,6 +697,11 @@ async def _image_prompt_stream(prompt: str, images: Sequence[VisionImage]):
         "parent_tool_use_id": None,
         "session_id": "default",
     }
+
+
+def _turn_timeout(timeout: Optional[int]) -> int:
+    """The caller's limit for a turn, or ``DEFAULT_TIMEOUT_SECONDS`` without one."""
+    return DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
 
 
 def _assistant_text(message, text_block_cls) -> list[str]:
