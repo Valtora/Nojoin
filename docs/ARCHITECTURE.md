@@ -59,9 +59,9 @@ When editing `celery_app.py`, note that the broker reads its transport options w
 
 ### AI Providers
 
-LLM backends live in `backend/processing/llm_backends/` (Gemini, OpenAI, Anthropic, Ollama). Each user's AI calls resolve to the install-wide provider (an API key or Ollama) or **CLI OAuth**, which runs the user's own Claude subscription through the Claude Agent SDK, or ChatGPT subscription through the OpenAI Codex CLI, on the IO lane. CLI OAuth falls back through the server's provider chain on any failure, and no feature may depend on it; [SECURITY.md](SECURITY.md) covers the trust boundary.
+LLM backends live in `backend/processing/llm_backends/` (Gemini, OpenAI, Anthropic, Ollama). Each user's AI calls resolve to the install-wide provider (an API key or Ollama) or **CLI OAuth**, which runs the user's own Claude subscription through the Claude Agent SDK, or ChatGPT subscription through the OpenAI Codex CLI, on the IO lane. CLI OAuth falls back through the server's provider chain on any failure, and no feature may depend on it; [SECURITY.md](SECURITY.md) covers the trust boundary. A CLI turn runs to the timeout its caller passes, the one a hosted provider gets (90 s for Meeting Edge and the live naming ask), or to 300 s when the caller passes none. The limit covers the whole turn, process start included, and a turn that runs out of it has its CLI process stopped and fails over like any other error.
 
-An install-wide secondary provider (`secondary_llm_provider`, or `SECONDARY_LLM_PROVIDER`) wraps the primary in `SecondaryLLMBackend`. Any primary failure is retried on the secondary, which has its own models and key, and if both fail the primary's error is raised. A streamed answer falls back only when the primary failed before its first token.
+An install-wide secondary provider (`secondary_llm_provider`, or `SECONDARY_LLM_PROVIDER`) wraps the primary in `SecondaryLLMBackend`. Any primary failure is retried on the secondary, which has its own models and key, and if both fail the primary's error is raised. It passes a caller's timeout to every backend in the chain unchanged, and none when the caller gave none, so each backend applies its own default. A streamed answer falls back only when the primary failed before its first token.
 
 ### Document Parsing
 
