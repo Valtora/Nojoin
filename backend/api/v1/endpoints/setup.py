@@ -24,6 +24,7 @@ from backend.processing.llm_backends import model_probe
 from backend.processing.llm_services import get_llm_backend
 from backend.utils.config_manager import config_manager
 from backend.utils.deployment_warnings import FIRST_RUN_PASSWORD_PLACEHOLDER
+from backend.utils.llm_config import _normalise_context_window
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
@@ -113,6 +114,7 @@ class ListModelsRequest(BaseModel):
     provider: str
     api_key: Optional[str] = None
     api_url: Optional[str] = None
+    provider_role: Literal["primary", "secondary"] = "primary"
 
 
 async def is_system_initialized(db: AsyncSession) -> bool:
@@ -375,14 +377,36 @@ def _build_setup_llm_backend(
 ):
     from backend.utils.config_manager import get_system_api_keys
 
-    prefix = "secondary_" if provider_role == "secondary" else ""
+    secondary = provider_role == "secondary"
+    prefix = "secondary_" if secondary else ""
     api_key = get_system_api_keys().get(f"{prefix}{provider}_api_key")
+    if secondary and provider != "ollama" and not api_key:
+        # Never fall back to the primary's key: that would test the wrong key.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No fallback key is configured. Set "
+                f"SECONDARY_{provider.upper()}_API_KEY in .env."
+            ),
+        )
 
     api_url = None
+    ollama_options: dict = {}
     if provider == "ollama":
+        # Only the stored address is used, never one sent in the request.
         url_setting = f"{prefix}ollama_api_url"
         api_url = config_manager.get(url_setting)
         api_url = _validate_setup_ollama_api_url(api_url, trusted_setting=url_setting)
+        if secondary:
+            # The fallback's own window, thinking choice and trusted address, as
+            # resolve_llm_config gives real calls (llm_config._merge_llm_config).
+            ollama_options = {
+                "context_window": _normalise_context_window(
+                    config_manager.get("secondary_ollama_context_window")
+                ),
+                "think": config_manager.get("secondary_ollama_think") is True,
+                "trusted_api_url": config_manager.get(url_setting) or None,
+            }
 
     return get_llm_backend(
         provider,
@@ -390,6 +414,7 @@ def _build_setup_llm_backend(
         model=model,
         api_url=api_url,
         allow_private_api_url=provider == "ollama",
+        **ollama_options,
     )
 
 
@@ -435,8 +460,10 @@ def _validate_llm_provider(
     return response
 
 
-def _list_llm_provider_models(provider: str) -> dict:
-    return {"models": _build_setup_llm_backend(provider).list_models()}
+def _list_llm_provider_models(provider: str, provider_role: str = "primary") -> dict:
+    return {
+        "models": _build_setup_llm_backend(provider, None, provider_role).list_models()
+    }
 
 
 @router.post("/validate-llm")
@@ -498,7 +525,9 @@ async def list_models(
 
     try:
         # Off the event loop for the reason given in validate_llm.
-        return await asyncio.to_thread(_list_llm_provider_models, request.provider)
+        return await asyncio.to_thread(
+            _list_llm_provider_models, request.provider, request.provider_role
+        )
     except HTTPException:
         if is_public_request:
             logger.warning(

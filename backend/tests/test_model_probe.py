@@ -118,9 +118,12 @@ def _handler(http_lib, outcome: str, success_body, sent: list):
         sent.append(str(request.url))
         if outcome == "timeout":
             raise http_lib.ReadTimeout("timed out", request=request)
-        if outcome in {"404", "401", "429"}:
+        if outcome == "400-then-ok" and len(sent) == 1:
+            # A server that refuses JSON mode, then answers without it.
+            return http_lib.Response(400, json=_error_body(400))
+        if outcome in {"404", "401", "429", "500"}:
             return http_lib.Response(int(outcome), json=_error_body(int(outcome)))
-        text = GOOD_REPLY if outcome == "ok" else PROSE_REPLY
+        text = GOOD_REPLY if outcome in {"ok", "400-then-ok"} else PROSE_REPLY
         return http_lib.Response(200, json=success_body(text))
 
     return handle
@@ -153,7 +156,6 @@ def _openai_backend(outcome: str, sent: list):
     backend.client = openai.OpenAI(
         api_key="sk-not-used",
         base_url="https://openai.example.test/v1",
-        max_retries=0,
         http_client=http_lib.Client(
             transport=http_lib.MockTransport(_handler(http_lib, outcome, body, sent))
         ),
@@ -185,7 +187,6 @@ def _anthropic_backend(outcome: str, sent: list):
     backend.client = anthropic.Anthropic(
         api_key="not-used",
         base_url="https://anthropic.example.test",
-        max_retries=0,
         http_client=http_lib.Client(
             transport=http_lib.MockTransport(_handler(http_lib, outcome, body, sent))
         ),
@@ -239,7 +240,7 @@ class _OllamaRequests:
             raise requests.ReadTimeout("read timed out")
         response = requests.Response()
         response.url = url
-        if self.outcome in {"404", "401", "429"}:
+        if self.outcome in {"404", "401", "429", "500"}:
             response.status_code = int(self.outcome)
             response._content = b'{"error": "model not found"}'
             return response
@@ -275,6 +276,7 @@ EXPECTED_KIND = {
     "429": "quota",
     "timeout": "timeout",
     "prose": "bad_response",
+    "500": "error",
 }
 
 
@@ -307,9 +309,10 @@ def test_each_provider_probe_reports_the_kind_of_failure(
     assert result.kind == EXPECTED_KIND[outcome]
     assert result.ok is (outcome == "ok")
     assert backend.model in result.message
-    # One generation each: no failure is retried, so a timeout costs one
-    # timeout. Ollama may first read the model's facts from /api/show, as
-    # every real call does.
+    # One generation each, with the SDK clients built as production builds them
+    # (default retries): the probe turns retries off, so a 429, a 500 or a
+    # timeout costs one request. Ollama may first read the model's facts from
+    # /api/show, as every real call does.
     generations = [url for url in sent if not url.endswith("/api/show")]
     assert len(generations) == 1, sent
     if provider == "gemini":
@@ -524,3 +527,159 @@ async def test_the_secondary_is_tested_with_its_own_key(monkeypatch) -> None:
 def test_probe_timeouts_match_the_decision() -> None:
     assert model_probe.probe_timeout("gemini") == 20
     assert model_probe.probe_timeout("ollama") == 60
+
+
+def test_openai_retries_without_json_mode_only_after_a_refusal() -> None:
+    sent: list = []
+    backend = _openai_backend("400-then-ok", sent)
+
+    result = probe_one(
+        lambda model: backend, "openai", backend.model, "main", include_detail=False
+    )
+
+    assert result.kind == "ok"
+    assert len(sent) == 2, sent
+
+
+def test_a_refused_connection_is_an_error_not_a_timeout() -> None:
+    from urllib3.exceptions import NewConnectionError
+
+    refused = NewConnectionError(None, "Failed to establish a new connection: refused")
+    try:
+        try:
+            raise refused
+        except NewConnectionError as inner:
+            raise requests.ConnectionError("connection refused") from inner
+    except requests.ConnectionError as outer:
+        assert classify_probe_error(outer) == "error"
+
+    try:
+        try:
+            raise ConnectionRefusedError(111, "Connection refused")
+        except ConnectionRefusedError as inner:
+            raise RuntimeError("Ollama API error (probe)") from inner
+    except RuntimeError as outer:
+        assert classify_probe_error(outer) == "error"
+
+
+class _RecordingOllama:
+    """Stands in for ``requests`` under a real OllamaLLMBackend built by the route."""
+
+    def __init__(self):
+        self.chats: list = []
+
+    def get(self, url, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        response._content = json.dumps(
+            {"models": [{"name": "fallback-model"}]}
+        ).encode()
+        return response
+
+    def post(self, url, json=None, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        if url.endswith("/api/show"):
+            body = {
+                "capabilities": ["completion", "thinking"],
+                "model_info": {"general.architecture": "x", "x.context_length": 131072},
+            }
+        else:
+            self.chats.append((url, json))
+            body = {
+                "message": {"role": "assistant", "content": GOOD_REPLY},
+                "done_reason": "stop",
+            }
+        response._content = json_module.dumps(body).encode()
+        return response
+
+
+@pytest.mark.anyio
+async def test_the_ollama_fallback_is_probed_with_its_own_window_and_thinking(
+    monkeypatch,
+) -> None:
+    stored = {
+        "ollama_api_url": "http://10.0.0.5:11434",
+        "ollama_context_window": 32768,
+        "ollama_think": True,
+        "secondary_ollama_api_url": "http://10.0.0.6:11434",
+        "secondary_ollama_context_window": 8192,
+        "secondary_ollama_think": False,
+    }
+    monkeypatch.setattr(
+        setup.config_manager, "get", lambda key, default=None: stored.get(key, default)
+    )
+    fake = _RecordingOllama()
+    monkeypatch.setattr(requests, "get", fake.get)
+    monkeypatch.setattr(requests, "post", fake.post)
+
+    async def _permission(db, request):
+        return SimpleNamespace(id=1, role="owner")
+
+    async def _db() -> AsyncGenerator[object, None]:
+        yield object()
+
+    monkeypatch.setattr(setup, "check_setup_permission", _permission)
+    app = create_app(app_lifespan=None)
+    app.dependency_overrides[get_db] = _db
+
+    response = await _post(
+        app,
+        {
+            "provider": "ollama",
+            "provider_role": "secondary",
+            "probe_models": [{"model": "fallback-model"}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["valid"] is True
+    [(url, payload)] = fake.chats
+    assert url == "http://10.0.0.6:11434/api/chat"
+    assert payload["options"]["num_ctx"] == 8192
+    assert payload["think"] is False
+
+
+@pytest.mark.anyio
+async def test_a_hosted_fallback_without_its_own_key_is_refused(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "primary-key")
+    monkeypatch.delenv("SECONDARY_OPENAI_API_KEY", raising=False)
+    calls: dict = {}
+    seen: list = []
+    app = _route_app(monkeypatch, public=False, calls=calls, seen=seen)
+
+    for path, body in (
+        (
+            "/api/v1/setup/validate-llm",
+            {"provider_role": "secondary", "probe_models": [{"model": "good"}]},
+        ),
+        ("/api/v1/setup/list-models", {"provider_role": "secondary"}),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="https://test"
+        ) as client:
+            response = await client.post(path, json={"provider": "openai", **body})
+        assert response.status_code == 400
+        assert response.json() == {
+            "detail": "No fallback key is configured. Set SECONDARY_OPENAI_API_KEY in .env."
+        }
+    assert seen == [] and calls == {}
+
+
+@pytest.mark.anyio
+async def test_the_model_list_reads_the_fallbacks_key(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "primary-key")
+    monkeypatch.setenv("SECONDARY_OPENAI_API_KEY", "secondary-key")
+    seen: list = []
+    app = _route_app(monkeypatch, public=False, calls={}, seen=seen)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="https://test"
+    ) as client:
+        response = await client.post(
+            "/api/v1/setup/list-models",
+            json={"provider": "openai", "provider_role": "secondary"},
+        )
+
+    assert response.status_code == 200
+    assert [api_key for _, api_key, _ in seen] == ["secondary-key"]

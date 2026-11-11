@@ -26,9 +26,9 @@ ProbeKind = Literal[
 ProbeRole = Literal["main", "meeting_edge"]
 
 PROBE_PROMPT = 'Reply with exactly this JSON object and nothing else: {"ok": true}'
-# A ceiling, not a cost: the reply is about five tokens. It is set where a
-# provider lets a thinking model spend its output budget on thought (Gemini,
-# Anthropic), so a model that thinks first still has room to answer.
+# A ceiling, not a cost: the reply is about five tokens. Only Anthropic gets
+# it, since its API requires one; it leaves a model that thinks first room to
+# answer. The other providers' real calls send no cap, so their probes do not.
 PROBE_MAX_OUTPUT_TOKENS = 2048
 PROBE_TIMEOUT_SECONDS = 20
 # A cold Ollama model has to load before it answers.
@@ -105,6 +105,11 @@ def _status_code(exc: BaseException) -> int | None:
     return None
 
 
+def is_request_refusal(exc: BaseException) -> bool:
+    """Whether the provider refused the request itself (400 or 422)."""
+    return any(_status_code(link) in (400, 422) for link in _exception_chain(exc))
+
+
 def classify_probe_error(exc: BaseException) -> ProbeKind:
     """Sort a failed probe by what the user can do about it.
 
@@ -115,6 +120,12 @@ def classify_probe_error(exc: BaseException) -> ProbeKind:
     for link in _exception_chain(exc):
         if isinstance(link, ProbeReplyError):
             return "bad_response"
+        # urllib3's NewConnectionError subclasses ConnectTimeoutError, so a
+        # refused connection would otherwise read as a timeout.
+        if isinstance(link, ConnectionRefusedError) or any(
+            cls.__name__ == "NewConnectionError" for cls in type(link).__mro__
+        ):
+            return "error"
         if isinstance(link, TimeoutError) or any(
             "Timeout" in cls.__name__ for cls in type(link).__mro__
         ):

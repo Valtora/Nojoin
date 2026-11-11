@@ -576,7 +576,7 @@ class OpenAILLMBackend(LLMBackend):
     def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
         # The Meeting Edge request, JSON mode first. No output cap: real calls
         # send none, and OpenAI-compatible servers disagree on its name.
-        from backend.processing.llm_backends.model_probe import classify_probe_error
+        from backend.processing.llm_backends.model_probe import is_request_refusal
 
         if not self.model:
             raise ValueError("No OpenAI model configured.")
@@ -587,16 +587,19 @@ class OpenAILLMBackend(LLMBackend):
         }
         if "gpt" in self.model:
             request_kwargs["temperature"] = 0.2
+        # No SDK retries: one probe is one request, and a timeout is one timeout.
+        client = self.client.with_options(max_retries=0)
         try:
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 **request_kwargs, response_format={"type": "json_object"}
             )
-        except Exception as json_mode_error:  # noqa: BLE001 -- boundary: retried without JSON mode only when the refusal is not one a retry would repeat
-            # Meeting Edge retries without response_format; a missing model,
-            # a refused key, a rate limit or a timeout would only fail again.
-            if classify_probe_error(json_mode_error) != "error":
+        except Exception as json_mode_error:  # noqa: BLE001 -- boundary: retried without JSON mode only when the server refused the request itself
+            # Meeting Edge retries without response_format. Only a server that
+            # refuses the request (400 or 422, as one without JSON mode does)
+            # gets the plain retry: anything else would only fail again.
+            if not is_request_refusal(json_mode_error):
                 raise
-            response = self.client.chat.completions.create(**request_kwargs)
+            response = client.chat.completions.create(**request_kwargs)
         return response.choices[0].message.content or ""
 
     def validate_api_key(self) -> bool:

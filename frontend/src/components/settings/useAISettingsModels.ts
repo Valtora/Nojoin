@@ -175,7 +175,7 @@ export function useAISettingsModels(
 
       setSecondaryFetchingModels(true);
       try {
-        const res = await listModels(provider, "", url);
+        const res = await listModels(provider, "", url, undefined, "secondary");
         setSecondaryAvailableModels(res.models);
       } catch (e: unknown) {
         console.error("Failed to fetch secondary models", e);
@@ -223,12 +223,17 @@ export function useAISettingsModels(
           setAvailableModels(res.models);
         }
       } else {
-        // Otherwise refresh models explicitly
-        const modelsRes = await listModels(provider, "", url);
-        if (isSecondary) {
-          setSecondaryAvailableModels(modelsRes.models);
-        } else {
-          setAvailableModels(modelsRes.models);
+        // Otherwise refresh the list with the same role's key. A refresh that
+        // fails keeps the list as it was and never hides the test's results.
+        try {
+          const modelsRes = await listModels(provider, "", url, undefined, role);
+          if (isSecondary) {
+            setSecondaryAvailableModels(modelsRes.models);
+          } else {
+            setAvailableModels(modelsRes.models);
+          }
+        } catch (refreshError: unknown) {
+          console.error("Failed to refresh the model list", refreshError);
         }
       }
 

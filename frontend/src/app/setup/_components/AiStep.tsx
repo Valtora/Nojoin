@@ -255,6 +255,9 @@ export default function AiStep({
                     label="Model"
                     value={selectedModel}
                     onChange={onInputChange}
+                    // Held while a test runs, so the result and the busy line
+                    // name the model that was tested.
+                    disabled={testingModel}
                     hint="Used for meeting notes, chat, titles, and speaker inference. Changeable in Settings > AI providers."
                   >
                     {availableModels.map((model) => (

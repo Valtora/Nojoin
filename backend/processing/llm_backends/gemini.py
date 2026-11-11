@@ -510,6 +510,8 @@ class GeminiLLMBackend(LLMBackend):
             raise RuntimeError(f"Gemini API error (meeting title): {e}")
 
     def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The Meeting Edge request. No output cap, as real calls send none: a
+        # thinking model that spent a cap on thought would read as a bad reply.
         if not self.model:
             raise ValueError("No Gemini model configured.")
         response = self.client.models.generate_content(
@@ -518,7 +520,6 @@ class GeminiLLMBackend(LLMBackend):
             config=self.genai.types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.2,
-                max_output_tokens=max_output_tokens,
                 http_options=self.genai.types.HttpOptions(
                     timeout=int(timeout * 1000),
                 ),

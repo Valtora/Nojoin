@@ -653,7 +653,8 @@ class AnthropicLLMBackend(LLMBackend):
         # The Meeting Edge request, with low effort for a model that thinks.
         if not self.model:
             raise ValueError("No Anthropic model configured.")
-        response = self.client.messages.create(
+        # No SDK retries: one probe is one request, and a timeout is one timeout.
+        response = self.client.with_options(max_retries=0).messages.create(
             model=self.model,
             max_tokens=max_output_tokens,
             messages=[{"role": "user", "content": prompt}],

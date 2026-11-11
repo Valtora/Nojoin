@@ -852,6 +852,12 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
     backend = object.__new__(AnthropicLLMBackend)
     backend.model = "claude-opus-5"
     backend.client = SimpleNamespace(messages=RecordingMessages())
+    # The probe turns SDK retries off through with_options, which the real
+    # client must accept too.
+    real_anthropic = anthropic.Anthropic(api_key="not-used")
+    backend.client.with_options = lambda **options: (
+        real_anthropic.with_options(**options) and backend.client
+    )
 
     # One call per distinct request shape: the streamed notes ceiling ladder, the
     # plain create path, and the chat path that also sends system and tools.
@@ -940,6 +946,11 @@ def test_openai_kwargs_are_accepted_by_the_installed_sdk() -> None:
     backend.model = "gpt-5.5"
     backend.client = SimpleNamespace(
         chat=SimpleNamespace(completions=RecordingCompletions())
+    )
+    # The probe turns SDK retries off through with_options, which the real
+    # client must accept too.
+    backend.client.with_options = lambda **options: (
+        real.with_options(**options) and backend.client
     )
 
     # One call per distinct request shape: the plain create, the JSON-mode

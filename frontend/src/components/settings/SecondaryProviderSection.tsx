@@ -76,7 +76,7 @@ export default function SecondaryProviderSection({
   const refreshModels = () => {
     const url = isOllama ? settings.secondary_ollama_api_url : undefined;
     models.setSecondaryFetchingModels(true);
-    listModels(provider, "", url)
+    listModels(provider, "", url, undefined, "secondary")
       .then((res) => models.setSecondaryAvailableModels(res.models))
       .catch(console.error)
       .finally(() => models.setSecondaryFetchingModels(false));

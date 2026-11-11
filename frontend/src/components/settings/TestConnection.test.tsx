@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelProbeResult } from "@/lib/api";
@@ -190,6 +190,66 @@ describe("handleValidate (issue #991)", () => {
       probeModels: [{ model: "gemini-pro-latest", role: "main" }],
     });
     expect(result.current.validationMsg?.key).toBe("secondary:gemini");
+    // The list refresh after the test reads the fallback's key too.
+    expect(mocks.listModels).toHaveBeenLastCalledWith(
+      "gemini",
+      "",
+      "",
+      undefined,
+      "secondary",
+    );
+  });
+
+  it("keeps the per-model results when the list refresh fails", async () => {
+    mocks.validateLLM.mockResolvedValue({
+      valid: false,
+      message: missing.message,
+      results: [pass, missing],
+    });
+    const { result } = renderHook(() => useAISettingsModels({ settings }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    mocks.listModels.mockRejectedValue(new Error("400 from list-models"));
+
+    await act(async () => {
+      await result.current.handleValidate("gemini", "secondary");
+    });
+
+    expect(result.current.validationMsg).toMatchObject({
+      type: "error",
+      key: "secondary:gemini",
+      results: [pass, missing],
+    });
+    render(
+      <TestConnection
+        id="t"
+        provider="gemini"
+        role="secondary"
+        validating={null}
+        message={result.current.validationMsg}
+        onTest={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Meeting Edge model failed: Gemini does not serve gemini-old.",
+    );
+  });
+
+  it("loads the fallback's models with the fallback's key", async () => {
+    renderHook(() => useAISettingsModels({ settings }));
+
+    await waitFor(
+      () =>
+        expect(mocks.listModels).toHaveBeenCalledWith(
+          "gemini",
+          "",
+          "",
+          undefined,
+          "secondary",
+        ),
+      { timeout: 3000 },
+    );
   });
 
   it("starts one test however often it is asked while one runs", async () => {
