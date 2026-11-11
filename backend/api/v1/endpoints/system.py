@@ -66,6 +66,7 @@ from backend.utils.download_progress import (
     is_download_in_progress,
 )
 from backend.utils.model_utils import WHISPER_MODEL_SIZES_MB
+from backend.utils.time import utc_now
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -502,6 +503,9 @@ async def setup_system(
         is_superuser=True,
         force_password_change=False,  # First user sets their own password, so no need to force change
         role="owner",
+        # The owner accepted the legal disclaimer on the wizard's Legal step,
+        # which comes before this one (#1004).
+        legal_accepted_at=utc_now(),
         settings=settings,
         # Opting out marks the demo as already seen so startup seeding also
         # skips it; Settings > Help can still force-recreate it later.

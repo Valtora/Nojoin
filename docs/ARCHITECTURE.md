@@ -640,7 +640,7 @@ Token handling is in [backend/api/deps.py](../backend/api/deps.py) and [backend/
 | API clients | Bearer token (type `api`). |
 | MCP connectors | OAuth 2.1 bearer token (type `mcp`) from Nojoin's own authorisation server, accepted only at `/mcp`. Read tools need `mcp:read` and write tools `mcp:write`; see [MCP.md](MCP.md). |
 
-All three carry the user's `token_version` and are checked against the `revoked_jwts` denylist. Browser capture uses the normal session, and the retired native-helper routes answer `410 Gone` pointing to [CAPTURE.md](CAPTURE.md). A user flagged for a forced password change can reach only their own profile, the password update and logout until they change it.
+All three carry the user's `token_version` and are checked against the `revoked_jwts` denylist. Browser capture uses the normal session, and the retired native-helper routes answer `410 Gone` pointing to [CAPTURE.md](CAPTURE.md). A user flagged for a forced password change can reach only their own profile, the password update and logout until they change it. An account other than the setup account that has not accepted the terms of use is refused a new capture or import until it does, and the web app shows it the terms in place of every page ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)).
 
 ## Storage and Persistence
 

@@ -34,6 +34,7 @@ def fake_user() -> SimpleNamespace:
         force_password_change=False,
         is_active=True,
         token_version=0,
+        legal_accepted_at=None,
     )
 
 

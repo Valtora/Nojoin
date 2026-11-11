@@ -26,7 +26,7 @@ Set `MCP_ANONYMOUS_DISCOVERY=false` and restart to answer `401` to every unauthe
 1. In Claude, open **Settings → Connectors → Add custom connector**.
 2. Enter a name such as `Nojoin` and the URL `https://your-nojoin-domain/mcp`.
 3. Leave the OAuth Client ID and Client Secret empty. Claude registers itself with Nojoin.
-4. Select **Add**, then **Connect**. On Nojoin's consent page, sign in if asked, review the access (it includes the write tools), and select **Allow**. If your account must change its password first, Nojoin takes you to do that and then back to the consent page. The change signs out every session, so sign in there with the new password.
+4. Select **Add**, then **Connect**. On Nojoin's consent page, sign in if asked, review the access (it includes the write tools), and select **Allow**. If your account must change its password first, Nojoin takes you to do that and then back to the consent page. The change signs out every session, so sign in there with the new password. If you have not yet accepted Nojoin's terms of use, the consent page shows them first and carries on once you accept.
 
 A connector added to a claude.ai account also works in Claude Desktop and Cowork on the same account.
 

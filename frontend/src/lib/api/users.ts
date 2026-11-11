@@ -35,6 +35,15 @@ export const updateUserMe = async (data: {
   return response.data;
 };
 
+/**
+ * Accepts the terms of use for the signed-in account (#1004). The server keeps
+ * the first time and answers a repeat as it answered the first.
+ */
+export const acceptLegalTerms = async (): Promise<User> => {
+  const response = await api.post<User>("/users/me/legal-acceptance");
+  return response.data;
+};
+
 export const updatePasswordMe = async (data: {
   current_password: string;
   new_password: string;

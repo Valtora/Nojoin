@@ -554,6 +554,26 @@ describe("capture controller", () => {
     await reloaded.destroy();
   });
 
+  it("leaves a start refused for the terms of use to the notice (#1004)", async () => {
+    const refusal = new AxiosError("Request failed with status code 403");
+    Object.assign(refusal, {
+      response: {
+        status: 403,
+        data: {
+          detail: { code: "legal_acceptance_required", message: "Accept first." },
+        },
+      },
+    });
+    apiMocks.initRecording.mockRejectedValueOnce(refusal);
+    const controller = new CaptureController();
+
+    await expect(controller.start("")).resolves.toBeNull();
+
+    expect(pickSourceMocks.pickCaptureSource).not.toHaveBeenCalled();
+    expect(controller.getState()).toMatchObject({ status: "idle", error: null });
+    await controller.destroy();
+  });
+
   it("asks before reserving anything under Ask each time", async () => {
     const controller = new CaptureController();
     controller.updateSettings({ startMode: "ask" });

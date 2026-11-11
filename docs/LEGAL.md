@@ -1,6 +1,16 @@
 # Legal Disclaimer and Terms of Use
 
-The canonical legal disclaimer for Nojoin. The setup wizard asks the first administrator to accept sections 1 and 2.
+The canonical legal disclaimer for Nojoin. Every user accepts sections 1 and 2 for themselves before they can use Nojoin: the owner on the first step of the setup wizard, and everyone else the first time they sign in, whether they joined through an invitation or an administrator created their account. Until a user accepts, Nojoin refuses to start a recording or import audio for them. Nojoin records when each user accepted, and administrators see the date in **Settings > Users and access** ([ADMIN.md](ADMIN.md#terms-of-use)).
+
+Accounts that existed before Nojoin 3.2.0 are asked once, the next time they open it. The account that set the installation up accepted during setup and is not asked again, but no date was recorded for it.
+
+The setup wizard also tells the owner:
+
+> As the owner, you are also responsible for the people you give accounts to, who each accept these terms the first time they sign in.
+
+<!-- The app shows sections 1 and 2, the closing sentence and the owner's
+sentence above from frontend/src/lib/legalTerms.json. scripts/validate_docs.py
+fails when this page and that file differ, so change both together. -->
 
 ## 1. Compliance With Laws
 
