@@ -226,7 +226,7 @@ export default function SpeakerPanel({
       data-ui-fill="inset"
       className="@container flex h-full min-w-0 flex-col bg-surface-inset outline-none data-reviewing:ring-2 data-reviewing:ring-inset data-reviewing:ring-action"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
+      <div className="relative min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         <LiveSpeakerRows labels={liveLabels} names={liveSpeakerNames} speakers={speakers}
           globalSpeakers={globalSpeakers} speakerColors={speakerColors} onRename={onRenameLiveSpeaker}
           onMerge={onMergeLiveSpeaker}

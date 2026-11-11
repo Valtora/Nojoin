@@ -277,7 +277,7 @@ export default function GeneralSettings({
                           <div
                             role="radiogroup"
                             aria-label="Timezone"
-                            className="max-h-80 space-y-1.5 overflow-y-auto p-2"
+                            className="relative max-h-80 space-y-1.5 overflow-y-auto p-2"
                           >
                             {filteredTimeZones.length > 0 ? (
                               filteredTimeZones.map((timeZone) => {

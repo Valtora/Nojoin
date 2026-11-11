@@ -106,7 +106,7 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="relative min-h-0 flex-1 overflow-y-auto">
             <SettingsNav groups={groups} matching={matching} />
           </div>
 

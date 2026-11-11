@@ -13,7 +13,7 @@ export default function RecordingTasks({ tasks, busyTaskId, onToggle }: {
 }) {
   const idPrefix = useId();
   return (
-    <div className="h-full overflow-y-auto p-3 pb-clear-floating-3">
+    <div className="relative h-full overflow-y-auto p-3 pb-clear-floating-3">
       <ul aria-label="Linked tasks" className="space-y-2">
         {tasks.map((task) => {
           // An archived task is read-only here, as the Tasks page offers it no

@@ -317,7 +317,7 @@ export default function TranscriptSection({
         composerOwnsDraft={inFlightContent !== undefined}
         readEndMs={readEndMs}
         onEmptied={focusSection}
-        className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
+        className="relative mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
       />
       {transcriptSegments.length > 0 || notes.length > 0 || liveTranscript ? (
         <div className="min-h-0 flex-1">
@@ -392,7 +392,7 @@ export default function TranscriptSection({
       {/* Inset like the transcript above it, so the box's focus rings are not
           clipped, and clear of the phone's floating chat button. */}
       {inFlightContent ? <div data-testid="note-box-region"
-        className="max-h-[50%] shrink-0 overflow-y-auto pb-2 pl-2 pr-clear-floating-2 md:pl-4 md:pr-clear-floating-4">
+        className="relative max-h-[50%] shrink-0 overflow-y-auto pb-2 pl-2 pr-clear-floating-2 md:pl-4 md:pr-clear-floating-4">
         {inFlightContent}
       </div> : null}
     </div>

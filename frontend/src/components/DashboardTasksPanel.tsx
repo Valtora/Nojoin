@@ -131,7 +131,7 @@ export default function DashboardTasksPanel() {
           content: it takes the slack, and scrolls inside itself once there is
           more of it than the column has room for. Everything above it keeps
           its natural height, so the header and composer never scroll away. */}
-      <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto">
+      <div className="relative mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto">
         {loading ? (
           <div data-ui-fill="inset" data-ui="surface" data-ui-surface="inset" className="density-surface-panel flex items-center gap-3 bg-surface-inset px-4 py-4 text-sm text-contrast-muted">
             <Loader2 className="h-4 w-4 animate-spin" />

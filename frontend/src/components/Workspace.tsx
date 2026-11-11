@@ -19,7 +19,7 @@ interface WorkspaceProps {
  */
 export default function Workspace({
   children,
-  wrapperClassName = "flex-1 overflow-auto",
+  wrapperClassName = "relative flex-1 overflow-auto",
   backgroundClassName = "bg-surface-page",
   contentClassName = "workspace-shell",
   paddingClassName = "workspace-pad-y",

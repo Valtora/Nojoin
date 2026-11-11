@@ -140,12 +140,85 @@ def classify_probe_error(exc: BaseException) -> ProbeKind:
     return "error"
 
 
-_URL = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
+# The text is provider-controlled and can be long, so every quantifier here is
+# bounded or runs over a class its successor cannot match: each pattern is
+# linear in the length of the text.
+_URL = re.compile(r"[a-z][a-z0-9+.-]{0,31}://\S+", re.IGNORECASE)
 _KEY_LIKE = re.compile(
-    r"(?:sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{20,}|"
-    r"(?:key|token|secret|password)\s*[=:]\s*\S+)",
+    r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{20,}",
     re.IGNORECASE,
 )
+# A credential field, bare or quoted as in JSON or a Python dict, then its
+# value. The name is anything ending in a credential word (api_key,
+# x-goog-api-key, accessToken, clientSecret, Authorization and the like), so
+# the match starts at that word and the rest of the name is left as it is.
+# The value may sit in brackets, as a header list does; a quoted value ends at
+# its closing quote (a backslash escape does not end it), anything else at the
+# next space.
+_CREDENTIAL_FIELD = re.compile(
+    r"(?P<word>key|token|secret|password|passwd|authorization)(?P<close>[\"']?)"
+    r"(?P<sep>\s?(?:[:=]|%3[ad])\s?)"
+    # An earlier step's [redacted] or [url] is a value, not a bracket.
+    r"(?P<open>(?:(?!\[(?:redacted|url)\])[\[({<]\s?){0,3})"
+    r"(?P<scheme>(?:bearer|basic)\s)?"
+    r"(?P<value>\"(?:[^\"\\]|\\.)*\"?|'(?:[^'\\]|\\.)*'?|\S+)",
+    re.IGNORECASE,
+)
+# An authorisation value on its own, outside any named field.
+_AUTH_SCHEME = re.compile(
+    r"(?<![A-Za-z0-9])(?P<scheme>bearer|basic)\s(?P<value>[A-Za-z0-9._~+/-]+=*)",
+    re.IGNORECASE,
+)
+# Names that also turn up in prose, as in "Invalid token: the token expired"
+# or "the key: value pairs": after a bare name and a colon, a plain word is
+# left alone.
+_PROSE_WORDS = frozenset({"key", "token"})
+_CLOSERS = {"[": "]", "(": ")", "{": "}", "<": ">"}
+_REDACTED = "[redacted]"
+
+
+def _is_word(value: str) -> bool:
+    """Whether a value reads as an ordinary word rather than a credential."""
+    word = value.rstrip(".,;:!?)")
+    return word.isalpha() and len(word) < 20
+
+
+def _redact_field(match: re.Match[str]) -> str:
+    word, sep, value = match["word"], match["sep"], match["value"]
+    opening, scheme = match["open"], match["scheme"] or ""
+    quote = value[0] if value[0] in "\"'" else ""
+    if (
+        not match["close"]
+        and not quote
+        and not opening
+        and not scheme
+        and ":" in sep
+        and word.lower() in _PROSE_WORDS
+        and _is_word(value)
+    ):
+        return match[0]
+    redacted = f"{quote}{_REDACTED}{quote}"
+    if not quote:
+        # An unquoted value ran to the next space, taking any closing
+        # brackets with it; put back the ones that match the opening.
+        closing = "".join(_CLOSERS[c] for c in reversed(opening) if c in _CLOSERS)
+        if closing and value.endswith(closing):
+            redacted += closing
+    return f"{word}{match['close']}{sep}{opening}{scheme}{redacted}"
+
+
+def _redact_auth_scheme(match: re.Match[str]) -> str:
+    value = match["value"]
+    if len(value) < 8 or _is_word(value):
+        # "Bearer auth", "basic authentication": prose, not a credential.
+        return match[0]
+    return f"{match['scheme']} {_REDACTED}"
+
+
+def _redact_key_like(text: str) -> str:
+    text = _KEY_LIKE.sub(_REDACTED, text)
+    text = _CREDENTIAL_FIELD.sub(_redact_field, text)
+    return _AUTH_SCHEME.sub(_redact_auth_scheme, text)
 
 
 def safe_provider_detail(exc: BaseException, secrets: Sequence[str] = ()) -> str:
@@ -153,14 +226,16 @@ def safe_provider_detail(exc: BaseException, secrets: Sequence[str] = ()) -> str
 
     URLs are dropped whole, since one can carry credentials or a key in its
     query, and so is anything shaped like a key, besides the exact secrets the
-    caller passes.
+    caller passes: a provider key format, the value of a credential field or
+    header (bare, or quoted as in JSON), and a Bearer or Basic value. A field
+    name and the reason around it stay readable.
     """
     text = " ".join(str(exc).split())
     for secret in secrets:
         if secret:
-            text = text.replace(secret, "[redacted]")
+            text = text.replace(secret, _REDACTED)
     text = _URL.sub("[url]", text)
-    text = _KEY_LIKE.sub("[redacted]", text)
+    text = _redact_key_like(text)
     if len(text) > _DETAIL_MAX_CHARS:
         text = text[: _DETAIL_MAX_CHARS - 3].rstrip() + "..."
     return text
@@ -212,19 +287,19 @@ def probe_one(
         check_probe_reply(reply)
     except Exception as exc:  # noqa: BLE001 -- boundary: a probe reports every failure as a result row, never as an error
         kind = classify_probe_error(exc)
+        # The log gets the same redacted text an administrator is shown.
+        detail = safe_provider_detail(exc, secrets)
         logger.warning(
             "Model probe failed: provider=%s model=%s role=%s kind=%s error=%s",
             provider,
             model,
             role,
             kind,
-            safe_provider_detail(exc, secrets),
+            detail,
         )
         message = probe_message(provider, model, kind, seconds)
-        if include_detail and kind != "bad_response":
-            detail = safe_provider_detail(exc, secrets)
-            if detail:
-                message = f"{message} ({detail})"
+        if include_detail and kind != "bad_response" and detail:
+            message = f"{message} ({detail})"
         return ProbeResult(model=model, role=role, ok=False, kind=kind, message=message)
     return ProbeResult(
         model=model,

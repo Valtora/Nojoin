@@ -210,7 +210,7 @@ function MeetingEdgePanel({
           collapses this to nothing and the panel renders as a badge over an
           empty card. A basis of auto takes the content height when there is
           nothing to distribute and shrinks to the cell when there is. */}
-      <div className="mt-5 min-h-0 flex-auto overflow-y-auto">
+      <div className="relative mt-5 min-h-0 flex-auto overflow-y-auto">
         {hasPayload ? (
           <div className="space-y-4">
             {payload?.summary ? (
