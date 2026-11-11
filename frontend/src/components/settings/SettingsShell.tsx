@@ -115,7 +115,11 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
           </div>
         </aside>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Positioned so it is the containing block of the absolute elements
+            inside, screen-reader-only text among them. Otherwise they resolve
+            against <main>, which this column neither clips nor scrolls, and a
+            long page lets <main> scroll on past the last card. */}
+        <div className="relative min-h-0 flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex h-full items-center justify-center py-16 contrast-helper">
               <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
