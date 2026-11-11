@@ -573,6 +573,32 @@ class OpenAILLMBackend(LLMBackend):
             logger.error(f"OpenAI API error (meeting title): {e}")
             raise RuntimeError(f"OpenAI API error (meeting title): {e}")
 
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The Meeting Edge request, JSON mode first. No output cap: real calls
+        # send none, and OpenAI-compatible servers disagree on its name.
+        from backend.processing.llm_backends.model_probe import classify_probe_error
+
+        if not self.model:
+            raise ValueError("No OpenAI model configured.")
+        request_kwargs = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "timeout": timeout,
+        }
+        if "gpt" in self.model:
+            request_kwargs["temperature"] = 0.2
+        try:
+            response = self.client.chat.completions.create(
+                **request_kwargs, response_format={"type": "json_object"}
+            )
+        except Exception as json_mode_error:  # noqa: BLE001 -- boundary: retried without JSON mode only when the refusal is not one a retry would repeat
+            # Meeting Edge retries without response_format; a missing model,
+            # a refused key, a rate limit or a timeout would only fail again.
+            if classify_probe_error(json_mode_error) != "error":
+                raise
+            response = self.client.chat.completions.create(**request_kwargs)
+        return response.choices[0].message.content or ""
+
     def validate_api_key(self) -> bool:
         """
         Validate the API key by making a lightweight API call.

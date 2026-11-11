@@ -20,6 +20,7 @@ import {
   getErrorStatus,
   isRecord,
 } from "@/lib/errors";
+import type { ModelProbeResult } from "@/lib/api";
 import type { CliOAuthStatus, CliProvider } from "@/types";
 
 // Shown for every other unlock failure. The backend deliberately returns one
@@ -202,6 +203,15 @@ export function useSetupWizard() {
   } | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsFetched, setModelsFetched] = useState(false);
+  // Test connection on the chosen model (#991). Run only from its button.
+  const [testingModel, setTestingModel] = useState(false);
+  const testingModelRef = useRef(false);
+  const [modelTest, setModelTest] = useState<{
+    model: string;
+    valid: boolean;
+    msg: string;
+    results: ModelProbeResult[];
+  } | null>(null);
   const [cliStatus, setCliStatus] = useState<CliOAuthStatus | null>(null);
 
   const [error, setError] = useState("");
@@ -545,6 +555,45 @@ export function useSetupWizard() {
     }
   }, [serverProvider, serverConfig?.ollama_api_url, setupCredential]);
 
+  const testSelectedModel = useCallback(async () => {
+    const model = formData.selected_model;
+    if (!model || testingModelRef.current) return;
+    testingModelRef.current = true;
+    setTestingModel(true);
+    setModelTest(null);
+    try {
+      const res = await validateLLM(
+        serverProvider,
+        "",
+        serverProvider === "ollama" ? serverConfig?.ollama_api_url : undefined,
+        undefined,
+        setupCredential(),
+        { providerRole: "primary", probeModels: [{ model, role: "main" }] },
+      );
+      setModelTest({
+        model,
+        valid: res.valid,
+        msg: res.message || "",
+        results: res.results ?? [],
+      });
+    } catch (err: unknown) {
+      setModelTest({
+        model,
+        valid: false,
+        msg: getErrorMessage(err, "Validation failed"),
+        results: [],
+      });
+    } finally {
+      testingModelRef.current = false;
+      setTestingModel(false);
+    }
+  }, [
+    formData.selected_model,
+    serverProvider,
+    serverConfig?.ollama_api_url,
+    setupCredential,
+  ]);
+
   useEffect(() => {
     if (step !== STEP_AI) return;
     if (!serverCredentialPresent || modelsFetched || validatingLLM) return;
@@ -741,6 +790,12 @@ export function useSetupWizard() {
     validatingLLM,
     llmValidationMsg,
     availableModels,
+    testingModel,
+    // A result for a model no longer selected would mislead, so it is shown
+    // only while its model is the chosen one.
+    modelTest:
+      modelTest && modelTest.model === formData.selected_model ? modelTest : null,
+    testSelectedModel,
     serverProvider,
     serverProviderSelected,
     serverCredentialPresent,

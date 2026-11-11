@@ -9,6 +9,10 @@ from backend.processing.llm_backends.base import (
     NOTES_MAX_OUTPUT_TOKENS,
     TruncatedNotesError,
 )
+from backend.processing.llm_backends.model_probe import (
+    PROBE_MAX_OUTPUT_TOKENS,
+    PROBE_PROMPT,
+)
 from backend.processing.llm_services import (
     OLLAMA_DEFAULT_NUM_CTX,
     AnthropicLLMBackend,
@@ -864,6 +868,9 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
             meeting_notes="Notes",
             diarized_transcript="[00:00 - 00:05] SPEAKER_00: Hi.",
         ),
+        lambda: backend.probe_model(
+            PROBE_PROMPT, timeout=20, max_output_tokens=PROBE_MAX_OUTPUT_TOKENS
+        ),
     )
     for call in calls:
         with contextlib.suppress(Exception):
@@ -949,6 +956,9 @@ def test_openai_kwargs_are_accepted_by_the_installed_sdk() -> None:
             "generate_meeting_notes": lambda: backend.generate_meeting_notes(
                 "[00:00 - 00:05] SPEAKER_00: Hi.", {}
             ),
+            "probe_model": lambda: backend.probe_model(
+                PROBE_PROMPT, timeout=20, max_output_tokens=PROBE_MAX_OUTPUT_TOKENS
+            ),
             "ask_question_streaming": lambda: list(
                 backend.ask_question_streaming(
                     "What was decided?",
@@ -1025,6 +1035,9 @@ def test_gemini_kwargs_are_accepted_by_the_installed_sdk() -> None:
                     meeting_notes="Notes",
                     diarized_transcript="[00:00 - 00:05] SPEAKER_00: Hi.",
                 )
+            ),
+            "probe_model": lambda: backend.probe_model(
+                PROBE_PROMPT, timeout=20, max_output_tokens=PROBE_MAX_OUTPUT_TOKENS
             ),
         },
         captured,
@@ -1133,6 +1146,12 @@ def _gemini_backend_on_mock_transport(monkeypatch, sent_urls: list):
             id="stream",
         ),
         pytest.param(lambda b: b.list_models(), id="list-models"),
+        pytest.param(
+            lambda b: b.probe_model(
+                '{"ok": true}', timeout=20, max_output_tokens=PROBE_MAX_OUTPUT_TOKENS
+            ),
+            id="test-connection-probe",
+        ),
     ],
 )
 def test_gemini_requests_name_api_version_v1beta(monkeypatch, call) -> None:

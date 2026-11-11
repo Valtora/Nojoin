@@ -649,6 +649,19 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (meeting title): {e}")
             raise RuntimeError(f"Anthropic API error (meeting title): {e}")
 
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The Meeting Edge request, with low effort for a model that thinks.
+        if not self.model:
+            raise ValueError("No Anthropic model configured.")
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=max_output_tokens,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=timeout,
+            **self._brief_reply_kwargs(),
+        )
+        return _response_text_or_raise(response, "the test reply")
+
     def validate_api_key(self) -> bool:
         """
         Validate the API key by making a lightweight API call.

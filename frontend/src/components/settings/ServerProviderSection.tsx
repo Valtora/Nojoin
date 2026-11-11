@@ -177,7 +177,7 @@ export default function ServerProviderSection({
       {hasCredential && (
         <SettingsRow
           label="Connection"
-          description="Checks the key or address and reloads the model list. Nothing is saved."
+          description="Checks the key or address, runs a short test on the default and Meeting Edge models, and reloads the model list. Nothing is saved."
           descriptionId="ai-primary-test-help"
         >
           <TestConnection

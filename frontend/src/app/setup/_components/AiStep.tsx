@@ -7,6 +7,7 @@ import {
   Clock,
   Cloud,
   Loader2,
+  PlugZap,
   RefreshCw,
   Server,
 } from "lucide-react";
@@ -15,6 +16,8 @@ import type { ReactNode } from "react";
 import Button from "@/components/ui/Button";
 import Select from "@/components/ui/Select";
 import CliOAuthPanel from "@/components/settings/CliOAuthPanel";
+import ModelProbeResults from "@/components/settings/ModelProbeResults";
+import type { ModelProbeResult } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import type { CliOAuthStatus, CliProvider } from "@/types";
 
@@ -63,6 +66,9 @@ interface AiStepProps {
   llmValidationMsg: { valid: boolean; msg: string } | null;
   availableModels: string[];
   selectedModel: string;
+  testingModel: boolean;
+  modelTest: { valid: boolean; msg: string; results: ModelProbeResult[] } | null;
+  onTestModel: () => void;
   reloadingConfig: boolean;
   savingAi: boolean;
   connectedCliProvider: CliProvider | undefined;
@@ -94,6 +100,9 @@ export default function AiStep({
   llmValidationMsg,
   availableModels,
   selectedModel,
+  testingModel,
+  modelTest,
+  onTestModel,
   reloadingConfig,
   savingAi,
   connectedCliProvider,
@@ -254,6 +263,46 @@ export default function AiStep({
                       </option>
                     ))}
                   </Select>
+
+                  <div className="space-y-2">
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      loading={testingModel}
+                      disabled={!selectedModel}
+                      onClick={onTestModel}
+                      iconLeft={<PlugZap className="w-4 h-4" />}
+                      aria-describedby="setup-llm-test-help"
+                    >
+                      {testingModel ? "Testing..." : "Test connection"}
+                    </Button>
+                    <p id="setup-llm-test-help" className="text-xs text-contrast-helper">
+                      Runs one short request on the chosen model. You can finish
+                      setup whatever it shows.
+                    </p>
+                    <div role="status" className="space-y-1">
+                      {testingModel && (
+                        <p className="text-xs text-contrast-helper">
+                          Running a short test on {selectedModel}...
+                        </p>
+                      )}
+                      {modelTest && (
+                        <>
+                          <p
+                            className={cn(
+                              "text-xs",
+                              modelTest.valid
+                                ? "text-status-success-fg"
+                                : "text-status-danger-fg",
+                            )}
+                          >
+                            {modelTest.msg}
+                          </p>
+                          <ModelProbeResults results={modelTest.results} />
+                        </>
+                      )}
+                    </div>
+                  </div>
 
                   {recommendations && (
                     <div className="p-3 bg-status-info-bg rounded-lg border border-status-info-border text-xs text-status-info-fg">

@@ -2,10 +2,10 @@ import asyncio
 import hmac
 import logging
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -20,6 +20,7 @@ from backend.api.deps import (
 )
 from backend.api.error_handling import sanitized_http_exception
 from backend.models.user import User
+from backend.processing.llm_backends import model_probe
 from backend.processing.llm_services import get_llm_backend
 from backend.utils.config_manager import config_manager
 from backend.utils.deployment_warnings import FIRST_RUN_PASSWORD_PLACEHOLDER
@@ -71,7 +72,9 @@ def _raise_setup_validation_error(
     )
 
 
-def _validate_setup_ollama_api_url(url: str | None) -> str | None:
+def _validate_setup_ollama_api_url(
+    url: str | None, trusted_setting: str = "ollama_api_url"
+) -> str | None:
     if not url:
         return url
 
@@ -79,7 +82,7 @@ def _validate_setup_ollama_api_url(url: str | None) -> str | None:
         return validate_ollama_api_url(
             url,
             allow_private=True,
-            trusted_url=config_manager.get("ollama_api_url"),
+            trusted_url=config_manager.get(trusted_setting),
         )
     except OllamaURLValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -88,11 +91,22 @@ def _validate_setup_ollama_api_url(url: str | None) -> str | None:
 router = APIRouter()
 
 
+class ProbeModelRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=200)
+    role: Literal["main", "meeting_edge"] = "main"
+
+
 class ValidateLLMRequest(BaseModel):
     provider: str
     api_key: Optional[str] = None
     model: Optional[str] = None
     api_url: Optional[str] = None
+    # Which configured provider to test: the primary's key and Ollama URL, or
+    # the secondary's (SECONDARY_<PROVIDER>_API_KEY, secondary_ollama_api_url).
+    provider_role: Literal["primary", "secondary"] = "primary"
+    # Models Test connection runs (#991). Each distinct model is probed once,
+    # at most MAX_PROBES_PER_REQUEST; an empty list checks the key alone.
+    probe_models: list[ProbeModelRequest] = Field(default_factory=list, max_length=6)
 
 
 class ListModelsRequest(BaseModel):
@@ -354,15 +368,21 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
     }
 
 
-def _build_setup_llm_backend(provider: str, model: Optional[str] = None):
+def _build_setup_llm_backend(
+    provider: str,
+    model: Optional[str] = None,
+    provider_role: str = "primary",
+):
     from backend.utils.config_manager import get_system_api_keys
 
-    api_key = get_system_api_keys().get(f"{provider}_api_key")
+    prefix = "secondary_" if provider_role == "secondary" else ""
+    api_key = get_system_api_keys().get(f"{prefix}{provider}_api_key")
 
     api_url = None
     if provider == "ollama":
-        api_url = config_manager.get("ollama_api_url")
-        api_url = _validate_setup_ollama_api_url(api_url)
+        url_setting = f"{prefix}ollama_api_url"
+        api_url = config_manager.get(url_setting)
+        api_url = _validate_setup_ollama_api_url(api_url, trusted_setting=url_setting)
 
     return get_llm_backend(
         provider,
@@ -373,19 +393,46 @@ def _build_setup_llm_backend(provider: str, model: Optional[str] = None):
     )
 
 
-def _validate_llm_provider(provider: str, model: Optional[str]) -> dict:
-    llm = _build_setup_llm_backend(provider, model)
+def _validate_llm_provider(
+    provider: str,
+    model: Optional[str],
+    provider_role: str = "primary",
+    probe_models: Optional[list[ProbeModelRequest]] = None,
+    include_detail: bool = False,
+) -> dict:
+    llm = _build_setup_llm_backend(provider, model, provider_role)
     llm.validate_api_key()
 
     if provider == "ollama":
-        return {
+        response: dict = {
             "valid": True,
             "message": "Connected to Ollama successfully.",
             "models": llm.list_models(),
         }
+    else:
+        provider_name = provider.capitalize() if provider else "LLM"
+        response = {"valid": True, "message": f"{provider_name} API key is valid."}
 
-    provider_name = provider.capitalize() if provider else "LLM"
-    return {"valid": True, "message": f"{provider_name} API key is valid."}
+    planned = model_probe.plan_probes(
+        (entry.model, entry.role) for entry in probe_models or ()
+    )
+    if not planned:
+        response["results"] = []
+        return response
+
+    results = model_probe.run_probes(
+        lambda probe_model: _build_setup_llm_backend(
+            provider, probe_model, provider_role
+        ),
+        provider,
+        planned,
+        include_detail=include_detail,
+        secrets=[getattr(llm, "api_key", None) or ""],
+    )
+    response["results"] = [result.as_dict() for result in results]
+    response["valid"] = all(result.ok for result in results)
+    response["message"] = model_probe.summarise(provider, results)
+    return response
 
 
 def _list_llm_provider_models(provider: str) -> dict:
@@ -397,7 +444,7 @@ async def validate_llm(
     request: ValidateLLMRequest, req: Request, db: AsyncSession = Depends(get_db)
 ):
     """
-    Validate LLM API Key.
+    Validate the provider's key, then run each model in probe_models once.
     """
     user = await check_setup_permission(db, req)
     is_public_request = user is None
@@ -408,7 +455,14 @@ async def validate_llm(
         # the provider is unreachable. On the event loop that stalls every
         # other request the API is serving.
         return await asyncio.to_thread(
-            _validate_llm_provider, request.provider, request.model
+            _validate_llm_provider,
+            request.provider,
+            request.model,
+            request.provider_role,
+            request.probe_models,
+            # Provider text reaches a signed-in administrator only; a public
+            # first-run request gets the kind and Nojoin's own wording.
+            not is_public_request,
         )
     except HTTPException:
         if is_public_request:

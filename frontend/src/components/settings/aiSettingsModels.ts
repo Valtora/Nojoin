@@ -1,3 +1,4 @@
+import type { ModelProbeRequest } from "@/lib/api";
 import { Settings } from "@/types";
 
 /**
@@ -182,4 +183,31 @@ export function getModelOptionsForProvider(
     selectedModel,
     ...availableModels.filter((model) => model !== selectedModel),
   ];
+}
+
+export type ProviderRole = "primary" | "secondary";
+
+/**
+ * The models Test connection runs for one provider (#991): its default model,
+ * then its Meeting Edge model when one is set and differs. The server probes
+ * each distinct model once whatever is sent; this keeps the request honest.
+ */
+export function probeModelsForRole(
+  settings: Settings,
+  role: ProviderRole,
+): ModelProbeRequest[] {
+  const provider = settings.secondary_llm_provider;
+  const main =
+    role === "secondary"
+      ? getSecondaryProviderModel(settings, provider)
+      : getSelectedModelForProvider(settings, "main");
+  const live =
+    role === "secondary"
+      ? getSecondaryProviderLiveModel(settings, provider)
+      : getSelectedModelForProvider(settings, "live");
+
+  const probes: ModelProbeRequest[] = [];
+  if (main) probes.push({ model: main, role: "main" });
+  if (live && live !== main) probes.push({ model: live, role: "meeting_edge" });
+  return probes;
 }
