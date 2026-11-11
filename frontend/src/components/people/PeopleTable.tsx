@@ -102,7 +102,7 @@ export function PeopleTable({
         data-ui-fill="card"
         data-ui-border="full"
         kind="card" className="hidden lg:block bg-surface-card rounded-xl shadow-card border border-surface-border">
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-inset border-b border-surface-border">

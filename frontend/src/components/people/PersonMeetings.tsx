@@ -69,7 +69,7 @@ function MeetingHistory({ data, timeZone }: { data: PersonMeetingsRead; timeZone
         <h4 id={meetingsHeading} className="text-sm font-medium text-foreground">
           {data.meeting_count > data.meetings.length ? `Latest ${data.meetings.length} meetings` : "Linked meetings"}
         </h4>
-        <div role="region" aria-labelledby={meetingsHeading} className="mt-2 max-h-72 overflow-y-auto px-1">
+        <div role="region" aria-labelledby={meetingsHeading} className="relative mt-2 max-h-72 overflow-y-auto px-1">
           <ul className="divide-y divide-surface-border">
             {data.meetings.map((meeting) => <li key={meeting.recording_id}>
               <Link href={`/recordings/${meeting.recording_id}`}
@@ -126,7 +126,7 @@ function MonthlyTalkTime({ months }: { months: PersonTalkMonthRead[] }) {
     <h4 id={heading} className="text-sm font-medium text-foreground">Talk time by month</h4>
     {/* Focusable so the keyboard can scroll it: nothing inside takes focus. */}
     <div role="region" aria-labelledby={heading} tabIndex={0}
-      className="mt-2 max-h-40 overflow-y-auto rounded-md px-1 focus-visible:outline-2 focus-visible:outline-focus-ring md:max-h-72">
+      className="relative mt-2 max-h-40 overflow-y-auto rounded-md px-1 focus-visible:outline-2 focus-visible:outline-focus-ring md:max-h-72">
       <ul className="space-y-2" aria-label="Monthly talk time">
         {withQuietMonths(months).map(({ month, seconds }) => <li key={month}>
           <div className="flex justify-between gap-3 text-xs text-contrast-helper">

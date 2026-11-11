@@ -139,7 +139,7 @@ export default function Modal({
                   </div>
                 )}
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+                <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
 
                 {footer && (
                   <div data-ui="modal-footer" className="flex flex-wrap items-center justify-end gap-2 border-t border-surface-divider px-5 py-4">

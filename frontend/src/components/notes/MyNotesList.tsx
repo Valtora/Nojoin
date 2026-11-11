@@ -180,7 +180,7 @@ export default function MyNotesList({
       ref={listRef}
       tabIndex={-1}
       data-testid="my-notes"
-      className={cn("min-h-0 overflow-y-auto p-3 pb-clear-floating-3 outline-none", className)}
+      className={cn("relative min-h-0 overflow-y-auto p-3 pb-clear-floating-3 outline-none", className)}
     >
       {notes === null ? (
         <p className="p-4 text-center text-sm italic text-contrast-helper">Loading notes…</p>

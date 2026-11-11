@@ -616,7 +616,7 @@ interface TagNode extends PeopleTag {
                                 kind="float"
                                 ref={speakerResultsRef}
                                 style={speakerResultsStyle}
-                                className="z-10 bg-control-bg rounded-md shadow-float border border-surface-border overflow-y-auto"
+                                className="fixed z-10 bg-control-bg rounded-md shadow-float border border-surface-border overflow-y-auto"
                               >
                                 {filteredSpeakers.length === 0 ? (
                                   <div className="px-3 py-2 text-sm text-contrast-helper">

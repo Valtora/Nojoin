@@ -389,7 +389,7 @@ export default function AddTagModal({
           </div>
 
           <div
-            className="overflow-y-auto rounded-lg border border-surface-border"
+            className="relative overflow-y-auto rounded-lg border border-surface-border"
             style={{ minHeight: "200px", maxHeight: "400px" }}
           >
             {renderTagTree(tagTree)}
