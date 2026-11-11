@@ -32,6 +32,13 @@ from backend.processing.llm_backends.base import (
     raise_if_output_truncated,
 )
 
+# The Gemini API version every request names. This backend was written against
+# v1beta, which serves the -latest model aliases (gemini-flash-latest and the
+# rest) and the features it uses. google-genai 3.0.0 moved the default for an
+# API-key client to v1, where those aliases answer 404 (#990). A per-call
+# HttpOptions, such as a timeout, keeps the client's version.
+GEMINI_API_VERSION = "v1beta"
+
 
 class GeminiLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
@@ -53,7 +60,10 @@ class GeminiLLMBackend(LLMBackend):
         self.api_key = api_key
         self.model = model or None
         self.genai = genai
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = genai.Client(
+            api_key=self.api_key,
+            http_options=genai.types.HttpOptions(api_version=GEMINI_API_VERSION),
+        )
 
     @staticmethod
     def _raise_if_truncated(response) -> None:

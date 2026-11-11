@@ -1042,6 +1042,118 @@ def test_gemini_kwargs_are_accepted_by_the_installed_sdk() -> None:
             )
 
 
+def _gemini_backend_on_mock_transport(monkeypatch, sent_urls: list):
+    """A GeminiLLMBackend built by its own ``__init__`` on the installed SDK.
+
+    Only the transport is swapped: ``genai.Client`` is wrapped to add a mock
+    transport to whatever HTTP options the backend passes, so the URL recorded
+    is the one the SDK built for the backend's own client, and nothing leaves
+    the process.
+    """
+    import importlib
+
+    from google import genai
+
+    monkeypatch.delenv("GOOGLE_GENAI_API_VERSION", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_HTTP_CLIENT", raising=False)
+
+    reply = {
+        "candidates": [
+            {
+                "content": {
+                    "role": "model",
+                    "parts": [{"text": _sample_meeting_edge_payload()}],
+                },
+                "finishReason": "STOP",
+            }
+        ]
+    }
+
+    real_client = genai.Client
+
+    # The mock transport must come from the package the SDK builds its HTTP
+    # client from: 2.x takes httpx whenever it is installed, 3.x defaults to
+    # httpx2. Ask a client built the same way rather than guess by version.
+    probe = real_client(api_key="not-used")
+    http_lib = None
+    for cls in type(probe._api_client._httpx_client).__mro__:
+        package = (cls.__module__ or "").split(".")[0]
+        if package in ("httpx", "httpx2"):
+            http_lib = importlib.import_module(package)
+            break
+    assert http_lib is not None, "google-genai built neither httpx nor httpx2"
+
+    def handler(request):
+        sent_urls.append(str(request.url))
+        if request.method == "GET":
+            return http_lib.Response(
+                200, json={"models": [{"name": "models/gemini-flash-latest"}]}
+            )
+        if ":streamGenerateContent" in request.url.path:
+            return http_lib.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=f"data: {json.dumps(reply)}\n\n".encode(),
+            )
+        return http_lib.Response(200, json=reply)
+
+    transport = {"transport": http_lib.MockTransport(handler)}
+
+    def client_on_mock_transport(*args, http_options=None, **kwargs):
+        if http_options is None:
+            http_options = genai.types.HttpOptions(client_args=transport)
+        else:
+            http_options = genai.types.HttpOptions.model_validate(
+                http_options
+            ).model_copy(update={"client_args": transport})
+        return real_client(*args, http_options=http_options, **kwargs)
+
+    monkeypatch.setattr(genai, "Client", client_on_mock_transport)
+    return GeminiLLMBackend(api_key="not-used", model="gemini-flash-latest")
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda b: b.generate_text("Hi"), id="plain"),
+        pytest.param(
+            lambda b: b.generate_meeting_edge(
+                MeetingEdgeRequest(recent_transcript="Speaker A: Hi."), timeout=30
+            ),
+            id="per-call-timeout",
+        ),
+        pytest.param(
+            lambda b: list(
+                b.ask_question_streaming(
+                    "What was decided?",
+                    meeting_notes="Notes",
+                    diarized_transcript="[00:00 - 00:05] SPEAKER_00: Hi.",
+                )
+            ),
+            id="stream",
+        ),
+        pytest.param(lambda b: b.list_models(), id="list-models"),
+    ],
+)
+def test_gemini_requests_name_api_version_v1beta(monkeypatch, call) -> None:
+    """Every Gemini request goes to v1beta, on google-genai 2.x and 3.x alike.
+
+    google-genai 3.0.0 moved an API-key client's default to v1, which does not
+    serve the ``-latest`` aliases (#990). A per-call ``HttpOptions`` such as a
+    timeout must not reset the version either.
+    """
+    sent_urls: list[str] = []
+    backend = _gemini_backend_on_mock_transport(monkeypatch, sent_urls)
+
+    result = call(backend)
+
+    assert result, "the canned reply did not come back through the SDK"
+    assert len(sent_urls) == 1
+    assert sent_urls[0].startswith(
+        "https://generativelanguage.googleapis.com/v1beta/models"
+    ), sent_urls[0]
+
+
 def _anthropic_backend_capturing_creates(model: str, response, capture: list):
     class FakeMessages:
         def create(self, **kwargs):
