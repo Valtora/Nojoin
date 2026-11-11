@@ -325,7 +325,7 @@ The same **Advanced** block has three switches in **Processing**:
 
 Before 3.1.0 a **Mute non-speech for transcription** switch could stop transcription muting what voice activity detection skipped. It is gone: transcription always works as described above, and turning off **Voice activity detection** is the way to have it hear everything.
 
-Voice activity detection still runs with both switches off, so a recording with no speech still completes with an empty transcript. Turning voice activity detection off unmutes both.
+Turning voice activity detection off unmutes transcription and speaker separation.
 
 ### When Voiceprints Need Rebuilding
 

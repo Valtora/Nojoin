@@ -8,43 +8,34 @@ Container images for this release. All images are cosign-signed and ship build-p
 
 <!-- Maintainer: what stops working or behaves differently after the upgrade, and what to do about it. -->
 
-- **Your notes are now timeline notes.** Each note sits at a moment in the meeting, survives reprocessing and reaches the AI at that point. Free-text notes from earlier releases become one note before the transcript (#494).
-- **Integrations that use notes need updating.** `/transcripts/{id}/timeline-notes` replaces `/transcripts/{id}/user-notes`, MCP `get_meeting_notes` returns `timeline_notes`, and `append_meeting_notes` adds one note per call, at `at_seconds` when given. Backups are written in format 3, which earlier releases refuse (#494, #684).
-- **Some other API answers changed.** `POST /tags/` answers 400 for a name already in use (#604), batch recording routes answer with `count`, `skipped` and `recording_ids` (#739), and edits answer 409 while a reprocess runs (#756). The OAuth token endpoint answers a missing `grant_type` with an OAuth error (#648), and every retired Companion route answers 410 (#665).
-- **Actions that could lose a meeting now refuse.** Retry Speaker Inference answers 409 unless the meeting has finished processing, and Discard answers 409 for any meeting that has finished once, so move it to the bin instead. Reprocess answers 409 for a paused capture or while notes generate, and notes generation answers 409 during a capture. Notes no longer move a recording to processing, and MCP tools pass on a route's reason when it refuses (#850, #852, #855, #857, #859).
-- **Parakeet word ends are capped, at 0.4 s by default.** A word also ends where the next one starts or its window ends, so a window's last word no longer runs into the next speaker's turn. **Word length cap** (`asr_word_length_cap_s`) replaces the retired `asr_word_end_padding_s` (#473).
-- **Several defaults changed.**
-  - Browser noise suppression is off, and a setting saved before this release reads as off once (#711).
-  - Live speaker labels and live word settling are on with a CUDA worker (#729, #735).
-  - Speaker separation hears the whole recording, which tells people apart better and can take up to 1.5 times as long on a CPU (#658).
-  - Suggested speaker names wait for **Confirm**, and only confirmed names teach a voiceprint (#683).
-  - New transcript lines run to about 30 seconds, up from 10 (#735).
-  - **Edit text** moved to each line's ⋯ menu, and clicking a line selects its text (#616).
+- **Mute non-speech for transcription is retired.** With voice activity detection on, transcription always hears what it kept plus what speaker separation heard as speech. Anyone who had turned the switch off gets the default from the next recording processed, and turning off **Voice activity detection** under **Settings > Recording > Advanced** makes transcription hear everything (#966).
+- **Some API answers changed.** An integer past its column's range answers 422 where it answered 500, and an id of 0 answers 422 rather than 404. An invitation lasts at most 36,500 days (#928, #935).
+- **Some defaults changed.**
+  - Live speaker name suggestions are on for every user. With an AI provider set up, recent transcript lines go to it during a capture whether Meeting Edge is on or off, until the user turns the suggestions off (#803).
+  - Ollama models no longer think before they answer unless an administrator turns on **Thinking** (#937).
+  - **Corner style** follows **Style**, so a browser on the old default, Rounded, shows square corners under Classic (#967).
 
 ### Highlights
 
 <!-- Maintainer: one bullet per item, one or two sentences each. What an operator would notice, not how it works. Detail belongs in the docs. Remove the section if a release has nothing to lead with. -->
 
-- **One recording view for every state.** Recording, paused, processing and finished meetings open on the same page, with the recorder in the player's place and one side column for Speakers, My notes, Captures and Meeting Edge (#756).
-- **Live words settle before they lock.** On a GPU server recent words are decoded again until three passes agree, so they appear about 2.3 seconds sooner and are as accurate or better. Live lines can be edited and split once they lock, and reprocessing keeps your corrections (#735).
-- **Live lines name their speakers.** With a CUDA worker live lines show "Speaker N", and you can name a speaker while recording. NVIDIA's Nemotron model labels meetings of up to seven people, live and final, and a voiceprint match of 0.85 or more shows its name without asking (#543, #696, #705, #725, #729).
-- **Live speakers can be picked and merged.** During a capture **Change speaker** lists the meeting's live speakers first, and one live speaker can be merged into another from a line or from Speakers. Both carry through to the processed meeting. People appear in the picker only when you search (#863, #866).
-- **Notes go on lines, selections and moments.** Add one under the live transcript, from a line's ⋯ menu or on selected text, move it between lines, and find it again in the My notes tab. Unsaved notes survive a reload, and exports include your notes unless you untick **Include my notes** (#517, #553, #613, #616, #684, #690, #694).
-- **Captures put screen stills and files on notes.** Alt+Shift+C or the camera button saves a still of the shared screen, and a file dropped into the note box goes with its note. Notes, Meeting Chat and search read only the files you switch on, and a file can be removed from its note (#699, #738).
-- **A recording that needs recovery gets a badge.** Pausing in one tab no longer opens a dialog in every other tab, and a reloaded capturing tab takes its capture back at once (#760).
-- **The microphone can be released while paused.** A per-browser setting, off by default, frees it for other apps during a pause and asks for it again on Resume (#755).
-- **Browser recordings hold up through more failures.** A capture survives an ended sign-in, an outage and a takeover by another tab, and audio a tab could not upload is offered as a download. The live transcript says when it is behind, and moves past a missing chunk where it used to stop (#518, #581, #591, #629, #790, #791).
-- **Each recording can have its own language.** Set it at import or on reprocess. With Whisper and voice activity detection on, Nojoin detects the language from speech and offers to reprocess when it hears a different one. Canary on automatic now reads as English (#673, #680).
-- **Transcripts lose fewer words and invent fewer.** Transcription hears the audio inside every speaker turn, Parakeet decodes speech it skipped a second time, and Whisper's "Thank you." in digital silence is dropped (#496, #609, #675).
-- **Voiceprints are harder to pull off course.** A new voiceprint needs 20 seconds of clear speech from one recording, folding in another recording needs a similarity of 0.70, up from 0.60, and a voiceprint can be locked (#498, #499, #515).
-- **Two appearance styles join Default.** Classic and Depth are under **Settings > Appearance > Style**, saved per browser (#723).
-- **Dates and times follow the time-zone setting everywhere.** Outside UTC they were shifted by the browser's offset, and "Revised" stuck to finished lines. With no zone chosen Nojoin shows UTC, or `DEFAULT_TIMEZONE` where the administrator set one, so pick yours in **Settings > Appearance** (#751, #753).
-- **Recordings lists share one selection.** Recordings, Archived and Deleted take Shift ranges and a ⋯ menu on each row, and every action but **Delete Permanently** offers **Undo** for 10 seconds. Phones get Speakers and My notes tabs and a **Start** button (#655, #684, #739, #802).
-- **Security gaps are closed.** The bundled proxy sends HSTS on every HTTPS response (#493), a password change or revoke-all ends MCP access, refresh tokens included (#500), and file paths stay inside their folders (#630, #632). The images drop the distrusted eMudhra root (#588), logs mask one-time codes (#674), people and tags stay in each user's own library (#544, #548), and the last active Owner or superuser can no longer be removed (#641, #642). The worker images carry filelock 4.2.1 and dnspython 2.9.0, which fix a file overwrite and a denial of service (#870).
-- **Meetings are harder to lose.** Retry Speaker Inference during a capture used to end it and lose its audio, and Discard while notes regenerated deleted the finished meeting. Notes, AI analysis and delivery left behind by a worker restart now read as failed after 15 minutes and can run again, where they stayed generating for good, and a retry whose audio is missing stays failed instead of waiting in the queue (#850, #852, #859).
-- **Setup follows a pinned telemetry setting.** With `NOJOIN_TELEMETRY_ENABLED` set, setup shows its value read-only and stores no choice, so removing a `false` pin later leads to the usual notice instead of diagnostics starting unasked (#854, #862).
-- **Smaller fixes.** Regenerating notes on several recordings no longer fails with "No model selected" (#471), and Stop no longer fails with a deadlock while the last segment is transcribed (#784). Meeting Chat no longer offers to watch the meeting or act later (#786). Images fit the vision providers' limits (#713, #721). Setup accepts a non-ASCII `FIRST_RUN_PASSWORD`, and two browsers finishing it at once no longer make two Owners (#727). Calendars stop retrying a refused sign-in, and tags hold each name once per user (#593, #667). A second find and replace now changes the lines an earlier one changed (#857). A speaker correction carries only onto the words its line covers, so one near a change of speaker no longer takes the next person's speech with it (#864). The Reprocess dialog opens on the install's model, and unnamed buttons and the notes editor have names for screen readers (#855). Permanent and batch delete take their locks in the same order as Discard, so the two can no longer deadlock (#857).
-- **Dependency changes.** The worker pins Transformers 5.20.2 for Nemotron, and Pillow moves to 13.0.0 (#532, #725). PDFs are parsed with pypdfium2 and pdfplumber in place of PyMuPDF, so multi-column pages read column by column and a truncated PDF fails to parse. Documents attached earlier keep their text until parsed again (#651). Claude Sonnet 4.6, Opus 4.6 and Haiku 4.5 now use Anthropic's default temperature, which the current Anthropic API requires (#556).
+- **Live speakers get suggested names.** A speaker who introduces themselves is offered that name to **Accept** or **Dismiss**, and with an AI provider set up Nojoin asks the AI, on the **Meeting Edge model** where one is set, about an unnamed speaker after a possible introduction or a minute of their speech, then at doubling intervals up to every eight minutes. Nothing applies until you accept it, and **Suggest speaker names during a meeting** under **Settings > Notes and live assistance** turns it off (#803, #983).
+- **People show their meetings and talk time.** **Person Details** opens on **Meetings**, with their meeting count, talk time and newest 50 meetings. The People count, the recordings list's person filter and the MCP `get_person` tool follow one rule: a meeting counts while one of the person's speakers there still has lines. `get_person` reads only the signed-in user's recordings, and the sample lines offered when recalibrating a voiceprint no longer come from a speaker merged away or one whose lines all moved to someone else (#798, #976, #982, #986).
+- **A meeting shows its tasks.** A **Tasks** tab on a meeting with linked tasks lets you complete each one or open it in **Tasks**, and archived ones are read-only (#797, #978).
+- **A reply's first words go to the person replying.** Where the speaker model gave up to eight words of a reply to the previous speaker, processing and live Nemotron labels move them, leaving locked words and edited lines alone. A speaker the brief-speaker check folds into another keeps their words, and unticking **Check speakers heard only briefly** skips the check (#922).
+- **Firefox and Safari can record.** They record the microphone where they were refused, and desktop Chromium can record it alone, without screen stills (#804).
+- **Recording source is a setting.** **Recording source** under **Settings > Recording** offers **Microphone and system audio**, the default, **Microphone only** or **Ask each time**, saved per browser (#963).
+- **Tags show on cards, the dashboard and tasks.** Meeting cards show colour dots, **Recent Meetings** and dashboard tasks show chips, and tags selected in the navigation filter **Tasks** (#799, #899, #933).
+- **The meeting list covers the whole library.** It loads 50 meetings at a time as you scroll, where it stopped at the newest 100, and **Search...** looks through titles, tags, speaker names and transcripts on the server. Typing redraws only the cards that changed (#905, #912).
+- **Settings say what they do.** **Live word settling** is **Refine live words**, **Mute non-speech for speaker separation** is **Faster speaker separation**, and the tuning rows are **Longest word (Parakeet only)**, **Speakers heard only briefly** and **Stray one-word speaker changes**. Search still finds the old names. A meeting's notes tabs read **Meeting notes** and **Your notes** (#965, #966).
+- **Ollama thinking is a setting.** With **Thinking** off, the default, a thinking model no longer spends minutes before its first word and times notes out. A fallback Ollama at its own private address now runs, and saving **Settings > AI providers** no longer fails when a stored Ollama host stops resolving (#937, #952, #957).
+- **Test connection runs the model.** **Test connection** under **Settings > AI providers** and in first-run setup sends one short request to each selected model, where it only checked the key or address, and names any model that fails with the reason, which leaves out URLs, keys and the values of credential fields and headers. The fallback's button tests the fallback's own key, address and Ollama settings. A failed test never stops a save or setup (#997, #998).
+- **Names, tags and search hold up.** A name you give a meeting survives processing, a rename shows at once on the page, the list and the dashboard, and a meeting started without a name is named in your time zone (#889, #890, #902). A tag or calendar change no longer hides an edit made in another tab (#903). Search finds a phrase that repeats a word across lines, and the task link picker searches every recording, not the newest 100 (#910, #911).
+- **Tours stay out of the way.** A tour is marked seen however you close it, waits while you type, and stays open when a click lands as it opens. A recording's tour covers every tab (#883, #916, #919, #987).
+- **The recording page is tidier.** The note box loses its placement select, and **⋯** beside it puts a note before or after the transcript (#964). A failed **Stop** or **Discard** reports its error once, and **Discard** asks in the app's own dialog (#883, #934). **Revised** marks only lines changed after they first showed, the side column opens wide enough for its tabs, and a failed recording's **Transcript** tab shows the reason with **Retry processing** (#883, #890).
+- **Live transcription keeps pace in long meetings.** The work done at each step no longer grows with the length of the meeting, a capture's language is detected once, after three steps that agree, and a language set on the recording reaches the live transcript (#879, #882, #895). A damaged audio segment no longer holds the live transcript for 10 seconds (#875).
+- **Smaller fixes.** With Canary, untimed words after a corrected line stay in the transcript, and the aligner and Nemotron downloads each show their own progress (#820). With **Max Speakers** set, a CUDA install keeps the combined speaker pass when it fits the limit (#894). Long-meeting notes name Nemotron's speakers and split on Ollama 0.40.11's context refusal (#955, #956). Notes generation no longer fails when the AI names a speaker label it was not offered, and document, invitation and CLI dates read alike in every browser language (#885). The health check no longer stalls other API requests for a second while no worker answers, and Enter or Escape that chooses a Chinese or Japanese candidate no longer acts on the page (#913, #914). Discarding a capture no longer logs errors with tracebacks, and with no recent meetings the dashboard's task list starts under **Meet Now** (#874, #969). Settings pages no longer scroll on past their last card, a fault 3.0.0 had too, and nor does the Tasks page with **Create Task** open in a narrow window (#996, #999).
+- **Dependency changes.** The worker moves to PyTorch 2.15.0 on a CUDA 13.2 base and to Transformers 5.21.0, and Nemotron and the Canary aligner no longer turn off on a Transformers release other than the one they were checked on (#868, #893, #896). The frontend carries follow-redirects 1.16.2, a runtime dependency through axios, for GHSA-mrwp-f3q8-3g9p, and other pins follow Dependabot (#873, #891, #943). The Gemini client names API version `v1beta`, because google-genai 3.0.0 moved its default to `v1`, where the `-latest` model names answer 404 (#995).
 
 ### Upgrade
 
@@ -57,15 +48,10 @@ docker compose down
 docker compose up -d
 ```
 
-- Stop the stack before starting the new images. A 2.10.0 worker still running after the migration fails, because it reads the `transcripts.user_notes` column this release drops (#494).
-- `git pull` brings the bundled proxy's configuration, which now includes two new files, `nginx/hsts.conf` and `nginx/access-log.conf`. Stopping the stack recreates the nginx container, which it needs to read the new configuration. If an edge proxy in front of Nojoin already adds `Strict-Transport-Security`, remove one of the two, because a browser reads only the first (#493, #674).
-- A Canary install downloads the pinned Qwen3 forced aligner, about 1.8 GB, on `worker-cpu` at first start, and needs about 3.7 GB more worker RAM while it is loaded. Canary transcribes without word timings until it is ready (#735).
-- A CUDA install downloads the Nemotron diarisation model, 397 MB, after its first eligible recording, which keeps the existing speaker pass. Prepare it ahead in **Settings > AI providers > Advanced > Model downloads**. CPU workers and `speaker_engine` set to `classic` never use it, and recordings with **Max Speakers** set use it for live labels but not in final processing (#725, #729).
-- Final processing of long recordings can take longer on a CPU host, because speaker separation now hears the whole recording. Voiceprint match scores may shift slightly. **Mute non-speech for speaker separation** in **Settings > Recording > Advanced** brings back the old behaviour (#658).
-- The example compose file now passes the four `NOJOIN_STALL_WATCHDOG_*` variables to `api` and `NOJOIN_STORAGE_HYGIENE` to every app service. A `docker-compose.yml` copied from an earlier example ignores those values in `.env` until you copy the lines across (#511, #533).
-- An empty `LLM_PROVIDER` now means the provider of the only API key set, and `gemini` otherwise. A `docker-compose.yml` copied from an earlier example turns an empty value into `gemini`, so change its line to `${LLM_PROVIDER:-}` to use the new rule. If the provider changes, choose a model in **Settings > AI providers** (#521, #728).
-- Compose reads a `.env` line such as `KEY= # note` as the value `# note`. Nojoin now reads such a value as empty and logs the variables it emptied, so move each comment to its own line. If `BACKUP_EXPORT_DIR` had that shape, exports went inside the worker container and were lost when it was recreated, so export again any archive you need (#562).
-- Reprocess a recording to apply the Parakeet word cap, the longer lines and the new speaker pass to it. Recordings keep their stored transcripts until then.
+- The GPU worker image is built on CUDA 13.2. The NVIDIA driver floor stays at 580 (#893).
+- On the first start `worker-io` moves Celery Beat's schedule from `data/celerybeat-schedule.db` to `data/celerybeat-schedule.json` with each job's last run. If the old file is unreadable, every periodic job waits a full interval this once. Leave the `-s` argument in `docker-compose.yml` as it is (#920).
+- An install with Nemotron or the Canary aligner prepared checks their files again on the first start, because their manifests changed. Nothing downloads (#868, #896).
+- Export file names changed. The date is the meeting's day in your time zone, an export of two parts is named for them, as in `20261102_Team sync_NotesAndTranscript.pdf`, where it read `FullExport`, and the audio file starts with the date too. Update anything that picks up exports by name (#890).
 
 ### Migration
 
@@ -73,58 +59,38 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any blocking first-boot migration, longer startup, or manual step. Keep it to bullets. -->
 
-- Fifteen Alembic revisions run in order on the first API start.
-  - `7c3e5a91d2f4` adds `recording_speakers.embedding_speech_seconds`, the speech a voiceprint was built from (#498).
-  - `63005cac6492` turns each non-blank `transcripts.user_notes` into one note before the transcript, owned by the recording's owner, and drops the column (#494).
-  - `7ff0bbdadad8` adds the table `recording_speaker_drift_refusals`, empty at first (#499).
-  - `7cee4b4388a7` gives each person with no owner the owner of the recordings that link them, and moves a link into another user's library to the linking user's person of the same name. People made by **Create Voiceprint** or the demo meeting then show in their owner's People page. It deletes nothing (#544).
-  - `f704bbd87f98` gives each people tag with no owner an owner, and keeps tag links and parents within one user's library. It deletes no tag (#548).
-  - `edb5059e5d68` merges each user's repeated tag and people tag names into the oldest tag of that name, then adds a unique index on `(user_id, name)` (#593).
-  - `8f7a09a9d7f3` adds `recordings.capture_epoch`, which names the tab that holds a capture (#591).
-  - `fb5a849e7f5b` deletes repeated links between a meeting and a tag, keeping the oldest, then adds a unique constraint (#601).
-  - `76243f67da02` adds `recordings.transcription_language`, empty, so every recording follows its owner's setting (#680).
-  - `b13e4912f23a` adds `transcripts.language_detection` (#680).
-  - `0f3b502561a6` adds the table `speaker_name_events` and `recording_speakers.name_source`. Names given before the upgrade show as they did (#683).
-  - `c4d81e6a2f90` adds `documents.note_id` and `documents.use_in_notes` for files on notes (#699).
-  - `7bb9c74f9946` adds `timeline_notes.file_removed` (#738).
-  - `f2a6e1d9c735` adds `transcripts.change_sequence` and `transcripts.settling_state` (#735).
-  - `53b4bc17207f` adds `recordings.first_processed_at` and fills it in for every recording that has finished processing, so Discard refuses them (#850).
-- `asr_word_end_padding_s` is retired. A stored value is ignored, and dropped from `config.json` on the next save (#473).
-- New install-wide keys in `data/config.json` are `live_speaker_labels` (`auto` or `off`) and `speaker_engine` (`auto` or `classic`), which have no settings page, and `live_text_settling` (`off`, `auto` or `always`) with `live_text_settling_k` (3) and `live_text_settling_window_s` (10). Without a stored value the three modes take `auto`, and a stored `off` stays off. `always` settles on a CPU worker too, at a high CPU and RAM cost. The `live_max_segment_s` default rises from 20 to 30 seconds (#725, #729, #735).
-- New per-user settings are `asr_word_length_cap_s` (0.4 s), `line_break_pause_s` (1 s), `vad_mute_transcription` (on), `vad_mute_diarization` (off), `confirm_suggested_names` (off) and `voiceprint_learning` (`confirmed`). Setting `voiceprint_learning` to `automatic` lets unconfirmed matches teach voiceprints again (#473, #658, #683, #735).
-- `NOJOIN_STORAGE_HYGIENE` is a new environment variable. Empty means `flag`, which only reports, and `delete` removes the files (#533).
-- `.env.example`, `docker-compose.example.yml` and `nginx/` changed, as **Upgrade** describes.
-- Backups are written in format 3. Restoring an older archive turns its notes into one note before the transcript, as the migration does (#494). On recordings made without live word settling, a backup forgets the names you dismissed with **Not Alex**, so after a restore they can be suggested again (#683).
+- One Alembic revision runs. `bb518dd1f469` adds `recordings.title_user_edited` and sets it on every recording whose name is not a default one such as "Monday 2nd Nov, Morning Meeting". A meeting renamed before the upgrade then keeps its name through a reprocess, and one still under a default name takes the AI title (#889).
+- `vad_mute_transcription` is retired, and a stored value is dropped on the user's next save (#966). New install-wide keys in `data/config.json` are `ollama_think` and `secondary_ollama_think` (`false`), shown as **Thinking**, and `sentence_start_correction` (`true`), which has no settings page (#922, #937).
+- New per-user settings are `suggest_live_speaker_names` (on) and `phantom_filter_off` (unset, shown as **Check speakers heard only briefly** ticked) (#803, #922).
+- No environment variable changed, and `.env.example`, `docker-compose.example.yml` and `nginx/` need no action.
+- Backups stay in format 3. An older archive restores with its names counted as chosen, as the migration does (#889).
 
 ### Rollback
 
 <!-- Maintainer: state whether rollback is code-only or requires data steps. Default below. -->
 
-- Roll the schema back before the images, because the 2.10.0 API refuses to start against a revision it does not know. With no browser recording in progress and 3.0.0 still running, run `docker compose exec api alembic downgrade 3b804f4435a1`, then stop the stack and start the 2.10.0 image tags.
-- Keep a backup made on 2.10.0. That release refuses the format 3 archives 3.0.0 writes.
-- The downgrade folds each meeting's notes back into one free-text field in timeline order, losing each note's kind, time, quote and author. Files on notes, screen stills included, stay on their meetings as ordinary documents, and every notes run reads them.
-- It also drops speaker name sources, so a name still waiting for **Confirm** shows as a plain name. Drift guard refusals, each recording's own language, language detection results and voiceprint speech figures go too. Merged tags, deleted duplicate tag links and the owners given to people and tags stay as they are.
+- Roll the schema back before the images, because the 3.0.0 API refuses to start against a revision it does not know. With no browser recording in progress and 3.1.0 still running, run `docker compose exec api alembic downgrade 53b4bc17207f`, then stop the stack and start the 3.0.0 image tags.
+- The downgrade drops `recordings.title_user_edited`, so 3.0.0 writes the AI title over every meeting's name again at its next processing or reprocess.
+- 3.0.0 ignores `data/celerybeat-schedule.json`, so every periodic job waits a full interval once. It restores an archive made on 3.1.0, without the record of chosen names.
 
 ### Known Issues
 
 <!-- Maintainer: list only problems Nojoin can fix, each with its open issue. A limit set by a dependency or a provider is documented in the guide for that feature and does not belong here. -->
 
-- After a pause, the transcript's line break can land a few seconds early, mid-speech, when audio from before the pause was still waiting to upload, for example after an upload stall, an offline pause or a reload. The final words are unaffected (#815).
-- Live lines can move words between speakers at a turn change before they lock, and once a capture passes eight voices a reply's first words can still go to the previous speaker live (#776, #813).
-- After a damaged audio segment the live transcript waits about 10 seconds before it moves on (#808).
-- With Canary, untimed words after a line you corrected can go into that line's review and out of the transcript. Within ten minutes of a failed aligner download, preparing Canary reports done without fetching the aligner (#788).
-- While the Canary aligner and Nemotron download at the same time, **Model downloads** can show one's progress against the other (#783).
+- Live lines can move words between speakers at a turn change before they lock, and past eight voices a live reply's first words can still go to the previous speaker (#776, #813, #888).
+- Editing the text of the previous speaker's line sends a reply's moved first words back to that line (#975).
+- A live name the AI suggested stays when its line moves to another speaker, and turning off **Suggest speaker names during a meeting** mid-meeting leaves names already offered on screen (#981).
+- When AI runs on a Claude or ChatGPT subscription, a live naming ask or a Meeting Edge call can run for 300 s where Nojoin allows 90 s (#980).
+- The **Analytics** note comparing a person with their usual delivery can still read meetings where all their lines moved to other speakers, and meetings in the bin (#985).
 
 ### Browser-Capture Compatibility
 
 <!-- Maintainer: note any change to supported browsers/OSes or capture behaviour. Default below. -->
 
-- Supported browsers, operating systems and audio sources are unchanged. Chrome on Windows, Linux and macOS, and other Chromium-family browsers on Windows and Linux, record shared audio with the microphone or the microphone only, and other Chromium-family browsers on macOS are best-effort. Firefox, Safari and mobile browsers record the microphone only.
-- Capture asks the browser for echo cancellation and auto gain, with noise suppression off unless you turn it on under **Settings > Recording > Advanced** (#711).
-- Stop releases the microphone before the upload, and **Release the microphone while paused** frees it during a pause. Shared tab or screen audio is never released, and the release is untested on iOS (#518, #755).
-- Start can use a saved microphone that the browser lists without an id, as Chrome does after **Allow this time** and a restart (#809).
-- Only the tab that holds a capture shows its controls. Other tabs and devices read Live or Paused with the server's clock, and a refused Start says why, including when the recording is open in another tab (#756, #760).
-- Each Resume starts a new transcript line, so speech either side of a pause no longer joins into one line (#802).
+- Firefox on Windows, Linux and macOS, Safari on macOS, and every browser on Android and iOS record the microphone only, with no share picker. Chrome on desktop and other Chromium-family browsers on Windows and Linux record system audio with the microphone, or the microphone alone, and other Chromium-family browsers on macOS record system audio best-effort. Recording needs microphone access and AudioWorklet support, which plain HTTP lacks (#804).
+- In desktop Chromium, cancelling the share picker offers **Record microphone only**, and a refused or silent share asks again before anything records. A **Resume** after a reload records from the meeting's own source (#963).
+- **Start Meeting** gives up after 10 seconds when the browser never starts audio, releases the microphone and any share, and removes the meeting it began, as Firefox on Linux does without a sound server. A **Resume** after a reload leaves the recording paused, and the input test in **Settings > Recording** releases the microphone (#929, #931).
+- After a pause, the line break lands where the new audio begins, also after an upload stall, an offline pause or a reload (#878).
 
 ### Changes
 
