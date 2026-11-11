@@ -81,6 +81,120 @@ def test_provider_detail_carries_no_key_and_no_url() -> None:
     assert detail.startswith("401 for [url]")
 
 
+# Built from pieces at runtime, so no credential-shaped literal sits in the repo.
+FAKE = "-".join(["not", "a", "real", "credential", "42"])
+
+# Each shape the pattern backstop covers: the provider text, then the detail.
+CREDENTIAL_SHAPES = [
+    pytest.param(f'{{"api_key": "{FAKE}"}}', '{"api_key": "[redacted]"}', id="json"),
+    pytest.param(f"{{'api_key': '{FAKE}'}}", "{'api_key': '[redacted]'}", id="dict"),
+    pytest.param(f'"apikey": "{FAKE}"', '"apikey": "[redacted]"', id="apikey"),
+    pytest.param(f'"API-Key": "{FAKE}"', '"API-Key": "[redacted]"', id="api-key"),
+    pytest.param(f'"key": "{FAKE}"', '"key": "[redacted]"', id="key"),
+    pytest.param(f"'token': '{FAKE}'", "'token': '[redacted]'", id="token"),
+    pytest.param(
+        f'"access_token": "{FAKE}"', '"access_token": "[redacted]"', id="access_token"
+    ),
+    pytest.param(f'"secret": "{FAKE}"', '"secret": "[redacted]"', id="secret"),
+    pytest.param(
+        f'"client_secret": "{FAKE}"',
+        '"client_secret": "[redacted]"',
+        id="client_secret",
+    ),
+    pytest.param(f'"password": "{FAKE}"', '"password": "[redacted]"', id="password"),
+    pytest.param(
+        f'"Authorization": "Bearer {FAKE}"',
+        '"Authorization": "[redacted]"',
+        id="quoted authorization",
+    ),
+    pytest.param(
+        f"Authorization: Bearer {FAKE}",
+        "Authorization: Bearer [redacted]",
+        id="authorization bearer",
+    ),
+    pytest.param(
+        f"authorization: basic {FAKE}",
+        "authorization: basic [redacted]",
+        id="authorization basic",
+    ),
+    pytest.param(
+        f"sent Bearer {FAKE} upstream", "sent Bearer [redacted] upstream", id="bearer"
+    ),
+    pytest.param(f"sent Basic {FAKE}", "sent Basic [redacted]", id="basic"),
+    pytest.param(f"x-api-key: {FAKE}", "x-api-key: [redacted]", id="x-api-key"),
+    pytest.param(
+        f"X-Goog-Api-Key: {FAKE}", "X-Goog-Api-Key: [redacted]", id="x-goog-api-key"
+    ),
+    pytest.param(
+        f"headers {{'x-api-key': '{FAKE}'}}",
+        "headers {'x-api-key': '[redacted]'}",
+        id="quoted header",
+    ),
+    pytest.param(f"api_key={FAKE}&alt=json", "api_key=[redacted]&alt=json", id="query"),
+    pytest.param(
+        f"Invalid token: {FAKE}", "Invalid token: [redacted]", id="prose name"
+    ),
+    pytest.param(f'"api_key": "{FAKE}', '"api_key": "[redacted]"', id="unterminated"),
+]
+
+
+@pytest.mark.parametrize(("raw", "expected"), CREDENTIAL_SHAPES)
+def test_provider_detail_redacts_credential_shaped_values(raw, expected) -> None:
+    detail = safe_provider_detail(RuntimeError(raw))
+
+    assert detail == expected
+    assert FAKE not in detail
+
+
+# Reasons an administrator needs, which must come through word for word.
+PROVIDER_REASONS = [
+    "model 'gemma4:12b' not found, try pulling it first",
+    "The model gemini-flash-lite-latest does not exist",
+    "Incorrect API key provided",
+    "API key not valid. Please pass a valid API key.",
+    "{'type': 'authentication_error', 'message': 'invalid x-api-key'}",
+    "invalid x-api-key",
+    "Rate limit reached for requests",
+    "maximum context length is 8192 tokens",
+    "max_tokens: 4096 > 2048, which is the maximum allowed number of output tokens",
+    "Invalid token: the token has expired",
+    "Missing bearer or basic authentication in header",
+    "provide your API key in an Authorization header using Bearer auth",
+    "{'code': 'invalid_api_key', 'param': None}",
+    "model 'multitask-instruct' not found",
+    "hotkey: press",
+]
+
+
+@pytest.mark.parametrize("reason", PROVIDER_REASONS)
+def test_provider_detail_keeps_an_ordinary_reason_word_for_word(reason) -> None:
+    assert safe_provider_detail(RuntimeError(reason)) == reason
+
+
+def test_a_failed_probe_logs_only_the_redacted_detail(monkeypatch) -> None:
+    class _Refused:
+        def probe_model(self, prompt, *, timeout, max_output_tokens):
+            raise RuntimeError(f"401 {{'x-api-key': '{FAKE}'}} for the-stored-key")
+
+    logged: list[str] = []
+    monkeypatch.setattr(
+        model_probe.logger, "warning", lambda msg, *args: logged.append(msg % args)
+    )
+
+    result = probe_one(
+        lambda model: _Refused(),
+        "anthropic",
+        "claude-test",
+        "main",
+        include_detail=True,
+        secrets=["the-stored-key"],
+    )
+
+    [line] = logged
+    assert line.endswith("error=401 {'x-api-key': '[redacted]'} for [redacted]")
+    assert result.message.endswith("(401 {'x-api-key': '[redacted]'} for [redacted])")
+
+
 def test_a_timeout_anywhere_in_the_chain_is_a_timeout() -> None:
     try:
         try:
