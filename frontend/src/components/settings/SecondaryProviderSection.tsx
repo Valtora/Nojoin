@@ -76,7 +76,7 @@ export default function SecondaryProviderSection({
   const refreshModels = () => {
     const url = isOllama ? settings.secondary_ollama_api_url : undefined;
     models.setSecondaryFetchingModels(true);
-    listModels(provider, "", url)
+    listModels(provider, "", url, undefined, "secondary")
       .then((res) => models.setSecondaryAvailableModels(res.models))
       .catch(console.error)
       .finally(() => models.setSecondaryFetchingModels(false));
@@ -225,7 +225,7 @@ export default function SecondaryProviderSection({
       {hasCredential && (
         <SettingsRow
           label="Connection"
-          description="Checks the fallback's key or address and reloads its model list. Nothing is saved."
+          description="Checks the fallback's key or address, runs a short test on its models, and reloads its model list. Nothing is saved."
           descriptionId="ai-fallback-test-help"
         >
           <TestConnection
@@ -233,7 +233,8 @@ export default function SecondaryProviderSection({
             provider={provider}
             validating={models.validating}
             message={models.validationMsg}
-            onTest={() => void models.handleValidate(provider)}
+            role="secondary"
+            onTest={() => void models.handleValidate(provider, "secondary")}
           />
         </SettingsRow>
       )}

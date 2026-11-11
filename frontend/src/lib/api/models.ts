@@ -11,6 +11,8 @@ export const listModels = async (
   apiKey: string,
   apiUrl?: string,
   bootstrapPassword?: string,
+  /** Whose key and address to list with: the default provider's or the fallback's. */
+  providerRole: "primary" | "secondary" = "primary",
 ): Promise<{ models: string[] }> => {
   const response = await api.post<{ models: string[] }>(
     "/setup/list-models",
@@ -18,6 +20,7 @@ export const listModels = async (
       provider,
       api_key: apiKey,
       api_url: apiUrl,
+      provider_role: providerRole,
     },
     buildFirstRunRequestConfig(bootstrapPassword),
   );

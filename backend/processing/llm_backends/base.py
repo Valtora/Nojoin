@@ -451,6 +451,15 @@ class LLMBackend:
         """
         raise NotImplementedError
 
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        """Send Test connection's probe to ``self.model`` and return the raw reply.
+
+        Uses the client, options and JSON mode of the backend's Meeting Edge
+        call, so the probe fails where real calls would. SDK errors propagate
+        unwrapped: ``model_probe.classify_probe_error`` reads their status.
+        """
+        raise NotImplementedError
+
     def _build_chat_prompt(
         self,
         user_question: str,

@@ -9,6 +9,10 @@ from backend.processing.llm_backends.base import (
     NOTES_MAX_OUTPUT_TOKENS,
     TruncatedNotesError,
 )
+from backend.processing.llm_backends.model_probe import (
+    PROBE_MAX_OUTPUT_TOKENS,
+    PROBE_PROMPT,
+)
 from backend.processing.llm_services import (
     OLLAMA_DEFAULT_NUM_CTX,
     AnthropicLLMBackend,
@@ -848,6 +852,12 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
     backend = object.__new__(AnthropicLLMBackend)
     backend.model = "claude-opus-5"
     backend.client = SimpleNamespace(messages=RecordingMessages())
+    # The probe turns SDK retries off through with_options, which the real
+    # client must accept too.
+    real_anthropic = anthropic.Anthropic(api_key="not-used")
+    backend.client.with_options = lambda **options: (
+        real_anthropic.with_options(**options) and backend.client
+    )
 
     # One call per distinct request shape: the streamed notes ceiling ladder, the
     # plain create path, and the chat path that also sends system and tools.
@@ -863,6 +873,9 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
             "What was decided?",
             meeting_notes="Notes",
             diarized_transcript="[00:00 - 00:05] SPEAKER_00: Hi.",
+        ),
+        lambda: backend.probe_model(
+            PROBE_PROMPT, timeout=20, max_output_tokens=PROBE_MAX_OUTPUT_TOKENS
         ),
     )
     for call in calls:
@@ -934,6 +947,11 @@ def test_openai_kwargs_are_accepted_by_the_installed_sdk() -> None:
     backend.client = SimpleNamespace(
         chat=SimpleNamespace(completions=RecordingCompletions())
     )
+    # The probe turns SDK retries off through with_options, which the real
+    # client must accept too.
+    backend.client.with_options = lambda **options: (
+        real.with_options(**options) and backend.client
+    )
 
     # One call per distinct request shape: the plain create, the JSON-mode
     # create with response_format, the streamed notes path, and the streamed
@@ -948,6 +966,9 @@ def test_openai_kwargs_are_accepted_by_the_installed_sdk() -> None:
             ),
             "generate_meeting_notes": lambda: backend.generate_meeting_notes(
                 "[00:00 - 00:05] SPEAKER_00: Hi.", {}
+            ),
+            "probe_model": lambda: backend.probe_model(
+                PROBE_PROMPT, timeout=20, max_output_tokens=PROBE_MAX_OUTPUT_TOKENS
             ),
             "ask_question_streaming": lambda: list(
                 backend.ask_question_streaming(
@@ -1025,6 +1046,9 @@ def test_gemini_kwargs_are_accepted_by_the_installed_sdk() -> None:
                     meeting_notes="Notes",
                     diarized_transcript="[00:00 - 00:05] SPEAKER_00: Hi.",
                 )
+            ),
+            "probe_model": lambda: backend.probe_model(
+                PROBE_PROMPT, timeout=20, max_output_tokens=PROBE_MAX_OUTPUT_TOKENS
             ),
         },
         captured,
@@ -1133,6 +1157,12 @@ def _gemini_backend_on_mock_transport(monkeypatch, sent_urls: list):
             id="stream",
         ),
         pytest.param(lambda b: b.list_models(), id="list-models"),
+        pytest.param(
+            lambda b: b.probe_model(
+                '{"ok": true}', timeout=20, max_output_tokens=PROBE_MAX_OUTPUT_TOKENS
+            ),
+            id="test-connection-probe",
+        ),
     ],
 )
 def test_gemini_requests_name_api_version_v1beta(monkeypatch, call) -> None:
