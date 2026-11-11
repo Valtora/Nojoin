@@ -648,16 +648,46 @@ async def test_no_model_is_probed_twice_and_no_more_than_three(monkeypatch) -> N
 
 
 @pytest.mark.anyio
-async def test_without_models_only_the_key_is_checked(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("provider", "label"),
+    [("gemini", "Gemini"), ("openai", "OpenAI"), ("anthropic", "Anthropic")],
+)
+@pytest.mark.parametrize("probe_models", [[], [{"model": "  "}]])
+async def test_without_models_only_the_key_is_checked(
+    monkeypatch, provider, label, probe_models
+) -> None:
     calls: dict = {}
     app = _route_app(monkeypatch, public=False, calls=calls)
 
-    response = await _post(app, {"provider": "anthropic"})
+    response = await _post(app, {"provider": provider, "probe_models": probe_models})
+
+    # Says what ran, not that a model passed (#1005).
+    assert response.status_code == 200
+    assert response.json() == {
+        "valid": True,
+        "message": f"{label} is reachable. Choose a model to test it.",
+        "results": [],
+    }
+    assert calls == {}
+
+
+@pytest.mark.anyio
+async def test_ollama_without_models_lists_them_and_asks_for_one(monkeypatch) -> None:
+    monkeypatch.setattr(
+        setup.config_manager,
+        "get",
+        lambda key, default=None: None if key == "ollama_api_url" else default,
+    )
+    calls: dict = {}
+    app = _route_app(monkeypatch, public=True, calls=calls)
+
+    response = await _post(app, {"provider": "ollama"})
 
     assert response.status_code == 200
     assert response.json() == {
         "valid": True,
-        "message": "Anthropic API key is valid.",
+        "message": "Ollama is reachable. Choose a model to test it.",
+        "models": ["good", "missing"],
         "results": [],
     }
     assert calls == {}

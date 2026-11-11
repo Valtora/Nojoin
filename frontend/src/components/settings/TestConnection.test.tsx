@@ -74,6 +74,56 @@ describe("TestConnection's result (issue #991)", () => {
     );
   });
 
+  it("shows a check that ran no model in the neutral tone (issue #1005)", () => {
+    const reachable = "Gemini is reachable. Choose a model to test it.";
+    const { rerender } = render(
+      <TestConnection
+        id="t"
+        provider="gemini"
+        validating={null}
+        message={message({ type: "success", msg: reachable, results: [] })}
+        onTest={vi.fn()}
+      />,
+    );
+
+    const summary = screen.getByText(reachable);
+    expect(summary).toHaveClass("text-contrast-helper");
+    expect(summary).not.toHaveClass("text-status-success-fg");
+    expect(screen.queryByRole("list", { name: "Models tested" })).toBeNull();
+
+    // A run in which every model answered still reads as a pass.
+    rerender(
+      <TestConnection
+        id="t"
+        provider="gemini"
+        validating={null}
+        message={message({
+          type: "success",
+          msg: "Gemini works: gemini-flash-latest answered.",
+          results: [pass],
+        })}
+        onTest={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("Gemini works: gemini-flash-latest answered."),
+    ).toHaveClass("text-status-success-fg");
+
+    // A refused key has no rows either, and is still a failure.
+    rerender(
+      <TestConnection
+        id="t"
+        provider="gemini"
+        validating={null}
+        message={message({ msg: "Validation failed", results: [] })}
+        onTest={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Validation failed")).toHaveClass(
+      "text-status-danger-fg",
+    );
+  });
+
   it("keeps the fallback's result off the default card when they share a provider", () => {
     render(
       <TestConnection

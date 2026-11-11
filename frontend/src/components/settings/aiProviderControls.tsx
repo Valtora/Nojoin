@@ -152,6 +152,14 @@ export function TestConnection({
   const key = validationKey(provider, role);
   const busy = validating === key;
   const result = message?.key === key ? message : null;
+  // With no model selected only the key or address was checked (#1005), so
+  // the summary is neither a pass nor a failure.
+  const tone =
+    result?.type === "error"
+      ? "text-status-danger-fg"
+      : result?.results.length
+        ? "text-status-success-fg"
+        : "text-contrast-helper";
 
   return (
     <div className="flex flex-col gap-2 @min-[26rem]:items-end">
@@ -182,15 +190,7 @@ export function TestConnection({
         )}
         {result && (
           <>
-            <p
-              className={cn(
-                "text-xs",
-                result.type === "success" && "text-status-success-fg",
-                result.type === "error" && "text-status-danger-fg",
-              )}
-            >
-              {result.msg}
-            </p>
+            <p className={cn("text-xs", tone)}>{result.msg}</p>
             <ModelProbeResults results={result.results} className="text-left" />
           </>
         )}
