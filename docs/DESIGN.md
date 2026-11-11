@@ -591,7 +591,8 @@ only. Build a surface from these before reaching for raw elements.
 | `Badge`, `StatusBadge` | Pills. `StatusBadge` maps a `RecordingStatus` to a tone, a glyph and a label. |
 | `Input`, `Select` | Form fields, both built on the shared `fieldChrome` helper. `Select` is a native select, for the platform picker on a phone; it relies on `color-scheme` (see [Themes](#themes)). |
 | `Modal` | Every dialog. Wraps the Headless UI dialog for the focus trap, scroll lock, Escape handling and portal, and adds the plain scrim, the float surface and shadow, `--z-modal`, and a height cap so a tall modal keeps its actions on screen on a phone. Headless UI puts focus back on the element that opened the dialog; an action that removes that element sets `returnFocus` first, and focus goes there once the dialog has gone. |
-| `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Widgets on the same tokens. |
+| `Switch`, `ModernDatePicker`, `MultiSelect` | Widgets on the same tokens. |
+| `Tooltip`, `InfoTip` | Short text on hover or keyboard focus, in the inverted `--tooltip-*` colours. `InfoTip` is a small "i" `IconButton` with the touch target, for explaining the control beside it: a press pins the text, so it opens on a phone too. Escape closes either without closing the dialog it sits in, and a press outside lets a pinned one go. The bubble stays in the page while hidden and is positioned with `useAnchoredPanel`, so a field can name its `id` in `aria-describedby` and a dialog does not clip it. |
 | `useAnchoredPanel` | Positions a dropdown or popover against its trigger with `position: fixed`, flipping above when there is more room and clamping to the viewport, so a panel opened inside a modal is not clipped. |
 | `FitText` | A single line that must fit its container, such as the meeting title. Steps the font down from a designed size to a readability floor, then wraps to two clamped lines. |
 
