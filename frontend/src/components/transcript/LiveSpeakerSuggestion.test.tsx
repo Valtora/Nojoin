@@ -58,6 +58,20 @@ describe("live speaker suggestions", () => {
       expect(within(suggestion).getByText(reason)).toBeInTheDocument();
     });
 
+  // jsdom has no layout. At 390 px Accept and Dismiss wrapped under a long
+  // name (#981); they now sit together, apart from the name, which wraps alone.
+  it("keeps Accept and Dismiss together, beside a name that wraps on its own", () => {
+    render(<Harness sources={{ LIVE_PROVISIONAL_1: "llm" }} />);
+    const accept = screen.getByRole("button", { name: "Accept suggested name Alex" });
+    const actions = accept.parentElement!;
+    expect(screen.getByRole("button", { name: "Dismiss suggested name Alex" }).parentElement).toBe(actions);
+    expect(actions).toHaveClass("shrink-0");
+    expect(actions).not.toHaveTextContent("Alex");
+    const name = within(screen.getByRole("group", { name: "Suggested name Alex" })).getByText("Alex").parentElement!;
+    expect(name).toHaveClass("min-w-0");
+    expect(name).toHaveTextContent("Alex Suggested Suggested by AI");
+  });
+
   it("moves the name to the speaker's new line after someone else has spoken", () => {
     const other = { id: "c", start: 4, end: 5, text: "Hello", speaker: "LIVE_PROVISIONAL_2", speaker_state: "stable" };
     const { rerender } = render(<Harness lines={[segments[1], other]} />);

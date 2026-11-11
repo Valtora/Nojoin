@@ -6,6 +6,9 @@ pending at a time. Proposals are not naming acts: only the live rename route
 writes the user's anchored event. A dismissed label stays dismissed for the
 rest of the capture. A label merged into another is read as the label it
 joined, so a group has one proposal and its members' introductions count.
+A proposal goes, with nobody deciding, when a line of the label's that it was
+heard on moves to another label. With the owner's ``suggest_live_speaker_names``
+setting off, the read shows none.
 """
 
 from collections.abc import Mapping, Sequence
@@ -43,6 +46,7 @@ from backend.utils.transcript_settling import (
 )
 
 from .live import live_speaker_groups, live_speaker_names
+from .preferences import live_name_suggestions_enabled, owner_settings
 from .sources import suggestion_source
 
 LIVE_SUGGESTION_ORIGIN = "live_self_introduction"
@@ -56,6 +60,9 @@ LIVE_ASK_ORIGIN = "live_llm_ask"
 # the further speech needed before the next, up to the most below.
 NEW_SPEECH_PER_ASK_SECONDS = 60.0
 MAX_SPEECH_PER_ASK_SECONDS = 480.0
+# How far a timed quote's start may be from the line it quotes: the prompt
+# shows each line's times in whole seconds.
+QUOTED_LINE_TOLERANCE_SECONDS = 1.0
 
 
 def suggest_live_speaker_names(
@@ -67,7 +74,9 @@ def suggest_live_speaker_names(
     """Review current evidence for unnamed labels, under the capture fence."""
     suggestions = load_transcript_speaker_suggestions(transcript)
     candidates = _live_candidates(session, transcript, segments, meeting_context)
-    retired = _retire_stale_proposals(transcript, suggestions, candidates)
+    retired = _retire_stale_proposals(
+        transcript, suggestions, candidates, _moved_ai_proposals(transcript, segments)
+    )
     _restart_ask_windows(transcript, retired, _speech_by_label(segments))
     pending = _pending_live_proposals(transcript)
     additions = [
@@ -109,18 +118,21 @@ def _live_labels(segments: Sequence[dict[str, Any]]) -> set[str]:
     }
 
 
-def _unanswered_labels(
-    session: Any, transcript: Transcript, labels: set[str]
-) -> list[str]:
-    """The labels the user has neither named nor dismissed a proposal for."""
-    dismissed = {
+def _dismissed_labels(transcript: Transcript) -> set[str]:
+    return {
         item["diarization_label"]
         for item in load_transcript_speaker_suggestions(transcript)
         if item.get("origin") in LIVE_PROPOSAL_ORIGINS
         and item.get("status") == SPEAKER_SUGGESTION_STATUS_REJECTED
     }
+
+
+def _unanswered_labels(
+    session: Any, transcript: Transcript, labels: set[str]
+) -> list[str]:
+    """The labels the user has neither named nor dismissed a proposal for."""
     named = live_speaker_names(session, transcript.recording_id, labels=labels)
-    return sorted(labels - dismissed - named.keys())
+    return sorted(labels - _dismissed_labels(transcript) - named.keys())
 
 
 def has_unnamed_live_labels(session: Any, transcript: Transcript) -> bool:
@@ -169,18 +181,24 @@ def follow_live_merge(transcript: Transcript, label: str, into: str) -> None:
 
     The live read shows a group under the label it joined, so a proposal left
     on the merged label would vanish until the next naming check, and a
-    paused capture runs none. One the joined label already has stands.
+    paused capture runs none. One the joined label already has stands, and a
+    dismissal of the joined label wins: it holds for the rest of the capture,
+    so the merged label's proposal goes (#981).
     """
     _merge_live_asks(transcript, label, into)
     pending = _pending_live_entries(transcript)
     if label not in pending:
         return
-    if into in pending:
+    if into in pending or into in _dismissed_labels(transcript):
         resolve_pending_transcript_speaker_suggestion(
             transcript,
             diarization_label=label,
             resolution=SPEAKER_SUGGESTION_STATUS_SUPERSEDED,
-            reason="live_speaker_merged",
+            reason=(
+                "live_speaker_merged"
+                if into in pending
+                else "live_speaker_merged_into_dismissed"
+            ),
         )
         return
     moved = pending[label]
@@ -226,20 +244,30 @@ def _retire_stale_proposals(
     transcript: Transcript,
     suggestions: list[dict[str, Any]],
     candidates: dict[str, SpeakerInferenceSuggestion],
+    moved_ai_labels: set[str],
 ) -> set[str]:
     """Unlocked words and labels can move; their old proposal must not linger.
 
-    Returns the labels whose proposal was retired.
+    A rule proposal goes when the rule no longer hears it, an AI one when a
+    line of the label's it was heard on now has another label
+    (``_moved_ai_proposals``). Returns the labels whose proposal was retired.
     """
     retired: set[str] = set()
     for item in suggestions:
-        if item.get("origin") != LIVE_SUGGESTION_ORIGIN:
-            continue
         if item.get("status") != SPEAKER_SUGGESTION_STATUS_PENDING:
             continue
         label = item["diarization_label"]
-        candidate = candidates.get(label)
-        if candidate is not None and candidate.suggested_name == item["suggested_name"]:
+        if item.get("origin") == LIVE_LLM_SUGGESTION_ORIGIN:
+            if label not in moved_ai_labels:
+                continue
+        elif item.get("origin") == LIVE_SUGGESTION_ORIGIN:
+            candidate = candidates.get(label)
+            if (
+                candidate is not None
+                and candidate.suggested_name == item["suggested_name"]
+            ):
+                continue
+        else:
             continue
         resolve_pending_transcript_speaker_suggestion(
             transcript,
@@ -299,7 +327,7 @@ def refresh_live_speaker_suggestions(
         hits = _live_candidates(session, *evidence)
         if {label: item.suggested_name for label, item in hits.items()} != (
             _pending_live_proposals(evidence[0])
-        ):
+        ) or _moved_ai_proposals(evidence[0], evidence[1]):
             evidence = _live_evidence(session, recording_id, lock=True)
             if evidence is not None:
                 suggest_live_speaker_names(session, *evidence)
@@ -461,14 +489,98 @@ def store_live_llm_suggestions(
         transcript.speaker_name_suggestions = load_transcript_speaker_suggestions(
             transcript
         ) + [
-            build_persisted_speaker_suggestion(
-                item, origin=LIVE_LLM_SUGGESTION_ORIGIN, provider=provider
-            )
+            {
+                **build_persisted_speaker_suggestion(
+                    item, origin=LIVE_LLM_SUGGESTION_ORIGIN, provider=provider
+                ),
+                "evidence_lines": _quoted_own_lines(item, segments),
+            }
             for item in added
         ]
         session.add(transcript)
     session.commit()
     return len(added)
+
+
+def _quoted_own_lines(
+    item: SpeakerInferenceSuggestion, segments: Sequence[dict[str, Any]]
+) -> list[dict[str, float]]:
+    """The label's own lines an AI name quotes, by start and end in seconds.
+
+    A timed quote is the line starting nearest its start, within
+    ``QUOTED_LINE_TOLERANCE_SECONDS``; an untimed one is the only line whose
+    text holds it. A quoted line of another label's, such as one addressing
+    this speaker by name, is left out: who said it says nothing about whose
+    name this is.
+    """
+    lines: list[dict[str, float]] = []
+    for span in item.evidence_spans:
+        line = _quoted_line(span.quote, span.start_seconds, segments)
+        if line is None or str(line.get("speaker", "")) != item.diarization_label:
+            continue
+        entry = {
+            "start_seconds": round(float(line.get("start") or 0.0), 3),
+            "end_seconds": round(float(line.get("end") or 0.0), 3),
+        }
+        if entry not in lines:
+            lines.append(entry)
+    return lines
+
+
+def _quoted_line(
+    quote: str, start: float | None, segments: Sequence[dict[str, Any]]
+) -> dict[str, Any] | None:
+    if start is not None:
+        nearest = min(
+            segments,
+            key=lambda segment: abs(float(segment.get("start") or 0.0) - start),
+            default=None,
+        )
+        if (
+            nearest is not None
+            and abs(float(nearest.get("start") or 0.0) - start)
+            <= QUOTED_LINE_TOLERANCE_SECONDS
+        ):
+            return nearest
+        return None
+    wanted = " ".join(quote.casefold().split())
+    holding = [
+        segment
+        for segment in segments
+        if wanted
+        and wanted in " ".join(str(segment.get("text", "")).casefold().split())
+    ]
+    return holding[0] if len(holding) == 1 else None
+
+
+def _moved_ai_proposals(
+    transcript: Transcript, segments: Sequence[dict[str, Any]]
+) -> set[str]:
+    """Labels whose pending AI name was heard on a line that another label now
+    holds, found by the line's middle. A line no longer there holds nothing."""
+    moved: set[str] = set()
+    for label, item in _pending_live_entries(
+        transcript, (LIVE_LLM_SUGGESTION_ORIGIN,)
+    ).items():
+        for line in item.get("evidence_lines") or []:
+            middle = (
+                float(line.get("start_seconds") or 0.0)
+                + float(line.get("end_seconds") or 0.0)
+            ) / 2
+            now = next(
+                (
+                    segment
+                    for segment in segments
+                    if float(segment.get("start") or 0.0)
+                    <= middle
+                    <= float(segment.get("end") or 0.0)
+                ),
+                None,
+            )
+            if now is not None and str(now.get("speaker", "")) != label:
+                moved.add(label)
+                break
+    return moved
 
 
 def _live_evidence(
@@ -506,6 +618,11 @@ def live_speaker_suggestions(
         return {}
     pending = _pending_live_proposals(transcript, LIVE_PROPOSAL_ORIGINS)
     if not pending:
+        return {}
+    # Turned off mid-meeting, the names already offered leave the screen at
+    # the page's next read. They stay pending: turned back on, any still
+    # standing show again, and none is applied without Accept.
+    if not live_name_suggestions_enabled(owner_settings(session, recording.user_id)):
         return {}
     heard = set(
         session.execute(

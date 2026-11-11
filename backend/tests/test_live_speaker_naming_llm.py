@@ -22,7 +22,7 @@ from sqlmodel import Session
 import backend.worker.tasks as tasks_module
 from backend.core.single_flight import KEY_PREFIX
 from backend.models.transcript import Transcript
-from backend.tests.live_naming_fixtures import ONE, TWO
+from backend.tests.live_naming_fixtures import ONE, THREE, TWO
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
@@ -803,3 +803,139 @@ async def test_a_failed_ask_gives_up_quietly_and_counts_as_an_ask(
     await _refresh(session_maker, llm)
     assert llm.asks == [[ONE], [ONE]]
     assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Priya Raman"}
+
+
+async def _move_line(session_maker: Any, start_ms: int, label: str) -> None:
+    await _sql(
+        session_maker,
+        "UPDATE transcript_utterances SET speaker_label = :label WHERE start_ms = :start",
+        label=label,
+        start=start_ms,
+    )
+
+
+async def _offer_ai_name(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM, span: dict[str, Any]
+) -> None:
+    """The AI names the first speaker from ``span``; its 9.5 s line runs to 64 s."""
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _talk_until(session_maker, 64_000)
+    llm.names = {ONE: "Priya Raman"}
+    llm.spans = [span]
+    await _refresh(session_maker, llm)
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Priya Raman"}
+
+
+# The prompt shows 00:09 for the line at 9.5 s; the fixture's text for that line
+# is "live line 3 with a few more words to say".
+@pytest.mark.parametrize(
+    "span",
+    [{"start_seconds": 9.0, "end_seconds": 64.0}, {"quote": "Live line 3 with a few"}],
+    ids=["timed-quote", "untimed-quote"],
+)
+async def test_an_ai_name_goes_when_the_line_it_was_heard_on_moves(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM, span: dict[str, Any]
+) -> None:
+    await _offer_ai_name(client, session_maker, llm, span)
+
+    await _move_line(session_maker, 9500, TWO)
+    await _refresh(session_maker, llm)
+
+    assert (await _read(client))["live_speaker_suggestions"] == {}
+    (offered,) = [
+        item for item in await _review(session_maker) if item["origin"] == "live_llm"
+    ]
+    assert (offered["status"], offered["resolution_reason"]) == (
+        "superseded",
+        "live_evidence_changed",
+    )
+
+
+async def test_an_ai_name_stays_when_another_speakers_quoted_line_moves(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    # The second speaker's line at 6 s, as when they address the first by name.
+    await _offer_ai_name(
+        client, session_maker, llm, {"start_seconds": 6.0, "end_seconds": 9.0}
+    )
+
+    await _move_line(session_maker, 6000, THREE)
+    await _refresh(session_maker, llm)
+
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Priya Raman"}
+
+
+async def test_a_merge_does_not_move_the_line_an_ai_name_was_heard_on(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _offer_ai_name(
+        client, session_maker, llm, {"start_seconds": 9.0, "end_seconds": 64.0}
+    )
+
+    merged = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/live/{ONE}/merge",
+        json={"into_label": TWO},
+    )
+    assert merged.status_code == 200, merged.text
+    await _refresh(session_maker, llm)
+
+    assert (await _read(client))["live_speaker_suggestions"] == {TWO: "Priya Raman"}
+
+
+async def test_turning_suggestions_off_hides_the_names_offered_until_turned_on(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, NO_PROVIDER)
+    await _say(session_maker, ONE, "I'm Alex.")
+    await _refresh(session_maker, llm)
+    assert (await _name(client, TWO, "Blair")).status_code == 200
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Alex"}
+
+    await _seed_settings(
+        session_maker, {**NO_PROVIDER, "suggest_live_speaker_names": False}
+    )
+
+    # No naming check and no new line: the next read alone hides the name,
+    # and it cannot be answered while hidden. The accepted name stays.
+    read = await _read(client)
+    assert read["live_speaker_suggestions"] == {}
+    assert read["live_speaker_suggestion_sources"] == {}
+    assert read["live_speaker_names"] == {TWO: "Blair"}
+    dismissed = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/live/{ONE}/suggestions/reject"
+    )
+    assert dismissed.status_code == 404, dismissed.text
+    assert [item["status"] for item in await _review(session_maker)] == ["pending"]
+
+    await _seed_settings(session_maker, NO_PROVIDER)
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Alex"}
+
+
+@pytest.mark.parametrize("answer", ["Alice Head", "Bob Clerk", "Carol Sales"])
+async def test_a_surname_that_is_also_a_role_word_is_an_ai_name(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM, answer: str
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _talk_until(session_maker, 64_000)
+    llm.names = {ONE: answer}
+
+    await _refresh(session_maker, llm)
+
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: answer}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["Guest", "Head of Sales", "Alice Example (host)", "Alice2", "A" * 256],
+)
+async def test_an_answer_that_is_not_a_name_is_dropped_whole(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM, answer: str
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _talk_until(session_maker, 64_000)
+    llm.names = {ONE: answer}
+
+    await _refresh(session_maker, llm)
+
+    assert llm.asks == [[ONE]]
+    assert (await _read(client))["live_speaker_suggestions"] == {}

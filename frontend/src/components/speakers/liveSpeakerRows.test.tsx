@@ -155,6 +155,20 @@ describe("live speaker rows", () => {
       await waitFor(() => expect(dismiss).toHaveBeenCalledWith(A));
     });
 
+    // A card's column is too narrow to share with the name, so its actions get
+    // a row of their own under it, all three together (#981).
+    it("puts Accept, Dismiss and Go to line on one row under the name", () => {
+      render(page());
+      const row = within(card());
+      const actions = row.getByRole("button", { name: "Accept suggested name Alex" }).parentElement!;
+      for (const name of ["Dismiss suggested name Alex", "Go to the line where Alex was heard"]) {
+        expect(row.getByRole("button", { name }).parentElement).toBe(actions);
+      }
+      expect(actions).not.toHaveTextContent("Alex");
+      expect(actions.previousElementSibling).toHaveTextContent("Alex Suggested Introduced themselves");
+      expect(actions.parentElement).toHaveClass("flex-col");
+    });
+
     it("goes to the line where it was heard, after showing the transcript", () => {
       const onShowTranscript = vi.fn();
       render(page(onShowTranscript));

@@ -14,6 +14,7 @@ from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
     TAGS_SCHEMA,
+    USERS_SCHEMA,
 )
 from backend.tests.test_live_speaker_naming_api import (
     REC,
@@ -34,6 +35,15 @@ from backend.utils.speaker_names.live_suggestions import (
 )
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture(autouse=True)
+async def users_table(session_maker: Any) -> None:
+    """The read looks up whether the owner wants live suggestions; with no
+    row, the default (on) holds."""
+    async with session_maker() as db:
+        await db.execute(text(USERS_SCHEMA))
+        await db.commit()
 
 
 async def _refresh(session_maker: Any) -> None:
@@ -262,13 +272,25 @@ async def test_a_merged_speakers_introduction_names_the_speaker_it_joined(
     assert review == {TWO: "accepted"}
 
 
-@pytest.mark.parametrize("joined_has_one", [False, True])
+# A dismissal holds for the rest of the recording, so a merge into a dismissed
+# label drops the name pending on the merged one (the maintainer's call on #981).
+@pytest.mark.parametrize("joined", ["has_its_own", "has_none", "was_dismissed"])
 async def test_a_paused_merge_moves_a_pending_proposal_to_the_label_joined(
-    client: AsyncClient, session_maker: Any, joined_has_one: bool
+    client: AsyncClient, session_maker: Any, joined: str
 ) -> None:
     await _seed_proposals(session_maker)
-    if not joined_has_one:
+    if joined == "was_dismissed":
         assert (await _dismiss(client, TWO)).status_code == 200
+    if joined == "has_none":
+        async with session_maker() as db:
+            await db.execute(
+                text(
+                    "UPDATE transcript_utterances SET text = '' WHERE speaker_label = :two"
+                ),
+                {"two": TWO},
+            )
+            await db.commit()
+        await _refresh(session_maker)
     async with session_maker() as db:
         await db.execute(text("UPDATE recordings SET status = 'PAUSED'"))
         await db.commit()
@@ -281,6 +303,38 @@ async def test_a_paused_merge_moves_a_pending_proposal_to_the_label_joined(
 
     # No naming check runs while paused: the read alone shows the move.
     read = (await client.get(f"/api/v1/transcripts/{REC}/utterances")).json()
-    assert read["live_speaker_suggestions"] == {
-        TWO: "Blair" if joined_has_one else "Alex"
+    assert (
+        read["live_speaker_suggestions"]
+        == {
+            "has_its_own": {TWO: "Blair"},
+            "has_none": {TWO: "Alex"},
+            "was_dismissed": {},
+        }[joined]
+    )
+
+
+async def test_a_dismissed_label_stays_without_a_name_after_a_merge_into_it(
+    client: AsyncClient, session_maker: Any
+) -> None:
+    await _seed_proposals(session_maker)
+    assert (await _dismiss(client, TWO)).status_code == 200
+
+    merged = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/live/{ONE}/merge",
+        json={"into_label": TWO},
+    )
+    assert merged.status_code == 200, merged.text
+    # The group still holds "I'm Alex.", now read as the dismissed label's.
+    await _refresh(session_maker)
+    await _refresh(session_maker)
+
+    read = (await client.get(f"/api/v1/transcripts/{REC}/utterances")).json()
+    assert read["live_speaker_suggestions"] == {}
+    review = {
+        item["diarization_label"]: (item["status"], item["resolution_reason"])
+        for item in await _review(session_maker)
+    }
+    assert review == {
+        ONE: ("superseded", "live_speaker_merged_into_dismissed"),
+        TWO: ("rejected", "user_rejected"),
     }
