@@ -287,7 +287,7 @@ export default function UpdatesSettings() {
             description="Pull the published images and recreate the stack. If you build from source, rebuild instead of pulling."
           >
             <div className="space-y-3">
-              <pre className="settings-inset overflow-x-auto rounded-lg px-4 py-3 font-mono text-sm text-foreground">
+              <pre className="settings-inset relative overflow-x-auto rounded-lg px-4 py-3 font-mono text-sm text-foreground">
                 {UPGRADE_COMMANDS}
               </pre>
               <a

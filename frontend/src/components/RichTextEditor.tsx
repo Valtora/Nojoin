@@ -128,7 +128,7 @@ export default function RichTextEditor({
     // anywhere still lands in the editor) and grows past it when long, and
     // the clearance padding is room after long notes, never extra height
     // for short ones.
-    <SurfaceBase data-ui-fill="card" kind="pane" className="flex h-full w-full flex-col overflow-y-auto bg-surface-card pb-clear-floating-0">
+    <SurfaceBase data-ui-fill="card" kind="pane" className="relative flex h-full w-full flex-col overflow-y-auto bg-surface-card pb-clear-floating-0">
       <EditorContent editor={editor} className="flex-1" />
     </SurfaceBase>
   );

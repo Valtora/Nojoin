@@ -263,7 +263,7 @@ function AuthorizeContent() {
                 </div>
 
                 {/* Capability list */}
-                <ul className="mt-5 max-h-[45dvh] overflow-y-auto divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
+                <ul className="relative mt-5 max-h-[45dvh] overflow-y-auto divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
                   {capabilities.map(({ icon: Icon, label }) => (
                     <li
                       key={label}

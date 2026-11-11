@@ -855,7 +855,7 @@ export default function Sidebar() {
       {/* The head (meeting controls, search, filters and Select all) stays
           put while the cards scroll beneath it. It gives way, and scrolls on
           its own, only when open filters would leave the cards too little room. */}
-      <div className="min-h-0 shrink overflow-y-auto">
+      <div className="relative min-h-0 shrink overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
           <MeetingControls

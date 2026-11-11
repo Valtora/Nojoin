@@ -115,7 +115,7 @@ export default function CapturesGallery({
       data-testid="captures-gallery"
       // Focus lands here when a capture's Remove takes away the button pressed.
       tabIndex={-1}
-      className={cn("min-h-0 overflow-y-auto p-3 pb-clear-floating-3 outline-none", className)}
+      className={cn("relative min-h-0 overflow-y-auto p-3 pb-clear-floating-3 outline-none", className)}
     >
       {placements === null ? (
         <p className="p-4 text-center text-sm italic text-contrast-helper">Loading captures…</p>

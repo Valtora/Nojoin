@@ -37,7 +37,7 @@ export default function ProcessingCard({ recordings }: ProcessingCardProps) {
         <h2 className="text-base font-semibold text-foreground">Processing</h2>
       </div>
 
-      <ul className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto">
+      <ul className="relative mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto">
         {recordings.map((recording) => {
           const eta = formatEta(recording.processing_eta_seconds);
 
