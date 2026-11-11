@@ -1050,14 +1050,12 @@ def _gemini_backend_on_mock_transport(monkeypatch, sent_urls: list):
     is the one the SDK built for the backend's own client, and nothing leaves
     the process.
     """
+    import importlib
+
     from google import genai
 
-    try:
-        # google-genai 3.x sends through httpx2; 2.x only has httpx. The SDK
-        # picks its HTTP client from the transport's package.
-        import httpx2 as http_lib
-    except ImportError:
-        import httpx as http_lib
+    monkeypatch.delenv("GOOGLE_GENAI_API_VERSION", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_HTTP_CLIENT", raising=False)
 
     reply = {
         "candidates": [
@@ -1070,6 +1068,20 @@ def _gemini_backend_on_mock_transport(monkeypatch, sent_urls: list):
             }
         ]
     }
+
+    real_client = genai.Client
+
+    # The mock transport must come from the package the SDK builds its HTTP
+    # client from: 2.x takes httpx whenever it is installed, 3.x defaults to
+    # httpx2. Ask a client built the same way rather than guess by version.
+    probe = real_client(api_key="not-used")
+    http_lib = None
+    for cls in type(probe._api_client._httpx_client).__mro__:
+        package = (cls.__module__ or "").split(".")[0]
+        if package in ("httpx", "httpx2"):
+            http_lib = importlib.import_module(package)
+            break
+    assert http_lib is not None, "google-genai built neither httpx nor httpx2"
 
     def handler(request):
         sent_urls.append(str(request.url))
@@ -1085,7 +1097,6 @@ def _gemini_backend_on_mock_transport(monkeypatch, sent_urls: list):
             )
         return http_lib.Response(200, json=reply)
 
-    real_client = genai.Client
     transport = {"transport": http_lib.MockTransport(handler)}
 
     def client_on_mock_transport(*args, http_options=None, **kwargs):
@@ -1097,8 +1108,6 @@ def _gemini_backend_on_mock_transport(monkeypatch, sent_urls: list):
             ).model_copy(update={"client_args": transport})
         return real_client(*args, http_options=http_options, **kwargs)
 
-    monkeypatch.delenv("GOOGLE_GENAI_API_VERSION", raising=False)
-    monkeypatch.delenv("GOOGLE_GENAI_HTTP_CLIENT", raising=False)
     monkeypatch.setattr(genai, "Client", client_on_mock_transport)
     return GeminiLLMBackend(api_key="not-used", model="gemini-flash-latest")
 
