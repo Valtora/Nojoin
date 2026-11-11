@@ -10,8 +10,7 @@ their next page load. The owner of an existing install accepted during setup,
 but no time was kept and a made-up one would be worse than none, so theirs
 stays empty and the setup account is not asked again.
 
-The schema's only timezone-aware column: an acceptance is a record that should
-name its instant without relying on the convention that naive values are UTC.
+Naive UTC, as every other datetime column in the schema.
 
 Revision ID: ed5d42732014
 Revises: bb518dd1f469
@@ -29,7 +28,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "users",
-        sa.Column("legal_accepted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("legal_accepted_at", sa.DateTime(), nullable=True),
     )
 
 

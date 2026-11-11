@@ -1,7 +1,7 @@
 """Backups carry each user's acceptance of the terms of use (#1004).
 
-An archive holds the time as the database does, with its offset, and a restore
-puts it back. An archive from before the column restores its users with no
+An archive holds the time as the database does, in naive UTC as every other
+time it holds, and a restore puts it back. An archive from before the column restores its users with no
 time, so they are asked at their next visit, as an upgrade asks them.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import zipfile
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,7 +24,7 @@ from backend.models.user import User
 from backend.tests.postgres_setup import fresh_schema
 
 SCHEMA = "backup_legal_acceptance_test"
-ACCEPTED_AT = datetime(2026, 11, 2, 9, 30, 15, 250000, tzinfo=UTC)
+ACCEPTED_AT = datetime(2026, 11, 2, 9, 30, 15, 250000)
 
 
 @pytest.fixture
@@ -106,7 +106,8 @@ def test_a_backup_keeps_each_acceptance_and_an_older_one_has_none(
             }
         assert archived["owner"] is None
         assert archived["bob"] is None
-        assert datetime.fromisoformat(archived["alice"]) == ACCEPTED_AT
+        # Written as created_at is, with no offset.
+        assert archived["alice"] == "2026-11-02T09:30:15.250000"
 
         # Restored onto an install that no longer has them, so the archive's
         # rows are inserted rather than matched to existing accounts.

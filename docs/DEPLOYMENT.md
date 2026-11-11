@@ -652,7 +652,7 @@ These run on the first start after the upgrade and need no action unless a note 
 
 #### Upgrading From Before 3.2.0
 
-- **Each user accepts the terms of use (#1004).** Alembic revision `ed5d42732014` adds the nullable `users.legal_accepted_at`, a timestamp with time zone, with no backfill. From the upgrade, every account except the setup account is shown the terms of use once, at its next page load, and the API refuses it a new capture or import until it accepts ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)). A capture or import already under way finishes normally. The setup account is not asked again and keeps an empty date, since none was recorded when it accepted during setup. A downgrade drops the column and every recorded acceptance. A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.
+- **Each user accepts the terms of use (#1004).** Alembic revision `ed5d42732014` adds the nullable `users.legal_accepted_at`, a naive UTC timestamp like the schema's others, with no backfill. From the upgrade, every account except the setup account is shown the terms of use once, at its next page load, and the API refuses it a new capture or import until it accepts ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)). A capture or import already under way finishes normally. The setup account is not asked again and keeps an empty date, since none was recorded when it accepted during setup. A downgrade drops the column and every recorded acceptance. A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.
 
 #### Upgrading From Before 3.1.0
 

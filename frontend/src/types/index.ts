@@ -32,7 +32,8 @@ export interface User {
   /** Per-user cap on AI analysis runs per UTC day. Null inherits the install default; 0 is no cap. */
   ai_analysis_daily_limit?: number | null;
   /**
-   * When the user accepted the terms of use, with its UTC offset. Null until
+   * When the user accepted the terms of use, in UTC with no offset, as the
+   * API gives every time (read it with `parseServerTimestamp`). Null until
    * they do, and for the setup account of an install set up before the time
    * was recorded.
    */

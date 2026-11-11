@@ -1,6 +1,5 @@
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -511,7 +510,7 @@ async def accept_legal_terms(
     For the caller alone: no route accepts for someone else, and no user update
     sets or clears the time. Only a browser session may accept, from the page
     that shows the terms; an API token gets 403. The time comes from the
-    server's clock in UTC and is written once. Accepting again changes nothing
+    server's clock, in UTC, and is written once. Accepting again changes nothing
     and answers as the first time did.
     """
     if session_id is None:
@@ -528,7 +527,7 @@ async def accept_legal_terms(
                 col(User.id) == current_user.id,
                 col(User.legal_accepted_at).is_(None),
             )
-            .values(legal_accepted_at=datetime.now(UTC))
+            .values(legal_accepted_at=utc_now())
         )
         await db.commit()
         await db.refresh(current_user)

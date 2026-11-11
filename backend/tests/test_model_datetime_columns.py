@@ -8,8 +8,7 @@ every naive value bound to it. A field declared that way disagrees with its own
 migration and fails on its first insert, so declare it with ``sa_type=DateTime``.
 
 Moving the schema to aware UTC is a deliberate migration of every datetime column and
-every producer, not something one new field should start on its own. The one exception
-is listed below with its reason, and its only writers stamp an aware UTC value.
+every producer, not something one new field should start on its own.
 """
 
 from __future__ import annotations
@@ -45,35 +44,12 @@ def _production_datetime_columns() -> dict[str, bool]:
     return columns
 
 
-# Columns that are timezone-aware on purpose. Each needs its reason, and every writer
-# of it must bind an aware value.
-AWARE_BY_DESIGN = {
-    # When a user accepted the legal disclaimer (#1004): a record that should name its
-    # instant without leaning on the naive-means-UTC convention. Written by first-run
-    # setup and the acceptance route, both with datetime.now(UTC), and by a restore,
-    # from the offset the archive kept.
-    "users.legal_accepted_at",
-}
-
-
 def test_every_datetime_column_is_naive() -> None:
     columns = _production_datetime_columns()
     assert columns, "found no datetime columns, so this check tested nothing"
 
-    aware = sorted(
-        name
-        for name, timezone in columns.items()
-        if timezone and name not in AWARE_BY_DESIGN
-    )
+    aware = sorted(name for name, timezone in columns.items() if timezone)
     assert not aware, (
         "These columns are timezone-aware, but the schema and every writer use naive "
         "UTC. Declare each field with sa_type=DateTime: " + ", ".join(aware)
-    )
-
-
-def test_the_aware_exceptions_are_still_aware() -> None:
-    columns = _production_datetime_columns()
-
-    assert {name: columns.get(name) for name in AWARE_BY_DESIGN} == dict.fromkeys(
-        AWARE_BY_DESIGN, True
     )

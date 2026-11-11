@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -35,13 +35,12 @@ class User(BaseDBModel, table=True):
     # Per-user cap on AI analysis runs per UTC day, set by an administrator.
     # Null inherits the install's ai_analysis_daily_limit; 0 means no limit.
     ai_analysis_daily_limit: Optional[int] = Field(default=None, nullable=True)
-    # When this user accepted the legal disclaimer (#1004): stamped once, from
-    # the server's clock, by setup for the owner and by the acceptance route
-    # for everyone else, and never changed after. Null until then, and for the
-    # owner of an install set up before the time was recorded. The schema's one
-    # timezone-aware column, so the record names its instant on its own.
+    # When this user accepted the legal disclaimer (#1004), in UTC: stamped
+    # once, from the server's clock, by setup for the owner and by the
+    # acceptance route for everyone else, and never changed after. Null until
+    # then, and for the owner of an install set up before the time was recorded.
     legal_accepted_at: Optional[datetime] = Field(
-        default=None, sa_type=DateTime(timezone=True), nullable=True
+        default=None, sa_type=DateTime, nullable=True
     )
 
     invitation_id: Optional[int] = Field(default=None, foreign_key="invitations.id")
@@ -96,15 +95,6 @@ class UserRead(SQLModel):
     legal_accepted_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-
-    @field_validator("legal_accepted_at")
-    @classmethod
-    def legal_accepted_at_in_utc(cls, value: Optional[datetime]) -> Optional[datetime]:
-        # SQLite, which the tests use, returns the stored instant without its
-        # zone. The column holds UTC, so the API always says so.
-        if value is not None and value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
-        return value
 
     @computed_field  # type: ignore[prop-decorator]  # mypy doesn't support @computed_field over @property
     @property

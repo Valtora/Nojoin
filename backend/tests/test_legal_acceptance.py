@@ -13,7 +13,7 @@ from __future__ import annotations
 import ast
 import io
 import wave
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -37,9 +37,11 @@ from backend.tests.test_recording_pause_resume import (  # noqa: F401 -- fixture
     TRUSTED_ORIGIN,
     test_session_maker,
 )
+from backend.utils.time import utc_now
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ACCEPTED_AT = datetime(2026, 11, 2, 9, 30, tzinfo=UTC)
+# Naive UTC, as the schema stores every time.
+ACCEPTED_AT = datetime(2026, 11, 2, 9, 30)
 ORIGIN = {"Origin": TRUSTED_ORIGIN}
 
 REVOKED_JWTS_SCHEMA = """
@@ -224,20 +226,20 @@ def test_everyone_but_the_setup_account_accepts_once(
     )
 
 
-def test_the_api_always_gives_the_time_in_utc() -> None:
-    # SQLite hands the stored instant back without its zone.
+def test_the_api_gives_the_time_as_it_gives_created_at() -> None:
+    """Naive UTC, with no offset, which the web app reads as UTC."""
     user = User(
         id=7,
         username="erin",
         hashed_password="x",
-        legal_accepted_at=datetime(2026, 11, 2, 9, 30),
+        legal_accepted_at=ACCEPTED_AT,
+        created_at=ACCEPTED_AT,
     )
 
-    read = UserRead.model_validate(user, from_attributes=True)
+    read = UserRead.model_validate(user, from_attributes=True).model_dump(mode="json")
 
-    assert read.legal_accepted_at == ACCEPTED_AT
-    assert read.model_dump(mode="json")["legal_accepted_at"] == "2026-11-02T09:30:00Z"
-    assert read.model_dump()["legal_acceptance_required"] is False
+    assert read["legal_accepted_at"] == read["created_at"] == "2026-11-02T09:30:00"
+    assert read["legal_acceptance_required"] is False
 
 
 def test_sign_in_tells_an_api_client_to_accept_first() -> None:
@@ -264,7 +266,7 @@ async def test_users_me_says_whether_to_ask(
 
     assert body["legal_acceptance_required"] is required
     assert body["legal_accepted_at"] == (
-        "2026-11-02T09:30:00Z" if username == "bob" else None
+        "2026-11-02T09:30:00" if username == "bob" else None
     )
 
 
@@ -279,7 +281,7 @@ async def test_the_users_table_shows_each_acceptance(client: AsyncClient) -> Non
 
     assert rows["owner"] == (None, False)
     assert rows["alice"] == (None, True)
-    assert rows["bob"] == ("2026-11-02T09:30:00Z", False)
+    assert rows["bob"] == ("2026-11-02T09:30:00", False)
     assert rows["carol"] == (None, True)
 
 
@@ -419,7 +421,7 @@ async def test_accepting_stamps_the_server_time_once(
     client: AsyncClient, session_maker: sessionmaker
 ) -> None:
     _session(client, "alice")
-    before = datetime.now(UTC)
+    before = utc_now()
 
     first = await client.post("/api/v1/users/me/legal-acceptance", headers=ORIGIN)
     again = await client.post("/api/v1/users/me/legal-acceptance", headers=ORIGIN)
@@ -427,8 +429,9 @@ async def test_accepting_stamps_the_server_time_once(
     assert first.status_code == again.status_code == 200
     assert first.json()["legal_acceptance_required"] is False
     stamped = datetime.fromisoformat(first.json()["legal_accepted_at"])
-    assert stamped.utcoffset() == timedelta(0)
-    assert before - timedelta(seconds=1) <= stamped <= datetime.now(UTC)
+    # Naive, like every other time the API gives, and from the server's UTC clock.
+    assert stamped.tzinfo is None
+    assert before - timedelta(seconds=1) <= stamped <= utc_now()
     # Idempotent: the second answers as the first and overwrites nothing.
     assert again.json()["legal_accepted_at"] == first.json()["legal_accepted_at"]
     assert await _stored_time(session_maker, "alice") is not None
@@ -443,7 +446,7 @@ async def test_accepting_never_moves_an_earlier_time(
 
     response = await client.post("/api/v1/users/me/legal-acceptance", headers=ORIGIN)
 
-    assert response.json()["legal_accepted_at"] == "2026-11-02T09:30:00Z"
+    assert response.json()["legal_accepted_at"] == "2026-11-02T09:30:00"
 
 
 @pytest.mark.anyio
@@ -607,7 +610,7 @@ async def test_setup_records_when_the_owner_accepted(
 
     app = create_app(app_lifespan=None)
     app.dependency_overrides[get_db] = _db
-    before = datetime.now(UTC)
+    before = utc_now()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="https://test"
     ) as setup_client:
@@ -624,5 +627,5 @@ async def test_setup_records_when_the_owner_accepted(
     assert response.status_code == 200, response.text
     (owner,) = session.added
     assert owner.is_superuser
-    assert owner.legal_accepted_at.tzinfo is UTC
-    assert before <= owner.legal_accepted_at <= datetime.now(UTC)
+    assert owner.legal_accepted_at.tzinfo is None
+    assert before <= owner.legal_accepted_at <= utc_now()

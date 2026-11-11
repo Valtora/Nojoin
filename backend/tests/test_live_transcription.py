@@ -233,7 +233,7 @@ CREATE TABLE recording_audio_window_manifests (
 def build_test_user(
     user_id: int = 1, username: str = "alice", settings: dict | None = None
 ):
-    from datetime import UTC, datetime
+    from datetime import datetime
     from types import SimpleNamespace
 
     return SimpleNamespace(
@@ -243,7 +243,7 @@ def build_test_user(
         settings=settings or {},
         is_superuser=False,
         # Accepted the terms of use, so a capture may start (#1004).
-        legal_accepted_at=datetime(2026, 11, 1, tzinfo=UTC),
+        legal_accepted_at=datetime(2026, 11, 1),
     )
 
 

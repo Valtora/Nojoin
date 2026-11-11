@@ -74,7 +74,7 @@ describe("LegalAcceptanceNotice (#1004)", () => {
       username: "alice",
       force_password_change: false,
       legal_acceptance_required: false,
-      legal_accepted_at: "2026-11-11T10:00:00Z",
+      legal_accepted_at: "2026-11-11T10:00:00",
     });
     const { getByRole } = renderWithProviders(<LegalAcceptanceNotice />);
 

@@ -21,8 +21,9 @@ vi.mock("@/lib/api", () => ({
 const addNotification = vi.fn();
 
 // Dates read in the viewer's Nojoin timezone, as the invitations above them do.
+let viewerTimeZone = "Asia/Tokyo";
 vi.mock("@/lib/useUserTimeZone", () => ({
-  useUserTimeZone: () => "Asia/Tokyo",
+  useUserTimeZone: () => viewerTimeZone,
 }));
 
 vi.mock("@/lib/notificationStore", () => ({
@@ -246,6 +247,7 @@ describe("UsersTab terms of use column (#1004)", () => {
   const row = (username: string) => screen.getByText(username).closest("tr") as HTMLElement;
 
   beforeEach(() => {
+    viewerTimeZone = "Asia/Tokyo";
     context.isSuperuser = true;
     context.role = UserRole.OWNER;
     getUsers.mockReset().mockResolvedValue({
@@ -258,8 +260,8 @@ describe("UsersTab terms of use column (#1004)", () => {
         },
         {
           ...account(2, "alice.example", UserRole.USER),
-          // 23:30 UTC on the 2nd is the 3rd in Tokyo.
-          legal_accepted_at: "2026-11-02T23:30:00Z",
+          // Naive UTC, as the API gives it: 23:30 on the 2nd is the 3rd in Tokyo.
+          legal_accepted_at: "2026-11-02T23:30:00",
           legal_acceptance_required: false,
         },
         {
@@ -272,12 +274,17 @@ describe("UsersTab terms of use column (#1004)", () => {
     });
   });
 
-  it("shows each acceptance date in the viewer's timezone", async () => {
+  it.each([
+    // Ahead of UTC, 23:30 on the 2nd is already the 3rd; behind it, still the 2nd.
+    ["Asia/Tokyo", "3 Nov 2026"],
+    ["America/Los_Angeles", "2 Nov 2026"],
+  ])("shows each acceptance date in the viewer's timezone, %s", async (zone, day) => {
+    viewerTimeZone = zone;
     render(<UsersTab />);
     await screen.findByText("bob.example");
 
     expect(screen.getByRole("columnheader", { name: "Terms accepted" })).toBeInTheDocument();
-    expect(within(row("alice.example")).getByText("3 Nov 2026")).toBeInTheDocument();
+    expect(within(row("alice.example")).getByText(day)).toBeInTheDocument();
   });
 
   it("reads a user who has not accepted as not yet accepted", async () => {

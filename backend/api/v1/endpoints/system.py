@@ -1,7 +1,6 @@
 import asyncio
 import functools
 import logging
-from datetime import UTC, datetime
 from typing import Any, Optional
 
 from celery.exceptions import TimeoutError as CeleryTimeoutError
@@ -67,6 +66,7 @@ from backend.utils.download_progress import (
     is_download_in_progress,
 )
 from backend.utils.model_utils import WHISPER_MODEL_SIZES_MB
+from backend.utils.time import utc_now
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -505,7 +505,7 @@ async def setup_system(
         role="owner",
         # The owner accepted the legal disclaimer on the wizard's Legal step,
         # which comes before this one (#1004).
-        legal_accepted_at=datetime.now(UTC),
+        legal_accepted_at=utc_now(),
         settings=settings,
         # Opting out marks the demo as already seen so startup seeding also
         # skips it; Settings > Help can still force-recreate it later.
