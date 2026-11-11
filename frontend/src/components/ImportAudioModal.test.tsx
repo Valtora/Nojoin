@@ -234,3 +234,42 @@ describe("ImportAudioModal and the terms of use (#1004)", () => {
     expect(addNotification).not.toHaveBeenCalled();
   });
 });
+
+// The API can refuse with a detail that is not text: a list from request
+// validation (a 422) or a coded object. The toast renders only text (#1008).
+describe("ImportAudioModal and an error detail that is not text", () => {
+  const failed = (status: number, detail: unknown) =>
+    Object.assign(new Error(`Request failed with status code ${status}`), {
+      response: { status, data: { detail } },
+    });
+
+  it.each([
+    [
+      "a request validation list",
+      failed(422, [
+        { loc: ["query", "max_speakers"], msg: "Input should be less than or equal to 50", type: "less_than_equal" },
+      ]),
+      "max speakers: Input should be less than or equal to 50",
+    ],
+    [
+      "a coded object",
+      failed(409, { code: "example_refusal", message: "This import was refused." }),
+      "This import was refused.",
+    ],
+    [
+      "a list with no message in it",
+      failed(422, [{ loc: ["query", "max_speakers"], type: "missing" }]),
+      "Upload failed. Please try again.",
+    ],
+  ])("reports %s as readable text", async (_shape, error, message) => {
+    vi.mocked(importAudio).mockRejectedValue(error);
+    renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+    selectFile("standup.wav");
+
+    fireEvent.click(screen.getByRole("button", { name: "Import Audio" }));
+
+    await vi.waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({ type: "error", message }),
+    );
+  });
+});

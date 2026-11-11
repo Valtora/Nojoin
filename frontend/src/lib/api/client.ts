@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import { recordRequestOutcome } from "@/lib/connectivity/monitor";
+import { describeErrorDetail } from "@/lib/errors";
 import { isLegalAcceptanceRefusal, requireLegalAcceptance } from "@/lib/legalAcceptance";
 import {
   isSessionEndedError,
@@ -33,43 +34,6 @@ export const leaveForSignIn = (): boolean => {
   if (!useSessionStore.getState().signInRequired) return false;
   reloadToSignIn();
   return true;
-};
-
-type ValidationErrorItem = {
-  loc?: unknown;
-  msg?: unknown;
-};
-
-const formatValidationDetail = (detail: unknown): string | unknown => {
-  if (!Array.isArray(detail)) {
-    return detail;
-  }
-
-  const messages = detail
-    .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
-
-      const { loc, msg } = item as ValidationErrorItem;
-      if (typeof msg !== "string") {
-        return null;
-      }
-
-      if (!Array.isArray(loc) || typeof loc[loc.length - 1] !== "string") {
-        return msg;
-      }
-
-      const fieldName = String(loc[loc.length - 1]).replace(/_/g, " ");
-      return `${fieldName}: ${msg}`;
-    })
-    .filter((message): message is string => Boolean(message));
-
-  if (messages.length === 0) {
-    return detail;
-  }
-
-  return messages.join(" ");
 };
 
 // A header value is a string of bytes, so the browser refuses any character
@@ -128,9 +92,12 @@ api.interceptors.response.use(
       typeof error.response.data === "object" &&
       !Array.isArray(error.response.data)
     ) {
-      error.response.data.detail = formatValidationDetail(
-        error.response.data.detail,
-      );
+      // A request validation error's list becomes its text here, for code
+      // that reads the detail itself; getErrorDetail reads any shape.
+      const detail = error.response.data.detail;
+      if (Array.isArray(detail)) {
+        error.response.data.detail = describeErrorDetail(detail) ?? detail;
+      }
     }
 
     // While a capture runs, or notes wait to be saved, a refused session stays
