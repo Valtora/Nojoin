@@ -36,7 +36,20 @@ NAMES = [
     "प्रिया",
     "Nguyễn Văn An",
     # Decomposed: e and a combining acute accent.
-    "René Example",
+    "Rene\u0301 Example",
+    # The marks that sit inside names in other scripts, written as escapes
+    # where they are invisible or look like a hyphen or an apostrophe.
+    "علی\u200cرضا",  # Persian, zero-width non-joiner
+    "ジョン\u30fbスミス",  # Japanese katakana middle dot
+    "ｼﾞｮﾝ\uff65ｽﾐｽ",  # its half-width form
+    "山田\u3000太郎",  # Japanese, ideographic space
+    "ג\u05f3ון",  # Hebrew geresh
+    "בן\u05beגוריון",  # Hebrew maqaf
+    "Gal\u00b7la Example",  # Catalan middle dot
+    "Alice\u00a0Example",  # no-break space
+    "Jean\u2013Luc Example",  # en dash
+    "Ka\u2018iulani Example",  # okina typed as a left quotation mark
+    "བསྟན\u0f0bའཛིན",  # Tibetan tsheg
     "A" * MAX_PERSONAL_NAME_LENGTH,
 ]
 
@@ -68,6 +81,8 @@ NOT_NAMES = [
     "Alice & Bob",
     "Alice and Bob",
     "Alice\nExample",
+    "Alice\tExample",
+    "Alice\u202eExample",  # a bidi control
     "Alice_Example",
     "\U0001f600 Alice",
     "...",

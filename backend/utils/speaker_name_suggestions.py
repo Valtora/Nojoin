@@ -84,9 +84,20 @@ ROLE_OR_NAME_WORDS = frozenset(
 # The longest name the live rename route accepts, which Accept goes through,
 # and so the longest an AI suggestion may offer.
 MAX_PERSONAL_NAME_LENGTH = 255
-# Between the letters and combining marks of a name in any script: spaces,
-# hyphens, apostrophes (straight and typographic) and full stops.
-NAME_PUNCTUATION = frozenset(" -\u2010\u2011'\u2019.")
+# What may sit between the letters and combining marks of a name in any
+# script, besides any space separator (Zs: a no-break space, the ideographic
+# space between a Japanese family and given name) and any dash (Pd: hyphens,
+# the Hebrew maqaf). Tab and line breaks are control characters and stay out.
+NAME_SEPARATOR_CATEGORIES = frozenset({"Zs", "Pd"})
+# The zero-width non-joiner and joiner that Persian and Indic names need; no
+# other format character, so bidi controls stay out.
+NAME_JOINERS = frozenset("\u200c\u200d")
+# Punctuation that sits inside names: apostrophes, straight and typographic,
+# with the left quotation mark typed for the Hawaiian okina; full stops; the
+# middle dots of Catalan, Chinese transliteration and Japanese katakana (full
+# and half width); the Hebrew geresh and gershayim; and the Tibetan tsheg
+# between syllables.
+NAME_PUNCTUATION = frozenset("'\u2018\u2019.\u00b7\u30fb\uff65\u05f3\u05f4\u0f0b\u0f0c")
 NAME_STOPWORDS = {"at", "for", "from", "in", "on", "with"}
 # Words that follow "I'm", "my name is", "this is", or precede "here"/"speaking",
 # without being a name. They are capitalised in title-case or all-caps
@@ -799,8 +810,9 @@ def is_personal_name(name: str) -> bool:
     """Whether a model's suggested name reads as a person's.
 
     Any script ("李明", "Ana Maria de Souza"), up to
-    ``MAX_PERSONAL_NAME_LENGTH`` characters of letters, combining marks and
-    ``NAME_PUNCTUATION``. Anything else is no name: it is refused whole, never
+    ``MAX_PERSONAL_NAME_LENGTH`` characters of letters and combining marks,
+    with spaces, dashes, ``NAME_JOINERS`` and ``NAME_PUNCTUATION`` between
+    them. Anything else is no name: it is refused whole, never
     trimmed into a different name. Nor is a placeholder ("Speaker 2"), a role
     ("industrial designer", "the manager", "Guest") or a phrase; a role word
     that is also a surname passes beside a name ("Alice Head").
@@ -809,7 +821,9 @@ def is_personal_name(name: str) -> bool:
         return False
     categories = [unicodedata.category(character) for character in name]
     if not any(category.startswith("L") for category in categories) or any(
-        not category.startswith(("L", "M")) and character not in NAME_PUNCTUATION
+        not category.startswith(("L", "M"))
+        and category not in NAME_SEPARATOR_CATEGORIES
+        and character not in NAME_JOINERS | NAME_PUNCTUATION
         for character, category in zip(name, categories, strict=True)
     ):
         return False
