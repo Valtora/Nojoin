@@ -59,14 +59,41 @@ export function getErrorStatus(error: unknown): number | null {
   return null;
 }
 
-export function getErrorDetail(error: unknown): string | null {
-  const data = getResponseData(error);
-  if (!data) {
+/** One entry of a request validation error (a 422), after the field it names. */
+function validationIssueText(issue: unknown): string | null {
+  if (!isRecord(issue) || typeof issue.msg !== "string" || !issue.msg.trim()) {
     return null;
   }
+  const field = Array.isArray(issue.loc) ? issue.loc[issue.loc.length - 1] : undefined;
+  return typeof field === "string" ? `${field.replace(/_/g, " ")}: ${issue.msg}` : issue.msg;
+}
 
-  const detail = data.detail;
-  return typeof detail === "string" && detail.trim().length > 0 ? detail : null;
+/**
+ * The readable text of an API error's `detail`, whatever its shape: the text
+ * itself, the `message` of a coded refusal (`{code, message}`), or the
+ * messages of a request validation error's list, each after its field. Null
+ * when the detail holds no text, so a caller falls back to its own message
+ * instead of handing an object to something that renders it.
+ */
+export function describeErrorDetail(detail: unknown): string | null {
+  if (typeof detail === "string") {
+    return detail.trim().length > 0 ? detail : null;
+  }
+  if (Array.isArray(detail)) {
+    const issues = detail
+      .map(validationIssueText)
+      .filter((text): text is string => text !== null);
+    return issues.length > 0 ? issues.join(" ") : null;
+  }
+  if (isRecord(detail) && typeof detail.message === "string" && detail.message.trim()) {
+    return detail.message;
+  }
+  return null;
+}
+
+export function getErrorDetail(error: unknown): string | null {
+  const data = getResponseData(error);
+  return data ? describeErrorDetail(data.detail) : null;
 }
 
 export function getErrorMessage(error: unknown, fallback: string): string {
