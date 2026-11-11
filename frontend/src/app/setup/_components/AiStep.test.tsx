@@ -19,6 +19,7 @@ const props = (overrides: Partial<ComponentProps<typeof AiStep>> = {}): Componen
   availableModels: [],
   selectedModel: "",
   testingModel: false,
+  modelUnderTest: null,
   modelTest: null,
   onTestModel: vi.fn(),
   reloadingConfig: false,
@@ -142,9 +143,21 @@ describe("the AI step's Test connection (issue #991)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Running a short test on good-model...");
   });
 
-  it("holds the model select while a test runs, so the busy line names the tested model", () => {
-    render(<AiStep {...props({ ...ready, testingModel: true })} />);
+  it("holds the model select while a test runs, and names the model tested", () => {
+    render(
+      <AiStep
+        {...props({
+          ...ready,
+          selectedModel: "missing-model",
+          testingModel: true,
+          modelUnderTest: "good-model",
+        })}
+      />,
+    );
 
     expect(screen.getByRole("combobox", { name: "Model" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Running a short test on good-model...",
+    );
   });
 });

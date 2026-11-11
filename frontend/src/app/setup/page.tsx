@@ -53,6 +53,7 @@ export default function SetupPage() {
     validatingLLM,
     llmValidationMsg,
     testingModel,
+    modelUnderTest,
     modelTest,
     testSelectedModel,
     availableModels,
@@ -277,6 +278,7 @@ export default function SetupPage() {
               availableModels={availableModels}
               selectedModel={formData.selected_model}
               testingModel={testingModel}
+              modelUnderTest={modelUnderTest}
               modelTest={modelTest}
               onTestModel={() => void testSelectedModel()}
               reloadingConfig={reloadingConfig}

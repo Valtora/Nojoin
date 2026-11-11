@@ -67,6 +67,8 @@ interface AiStepProps {
   availableModels: string[];
   selectedModel: string;
   testingModel: boolean;
+  /** The model the running test was started on. */
+  modelUnderTest: string | null;
   modelTest: { valid: boolean; msg: string; results: ModelProbeResult[] } | null;
   onTestModel: () => void;
   reloadingConfig: boolean;
@@ -101,6 +103,7 @@ export default function AiStep({
   availableModels,
   selectedModel,
   testingModel,
+  modelUnderTest,
   modelTest,
   onTestModel,
   reloadingConfig,
@@ -286,7 +289,7 @@ export default function AiStep({
                     <div role="status" className="space-y-1">
                       {testingModel && (
                         <p className="text-xs text-contrast-helper">
-                          Running a short test on {selectedModel}...
+                          Running a short test on {modelUnderTest ?? selectedModel}...
                         </p>
                       )}
                       {modelTest && (

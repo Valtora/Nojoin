@@ -204,7 +204,8 @@ export function useSetupWizard() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsFetched, setModelsFetched] = useState(false);
   // Test connection on the chosen model (#991). Run only from its button.
-  const [testingModel, setTestingModel] = useState(false);
+  // The model a running test was started on, or null when none is running.
+  const [modelUnderTest, setModelUnderTest] = useState<string | null>(null);
   const testingModelRef = useRef(false);
   const [modelTest, setModelTest] = useState<{
     model: string;
@@ -559,7 +560,7 @@ export function useSetupWizard() {
     const model = formData.selected_model;
     if (!model || testingModelRef.current) return;
     testingModelRef.current = true;
-    setTestingModel(true);
+    setModelUnderTest(model);
     setModelTest(null);
     try {
       const res = await validateLLM(
@@ -585,7 +586,7 @@ export function useSetupWizard() {
       });
     } finally {
       testingModelRef.current = false;
-      setTestingModel(false);
+      setModelUnderTest(null);
     }
   }, [
     formData.selected_model,
@@ -790,7 +791,8 @@ export function useSetupWizard() {
     validatingLLM,
     llmValidationMsg,
     availableModels,
-    testingModel,
+    testingModel: modelUnderTest !== null,
+    modelUnderTest,
     // A result for a model no longer selected would mislead, so it is shown
     // only while its model is the chosen one.
     modelTest:
