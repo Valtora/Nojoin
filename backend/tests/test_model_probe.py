@@ -130,11 +130,46 @@ CREDENTIAL_SHAPES = [
         "headers {'x-api-key': '[redacted]'}",
         id="quoted header",
     ),
-    pytest.param(f"api_key={FAKE}&alt=json", "api_key=[redacted]&alt=json", id="query"),
+    pytest.param(f"api_key={FAKE}&alt=json", "api_key=[redacted]", id="query"),
     pytest.param(
         f"Invalid token: {FAKE}", "Invalid token: [redacted]", id="prose name"
     ),
     pytest.param(f'"api_key": "{FAKE}', '"api_key": "[redacted]"', id="unterminated"),
+    pytest.param(f"accessToken={FAKE}", "accessToken=[redacted]", id="camelCase"),
+    pytest.param(f"authToken: {FAKE}", "authToken: [redacted]", id="authToken"),
+    pytest.param(f"apiToken: {FAKE}", "apiToken: [redacted]", id="apiToken"),
+    pytest.param(f"secretkey={FAKE}", "secretkey=[redacted]", id="secretkey"),
+    pytest.param(f"privateKey={FAKE}", "privateKey=[redacted]", id="privateKey"),
+    pytest.param(
+        f'"accessToken": "{FAKE}"', '"accessToken": "[redacted]"', id="quoted camelCase"
+    ),
+    pytest.param(
+        f'"clientSecret": "{FAKE}"', '"clientSecret": "[redacted]"', id="clientSecret"
+    ),
+    pytest.param(
+        f'"refreshToken":"{FAKE}"', '"refreshToken":"[redacted]"', id="refreshToken"
+    ),
+    pytest.param(
+        f"password=ab,cd;ef&gh){FAKE}", "password=[redacted]", id="punctuated value"
+    ),
+    pytest.param(
+        f'"x-api-key":["{FAKE}"]', '"x-api-key":["[redacted]"]', id="header list"
+    ),
+    pytest.param(
+        f'headers={{"authorization": ["Bearer {FAKE}"]}}',
+        'headers={"authorization": ["[redacted]"]}',
+        id="authorization list",
+    ),
+    pytest.param(f"key=[{FAKE}]", "key=[[redacted]]", id="bracketed"),
+    pytest.param(f"token: ({FAKE})", "token: ([redacted])", id="parenthesised"),
+    pytest.param(
+        f'"key": "ab\\"{FAKE}"', '"key": "[redacted]"', id="escaped double quote"
+    ),
+    pytest.param(
+        f"'key': 'ab\\'{FAKE}'", "'key': '[redacted]'", id="escaped single quote"
+    ),
+    pytest.param(f"key%3D{FAKE}", "key%3D[redacted]", id="percent-encoded"),
+    pytest.param(f'api_key"={FAKE}', 'api_key"=[redacted]', id="closing quote only"),
 ]
 
 
@@ -163,12 +198,26 @@ PROVIDER_REASONS = [
     "{'code': 'invalid_api_key', 'param': None}",
     "model 'multitask-instruct' not found",
     "hotkey: press",
+    "the key: value pairs were malformed",
+    "unsupported parameter: token budget",
+    "This model's maximum context length is 8192 tokens. However, your messages "
+    "resulted in 9000 tokens.",
+    "Error code: 404 - {'error': {'message': \"model 'x' not found\", "
+    "'type': 'api_error'}}",
+    "{'error': {'code': 400, 'message': 'API key not valid. Please pass a valid API "
+    "key.', 'status': 'INVALID_ARGUMENT', 'details': [{'reason': 'API_KEY_INVALID', "
+    "'domain': 'googleapis.com'}]}}",
 ]
 
 
 @pytest.mark.parametrize("reason", PROVIDER_REASONS)
 def test_provider_detail_keeps_an_ordinary_reason_word_for_word(reason) -> None:
-    assert safe_provider_detail(RuntimeError(reason)) == reason
+    limit = model_probe._DETAIL_MAX_CHARS
+    shown = reason if len(reason) <= limit else reason[: limit - 3].rstrip() + "..."
+
+    assert safe_provider_detail(RuntimeError(reason)) == shown
+    # Past the length cap too, the patterns leave the reason alone.
+    assert model_probe._redact_key_like(reason) == reason
 
 
 def test_a_failed_probe_logs_only_the_redacted_detail(monkeypatch) -> None:
