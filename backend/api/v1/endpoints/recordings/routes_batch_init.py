@@ -8,7 +8,12 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
-from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
+from backend.api.deps import (
+    enforce_legal_acceptance,
+    get_current_recording_client_user,
+    get_current_user,
+    get_db,
+)
 from backend.models.recording import (
     ClientStatus,
     Recording,
@@ -211,6 +216,10 @@ async def init_upload(
     """
     Initialize a multipart upload.
     """
+    # Starting a capture needs the terms accepted (#1004). Its segments, pause,
+    # resume, finalize and discard do not, so one running at an upgrade ends
+    # normally.
+    enforce_legal_acceptance(current_user)
     active_recording = await recordings_module._get_active_capture_recording_for_user(
         db, current_user.id
     )

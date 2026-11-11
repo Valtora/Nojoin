@@ -213,3 +213,24 @@ describe("ImportAudioModal recording date in a browser zone that differs from th
       .toBe("2026-10-27T01:00:00.000Z");
   });
 });
+
+describe("ImportAudioModal and the terms of use (#1004)", () => {
+  const refusal = Object.assign(new Error("Request failed with status code 403"), {
+    response: {
+      status: 403,
+      data: { detail: { code: "legal_acceptance_required", message: "Accept first." } },
+    },
+  });
+
+  it("closes for the notice instead of reporting an error", async () => {
+    vi.mocked(importAudio).mockRejectedValue(refusal);
+    const onClose = vi.fn();
+    renderWithProviders(<ImportAudioModal isOpen onClose={onClose} />);
+    selectFile("standup.wav");
+
+    fireEvent.click(screen.getByRole("button", { name: "Import Audio" }));
+
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(addNotification).not.toHaveBeenCalled();
+  });
+});

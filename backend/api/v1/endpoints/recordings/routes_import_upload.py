@@ -14,7 +14,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import enforce_legal_acceptance, get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
@@ -151,6 +151,7 @@ async def import_audio(
     track of MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP files. Only the
     audio is stored (``keep_imported_audio_task``).
     """
+    enforce_legal_acceptance(current_user)
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
     if file_ext not in SUPPORTED_AUDIO_FORMATS:
         raise HTTPException(
@@ -241,7 +242,11 @@ async def init_chunked_import(
 ):
     """
     Initialize a chunked import for large files.
+
+    Only this step needs the terms accepted (#1004): an import already started
+    sends its parts and finalizes as before.
     """
+    enforce_legal_acceptance(current_user)
     file_ext = os.path.splitext(filename)[1].lower()
     if file_ext not in SUPPORTED_AUDIO_FORMATS:
         raise HTTPException(
@@ -515,6 +520,7 @@ async def upload_recording(
     """
     Upload a new audio recording.
     """
+    enforce_legal_acceptance(current_user)
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
     if not file_ext:
         file_ext = ".wav"

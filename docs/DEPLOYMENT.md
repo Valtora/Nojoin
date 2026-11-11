@@ -650,6 +650,10 @@ If your `docker-compose.yml` has its own `build:` directives, run `docker compos
 
 These run on the first start after the upgrade and need no action unless a note says so.
 
+#### Upgrading From Before 3.2.0
+
+- **Each user accepts the terms of use (#1004).** Alembic revision `ed5d42732014` adds the nullable `users.legal_accepted_at`, a naive UTC timestamp like the schema's others, with no backfill. From the upgrade, every account except the setup account is shown the terms of use once, at its next page load, and the API refuses it a new capture or import until it accepts ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)). A capture or import already under way finishes normally. The setup account is not asked again and keeps an empty date, since none was recorded when it accepted during setup. A downgrade drops the column and every recorded acceptance. A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.
+
 #### Upgrading From Before 3.1.0
 
 - **Live speaker name suggestions (#803).** A new per-user setting, `suggest_live_speaker_names`, on by default, shown as **Suggest speaker names during a meeting** under **Settings > Notes and live assistance** ([USAGE.md](USAGE.md#live-transcription)). From the first capture after the upgrade, Nojoin checks unnamed live speakers for a self-introduction and, with an AI provider set up, sends recent transcript lines to it whether Meeting Edge is on or off. A user who does not want that turns the setting off before recording.

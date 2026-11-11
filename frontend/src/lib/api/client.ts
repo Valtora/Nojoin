@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import { recordRequestOutcome } from "@/lib/connectivity/monitor";
+import { isLegalAcceptanceRefusal, requireLegalAcceptance } from "@/lib/legalAcceptance";
 import {
   isSessionEndedError,
   noteSessionRefusal,
@@ -164,6 +165,12 @@ api.interceptors.response.use(
         // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: this runs outside React (no router), and the reload clears the signed-in session's in-memory client state
         window.location.href = FORCE_PASSWORD_CHANGE_REDIRECT;
       }
+    }
+
+    // A new capture or import refused until the terms of use are accepted:
+    // the app answers with the notice, not an error (#1004).
+    if (isLegalAcceptanceRefusal(error)) {
+      requireLegalAcceptance();
     }
 
     return Promise.reject(error);

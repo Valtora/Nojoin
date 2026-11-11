@@ -7,6 +7,11 @@ import {
   useSessionStore,
 } from "@/lib/session";
 
+import {
+  resetLegalAcceptanceForTests,
+  useLegalAcceptanceStore,
+} from "@/lib/legalAcceptance";
+
 import api, { buildFirstRunRequestConfig } from "./client";
 
 // The real axios instance and its response interceptor run, on the fetch
@@ -234,5 +239,60 @@ describe("first-run bootstrap header", () => {
     expect(config.headers?.Authorization).toBe(
       "Bootstrap pass-\u00e2\u0082\u00ac-\u00c3\u00a0",
     );
+  });
+});
+
+describe("api client and the terms of use (#1004)", () => {
+  beforeEach(() => {
+    api.defaults.adapter = "fetch";
+    navigations = [];
+    resetSessionForTests();
+    resetLegalAcceptanceForTests();
+  });
+
+  afterEach(() => {
+    api.defaults.adapter = originalAdapter;
+    vi.unstubAllGlobals();
+    resetLegalAcceptanceForTests();
+  });
+
+  const refusedForTerms = () =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              detail: {
+                code: "legal_acceptance_required",
+                message: "Accept the terms first.",
+              },
+            }),
+            { status: 403, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+  it("answers a refused capture with the notice, staying on the page", async () => {
+    openPage("/recordings");
+    refusedForTerms();
+
+    await expect(api.post("/recordings/init")).rejects.toMatchObject({
+      response: { status: 403 },
+    });
+
+    expect(useLegalAcceptanceStore.getState().required).toBe(true);
+    expect(navigations).toEqual([]);
+  });
+
+  it("leaves other refusals alone", async () => {
+    openPage("/recordings");
+    serverAnswers(403, "Not authorized");
+
+    await expect(api.get("/users")).rejects.toMatchObject({
+      response: { status: 403 },
+    });
+
+    expect(useLegalAcceptanceStore.getState().required).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ No Nojoin backend runs behind it. The normal frontend, built in demo mode, talks
 
 ## How It Fits Together
 
-- **Frontend in demo mode.** `NEXT_PUBLIC_DEMO_MODE=true` at build time (see `frontend/src/lib/demo.ts`) adds a read-only banner, replaces the sign-in form with an "Enter the demo" button, disables Start Meeting and Import Audio, and switches off account changes. The flag is inlined at build time, so a normal build compiles the demo branches away and no server response can turn a real install into a demo.
+- **Frontend in demo mode.** `NEXT_PUBLIC_DEMO_MODE=true` at build time (see `frontend/src/lib/demo.ts`) adds a read-only banner, replaces the sign-in form with an "Enter the demo" button, disables Start Meeting and Import Audio, switches off account changes, and never shows the terms of use notice, whose acceptance the fixture API would refuse. The flag is inlined at build time, so a normal build compiles the demo branches away and no server response can turn a real install into a demo.
 - **Fixture API** (`server/app.py`). Serves captured GET responses, matched on path and query, then on the path alone. Every write gets a 403 with a read-only message, except sign-in and sign-out, which set and clear a cookie so the frontend's session handling works unchanged. A search the capture never ran is narrowed to the list items that mention the term. Dates in responses move forward by the whole weeks since the capture, so tasks, meetings and calendar events stay near the visitor's today and keep their weekdays. The process holds no database, credential or model.
 - **nginx** (`nginx.conf`) sends `/api/` to the fixture API and everything else to the frontend, with a per-visitor rate limit. It is the only container on the tunnel's network.
 
@@ -35,7 +35,7 @@ docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp \
   sh -c 'cd /tmp && npm i -s playwright@1.62.1 && cp /capture/capture.mjs . && node capture.mjs'
 ```
 
-`capture/capture.mjs` signs in as `SEED_USERNAME` (default `demo`), visits every page and every tab of each recording, requests the archived, deleted and per-tag recording lists directly, fetches each recording's audio whole, and writes `index.json` plus one file per distinct response body. It marks the captured account as a non-administrator, as the demo account is, and records the instance as healthy, because a refresh captures with the seed's workers stopped.
+`capture/capture.mjs` signs in as `SEED_USERNAME` (default `demo`), visits every page and every tab of each recording, requests the archived, deleted and per-tag recording lists directly, fetches each recording's audio whole, and writes `index.json` plus one file per distinct response body. It marks the captured account as a non-administrator, as the demo account is, with no terms of use to accept, and records the instance as healthy, because a refresh captures with the seed's workers stopped.
 
 The fixtures are a snapshot of the API at capture time. A release that changes a response the frontend reads breaks the matching panel until the capture is rerun, which `refresh.sh` does for every release.
 

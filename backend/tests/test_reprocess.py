@@ -358,12 +358,16 @@ CREATE TABLE speaker_correction_events (
 
 
 def build_test_user(user_id: int = 1, username: str = "alice"):
+    from datetime import datetime
     from types import SimpleNamespace
 
     return SimpleNamespace(
         id=user_id,
         username=username,
         force_password_change=False,
+        is_superuser=False,
+        # Accepted the terms of use, so an import may start (#1004).
+        legal_accepted_at=datetime(2026, 11, 1),
     )
 
 

@@ -38,6 +38,7 @@ describe("api public surface", () => {
         "DOCUMENT_SIZE_WARNING_BYTES",
         "SUPPORTED_DOCUMENT_FORMATS",
         "VISION_ONLY_DOCUMENT_FORMATS",
+        "acceptLegalTerms",
         "addPersonalDictionaryWord",
         "addSpellcheckIgnoredWord",
         "addTagToRecording",
