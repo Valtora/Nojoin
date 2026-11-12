@@ -520,7 +520,7 @@ Notifications appear at the bottom right. Most close after five seconds, or soon
 
 ## Updates
 
-**Settings > Updates** shows the installed version, the latest release and each release's notes, from GitHub Releases when the server can reach GitHub. The installed and latest releases are open, and older ones expand when you choose them.
+**Settings > Updates** shows the installed version, the latest release and each release's notes, from GitHub Releases when the server can reach GitHub. The installed and latest releases are open, and older ones expand when you choose them. A release's image digests sit closed under **Container images**, and from 3.2.0 its list of commits under **Commits**, with a link to the release's full notes in [docs/releases](releases/README.md).
 
 When a newer release is out, owners and administrators get a persistent notification about it each time they open Nojoin:
 

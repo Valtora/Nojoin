@@ -499,7 +499,7 @@ One tag, `vX.Y.Z`, releases the API, worker, worker-io and frontend images toget
 **Maintainer steps:**
 
 1. Merge the release's work into `main`.
-2. In a pull request, bump [docs/VERSION](VERSION) and write the notes in [.github/release-notes-template.md](../.github/release-notes-template.md). Merge it.
+2. In a pull request, bump [docs/VERSION](VERSION), run `python3 scripts/cut_release_notes.py 0.6.0` to turn [docs/releases/next.md](releases/next.md) into the version's page, and write the release body in [.github/release-notes-template.md](../.github/release-notes-template.md) from that page ([Release Notes](#release-notes)). Merge it.
 3. On the release host, run the script with the new version:
 
    ```bash
@@ -507,7 +507,7 @@ One tag, `vX.Y.Z`, releases the API, worker, worker-io and frontend images toget
    ```
 
    It pushes the tag, watches the workflow run and prints the release URL. `--no-wait` pushes the tag without watching.
-4. Refine the notes in the GitHub Releases UI if the release needs specific guidance under Migration, Rollback, Known Issues or Browser-Capture Compatibility.
+4. Correct the notes after the release in `docs/releases/0.6.0.md` on `main`, which the index links. The body links the copy at the tag, so a correction an operator needs before upgrading also goes into the GitHub release's **Before you upgrade**, in the GitHub Releases UI.
 5. Check the public demo refreshed. `demo/refresh.sh` runs hourly on the release host, rebuilds `demo.nojoin.co.uk` for a new release and sends a notification either way. A failed refresh leaves the previous demo running. See [demo/README.md](../demo/README.md).
 
 **What the script does**, stopping at the first failure:
@@ -524,7 +524,7 @@ One tag, `vX.Y.Z`, releases the API, worker, worker-io and frontend images toget
 2. Checks every image is on GHCR under both immutable tags, carries provenance and an SBOM, and has a revision label naming the tag's commit. It checks all four before signing any.
 3. Signs each image by digest with cosign.
 4. Points the rolling `major.minor` and `latest` tags at the signed digests.
-5. Publishes the GitHub Release ([Automated Release Notes](#automated-release-notes)).
+5. Publishes the GitHub Release ([Release Notes](#release-notes)).
 
 A tag pushed by hand, without the script, fails at step 2 because its images are not on the registry. A manual `workflow_dispatch` run re-verifies and re-signs an existing tag's images and republishes its notes, for instance after a transient failure: set `release_ref` to the tag, and `publish_latest=true` if `latest` should move.
 
@@ -657,9 +657,28 @@ Some findings need an image-level fix rather than a requirements bump:
 - **Secrets in the build context.** [.dockerignore](../.dockerignore) excludes key and certificate files, with a `**/` prefix so nested paths match. Release builds come from a clean worktree; a local build sees every untracked file the ignore list misses, so the secret scanner can flag a local build and not a release.
 - **Secret-scanner false positives.** Add a narrow path allow rule to [.github/trivy-secret.yaml](../.github/trivy-secret.yaml) with a comment saying why the match is not a credential. A rule id in `.github/trivyignore` would switch the rule off everywhere. Never quote the matched text in a file the images copy, which includes everything under `.github/`.
 
-### Automated Release Notes
+### Release Notes
 
-After the rolling tags move, `publish-release-notes` finds the previous tag with `git describe`, renders that range with `scripts/render_release_notes.py`, looks up the published digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md), replacing `{{VERSION}}`, `{{IMAGE_DIGESTS}}` and `{{CHANGELOG}}`. The changelog goes under **Changes**, after the hand-written sections (Highlights, Upgrade, Migration, Rollback, Known Issues and Browser-Capture Compatibility), with commits grouped by Conventional Commit type and the minor ones folded into a collapsed block. Rewrite the notes around the three placeholders, not over them: `scripts/validate_docs.py`, which the `Docs validation` job runs on every pull request, fails when one is missing. `make_latest` follows `publish_latest`.
+Each release has notes in two places:
+
+- **The GitHub release body**, written from [.github/release-notes-template.md](../.github/release-notes-template.md): what to do before upgrading, up to five highlights, the upgrade commands and a link to the full notes, with the image digests and the commit list collapsed at the end. **Settings > Updates** in the app shows the same body.
+- **The full notes**, one page per version under [docs/releases/](releases/README.md), listed in its index. Each page stays there after its release; the template is rewritten every time.
+
+**While a release collects.** A pull request that changes what a user, an operator or an API client would notice adds its line to [docs/releases/next.md](releases/next.md), under the heading that fits ([CONTRIBUTING.md](../.github/CONTRIBUTING.md#release-notes) has the style). The headings are fixed: Breaking changes; Changes, split into eight areas; Upgrade; Migration; Rollback; Known issues; Browser capture. Pull requests that merge side by side mostly append under different areas, so their conflicts stay small. Reviewers check for the line; no CI job does.
+
+**In the version-bump pull request.** `python3 scripts/cut_release_notes.py X.Y.Z` writes `docs/releases/X.Y.Z.md` from `next.md`, titled with the version and dated today unless `--date YYYY-MM-DD` gives another day. It leaves out the guidance comments and every section still empty, resets `next.md` to its skeleton and lists the version first in the index. It leaves `docs/VERSION` alone, refuses a version that already has a page, and runs on the release host's system Python. `--skeleton` prints the empty `next.md`. Then rewrite the hand-written parts of the template from the new page: **Before you upgrade**, one line for each breaking change and manual step; **What's new**, at most five bullets of one sentence each, with no issue numbers; and **Upgrade**.
+
+**What Docs validation checks.** [scripts/validate_docs.py](../scripts/validate_docs.py) runs in the `Docs validation` job on every pull request and fails when:
+
+- the template has lost `{{VERSION}}`, `{{IMAGE_DIGESTS}}`, `{{CHANGELOG}}` or the link to the full notes at the release's tag. A body without a placeholder publishes without that part, as 2.10.0 shipped with no changelog (#480).
+- the template's hand-written part runs past 350 words, or **What's new** past five bullets or 40 words in a bullet. A word is a run of characters with a letter or digit in it, and HTML comments, the placeholders, code blocks and the collapsed blocks are not counted. A release with unusually many breaking changes raises the limits at the top of the script, deliberately, in its own pull request.
+- `docs/releases/<docs/VERSION>.md` is missing or not in the index, or `next.md` has lost, added or reordered a heading. The skeleton and its headings are defined once, in [scripts/cut_release_notes.py](../scripts/cut_release_notes.py).
+
+**When the release publishes.** After the rolling tags move, `publish-release-notes` finds the previous tag with `git describe`, renders that range with `scripts/render_release_notes.py`, looks up the published digests and fills the template, all from the tag's own checkout. A `workflow_dispatch` republish of an older tag therefore uses that tag's template. The commit list is grouped by Conventional Commit type, with the minor commits folded into a block of their own. `make_latest` follows `publish_latest`.
+
+**In the app.** **Settings > Updates** shows a body from 3.2.0 on with its summary open and the digests and commits closed under **Container images** and **Commits**. It shows older bodies as before. An installation on 3.1.0 or earlier shows a 3.2.0 body with the digests and commits open at its end.
+
+Keep two things as they are. The body is written by hand, not derived from the page when the release publishes: a parsing failure at that point would publish the release without notes, as 2.10.0 did. And `next.md` takes no `merge=union` in `.gitattributes`: once a cut has reset the file, a union merge of an older branch can bring released lines back without a conflict.
 
 ## Related Docs
 

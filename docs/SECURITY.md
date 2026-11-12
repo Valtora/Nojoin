@@ -200,7 +200,7 @@ An out-of-band security fix skips none of the release gates; only the schedule i
 
 1. **Draft privately.** Develop the fix on a private branch or in a GitHub Security Advisory draft, so nothing is disclosed before an image exists.
 2. **Bump and release.** Merge the `docs/VERSION` bump and run `scripts/release.py` as for a normal release: a green `CI gate` on every commit since the last release, the build, the vulnerability scan, the health and non-root smoke and the CLI advisory lookup on the release host, then verification and cosign signing in the release workflow.
-3. **Publish notes.** Add a security section to the generated release notes giving the affected versions, the severity and the required operator action, for example "upgrade immediately".
+3. **Publish notes.** Give the affected versions, the severity and the required operator action, for example "upgrade immediately", under **Before you upgrade** in the release body and in the version's page under [docs/releases](releases/README.md) ([Release Notes](DEVELOPMENT.md#release-notes)).
 4. **Advisory.** Publish or update the GitHub Security Advisory, request a CVE where appropriate, and credit the reporter.
 
 ### Artifact Revocation

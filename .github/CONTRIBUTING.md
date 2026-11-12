@@ -54,6 +54,18 @@ A change to behaviour, setup, deployment or support updates the guide that owns 
 
 Reviewers treat a behaviour or operational change with no documentation update as incomplete.
 
+## Release Notes
+
+A pull request that changes what a user, an operator or an API client would notice adds its line to [docs/releases/next.md](../docs/releases/next.md), the notes for the next release, under the heading that fits. Keep every heading in that file, even an empty one.
+
+- Write one or two sentences on what they would notice, not how the code does it.
+- Put UI labels in bold as the guides do, such as **Settings > AI providers**, and end with the issue or pull request number in brackets, such as (#1009).
+- Write British English, with no em dashes and no emojis.
+- Name no real people, companies or meeting titles. Use made-up names such as Alice Example.
+- Give a dependency bump a line only when an operator would notice it.
+
+Reviewers check for the line; no CI job does. The maintainer turns `next.md` into the version's page when cutting a release ([Release Notes](../docs/DEVELOPMENT.md#release-notes)).
+
 ## Reporting Issues
 
 Use the closest issue template.
