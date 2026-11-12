@@ -588,6 +588,8 @@ After new live segments land, `refresh_meeting_edge_task` is dispatched best-eff
 
 Meeting Edge uses the configured provider's live model when one is set, else its main model.
 
+Meeting Edge and the live naming ask call each provider in the chain once per run, held to the 90 s timeout (`LLMBackend.for_live_calls`; OpenAI streams the name ask, so there the timeout applies to each read): Anthropic and OpenAI with SDK retries off, so a `Retry-After` is not waited out inside the call, and Gemini with one attempt and the timeout on the speaker suggestion call as well. OpenAI's request without JSON mode follows only a refusal (400 or 422), and Ollama's JSON repair call gets what is left of the first call's deadline, and is not sent with less than 5 s left. Every other call (notes, chat, analysis, the suggestions made after processing) keeps each provider's own retries and timeouts.
+
 A Redis single-flight guard (`backend/core/single_flight.py`) admits one refresh per recording at a time. Surplus triggers are dropped, since the next carries fresher transcript, and recorded as `meeting_edge_refresh_skipped`. The guard is a key with a TTL, so a worker killed mid-refresh releases it on expiry, and it fails open when Redis is unreachable.
 
 ### Utterance Public Ids

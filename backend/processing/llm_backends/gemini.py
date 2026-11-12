@@ -1,3 +1,4 @@
+import copy
 import logging
 from typing import Any, Dict, Generator, List, Optional, Sequence
 
@@ -64,6 +65,23 @@ class GeminiLLMBackend(LLMBackend):
             api_key=self.api_key,
             http_options=genai.types.HttpOptions(api_version=GEMINI_API_VERSION),
         )
+
+    def for_live_calls(self) -> "GeminiLLMBackend":
+        """A copy that sends each live call once, within its timeout."""
+        live = copy.copy(self)
+        live._live_calls = True
+        return live
+
+    def _http_options(self, timeout: int) -> Any:
+        """A call's HttpOptions: its timeout, and for a live call one attempt.
+
+        google-genai makes one attempt when no retry options are given; a live
+        call says so, so a change of that default cannot bring retries back.
+        """
+        options: dict[str, Any] = {"timeout": int(timeout * 1000)}
+        if self._live_calls:
+            options["retry_options"] = self.genai.types.HttpRetryOptions(attempts=1)
+        return self.genai.types.HttpOptions(**options)
 
     @staticmethod
     def _raise_if_truncated(response) -> None:
@@ -147,10 +165,22 @@ class GeminiLLMBackend(LLMBackend):
             raise ValueError(
                 "No Gemini model configured. Please select a model in Settings."
             )
+        # Only a live ask is held to its timeout; the suggestions made after
+        # processing keep the client's own.
+        live_config = (
+            {
+                "config": self.genai.types.GenerateContentConfig(
+                    http_options=self._http_options(timeout)
+                )
+            }
+            if self._live_calls
+            else {}
+        )
         try:
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
+                **live_config,
             )
             text = self._extract_text_from_response(response)
             return self.parse_speaker_inference_result(text, eligible_labels)
@@ -316,9 +346,7 @@ class GeminiLLMBackend(LLMBackend):
                 config=self.genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.2,
-                    http_options=self.genai.types.HttpOptions(
-                        timeout=int(timeout * 1000),
-                    ),
+                    http_options=self._http_options(timeout),
                 ),
             )
             text = self._extract_text_from_response(response)
