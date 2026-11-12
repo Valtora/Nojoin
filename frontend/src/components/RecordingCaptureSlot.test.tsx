@@ -146,8 +146,14 @@ describe("RecordingCaptureSlot", () => {
     expect(screen.getByTitle("Resume recording")).toBeDisabled();
     expect(screen.getByLabelText(/max speakers/i)).toBeDisabled();
     expect(screen.getByTestId("waveform")).toHaveAttribute("data-enabled", "false");
+    // A stop that succeeds asks the page to refresh 300 ms later. Awaiting that
+    // keeps the timer from firing after this file's jsdom is torn down (#1003).
+    const refreshed = new Promise<Event>((resolve) => {
+      window.addEventListener("recording-updated", resolve, { once: true });
+    });
     fireEvent.click(screen.getByTitle("Stop recording"));
     await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
+    expect(((await refreshed) as CustomEvent).detail).toEqual({ id: "rec-1" });
   });
 
   it("keeps Stop upload stages and backlog guarded even before metadata catches up", () => {
