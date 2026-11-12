@@ -141,10 +141,11 @@ AUTOMATIC_MEETING_INTELLIGENCE_STAGE = "Generating Notes"
 AUTOMATIC_MEETING_INTELLIGENCE_STEP = "Generating meeting notes..."
 
 MEETING_EDGE_TIMEOUT_SECONDS = 90
-# Comfortably above the timeout above, because this only has to bound how long a
-# worker killed mid-refresh can block the next one. Tuning it near the typical
-# run time would trade a rare wedge for a common double-run.
-MEETING_EDGE_SINGLE_FLIGHT_TTL_SECONDS = MEETING_EDGE_TIMEOUT_SECONDS + 30
+# A refresh renews its guard while it runs, however long the provider chain
+# takes (the timeout above is per request, and SDK retries and the fallback
+# can each add to it), so this only bounds how long a worker killed
+# mid-refresh can block the next one.
+MEETING_EDGE_SINGLE_FLIGHT_TTL_SECONDS = 120
 MEETING_EDGE_MIN_SEGMENTS = 3
 MEETING_EDGE_MIN_WORDS = 80
 MEETING_EDGE_FOCUSED_MIN_SEGMENTS = 2

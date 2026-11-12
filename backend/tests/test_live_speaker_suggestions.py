@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import text
 from sqlmodel import Session, select
 
+from backend.core.single_flight import KEY_PREFIX
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.processing import live_persistence
@@ -60,12 +61,12 @@ def _pending(session: Session, recording_id: int = 1) -> dict[str, str]:
     )
 
 
-def _run_naming_task(session: Session) -> None:
+def _run_naming_task(session: Session, **kwargs: Any) -> None:
     task = live_naming_stage.refresh_live_speaker_names_task
     original_session = task._session
     task._session = session
     try:
-        task.run(1)
+        task.run(1, **kwargs)
     finally:
         task._session = original_session
 
@@ -275,7 +276,24 @@ def test_at_most_one_check_waits_per_recording(
     assert len(stub_celery_dispatch) == 1
 
     # Lines published once the check has started need a check of their own.
-    _run_naming_task(session)
+    _run_naming_task(session, **(stub_celery_dispatch[0][2] or {}))
+    live_naming_stage.queue_live_naming_check(1)
+    assert len(stub_celery_dispatch) == 2
+
+
+def test_a_check_that_waited_out_its_slot_leaves_the_newer_claim(
+    session: Session, fake_single_flight: Any, stub_celery_dispatch: list[Any]
+) -> None:
+    slot = f"{KEY_PREFIX}live-naming-queued:1"
+    live_naming_stage.queue_live_naming_check(1)
+    # The check waits in the queue past its TTL, and a newer one is queued.
+    del fake_single_flight.keys[slot]
+    live_naming_stage.queue_live_naming_check(1)
+    newer = fake_single_flight.keys[slot]
+
+    _run_naming_task(session, **(stub_celery_dispatch[0][2] or {}))
+
+    assert fake_single_flight.keys[slot] == newer
     live_naming_stage.queue_live_naming_check(1)
     assert len(stub_celery_dispatch) == 2
 

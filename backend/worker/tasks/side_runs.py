@@ -63,7 +63,8 @@ def claim_heartbeat(
     can keep going past the expiry. The task's own session is waiting on that
     call, so the renewal runs on a thread with a session of its own. It ends
     with the block, or with the process when the worker is lost, which is what
-    lets a lost run's claim expire.
+    lets a lost run's claim expire. backend.core.single_flight renews its
+    Redis keys the same way.
     """
     stop = threading.Event()
 
