@@ -22,7 +22,7 @@ from sqlmodel import Session
 import backend.worker.tasks as tasks_module
 from backend.core.single_flight import KEY_PREFIX
 from backend.models.transcript import Transcript
-from backend.tests.live_naming_fixtures import ONE, THREE, TWO
+from backend.tests.live_naming_fixtures import LIVE_LINES, ONE, THREE, TWO
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
@@ -112,8 +112,12 @@ def llm(
     return fake
 
 
-async def _seed_owner(session_maker: Any, settings: dict[str, Any]) -> None:
-    await _seed(session_maker)
+async def _seed_owner(
+    session_maker: Any,
+    settings: dict[str, Any],
+    lines: list[tuple[float, float, str, bool]] = LIVE_LINES,
+) -> None:
+    await _seed(session_maker, lines=lines)
     async with session_maker() as db:
         await db.execute(text(USERS_SCHEMA))
         await db.execute(
@@ -837,6 +841,42 @@ async def test_an_ai_name_goes_when_the_line_it_was_heard_on_moves(
     client: AsyncClient, session_maker: Any, llm: FakeLLM, span: dict[str, Any]
 ) -> None:
     await _offer_ai_name(client, session_maker, llm, span)
+
+    await _move_line(session_maker, 9500, TWO)
+    await _refresh(session_maker, llm)
+
+    assert (await _read(client))["live_speaker_suggestions"] == {}
+    (offered,) = [
+        item for item in await _review(session_maker) if item["origin"] == "live_llm"
+    ]
+    assert (offered["status"], offered["resolution_reason"]) == (
+        "superseded",
+        "live_evidence_changed",
+    )
+
+
+# A second speaker's short reply at 9.1 s, which the prompt also shows as 00:09.
+# The first speaker's line at 9.5 s is then the fixture's line 4.
+SAME_SECOND_LINES = [*LIVE_LINES[:3], (9.1, 9.4, TWO, False), *LIVE_LINES[3:]]
+
+
+async def test_a_timed_quote_is_the_line_holding_it_among_those_in_its_second(
+    client: AsyncClient, session_maker: Any, llm: FakeLLM
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS, lines=SAME_SECOND_LINES)
+    await _say_at(session_maker, 9100, "Yes.")
+    await _talk_until(session_maker, 64_000)
+    llm.names = {ONE: "Priya Raman"}
+    llm.spans = [
+        {"quote": "Live line 4 with a few", "start_seconds": 9.0, "end_seconds": 64.0}
+    ]
+    await _refresh(session_maker, llm)
+
+    assert (await _read(client))["live_speaker_suggestions"] == {ONE: "Priya Raman"}
+    (offered,) = [
+        item for item in await _review(session_maker) if item["origin"] == "live_llm"
+    ]
+    assert offered["evidence_lines"] == [{"start_seconds": 9.5, "end_seconds": 64.0}]
 
     await _move_line(session_maker, 9500, TWO)
     await _refresh(session_maker, llm)
