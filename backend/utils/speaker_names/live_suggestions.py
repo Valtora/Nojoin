@@ -507,11 +507,15 @@ def _quoted_own_lines(
 ) -> list[dict[str, float]]:
     """The label's own lines an AI name quotes, by start and end in seconds.
 
-    A timed quote is the line starting nearest its start, within
-    ``QUOTED_LINE_TOLERANCE_SECONDS``; an untimed one is the only line whose
-    text holds it. A quoted line of another label's, such as one addressing
-    this speaker by name, is left out: who said it says nothing about whose
-    name this is.
+    A timed quote is looked for among the lines starting within
+    ``QUOTED_LINE_TOLERANCE_SECONDS`` of its start, since the prompt shows
+    whole seconds and two speakers can start lines in the same one. It is the
+    line there whose text holds the quote, the nearest of them when more than
+    one does, or the nearest line there when none does. An untimed quote is
+    the only line whose text holds it. Text is compared casefolded, with
+    whitespace collapsed. A quoted line of another label's, such as one
+    addressing this speaker by name, is left out: who said it says nothing
+    about whose name this is.
     """
     lines: list[dict[str, float]] = []
     for span in item.evidence_spans:
@@ -530,27 +534,29 @@ def _quoted_own_lines(
 def _quoted_line(
     quote: str, start: float | None, segments: Sequence[dict[str, Any]]
 ) -> dict[str, Any] | None:
+    wanted = _comparable_text(quote)
+
+    def holds_quote(segment: dict[str, Any]) -> bool:
+        return bool(wanted) and wanted in _comparable_text(segment.get("text", ""))
+
     if start is not None:
-        nearest = min(
-            segments,
-            key=lambda segment: abs(float(segment.get("start") or 0.0) - start),
-            default=None,
-        )
-        if (
-            nearest is not None
-            and abs(float(nearest.get("start") or 0.0) - start)
-            <= QUOTED_LINE_TOLERANCE_SECONDS
-        ):
-            return nearest
-        return None
-    wanted = " ".join(quote.casefold().split())
-    holding = [
-        segment
-        for segment in segments
-        if wanted
-        and wanted in " ".join(str(segment.get("text", "")).casefold().split())
-    ]
+
+        def distance(segment: dict[str, Any]) -> float:
+            return abs(float(segment.get("start") or 0.0) - start)
+
+        near = [
+            segment
+            for segment in segments
+            if distance(segment) <= QUOTED_LINE_TOLERANCE_SECONDS
+        ]
+        holding = [segment for segment in near if holds_quote(segment)]
+        return min(holding or near, key=distance, default=None)
+    holding = [segment for segment in segments if holds_quote(segment)]
     return holding[0] if len(holding) == 1 else None
+
+
+def _comparable_text(text: Any) -> str:
+    return " ".join(str(text).casefold().split())
 
 
 def _moved_ai_proposals(

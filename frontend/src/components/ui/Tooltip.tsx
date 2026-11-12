@@ -142,11 +142,15 @@ function TooltipBubble({ id, open, anchorRef, children }: BubbleProps) {
       kind="float"
       role="tooltip"
       hidden={!open}
-      // The panel's own width cap is the viewport's. A bubble keeps max-w-xs,
-      // the width it was measured and placed at, or it widens past the edge.
+      // The bubble's width cap is its class alone: 20rem, or the viewport less
+      // useAnchoredPanel's 8px margin each side when that is narrower. A class
+      // holds on the hidden measuring pass too, so the bubble is measured and
+      // placed at the width it renders at. The panel's own cap is set only
+      // after measuring and would override the class, letting the bubble
+      // widen past the width it was placed at and over the edge.
       style={open ? { ...panelStyle, maxWidth: undefined } : undefined}
       className={cn(
-        'z-[var(--z-dropdown)] w-max max-w-xs rounded-md px-3 py-2',
+        'z-[var(--z-dropdown)] w-max max-w-[min(20rem,calc(100vw-16px))] rounded-md px-3 py-2',
         'bg-tooltip-bg text-tooltip-fg shadow-float',
         'text-left text-xs leading-relaxed font-normal whitespace-normal break-words',
       )}

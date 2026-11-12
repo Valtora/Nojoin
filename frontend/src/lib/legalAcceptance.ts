@@ -67,13 +67,24 @@ export const requireLegalAcceptance = () => setRequired(true);
 
 /**
  * What to tell a user whose capture or import was refused for the terms, or
- * null when the notice says it. The notice waits while notes not saved yet
- * hold the page, and the user would otherwise see nothing happen.
+ * null when the notice says it. The notice waits while a running capture or
+ * notes not saved yet hold the page (`heldBy`), and the user would otherwise
+ * see nothing happen, so the message names what it waits for. Import Audio
+ * stays open during a capture, so an account recording across the upgrade
+ * can be refused an import with no notes to save.
  */
-export const legalRefusalMessage = (action: "record" | "import"): string | null =>
-  useSessionStore.getState().heldInPlace
-    ? `Accept the terms of use to ${action === "record" ? "start a recording" : "import audio"}. Nojoin shows them once your notes are saved.`
-    : null;
+export const legalRefusalMessage = (action: "record" | "import"): string | null => {
+  const { heldInPlace, heldBy } = useSessionStore.getState();
+  if (!heldInPlace) return null;
+  const capture = heldBy.includes("capture");
+  const waitsFor =
+    capture && heldBy.includes("notes")
+      ? "your recording ends and your notes are saved"
+      : capture
+        ? "your recording ends"
+        : "your notes are saved";
+  return `Accept the terms of use to ${action === "record" ? "start a recording" : "import audio"}. Nojoin shows them once ${waitsFor}.`;
+};
 
 /** Restores the initial state. For tests. */
 export const resetLegalAcceptanceForTests = () => {
