@@ -66,4 +66,22 @@ describe("legal acceptance (#1004)", () => {
     expect(legalRefusalMessage("record")).toMatch(/start a recording/);
     expect(legalRefusalMessage("import")).toMatch(/import audio/);
   });
+
+  // Import Audio stays open during a capture, which may have no notes at all.
+  it("names what holds the page in the explanation", () => {
+    holdSignInInPlace(true, "capture");
+    expect(legalRefusalMessage("import")).toBe(
+      "Accept the terms of use to import audio. Nojoin shows them once your recording ends.",
+    );
+
+    holdSignInInPlace(true, "notes");
+    expect(legalRefusalMessage("import")).toBe(
+      "Accept the terms of use to import audio. Nojoin shows them once your recording ends and your notes are saved.",
+    );
+
+    holdSignInInPlace(false, "capture");
+    expect(legalRefusalMessage("record")).toBe(
+      "Accept the terms of use to start a recording. Nojoin shows them once your notes are saved.",
+    );
+  });
 });
