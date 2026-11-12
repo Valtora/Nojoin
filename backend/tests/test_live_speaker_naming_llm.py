@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -75,10 +76,14 @@ class FakeLLM:
         self.error: Exception | None = None
         # The answer's evidence spans, each quoted with these keys besides.
         self.spans: list[dict[str, Any]] = [{}]
+        # Run while the call is in flight, before it answers.
+        self.during_call: Callable[[], None] | None = None
 
     def infer_speaker_suggestions(self, transcript: str, **kwargs: Any) -> Any:
         labels = list(kwargs["eligible_labels"])
         self.asks.append(labels)
+        if self.during_call is not None:
+            self.during_call()
         if self.error is not None:
             raise self.error
         reply = {
@@ -191,14 +196,14 @@ async def _set_ask_records(session_maker: Any, records: list[dict[str, Any]]) ->
         await db.commit()
 
 
-async def _run_task(session_maker: Any, task: Any) -> None:
+async def _run_task(session_maker: Any, task: Any, **kwargs: Any) -> None:
     """Run a task on the worker's own kind of session."""
 
     def run(session: Session) -> None:
         original = task._session
         task._session = session
         try:
-            task.run(1)
+            task.run(1, **kwargs)
         finally:
             task._session = original
 
@@ -210,10 +215,14 @@ async def _run_task(session_maker: Any, task: Any) -> None:
 async def _refresh(session_maker: Any, llm: FakeLLM) -> None:
     """One naming check, then any ask it queued."""
     await _run_task(session_maker, live_naming_stage.refresh_live_speaker_names_task)
-    for name, _, _ in llm.dispatched[llm.ran :]:
+    for name, _, kwargs in llm.dispatched[llm.ran :]:
         llm.ran += 1
         assert name == live_naming_stage.LIVE_NAMING_ASK_TASK
-        await _run_task(session_maker, live_naming_stage.ask_live_speaker_names_task)
+        await _run_task(
+            session_maker,
+            live_naming_stage.ask_live_speaker_names_task,
+            **(kwargs or {}),
+        )
 
 
 async def _read(client: AsyncClient) -> dict[str, Any]:
@@ -582,6 +591,75 @@ async def test_no_ask_while_another_is_in_flight(
     assert in_flight not in fake_single_flight.keys
 
 
+async def test_an_ask_that_outlived_its_slot_leaves_the_newer_claim_in_place(
+    session_maker: Any, llm: FakeLLM, fake_single_flight: Any
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _say(session_maker, ONE, "I'm Alex.")
+    slot = f"{KEY_PREFIX}live-naming-ask:1"
+    await _run_task(session_maker, live_naming_stage.refresh_live_speaker_names_task)
+    # The first ask waits past its slot's TTL, and the next check queues another.
+    del fake_single_flight.keys[slot]
+    await _run_task(session_maker, live_naming_stage.refresh_live_speaker_names_task)
+    first, second = (kwargs or {} for _, _, kwargs in llm.dispatched)
+    newer = fake_single_flight.keys[slot]
+
+    await _run_task(
+        session_maker, live_naming_stage.ask_live_speaker_names_task, **first
+    )
+
+    # Its end leaves the newer ask's claim, so no third ask can be queued.
+    assert fake_single_flight.keys.get(slot) == newer
+    await _run_task(session_maker, live_naming_stage.refresh_live_speaker_names_task)
+    assert len(llm.dispatched) == 2
+    await _run_task(
+        session_maker, live_naming_stage.ask_live_speaker_names_task, **second
+    )
+    assert llm.asks == [[ONE]]
+    assert slot not in fake_single_flight.keys
+
+
+@pytest.mark.usefixtures("fast_renewal")
+async def test_an_ask_longer_than_its_slot_keeps_out_a_second(
+    session_maker: Any, llm: FakeLLM, fake_single_flight: Any
+) -> None:
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _say(session_maker, ONE, "I'm Alex.")
+
+    def outlast_the_slot() -> None:
+        # Three providers, each retrying a timed-out request twice, run far
+        # past the 300 s the slot was claimed for when the ask was queued.
+        fake_single_flight.pass_time(900)
+        # A check now finds the labels due and tries to queue another ask.
+        live_naming_stage._queue(
+            live_naming_stage.LIVE_NAMING_ASK_TASK, "live-naming-ask:1", 1
+        )
+
+    llm.during_call = outlast_the_slot
+    await _refresh(session_maker, llm)
+
+    assert llm.asks == [[ONE]]
+    assert len(llm.dispatched) == 1
+    assert f"{KEY_PREFIX}live-naming-ask:1" not in fake_single_flight.keys
+
+
+async def test_an_ask_queued_before_claim_tokens_still_frees_its_slot(
+    session_maker: Any, llm: FakeLLM, fake_single_flight: Any
+) -> None:
+    """A worker upgraded under a queued ask runs it from the message it has."""
+    await _seed_owner(session_maker, AI_SETTINGS)
+    await _say(session_maker, ONE, "I'm Alex.")
+    await _run_task(session_maker, live_naming_stage.refresh_live_speaker_names_task)
+    # The old code claimed the slot with one constant and queued no token.
+    slot = f"{KEY_PREFIX}live-naming-ask:1"
+    fake_single_flight.keys[slot] = "claimed"
+
+    await _run_task(session_maker, live_naming_stage.ask_live_speaker_names_task)
+
+    assert llm.asks == [[ONE]]
+    assert slot not in fake_single_flight.keys
+
+
 async def test_the_finished_transcript_read_leaves_out_ask_records(
     client: AsyncClient, session_maker: Any, llm: FakeLLM
 ) -> None:
@@ -698,7 +776,11 @@ async def test_an_ask_queued_before_suggestions_were_turned_off_asks_nothing(
         "UPDATE users SET settings = :settings",
         settings=json.dumps({**AI_SETTINGS, "suggest_live_speaker_names": False}),
     )
-    await _run_task(session_maker, live_naming_stage.ask_live_speaker_names_task)
+    await _run_task(
+        session_maker,
+        live_naming_stage.ask_live_speaker_names_task,
+        **(llm.dispatched[0][2] or {}),
+    )
 
     assert llm.asks == []
     assert (await _read(client))["live_speaker_suggestions"] == {}
