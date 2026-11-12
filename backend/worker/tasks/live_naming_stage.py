@@ -28,7 +28,12 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from backend.core.single_flight import claim, release_claim
+from backend.core.single_flight import (
+    LEGACY_CLAIM_TOKEN,
+    claim,
+    hold_claim,
+    release_claim,
+)
 from backend.models.recording import Recording
 from backend.models.user import User
 from backend.services.timeline_note_service import load_recording_timeline_notes
@@ -55,9 +60,11 @@ logger = logging.getLogger(__name__)
 
 LIVE_NAMING_TASK = "backend.worker.tasks.refresh_live_speaker_names_task"
 LIVE_NAMING_ASK_TASK = "backend.worker.tasks.ask_live_speaker_names_task"
-# Frees a slot if its task is lost, as a worker restart can do; an ask's slot
-# also covers the call itself.
+# Frees a slot if its task is lost before it starts, as a worker restart can do.
 LIVE_NAMING_QUEUED_TTL_SECONDS = 300
+# A running ask renews its slot until it ends, however long the provider chain
+# takes, so this only bounds how long a lost worker blocks the next ask.
+LIVE_NAMING_ASK_TTL_SECONDS = 120
 # The latest lines sent, so an ask stays small however long the meeting runs.
 ASK_CONTEXT_LINES = 120
 
@@ -71,13 +78,19 @@ def _ask_key(recording_id: int) -> str:
 
 
 def _queue(task_name: str, key: str, recording_id: int) -> None:
-    """Queue the task unless its slot is held; a dispatch failure is logged."""
-    if not claim(key, ttl_seconds=LIVE_NAMING_QUEUED_TTL_SECONDS):
+    """Queue the task unless its slot is held; a dispatch failure is logged.
+
+    The task gets the claim's token, the only one that frees the slot.
+    """
+    token = claim(key, ttl_seconds=LIVE_NAMING_QUEUED_TTL_SECONDS)
+    if token is None:
         return
     try:
-        celery_app.send_task(task_name, args=[recording_id])
+        celery_app.send_task(
+            task_name, args=[recording_id], kwargs={"claim_token": token}
+        )
     except Exception as exc:  # noqa: BLE001 -- boundary: dispatch is best-effort
-        release_claim(key)
+        release_claim(key, token)
         logger.warning(
             "Failed to queue %s for recording %s: %s", task_name, recording_id, exc
         )
@@ -87,10 +100,17 @@ def queue_live_naming_check(recording_id: int) -> None:
     _queue(LIVE_NAMING_TASK, _check_key(recording_id), recording_id)
 
 
+def _token(claim_token: str | None) -> str:
+    """The task's claim token; one queued before tokens holds the old constant."""
+    return claim_token or LEGACY_CLAIM_TOKEN
+
+
 @celery_app.task(name=LIVE_NAMING_TASK, base=DatabaseTask, bind=True)
-def refresh_live_speaker_names_task(self, recording_id: int) -> None:
+def refresh_live_speaker_names_task(
+    self, recording_id: int, claim_token: str | None = None
+) -> None:
     """Propose names for unnamed live labels from the current lines."""
-    release_claim(_check_key(recording_id))
+    release_claim(_check_key(recording_id), _token(claim_token))
     recording = self.session.get(Recording, recording_id)
     if recording is None or not live_name_suggestions_enabled(
         owner_settings(self.session, recording.user_id)
@@ -102,12 +122,27 @@ def refresh_live_speaker_names_task(self, recording_id: int) -> None:
 
 
 @celery_app.task(name=LIVE_NAMING_ASK_TASK, base=DatabaseTask, bind=True)
-def ask_live_speaker_names_task(self, recording_id: int) -> None:
-    """One ask covering every label due one; frees its slot when it ends."""
-    try:
+def ask_live_speaker_names_task(
+    self, recording_id: int, claim_token: str | None = None
+) -> None:
+    """One ask covering every label due one; holds its slot until it ends.
+
+    The slot was claimed when the ask was queued. A newer claim on it means
+    this ask waited out its slot and a newer one is queued, which asks about
+    the same labels.
+    """
+    with hold_claim(
+        _ask_key(recording_id),
+        _token(claim_token),
+        ttl_seconds=LIVE_NAMING_ASK_TTL_SECONDS,
+    ) as held:
+        if not held:
+            logger.info(
+                "Live naming ask for recording %s skipped: a newer ask is queued",
+                recording_id,
+            )
+            return
         _ask(self.session, recording_id)
-    finally:
-        release_claim(_ask_key(recording_id))
 
 
 def _ask(session: Any, recording_id: int) -> None:

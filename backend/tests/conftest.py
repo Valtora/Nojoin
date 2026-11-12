@@ -18,6 +18,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import threading
 import traceback
 import types
 from collections.abc import Iterator
@@ -260,32 +261,73 @@ def stub_meeting_edge_dispatch(monkeypatch):
 class FakeSingleFlightRedis:
     """Just enough Redis for the single-flight guard, in memory.
 
-    Only `SET NX EX` and the compare-and-delete release script are modelled,
-    because those are the only two operations the guard performs. TTLs are
-    recorded rather than enforced: no test wants to wait one out, and the ones
-    that care about expiry drop the key directly.
+    Models `SET NX EX` and the guard's three scripts (release, a holder's
+    renewal and a claim's hold), the only operations it performs. Time passes
+    only when a test says so: `advance` counts each key's TTL down and expires
+    it at zero, and `pass_time` does that in steps, giving a holder's renewer
+    the chance to renew after each, as it would while a long call runs. A
+    renewer runs on its own thread, so every operation takes the lock.
     """
 
     def __init__(self) -> None:
         self.keys: dict[str, str] = {}
-        self.ttls: dict[str, int] = {}
+        self.ttls: dict[str, float] = {}
         self.closed = 0
+        self.renewals = 0
+        self._lock = threading.Condition()
 
     def set(self, key, value, nx=False, ex=None):
-        if nx and key in self.keys:
-            return None
-        self.keys[key] = value
-        if ex is not None:
-            self.ttls[key] = ex
-        return True
+        with self._lock:
+            if nx and key in self.keys:
+                return None
+            self.keys[key] = value
+            if ex is not None:
+                self.ttls[key] = ex
+            return True
 
-    def eval(self, _script, _numkeys, key, token):
-        # The guard's release: delete only if we still hold the token.
-        if self.keys.get(key) == token:
-            del self.keys[key]
-            self.ttls.pop(key, None)
-            return 1
-        return 0
+    def eval(self, script, _numkeys, key, token, *args):
+        with self._lock:
+            current = self.keys.get(key)
+            if "'set'" in script:
+                # A claim's hold: renew it, or take it back once it has expired.
+                if current not in (None, token):
+                    return 0
+                self.keys[key] = token
+                self.ttls[key] = int(args[0])
+                return 1
+            if "expire" in script:
+                # A holder's renewal, while it still holds the key.
+                if current != token:
+                    return 0 if current is None else -1
+                self.ttls[key] = int(args[0])
+                self.renewals += 1
+                self._lock.notify_all()
+                return 1
+            # The guard's release: delete only if we still hold the token.
+            if current == token:
+                del self.keys[key]
+                self.ttls.pop(key, None)
+                return 1
+            return 0
+
+    def advance(self, seconds: float) -> None:
+        with self._lock:
+            for key, left in list(self.ttls.items()):
+                if left - seconds > 0:
+                    self.ttls[key] = left - seconds
+                else:
+                    self.keys.pop(key, None)
+                    del self.ttls[key]
+
+    def pass_time(self, seconds: float, step: float = 30.0) -> None:
+        """Let `seconds` pass, waiting after each step for a renewal if one comes."""
+        while seconds > 0:
+            moved = min(step, seconds)
+            self.advance(moved)
+            seconds -= moved
+            with self._lock:
+                seen = self.renewals
+                self._lock.wait_for(lambda: self.renewals > seen, timeout=1.0)
 
     def close(self):
         self.closed += 1
@@ -305,6 +347,20 @@ def fake_single_flight(monkeypatch):
     fake = FakeSingleFlightRedis()
     monkeypatch.setattr(single_flight_module, "_open_client", lambda: fake)
     return fake
+
+
+@pytest.fixture
+def fast_renewal(monkeypatch):
+    """Renew a held single-flight key every 10 ms, not every third of its TTL.
+
+    With `pass_time`, a test can run a guarded call for longer than its TTL in
+    a fraction of a second.
+    """
+    from backend.core import single_flight as single_flight_module
+
+    monkeypatch.setattr(
+        single_flight_module, "_renew_interval", lambda ttl_seconds: 0.01, raising=False
+    )
 
 
 @pytest.fixture(autouse=True)
