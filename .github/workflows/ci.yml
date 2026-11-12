@@ -48,10 +48,10 @@ jobs:
           # pipeline) cannot be validated by the unit suites and run on their own
           # triggers, so they are not gated here.
           #
-          # `scripts` runs only the Python quality gate (lint, format, mypy, and the
-          # validators) — not the full pytest suite — since scripts/ are standalone
-          # tooling the backend tests do not import. scripts/dev/ is the exception:
-          # its fake LLM server is tested against the real Ollama backend.
+          # `scripts` runs the Python quality gate and the backend tests. Tests
+          # under backend/tests import or run several of the scripts, and a
+          # list of only those would drift as tests are added, so any change
+          # under scripts/ runs the whole suite.
           filters: |
             backend:
               - 'backend/**'
@@ -60,7 +60,6 @@ jobs:
               # The frontend's copy of the processing tuning bounds; a backend
               # test checks it against backend/processing/processing_tuning.py.
               - 'frontend/src/lib/processingTuning.json'
-              - 'scripts/dev/**'
             frontend:
               - 'frontend/**'
             site:
@@ -91,7 +90,7 @@ jobs:
   backend-tests:
     name: Backend tests
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.deployment == 'true'
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.scripts == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     # The suite runs on SQLite, which cannot stand in for Postgres on driver
