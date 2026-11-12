@@ -31,6 +31,7 @@ Tick the checks you ran for the areas you touched (`docs/DEVELOPMENT.md`, "Verif
 
 - [ ] No documentation change required.
 - [ ] Updated the guide that owns each changed behaviour, setup, deployment or support topic (`.github/CONTRIBUTING.md`, "Documentation Ownership").
+- [ ] Added a line to `docs/releases/next.md` for what a user, operator or API client would notice (`.github/CONTRIBUTING.md`, "Release Notes").
 
 ## Security impact
 

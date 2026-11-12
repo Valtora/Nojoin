@@ -25,4 +25,5 @@
 - [SECURITY.md](SECURITY.md): Authentication, encryption, exposure rules, and vulnerability reporting.
 - [LEGAL.md](LEGAL.md): Legal disclaimer and recording-law responsibility.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md): Community conduct expectations.
+- [releases/](releases/README.md): The full notes for each release, newest first, and the notes collecting for the next one.
 - [VERSION](VERSION): The current release version.

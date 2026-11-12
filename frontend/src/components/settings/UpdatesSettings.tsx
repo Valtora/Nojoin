@@ -122,6 +122,24 @@ function Disclosure({
   );
 }
 
+/** Part of a release's notes that stays closed until chosen. */
+function FoldedNotes({ title, content }: { title: string; content: string }) {
+  return (
+    <Disclosure
+      summary={
+        <span className="text-sm font-medium text-foreground">{title}</span>
+      }
+    >
+      <MarkdownBubble
+        content={content}
+        className={NOTES_CLASS}
+        linkClassName={NOTES_LINK_CLASS}
+        html={false}
+      />
+    </Disclosure>
+  );
+}
+
 function ReleaseNotes({ release }: { release: ReleaseInfo }) {
   if (!release.body?.trim()) {
     return (
@@ -131,7 +149,7 @@ function ReleaseNotes({ release }: { release: ReleaseInfo }) {
     );
   }
 
-  const { images, notes } = prepareReleaseNotes(release.body);
+  const { images, notes, commits } = prepareReleaseNotes(release.body);
 
   return (
     <div className="space-y-4">
@@ -141,22 +159,8 @@ function ReleaseNotes({ release }: { release: ReleaseInfo }) {
         linkClassName={NOTES_LINK_CLASS}
         html={false}
       />
-      {images && (
-        <Disclosure
-          summary={
-            <span className="text-sm font-medium text-foreground">
-              Container images
-            </span>
-          }
-        >
-          <MarkdownBubble
-            content={images}
-            className={NOTES_CLASS}
-            linkClassName={NOTES_LINK_CLASS}
-        html={false}
-          />
-        </Disclosure>
-      )}
+      {images && <FoldedNotes title="Container images" content={images} />}
+      {commits && <FoldedNotes title="Commits" content={commits} />}
       <a
         href={release.html_url}
         target="_blank"
