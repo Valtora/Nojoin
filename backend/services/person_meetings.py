@@ -24,7 +24,8 @@ from backend.utils.timezones import utc_naive_to_timezone
 # allow-list, so a status added later counts nowhere until someone decides it
 # should. Every reader of a person's meetings shares it: the history and the
 # People list count here, the recordings list's person filter, the MCP
-# get_person tool and the voiceprint sample lines through counted_speaker().
+# get_person tool, the voiceprint sample lines and the delivery baselines
+# through counted_speaker().
 COUNTED_SPEAKER_STATUS = "active"
 
 

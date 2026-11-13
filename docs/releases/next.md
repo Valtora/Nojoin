@@ -45,6 +45,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - With AI on a Claude or ChatGPT subscription, the live speaker naming ask stops after 90 s and **Generate structure** after 180 s, where both ran for up to 300 s (#1013).
 - A slow AI provider no longer lets a second Meeting Edge refresh or live speaker naming ask start for a meeting while the first is still waiting on the provider and its fallback (#1010, #1011).
 - Meeting Edge and the live speaker naming ask send each AI provider one request per run, held to their 90 s timeout. A failing provider was retried inside the call, waiting out any rate-limit delay it asked for, and an Anthropic or Gemini name ask had no 90 s limit at all (#994).
+- The **Analytics** note comparing a person with their usual delivery reads only the meetings their **Person Details** counts. It also read meetings in the bin and meetings where all their lines had moved to other speakers or their speaker was merged into another, so the meeting count behind it could run high (#985).
 
 ### People, tasks and calendar
 
@@ -88,7 +89,6 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - Live lines can move words between speakers at a turn change before they lock, and past eight voices a live reply's first words can still go to the previous speaker (#776, #813, #888).
 - Editing the text of the previous speaker's line sends a reply's moved first words back to that line (#975).
-- The **Analytics** note comparing a person with their usual delivery can still read meetings where all their lines moved to other speakers, and meetings in the bin (#985).
 
 ## Browser capture
 
