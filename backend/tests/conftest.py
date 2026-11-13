@@ -366,8 +366,8 @@ def fast_renewal(monkeypatch):
 class FakeLiveAIRedis:
     """Just enough Redis for the live AI backoff (#994), in memory.
 
-    The per-recording hashes and the epoch counter. TTLs are recorded, not
-    enforced. ``unreachable`` makes every call raise, as a lost Redis does.
+    The per-recording hashes, the epoch counter and the notice key. TTLs are
+    recorded, not enforced. ``unreachable`` makes every call raise, as a lost Redis does.
     """
 
     def __init__(self) -> None:
@@ -383,6 +383,13 @@ class FakeLiveAIRedis:
     def get(self, key):
         self._check()
         return self.values.get(key)
+
+    def set(self, key, value, nx=False):
+        self._check()
+        if nx and key in self.values:
+            return None
+        self.values[key] = value
+        return True
 
     def incr(self, key):
         self._check()

@@ -20,9 +20,11 @@ one at a time per recording and feature.
 Both features share a recording's tier states, since they call the same chain:
 a tier failing for one is skipped by the other. A state lists the features
 (purposes) it has held up, each added the first time that feature fails on the
-tier or passes it over, so its notice names every one of them. A failure reads
-the tier's state again before writing it, as the other feature may have
-written it during the call.
+tier or passes it over, so its notice names every one of them. The two can
+call at once, and a call can last a whole timeout, so the chain reads each
+tier's state as stored just before deciding whether to call it, and a failure
+reads it again before writing: a stop stays stopped, the later of two waits
+stands, and the wording follows whichever failure set it.
 
 State is a Redis hash per recording, one field per tier, with a 12 hour TTL. A
 tier is named by its role in the chain, its provider and its model: nothing
@@ -38,8 +40,10 @@ with no backoff and no notice, and nothing raises into the caller.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
+import secrets
 import time
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
@@ -60,6 +64,8 @@ logger = logging.getLogger(__name__)
 
 KEY_PREFIX = "nojoin:live-ai:"
 EPOCH_KEY = f"{KEY_PREFIX}epoch"
+# A random key made once, which notice ids are hashed with (``notice_id``).
+NOTICE_SECRET_KEY = f"{KEY_PREFIX}notice-secret"
 STATE_TTL_SECONDS = 12 * 60 * 60
 FIRST_BACKOFF_SECONDS = 30
 MAX_BACKOFF_SECONDS = 5 * 60
@@ -498,12 +504,18 @@ class LiveAIChain:
         """Record the skip as a metric, not an error, when every tier waits.
 
         Each tier then names this feature too, so its notice says what the
-        wait holds up, though the wait began with the other feature.
+        wait holds up, though the wait began with the other feature. The
+        decision reads the states loaded as the chain was built, just before
+        this; a wait that ended since is tried at the next trigger.
         """
         if not self.waiting():
             return False
         for tier in self._tiers:
-            self._serves(tier)
+            loaded = self._states.get(tier.key)
+            if loaded is not None and self.purpose not in loaded.purposes:
+                state = self._fresh(tier)
+                if state is not None:
+                    self._serves(tier, state)
         now = _now()
         record_pipeline_metric(
             stage=_SKIP_METRIC_STAGES.get(self.purpose, f"{self.purpose}_skipped"),
@@ -542,42 +554,54 @@ class LiveAIChain:
             if (state := self._states.get(tier.key)) is not None
         ]
 
-    def _serves(self, tier: Tier) -> None:
+    def _fresh(self, tier: Tier) -> TierState | None:
+        """The tier's state as stored now, or as loaded without Redis.
+
+        The other feature may have written it since this chain loaded, while a
+        tier before it spent its whole timeout failing.
+        """
+        state = self._store.read(tier.key, self._states.get(tier.key))
+        if state is None:
+            self._states.pop(tier.key, None)
+        else:
+            self._states[tier.key] = state
+        return state
+
+    def _serves(self, tier: Tier, state: TierState) -> None:
         """Add this feature to a waiting tier's state, once: it is held up too."""
-        state = self._states.get(tier.key)
-        if state is None or self.purpose in state.purposes:
+        if self.purpose in state.purposes:
             return
-        current = self._store.read(tier.key, state)
-        if current is None:
-            # It answered for the other feature since this chain loaded.
-            return
-        if self.purpose not in current.purposes:
-            current = replace(
-                current, purposes=_with_purpose(current.purposes, self.purpose)
-            )
-            self._store.save(tier.key, current)
-        self._states[tier.key] = current
+        state = replace(state, purposes=_with_purpose(state.purposes, self.purpose))
+        self._states[tier.key] = state
+        self._store.save(tier.key, state)
 
     def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
         for index, tier in enumerate(self._tiers):
-            state = self._states.get(tier.key)
-            # The clock is read for each tier and again on a failure: a tier
-            # before this one may have spent its whole timeout failing.
+            # One read per tier, as close to the call as it can be. The clock
+            # is read for each tier and again on a failure, for the same reason.
+            state = self._fresh(tier)
             if state is not None and state.waiting(_now()):
-                self._serves(tier)
+                self._serves(tier, state)
                 continue
             try:
                 result = getattr(tier.backend, method)(*args, **kwargs)
             except Exception as exc:  # noqa: BLE001 -- boundary: every provider failure is classified and the next tier tried
                 self._failed(tier, state, exc, _now())
                 continue
+            if state is not None:
+                self._states.pop(tier.key, None)
+                self._store.clear(tier.key)
             # This tier answers, so a later one's wait no longer means anything
-            # and would outlive its use. A later tier that is stopped stays so.
-            for answered in (tier, *self._tiers[index + 1 :]):
-                done = self._states.get(answered.key)
-                if done is not None and (answered is tier or not done.stopped):
-                    self._states.pop(answered.key, None)
-                    self._store.clear(answered.key)
+            # and would outlive its use. A later tier that is stopped stays so,
+            # read again in case the other feature stopped it meanwhile.
+            for later in self._tiers[index + 1 :]:
+                loaded = self._states.get(later.key)
+                if loaded is None or loaded.stopped:
+                    continue
+                stored = self._fresh(later)
+                if stored is not None and not stored.stopped:
+                    self._states.pop(later.key, None)
+                    self._store.clear(later.key)
             return result
         raise LiveAIUnavailable(self.purpose, self._tier_states())
 
@@ -589,13 +613,22 @@ class LiveAIChain:
         # while this call ran: count on from what is stored now.
         state = self._store.read(tier.key, state)
         failures = (state.failures if state is not None else 0) + 1
-        stopped = not failure.clears_by_itself
-        until = None
+        kind = failure.kind
+        until: float | None = None
+        if state is not None and state.stopped:
+            # A stop stays, and keeps its reason: only an answer or a new
+            # epoch lifts it.
+            stopped, kind = True, state.kind
+        else:
+            stopped = not failure.clears_by_itself
         if not stopped:
             wait = backoff_seconds(failures)
             if failure.retry_after_s is not None:
                 wait = max(wait, failure.retry_after_s)
             until = now + wait
+            # A longer wait the other feature set stands, with its reason.
+            if state is not None and state.until is not None and state.until > until:
+                until, kind = state.until, state.kind
         purposes = _with_purpose(
             state.purposes if state is not None else (), self.purpose
         )
@@ -604,7 +637,7 @@ class LiveAIChain:
             provider_id=tier.provider_id,
             label=tier.label,
             model=tier.model,
-            kind=failure.kind,
+            kind=kind,
             failures=failures,
             stopped=stopped,
             until=until,
@@ -640,14 +673,39 @@ def live_ai_chain(
 # -- what the interface reads ----------------------------------------------
 
 
-def notice_id(key: str, state: TierState) -> str:
-    """Stable for one tier's kind of failure within one epoch.
+def _notice_secret() -> str | None:
+    """The key notice ids are hashed with, made the first time one is needed.
 
-    A feature joining the notice gives it a new id, so it is shown again with
-    every feature it names.
+    A plain hash of the recording's id could be undone by trying every small
+    integer; keyed with a random value, the id says nothing about it.
     """
-    raw = f"{key}|{state.kind}|{state.epoch}|{','.join(state.purposes)}"
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+    client = None
+    try:
+        client = _open_client()
+        value = client.get(NOTICE_SECRET_KEY)
+        if not value:
+            client.set(NOTICE_SECRET_KEY, secrets.token_hex(32), nx=True)
+            value = client.get(NOTICE_SECRET_KEY)
+        return str(value) if value else None
+    except Exception as exc:  # noqa: BLE001 -- boundary: without it there are no notices, as without Redis
+        logger.warning("Live AI notice key could not be read: %s", exc)
+        return None
+    finally:
+        if client is not None:
+            _close(client)
+
+
+def notice_id(secret: str, recording_id: int, key: str, state: TierState) -> str:
+    """Stable for one recording's tier and kind of failure within one epoch.
+
+    The recording is part of it, since the page's toast ids are global: the
+    same lasting failure in two captures must not share an id, or opening one
+    recording closes the other's notice. A feature joining the notice gives it
+    a new id, so it is shown again with every feature it names.
+    """
+    raw = f"{recording_id}|{key}|{state.kind}|{state.epoch}|{','.join(state.purposes)}"
+    digest = hmac.new(secret.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
+    return digest.hexdigest()[:16]
 
 
 def live_ai_notices(recording_id: int, *, viewer_is_admin: bool) -> list[dict]:
@@ -658,6 +716,9 @@ def live_ai_notices(recording_id: int, *, viewer_is_admin: bool) -> list[dict]:
     """
     store = BackoffStore(recording_id)
     states = store.load()
+    secret = _notice_secret() if states else None
+    if secret is None:
+        return []
     now = _now()
     notices = []
     for key, state in sorted(states.items()):
@@ -665,7 +726,7 @@ def live_ai_notices(recording_id: int, *, viewer_is_admin: bool) -> list[dict]:
         fixable_by = "you" if own or viewer_is_admin else "admin"
         notices.append(
             {
-                "id": notice_id(key, state),
+                "id": notice_id(secret, recording_id, key, state),
                 "purposes": list(state.purposes),
                 "provider": state.label,
                 "model": state.model,
