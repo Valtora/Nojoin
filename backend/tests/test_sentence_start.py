@@ -97,6 +97,14 @@ def test_sentence_terminals_are_unicode_sentence_terminals(token, ends):
     assert ends_sentence(token) is ends
 
 
+def test_the_unicode_tables_are_the_generated_ones():
+    """``scripts/generate_sentence_terminals.py --check`` in the suite: a table
+    edited by hand fails here, as does one a newer regex would generate (#975)."""
+    from scripts.generate_sentence_terminals import table_drift
+
+    assert table_drift() == []
+
+
 # --- generator ------------------------------------------------------------------
 def _long_tail(count: int) -> tuple[list, list[str], list]:
     tokens = [(" done.", 0.0, 0.5)]
