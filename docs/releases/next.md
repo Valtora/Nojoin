@@ -50,6 +50,8 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 ### People, tasks and calendar
 
+- On a phone, **Tasks** no longer scrolls sideways while **Create Task** or a task's **Edit** form is open. A long meeting name in the form's recording list is cut short to fit the screen, as it is on a wider one (#1001).
+
 ### Settings and administration
 
 - The users table under **Settings > Users and access** has a **Terms accepted** column with the day each account accepted, or **Not yet accepted** (#1007).

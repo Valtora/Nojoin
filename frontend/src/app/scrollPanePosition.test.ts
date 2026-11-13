@@ -18,6 +18,9 @@ import { describe, expect, it } from "vitest";
  * So a class string that makes an element scroll also positions it: `relative`,
  * or `absolute`, `fixed` or `sticky` where the element already is one of those.
  * The check is per line, so keep the position class on the line that scrolls.
+ *
+ * Stylesheets follow the same rule: a rule that sets `overflow` to `auto` or
+ * `scroll` also sets `position`, in the same rule (#1002).
  */
 const SRC = path.resolve(__dirname, "..");
 
@@ -28,13 +31,16 @@ const COMMENT = /^\s*(?:\/\/|\/\*|\*|\{\/\*)/;
 // recognised by resize-none, which only textareas use here.
 const TEXTAREA = /\bresize-none\b/;
 
-function sourceFiles(dir: string): string[] {
+function filesUnder(dir: string, keep: (name: string) => boolean): string[] {
   return readdirSync(dir).flatMap((name) => {
     const full = path.join(dir, name);
-    if (statSync(full).isDirectory()) return sourceFiles(full);
-    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [full] : [];
+    if (statSync(full).isDirectory()) return filesUnder(full, keep);
+    return keep(name) ? [full] : [];
   });
 }
+
+const sourceFiles = (dir: string) =>
+  filesUnder(dir, (name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name));
 
 function unpositionedScrollers(source: string): number[] {
   return source.split("\n").flatMap((line, index) =>
@@ -42,6 +48,56 @@ function unpositionedScrollers(source: string): number[] {
       ? [index + 1]
       : [],
   );
+}
+
+const STYLE_SCROLLS = /(?:^|[;\s])overflow(?:-[xy])?\s*:[^;]*\b(?:auto|scroll)\b/;
+const STYLE_POSITIONED = /(?:^|[;\s])position\s*:\s*(?:relative|absolute|fixed|sticky)\b/;
+// Stylesheet rules that scroll without positioning their element, and why that
+// is safe. Each must still name a rule that scrolls.
+const STYLE_EXEMPT = new Set([
+  // react-datepicker's own stylesheet makes .react-datepicker relative.
+  ".react-datepicker-popper .react-datepicker",
+  // It holds a table whose cells are all relative, so nothing inside reaches past a cell.
+  ".ProseMirror .tableWrapper",
+]);
+
+/**
+ * Each rule's selector and its own declarations, for rules nested in at-rules
+ * or in other rules too. A brace walk rather than a CSS parser: comments are
+ * blanked first, and no string in these stylesheets holds a brace.
+ */
+function stylesheetRules(css: string): { selector: string; body: string }[] {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, " ");
+  const rules: { selector: string; body: string }[] = [];
+  const open: { selector: string; body: string }[] = [];
+  let start = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char !== "{" && char !== "}" && char !== ";") continue;
+    const chunk = text.slice(start, index);
+    start = index + 1;
+    if (char === "{") {
+      open.push({ selector: chunk.trim().replace(/\s+/g, " "), body: "" });
+      continue;
+    }
+    const rule = open.at(-1);
+    if (!rule) continue;
+    rule.body += `${chunk};`;
+    if (char === "}") {
+      open.pop();
+      rules.push(rule);
+    }
+  }
+  return rules;
+}
+
+const scrollingRules = (css: string) =>
+  stylesheetRules(css).filter((rule) => STYLE_SCROLLS.test(rule.body));
+
+function unpositionedStylesheetScrollers(css: string): string[] {
+  return scrollingRules(css)
+    .filter((rule) => !STYLE_POSITIONED.test(rule.body) && !STYLE_EXEMPT.has(rule.selector))
+    .map((rule) => rule.selector);
 }
 
 describe("scrolling panes", () => {
@@ -62,5 +118,34 @@ describe("scrolling panes", () => {
       ),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it("recognises a stylesheet rule that scrolls and is not positioned", () => {
+    // .page-shell as #1002 found it, and as it was fixed.
+    expect(unpositionedStylesheetScrollers(".page-shell { height: 100dvh; overflow-y: auto; }")).toEqual([
+      ".page-shell",
+    ]);
+    expect(
+      unpositionedStylesheetScrollers(".page-shell { position: relative; height: 100dvh; overflow-y: auto; }"),
+    ).toEqual([]);
+    expect(unpositionedStylesheetScrollers("@layer components { .a { overflow: hidden scroll } }")).toEqual([".a"]);
+    expect(unpositionedStylesheetScrollers(".a { color: red; &:hover { overflow-x: auto } }")).toEqual(["&:hover"]);
+    expect(unpositionedStylesheetScrollers(".a { overflow: auto; .b { color: red } position: sticky; }")).toEqual([]);
+    expect(unpositionedStylesheetScrollers("/* .a { overflow: auto } */ .b { color: red }")).toEqual([]);
+    expect(
+      unpositionedStylesheetScrollers(".a { overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere }"),
+    ).toEqual([]);
+  });
+
+  it("positions every stylesheet rule that scrolls", () => {
+    const stylesheets = filesUnder(SRC, (name) => name.endsWith(".css"));
+    const css = stylesheets.map((file) => readFileSync(file, "utf8"));
+    const offenders = stylesheets.flatMap((file, index) =>
+      unpositionedStylesheetScrollers(css[index]).map((selector) => `${path.relative(SRC, file)}: ${selector}`),
+    );
+    expect(offenders).toEqual([]);
+
+    const scrolling = new Set(css.flatMap((sheet) => scrollingRules(sheet).map((rule) => rule.selector)));
+    expect([...STYLE_EXEMPT].filter((selector) => !scrolling.has(selector))).toEqual([]);
   });
 });

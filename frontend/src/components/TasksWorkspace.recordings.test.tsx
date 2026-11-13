@@ -165,4 +165,22 @@ describe("linking recordings to a task (issue #906)", () => {
       ),
     );
   });
+
+  it("keeps the create and edit forms within a phone's width (#1001)", async () => {
+    api.getUserTasks.mockResolvedValue([task()]);
+    render(<TasksWorkspace />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create Task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await waitFor(() => expect(screen.getAllByRole("option", { name: /^Weekly sync 0,/ })).toHaveLength(2));
+
+    // Below lg each form is one grid column. An implicit column is never
+    // narrower than its content's narrowest layout, and the picker's recording
+    // names do not wrap, so the longest name set the form's width. grid-cols-1
+    // is minmax(0, 1fr): the column keeps the form's width and names truncate.
+    expect(screen.getByPlaceholderText("Task title").closest("form")).toHaveClass("grid-cols-1");
+    expect(screen.getByDisplayValue("Send the figures to Bob Example").closest(".grid")).toHaveClass(
+      "grid-cols-1",
+    );
+  });
 });
