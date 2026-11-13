@@ -410,9 +410,10 @@ class FakeLiveAIRedis:
         self.hashes.setdefault(key, {})[field] = value
         return 1
 
-    def hdel(self, key, field):
+    def hdel(self, key, *fields):
         self._check()
-        return 1 if self.hashes.get(key, {}).pop(field, None) is not None else 0
+        held = self.hashes.get(key, {})
+        return sum(1 for field in fields if held.pop(field, None) is not None)
 
     def expire(self, key, seconds):
         self._check()
