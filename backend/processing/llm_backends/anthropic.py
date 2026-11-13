@@ -87,6 +87,8 @@ def _response_text_or_raise(response, what: str) -> str:
 
 
 class AnthropicLLMBackend(LLMBackend):
+    provider_id = "anthropic"
+
     def __init__(self, api_key=None, model=None):
         import anthropic
 

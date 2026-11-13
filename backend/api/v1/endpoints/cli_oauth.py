@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.params import PageLimit, PageOffset
@@ -32,6 +33,7 @@ from backend.models.cli_oauth import (
     CliUsageDaily,
 )
 from backend.models.user import User
+from backend.processing.live_ai_backoff import bump_epoch
 from backend.services.cli_oauth import codex_oauth, oauth
 from backend.services.cli_oauth.persistence import (
     CliTokenBundle,
@@ -551,6 +553,8 @@ async def complete_cli_oauth(
         status=CliOAuthCredentialStatus.ACTIVE.value,
     )
     logger.info("Completed CLI OAuth connect for user %s.", current_user.id)
+    # A subscription stopped for a lost credential is tried again.
+    await run_in_threadpool(bump_epoch)
     return await _full_status(db, current_user.id)
 
 
@@ -605,4 +609,5 @@ async def disconnect_cli_oauth(
     # it while another provider stays connected is harmless.
     wipe_user_cli_dir(current_user.id)
     logger.info("Disconnected CLI OAuth (%s) for user %s.", provider, current_user.id)
+    await run_in_threadpool(bump_epoch)
     return await _full_status(db, current_user.id)

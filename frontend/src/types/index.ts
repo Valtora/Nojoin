@@ -750,6 +750,29 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   speakers?: RecordingSpeaker[];
   tags?: Tag[];
   calendar_event?: CalendarEventLink | null;
+  /** Detail read of a capture in progress only; absent otherwise. */
+  live_ai_notices?: LiveAiNotice[];
+}
+
+/**
+ * A live AI provider failing during this capture (#994): waiting out a backoff
+ * ("retrying") or stopped until the AI settings change. The message is worded
+ * for the viewer from the classified reason, never from the provider's text.
+ */
+export interface LiveAiNotice {
+  /** Stable for one provider's kind of failure; shown once. */
+  id: string;
+  purposes: string[];
+  provider: string;
+  model: string;
+  kind: string;
+  action: "retrying" | "stopped";
+  retry_at: string | null;
+  /** "you" when the viewer can fix it in Settings, else "admin". */
+  fixable_by: "you" | "admin";
+  /** The Settings page that fixes it, when the viewer can open it. */
+  settings: "ai-providers" | "your-ai" | null;
+  message: string;
 }
 
 export interface RecordingInitResponse {

@@ -104,6 +104,9 @@ class SecondaryLLMBackend(LLMBackend):
             getattr(secondary, "model", "unknown"),
         )
 
+    def tiers(self) -> tuple[LLMBackend, ...]:
+        return (*self._primary.tiers(), *self._secondary.tiers())
+
     def for_live_calls(self) -> "SecondaryLLMBackend":
         """The same chain, each provider in it set up for a live call."""
         live = copy.copy(self)

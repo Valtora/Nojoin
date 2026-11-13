@@ -196,6 +196,23 @@ def build_eligible_speaker_labels_prompt_section(
 class LLMBackend:
     # Set on the copy for_live_calls returns.
     _live_calls: bool = False
+    # The provider this backend calls, as model_probe.PROVIDER_LABELS keys it.
+    provider_id: str = ""
+    model: Optional[str] = None
+
+    def tiers(self) -> Tuple["LLMBackend", ...]:
+        """The providers this backend calls, in the order it tries them.
+
+        One for a single provider; a fallback chain lists each of its own.
+        """
+        return (self,)
+
+    @property
+    def provider_label(self) -> str:
+        """The provider's name as the interface writes it."""
+        from backend.processing.llm_backends.model_probe import PROVIDER_LABELS
+
+        return PROVIDER_LABELS.get(self.provider_id, self.provider_id or "AI")
 
     def for_live_calls(self) -> "LLMBackend":
         """This backend as Meeting Edge and the live naming ask use it.

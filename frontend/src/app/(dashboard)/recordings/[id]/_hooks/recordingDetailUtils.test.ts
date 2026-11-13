@@ -81,6 +81,25 @@ describe("polling a recording with no audio and no proxy", () => {
   });
 });
 
+describe("noticing a change to the live AI notices in a poll", () => {
+  const notice = {
+    id: "n1", purposes: ["meeting_edge"], provider: "Ollama", model: "fake-500",
+    kind: "unavailable", action: "retrying" as const, retry_at: null,
+    fixable_by: "you" as const, settings: null, message: "Trying again in 30 seconds.",
+  };
+
+  it("takes a notice that appears, changes or leaves, but not a countdown", () => {
+    const before = recordingWith({ live_ai_notices: [notice] });
+    expect(hasPolledRecordingChanged(before, recordingWith({
+      live_ai_notices: [{ ...notice, message: "Trying again in 25 seconds." }],
+    }))).toBe(false);
+    expect(hasPolledRecordingChanged(before, recordingWith({
+      live_ai_notices: [{ ...notice, action: "stopped" }],
+    }))).toBe(true);
+    expect(hasPolledRecordingChanged(before, recordingWith({ live_ai_notices: [] }))).toBe(true);
+  });
+});
+
 describe("noticing a change to the speaker cap in a poll", () => {
   it("takes a new cap, which the live Max Speakers field shows", () => {
     const before = recordingWith({ max_speakers: 3 });

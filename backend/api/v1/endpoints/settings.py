@@ -12,6 +12,7 @@ from pydantic import (
     field_validator,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
@@ -19,6 +20,7 @@ from backend.api.params import RowId
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
+from backend.processing.live_ai_backoff import bump_epoch, touches_ai_settings
 from backend.processing.processing_tuning import (
     PHANTOM_EMBEDDING_FLOOR_KEY,
     PHANTOM_MERGE_THRESHOLD_KEY,
@@ -791,6 +793,10 @@ async def _save_user_settings(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
+
+    # A provider stopped during a capture is tried again under the new settings.
+    if touches_ai_settings(update_data):
+        await run_in_threadpool(bump_epoch)
 
     meeting_edge_keys = {"meeting_edge_context_level", "enable_meeting_edge"}
     if meeting_edge_keys.intersection(update_data):

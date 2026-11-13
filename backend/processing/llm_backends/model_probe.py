@@ -18,6 +18,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from typing import Callable, Iterable, Literal, Sequence
 
+from backend.processing.llm_backends.failures import (
+    classify_failure,
+    exception_chain,
+    status_code,
+)
+
 logger = logging.getLogger(__name__)
 
 ProbeKind = Literal[
@@ -85,59 +91,31 @@ def check_probe_reply(text: str | None) -> None:
         raise ProbeReplyError("reply is not the requested object")
 
 
-def _exception_chain(exc: BaseException) -> Iterable[BaseException]:
-    seen: set[int] = set()
-    current: BaseException | None = exc
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        yield current
-        current = current.__cause__ or current.__context__
-
-
-def _status_code(exc: BaseException) -> int | None:
-    for candidate in (
-        getattr(exc, "status_code", None),
-        getattr(exc, "code", None),
-        getattr(getattr(exc, "response", None), "status_code", None),
-    ):
-        if isinstance(candidate, int) and not isinstance(candidate, bool):
-            return candidate
-    return None
-
-
 def is_request_refusal(exc: BaseException) -> bool:
     """Whether the provider refused the request itself (400 or 422)."""
-    return any(_status_code(link) in (400, 422) for link in _exception_chain(exc))
+    return any(status_code(link) in (400, 422) for link in exception_chain(exc))
+
+
+# The probe's kinds, from the shared classifier's (failures.classify_failure).
+_PROBE_KINDS: dict[str, ProbeKind] = {
+    "auth": "auth",
+    "unknown_model": "unknown_model",
+    "billing": "quota",
+    "rate_limit": "quota",
+    "timeout": "timeout",
+    "bad_response": "bad_response",
+}
 
 
 def classify_probe_error(exc: BaseException) -> ProbeKind:
     """Sort a failed probe by what the user can do about it.
 
-    SDK errors share no base class, so this reads the HTTP status each SDK
-    carries (``status_code``, ``code`` or ``response.status_code``) and the
-    class names timeouts use across requests, httpx, httpx2 and the SDKs.
+    The kinds come from the classifier the live calls' backoff uses, so Test
+    connection and a live call read a provider's answer the same way.
     """
-    for link in _exception_chain(exc):
-        if isinstance(link, ProbeReplyError):
-            return "bad_response"
-        # urllib3's NewConnectionError subclasses ConnectTimeoutError, so a
-        # refused connection would otherwise read as a timeout.
-        if isinstance(link, ConnectionRefusedError) or any(
-            cls.__name__ == "NewConnectionError" for cls in type(link).__mro__
-        ):
-            return "error"
-        if isinstance(link, TimeoutError) or any(
-            "Timeout" in cls.__name__ for cls in type(link).__mro__
-        ):
-            return "timeout"
-        status = _status_code(link)
-        if status == 404:
-            return "unknown_model"
-        if status in (401, 403):
-            return "auth"
-        if status == 429:
-            return "quota"
-    return "error"
+    if any(isinstance(link, ProbeReplyError) for link in exception_chain(exc)):
+        return "bad_response"
+    return _PROBE_KINDS.get(classify_failure(exc).kind, "error")
 
 
 # The text is provider-controlled and can be long, so every quantifier here is

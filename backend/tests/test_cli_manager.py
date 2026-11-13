@@ -246,7 +246,7 @@ def test_expired_token_is_refreshed_and_rotation_persisted(monkeypatch):
     assert cred.token_expires_at > utc_now()
 
 
-def test_refresh_failure_sets_needs_reauth_and_raises(monkeypatch):
+def test_rejected_refresh_sets_needs_reauth_and_raises(monkeypatch):
     engine = _sqlite_engine()
     _seed(engine, expires_at=utc_now() - timedelta(minutes=1), refresh="refresh-old")
     monkeypatch.setattr(
@@ -254,7 +254,7 @@ def test_refresh_failure_sets_needs_reauth_and_raises(monkeypatch):
     )
 
     async def _boom(_):
-        raise oauth.CliOAuthExchangeError("429 headless lockout")
+        raise oauth.CliOAuthExchangeError("invalid_grant", http_status=400)
 
     monkeypatch.setattr(oauth, "refresh_tokens", _boom)
 
