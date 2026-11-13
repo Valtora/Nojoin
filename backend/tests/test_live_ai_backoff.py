@@ -690,6 +690,92 @@ def test_an_answer_leaves_a_later_tier_the_other_feature_stopped(
     ] == [("fallback", True, "auth")]
 
 
+# -- an answer during the other feature's failure --------------------------------
+
+
+def _answering_while(other: Any, model: str = "claude-x") -> Provider:
+    """The primary, answering once the other feature's run has ended."""
+    return Provider("anthropic", model, _meanwhile(other))
+
+
+@OVERLAPS
+@pytest.mark.parametrize("status", [500, 401], ids=["wait", "stop"])
+def test_an_answer_clears_what_the_other_feature_set_on_its_tier(
+    clock, fake_live_ai_redis, first, second, status
+):
+    """The other feature fails on the tier while this call to it runs; the
+    answer is the later word, so the tier starts again from nothing."""
+    failing = Provider("anthropic", "claude-x", lambda: _http_error(status))
+    answering = _answering_while(lambda: _feature(second, failing))
+
+    _feature(first, answering)
+
+    assert _states(fake_live_ai_redis) == {}
+    assert live_ai_notices(RECORDING, viewer_is_admin=True) == []
+    _feature(second, failing)
+    assert failing.calls == 2
+
+
+@OVERLAPS
+def test_an_answer_drops_a_later_wait_the_other_feature_set(
+    clock, fake_live_ai_redis, first, second
+):
+    failing = Provider("anthropic", "claude-x", lambda: _http_error(500))
+    fallback = Provider("ollama", "fallback", lambda: _http_error(500))
+    answering = _answering_while(
+        lambda: _feature(second, SecondaryLLMBackend(failing, fallback))
+    )
+
+    _feature(first, SecondaryLLMBackend(answering, fallback))
+
+    assert fallback.calls == 1
+    assert _states(fake_live_ai_redis) == {}
+
+
+@OVERLAPS
+def test_an_answer_leaves_a_later_stop_the_other_feature_set(
+    clock, fake_live_ai_redis, first, second
+):
+    failing = Provider("anthropic", "claude-x", lambda: _http_error(500))
+    refusing = Provider("ollama", "fallback", lambda: _http_error(401))
+    answering = _answering_while(
+        lambda: _feature(second, SecondaryLLMBackend(failing, refusing))
+    )
+
+    _feature(first, SecondaryLLMBackend(answering, refusing))
+
+    states = {s["model"]: s for s in _states(fake_live_ai_redis).values()}
+    assert (states["fallback"]["stopped"], states["fallback"]["kind"]) == (
+        True,
+        "auth",
+    )
+    assert refusing.calls == 1
+
+
+@pytest.mark.parametrize("count", [1, 2, 3])
+def test_a_first_tier_answer_reads_the_store_twice(
+    clock, fake_live_ai_redis, monkeypatch: pytest.MonkeyPatch, count
+):
+    """Once before the call and once after it, however many tiers follow."""
+    reads: list[str] = []
+
+    class Counting:
+        def __getattr__(self, name: str) -> Any:
+            if name in ("get", "hget", "hgetall"):
+                reads.append(name)
+            return getattr(fake_live_ai_redis, name)
+
+    tiers = [Provider("ollama", f"model-{n}") for n in range(count)]
+    backend: Any = tiers[-1]
+    for tier in reversed(tiers[:-1]):
+        backend = SecondaryLLMBackend(tier, backend)
+    chain = live_ai_chain(backend, RECORDING)
+    monkeypatch.setattr(live_ai_backoff, "_open_client", Counting)
+
+    assert chain.generate_meeting_edge("request", timeout=90) == "guidance from model-0"
+    assert reads == ["hget", "hgetall"]
+
+
 # -- recovery -------------------------------------------------------------------
 
 

@@ -24,7 +24,9 @@ tier or passes it over, so its notice names every one of them. The two can
 call at once, and a call can last a whole timeout, so the chain reads each
 tier's state as stored just before deciding whether to call it, and a failure
 reads it again before writing: a stop stays stopped, the later of two waits
-stands, and the wording follows whichever failure set it.
+stands, and the wording follows whichever failure set it. An answer is the
+latest word, so it reads the states again too and clears whatever the
+answering tier holds, a stop included, and the waits after it.
 
 State is a Redis hash per recording, one field per tier, with a 12 hour TTL. A
 tier is named by its role in the chain, its provider and its model: nothing
@@ -246,6 +248,31 @@ class BackoffStore:
         finally:
             if client is not None:
                 _close(client)
+        return self._parse(raw)
+
+    def read_all(self, fallback: dict[str, TierState]) -> dict[str, TierState]:
+        """Every tier's state as stored now, in one read, or ``fallback``
+        without Redis. The epoch stays the one ``load`` read."""
+        if not self.available:
+            return dict(fallback)
+        client = None
+        try:
+            client = _open_client()
+            raw = client.hgetall(_state_key(self.recording_id)) or {}
+        except Exception as exc:  # noqa: BLE001 -- boundary: without Redis the states loaded at the start stand
+            self.available = False
+            logger.warning(
+                "Live AI backoff for recording %s could not be read: %s",
+                self.recording_id,
+                exc,
+            )
+            return dict(fallback)
+        finally:
+            if client is not None:
+                _close(client)
+        return self._parse(raw)
+
+    def _parse(self, raw: dict) -> dict[str, TierState]:
         states: dict[str, TierState] = {}
         for key, value in raw.items():
             state = TierState.from_json(value)
@@ -282,8 +309,9 @@ class BackoffStore:
     def save(self, key: str, state: TierState) -> None:
         self._write(lambda client, name: client.hset(name, key, state.to_json()))
 
-    def clear(self, key: str) -> None:
-        self._write(lambda client, name: client.hdel(name, key))
+    def clear(self, *keys: str) -> None:
+        if keys:
+            self._write(lambda client, name: client.hdel(name, *keys))
 
     def _write(self, write: Any) -> None:
         if not self.available:
@@ -588,22 +616,31 @@ class LiveAIChain:
             except Exception as exc:  # noqa: BLE001 -- boundary: every provider failure is classified and the next tier tried
                 self._failed(tier, state, exc, _now())
                 continue
-            if state is not None:
-                self._states.pop(tier.key, None)
-                self._store.clear(tier.key)
-            # This tier answers, so a later one's wait no longer means anything
-            # and would outlive its use. A later tier that is stopped stays so,
-            # read again in case the other feature stopped it meanwhile.
-            for later in self._tiers[index + 1 :]:
-                loaded = self._states.get(later.key)
-                if loaded is None or loaded.stopped:
-                    continue
-                stored = self._fresh(later)
-                if stored is not None and not stored.stopped:
-                    self._states.pop(later.key, None)
-                    self._store.clear(later.key)
+            self._answered(index)
             return result
         raise LiveAIUnavailable(self.purpose, self._tier_states())
+
+    def _answered(self, index: int) -> None:
+        """Clear what the answer of the tier at ``index`` outdates.
+
+        A tier that answers starts again from nothing, and a later tier's wait
+        no longer means anything and would outlive its use; a later tier that
+        is stopped stays so. The other feature may have failed on any of them
+        while the call ran, so they are read as stored now, in one read, and
+        cleared in one write when anything needs clearing.
+        """
+        stored = self._store.read_all(self._states)
+        cleared = []
+        for position, tier in enumerate(self._tiers[index:]):
+            state = stored.get(tier.key)
+            if state is not None and (position == 0 or not state.stopped):
+                cleared.append(tier.key)
+                state = None
+            if state is None:
+                self._states.pop(tier.key, None)
+            else:
+                self._states[tier.key] = state
+        self._store.clear(*cleared)
 
     def _failed(
         self, tier: Tier, state: TierState | None, exc: Exception, now: float
