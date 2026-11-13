@@ -67,7 +67,8 @@ def ends_sentence(token: str) -> bool:
 # matching ``[\s\p{Pe}\p{Pf}\p{Quotation_Mark}]`` (whitespace, closing brackets,
 # final and other quotation marks). To regenerate, test each of chr(0)..chr(0x10FFFF)
 # against those two patterns and list the matches in order:
-# ``scripts/generate_sentence_terminals.py`` does that, and ``--check`` compares.
+# ``scripts/generate_sentence_terminals.py`` does that, and ``--check`` compares, as
+# the backend suite does (``test_sentence_start.py``).
 SENTENCE_TERMINALS = frozenset(
     (
         "\u0021\u002e\u003f\u0589\u061d\u061e\u061f\u06d4\u0700\u0701\u0702\u07f9\u0837\u0839\u083d\u083e"

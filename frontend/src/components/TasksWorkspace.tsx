@@ -516,9 +516,12 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
         />
 
         {isCreateOpen && (
+          // grid-cols-1 is minmax(0, 1fr). Below lg the form is one column, and
+          // without it the column would widen to the longest recording name in
+          // the picker, which the picker truncates instead (#1001).
           <form
             onSubmit={handleCreateTask}
-            className="density-surface-subtle mt-8 grid items-stretch gap-4 border border-action-border bg-action-tint p-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.42fr)]"
+            className="density-surface-subtle mt-8 grid grid-cols-1 items-stretch gap-4 border border-action-border bg-action-tint p-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.42fr)]"
           >
             <div className="flex flex-col gap-3">
               <InputBase
@@ -625,7 +628,8 @@ export default function TasksWorkspace({ initialTaskId }: { initialTaskId?: numb
                 className="density-surface-subtle border border-surface-border bg-surface-card p-5 shadow-card"
               >
                 {isEditing ? (
-                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.45fr)]">
+                  // grid-cols-1 for the reason the create form gives.
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.45fr)]">
                     <div className="space-y-3">
                       <InputBase
                         data-ui-fill="card"

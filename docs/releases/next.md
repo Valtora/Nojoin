@@ -36,6 +36,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - **Max Speakers** reads the same in the live recording toolbar, the import dialog and the reprocess dialog: its hint sits behind an "i" beside the box, which opens on hover, on keyboard focus or with a tap, and a rejected entry's message still shows under the box (#1014).
 - A name the AI suggested for a live speaker is withdrawn when a line it quoted moves to another speaker, and merging a speaker into one whose suggestion was dismissed drops the pending name. Turning off **Suggest speaker names during a meeting** hides names already offered until it is turned back on, an answer that is not a plausible personal name is refused, and **Accept** and **Dismiss** sit beside the name on a transcript line (#1016).
+- In the live transcript, editing a line no longer sends the first words of the reply after it back to that line's speaker. While your wording still ends with a full stop, question mark or exclamation mark, they stay with the person replying (#975).
 
 ### Meetings, tags and search
 
@@ -51,9 +52,12 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 ### People, tasks and calendar
 
+- On a phone, **Tasks** no longer scrolls sideways while **Create Task** or a task's **Edit** form is open. A long meeting name in the form's recording list is cut short to fit the screen, as it is on a wider one (#1001).
+
 ### Settings and administration
 
 - The users table under **Settings > Users and access** has a **Terms accepted** column with the day each account accepted, or **Not yet accepted** (#1007).
+- **Check speakers heard only briefly** in **Settings > Recording > Advanced > Speech and speaker tuning** stays where it is when you tick or untick it, and its description keeps a readable width beside the limits. On a wide screen the checkbox moved between the line below **Speakers heard only briefly** and the end of that line, and in a narrower window the limits could squeeze the description to a few characters (#975).
 
 ### API and MCP
 
@@ -90,7 +94,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 <!-- Only problems Nojoin can fix, each with its open issue. A limit set by a dependency or a provider belongs in the guide for that feature. -->
 
 - Live lines can move words between speakers at a turn change before they lock, and past eight voices a live reply's first words can still go to the previous speaker (#776, #813, #888).
-- Editing the text of the previous speaker's line sends a reply's moved first words back to that line (#975).
+- In a processed transcript, the first words of a reply that follows a line you edited stay with the previous speaker (#1035).
 
 ## Browser capture
 
