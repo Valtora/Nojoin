@@ -249,6 +249,11 @@ export default function ProcessingTuningSettings({
         labelId={labelId("recording-phantom-filter")}
         descriptionId={descriptionId("recording-phantom-filter")}
         label="Speakers heard only briefly"
+        // Unticking hides the fields, and a column sized by its content would
+        // shrink to its minimum and hand the space to the label, moving the
+        // checkbox. Held at the column's widest (max-w-sm), the row keeps the
+        // layout the fields give it either way.
+        controlClassName="@min-[26rem]:w-96"
         badge={
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs contrast-helper">
             <InputBase
