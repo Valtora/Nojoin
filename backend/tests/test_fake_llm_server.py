@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from backend.processing.llm_backends import model_probe
 from backend.processing.llm_backends import ollama as ollama_module
 from backend.processing.llm_backends import ollama_model_facts as ollama_facts_module
 from backend.processing.llm_backends.base import LLMBackend
@@ -215,6 +216,37 @@ def test_a_meeting_longer_than_the_window_is_written_in_parts(make_backend):
         long_transcript, {}, overflow=notes_refused.value
     )
     assert notes.startswith("## Summary")
+
+
+def test_test_connection_passes_on_each_listed_model(make_backend):
+    results = model_probe.run_probes(
+        lambda model: make_backend(model=model),
+        "ollama",
+        [("fake-llm:latest", "main"), ("fake-text:latest", "meeting_edge")],
+        include_detail=True,
+    )
+
+    assert [(r.model, r.kind) for r in results] == [
+        ("fake-llm:latest", "ok"),
+        ("fake-text:latest", "ok"),
+    ]
+
+
+def test_test_connection_reads_a_model_it_does_not_list_as_unknown(make_backend):
+    (result,) = model_probe.run_probes(
+        lambda model: make_backend(model=model),
+        "ollama",
+        [("llama3", "main")],
+        include_detail=False,
+    )
+
+    assert result.kind == "unknown_model"
+
+
+def test_the_probe_prompt_matches_test_connection():
+    """The server keeps a copy of the prompt, so a change to either fails here."""
+    assert fake.PROBE_PROMPT == model_probe.PROBE_PROMPT
+    assert fake.classify(model_probe.PROBE_PROMPT, wants_json=True) == "probe"
 
 
 def test_a_json_repair_prompt_keeps_its_original_task():

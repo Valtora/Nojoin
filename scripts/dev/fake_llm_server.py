@@ -2,9 +2,9 @@
 
 Answers the Ollama API calls Nojoin makes (``GET /api/tags``, ``POST
 /api/show`` and ``POST /api/chat``, streamed or not, with images or without),
-so an end-to-end stack can run notes, Meeting Chat, Meeting Edge, AI analytics
-and document image parsing with no model and no outside network. Standard
-library only. Run it on the stack's internal network and point the stack at it
+so an end-to-end stack can run notes, Meeting Chat, Meeting Edge, AI analytics,
+document image parsing and Test connection's model probe with no model and no
+outside network. Standard library only. Run it on the stack's internal network and point the stack at it
 with ``OLLAMA_API_URL``; docs/DEVELOPMENT.md has the commands.
 
 Each request is classified by the instruction its prompt opens with, and gets
@@ -55,6 +55,11 @@ CHAT_ANSWER = (
     "This answer comes from the fake LLM server. It has not read the meeting, "
     "so it cannot say what was discussed."
 )
+# Test connection's probe, PROBE_PROMPT in
+# backend/processing/llm_backends/model_probe.py. A copy, since this server
+# imports nothing from the backend; test_fake_llm_server.py fails when the two
+# differ.
+PROBE_PROMPT = 'Reply with exactly this JSON object and nothing else: {"ok": true}'
 
 # The task each prompt asks for, by the instruction it opens with. The earliest
 # marker in a prompt wins, so one quoted further down, in a transcript or in
@@ -78,6 +83,7 @@ TASK_MARKERS = (
     ("notes", "Generate meeting notes from the transcript below."),
     ("title", "provide a title that summarises the main topic"),
     ("chat", "You are a helpful AI assistant. You have access to the following"),
+    ("probe", PROBE_PROMPT),
 )
 
 ANSWERS: dict[str, str] = {
@@ -121,6 +127,7 @@ ANSWERS: dict[str, str] = {
     "notes": NOTES,
     "title": TITLE,
     "chat": CHAT_ANSWER,
+    "probe": json.dumps({"ok": True}),
 }
 
 
