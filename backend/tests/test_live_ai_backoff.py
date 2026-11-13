@@ -491,13 +491,14 @@ def test_a_notice_names_every_feature_the_wait_holds_up(
 
 def test_a_failure_counts_on_from_the_other_features(clock, fake_live_ai_redis):
     """Both features' calls ran at once, and both failed: two failures."""
-    provider = Provider("ollama", "fake-500", lambda: _http_error(500))
-    name_ask = _name_ask(provider)
+    failing = Provider("ollama", "fake-500", lambda: _http_error(500))
+    slow = Provider(
+        "ollama",
+        "fake-500",
+        _meanwhile(lambda: _fail(failing), _timeout_after(clock, 5)),
+    )
 
-    _fail(provider)
-    clock.now += 5
-    with pytest.raises(LiveAIUnavailable):
-        name_ask.infer_speaker_suggestions("transcript", timeout=90)
+    _ask_names(slow)
 
     (state,) = _states(fake_live_ai_redis).values()
     assert state["failures"] == 2 and state["until"] == clock.now + 60
@@ -519,6 +520,174 @@ def test_a_tier_that_answered_for_the_other_feature_starts_afresh(
 
     (state,) = _states(fake_live_ai_redis).values()
     assert state["failures"] == 1 and state["purposes"] == ["live_naming"]
+
+
+def test_two_recordings_with_the_same_failing_tier_get_different_ids(clock):
+    """The page's toast ids are global, so a notice id belongs to one recording."""
+    for recording in (RECORDING, RECORDING + 1):
+        try:
+            live_ai_chain(
+                Provider("ollama", "fake-401", lambda: _http_error(401)), recording
+            ).generate_meeting_edge("request", timeout=90)
+        except LiveAIUnavailable:
+            pass
+
+    (first,) = live_ai_notices(RECORDING, viewer_is_admin=True)
+    (second,) = live_ai_notices(RECORDING + 1, viewer_is_admin=True)
+
+    assert first["message"] == second["message"]
+    assert first["id"] != second["id"]
+    assert live_ai_notices(RECORDING, viewer_is_admin=True)[0]["id"] == first["id"]
+
+
+def test_a_notice_id_is_keyed_with_a_random_value(clock, fake_live_ai_redis):
+    """A plain hash of a small integer id could be undone by trying them all."""
+    _fail(Provider("ollama", "fake-401", lambda: _http_error(401)))
+    (notice,) = live_ai_notices(RECORDING, viewer_is_admin=True)
+    secret = fake_live_ai_redis.values[live_ai_backoff.NOTICE_SECRET_KEY]
+
+    assert len(secret) == 64 and len(notice["id"]) == 16
+    del fake_live_ai_redis.values[live_ai_backoff.NOTICE_SECRET_KEY]
+    assert live_ai_notices(RECORDING, viewer_is_admin=True)[0]["id"] != notice["id"]
+
+
+# -- both features at once ------------------------------------------------------
+
+
+def _feature(purpose: str, backend: Any) -> None:
+    """One whole run of a feature's chain, as its task would make it."""
+    chain = live_ai_chain(backend, RECORDING, purpose=purpose)
+    method = (
+        chain.infer_speaker_suggestions
+        if purpose == NAME_ASK
+        else chain.generate_meeting_edge
+    )
+    try:
+        method("request", timeout=90)
+    except LiveAIUnavailable:
+        pass
+
+
+def _meanwhile(run: Any, then: Any = None) -> Any:
+    """A call that lets the other feature run to the end while it is in flight,
+    then answers (``then`` None) or fails with ``then``."""
+    pending = [run]
+
+    def call() -> Any:
+        while pending:
+            pending.pop()()
+        return then() if callable(then) else then
+
+    return call
+
+
+OVERLAPS = pytest.mark.parametrize(
+    ("first", "second"), [("meeting_edge", NAME_ASK), (NAME_ASK, "meeting_edge")]
+)
+
+
+def _timeout_after(clock: Clock, seconds: float) -> Any:
+    def fail() -> Exception:
+        clock.now += seconds
+        return TimeoutError("timed out")
+
+    return fail
+
+
+@OVERLAPS
+def test_a_stop_set_during_the_other_features_call_stays(
+    clock, fake_live_ai_redis, first, second
+):
+    """One feature's call times out while the other is refused the key."""
+    refused = Provider("ollama", "shared", lambda: _http_error(401))
+    slow = Provider(
+        "ollama",
+        "shared",
+        _meanwhile(lambda: _feature(second, refused), _timeout_after(clock, 90)),
+    )
+
+    _feature(first, slow)
+
+    (state,) = _states(fake_live_ai_redis).values()
+    assert (state["stopped"], state["kind"], state["until"]) == (True, "auth", None)
+    assert state["purposes"] == ["meeting_edge", "live_naming"]
+    clock.now += 3600
+    _feature(first, slow)
+    assert slow.calls == 1
+
+
+@OVERLAPS
+def test_the_later_of_two_overlapping_waits_stands(
+    clock, fake_live_ai_redis, first, second
+):
+    """One feature's call times out while the other is asked to wait an hour."""
+    limited = Provider(
+        "ollama", "shared", lambda: _http_error(429, {"Retry-After": "3600"})
+    )
+    slow = Provider(
+        "ollama",
+        "shared",
+        _meanwhile(lambda: _feature(second, limited), _timeout_after(clock, 90)),
+    )
+    started = clock.now
+
+    _feature(first, slow)
+
+    (state,) = _states(fake_live_ai_redis).values()
+    assert state["kind"] == "rate_limit" and state["until"] == started + 3600
+    assert state["failures"] == 2
+    (notice,) = live_ai_notices(RECORDING, viewer_is_admin=True)
+    assert "is rate limiting shared" in notice["message"]
+
+
+@OVERLAPS
+def test_a_fallback_the_other_feature_put_into_a_wait_is_not_called(
+    clock, fake_live_ai_redis, first, second
+):
+    """While the primary times out, the other feature fails on the fallback."""
+    fallback = Provider("ollama", "fallback", lambda: _http_error(500))
+    failing_primary = Provider("anthropic", "claude-x", lambda: _http_error(500))
+    slow_primary = Provider(
+        "anthropic",
+        "claude-x",
+        _meanwhile(
+            lambda: _feature(second, SecondaryLLMBackend(failing_primary, fallback)),
+            _timeout_after(clock, 10),
+        ),
+    )
+
+    _feature(first, SecondaryLLMBackend(slow_primary, fallback))
+
+    # The fallback's 30 s wait has 20 s to run when the primary fails.
+    assert fallback.calls == 1
+    states = _states(fake_live_ai_redis)
+    assert {s["model"]: s["purposes"] for s in states.values()} == {
+        "claude-x": ["meeting_edge", "live_naming"],
+        "fallback": ["meeting_edge", "live_naming"],
+    }
+
+
+@OVERLAPS
+def test_an_answer_leaves_a_later_tier_the_other_feature_stopped(
+    clock, fake_live_ai_redis, first, second
+):
+    primary = Provider("anthropic", "claude-x", lambda: _http_error(500))
+    fallback = Provider("ollama", "fallback", lambda: _http_error(500))
+    _feature(first, SecondaryLLMBackend(primary, fallback))
+    clock.now += 30
+    refusing = Provider("ollama", "fallback", lambda: _http_error(401))
+    answering = Provider(
+        "anthropic",
+        "claude-x",
+        _meanwhile(lambda: _feature(second, SecondaryLLMBackend(primary, refusing))),
+    )
+
+    _feature(first, SecondaryLLMBackend(answering, fallback))
+
+    assert [
+        (state["model"], state["stopped"], state["kind"])
+        for state in _states(fake_live_ai_redis).values()
+    ] == [("fallback", True, "auth")]
 
 
 # -- recovery -------------------------------------------------------------------

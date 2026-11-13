@@ -110,6 +110,24 @@ describe("live AI notices", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("leaves another recording's toast alone when it closes its own", () => {
+    const ended = { status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE };
+    // An earlier capture's notice, closed when that capture ended.
+    const earlier = renderHook(({ recording }) => useLiveAiNotices(recording), {
+      initialProps: { recording: capture([{ ...stopped, id: "n-stop-earlier" }], { id: "rec-0" }) },
+    });
+    earlier.rerender({ recording: capture([], { id: "rec-0", ...ended }) });
+    earlier.unmount();
+
+    // The same failure in this capture: the server gives it an id of its own (#994).
+    renderHook(() => useLiveAiNotices(capture([stopped])));
+    expect(active().map((notification) => notification.id)).toEqual(["live-ai-n-stop"]);
+
+    // Opening the earlier recording in the same tab closes only its own notices.
+    renderHook(() => useLiveAiNotices(capture([], { id: "rec-0", ...ended })));
+    expect(active().map((notification) => notification.id)).toEqual(["live-ai-n-stop"]);
+  });
+
   it("shows nothing for a recording that is no longer being captured", () => {
     renderHook(() => useLiveAiNotices(capture([retrying], {
       status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE,
