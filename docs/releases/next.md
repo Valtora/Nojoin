@@ -68,6 +68,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 ### Deployment and dependencies
 
 - The worker moves to Transformers 5.22.1. A capture running across the upgrade continues its live speaker labels with clustering instead of Nemotron (#947).
+- The frontend moves to Next.js 16.4.6, which carries the security fixes released in 16.4.5. The API and workers move to Celery 5.7.0, SQLAlchemy 2.1.8 and psycopg 3.3.8, and the AI SDKs, still uncapped, now need at least openai 3.49.0, anthropic 2.7.0 and google-genai 3.0.0 (#1048).
 
 ## Upgrade
 
