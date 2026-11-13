@@ -185,10 +185,43 @@ describe("ProcessingTuningSettings", () => {
     const column = () =>
       document.getElementById("recording-phantom-filter-fields")?.parentElement?.className;
 
-    expect(column()).toContain("@min-[26rem]:w-96");
+    const ticked = column();
+    expect(ticked).toMatch(/@min-\[26rem\]:w-\[/);
     fireEvent.click(checkbox);
     expect(checkbox).not.toBeChecked();
-    expect(column()).toContain("@min-[26rem]:w-96");
+    expect(column()).toBe(ticked);
+  });
+
+  // The column's width must leave the label the 10.5rem SettingsRow promises
+  // at every width the row sits beside it, not only once the row is wide
+  // (#1033). Read from the row's own classes: where it turns beside, the gap,
+  // the column's floor, and this row's cap and the room it leaves the label.
+  it("never narrows the brief-speaker row's label below 10.5rem", () => {
+    renderWithState({});
+    const row = document.getElementById("recording-phantom-filter") as HTMLElement;
+    const layout = (row.firstElementChild as HTMLElement).className;
+    const control = (
+      document.getElementById("recording-phantom-filter-fields")?.parentElement as HTMLElement
+    ).className;
+    const rem = (pattern: RegExp, text: string) => Number(text.match(pattern)?.[1]);
+
+    const beside = rem(/@min-\[(\d+(?:\.\d+)?)rem\]:flex-row/, layout);
+    const gap = rem(/@min-\[[\d.]+rem\]:gap-(\d+)/, layout) / 4;
+    const floor = rem(/@min-\[[\d.]+rem\]:min-w-(\d+)/, control) / 4;
+    const width = control.match(
+      /@min-\[(\d+(?:\.\d+)?)rem\]:w-\[min\((\d+(?:\.\d+)?)rem,calc\(100%_-_(\d+(?:\.\d+)?)rem\)\)\]/,
+    );
+    expect(width).not.toBeNull();
+    const [, from, cap, reserve] = (width as RegExpMatchArray).map(Number);
+
+    expect(from).toBe(beside);
+    // Its widest is max-w-sm, the width the limits fill when there is room.
+    expect(cap).toBe(24);
+    // The room left beside the column holds the gap and a 10.5rem label...
+    expect(reserve - gap).toBeGreaterThanOrEqual(10.5);
+    // ...and where the row turns beside, the column's own floor does not
+    // take that room back.
+    expect(beside - reserve).toBeGreaterThanOrEqual(floor);
   });
 
   it("ticking again shows the brief-speaker limits with their values and clears the switch", () => {

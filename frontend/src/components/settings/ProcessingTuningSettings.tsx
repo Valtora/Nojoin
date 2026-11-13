@@ -29,9 +29,10 @@ function formatValue(value: number | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-// As the checkboxes in SearchSettingsMenu.
+// As the checkboxes in SearchSettingsMenu. shrink-0 keeps it square where its
+// label wraps beside it in a narrow row.
 const CHECKBOX_CLASS =
-  "h-4 w-4 rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
+  "h-4 w-4 shrink-0 rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 
 // The native spinner steps an empty field from its minimum rather than from
 // the default shown, and looks foreign in both themes (as in SpeakerCapField).
@@ -251,9 +252,10 @@ export default function ProcessingTuningSettings({
         label="Speakers heard only briefly"
         // Unticking hides the fields, and a column sized by its content would
         // shrink to its minimum and hand the space to the label, moving the
-        // checkbox. Held at the column's widest (max-w-sm), the row keeps the
-        // layout the fields give it either way.
-        controlClassName="@min-[26rem]:w-96"
+        // checkbox. The column's width therefore follows the row alone: its
+        // widest (max-w-sm, 24rem), less whatever the label needs to keep the
+        // 10.5rem SettingsRow promises it beside the 1.5rem gap.
+        controlClassName="@min-[26rem]:w-[min(24rem,calc(100%_-_12rem))]"
         badge={
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs contrast-helper">
             <InputBase
