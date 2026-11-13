@@ -637,7 +637,9 @@ built from them alone.
 - **`SettingsCard`** is the only container: a title with optional description, status badge and
   header control, then rows and blocks separated by hairlines. No card nests inside another.
 - **`SettingsRow`** puts a label and description on the left and one control on the right, and
-  stacks them below 26rem of its own width. Pass `controlId` for a single control: the label
+  stacks them below 26rem of its own width. Side by side, the control column never takes the
+  label's last 10.5rem: a column a row widens, such as `SETTINGS_CONTROL_COLUMN_WIDE`, narrows
+  in a narrow row instead, so never pass a `max-w` class to it. Pass `controlId` for a single control: the label
   becomes a real `<label>` for it, and the description takes the id `${controlId}-help` for the
   control's `aria-describedby`. A group of controls takes `labelId` and `aria-labelledby`
   instead. Rows carry no leading icon; category icons stay in the navigation.
