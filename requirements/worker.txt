@@ -1,5 +1,5 @@
 -r base.txt
-celery[redis]==5.6.3
+celery[redis]==5.7.0
 openai-whisper==20250625
 # Parakeet ASR engine (pluggable transcription backend)
 onnx-asr==0.12.0
@@ -7,11 +7,11 @@ onnx-asr==0.12.0
 # replace the CPU-only onnxruntime pinned below, not coexist with it.
 silero-vad==6.2.3
 numpy==2.4.6
-pandas==3.1.0
-openai>=3.42.1
-anthropic>=2.4.0
-google-genai>=2.34.0
-watchdog==7.0.0
+pandas==3.1.1
+openai>=3.49.0
+anthropic>=2.7.0
+google-genai>=3.0.0
+watchdog==7.1.0
 
 # Document parsing. pypdfium2 (PDFium) reads PDF text and renders pages for the
 # vision tier; pdfplumber finds ruled tables, on pdfminer.six, which it pins
@@ -20,7 +20,7 @@ watchdog==7.0.0
 # so no headless-office renderer is needed here. python-docx is also pinned in
 # backend.txt (Markdown-to-DOCX export); the worker needs its own copy because
 # the two images share no layer.
-pypdfium2==5.14.0
+pypdfium2==5.15.2
 pdfplumber==0.11.10
 pdfminer.six==20260107
 python-pptx==1.0.2
@@ -69,17 +69,17 @@ safetensors==0.8.0
 # Native Nemotron inference. No broad Transformers extras or NeMo dependency.
 # Dependabot moves this pin; run the opt-in Nemotron inference regression
 # (docs/DEVELOPMENT.md) to check a bump's outputs.
-transformers==5.22.1
+transformers==5.22.2
 librosa==1.0.0
 soxr==1.1.0
 lazy-loader==0.6
 msgpack==1.2.4
 decorator==5.3.1
 pooch==1.9.0
-platformdirs==4.14.3
+platformdirs==4.14.5
 # Transformers' CLI dependency and its helpers, present in a clean
 # worker-stack resolution even though native inference uses neither CLI.
-typer==0.27.3
+typer==0.29.0
 shellingham==1.5.4
 annotated-doc==0.0.5
 torch-audiomentations==0.12.0
