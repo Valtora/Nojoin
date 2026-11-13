@@ -395,9 +395,16 @@ class CliConversationManager:
             self._flip_status(
                 session, credential, CliOAuthCredentialStatus.NEEDS_REAUTH
             )
-            raise CliCredentialUnavailableError(
-                "CLI OAuth token refresh failed. Reconnect your subscription in "
-                "Settings > AI."
+            if exc.grant_rejected:
+                raise CliCredentialUnavailableError(
+                    "CLI OAuth token refresh failed. Reconnect your subscription "
+                    "in Settings > AI."
+                ) from exc
+            # The endpoint could not be reached, or failed on its side: the
+            # next request refreshes again, so this does not stop the tier.
+            raise CliOAuthUnavailableError(
+                "CLI OAuth token refresh did not complete; it is tried again on "
+                "the next request."
             ) from exc
         credential.access_token_encrypted = encrypt_secret(tokens.access_token)
         if tokens.refresh_token is not None:  # rotating; keep the old one if absent

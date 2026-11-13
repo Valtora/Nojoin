@@ -137,6 +137,93 @@ def test_a_failing_primary_waits_while_the_fallback_answers(clock, fake_live_ai_
     assert state["until"] == clock.now + 60
 
 
+def _slow_timeout(clock: Clock):
+    """A provider that takes its whole 90 s timeout to fail."""
+
+    def fail() -> Exception:
+        clock.now += 90
+        return TimeoutError("timed out")
+
+    return fail
+
+
+def test_a_failure_waits_from_the_moment_it_failed(clock, fake_live_ai_redis, caplog):
+    """A call that times out after 90 s starts its 30 s wait then."""
+    with caplog.at_level(logging.WARNING, logger=live_ai_backoff.__name__):
+        with pytest.raises(LiveAIUnavailable):
+            _call(Provider("anthropic", "claude-x", _slow_timeout(clock)))
+
+    (state,) = _states(fake_live_ai_redis).values()
+    assert state["until"] == clock.now + 30
+    (warning,) = [r for r in caplog.records if r.name == live_ai_backoff.__name__]
+    assert "trying it again in 30 s" in warning.getMessage()
+
+
+def test_the_next_tier_is_judged_when_the_one_before_it_failed(
+    clock, fake_live_ai_redis
+):
+    primary = Provider("anthropic", "claude-x", lambda: _http_error(500))
+    fallback = Provider(
+        "ollama", "fake-llm", lambda: _http_error(429, {"Retry-After": "60"})
+    )
+    with pytest.raises(LiveAIUnavailable):
+        _call(primary, fallback)
+    fallback_until = clock.now + 60
+
+    # At 30 s the primary may be called again and the fallback may not. The
+    # primary then spends 90 s timing out, by when the fallback may be.
+    primary.error = _slow_timeout(clock)
+    fallback.error = None
+    clock.now += 30
+    assert _call(primary, fallback) == "guidance from fake-llm"
+
+    assert clock.now > fallback_until and fallback.calls == 2
+    (primary_state,) = _states(fake_live_ai_redis).values()
+    assert primary_state["model"] == "claude-x"
+    assert primary_state["until"] == clock.now + 60
+
+
+def test_an_answering_tier_drops_a_later_tiers_wait(clock, fake_live_ai_redis):
+    primary = Provider("ollama", "fake-500", lambda: _http_error(500))
+    fallback = Provider("ollama", "fake-502", lambda: _http_error(502))
+    with pytest.raises(LiveAIUnavailable):
+        _call(primary, fallback)
+    assert len(_states(fake_live_ai_redis)) == 2
+
+    primary.error = None
+    clock.now += 30
+    chain = live_ai_chain(SecondaryLLMBackend(primary, fallback), RECORDING)
+    assert (
+        chain.generate_meeting_edge("request", timeout=90) == "guidance from fake-500"
+    )
+
+    assert _states(fake_live_ai_redis) == {}
+    assert chain._states == {}
+    assert live_ai_notices(RECORDING, viewer_is_admin=True) == []
+
+
+def test_a_later_tier_that_is_stopped_stays_stopped(clock, fake_live_ai_redis):
+    primary = Provider("ollama", "fake-500", lambda: _http_error(500))
+    fallback = Provider("ollama", "fake-401", lambda: _http_error(401))
+    with pytest.raises(LiveAIUnavailable):
+        _call(primary, fallback)
+
+    primary.error = None
+    clock.now += 30
+    assert _call(primary, fallback) == "guidance from fake-500"
+    clock.now += 3600
+    primary.error = lambda: _http_error(500)
+    with pytest.raises(LiveAIUnavailable):
+        _call(primary, fallback)
+
+    assert fallback.calls == 1
+    notices = live_ai_notices(RECORDING, viewer_is_admin=True)
+    assert {(n["model"], n["action"]) for n in notices} == {
+        ("fake-500", "retrying"),
+        ("fake-401", "stopped"),
+    }
+
+
 def test_a_tier_that_answers_starts_again_from_nothing(clock, fake_live_ai_redis):
     errors: list[Any] = [_http_error(500)]
     primary = Provider("ollama", "flaky", lambda: errors.pop() if errors else None)
@@ -290,6 +377,17 @@ def test_a_stopped_server_provider_is_worded_for_the_viewer(
     assert notice["fixable_by"] == fixable_by and notice["settings"] == settings
     assert notice["message"] == (
         f"Meeting Edge: Anthropic refused the API key for claude-x. {ending}"
+    )
+
+
+def test_ollama_refusing_a_model_is_not_about_a_key(clock):
+    _fail(Provider("ollama", "fake-401", lambda: _http_error(401)))
+
+    (notice,) = live_ai_notices(RECORDING, viewer_is_admin=True)
+
+    assert notice["message"] == (
+        "Meeting Edge: Ollama refused access to fake-401. Nojoin has stopped "
+        "using it until the AI settings change."
     )
 
 

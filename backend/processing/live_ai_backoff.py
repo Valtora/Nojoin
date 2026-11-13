@@ -317,12 +317,19 @@ _SUBSCRIPTION_REASONS = {
 }
 
 
+# Ollama takes no API key and serves only the models pulled to it.
+_OLLAMA_REASONS = {
+    "auth": "Ollama refused access to {model}",
+    "unknown_model": "{model} is not on the Ollama server",
+}
+
+
 def failure_reason(state: TierState) -> str:
     """Why the tier failed, in plain words, from its classified kind only."""
     if state.role == ROLE_SUBSCRIPTION and state.kind in _SUBSCRIPTION_REASONS:
         template = _SUBSCRIPTION_REASONS[state.kind]
-    elif state.kind == "unknown_model" and state.provider_id == "ollama":
-        template = "{model} is not on the Ollama server"
+    elif state.provider_id == "ollama" and state.kind in _OLLAMA_REASONS:
+        template = _OLLAMA_REASONS[state.kind]
     else:
         template = _REASONS.get(state.kind, _REASONS["error"])
     return template.format(provider=state.label, model=state.model)
@@ -449,19 +456,24 @@ class LiveAIChain:
         return self._call("generate_meeting_edge", request, timeout=timeout)
 
     def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        now = _now()
-        for tier in self._tiers:
+        for index, tier in enumerate(self._tiers):
             state = self._states.get(tier.key)
-            if state is not None and state.waiting(now):
+            # The clock is read for each tier and again on a failure: a tier
+            # before this one may have spent its whole timeout failing.
+            if state is not None and state.waiting(_now()):
                 continue
             try:
                 result = getattr(tier.backend, method)(*args, **kwargs)
             except Exception as exc:  # noqa: BLE001 -- boundary: every provider failure is classified and the next tier tried
-                self._failed(tier, state, exc, now)
+                self._failed(tier, state, exc, _now())
                 continue
-            if state is not None:
-                self._states.pop(tier.key, None)
-                self._store.clear(tier.key)
+            # This tier answers, so a later one's wait no longer means anything
+            # and would outlive its use. A later tier that is stopped stays so.
+            for answered in (tier, *self._tiers[index + 1 :]):
+                done = self._states.get(answered.key)
+                if done is not None and (answered is tier or not done.stopped):
+                    self._states.pop(answered.key, None)
+                    self._store.clear(answered.key)
             return result
         raise LiveAIUnavailable(
             self.purpose,

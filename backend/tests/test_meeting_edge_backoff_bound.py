@@ -117,3 +117,47 @@ def test_a_refused_key_on_both_providers(monkeypatch, fake_single_flight):
     _capture(monkeypatch, primary, fallback)
 
     assert (primary.calls, fallback.calls) == (1, 1)
+
+
+class SlowTimeout(Provider):
+    """Takes its whole 90 s timeout to fail, on every call."""
+
+    def __init__(self, clock: dict) -> None:
+        super().__init__("anthropic", "claude-x")
+        self.clock = clock
+
+    def generate_meeting_edge(
+        self, request: Any, prompt_template: Any = None, timeout: Any = None
+    ):
+        self.calls += 1
+        self.clock["now"] += 90
+        raise TimeoutError("timed out")
+
+
+def test_a_provider_that_times_out_on_every_call(monkeypatch, fake_single_flight):
+    """Each wait counts from the failure, 90 s after the call began.
+
+    Triggers that arrive during a call are dropped by the refresh's guard, so
+    the next one is 2 s after the call returns.
+    """
+    clock = {"now": 1_000_000.0}
+    backoff = sys.modules.get("backend.processing.live_ai_backoff")
+    if backoff is not None:
+        monkeypatch.setattr(backoff, "_now", lambda: clock["now"])
+    provider = SlowTimeout(clock)
+    session = _live_edge_session()
+    end = clock["now"] + CAPTURE_SECONDS
+    _run_live_edge_refresh(monkeypatch, session, provider)
+    task = tasks_module.refresh_meeting_edge_task
+    original = task._session
+    task._session = session
+    try:
+        while clock["now"] < end:
+            clock["now"] += TRIGGER_EVERY_SECONDS
+            task.run(1)
+    finally:
+        task._session = original
+
+    # Calls at 0, 120, 270, 480 and 810 s, then every 390 s (a 300 s wait
+    # after each 90 s timeout).
+    assert provider.calls == 11
