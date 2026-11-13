@@ -371,6 +371,130 @@ def test_the_label_pass_reads_an_edited_line_its_one_open_line_spans(
         assert [speakers[word] for word in ("so", "um", "we", "go")] == [P1, P1, P2, P2]
 
 
+# The label pass reads no locked line among its open lines as a line break
+# (``project_live_settling_speakers`` and ``_project`` in live_settling.py), so
+# it joins the lines either side of one (#1036). Remove the mark when it does.
+@pytest.mark.xfail(
+    strict=True, reason="#1036: the label pass joins open lines round an edited line"
+)
+@pytest.mark.parametrize(
+    "correcting", [True, False], ids=["correction", "no correction"]
+)
+def test_the_label_pass_keeps_two_open_lines_apart_round_an_edited_line(
+    publication_engine: Engine, correcting: bool
+) -> None:
+    """Speaker 1's "It is done." and "so um" are open either side of the edited
+    "Yes."; the label pass must not join them into one line spanning it, with
+    the sentence-start correction on or off (#1036)."""
+    recording_id = _seed(publication_engine)
+    with Session(publication_engine) as session:
+        evidence = _agreed_then_edited(session, recording_id)
+        apply_live_speaker_labels(
+            session,
+            recording_id=recording_id,
+            settled_ms=0,
+            decide=evidence.decide,
+            activity=evidence.native_activity() if correcting else None,
+        )
+        session.commit()
+
+        assert _speakers(session, recording_id) == [
+            (P1, "It is done."),
+            (P3, "Yes, agreed."),
+            (P1, "so um"),
+            (P2, "we go"),
+        ]
+
+
+def _published_then_first_line_edited(
+    session: Session, recording_id: int, text: str = "It is finished."
+) -> SpeakerEvidence:
+    """Publish "It is done. so um we go", where "so um" move to speaker 2, then
+    edit speaker 1's line as a person does mid-meeting (#975)."""
+    evidence = _evidence()
+    _enable_speakers(session, recording_id)
+    publish_live_settling(
+        session,
+        request=_request(session, recording_id, 0),
+        words=_words(),
+        decide_speaker=evidence.decide,
+        activity=evidence.native_activity(),
+    )
+    session.commit()
+    assert _speakers(session, recording_id) == [
+        (P1, "It is done."),
+        (P2, "so um we go"),
+    ]
+    done = serialize_canonical_utterances(session, recording_id)[0]
+    update_utterance_text(
+        session,
+        recording_id=recording_id,
+        utterance_public_id=done["id"],
+        text=text,
+    )
+    session.commit()
+    return evidence
+
+
+@pytest.mark.parametrize("step", ["publication", "label pass"])
+def test_editing_the_previous_speakers_line_keeps_the_reply_start_moved(
+    publication_engine: Engine, step: str
+) -> None:
+    """The edited line is read as context, and its full stop still ends the
+    sentence "so um" follows, so they stay with speaker 2 (#975)."""
+    recording_id = _seed(publication_engine)
+    with Session(publication_engine) as session:
+        evidence = _published_then_first_line_edited(session, recording_id)
+        if step == "publication":
+            publish_live_settling(
+                session,
+                request=_request(session, recording_id, 1),
+                words=_words(),
+                decide_speaker=evidence.decide,
+                activity=evidence.native_activity(),
+            )
+        else:
+            apply_live_speaker_labels(
+                session,
+                recording_id=recording_id,
+                settled_ms=0,
+                decide=evidence.decide,
+                activity=evidence.native_activity(),
+            )
+        session.commit()
+
+        assert _speakers(session, recording_id) == [
+            (P1, "It is finished."),
+            (P2, "so um we go"),
+        ]
+
+
+def test_an_edit_that_drops_the_full_stop_gives_the_reply_start_back(
+    publication_engine: Engine,
+) -> None:
+    """With no sentence end left in the edited line, nothing marks where the
+    reply starts, so "so um" are speaker 1's as the diariser heard them."""
+    recording_id = _seed(publication_engine)
+    with Session(publication_engine) as session:
+        evidence = _published_then_first_line_edited(
+            session, recording_id, "It is finished and"
+        )
+        apply_live_speaker_labels(
+            session,
+            recording_id=recording_id,
+            settled_ms=0,
+            decide=evidence.decide,
+            activity=evidence.native_activity(),
+        )
+        session.commit()
+
+        assert _speakers(session, recording_id) == [
+            (P1, "It is finished and"),
+            (P1, "so um"),
+            (P2, "we go"),
+        ]
+
+
 def _stored(
     session: Session, recording_id: int, starts: list[int], *, locked: bool = False
 ) -> TranscriptUtterance:
