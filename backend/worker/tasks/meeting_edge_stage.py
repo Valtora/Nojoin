@@ -491,9 +491,18 @@ def _refresh_meeting_edge(self, recording_id: int):
             ),
         )
 
-        # Every provider still in its backoff window: skipped, nothing written.
+        # Every provider still in its backoff window: skipped. The wait may be
+        # the name ask's, so the panel says why once, not on every trigger.
         llm = live_ai_chain(_llm_backend_from_config(llm_config), recording_id)
         if llm.skip_if_waiting(logger):
+            paused = llm.paused_message()
+            if transcript.meeting_edge_error_message != paused:
+                _set_meeting_edge_state(
+                    session,
+                    transcript,
+                    status=MEETING_EDGE_STATUS_ERROR,
+                    error_message=paused,
+                )
             return None
         _set_meeting_edge_state(
             session,

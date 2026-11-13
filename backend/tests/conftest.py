@@ -394,6 +394,10 @@ class FakeLiveAIRedis:
         self._check()
         return dict(self.hashes.get(key, {}))
 
+    def hget(self, key, field):
+        self._check()
+        return self.hashes.get(key, {}).get(field)
+
     def hset(self, key, field, value):
         self._check()
         self.hashes.setdefault(key, {})[field] = value

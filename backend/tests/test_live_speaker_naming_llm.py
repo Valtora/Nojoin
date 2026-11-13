@@ -23,6 +23,7 @@ from sqlmodel import Session
 import backend.worker.tasks as tasks_module
 from backend.core.single_flight import KEY_PREFIX
 from backend.models.transcript import Transcript
+from backend.processing import live_ai_backoff
 from backend.tests.live_naming_fixtures import LIVE_LINES, ONE, THREE, TWO
 from backend.tests.sqlite_schemas import (
     DOCUMENTS_SCHEMA,
@@ -853,26 +854,30 @@ async def test_an_ai_name_is_placed_only_by_a_single_timed_span(
     ],
     ids=["provider-timeout", "unreadable-answer"],
 )
-async def test_a_failed_ask_gives_up_quietly_and_counts_as_an_ask(
+async def test_a_failed_ask_gives_up_quietly_and_counts_as_an_ask(  # noqa: PLR0913 - five fixtures and the error
     client: AsyncClient,
     session_maker: Any,
     llm: FakeLLM,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
     error: Exception,
 ) -> None:
+    clock = {"now": 1_000_000.0}
+    monkeypatch.setattr(live_ai_backoff, "_now", lambda: clock["now"])
     await _seed_owner(session_maker, AI_SETTINGS)
     await _speak_for(session_maker, 61)
     llm.error = error
 
-    with caplog.at_level(logging.INFO, logger=live_naming_stage.__name__):
+    with caplog.at_level(logging.INFO):
         await _refresh(session_maker, llm)
 
     assert llm.asks == [[ONE]]
+    # One warning, where the provider's failure started its backoff (#994).
     assert [
-        (record.levelname, "timed out" in record.getMessage())
+        (record.name, "timed out" in record.getMessage())
         for record in caplog.records
-        if record.name == live_naming_stage.__name__
-    ] == [("WARNING", True)]
+        if record.levelno >= logging.WARNING
+    ] == [(live_ai_backoff.__name__, True)]
     assert (await _read(client))["live_speaker_suggestions"] == {}
 
     # No retry within the next window, however many checks run: the failed
@@ -884,7 +889,9 @@ async def test_a_failed_ask_gives_up_quietly_and_counts_as_an_ask(
     await _refresh(session_maker, llm)
     assert llm.asks == [[ONE]]
 
-    # Past it, the label is asked again: the failed ask released its slot.
+    # Past it, and past the provider's 30 s backoff, the label is asked
+    # again: the failed ask released its slot.
+    clock["now"] += 30
     await _speak_for(session_maker, 61 + 121)
     await _refresh(session_maker, llm)
     assert llm.asks == [[ONE], [ONE]]

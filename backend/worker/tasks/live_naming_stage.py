@@ -16,12 +16,19 @@ is due one (``refresh_live_speaker_suggestions``) and a provider is set up: a
 new self-introduction asks at once, and otherwise each ask of a label doubles
 the speech it needs before the next, from 60 s up to 480 s. A label with a
 pending name is not asked about again. The ask's slot is held until the ask
-ends, so a second is never queued while one is in flight. An ask that times
-out or fails gives up with a warning; it was recorded before the call, so it
-counts as an ask and the label waits for its next window. The model is not
+ends, so a second is never queued while one is in flight. The model is not
 told what the rule heard: it gets the finalisation speaker-suggestion prompt
 over the due labels' lines and their neighbours, and may leave a label out
 when it is unsure.
+
+The ask calls its providers through the live calls' backoff
+(``backend.processing.live_ai_backoff``), sharing each recording's provider
+states with Meeting Edge: a provider waiting out a failure of either is
+skipped. With every provider waiting, the ask is skipped before it is
+recorded, as a ``live_naming_ask_skipped`` metric, so the labels stay due and
+are asked once a provider can be tried again. An ask whose providers all fail
+gives up, each failure logged once where it happened; it was recorded before
+the call, so it counts as an ask and the label waits for its next window.
 """
 
 import logging
@@ -36,7 +43,11 @@ from backend.core.single_flight import (
 )
 from backend.models.recording import Recording
 from backend.models.user import User
-from backend.processing.llm_backends.base import live_call_backend
+from backend.processing.live_ai_backoff import (
+    PURPOSE_LIVE_NAMING,
+    LiveAIUnavailable,
+    live_ai_chain,
+)
 from backend.services.timeline_note_service import load_recording_timeline_notes
 from backend.utils.llm_config import LLM_PURPOSE_MEETING_EDGE, ResolvedLLMConfig
 from backend.utils.meeting_notes import format_segments_for_llm
@@ -156,6 +167,20 @@ def _ask(session: Any, recording_id: int) -> None:
     config = _live_llm_config(session, recording_id)
     if config is None:
         return
+    try:
+        llm = live_ai_chain(
+            _llm_backend_from_config(config), recording_id, purpose=PURPOSE_LIVE_NAMING
+        )
+    except (RuntimeError, ValueError) as exc:
+        # The settings name a provider that cannot be set up, such as an
+        # Ollama address refused where it is used. Nothing was asked.
+        logger.warning(
+            "Live naming ask for recording %s gave up: %s", recording_id, exc
+        )
+        return
+    # Every provider still in its backoff window: no ask, and none recorded.
+    if llm.skip_if_waiting(logger):
+        return
     user_notes = load_recording_timeline_notes(session, recording_id).user_notes_list()
     # Commits, so no transaction stays open through the call.
     marked = mark_live_asks(session, recording_id)
@@ -163,7 +188,6 @@ def _ask(session: Any, recording_id: int) -> None:
         return
     labels, segments, meeting_context = marked
     try:
-        llm = live_call_backend(_llm_backend_from_config(config))
         result = llm.infer_speaker_suggestions(
             _ask_transcript(segments, labels),
             timeout=MEETING_EDGE_TIMEOUT_SECONDS,
@@ -171,15 +195,11 @@ def _ask(session: Any, recording_id: int) -> None:
             meeting_context=meeting_context,
             eligible_labels=labels,
         )
-    except (RuntimeError, ValueError) as exc:
-        # Providers raise a timeout, an HTTP error or an unreadable answer as
-        # a RuntimeError; OpenAI's wrong model and a CLI subscription's
-        # unreadable answer are ValueErrors. The ask is already recorded, so
-        # the next window (a newer introduction, or the label's next stretch
-        # of speech) asks again.
-        logger.warning(
-            "Live naming ask for recording %s gave up: %s", recording_id, exc
-        )
+    except LiveAIUnavailable:
+        # Every provider failed or is waiting, and each failure was logged
+        # where it happened. The ask is already recorded, so the next window
+        # (a newer introduction, or the label's next stretch of speech) asks
+        # again.
         return
     added = store_live_llm_suggestions(
         session, recording_id, result, provider=config.provider
