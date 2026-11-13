@@ -9,6 +9,8 @@ import {
   SETTINGS_BUTTON_DANGER,
   SETTINGS_BUTTON_PRIMARY,
   SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_CONTROL_COLUMN_WIDE,
+  SETTINGS_CONTROL_END,
 } from "./settingsControls";
 
 /**
@@ -47,6 +49,14 @@ describe("settings controls", () => {
     expect(classes).toContain("disabled:opacity-60");
     expect(classes).toContain("aria-disabled:opacity-60");
     expect(classes).toContain("aria-disabled:cursor-not-allowed");
+  });
+
+  // SettingsRow's control column caps its own width so the label keeps
+  // 10.5rem (#1043); a max-w class passed to the column replaces that cap.
+  it("leaves the row's control column its own max width", () => {
+    expect(SETTINGS_CONTROL_COLUMN_WIDE).not.toMatch(/max-w-/);
+    expect(SETTINGS_CONTROL_END).not.toMatch(/max-w-/);
+    expect(violations(/controlClassName=.*max-w-/)).toEqual([]);
   });
 
   it("draws focus with the shared ring, not a hand-written one", () => {
