@@ -89,7 +89,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 <!-- Only problems Nojoin can fix, each with its open issue. A limit set by a dependency or a provider belongs in the guide for that feature. -->
 
 - Live lines can move words between speakers at a turn change before they lock, and past eight voices a live reply's first words can still go to the previous speaker (#776, #813, #888).
-- In a processed transcript, the first words of a reply that follows a line you edited stay with the previous speaker (#975).
+- In a processed transcript, the first words of a reply that follows a line you edited stay with the previous speaker (#1035).
 
 ## Browser capture
 

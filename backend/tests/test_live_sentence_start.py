@@ -373,9 +373,9 @@ def test_the_label_pass_reads_an_edited_line_its_one_open_line_spans(
 
 # The label pass reads no locked line among its open lines as a line break
 # (``project_live_settling_speakers`` and ``_project`` in live_settling.py), so
-# it joins the lines either side of one. Remove the mark when it does.
+# it joins the lines either side of one (#1036). Remove the mark when it does.
 @pytest.mark.xfail(
-    strict=True, reason="#975: the label pass joins open lines round an edited line"
+    strict=True, reason="#1036: the label pass joins open lines round an edited line"
 )
 @pytest.mark.parametrize(
     "correcting", [True, False], ids=["correction", "no correction"]
@@ -385,7 +385,7 @@ def test_the_label_pass_keeps_two_open_lines_apart_round_an_edited_line(
 ) -> None:
     """Speaker 1's "It is done." and "so um" are open either side of the edited
     "Yes."; the label pass must not join them into one line spanning it, with
-    the sentence-start correction on or off (#975)."""
+    the sentence-start correction on or off (#1036)."""
     recording_id = _seed(publication_engine)
     with Session(publication_engine) as session:
         evidence = _agreed_then_edited(session, recording_id)
