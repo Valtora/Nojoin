@@ -45,6 +45,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - With AI on a Claude or ChatGPT subscription, the live speaker naming ask stops after 90 s and **Generate structure** after 180 s, where both ran for up to 300 s (#1013).
 - A slow AI provider no longer lets a second Meeting Edge refresh or live speaker naming ask start for a meeting while the first is still waiting on the provider and its fallback (#1010, #1011).
 - Meeting Edge and the live speaker naming ask send each AI provider one request per run, held to their 90 s timeout. A failing provider was retried inside the call, waiting out any rate-limit delay it asked for, and an Anthropic or Gemini name ask had no 90 s limit at all (#994).
+- When the AI provider behind Meeting Edge fails during a recording, Nojoin waits before asking it again, from 30 seconds up to every 5 minutes, and stops asking for the rest of the recording when a key is refused, a model is missing or the account is out of credit, while a fallback provider carries on. One notification per kind of failure names the provider and model and says why, and the **Meeting Edge** tab says why it is paused. Changing the AI settings lifts a stop without a restart. The recording read carries the notices as `live_ai_notices` during a capture (#994).
 
 ### People, tasks and calendar
 

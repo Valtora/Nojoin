@@ -3,6 +3,7 @@
 import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import {
+  AlertTriangle,
   Brain,
   ChevronDown,
   Lightbulb,
@@ -27,6 +28,11 @@ interface MeetingEdgePanelProps {
   payload?: MeetingEdgePayload | null;
   focusText?: string | null;
   status?: string | null;
+  /**
+   * Why Meeting Edge is not updating, while its last run failed and every
+   * provider is waiting or stopped (#994). Built from the classified reason.
+   */
+  notice?: string | null;
   onSaveFocus: (focus: string) => Promise<void>;
   contextLevel?: number;
   onSaveContextLevel?: (level: number) => Promise<void>;
@@ -109,6 +115,7 @@ function MeetingEdgePanel({
   payload,
   focusText,
   status,
+  notice,
   onSaveFocus,
   contextLevel,
   onSaveContextLevel,
@@ -198,6 +205,16 @@ function MeetingEdgePanel({
           </span>
         ) : null}
       </div>
+
+      {notice ? (
+        <p
+          role="status"
+          className="mt-3 flex items-start gap-2 rounded-lg border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs leading-5 text-status-warning-fg"
+        >
+          <AlertTriangle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 break-words">{notice}</span>
+        </p>
+      ) : null}
 
       {/* Everything below the badge scrolls as one region, which is what lets
           this panel fill the height it is given rather than set it. The badge

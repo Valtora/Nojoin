@@ -113,6 +113,10 @@ const meetingEdgeSignature = (recording: Recording) =>
     payload: recording.transcript?.meeting_edge_payload ?? null,
   });
 
+// A notice's message counts down to its retry, so only what it is counts here.
+const liveAiNoticesSignature = (recording: Recording) =>
+  JSON.stringify((recording.live_ai_notices ?? []).map(({ id, action }) => [id, action]));
+
 /** Whether a polled copy of the recording differs in anything the page shows. */
 /**
  * Whether a failed poll means the recording is gone. A 404 does, except while
@@ -185,6 +189,7 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   // Changes with the notes list, which the page then fetches.
   polled.timeline_notes_list_signature !== current.timeline_notes_list_signature ||
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||
+  liveAiNoticesSignature(polled) !== liveAiNoticesSignature(current) ||
   JSON.stringify(polled.speakers) !== JSON.stringify(current.speakers);
 
 /**

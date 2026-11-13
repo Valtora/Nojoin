@@ -72,6 +72,17 @@ class CliLLMBackend(LLMBackend):
     the single provider API call to the selected subscription (Claude Agent SDK
     or Codex CLI)."""
 
+    provider_id = "cli"
+
+    @property
+    def provider_label(self) -> str:
+        """The user's own subscription, named for the person who connected it."""
+        return (
+            "ChatGPT subscription"
+            if self.provider == "codex"
+            else "Claude subscription"
+        )
+
     def __init__(
         self,
         model: Optional[str] = None,

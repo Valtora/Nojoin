@@ -72,6 +72,8 @@ MIN_LIVE_REPAIR_SECONDS = 5.0
 
 
 class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
+    provider_id = "ollama"
+
     think: bool = False  # Class level: a backend built without __init__ says no.
 
     def __init__(

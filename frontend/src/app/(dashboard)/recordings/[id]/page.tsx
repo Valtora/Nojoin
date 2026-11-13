@@ -195,6 +195,11 @@ export default function RecordingPage({ params }: PageProps) {
     focusText={recording.transcript?.meeting_edge_focus}
     // After capture the panel keeps its last guidance, not the state of its last run.
     status={capturing ? recording.transcript?.meeting_edge_status : null}
+    notice={
+      capturing && recording.transcript?.meeting_edge_status === "error"
+        ? recording.transcript.meeting_edge_error_message
+        : null
+    }
     onSaveFocus={handleMeetingEdgeFocusChange}
     contextLevel={meetingEdgeContextLevel}
     onSaveContextLevel={handleMeetingEdgeContextLevelChange}

@@ -93,6 +93,12 @@ class CliOAuthUnavailableError(RuntimeError):
     configured fallback when one exists; otherwise it surfaces to the caller."""
 
 
+class CliCredentialUnavailableError(CliOAuthUnavailableError):
+    """The subscription has no usable credential: none connected, revoked, or
+    one that can no longer be refreshed. It does not clear until the user
+    reconnects, which is what the live calls' backoff reads it as."""
+
+
 # A rate-limit window label the SDK reports (``five_hour``, ``seven_day``). Only
 # a short token of this shape is repeated to the user; anything else is left out
 # of the message rather than echoed.
@@ -339,7 +345,7 @@ class CliConversationManager:
             if credential is None or (
                 credential.status == CliOAuthCredentialStatus.REVOKED.value
             ):
-                raise CliOAuthUnavailableError(
+                raise CliCredentialUnavailableError(
                     "No active CLI OAuth credential. Connect your subscription "
                     "in Settings > AI."
                 )
@@ -353,14 +359,14 @@ class CliConversationManager:
                 # _finalize_codex_auth), so no httpx refresh here.
                 blob = decrypt_secret(credential.access_token_encrypted)
                 if not blob:
-                    raise CliOAuthUnavailableError(
+                    raise CliCredentialUnavailableError(
                         "ChatGPT credential is missing; reconnect in Settings > AI."
                     )
                 return blob
             if not self._needs_refresh(credential):
                 access_token = decrypt_secret(credential.access_token_encrypted)
                 if not access_token:
-                    raise CliOAuthUnavailableError(
+                    raise CliCredentialUnavailableError(
                         "CLI OAuth credential is missing its access token; "
                         "reconnect in Settings > AI."
                     )
@@ -375,7 +381,7 @@ class CliConversationManager:
             self._flip_status(
                 session, credential, CliOAuthCredentialStatus.NEEDS_REAUTH
             )
-            raise CliOAuthUnavailableError(
+            raise CliCredentialUnavailableError(
                 "CLI OAuth access token expired and no refresh token is stored. "
                 "Reconnect your subscription in Settings > AI."
             )
@@ -389,7 +395,7 @@ class CliConversationManager:
             self._flip_status(
                 session, credential, CliOAuthCredentialStatus.NEEDS_REAUTH
             )
-            raise CliOAuthUnavailableError(
+            raise CliCredentialUnavailableError(
                 "CLI OAuth token refresh failed. Reconnect your subscription in "
                 "Settings > AI."
             ) from exc

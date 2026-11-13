@@ -221,6 +221,33 @@ class LanguageNoticeRead(PublicModel):
     reprocess_language: str
 
 
+class LiveAINoticeRead(BaseModel):
+    """A live AI provider that is failing during this capture (#994).
+
+    One per provider in the chain that is waiting out a backoff or has
+    stopped. The message is built from the classified reason and worded for
+    the viewer; it never carries the provider's own error text.
+    """
+
+    # Stable for one provider's kind of failure until the AI settings change,
+    # so a client shows each notice once.
+    id: str
+    # The live features it serves: "meeting_edge".
+    purposes: list[str]
+    provider: str
+    model: str
+    kind: str
+    # "retrying" until retry_at, or "stopped" until the AI settings change.
+    action: Literal["retrying", "stopped"]
+    retry_at: Optional[datetime] = None
+    # Who can fix it: "you" (an administrator, or a user's own subscription)
+    # or "admin".
+    fixable_by: Literal["you", "admin"]
+    # The Settings page that fixes it, when the viewer can open it.
+    settings: Optional[Literal["ai-providers", "your-ai"]] = None
+    message: str
+
+
 class RecordingPublicRead(PublicModel):
     id: str
     created_at: datetime
@@ -304,6 +331,12 @@ class RecordingPublicRead(PublicModel):
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
     calendar_event: Optional[CalendarEventLinkRead] = None
+    # Only on the detail read of a recording being captured (UPLOADING or
+    # PAUSED); absent otherwise, so a finished recording's payload does not
+    # grow. backend/processing/live_ai_backoff.py.
+    live_ai_notices: Optional[list[LiveAINoticeRead]] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class RecordingsCalendarRead(BaseModel):

@@ -74,6 +74,7 @@ import {
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
 } from "./recordingDetailUtils";
+import { useLiveAiNotices } from "./useLiveAiNotices";
 import { useRecordingNotFound } from "./useRecordingNotFound";
 import { useRecordingPanel } from "./useRecordingPanel";
 import { useRecordingTranscript } from "./useRecordingTranscript";
@@ -180,7 +181,6 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // The notes error already showing when a recording opens is not news: only a
   // change after that raises a toast. Keyed by recording so each one primes.
   const lastNotesErrorRef = useRef<{ recordingId: string; error: string | null } | null>(null);
-  const meetingEdgeErrorsShownRef = useRef(new Set<string>());
   // When the page first saw the audio as unavailable. It bounds how long the
   // page keeps re-checking for it.
   const audioUnavailableSinceRef = useRef<number | null>(null);
@@ -504,25 +504,9 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     }
   }, [addNotification, recording]);
 
-  useEffect(() => {
-    if (!recording || !isLiveCaptureInProgress(recording)) return;
-    const meetingEdgeError =
-      recording?.transcript?.meeting_edge_status === "error"
-        ? recording.transcript?.meeting_edge_error_message ||
-          "Meeting Edge is temporarily unavailable."
-        : null;
-
-    const errorKey = JSON.stringify([recording.id, meetingEdgeError]);
-    if (meetingEdgeError && !meetingEdgeErrorsShownRef.current.has(errorKey)) {
-      meetingEdgeErrorsShownRef.current.add(errorKey);
-      addNotification({ type: "error", message: meetingEdgeError });
-    }
-  }, [
-    addNotification,
-    recording,
-    recording?.transcript?.meeting_edge_error_message,
-    recording?.transcript?.meeting_edge_status,
-  ]);
+  // A live AI provider failing during capture: one toast per notice (#994).
+  // Meeting Edge's own state is the line in its panel.
+  useLiveAiNotices(recording);
 
   // Player Handlers
   const handleTimeUpdate = () => {
