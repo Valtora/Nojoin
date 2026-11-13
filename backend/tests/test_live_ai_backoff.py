@@ -20,6 +20,7 @@ from backend.processing import live_ai_backoff
 from backend.processing.cli.manager import CliCredentialUnavailableError
 from backend.processing.live_ai_backoff import (
     EPOCH_KEY,
+    BackoffStore,
     LiveAIChain,
     LiveAIUnavailable,
     backoff_seconds,
@@ -37,6 +38,8 @@ from backend.tests.test_meeting_edge_toggle import (
 )
 
 RECORDING = 1
+# The name ask's purpose, as the recording read gives it.
+NAME_ASK = "live_naming"
 PROVIDER_TEXT = "request_id=req_abc123 the upstream said something private"
 
 
@@ -70,6 +73,15 @@ class Provider(LLMBackend):
         if error is not None:
             raise error
         return f"guidance from {self.model}"
+
+    def infer_speaker_suggestions(
+        self, transcript: str, prompt_template: Any = None, **kwargs: Any
+    ) -> Any:
+        self.calls += 1
+        error = self.error() if callable(self.error) else self.error
+        if error is not None:
+            raise error
+        return f"names from {self.model}"
 
 
 class Clock:
@@ -422,6 +434,91 @@ def test_a_notice_keeps_its_id_and_leaves_when_its_provider_answers(clock):
     clock.now += 60
     _call(provider)
     assert live_ai_notices(RECORDING, viewer_is_admin=True) == []
+
+
+def _name_ask(provider: Provider) -> LiveAIChain:
+    return live_ai_chain(provider, RECORDING, purpose=NAME_ASK)
+
+
+def _ask_names(provider: Provider) -> None:
+    try:
+        _name_ask(provider).infer_speaker_suggestions("transcript", timeout=90)
+    except LiveAIUnavailable:
+        pass
+
+
+def test_a_name_ask_failing_alone_is_named_on_its_own(clock):
+    _ask_names(Provider("openai", "gpt-test", lambda: _http_error(429)))
+
+    (notice,) = live_ai_notices(RECORDING, viewer_is_admin=True)
+
+    assert notice["purposes"] == ["live_naming"]
+    assert notice["message"] == (
+        "Speaker name suggestions: OpenAI is rate limiting gpt-test. Nojoin will "
+        "try it again in 30 seconds."
+    )
+
+
+def test_a_notice_names_every_feature_the_wait_holds_up(
+    clock, monkeypatch: pytest.MonkeyPatch
+):
+    provider = Provider("ollama", "fake-401", lambda: _http_error(401))
+    _fail(provider)
+    (alone,) = live_ai_notices(RECORDING, viewer_is_admin=True)
+    saves: list[str] = []
+    save = BackoffStore.save
+    monkeypatch.setattr(
+        BackoffStore,
+        "save",
+        lambda store, key, state: (saves.append(key), save(store, key, state)),
+    )
+
+    # The name ask passes the stopped provider over, once and then again.
+    for _ in range(2):
+        clock.now += 2
+        assert _name_ask(provider).skip_if_waiting() is True
+
+    assert provider.calls == 1 and len(saves) == 1
+    (both,) = live_ai_notices(RECORDING, viewer_is_admin=True)
+    assert both["purposes"] == ["meeting_edge", "live_naming"]
+    assert both["message"] == (
+        "Meeting Edge and speaker name suggestions: Ollama refused access to "
+        "fake-401. Nojoin has stopped using it until the AI settings change."
+    )
+    # A new id, so the page shows it again with both features in it.
+    assert both["id"] != alone["id"]
+
+
+def test_a_failure_counts_on_from_the_other_features(clock, fake_live_ai_redis):
+    """Both features' calls ran at once, and both failed: two failures."""
+    provider = Provider("ollama", "fake-500", lambda: _http_error(500))
+    name_ask = _name_ask(provider)
+
+    _fail(provider)
+    clock.now += 5
+    with pytest.raises(LiveAIUnavailable):
+        name_ask.infer_speaker_suggestions("transcript", timeout=90)
+
+    (state,) = _states(fake_live_ai_redis).values()
+    assert state["failures"] == 2 and state["until"] == clock.now + 60
+    assert state["purposes"] == ["meeting_edge", "live_naming"]
+
+
+def test_a_tier_that_answered_for_the_other_feature_starts_afresh(
+    clock, fake_live_ai_redis
+):
+    errors: list[Any] = [_http_error(500), None, _http_error(500)]
+    provider = Provider("ollama", "flaky", lambda: errors.pop())
+    _fail(provider)
+    clock.now += 30
+    name_ask = _name_ask(provider)
+
+    assert _call(provider) == "guidance from flaky"
+    with pytest.raises(LiveAIUnavailable):
+        name_ask.infer_speaker_suggestions("transcript", timeout=90)
+
+    (state,) = _states(fake_live_ai_redis).values()
+    assert state["failures"] == 1 and state["purposes"] == ["live_naming"]
 
 
 # -- recovery -------------------------------------------------------------------

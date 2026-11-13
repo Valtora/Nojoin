@@ -1,10 +1,10 @@
 """Back off a failing AI provider during a live capture (#994).
 
-A live AI call (Meeting Edge here; the live speaker naming ask later) is
-triggered every few seconds while a meeting runs. Without this, a provider that
-fails on every call is called on every trigger, with its fallback after it: a
-53 minute capture made about 1,500 failed calls to each. Here each provider in
-the chain (a tier) fails into a backoff of its own:
+A live AI call (Meeting Edge, and the live speaker naming ask) is triggered
+every few seconds while a meeting runs. Without this, a provider that fails on
+every call is called on every trigger, with its fallback after it: a 53 minute
+capture made about 1,500 failed calls to each. Here each provider in the chain
+(a tier) fails into a backoff of its own:
 
 - a failure that clears by itself waits 30 s, doubling each time to 5 minutes,
   and a rate limit waits at least as long as the provider asked;
@@ -13,9 +13,16 @@ the chain (a tier) fails into a backoff of its own:
 - a tier that answers starts again from nothing.
 
 Inside a tier's window the chain goes straight to the next tier, and a call
-with every tier waiting is skipped before anything is written. Callers run the
-chain inside their single-flight key, so the decision and the call are one at
-a time per recording.
+with every tier waiting is skipped before the feature records anything. Callers
+run the chain inside their single-flight key, so the decision and the call are
+one at a time per recording and feature.
+
+Both features share a recording's tier states, since they call the same chain:
+a tier failing for one is skipped by the other. A state lists the features
+(purposes) it has held up, each added the first time that feature fails on the
+tier or passes it over, so its notice names every one of them. A failure reads
+the tier's state again before writing it, as the other feature may have
+written it during the call.
 
 State is a Redis hash per recording, one field per tier, with a 12 hour TTL. A
 tier is named by its role in the chain, its provider and its model: nothing
@@ -34,7 +41,7 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -58,8 +65,26 @@ FIRST_BACKOFF_SECONDS = 30
 MAX_BACKOFF_SECONDS = 5 * 60
 
 PURPOSE_MEETING_EDGE = "meeting_edge"
-PURPOSE_LABELS = {PURPOSE_MEETING_EDGE: "Meeting Edge"}
-_SKIP_METRIC_STAGES = {PURPOSE_MEETING_EDGE: "meeting_edge_refresh_skipped"}
+PURPOSE_LIVE_NAMING = "live_naming"
+# How a notice names each feature, in this order: the interface calls the name
+# ask's setting "Suggest speaker names during a meeting".
+PURPOSE_LABELS = {
+    PURPOSE_MEETING_EDGE: "Meeting Edge",
+    PURPOSE_LIVE_NAMING: "speaker name suggestions",
+}
+_PURPOSE_ORDER = tuple(PURPOSE_LABELS)
+_LOG_NAMES = {
+    PURPOSE_MEETING_EDGE: "Meeting Edge",
+    PURPOSE_LIVE_NAMING: "Live naming ask",
+}
+_PAUSED_LEADS = {
+    PURPOSE_MEETING_EDGE: "Meeting Edge is paused",
+    PURPOSE_LIVE_NAMING: "Speaker name suggestions are paused",
+}
+_SKIP_METRIC_STAGES = {
+    PURPOSE_MEETING_EDGE: "meeting_edge_refresh_skipped",
+    PURPOSE_LIVE_NAMING: "live_naming_ask_skipped",
+}
 
 ROLE_SUBSCRIPTION = "subscription"
 ROLE_PRIMARY = "primary"
@@ -223,6 +248,31 @@ class BackoffStore:
                 states[key] = state
         return states
 
+    def read(self, key: str, fallback: TierState | None) -> TierState | None:
+        """One tier's state as stored now, or ``fallback`` without Redis.
+
+        The other live feature may have written it since ``load``.
+        """
+        if not self.available:
+            return fallback
+        client = None
+        try:
+            client = _open_client()
+            raw = client.hget(_state_key(self.recording_id), key)
+        except Exception as exc:  # noqa: BLE001 -- boundary: without Redis the state loaded at the start stands
+            self.available = False
+            logger.warning(
+                "Live AI backoff for recording %s could not be read: %s",
+                self.recording_id,
+                exc,
+            )
+            return fallback
+        finally:
+            if client is not None:
+                _close(client)
+        state = TierState.from_json(raw) if raw else None
+        return state if state is not None and state.epoch == self.epoch else None
+
     def save(self, key: str, state: TierState) -> None:
         self._write(lambda client, name: client.hset(name, key, state.to_json()))
 
@@ -292,9 +342,22 @@ def bump_epoch_on_io_start(sender: Any, **kwargs: Any) -> None:
 # -- the wording ------------------------------------------------------------
 
 
+def _purpose_rank(purpose: str) -> tuple[int, str]:
+    known = purpose in _PURPOSE_ORDER
+    return (_PURPOSE_ORDER.index(purpose) if known else len(_PURPOSE_ORDER), purpose)
+
+
+def _with_purpose(purposes: tuple[str, ...], purpose: str) -> tuple[str, ...]:
+    return tuple(sorted({*purposes, purpose}, key=_purpose_rank))
+
+
 def _features(purposes: tuple[str, ...] | list[str]) -> str:
-    labels = [PURPOSE_LABELS.get(p, p) for p in purposes] or ["Meeting Edge"]
-    return " and ".join(labels)
+    """The features a notice names, Meeting Edge first: "Meeting Edge and ..."."""
+    labels = [
+        PURPOSE_LABELS.get(p, p) for p in sorted(purposes, key=_purpose_rank)
+    ] or ["Meeting Edge"]
+    text = " and ".join(labels)
+    return text[:1].upper() + text[1:]
 
 
 # Why a tier failed, by its classified kind: the only source of the wording.
@@ -345,8 +408,11 @@ def _wait_phrase(seconds: float) -> str:
 
 
 def paused_message(purpose: str, states: list[TierState]) -> str:
-    """The Meeting Edge panel's line while no tier answers. The same for anyone."""
-    feature = PURPOSE_LABELS.get(purpose, "Meeting Edge")
+    """The Meeting Edge panel's line while no tier answers. The same for anyone.
+
+    The name ask has no panel; its message is only the exception's.
+    """
+    feature = _features((purpose,))
     if not states:
         return f"{feature} could not be updated."
     reasons = "; ".join(failure_reason(state) for state in states)
@@ -354,7 +420,8 @@ def paused_message(purpose: str, states: list[TierState]) -> str:
         action = "It stays off until the AI settings change."
     else:
         action = "Nojoin will keep trying."
-    return f"{feature} is paused: {reasons}. {action}"
+    lead = _PAUSED_LEADS.get(purpose, f"{feature} is paused")
+    return f"{lead}: {reasons}. {action}"
 
 
 def notice_message(state: TierState, *, fixable_by: str, now: float) -> str:
@@ -423,10 +490,20 @@ class LiveAIChain:
             for tier in self._tiers
         )
 
+    def paused_message(self) -> str:
+        """Why no tier can answer now, for the Meeting Edge panel."""
+        return paused_message(self.purpose, self._tier_states())
+
     def skip_if_waiting(self, log: logging.Logger | None = None) -> bool:
-        """Record the skip as a metric, not an error, when every tier waits."""
+        """Record the skip as a metric, not an error, when every tier waits.
+
+        Each tier then names this feature too, so its notice says what the
+        wait holds up, though the wait began with the other feature.
+        """
         if not self.waiting():
             return False
+        for tier in self._tiers:
+            self._serves(tier)
         now = _now()
         record_pipeline_metric(
             stage=_SKIP_METRIC_STAGES.get(self.purpose, f"{self.purpose}_skipped"),
@@ -455,12 +532,39 @@ class LiveAIChain:
     def generate_meeting_edge(self, request: Any, *, timeout: int) -> Any:
         return self._call("generate_meeting_edge", request, timeout=timeout)
 
+    def infer_speaker_suggestions(self, transcript: str, **kwargs: Any) -> Any:
+        return self._call("infer_speaker_suggestions", transcript, **kwargs)
+
+    def _tier_states(self) -> list[TierState]:
+        return [
+            state
+            for tier in self._tiers
+            if (state := self._states.get(tier.key)) is not None
+        ]
+
+    def _serves(self, tier: Tier) -> None:
+        """Add this feature to a waiting tier's state, once: it is held up too."""
+        state = self._states.get(tier.key)
+        if state is None or self.purpose in state.purposes:
+            return
+        current = self._store.read(tier.key, state)
+        if current is None:
+            # It answered for the other feature since this chain loaded.
+            return
+        if self.purpose not in current.purposes:
+            current = replace(
+                current, purposes=_with_purpose(current.purposes, self.purpose)
+            )
+            self._store.save(tier.key, current)
+        self._states[tier.key] = current
+
     def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
         for index, tier in enumerate(self._tiers):
             state = self._states.get(tier.key)
             # The clock is read for each tier and again on a failure: a tier
             # before this one may have spent its whole timeout failing.
             if state is not None and state.waiting(_now()):
+                self._serves(tier)
                 continue
             try:
                 result = getattr(tier.backend, method)(*args, **kwargs)
@@ -475,19 +579,15 @@ class LiveAIChain:
                     self._states.pop(answered.key, None)
                     self._store.clear(answered.key)
             return result
-        raise LiveAIUnavailable(
-            self.purpose,
-            [
-                state
-                for tier in self._tiers
-                if (state := self._states.get(tier.key)) is not None
-            ],
-        )
+        raise LiveAIUnavailable(self.purpose, self._tier_states())
 
     def _failed(
         self, tier: Tier, state: TierState | None, exc: Exception, now: float
     ) -> None:
         failure: Failure = classify_failure(exc)
+        # The other feature may have failed on this tier, or seen it answer,
+        # while this call ran: count on from what is stored now.
+        state = self._store.read(tier.key, state)
         failures = (state.failures if state is not None else 0) + 1
         stopped = not failure.clears_by_itself
         until = None
@@ -496,8 +596,8 @@ class LiveAIChain:
             if failure.retry_after_s is not None:
                 wait = max(wait, failure.retry_after_s)
             until = now + wait
-        purposes = tuple(
-            sorted({*(state.purposes if state is not None else ()), self.purpose})
+        purposes = _with_purpose(
+            state.purposes if state is not None else (), self.purpose
         )
         new_state = TierState(
             role=tier.role,
@@ -517,7 +617,7 @@ class LiveAIChain:
         detail = safe_provider_detail(exc, [secret] if isinstance(secret, str) else ())
         logger.warning(
             "%s for recording %s: %s %s (%s) failed (%s), %s: %s",
-            PURPOSE_LABELS.get(self.purpose, self.purpose),
+            _LOG_NAMES.get(self.purpose, self.purpose),
             self.recording_id,
             tier.label,
             tier.model,
@@ -530,17 +630,23 @@ class LiveAIChain:
         )
 
 
-def live_ai_chain(backend: Any, recording_id: int) -> LiveAIChain:
-    """Meeting Edge's chain for ``recording_id``, with each tier's backoff."""
-    return LiveAIChain(backend, recording_id=recording_id, purpose=PURPOSE_MEETING_EDGE)
+def live_ai_chain(
+    backend: Any, recording_id: int, *, purpose: str = PURPOSE_MEETING_EDGE
+) -> LiveAIChain:
+    """A live feature's chain for ``recording_id``, with each tier's backoff."""
+    return LiveAIChain(backend, recording_id=recording_id, purpose=purpose)
 
 
 # -- what the interface reads ----------------------------------------------
 
 
 def notice_id(key: str, state: TierState) -> str:
-    """Stable for one tier's kind of failure within one epoch."""
-    raw = f"{key}|{state.kind}|{state.epoch}"
+    """Stable for one tier's kind of failure within one epoch.
+
+    A feature joining the notice gives it a new id, so it is shown again with
+    every feature it names.
+    """
+    raw = f"{key}|{state.kind}|{state.epoch}|{','.join(state.purposes)}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
@@ -583,6 +689,8 @@ def live_ai_notices(recording_id: int, *, viewer_is_admin: bool) -> list[dict]:
 
 
 __all__ = [
+    "PURPOSE_LIVE_NAMING",
+    "PURPOSE_MEETING_EDGE",
     "BackoffStore",
     "LiveAIChain",
     "LiveAIUnavailable",

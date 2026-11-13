@@ -229,10 +229,10 @@ class LiveAINoticeRead(BaseModel):
     the viewer; it never carries the provider's own error text.
     """
 
-    # Stable for one provider's kind of failure until the AI settings change,
-    # so a client shows each notice once.
+    # Stable for one provider's kind of failure and the features it names,
+    # until the AI settings change, so a client shows each notice once.
     id: str
-    # The live features it serves: "meeting_edge".
+    # The live features it holds up: "meeting_edge", "live_naming".
     purposes: list[str]
     provider: str
     model: str
