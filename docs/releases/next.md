@@ -52,6 +52,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 ### Settings and administration
 
 - The users table under **Settings > Users and access** has a **Terms accepted** column with the day each account accepted, or **Not yet accepted** (#1007).
+- **Check speakers heard only briefly** in **Settings > Recording > Advanced > Speech and speaker tuning** stays where it is when you tick or untick it. On a wide screen it moved between the line below **Speakers heard only briefly** and the end of that line (#975).
 
 ### API and MCP
 

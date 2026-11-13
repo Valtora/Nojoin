@@ -175,6 +175,22 @@ describe("ProcessingTuningSettings", () => {
     expect(state.latest().phantom_merge_threshold).toBe(0.7);
   });
 
+  // jsdom cannot lay out a container query, so the contract under test is the
+  // class string, as in SettingsRow.test.tsx: the control column keeps one
+  // width whether or not the limits show, so the checkbox beside the label
+  // stays where it is when it is ticked or unticked (#975).
+  it("keeps the brief-speaker row's control column one width, ticked or not", () => {
+    renderWithState({});
+    const checkbox = screen.getByRole("checkbox", { name: "Check speakers heard only briefly" });
+    const column = () =>
+      document.getElementById("recording-phantom-filter-fields")?.parentElement?.className;
+
+    expect(column()).toContain("@min-[26rem]:w-96");
+    fireEvent.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+    expect(column()).toContain("@min-[26rem]:w-96");
+  });
+
   it("ticking again shows the brief-speaker limits with their values and clears the switch", () => {
     const state = renderWithState({ phantom_filter_off: true, phantom_max_segments: 2 });
     const checkbox = screen.getByRole("checkbox", { name: "Check speakers heard only briefly" });
