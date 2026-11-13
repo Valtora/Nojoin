@@ -209,8 +209,14 @@ html {
      Pair with `my-auto` on the child to centre it: auto margins centre when
      there is room and collapse to zero when there is not, so padding survives.
      `justify-center` does not -- it splits the overflow and puts half above the
-     top edge, where scrolling cannot reach it. */
+     top edge, where scrolling cannot reach it.
+
+     Positioned, as every scrolling pane in the dashboard is (#996, #999), so
+     that absolute elements inside, screen-reader-only text among them, resolve
+     against this box and scroll with it. Otherwise they resolve against the
+     viewport, which this box neither clips nor scrolls. */
   .page-shell {
+    position: relative;
     height: 100dvh;
     overflow-y: auto;
   }
