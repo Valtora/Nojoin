@@ -99,7 +99,8 @@ def test_sentence_terminals_are_unicode_sentence_terminals(token, ends):
 
 def test_the_unicode_tables_are_the_generated_ones():
     """``scripts/generate_sentence_terminals.py --check`` in the suite: a table
-    edited by hand fails here, as does one a newer regex would generate (#975)."""
+    edited by hand fails here (#975). regex is pinned in requirements/test.txt,
+    so newer Unicode data fails the Dependabot pull request that bumps it."""
     from scripts.generate_sentence_terminals import table_drift
 
     assert table_drift() == []

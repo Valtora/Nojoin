@@ -9,8 +9,8 @@ a terminal. They are frozen in the module rather than built from
 
 The tables come from the ``regex`` package, which carries its own Unicode data
 (its release notes name the version; the script prints the package version).
-Nojoin does not use it at run time, but Transformers depends on it, so the test
-requirements install it::
+Nojoin does not use it at run time. Transformers depends on it, and
+``requirements/test.txt`` pins it for the check below::
 
     python scripts/generate_sentence_terminals.py          # print the tables
     python scripts/generate_sentence_terminals.py --check  # compare with the module
@@ -18,8 +18,9 @@ requirements install it::
 Paste the printed tables over the ones in the module, and update the Unicode
 and regex versions in the comment above them. The backend suite makes the same
 comparison (``backend/tests/test_sentence_start.py``), so ``scripts/check.py``
-and CI's Backend tests fail on a table edited by hand, and on the first regex
-release with newer Unicode data until the tables are regenerated.
+and CI's Backend tests fail on a table edited by hand. Because regex is pinned,
+newer Unicode data shows on the Dependabot pull request that bumps it, and the
+tables are regenerated there.
 """
 
 from __future__ import annotations
