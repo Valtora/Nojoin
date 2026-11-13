@@ -66,4 +66,4 @@ Nojoin sends a daily heartbeat with a random install ID and the version, plus an
 
 Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**. Recording laws vary by jurisdiction, so review the [legal disclaimer](docs/LEGAL.md) before using it. Report vulnerabilities through the [security policy](docs/SECURITY.md). Contributions are welcome: see [CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
-If Nojoin is useful to you, please consider [buying me a coffee](https://ko-fi.com/valtorra).
+If Nojoin is useful to you, please consider [buying me a coffee](https://ko-fi.com/valtora).
