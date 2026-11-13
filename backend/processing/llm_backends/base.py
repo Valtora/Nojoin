@@ -194,6 +194,22 @@ def build_eligible_speaker_labels_prompt_section(
 
 
 class LLMBackend:
+    # Set on the copy for_live_calls returns.
+    _live_calls: bool = False
+
+    def for_live_calls(self) -> "LLMBackend":
+        """This backend as Meeting Edge and the live naming ask use it.
+
+        A live call makes one request, bounded by the timeout it is given:
+        no SDK retries, no waiting out a ``Retry-After`` inside the call, and
+        nothing sent after the deadline. A failing provider then fails once,
+        within its timeout, and the caller decides when to try again (#994).
+        Every other call keeps the backend's own behaviour. The default is the
+        backend itself, for one whose calls already work that way: a CLI
+        subscription's timeout bounds its whole turn.
+        """
+        return self
+
     def infer_speaker_suggestions(
         self,
         transcript: str,
@@ -871,3 +887,13 @@ Preserve the same schema and do not invent facts not supported by the original t
                 logger.error(
                     f"Could not find transcript for recording {recording_id} to update notes"
                 )
+
+
+def live_call_backend(backend: Any) -> Any:
+    """``backend`` set up for a live call (``LLMBackend.for_live_calls``).
+
+    Anything outside the LLMBackend family is used as it is.
+    """
+    if isinstance(backend, LLMBackend):
+        return backend.for_live_calls()
+    return backend

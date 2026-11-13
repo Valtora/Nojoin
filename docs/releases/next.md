@@ -44,6 +44,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - **Test connection** under **Settings > AI providers** with no model selected says the provider is reachable and asks you to choose a model, in grey, where it read as a passed test (#1009).
 - With AI on a Claude or ChatGPT subscription, the live speaker naming ask stops after 90 s and **Generate structure** after 180 s, where both ran for up to 300 s (#1013).
 - A slow AI provider no longer lets a second Meeting Edge refresh or live speaker naming ask start for a meeting while the first is still waiting on the provider and its fallback (#1010, #1011).
+- Meeting Edge and the live speaker naming ask send each AI provider one request per run, held to their 90 s timeout. A failing provider was retried inside the call, waiting out any rate-limit delay it asked for, and an Anthropic or Gemini name ask had no 90 s limit at all (#994).
 
 ### People, tasks and calendar
 

@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from typing import Any, Dict, Generator, List, Optional, Sequence
@@ -98,6 +99,17 @@ class AnthropicLLMBackend(LLMBackend):
         self.api_key = api_key
         self.model = model or None
         self.client = anthropic.Anthropic(api_key=self.api_key)
+
+    def for_live_calls(self) -> "AnthropicLLMBackend":
+        """A copy that sends each live call once, within its timeout.
+
+        The SDK otherwise retries a timeout, a 429 and a 5xx twice, and waits
+        out whatever ``Retry-After`` the provider sends.
+        """
+        live = copy.copy(self)
+        live.client = self.client.with_options(max_retries=0)
+        live._live_calls = True
+        return live
 
     def list_models(self) -> List[str]:
         """
@@ -233,6 +245,9 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 max_tokens=SPEAKER_SUGGESTIONS_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
+                # Only a live ask is held to its timeout; the suggestions made
+                # after processing keep the SDK's own.
+                **({"timeout": timeout} if self._live_calls else {}),
                 **self._brief_reply_kwargs(),
             )
             text = _response_text_or_raise(response, "the speaker suggestions")

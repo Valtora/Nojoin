@@ -8,6 +8,7 @@ with no call-site changes.
 
 import logging
 
+from backend.processing.llm_backends.base import live_call_backend
 from backend.services.timeline_note_service import (
     RecordingTimelineNotes,
     load_recording_timeline_notes,
@@ -494,7 +495,7 @@ def _refresh_meeting_edge(self, recording_id: int):
             source_signature=source_signature,
         )
 
-        llm = _llm_backend_from_config(llm_config)
+        llm = live_call_backend(_llm_backend_from_config(llm_config))
         result = llm.generate_meeting_edge(
             request,
             timeout=MEETING_EDGE_TIMEOUT_SECONDS,

@@ -1,3 +1,4 @@
+import copy
 import logging
 
 from backend.processing.llm_backends.anthropic import AnthropicLLMBackend
@@ -102,6 +103,13 @@ class SecondaryLLMBackend(LLMBackend):
             getattr(primary, "model", "unknown"),
             getattr(secondary, "model", "unknown"),
         )
+
+    def for_live_calls(self) -> "SecondaryLLMBackend":
+        """The same chain, each provider in it set up for a live call."""
+        live = copy.copy(self)
+        live._primary = self._primary.for_live_calls()
+        live._secondary = self._secondary.for_live_calls()
+        return live
 
     def _call_with_secondary(self, method_name: str, *args, **kwargs):
         try:

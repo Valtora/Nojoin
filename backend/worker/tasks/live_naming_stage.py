@@ -36,6 +36,7 @@ from backend.core.single_flight import (
 )
 from backend.models.recording import Recording
 from backend.models.user import User
+from backend.processing.llm_backends.base import live_call_backend
 from backend.services.timeline_note_service import load_recording_timeline_notes
 from backend.utils.llm_config import LLM_PURPOSE_MEETING_EDGE, ResolvedLLMConfig
 from backend.utils.meeting_notes import format_segments_for_llm
@@ -162,7 +163,8 @@ def _ask(session: Any, recording_id: int) -> None:
         return
     labels, segments, meeting_context = marked
     try:
-        result = _llm_backend_from_config(config).infer_speaker_suggestions(
+        llm = live_call_backend(_llm_backend_from_config(config))
+        result = llm.infer_speaker_suggestions(
             _ask_transcript(segments, labels),
             timeout=MEETING_EDGE_TIMEOUT_SECONDS,
             user_notes=user_notes,
