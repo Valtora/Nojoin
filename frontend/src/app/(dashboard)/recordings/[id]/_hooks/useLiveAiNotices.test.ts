@@ -92,6 +92,24 @@ describe("live AI notices", () => {
     expect(active()).toHaveLength(0);
   });
 
+  it("closes its toasts once the capture ends, and is quiet after that", () => {
+    const { rerender } = renderHook(({ recording }) => useLiveAiNotices(recording), {
+      initialProps: { recording: capture([stopped]) },
+    });
+    expect(active()).toHaveLength(1);
+
+    const ended = capture([], { status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE });
+    rerender({ recording: { ...ended, live_ai_notices: undefined } });
+    expect(active()).toHaveLength(0);
+    expect(useNotificationStore.getState().history.map((n) => n.message)).toContain(stopped.message);
+
+    const listener = vi.fn();
+    const unsubscribe = useNotificationStore.subscribe(listener);
+    rerender({ recording: { ...ended, live_ai_notices: undefined, name: "Weekly sync, renamed" } });
+    unsubscribe();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("shows nothing for a recording that is no longer being captured", () => {
     renderHook(() => useLiveAiNotices(capture([retrying], {
       status: RecordingStatus.PROCESSING, client_status: ClientStatus.IDLE,

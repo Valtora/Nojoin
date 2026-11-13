@@ -82,11 +82,14 @@ def test_a_rejected_grant_needs_the_subscription_reconnected(monkeypatch, status
     ids=["429", "500", "503", "404", "402", "refused", "timeout", "no-token"],
 )
 def test_a_refresh_that_did_not_complete_is_tried_again(monkeypatch, error):
-    raised, _engine = _refresh_failing_with(monkeypatch, error)
+    raised, engine = _refresh_failing_with(monkeypatch, error)
 
     assert not isinstance(raised, CliCredentialUnavailableError)
     failure = classify_failure(raised)
     assert failure.clears_by_itself and failure.kind not in CANNOT_CLEAR
+    # Settings and the one-subscription guard read the status: a failure that
+    # was not the subscription's leaves it connected.
+    assert _read(engine).status == "active"
 
 
 @pytest.mark.parametrize(

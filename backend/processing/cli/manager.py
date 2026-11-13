@@ -392,10 +392,12 @@ class CliConversationManager:
             tokens = asyncio.run(refresh_module.refresh_tokens(refresh_token))
         except oauth.CliOAuthExchangeError as exc:
             logger.warning("CLI OAuth refresh failed for user %s: %s", user_id, exc)
-            self._flip_status(
-                session, credential, CliOAuthCredentialStatus.NEEDS_REAUTH
-            )
             if exc.grant_rejected:
+                # Only a rejected grant marks the subscription disconnected:
+                # Settings and the one-subscription guard read the status.
+                self._flip_status(
+                    session, credential, CliOAuthCredentialStatus.NEEDS_REAUTH
+                )
                 raise CliCredentialUnavailableError(
                     "CLI OAuth token refresh failed. Reconnect your subscription "
                     "in Settings > AI."

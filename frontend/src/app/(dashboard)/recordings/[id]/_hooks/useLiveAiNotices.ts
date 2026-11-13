@@ -60,7 +60,9 @@ export function liveAiNotification(
  *
  * A notice keeps its id while the same provider fails the same way, so it is
  * shown once, across reloads of the tab. One that leaves the payload (its
- * provider answered again, or the settings changed) takes its toast with it.
+ * provider answered again, or the settings changed) takes its toast with it,
+ * and once the capture has ended every one of them goes: a stopped
+ * provider's toast is no longer news, and the notification history keeps it.
  */
 export function useLiveAiNotices(recording: Recording | null | undefined) {
   const router = useRouter();
@@ -70,8 +72,9 @@ export function useLiveAiNotices(recording: Recording | null | undefined) {
   const notices = recording?.live_ai_notices;
 
   useEffect(() => {
-    if (!recordingId || !live) return;
-    const current = notices ?? [];
+    if (!recordingId) return;
+    // No notice is sent once the capture has ended, and none is shown then.
+    const current = live ? notices ?? [] : [];
     const shown = readShown(recordingId);
     let changed = false;
     for (const notice of current) {
@@ -81,7 +84,8 @@ export function useLiveAiNotices(recording: Recording | null | undefined) {
       addNotification(liveAiNotification(notice, (href) => router.push(href)));
     }
     if (changed) writeShown(recordingId, shown);
-    // Each poll brings a new array; a pass over the same ids changes nothing.
+    // Each poll brings a new array; a pass over the same ids changes nothing,
+    // and removing a toast that is already gone leaves the store alone.
     const present = new Set(current.map((notice) => notice.id));
     for (const id of shown) {
       if (!present.has(id)) removeActiveNotification(`live-ai-${id}`);

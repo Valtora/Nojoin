@@ -580,7 +580,6 @@ async def poll_cli_oauth(
     if status == codex_oauth.STATUS_CONNECTED:
         await codex_oauth.clear_login_state(current_user.id)
         logger.info("Codex device connect completed for user %s.", current_user.id)
-        await run_in_threadpool(bump_epoch)
         return CliOAuthPollRead(provider=provider, status="connected")
     if status == codex_oauth.STATUS_FAILED:
         await codex_oauth.clear_login_state(current_user.id)
