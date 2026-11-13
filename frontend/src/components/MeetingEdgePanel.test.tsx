@@ -9,6 +9,23 @@ describe("MeetingEdgePanel", () => {
     vi.useRealTimers();
   });
 
+  it("states why Meeting Edge is paused, beside the guidance it keeps", () => {
+    const notice =
+      "Meeting Edge is paused: Ollama returned a server error for fake-500. Nojoin will keep trying.";
+    const props = {
+      onSaveFocus: vi.fn().mockResolvedValue(undefined),
+      status: "error",
+      payload: { summary: "Earlier guidance", questions: [], points: [], concepts: [] },
+    };
+    const { rerender } = render(<MeetingEdgePanel {...props} notice={notice} />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(notice);
+    expect(screen.getByText("Earlier guidance")).toBeVisible();
+
+    rerender(<MeetingEdgePanel {...props} status="ready" notice={null} />);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("cancels a pending focus debounce on read-only transition while retaining guidance and history", async () => {
     vi.useFakeTimers();
     const onSaveFocus = vi.fn().mockResolvedValue(undefined);

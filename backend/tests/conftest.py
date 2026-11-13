@@ -363,6 +363,81 @@ def fast_renewal(monkeypatch):
     )
 
 
+class FakeLiveAIRedis:
+    """Just enough Redis for the live AI backoff (#994), in memory.
+
+    The per-recording hashes and the epoch counter. TTLs are recorded, not
+    enforced. ``unreachable`` makes every call raise, as a lost Redis does.
+    """
+
+    def __init__(self) -> None:
+        self.hashes: dict[str, dict[str, str]] = {}
+        self.values: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+        self.unreachable = False
+
+    def _check(self) -> None:
+        if self.unreachable:
+            raise ConnectionError("no redis here")
+
+    def get(self, key):
+        self._check()
+        return self.values.get(key)
+
+    def incr(self, key):
+        self._check()
+        value = int(self.values.get(key) or 0) + 1
+        self.values[key] = str(value)
+        return value
+
+    def hgetall(self, key):
+        self._check()
+        return dict(self.hashes.get(key, {}))
+
+    def hset(self, key, field, value):
+        self._check()
+        self.hashes.setdefault(key, {})[field] = value
+        return 1
+
+    def hdel(self, key, field):
+        self._check()
+        return 1 if self.hashes.get(key, {}).pop(field, None) is not None else 0
+
+    def expire(self, key, seconds):
+        self._check()
+        self.ttls[key] = seconds
+        return True
+
+    def close(self):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def fake_live_ai_redis():
+    """Give the live AI backoff an in-memory Redis in every test.
+
+    Meeting Edge, the recording detail read of a capture and an AI settings
+    save all reach it; without this each would trip the Redis guard above.
+    Yields the fake, or None where the module does not exist.
+
+    Patched by hand rather than with ``monkeypatch``: an autouse fixture that
+    takes ``monkeypatch`` brings its teardown forward of fresh_worker_caches,
+    which then finds a test's stub modules still installed.
+    """
+    try:
+        from backend.processing import live_ai_backoff
+    except ImportError:
+        yield None
+        return
+    fake = FakeLiveAIRedis()
+    original = live_ai_backoff._open_client
+    live_ai_backoff._open_client = lambda: fake
+    try:
+        yield fake
+    finally:
+        live_ai_backoff._open_client = original
+
+
 @pytest.fixture(autouse=True)
 def text_embedding_model_guard(request, monkeypatch):
     """Fail any test that loads the real text embedding model.

@@ -56,7 +56,8 @@ async def refresh_tokens(refresh_token: str) -> OAuthTokens:
         raise CliOAuthExchangeError(f"Token endpoint request failed: {exc}") from exc
     if response.status_code != 200:
         raise CliOAuthExchangeError(
-            f"Token refresh returned HTTP {response.status_code}"
+            f"Token refresh returned HTTP {response.status_code}",
+            http_status=response.status_code,
         )
     payload = response.json()
     access_token = payload.get("access_token")

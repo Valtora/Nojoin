@@ -40,6 +40,8 @@ from backend.processing.llm_backends.base import (
 
 
 class OpenAILLMBackend(LLMBackend):
+    provider_id = "openai"
+
     def __init__(self, api_key=None, model=None):
         import openai
 

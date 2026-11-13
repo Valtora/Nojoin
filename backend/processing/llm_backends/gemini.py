@@ -42,6 +42,8 @@ GEMINI_API_VERSION = "v1beta"
 
 
 class GeminiLLMBackend(LLMBackend):
+    provider_id = "gemini"
+
     def __init__(self, api_key=None, model=None):
         # Lazy import to avoid errors when google-genai isn't installed
         try:
