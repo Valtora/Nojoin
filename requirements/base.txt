@@ -1,9 +1,9 @@
 sqlmodel==0.0.48
 # From SQLAlchemy 2.1, greenlet, which the async engine needs, arrives only
 # through the asyncio extra.
-sqlalchemy[asyncio]==2.1.6
+sqlalchemy[asyncio]==2.1.8
 # The workers' driver (backend/core/db.py names it in the sync URL).
-psycopg[binary]==3.3.7
+psycopg[binary]==3.3.8
 asyncpg==0.32.0
 python-dotenv==1.2.4
 PyJWT==2.15.1
