@@ -90,7 +90,7 @@ def correct_sentence_starts(
         context = _context_row(fixed, words[lo:hi], live.resume_boundaries_ms)
         if context is not None:
             stored = context.speaker_label or UNKNOWN
-            for word in row_words(context):
+            for word in _context_words(context):
                 if context.manual_text_locked or context.manual_speaker_locked:
                     lane.manual.add(len(lane.words))
                 lane.locked.add(len(lane.words))
@@ -109,6 +109,21 @@ def correct_sentence_starts(
         if source is not None and label != given:
             result[source] = replace(decisions[source], speaker=label)
     return result
+
+
+def _context_words(row: TranscriptUtterance) -> list[dict[str, Any]]:
+    """The words of the immutable row before a region, as the rule reads them.
+
+    Wording a person wrote replaces a line's words with one untimed word
+    (``protect_text_replacement``), and an untimed word never ends the sentence
+    a candidate follows. Read over the line's own span, a full stop the person
+    kept still lets the reply that follows the line move (#975).
+    """
+    words = row_words(row)
+    protected = (row.confidence_payload or {}).get("human_protection")
+    if protected and len(words) == 1 and words[0].get("start_ms") is None:
+        return [{**words[0], "start_ms": row.start_ms, "end_ms": row.end_ms}]
+    return words
 
 
 def _decided(word: dict[str, Any], decide: DecideSpeaker, fallback: str) -> str:
