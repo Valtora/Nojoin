@@ -114,13 +114,14 @@ def _seed_speaker(
     speaker_id: int,
     recording_id: int,
     global_speaker_id: int | None,
+    speaker_status: str = "active",
 ) -> None:
     connection.execute(
         text(
             "INSERT INTO recording_speakers (id, created_at, updated_at, "
             "public_id, recording_id, diarization_label, global_speaker_id, "
             "speaker_status, speaker_kind, identity_locked) "
-            "VALUES (:id, :ts, :ts, :pid, :rec, :label, :gsid, 'active', "
+            "VALUES (:id, :ts, :ts, :pid, :rec, :label, :gsid, :status, "
             "'diarized', 0)"
         ),
         {
@@ -129,6 +130,7 @@ def _seed_speaker(
             "rec": recording_id,
             "label": f"SPEAKER_{speaker_id:02d}",
             "gsid": global_speaker_id,
+            "status": speaker_status,
             "ts": _now(),
         },
     )
@@ -383,3 +385,171 @@ class TestDeliveryBaselines:
             )
 
         assert baselines == {}
+
+
+class TestBaselineMeetingsFollowPeopleCount:
+    """The baseline reads the meetings a person's People entry counts.
+
+    Three counted meetings give a fixed baseline. Each test adds a fourth
+    meeting whose figures would move both the meeting count and the medians if
+    it were read, so a meeting the People count leaves out shows up as a
+    changed baseline.
+    """
+
+    COUNTED = {
+        "meetings": 3,
+        "words_per_minute": 170,
+        "pitch_spread_semitones": 6.0,
+        "pauses_per_minute": 3.0,
+    }
+
+    @staticmethod
+    def _figures(wpm: int, spread: float) -> dict:
+        return {
+            "words_per_minute": wpm,
+            "pitch_spread_semitones": spread,
+            "pause_count": 6,
+            "speech_ms": 120_000,
+        }
+
+    def _payload(self, figures: dict[int, tuple[int, float]]) -> dict:
+        return {
+            "method_version": DELIVERY_METHOD_VERSION,
+            "delivery": {
+                "speakers": {
+                    f"rs:{speaker_id}": self._figures(wpm, spread)
+                    for speaker_id, (wpm, spread) in figures.items()
+                }
+            },
+        }
+
+    def _seed_counted_history(self, connection) -> None:
+        _seed_user(connection)
+        # The meeting being viewed, with Alice Example linked as person 77.
+        _seed_recording(connection, recording_id=10)
+        _seed_speaker(connection, speaker_id=1, recording_id=10, global_speaker_id=77)
+        for index, wpm in enumerate((150, 170, 190), start=1):
+            _seed_recording(
+                connection,
+                recording_id=20 + index,
+                payload=self._payload({100 + index: (wpm, 4.0 + index)}),
+            )
+            _seed_speaker(
+                connection,
+                speaker_id=100 + index,
+                recording_id=20 + index,
+                global_speaker_id=77,
+            )
+
+    @staticmethod
+    def _merge(connection, speaker_id: int, *, into: int) -> None:
+        connection.execute(
+            text(
+                "UPDATE recording_speakers SET merged_into_id = :into, "
+                "speaker_status = 'merged' WHERE id = :id"
+            ),
+            {"id": speaker_id, "into": into},
+        )
+
+    @staticmethod
+    def _bin(connection, recording_id: int) -> None:
+        connection.execute(
+            text("UPDATE recordings SET is_deleted = 1 WHERE id = :id"),
+            {"id": recording_id},
+        )
+
+    @staticmethod
+    def _baseline(engine) -> dict:
+        with Session(engine) as session:
+            baselines = compute_delivery_baselines(
+                session,
+                user_id=1,
+                recording_id=10,
+                speakers=[{"speaker_key": "rs:1", "global_speaker_id": 77}],
+            )
+        return baselines["rs:1"]
+
+    def test_meeting_where_all_their_lines_moved_away_is_left_out(
+        self, tmp_path: Path
+    ) -> None:
+        engine = _make_engine(tmp_path, "baselines-inactive")
+        with engine.begin() as connection:
+            self._seed_counted_history(connection)
+            # Every line of Alice's speaker here was moved to Bob Sample, so the
+            # figures measured for her before the move describe his speech.
+            _seed_recording(
+                connection, recording_id=24, payload=self._payload({104: (400, 12.0)})
+            )
+            _seed_speaker(
+                connection,
+                speaker_id=104,
+                recording_id=24,
+                global_speaker_id=77,
+                speaker_status="inactive",
+            )
+
+        assert self._baseline(engine) == self.COUNTED
+
+    def test_speaker_merged_into_another_is_left_out(self, tmp_path: Path) -> None:
+        engine = _make_engine(tmp_path, "baselines-merged")
+        with engine.begin() as connection:
+            self._seed_counted_history(connection)
+            # Alice's speaker was merged into Bob Sample's (person 88). The
+            # payload still holds her row's figures from before the merge.
+            _seed_recording(
+                connection,
+                recording_id=24,
+                payload=self._payload({104: (400, 12.0), 105: (120, 3.0)}),
+            )
+            _seed_speaker(
+                connection, speaker_id=105, recording_id=24, global_speaker_id=88
+            )
+            _seed_speaker(
+                connection, speaker_id=104, recording_id=24, global_speaker_id=77
+            )
+            self._merge(connection, 104, into=105)
+
+        assert self._baseline(engine) == self.COUNTED
+
+    def test_meeting_in_the_bin_is_left_out(self, tmp_path: Path) -> None:
+        engine = _make_engine(tmp_path, "baselines-binned")
+        with engine.begin() as connection:
+            self._seed_counted_history(connection)
+            _seed_recording(
+                connection, recording_id=24, payload=self._payload({104: (400, 12.0)})
+            )
+            _seed_speaker(
+                connection, speaker_id=104, recording_id=24, global_speaker_id=77
+            )
+            self._bin(connection, 24)
+
+        assert self._baseline(engine) == self.COUNTED
+
+    def test_counted_meeting_still_contributes_beside_a_merged_away_row(
+        self, tmp_path: Path
+    ) -> None:
+        engine = _make_engine(tmp_path, "baselines-counted")
+        with engine.begin() as connection:
+            self._seed_counted_history(connection)
+            # A fourth meeting where Alice was split in two and the second row
+            # merged back into the first: it counts through the surviving row,
+            # whose figures join the medians, and the merged row adds nothing.
+            _seed_recording(
+                connection,
+                recording_id=24,
+                payload=self._payload({104: (180, 6.5), 105: (400, 12.0)}),
+            )
+            _seed_speaker(
+                connection, speaker_id=104, recording_id=24, global_speaker_id=77
+            )
+            _seed_speaker(
+                connection, speaker_id=105, recording_id=24, global_speaker_id=77
+            )
+            self._merge(connection, 105, into=104)
+
+        assert self._baseline(engine) == {
+            "meetings": 4,
+            "words_per_minute": 175,
+            "pitch_spread_semitones": 6.25,
+            "pauses_per_minute": 3.0,
+        }

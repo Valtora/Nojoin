@@ -255,6 +255,9 @@ supports well, and it needs no model. The rules, in
   voiceprints.
 - A baseline needs at least three measured meetings for a speaker linked to
   the same person (`BASELINE_MIN_MEETINGS`, judgement).
+- The meetings read are the ones the person's People entry counts
+  (`counted_speaker()`): a speaker merged into another, one whose lines all
+  moved to other speakers and a meeting in the bin add nothing.
 - The meeting count is shown with the words, which stay descriptive ("faster
   than their usual across 4 meetings"), never affective.
 - Every six hours a background sweep re-measures up to 25 recordings whose

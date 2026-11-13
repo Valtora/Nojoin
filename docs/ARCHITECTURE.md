@@ -118,7 +118,7 @@ Speaking pace, pitch height and movement (YIN, spread in semitones), loudness an
 
 The payload carries `DELIVERY_METHOD_VERSION` and the transcript event watermark it was measured at. Stale figures are re-measured when the Analytics tab is next read, if the owner's `auto_remeasure_delivery` setting is on (the default), with a five-minute per-recording claim so the tab's polling cannot queue the run twice. A measurement that ended in error is never retried by a read. After a method-version bump, `remeasure_outdated_delivery_task` re-measures up to 25 recordings every six hours.
 
-Cross-meeting baselines compare a speaker linked to a person with that person's medians over the user's other measured meetings. They are derived on read, use the same method version only, and need three such meetings (`BASELINE_MIN_MEETINGS`). The wording describes delivery, never emotional state.
+Cross-meeting baselines compare a speaker linked to a person with that person's medians over the user's other measured meetings. They read the meetings the person's People entry counts, through `counted_speaker()` in [backend/services/person_meetings.py](../backend/services/person_meetings.py), so a speaker merged into another, one whose lines all moved to other speakers and a meeting in the bin add nothing. They are derived on read, use the same method version only, and need three such meetings (`BASELINE_MIN_MEETINGS`). The wording describes delivery, never emotional state.
 
 #### Measured Overlap
 

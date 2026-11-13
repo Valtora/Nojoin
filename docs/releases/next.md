@@ -47,6 +47,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - Meeting Edge and the live speaker naming ask send each AI provider one request per run, held to their 90 s timeout. A failing provider was retried inside the call, waiting out any rate-limit delay it asked for, and an Anthropic or Gemini name ask had no 90 s limit at all (#994).
 - When the AI provider behind Meeting Edge fails during a recording, Nojoin waits before asking it again, from 30 seconds up to every 5 minutes, and stops asking for the rest of the recording when a key is refused, a model is missing or the account is out of credit, while a fallback provider carries on. One notification per kind of failure names the provider and model and says why, and the **Meeting Edge** tab says why it is paused. Changing the AI settings lifts a stop without a restart. The recording read carries the notices as `live_ai_notices` during a capture (#994).
 - A Claude or ChatGPT subscription no longer shows as disconnected in **Settings > Your AI** after a token refresh that failed on a network or server error, and another subscription cannot be connected beside it meanwhile; Nojoin refreshes it again on the next request. Only a refresh the provider refuses asks you to reconnect (#994).
+- The **Analytics** note comparing a person with their usual delivery reads only the meetings their **Person Details** counts. It also read meetings in the bin and meetings where all their lines had moved to other speakers or their speaker was merged into another, so the meeting count behind it could run high (#985).
 
 ### People, tasks and calendar
 
@@ -90,7 +91,6 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - Live lines can move words between speakers at a turn change before they lock, and past eight voices a live reply's first words can still go to the previous speaker (#776, #813, #888).
 - Editing the text of the previous speaker's line sends a reply's moved first words back to that line (#975).
-- The **Analytics** note comparing a person with their usual delivery can still read meetings where all their lines moved to other speakers, and meetings in the bin (#985).
 
 ## Browser capture
 
