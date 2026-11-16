@@ -108,6 +108,8 @@ docker compose exec worker-gpu ldconfig -p | grep libcudnn_adv
 
 An empty result means the base image moved cuDNN and the image needs rebuilding against the new path. A handful of memcpy nodes in ONNX Runtime's log is normal. Hundreds or thousands mean the graph is running on the CPU.
 
+Whisper's word timestamps fall back the same way. When its Triton kernels cannot launch, it aligns words with slower CPU kernels, and `worker-gpu` logs a warning the first time, once per worker process, beginning `Whisper could not launch its Triton GPU kernels`. The image build fails if Triton does not import, so on a released image the warning means Triton loaded but could not compile or launch its kernels on this GPU.
+
 ## Data Directory Ownership
 
 The `api` and `worker-*` containers run as UID 1000 (`appuser`). Their entrypoints start as root only to fix ownership of the `./data` bind mount, because Docker creates a missing bind-mount source as `root:root`, then drop to `appuser` through `gosu`. Each directory Nojoin writes to under `data/` is created and checked on its own. A mis-owned data root, as on the first boot of a fresh `data/`, gets one recursive pass.

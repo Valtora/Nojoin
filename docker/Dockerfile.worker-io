@@ -20,51 +20,73 @@ ARG WORKER_BASE_IMAGE=ghcr.io/valtora/nojoin-worker:latest
 # policy (allow latest); only the Node runtime shipping them is pinned.
 #
 # The `-bookworm-slim` variant is load-bearing and NOT interchangeable with the
-# `-alpine` one that frontend/Dockerfile uses. This stage is only a donor: the
-# bare `node` binary is copied into the PyTorch base below, which is Ubuntu 24.04
-# (glibc 2.39). Debian bookworm builds against glibc 2.36, and glibc is forward
-# compatible, so that binary runs there. An Alpine build links against musl and
-# would find no loader in the Ubuntu base at all. The frontend image has the
-# opposite requirement — it runs Node standalone, so it takes the smaller Alpine
-# base. The two therefore stay different on purpose.
+# `-alpine` one that frontend/Dockerfile uses. This stage is a donor: the bare
+# `node` binary is copied into the PyTorch base below, which is Ubuntu 24.04
+# (glibc 2.39), and so are the CLIs the next stage installs with it. Debian
+# bookworm builds against glibc 2.36, and glibc is forward compatible, so that
+# binary runs there. An Alpine build links against musl and would find no loader
+# in the Ubuntu base at all, and npm would pick the CLIs' musl builds. The
+# frontend image has the opposite requirement — it runs Node standalone, so it
+# takes the smaller Alpine base. The two therefore stay different on purpose.
 FROM node:26-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe AS node
+
+# The two subscription CLIs, installed in the Node image so that npm, its cache
+# and its bundled deps (picomatch, sigstore, which would trip the Trivy HIGH
+# gate) never reach the final image: the Claude Code CLI (a native binary that
+# npm's postinstall puts in place) and the OpenAI Codex CLI (@openai/codex, a
+# node wrapper around a self-contained native binary). Both are LLM tooling and
+# stay UNPINNED per the repo policy (allow latest). The Codex payload is a large
+# (~285 MB) stripped static binary that Trivy cannot introspect (ADR-0002): it
+# adds no scannable CVEs but is an unaudited vendor artifact — an accepted
+# trade-off recorded in the ADR. Two things narrow it. `npm audit signatures`
+# fails the build unless every installed package verifies against the
+# registry's signing keys (and its provenance attestation where the publisher
+# issues one), so a package swapped on the registry or in transit cannot reach
+# the image; it refuses `-g`, so it runs from the global prefix's lib directory,
+# where npm keeps the global tree. And the installed versions are written to
+# /usr/local/share/nojoin/cli-versions.json, so a release can be matched against
+# an advisory without unpacking the SBOM (which records them too).
+#
+# Everything the final image takes is staged under /out at the path it lands
+# on, so one COPY carries it with npm's relative bin symlinks intact: claude is
+# symlinked to /usr/bin/claude (historical path, which the worker passes to the
+# Agent SDK as cli_path); codex lands at /usr/local/bin/codex (npm's global bin,
+# where NOJOIN_CODEX_PATH defaults). The package trees move whole, which keeps
+# the hard link between the Claude Code binary and its platform package's copy.
+FROM node AS cli
+RUN npm install -g @anthropic-ai/claude-code @openai/codex \
+    && (cd "$(npm prefix -g)/lib" && npm audit signatures) \
+    && mkdir -p /out/usr/local/lib/node_modules /out/usr/local/bin \
+        /out/usr/local/share/nojoin /out/usr/bin \
+    && npm ls -g --depth=0 --json @anthropic-ai/claude-code @openai/codex \
+        > /out/usr/local/share/nojoin/cli-versions.json \
+    && ln -s "$(readlink -f "$(command -v claude)")" /out/usr/bin/claude \
+    && cp -P "$(command -v claude)" "$(command -v codex)" /out/usr/local/bin/ \
+    && mv /usr/local/lib/node_modules/@anthropic-ai /usr/local/lib/node_modules/@openai \
+        /out/usr/local/lib/node_modules/
 
 FROM ${WORKER_BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 USER root
 
-# Bring in the pinned Node runtime + npm (dynamically linked against libc /
-# libstdc++ already present in the PyTorch base). npm installs two subscription
-# CLIs, then is removed: the Claude Code CLI (JS, runs directly on node) and the
-# OpenAI Codex CLI (@openai/codex, a self-contained native binary). npm's bundled
-# deps (picomatch, sigstore) would otherwise ride along at runtime and trip the
-# Trivy HIGH gate. Both are LLM tooling and stay UNPINNED per the repo policy
-# (allow latest). The Codex payload is a large (~285 MB) stripped static binary
-# that Trivy cannot introspect (ADR-0002): it adds no scannable CVEs but is an
-# unaudited vendor artifact — an accepted trade-off recorded in the ADR. Two
-# things narrow it. `npm audit signatures` fails the build unless every
-# installed package verifies against the registry's signing keys (and its
-# provenance attestation where the publisher issues one), so a package swapped
-# on the registry or in transit cannot reach the image; it refuses `-g`, so it
-# runs from the global prefix's lib directory, where npm keeps the global tree.
-# And the installed versions are written to /usr/local/share/nojoin/
-# cli-versions.json, so a release can be matched against an advisory without
-# unpacking the SBOM (which records them too). claude is symlinked to
-# /usr/bin/claude (historical path); codex lands at /usr/local/bin/codex (npm's
-# global bin, where NOJOIN_CODEX_PATH defaults).
+# The pinned Node runtime (dynamically linked against libc / libstdc++ already
+# present in the PyTorch base), which runs the Codex wrapper, and the CLIs.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
-RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && npm install -g @anthropic-ai/claude-code @openai/codex \
-    && (cd "$(npm prefix -g)/lib" && npm audit signatures) \
-    && mkdir -p /usr/local/share/nojoin \
-    && npm ls -g --depth=0 --json @anthropic-ai/claude-code @openai/codex \
-        > /usr/local/share/nojoin/cli-versions.json \
-    && ln -sf "$(readlink -f "$(command -v claude)")" /usr/bin/claude \
-    && pip install --no-cache-dir claude-agent-sdk \
-    && rm -rf /usr/local/lib/node_modules/npm /usr/lib/node_modules/npm \
-        /usr/local/bin/npm /usr/local/bin/npx /root/.npm
+COPY --from=cli /out/ /
+
+# The Agent SDK wheel bundles its own copy of the Claude Code binary (~360 MB),
+# which it runs only when no cli_path is given. backend/processing/cli/manager.py
+# always passes /usr/bin/claude, so the copy is removed in the layer that
+# installs it, leaving one binary in the image (#1053). Both CLIs then run once
+# from a throwaway HOME, so a broken copy or link fails the build here.
+RUN pip install --no-cache-dir claude-agent-sdk \
+    && sdk_dir="$(python -c 'import importlib.util, os; print(os.path.dirname(importlib.util.find_spec("claude_agent_sdk").origin))')" \
+    && rm -f "$sdk_dir/_bundled/claude" \
+    && check_home="$(mktemp -d)" \
+    && HOME="$check_home" TMPDIR="$check_home" claude --version \
+    && HOME="$check_home" TMPDIR="$check_home" codex --version \
+    && rm -rf "$check_home"
 
 # Default to root, matching the base worker image: the inherited worker entrypoint
 # enters as root to repair ./data ownership, then drops to appuser via gosu at

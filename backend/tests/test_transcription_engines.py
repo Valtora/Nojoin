@@ -1,5 +1,8 @@
 """Tests for the pluggable transcription engine (config + dispatch + engine schema)."""
 
+import logging
+import warnings
+
 import pytest
 
 from backend.processing import transcribe
@@ -193,6 +196,83 @@ def test_whisper_engine_seeds_fallback_sampling_without_leaking_it(monkeypatch):
 
     assert torch.equal(drawn[0], drawn[1])
     assert torch.equal(torch.rand(1), expected_next)
+
+
+def _whisper_fallback_records(caplog, whisper_engine):
+    return [
+        record
+        for record in caplog.records
+        if record.name == whisper_engine.logger.name
+        and record.levelno == logging.WARNING
+        and "Triton" in record.getMessage()
+    ]
+
+
+def test_whisper_engine_logs_one_warning_when_triton_falls_back(monkeypatch, caplog):
+    """Whisper's per-window Triton fallback warnings become one WARNING line.
+
+    One per process, because live settling transcribes every few seconds.
+    """
+    from backend.processing.engines import whisper_engine
+    from backend.processing.engines.whisper_engine import WhisperEngine
+
+    class _FakeModel:
+        def transcribe(self, audio_path, **kwargs):
+            # Stands in for whisper.timing, which warns from two kernels in
+            # every 30-second window when Triton cannot launch.
+            for kernel in ("median kernel", "DTW", "median kernel", "DTW"):
+                warnings.warn(
+                    "Failed to launch Triton kernels, likely due to missing CUDA "
+                    f"toolkit; falling back to a slower {kernel} implementation..."
+                )
+            warnings.warn("an unrelated warning")
+            return {"text": "", "language": "en", "segments": []}
+
+    monkeypatch.setattr(
+        whisper_engine.whisper, "load_model", lambda *a, **k: _FakeModel()
+    )
+    monkeypatch.setattr(whisper_engine.os.path, "exists", lambda p: True)
+    monkeypatch.setattr(whisper_engine, "_model_cache", {})
+    monkeypatch.setattr(whisper_engine, "_triton_fallback_logged", False)
+
+    with warnings.catch_warnings(record=True) as shown:
+        warnings.simplefilter("always")
+        # What model preparation leaves behind in the same worker process.
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*Failed to launch Triton kernels.*",
+            category=UserWarning,
+        )
+        with caplog.at_level(logging.WARNING, logger=whisper_engine.logger.name):
+            engine = WhisperEngine()
+            engine.transcribe("meeting.wav", {"processing_device": "cpu"})
+            engine.transcribe("standup.wav", {"processing_device": "cpu"})
+
+    records = _whisper_fallback_records(caplog, whisper_engine)
+    assert len(records) == 1
+    assert "meeting.wav" in records[0].getMessage()
+    assert [str(warning.message) for warning in shown] == ["an unrelated warning"] * 2
+
+
+def test_whisper_engine_logs_nothing_when_triton_runs(monkeypatch, caplog):
+    from backend.processing.engines import whisper_engine
+    from backend.processing.engines.whisper_engine import WhisperEngine
+
+    class _FakeModel:
+        def transcribe(self, audio_path, **kwargs):
+            return {"text": "", "language": "en", "segments": []}
+
+    monkeypatch.setattr(
+        whisper_engine.whisper, "load_model", lambda *a, **k: _FakeModel()
+    )
+    monkeypatch.setattr(whisper_engine.os.path, "exists", lambda p: True)
+    monkeypatch.setattr(whisper_engine, "_model_cache", {})
+    monkeypatch.setattr(whisper_engine, "_triton_fallback_logged", False)
+
+    with caplog.at_level(logging.WARNING, logger=whisper_engine.logger.name):
+        WhisperEngine().transcribe("meeting.wav", {"processing_device": "cpu"})
+
+    assert _whisper_fallback_records(caplog, whisper_engine) == []
 
 
 def test_release_model_cache_calls_engines():

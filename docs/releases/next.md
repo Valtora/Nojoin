@@ -69,6 +69,8 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - The worker moves to Transformers 5.22.1. A capture running across the upgrade continues its live speaker labels with clustering instead of Nemotron (#947).
 - The frontend moves to Next.js 16.4.6, which carries the security fixes released in 16.4.5. The API and workers move to Celery 5.7.0, SQLAlchemy 2.1.8 and psycopg 3.3.8, and the AI SDKs, still uncapped, now need at least openai 3.49.0, anthropic 2.7.0 and google-genai 3.0.0 (#1048).
+- The worker-io image carries one copy of the Claude Code CLI instead of two, about 360 MB less, and the api and worker images no longer store the application files twice, about 80 MB less each. An image built from a working checkout also leaves out the Python tool caches (#1053).
+- When Whisper cannot launch its Triton GPU kernels and aligns word timestamps on the CPU instead, `worker-gpu` logs a warning the first time, where it said nothing. A worker image whose Triton does not import now fails to build (#1053).
 
 ## Upgrade
 

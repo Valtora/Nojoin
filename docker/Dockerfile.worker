@@ -195,21 +195,31 @@ RUN HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -c \
      processor = Nemotron3DiarizationProcessor(NemotronAsrStreamingFeatureExtractor()); \
      model = Nemotron3DiarizationForAudioFrameClassification(Nemotron3DiarizationConfig())"
 
-WORKDIR /app
-
-COPY . .
+# Fail the build if Triton cannot import. Whisper aligns word timestamps with
+# Triton GPU kernels, and when they cannot load it falls back to slower CPU
+# kernels for every recording (whisper_engine.py logs a WARNING when it does).
+# whisper.triton_ops raises at import if Triton does, and needs no GPU to import.
+RUN python -c "import whisper.triton_ops"
 
 # Create the non-root appuser that the entrypoint drops to at runtime.
 # The Ubuntu 24.04-based PyTorch image ships a default user at UID 1000; remove
 # whatever occupies 1000 first so appuser keeps UID 1000 for mounted-volume
 # ownership. Create directories for volumes to ensure they are owned by appuser.
+#
+# The user exists before the source is copied so that COPY --chown can own the
+# files as they land. A `chown -R /app` after the copy stored every file in /app
+# a second time, in a layer of its own (#1053).
 RUN if getent passwd 1000 >/dev/null 2>&1; then \
         userdel -r "$(getent passwd 1000 | cut -d: -f1)" 2>/dev/null || true; \
     fi && \
     useradd -m -u 1000 appuser && \
-    mkdir -p /home/appuser/.cache/huggingface && \
-    mkdir -p /app/data && \
-    chown -R appuser:appuser /app /home/appuser
+    mkdir -p /home/appuser/.cache/huggingface /app/data && \
+    chown -R appuser:appuser /home/appuser && \
+    chown appuser:appuser /app /app/data
+
+WORKDIR /app
+
+COPY --chown=appuser:appuser . .
 
 RUN chmod +x backend/worker_entrypoint.sh
 

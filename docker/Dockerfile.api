@@ -78,12 +78,24 @@ RUN /usr/local/bin/python3 -m pip uninstall -y --root-user-action=ignore pip && 
 
 COPY --from=builder /opt/venv /opt/venv
 
+# Create the non-root appuser and the mounted-volume directories it must own.
+# The image intentionally does NOT `USER appuser`: the entrypoint enters as root
+# only to repair ./data bind-mount ownership, then drops to appuser via gosu, so
+# the long-running process runs as uid 1000 (asserted by the release smoke test).
+#
+# The user exists before the source is copied so that COPY --chown can own the
+# files as they land. A `chown -R /app` after the copy stored every file in /app
+# a second time, in a layer of its own (#1053).
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app /shared_model_cache && \
+    chown appuser:appuser /app /shared_model_cache
+
 WORKDIR /app
 
 ARG NOJOIN_SERVER_VERSION
 ENV NOJOIN_SERVER_VERSION=${NOJOIN_SERVER_VERSION}
 
-COPY . .
+COPY --chown=appuser:appuser . .
 
 RUN set -eu; \
     version="${NOJOIN_SERVER_VERSION:-}"; \
@@ -94,17 +106,10 @@ RUN set -eu; \
     if [ -z "$version" ]; then \
         version="0.0.0"; \
     fi; \
-    printf '%s\n' "$version" > /app/.build-version
+    printf '%s\n' "$version" > /app/.build-version; \
+    chown appuser:appuser /app/.build-version
 
 RUN chmod +x /app/backend/entrypoint.sh
-
-# Create the non-root appuser and the mounted-volume directories it must own.
-# The image intentionally does NOT `USER appuser`: the entrypoint enters as root
-# only to repair ./data bind-mount ownership, then drops to appuser via gosu, so
-# the long-running process runs as uid 1000 (asserted by the release smoke test).
-RUN useradd -m -u 1000 appuser && \
-    mkdir -p /shared_model_cache && \
-    chown -R appuser:appuser /app /shared_model_cache
 
 EXPOSE 8000
 
