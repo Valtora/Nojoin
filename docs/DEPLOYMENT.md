@@ -173,7 +173,7 @@ Models live in the `model_cache` volume (`XDG_CACHE_HOME` and `HF_HOME` on the w
 
 Changing the transcription model downloads nothing by itself. **Settings > Transcription** offers to fetch the new model, and **Model downloads**, under **Advanced** in **Settings > AI providers**, has a **Download** action with progress. A model that was never prepared is fetched on first use, which holds up live transcription and Meeting Edge. One preparation runs at a time, and a second request gets a 409. Deleting a cached model runs on a worker too, because the API mounts `model_cache` read-only, so both actions need running workers.
 
-After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation.
+After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation. What the process keeps after a release, the imported ML libraries and what a first inference leaves behind, goes only when `worker-gpu` restarts itself after an idle spell ([Idle Worker Restart](#idle-worker-restart)).
 
 `worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Beat records each job's last run in `data/celerybeat-schedule.json`, the `-s` path plus `.json`, and replaces the whole file after every task it sends, so the cadence survives restarts, even when Docker has to kill a busy `worker-io`. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
 
@@ -210,21 +210,46 @@ Worker tasks are split across four Celery queues, each drained by its own contai
 | Service | Queue | Shipped pool | Work |
 | --- | --- | --- | --- |
 | `worker-gpu` | `gpu` | `--pool=solo --concurrency=1` | Final processing, live ASR, speaker embeddings, overlap analytics, transcription and Pyannote speaker model preparation. The only lane with GPU access. |
-| `worker-cpu` | `cpu` | `--pool=prefork --concurrency=3` | ffmpeg transcodes, playback proxies, imported audio, delivery analytics, backups, all Nemotron and forced aligner downloads, including the aligner download that preparing Canary queues. |
-| `worker-io` | `io` | `--pool=prefork --concurrency=4`, plus Celery Beat | Meeting Edge, notes, chat, transcript indexing, calendar sync, restores, cleanup, model deletion, telemetry. |
-| `worker-parse` | `parse` | `--pool=prefork --concurrency=2 --max-tasks-per-child=25` | Document parsing and search index rebuilds. |
+| `worker-cpu` | `cpu` | `--pool=prefork --autoscale=3,1 --max-memory-per-child=400000` | ffmpeg transcodes, playback proxies, imported audio, delivery analytics, backups, all Nemotron and forced aligner downloads, including the aligner download that preparing Canary queues. |
+| `worker-io` | `io` | `--pool=prefork --autoscale=4,1 --max-memory-per-child=400000`, plus Celery Beat | Meeting Edge, notes, chat, transcript indexing, calendar sync, restores, cleanup, model deletion, telemetry. |
+| `worker-parse` | `parse` | `--pool=prefork --autoscale=2,1 --max-memory-per-child=400000 --max-tasks-per-child=25` | Document parsing and search index rebuilds. |
 
 `worker-parse` runs the `worker-io` image, because visual parsing can use a subscription CLI that ships only there. It is a separate lane because a parse has no page cap, and one large upload on the IO lane could slow Meeting Edge during a live meeting. Routing is `TASK_ROUTES` in `backend/celery_app.py`, and an unrouted task goes to the GPU lane.
 
-Tune `--concurrency` in `docker-compose.yml` to your host. Keep the GPU lane at 1 unless you have several GPUs or one card that can hold two pipelines. PostgreSQL's default `max_connections` (100) covers the shipped sizing, so raise it if you widen the lanes a lot.
+Tune the pools in `docker-compose.yml` to your host: `--autoscale=<most>,<fewest>` children on a prefork lane, or a fixed `--concurrency`. Keep the GPU lane at `--concurrency=1` unless you have several GPUs or one card that can hold two pipelines. PostgreSQL's default `max_connections` (100) covers the shipped sizing, so raise it if you widen the lanes a lot.
 
 Keep `--pool` at `solo` or `prefork`. Worker code queues follow-on tasks with a blocking call, which is safe only while each task has an operating-system process to itself. A pool that runs several tasks in one process, such as `gevent`, `eventlet` or `threads`, lets one blocked dispatch stall the others, and no test catches the change.
 
 #### Worker Child Recycling
 
-Prefork children are replaced after 500 tasks (`worker_max_tasks_per_child` in `backend/celery_app.py`). A lane's `--max-tasks-per-child` flag overrides that, as `worker-parse` does with 25, because one document can leave a child far heavier than any other task. The setting has no effect on `worker-gpu`, whose solo pool has no children, and does not touch Celery Beat.
+The prefork lanes autoscale. `worker-io` keeps one child while it is idle, adds children up to four while tasks wait, and removes the extra ones once the lane has been quiet for about a minute. `worker-cpu` grows to three children and `worker-parse` to two. An idle install then runs three prefork children instead of nine.
 
-A recycle never interrupts or loses a task, and the new child re-imports what its first task needs. Recycling bounds how far an undetected leak can grow. It does not lower steady-state memory. Raise the limit for a lane whose tasks are slow to warm up, and lower it for one whose tasks are memory-hungry.
+`--max-memory-per-child=400000` replaces a child after its task once the child has used more than 400,000 KiB (about 390 MiB) of resident memory. Celery measures the child's peak, not what it holds when the task ends, so one heavy task, such as a long backup, a large document or a model preparation, is enough. The task always finishes first.
+
+Prefork children are also replaced after 500 tasks (`worker_max_tasks_per_child` in `backend/celery_app.py`). A lane's `--max-tasks-per-child` flag overrides that, as `worker-parse` does with 25, because one document can leave a child far heavier than any other task. None of these settings affects `worker-gpu`, whose solo pool has no children, or Celery Beat.
+
+A recycle never interrupts or loses a task, and the new child re-imports what its first task needs. The task limit bounds how far an undetected leak can grow, and the memory limit hands back what a heavy task left behind. Raise either limit for a lane whose tasks are slow to warm up, and lower it for one whose tasks are memory-hungry.
+
+A `docker-compose.yml` from before 3.2.0 keeps fixed pools. To adopt autoscaling, replace `--concurrency=<n>` with `--autoscale=<n>,1` and add `--max-memory-per-child=400000` on `worker-cpu`, `worker-io` and `worker-parse`, as `docker-compose.example.yml` has them.
+
+### Idle Worker Restart
+
+`worker-gpu` releases its models after every task, but its process keeps what importing the ML libraries and running a first inference leave behind: about 1.5 GB of host memory on a CUDA install, and the GPU's CUDA context, with no model loaded. Only a process exit returns that memory, so once the worker has been idle long enough it restarts itself in place. It finishes a warm shutdown and then runs its own command line again in the same process: the container, process ID and environment stay the same, and nothing depends on the restart policy.
+
+It restarts once all of these hold:
+
+- `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES`, 15 by default, have passed since its last task finished.
+- It has run at least one task since it started, so a worker that has just restarted waits for work first.
+- No capture is recording or paused. While one is, the idle time does not count, and it starts counting when the capture stops or is discarded.
+- No task is running or waiting on the worker.
+
+It logs one line as it goes, `Idle for 15.4 minutes: restarting this worker in place to free memory. Models load again on the next task.`, followed by its usual startup lines. A task sent during the few seconds it takes waits in the queue and runs once the worker is back.
+
+The next task loads its models again. The first live caption of a capture that starts after a restart arrives about 14 seconds after its segment, against about 12.5 seconds when the models were only released, and about 20 seconds with live speaker labels. Final transcripts are unaffected.
+
+Set `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES` in `.env` in minutes, or `0` to turn the restart off. The shipped compose file passes it to `worker-gpu` alone. A `docker-compose.yml` from before 3.2.0 does not pass it, so the worker restarts after the default 15 minutes until you add `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES: ${NOJOIN_WORKER_IDLE_RECYCLE_MINUTES:-}` to `worker-gpu`'s `environment:` block.
+
+Only a solo pool restarts this way; the prefork lanes shed children instead ([Worker Child Recycling](#worker-child-recycling)). While **Settings > System and logs** is open, it asks `worker-gpu` for its processing device every 30 seconds, and each of those requests is a task, so close the page to see the worker restart.
 
 ## CPU-Only Deployment
 
@@ -316,6 +341,7 @@ Operations:
 | `NOJOIN_STALL_WATCHDOG_ENABLED` | `true` | Logs API stalls and host pressure ([Stall Detection](#stall-detection)). |
 | `WHISPER_ENABLE_WORD_TIMESTAMPS` | `true` | Whisper word timestamps, which let the merge assign speakers word by word. |
 | `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES` | `all`, `compute,utility` | GPU passthrough for `worker-gpu`. |
+| `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES` | `15` | Minutes `worker-gpu` stays idle before it restarts itself in place to free memory. `0` turns it off ([Idle Worker Restart](#idle-worker-restart)). |
 | `NOJOIN_CODEX_PATH` | `/usr/local/bin/codex` | Codex CLI path on the workers ([CLI OAuth](#cli-oauth-worker-io-image)). Not in `.env.example`. |
 
 Not in `.env.example` and not passed by the shipped compose file. Set them in the service's `environment:` block:
@@ -654,6 +680,7 @@ These run on the first start after the upgrade and need no action unless a note 
 
 #### Upgrading From Before 3.2.0
 
+- **Idle restart and autoscaling lanes (#1054).** `worker-gpu` now restarts itself in place 15 minutes after its last task, never while a capture is recording or paused, to hand back the memory its process keeps ([Idle Worker Restart](#idle-worker-restart)). An existing `docker-compose.yml` gets this without a change; to set `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES`, or `0` to turn it off, add the variable to `worker-gpu` as that section shows. The example's `worker-cpu`, `worker-io` and `worker-parse` now autoscale from one child and replace a child that has used more than 400,000 KiB, while an existing `docker-compose.yml` keeps its fixed pools until you copy those commands ([Worker Child Recycling](#worker-child-recycling)).
 - **Each user accepts the terms of use (#1004).** Alembic revision `ed5d42732014` adds the nullable `users.legal_accepted_at`, a naive UTC timestamp like the schema's others, with no backfill. From the upgrade, every account except the setup account is shown the terms of use once, at its next page load, and the API refuses it a new capture or import until it accepts ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)). A capture or import already under way finishes normally. The setup account is not asked again and keeps an empty date, since none was recorded when it accepted during setup. A downgrade drops the column and every recorded acceptance. A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.
 
 #### Upgrading From Before 3.1.0
