@@ -243,7 +243,7 @@ It restarts once all of these hold:
 - No capture is recording or paused. While one is, the idle time does not count, and it starts counting when the capture stops or is discarded.
 - No task is running or waiting on the worker.
 
-It logs one line as it goes, `Idle for 15.4 minutes: restarting this worker in place to free memory. Models load again on the next task.`, followed by its usual startup lines. A task sent during the few seconds it takes waits in the queue and runs once the worker is back.
+It logs one line as it goes, `Idle for 15.4 minutes: restarting this worker in place to free memory. Models load again on the next task.`, followed by its usual startup lines. A task sent during the few seconds it takes waits in the queue and runs once the worker is back. The restarted worker skips the startup sweep that sends waiting recordings to the queue again ([Runs Lost With A Worker](ARCHITECTURE.md#runs-lost-with-a-worker)): it held no task, so each one still has its task queued, and a second would process the recording twice. A container restart or a crash still runs the sweep.
 
 The next task loads its models again. The first live caption of a capture that starts after a restart arrives about 14 seconds after its segment, against about 12.5 seconds when the models were only released, and about 20 seconds with live speaker labels. Final transcripts are unaffected.
 

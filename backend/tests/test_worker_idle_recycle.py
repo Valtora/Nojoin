@@ -29,10 +29,19 @@ from sqlmodel import Session, SQLModel, create_engine
 
 import backend.celery_app as celery_app_module
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
+from backend.tests.test_stuck_processing_recovery import FakeSession, _sender
 from backend.utils import worker_idle_recycle as recycle
 from backend.utils.worker_idle_recycle import IdleClock
+from backend.worker.tasks import pipeline
 
 LIMIT = 900.0
+
+
+@pytest.fixture(autouse=True)
+def cold_start(monkeypatch):
+    """Each test starts as a cold start, and a marker a test's restart sets is
+    removed afterwards, so no later test's startup sweep is skipped."""
+    monkeypatch.setenv(recycle.IDLE_RESTART_MARKER, "0")
 
 
 def _no_capture() -> bool:
@@ -420,9 +429,13 @@ def test_a_task_the_worker_holds_blocks_the_check(due_clock, monkeypatch) -> Non
 
 def test_the_restart_runs_the_same_command_in_this_process(monkeypatch) -> None:
     calls: list[tuple[str, list[str]]] = []
-    monkeypatch.setattr(
-        recycle.os, "execv", lambda path, argv: calls.append((path, argv))
-    )
+    marked: list[bool] = []
+
+    def execv(path: str, argv: list[str]) -> None:
+        marked.append(recycle.restarted_when_idle())
+        calls.append((path, argv))
+
+    monkeypatch.setattr(recycle.os, "execv", execv)
     monkeypatch.setattr(
         sys, "orig_argv", ["/opt/venv/bin/python", "/opt/venv/bin/celery", "worker"]
     )
@@ -432,6 +445,61 @@ def test_the_restart_runs_the_same_command_in_this_process(monkeypatch) -> None:
     assert calls == [
         (sys.executable, ["/opt/venv/bin/python", "/opt/venv/bin/celery", "worker"])
     ]
+    # The marker is in the environment the new process image inherits.
+    assert marked == [True]
+
+
+def test_only_the_marker_value_one_means_an_idle_restart(monkeypatch) -> None:
+    assert recycle.restarted_when_idle() is False
+    monkeypatch.setenv(recycle.IDLE_RESTART_MARKER, "1")
+    assert recycle.restarted_when_idle() is True
+    monkeypatch.delenv(recycle.IDLE_RESTART_MARKER)
+    assert recycle.restarted_when_idle() is False
+
+
+# -- the GPU lane's startup sweep ------------------------------------------------------
+
+
+def _queued_sweep(monkeypatch) -> list[int]:
+    queued = Recording(id=8, name="Weekly sync", status=RecordingStatus.QUEUED)
+    monkeypatch.setattr(pipeline, "get_sync_session", lambda: FakeSession([queued]))
+    monkeypatch.setattr(pipeline, "_reclaim_orphaned_processing", lambda session: [])
+    sent: list[int] = []
+    monkeypatch.setattr(
+        pipeline, "process_recording_task", types.SimpleNamespace(delay=sent.append)
+    )
+    return sent
+
+
+def test_a_cold_start_sweeps_pending_recordings(
+    monkeypatch, stub_celery_dispatch
+) -> None:
+    sent = _queued_sweep(monkeypatch)
+
+    pipeline.check_queued_recordings(_sender({"gpu": object()}))
+
+    assert sent == [8]
+
+
+def test_an_idle_restart_skips_the_sweep(
+    monkeypatch, stub_celery_dispatch, caplog
+) -> None:
+    """The restart held no task, so a QUEUED recording's message is still in
+    the queue; sending it again would process the recording twice, and a
+    reprocess sent again by id alone would also lose its chosen engine."""
+    sent = _queued_sweep(monkeypatch)
+
+    def no_database():
+        pytest.fail("the sweep read the database")
+
+    monkeypatch.setattr(pipeline, "get_sync_session", no_database)
+    monkeypatch.setenv(recycle.IDLE_RESTART_MARKER, "1")
+
+    with caplog.at_level(logging.INFO):
+        pipeline.check_queued_recordings(_sender({"gpu": object()}))
+
+    assert sent == []
+    assert "Idle restart: skipping the startup sweep" in caplog.text
 
 
 def test_a_failed_exec_is_logged_and_the_worker_exits(monkeypatch, caplog) -> None:

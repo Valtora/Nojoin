@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 IDLE_RECYCLE_ENV = "NOJOIN_WORKER_IDLE_RECYCLE_MINUTES"
 DEFAULT_IDLE_MINUTES = 15.0
+# Set in the environment the restarted process inherits, so its startup sweep
+# can tell an idle restart from a cold start. Internal, not an operator setting.
+IDLE_RESTART_MARKER = "NOJOIN_WORKER_IDLE_RESTARTED"
 
 
 def idle_limit_seconds(raw: str | None = None) -> float:
@@ -50,6 +53,28 @@ def idle_limit_seconds(raw: str | None = None) -> float:
         )
         return DEFAULT_IDLE_MINUTES * 60
     return minutes * 60
+
+
+def restarted_when_idle() -> bool:
+    """Whether this process began as an idle restart of the worker.
+
+    The restart happens only with no task running or reserved, so nothing was
+    lost with the old process and every waiting recording still has its message
+    queued. A container start or a crash begins without the marker.
+    """
+    return os.environ.get(IDLE_RESTART_MARKER) == "1"
+
+
+def skip_startup_sweep() -> bool:
+    """For the GPU lane's startup sweep: True after an idle restart, logged once.
+
+    Sending a QUEUED recording's task again would process the recording twice,
+    and a reprocess sent again by id alone would also lose its chosen engine.
+    """
+    if not restarted_when_idle():
+        return False
+    logger.info("Idle restart: skipping the startup sweep of pending recordings.")
+    return True
 
 
 def poll_interval(limit_s: float) -> float:
@@ -188,6 +213,7 @@ def check_idle() -> None:
 
 def exec_self(**_kwargs: Any) -> None:
     """worker_shutdown: run the worker's own command line again in this process."""
+    os.environ[IDLE_RESTART_MARKER] = "1"
     for stream in (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__):
         if stream is not None:
             try:
