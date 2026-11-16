@@ -872,11 +872,11 @@ def _sweeps_recordings(sender, queue: str | None = None) -> bool:
 
 @worker_ready.connect
 def check_queued_recordings(sender, **kwargs):
-    """
-    On worker startup, re-queue recordings left QUEUED, and reclaim any left
-    PROCESSING by a worker that died mid-pipeline.
-    """
-    if not _sweeps_recordings(sender):
+    """On worker startup, re-queue recordings left QUEUED, and reclaim any left
+    PROCESSING by a worker that died mid-pipeline. An idle restart skips it."""
+    from backend.utils.worker_idle_recycle import skip_startup_sweep
+
+    if not _sweeps_recordings(sender) or skip_startup_sweep():
         return
 
     logger.info("Checking for pending QUEUED recordings...")

@@ -71,19 +71,22 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - The frontend moves to Next.js 16.4.6, which carries the security fixes released in 16.4.5. The API and workers move to Celery 5.7.0, SQLAlchemy 2.1.8 and psycopg 3.3.8, and the AI SDKs, still uncapped, now need at least openai 3.49.0, anthropic 2.7.0 and google-genai 3.0.0 (#1048).
 - The worker-io image carries one copy of the Claude Code CLI instead of two, about 360 MB less, and the api and worker images no longer store the application files twice, about 80 MB less each. An image built from a working checkout also leaves out the Python tool caches (#1053).
 - When Whisper cannot launch its Triton GPU kernels and aligns word timestamps on the CPU instead, `worker-gpu` logs a warning the first time, where it said nothing. A worker image whose Triton does not import now fails to build (#1053).
+- `worker-gpu` restarts itself in place once it has gone 15 minutes without a task, never while a capture is recording or paused, and hands back about 1.4 GB of memory on a CUDA install. The first live caption after such a restart takes about 14 seconds while the models load; final transcripts are unaffected. `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES` in `.env` sets the minutes, and `0` turns the restart off (#1054).
+- In `docker-compose.example.yml`, `worker-cpu`, `worker-io` and `worker-parse` autoscale from one child, and a child that has used more than 400,000 KiB is replaced after its task, so an idle install runs three prefork children instead of nine (#1054).
 
 ## Upgrade
 
 <!-- Steps beyond the usual upgrade commands, which the release body and DEPLOYMENT.md give. -->
 
 - Upgrade the API and the workers together, as the upgrade commands do: a 3.2.0 worker fails on the missing `users.legal_accepted_at` column until the API has migrated (#1007).
+- To autoscale the prefork lanes, copy the `worker-cpu`, `worker-io` and `worker-parse` commands from `docker-compose.example.yml` into your `docker-compose.yml`, which otherwise keeps its fixed pools. The idle restart of `worker-gpu` needs no change (#1054).
 
 ## Migration
 
 <!-- Each Alembic revision by id and what it adds or changes, new or retired config keys and environment variables, and the backup format. -->
 
 - One Alembic revision runs. `ed5d42732014` adds the nullable `users.legal_accepted_at`, with no backfill, so every account except the setup account is asked to accept the terms of use at its next visit (#1007).
-- No config key or environment variable changed, and `.env.example`, `docker-compose.example.yml` and `nginx/` need no action.
+- One environment variable is new: `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES`, empty for 15 minutes and `0` for off, which `docker-compose.example.yml` passes to `worker-gpu`. An existing `docker-compose.yml` does not pass it, so the default applies until you add it to `worker-gpu`'s `environment:` block. No config key changed, and `nginx/` needs no action (#1054).
 - Backups stay in format 3 and carry each user's acceptance time. An archive made before 3.2.0 restores its users with none, so they are asked at their next visit (#1007).
 
 ## Rollback

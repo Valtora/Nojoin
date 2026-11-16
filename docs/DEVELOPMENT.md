@@ -213,16 +213,16 @@ services:
     command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q gpu --pool=solo --concurrency=1 --loglevel=info
 
   worker-cpu:
-    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q cpu --pool=prefork --concurrency=3 --loglevel=info
+    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q cpu --pool=prefork --autoscale=3,1 --max-memory-per-child=400000 --loglevel=info
 
   worker-io:
-    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q io -B -s /app/data/celerybeat-schedule --pool=prefork --concurrency=4 --loglevel=info
+    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q io -B -s /app/data/celerybeat-schedule --pool=prefork --autoscale=4,1 --max-memory-per-child=400000 --loglevel=info
 
   worker-parse:
-    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q parse --max-tasks-per-child=25 --pool=prefork --concurrency=2 --loglevel=info
+    command: watchmedo auto-restart --directory=./backend --patterns='**/*.py' --recursive -- celery -A backend.celery_app.celery_app worker -Q parse --max-tasks-per-child=25 --pool=prefork --autoscale=2,1 --max-memory-per-child=400000 --loglevel=info
 ```
 
-Keep each lane's `-Q`, `--pool`, `--concurrency` and `--max-tasks-per-child` as the template has them, and `-B` on `worker-io` alone. A lane without `-Q` drains the GPU queue, where unrouted tasks land, and a second `-B` fires every periodic job twice. The pool is part of the dispatch model, and the parse lane's recycle limit overrides a global default of 500. See [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes) and [Worker Child Recycling](DEPLOYMENT.md#worker-child-recycling).
+Keep each lane's `-Q`, `--pool`, `--concurrency` or `--autoscale`, `--max-memory-per-child` and `--max-tasks-per-child` as the template has them, and `-B` on `worker-io` alone. A lane without `-Q` drains the GPU queue, where unrouted tasks land, and a second `-B` fires every periodic job twice. The pool is part of the dispatch model, and the parse lane's recycle limit overrides a global default of 500; `backend/tests/test_dev_compose_template.py` fails if a copy drifts. `worker-gpu` restarts itself in place when idle, and `watchmedo` keeps watching it, since the process ID does not change. See [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes), [Worker Child Recycling](DEPLOYMENT.md#worker-child-recycling) and [Idle Worker Restart](DEPLOYMENT.md#idle-worker-restart).
 
 The patch changes nothing for the frontend: rebuilding `frontend` is still how `https://localhost:14443` updates.
 
@@ -912,6 +912,7 @@ services:
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       WHISPER_ENABLE_WORD_TIMESTAMPS: ${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
+      NOJOIN_WORKER_IDLE_RECYCLE_MINUTES: ${NOJOIN_WORKER_IDLE_RECYCLE_MINUTES:-}
     deploy:
       resources:
         reservations:
@@ -926,7 +927,8 @@ services:
       ]
 
   # CPU lane: proxy generation, backups, and the ffmpeg transcode of segments
-  # from clients older than FLAC capture. No GPU.
+  # from clients older than FLAC capture. No GPU. The prefork lanes autoscale
+  # from one child and replace a child that has used more than 400,000 KiB.
   worker-cpu:
     <<: *worker-base
     container_name: nojoin-dev-worker-cpu
@@ -934,7 +936,8 @@ services:
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
-        "-Q", "cpu", "--pool=prefork", "--concurrency=3", "--loglevel=info",
+        "-Q", "cpu", "--pool=prefork", "--autoscale=3,1",
+        "--max-memory-per-child=400000", "--loglevel=info",
       ]
 
   # IO/LLM lane: Meeting Edge, notes, chat embeddings, calendar sync, cleanup.
@@ -961,7 +964,8 @@ services:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
         "-Q", "io", "-B", "-s", "/app/data/celerybeat-schedule",
-        "--pool=prefork", "--concurrency=4", "--loglevel=info",
+        "--pool=prefork", "--autoscale=4,1", "--max-memory-per-child=400000",
+        "--loglevel=info",
       ]
 
   # Document parsing, isolated from every other lane. A parse has no page cap,
@@ -985,7 +989,8 @@ services:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
         "-Q", "parse", "--max-tasks-per-child=25",
-        "--pool=prefork", "--concurrency=2", "--loglevel=info",
+        "--pool=prefork", "--autoscale=2,1", "--max-memory-per-child=400000",
+        "--loglevel=info",
       ]
 
   frontend:

@@ -221,6 +221,10 @@ services:
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       WHISPER_ENABLE_WORD_TIMESTAMPS: ${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
+      # Minutes idle before this solo worker restarts itself in place to free
+      # memory; 0 turns it off. No default here: backend/utils/worker_idle_recycle.py
+      # owns it (15) and reads an empty value as unset.
+      NOJOIN_WORKER_IDLE_RECYCLE_MINUTES: ${NOJOIN_WORKER_IDLE_RECYCLE_MINUTES:-}
     # Remove this deploy block for CPU-only deployments.
     deploy:
       resources:
@@ -236,6 +240,8 @@ services:
       ]
 
   # CPU lane: ffmpeg segment transcode, proxy generation, backups. No GPU.
+  # The prefork lanes autoscale: one child when idle, more under load, and a
+  # child that has used more than 400,000 KiB is replaced after its task.
   worker-cpu:
     <<: *worker-base
     container_name: nojoin-worker-cpu
@@ -243,12 +249,13 @@ services:
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
-        "-Q", "cpu", "--pool=prefork", "--concurrency=3", "--loglevel=info",
+        "-Q", "cpu", "--pool=prefork", "--autoscale=3,1",
+        "--max-memory-per-child=400000", "--loglevel=info",
       ]
 
   # IO/LLM lane: Meeting Edge, notes, chat embeddings, calendar sync, cleanup.
-  # Network-bound, so it runs a wider prefork pool. Owns Celery Beat (-B) so the
-  # periodic jobs fire exactly once across the stack (no double-scheduling).
+  # Network-bound, so it can grow the widest prefork pool. Owns Celery Beat (-B)
+  # so the periodic jobs fire exactly once across the stack (no double-scheduling).
   worker-io:
     <<: *worker-base
     container_name: nojoin-worker-io
@@ -277,7 +284,8 @@ services:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
         "-Q", "io", "-B", "-s", "/app/data/celerybeat-schedule",
-        "--pool=prefork", "--concurrency=4", "--loglevel=info",
+        "--pool=prefork", "--autoscale=4,1", "--max-memory-per-child=400000",
+        "--loglevel=info",
       ]
 
   # Document parsing, isolated from every other lane. A parse has no page cap,
@@ -304,7 +312,8 @@ services:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
         "-Q", "parse", "--max-tasks-per-child=25",
-        "--pool=prefork", "--concurrency=2", "--loglevel=info",
+        "--pool=prefork", "--autoscale=2,1", "--max-memory-per-child=400000",
+        "--loglevel=info",
       ]
 
   frontend:

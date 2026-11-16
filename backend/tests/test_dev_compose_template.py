@@ -229,12 +229,12 @@ def test_template_api_carries_every_setting_the_deployment_api_does() -> None:
 PARSE_RECYCLE_FLAG = "--max-tasks-per-child=25"
 
 
-def _parse_lane_blocks(text: str) -> list[str]:
-    """Return the body of every ``worker-parse:`` service block.
+def _service_blocks(text: str, service: str) -> list[str]:
+    """Return the body of every ``<service>:`` block in ``text``.
 
     A block runs from the service key to the next line indented at or left of
     it, which is where the service ends in any valid YAML. Reading the block
-    rather than the whole file is what makes the assertion below mean "the flag
+    rather than the whole file is what makes the assertions below mean "the flag
     is on this lane" rather than "the flag appears somewhere in this file".
     """
     blocks: list[str] = []
@@ -247,11 +247,15 @@ def _parse_lane_blocks(text: str) -> list[str]:
             else:
                 collecting.append(line)
                 continue
-        if line.rstrip() == "  worker-parse:":
+        if line.rstrip() == f"  {service}:":
             collecting = []
     if collecting is not None:
         blocks.append("\n".join(collecting))
     return blocks
+
+
+def _parse_lane_blocks(text: str) -> list[str]:
+    return _service_blocks(text, "worker-parse")
 
 
 def test_parse_lane_overrides_the_child_recycle_limit_everywhere() -> None:
@@ -281,3 +285,60 @@ def test_parse_lane_overrides_the_child_recycle_limit_everywhere() -> None:
                 "500 in backend/celery_app.py, which is far too high for a lane "
                 "whose per-document cost is unbounded."
             )
+
+
+WORKER_LANES = ("worker-gpu", "worker-cpu", "worker-io", "worker-parse")
+PREFORK_LANES = ("worker-cpu", "worker-io", "worker-parse")
+# The flags that size a lane's pool and recycle its children. Values end at a
+# quote in the template's JSON-style commands and at a space in the patch
+# snippet's one-line ones; --autoscale's own comma is part of the value.
+_POOL_FLAG_RE = re.compile(
+    r"--(?:pool|concurrency|autoscale|max-memory-per-child|max-tasks-per-child)=[^\s\"]+"
+)
+
+
+def _pool_flags(block: str) -> frozenset[str]:
+    return frozenset(_POOL_FLAG_RE.findall(block))
+
+
+def test_every_copy_of_a_lane_sizes_its_pool_the_same_way() -> None:
+    """A lane's pool flags must agree in all three copies (#1054).
+
+    The deployment compose, the guide's source-mount patch and its appended
+    template each spell out every lane's command. A copy that keeps an old
+    `--concurrency` after the others move to `--autoscale` runs a different pool
+    locally from the one an operator gets, with nothing to say so.
+    """
+    for lane in WORKER_LANES:
+        copies = [
+            (path.name, _pool_flags(block))
+            for path in (COMPOSE_PATH, GUIDE_PATH)
+            for block in _service_blocks(path.read_text(encoding="utf-8"), lane)
+        ]
+        assert len(copies) == 3, (
+            f"expected {lane} once in {COMPOSE_PATH.name} and twice in "
+            f"{GUIDE_PATH.name}, found {len(copies)}; the parser no longer "
+            "matches the files and would pass without checking anything."
+        )
+        assert all(flags for _name, flags in copies), copies
+        assert len({flags for _name, flags in copies}) == 1, (
+            f"the copies of {lane} size its pool differently: {copies}"
+        )
+
+
+def test_prefork_lanes_autoscale_with_a_child_memory_cap() -> None:
+    """The shipped prefork lanes start at one child and cap each child (#1054)."""
+    compose = COMPOSE_PATH.read_text(encoding="utf-8")
+    for lane in PREFORK_LANES:
+        (block,) = _service_blocks(compose, lane)
+        flags = _pool_flags(block)
+        assert "--pool=prefork" in flags, (lane, flags)
+        assert any(
+            flag.startswith("--autoscale=") and flag.endswith(",1") for flag in flags
+        ), (lane, flags)
+        assert "--max-memory-per-child=400000" in flags, (lane, flags)
+        assert not any(flag.startswith("--concurrency=") for flag in flags), (
+            f"{lane} sets both a fixed --concurrency and --autoscale: {flags}"
+        )
+    (gpu,) = _service_blocks(compose, "worker-gpu")
+    assert _pool_flags(gpu) == {"--pool=solo", "--concurrency=1"}

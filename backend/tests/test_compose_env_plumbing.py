@@ -29,6 +29,7 @@ from backend.utils.stall_watchdog import (
     LAG_THRESHOLD_ENV,
     PRESSURE_THRESHOLD_ENV,
 )
+from backend.utils.worker_idle_recycle import IDLE_RECYCLE_ENV
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.example.yml"
@@ -180,6 +181,18 @@ def test_stall_watchdog_settings_reach_the_api() -> None:
         f"{missing} are read by backend/utils/stall_watchdog.py but the api "
         "service in docker-compose.example.yml does not pass them in, so a "
         "value set in .env has no effect."
+    )
+
+
+def test_idle_restart_setting_reaches_worker_gpu() -> None:
+    """Only the solo GPU lane restarts when idle, so its service carries the
+    setting; a value in .env must reach that container (#1054)."""
+    text = COMPOSE_PATH.read_text(encoding="utf-8")
+    _, _, after_gpu = text.partition("\n  worker-gpu:\n")
+    assert after_gpu, "no worker-gpu service found"
+    assert IDLE_RECYCLE_ENV in _block_env_keys(after_gpu, "    environment:")
+    assert IDLE_RECYCLE_ENV in _env_example_keys(
+        ENV_EXAMPLE_PATH.read_text(encoding="utf-8")
     )
 
 
