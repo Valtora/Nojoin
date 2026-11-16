@@ -7,7 +7,15 @@ frontend/
 node_modules/
 **/node_modules/
 **/target/
-__pycache__
+**/__pycache__
+# Tool caches from a working checkout. Release builds come from a clean
+# worktree, but a local build otherwise copies several hundred MB of them into
+# /app. pyproject.toml points pytest, ruff and mypy at .cache/.
+**/.cache
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache
+**/.jekyll-cache
 *.pyc
 *.pyo
 *.pyd

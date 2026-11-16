@@ -1,12 +1,14 @@
 # Whisper transcription engine. Heavy imports (whisper, torch, tqdm) live here,
 # not in the thin dispatcher backend/processing/transcribe.py.
 
+import contextlib
 import gc
 import logging
 import os
 import threading
 import traceback
 import warnings
+from collections.abc import Iterator
 from typing import Literal
 
 import numpy as np
@@ -27,11 +29,13 @@ from .errors import (
 
 logger = logging.getLogger(__name__)
 
-warnings.filterwarnings(
-    "ignore",
-    message=r".*Failed to launch Triton kernels.*",
-    category=UserWarning,
-)
+# Whisper aligns word timestamps with Triton GPU kernels. When they cannot load
+# or launch, it falls back to slower CPU kernels and says so only in a
+# UserWarning for each 30-second window. The worker image build checks that
+# Triton imports; _log_triton_fallback turns a fallback at run time into one
+# WARNING per process, since live settling transcribes every few seconds.
+_TRITON_FALLBACK_WARNING = "Failed to launch Triton kernels"
+_triton_fallback_logged = False
 
 # Cache for loaded models to avoid reloading
 _model_cache = {}
@@ -54,9 +58,48 @@ def _transcribe_seeded(model, audio_path: str, device: str, **kwargs) -> dict:
     # device with no driver raises, and the error then belongs to the model call.
     use_cuda = device == "cuda" and torch.cuda.is_available()
     devices = [torch.cuda.current_device()] if use_cuda else []
-    with torch.random.fork_rng(devices=devices):
+    with torch.random.fork_rng(devices=devices), _log_triton_fallback(audio_path):
         torch.manual_seed(FALLBACK_SAMPLING_SEED)
         return model.transcribe(audio_path, **kwargs)
+
+
+@contextlib.contextmanager
+def _log_triton_fallback(audio_path: str) -> Iterator[None]:
+    """Log a WARNING the first time Whisper falls back from its Triton kernels.
+
+    The fallback warning is always shown inside the block, ahead of any filter
+    that would hide it (model preparation adds one), and is caught here. Every
+    other warning goes on to the display it had.
+    """
+    global _triton_fallback_logged
+    fell_back = False
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "always", message=f".*{_TRITON_FALLBACK_WARNING}", category=UserWarning
+        )
+        show_other = warnings.showwarning
+
+        def show(message, category, *where, **more):
+            nonlocal fell_back
+            if issubclass(category, UserWarning) and _TRITON_FALLBACK_WARNING in str(
+                message
+            ):
+                fell_back = True
+            else:
+                show_other(message, category, *where, **more)
+
+        warnings.showwarning = show
+        try:
+            yield
+        finally:
+            if fell_back and not _triton_fallback_logged:
+                _triton_fallback_logged = True
+                logger.warning(
+                    "Whisper could not launch its Triton GPU kernels and aligns word "
+                    "timestamps with its slower CPU kernels instead, first for %s. "
+                    "This is logged once per worker process.",
+                    audio_path,
+                )
 
 
 # Each silence in the detection window is cut to this many samples (100 ms)
