@@ -1,3 +1,30 @@
+export interface ResourceMemory {
+  used_bytes: number;
+  total_bytes: number;
+}
+
+export interface SystemResources {
+  sampled_at: string;
+  host: { cpu_percent: number; memory: ResourceMemory };
+  nojoin: { cpu_percent: number | null; memory_bytes: number } | null;
+  gpus: Array<{
+    uuid: string; name: string; utilisation_percent: number | null;
+    memory: ResourceMemory;
+  }>;
+  workers: Array<{
+    identity: string; lanes: string[]; sampled_at: string;
+    running: Array<{ name: string; started_at: string | null; elapsed_seconds: number | null }>;
+    reserved_count: number;
+    models: Array<{
+      name: string; device: string; estimated_bytes: number | null;
+      method: "CUDA tensor storage" | "estimate unavailable";
+    }>;
+    cuda_reserved_bytes: Record<string, number>;
+  }>;
+  queues: Record<string, number> | null;
+  capabilities: { gpu: boolean; docker: boolean; workers: boolean };
+}
+
 export enum RecordingStatus {
   UPLOADING = "UPLOADING",
   PAUSED = "PAUSED",

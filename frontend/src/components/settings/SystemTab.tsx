@@ -12,6 +12,7 @@ import SettingsStatusBadge, {
   type SettingsStatusBadgeTone,
 } from "./SettingsStatusBadge";
 import SystemLogs from "./SystemLogs";
+import SystemResources from "./SystemResources";
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -271,6 +272,7 @@ export default function SystemTab() {
           })}
       </SettingsCard>
 
+      <SystemResources />
       {isSuperuser && <SystemLogs />}
     </>
   );
