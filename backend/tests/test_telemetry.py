@@ -16,14 +16,6 @@ import pytest
 
 from backend.utils import telemetry
 from backend.utils.config_manager import ConfigManager
-
-# Imported at module scope deliberately, not inside the tests that use it.
-# Importing the worker package runs load_dotenv(), which repopulates os.environ
-# from the developer's own .env. Done inside a test that would put
-# NOJOIN_TELEMETRY_ENABLED back *after* _no_env_override cleared it, so a
-# machine whose .env disables telemetry would silently turn every send test into
-# a no-op that still passes. At module scope the load happens during collection,
-# and the per-test delenv wins.
 from backend.worker.tasks.system import (
     send_telemetry_heartbeat_task,
     send_telemetry_ping_task,
