@@ -7,6 +7,11 @@ import os
 # once, on import.
 os.environ["HF_HUB_OFFLINE"] = "1"
 
+# Keeps the checkout's .env and any LLM provider variable out of the suite
+# (#1056). Imported ahead of the backend, whose config_manager reads both as it
+# loads; suite_env.py says why.
+import backend.tests.suite_env  # noqa: F401
+
 # Points NOJOIN_DATA_DIR at a temporary directory. Imported ahead of the
 # backend, which fixes its data paths on import; data_dir.py says why. Without
 # it the suite wrote into the checkout's data/, and a read-only checkout failed
