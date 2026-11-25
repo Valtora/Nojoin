@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { useNavigationStore } from "@/lib/store";
@@ -13,8 +13,10 @@ import type { RecordingId } from "@/types";
  * The selection only ever holds rows that are shown: whenever the list,
  * search, filters or view change, and after any single-row action removes a
  * row, what is no longer shown is dropped, so the batch bar can never act on
- * a row the person cannot see. The Shift anchor is kept by id, so a refresh
- * that moves rows keeps the range starting from the same recording.
+ * a row the person cannot see. When the results of a new search or filter
+ * drop selected rows, `leftOut` counts them, so the list can say so (#974).
+ * The Shift anchor is kept by id, so a refresh that moves rows keeps the
+ * range starting from the same recording.
  */
 export interface RecordingSelection {
   /** The selected rows, in list order. */
@@ -27,6 +29,11 @@ export interface RecordingSelection {
   headerState: "none" | "some" | "all";
   /** The row a range extends from, when it is still shown. */
   anchorId: RecordingId | null;
+  /**
+   * How many selected rows the latest search or filter results left out.
+   * Back to 0 once the selection or the results change.
+   */
+  leftOut: number;
   /** Toggles one row and makes it the anchor. */
   toggle: (id: RecordingId) => void;
   /** Adds every row from the anchor to this one; with no anchor, toggles it. */
@@ -36,8 +43,18 @@ export interface RecordingSelection {
   clear: () => void;
 }
 
+/** One string for a set of ids, whatever their order. */
+const idsKey = (ids: readonly RecordingId[]) => [...ids].sort().join("\n");
+
+/**
+ * `resultsKey` names the search and filter the shown rows answer. Rows that
+ * drop out when it changes were hidden by a new search or filter, and count
+ * towards `leftOut`; rows that go for any other reason, such as an action
+ * that moved them, do not.
+ */
 export function useRecordingSelection(
   shownIds: readonly RecordingId[],
+  resultsKey: string | null = null,
 ): RecordingSelection {
   const {
     selectedRecordingIds,
@@ -47,6 +64,23 @@ export function useRecordingSelection(
     clearSelection,
     pruneRecordingSelection,
   } = useNavigationStore();
+
+  // Worked out in the render the new results arrive in, before the prune
+  // below takes the rows out of the store. It holds while the selection is
+  // the one the results left, and goes when the person changes it.
+  const [leftOutBy, setLeftOutBy] = useState<{
+    resultsKey: string | null;
+    count: number;
+    kept: string;
+  } | null>(null);
+  const [seenResultsKey, setSeenResultsKey] = useState(resultsKey);
+  if (resultsKey !== seenResultsKey) {
+    setSeenResultsKey(resultsKey);
+    const shown = new Set(shownIds);
+    const kept = selectedRecordingIds.filter((id) => shown.has(id));
+    const count = selectedRecordingIds.length - kept.length;
+    setLeftOutBy(count > 0 ? { resultsKey, count, kept: idsKey(kept) } : null);
+  }
 
   useEffect(() => {
     pruneRecordingSelection(shownIds);
@@ -64,6 +98,16 @@ export function useRecordingSelection(
         ? selectionAnchorId
         : null;
 
+    const leftOut =
+      leftOutBy &&
+      leftOutBy.resultsKey === resultsKey &&
+      leftOutBy.kept === idsKey(selectedIds)
+        ? leftOutBy.count
+        : 0;
+    // A change the person makes to the selection ends the notice, even one
+    // that comes back round to the same rows.
+    const forgetLeftOut = () => setLeftOutBy(null);
+
     return {
       selectedIds,
       count,
@@ -72,8 +116,13 @@ export function useRecordingSelection(
       headerState:
         count === 0 ? "none" : count === shownIds.length ? "all" : "some",
       anchorId,
-      toggle: toggleRecordingSelection,
+      leftOut,
+      toggle: (id) => {
+        forgetLeftOut();
+        toggleRecordingSelection(id);
+      },
       extendTo: (id) => {
+        forgetLeftOut();
         const to = shownIds.indexOf(id);
         if (to < 0) return;
         if (anchorId === null) {
@@ -89,16 +138,22 @@ export function useRecordingSelection(
         );
       },
       toggleAll: () => {
+        forgetLeftOut();
         if (count === shownIds.length) {
           clearSelection();
         } else {
           setRecordingSelection([...shownIds], anchorId);
         }
       },
-      clear: clearSelection,
+      clear: () => {
+        forgetLeftOut();
+        clearSelection();
+      },
     };
   }, [
     shownIds,
+    resultsKey,
+    leftOutBy,
     selectedRecordingIds,
     selectionAnchorId,
     setRecordingSelection,

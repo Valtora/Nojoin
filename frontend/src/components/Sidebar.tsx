@@ -36,6 +36,7 @@ import {
 } from "./recordings/_hooks/useRecordingSelection";
 import {
   LIST_ACTIONS,
+  leftOutOfSelection,
   permanentDeleteConfirmation,
   type ListActionId,
 } from "./recordings/recordingListActions";
@@ -64,6 +65,7 @@ import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useRecordingListPages } from "./recordings/_hooks/useRecordingListPages";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
+import { useRecordingListScroll } from "./recordings/_hooks/useRecordingListScroll";
 import RecordingListRow, {
   rowMenuLabel,
   type RecordingListRowActions,
@@ -260,7 +262,7 @@ export default function Sidebar() {
     () => recordings.map((recording) => recording.id),
     [recordings],
   );
-  const selection = useRecordingSelection(shownIds);
+  const selection = useRecordingSelection(shownIds, list.resultsKey);
   const longPress = useTouchLongPress(selection.toggle);
 
   // Confirmation Modal State
@@ -360,14 +362,13 @@ export default function Sidebar() {
   const listRef = useRef<HTMLUListElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  // A new search, filter or view starts at the top of its results. Left at
-  // the end of the old list, the scroller stays at the end of the new one
-  // and the footer loads page after page. Keyed as the list hook keys its
+  // The list keeps its place while the rail is collapsed, and a new search,
+  // filter or view starts at the top. Keyed as the list hook keys its
   // requests, so filters rebuilt with the same values leave the list alone.
-  const listFiltersKey = JSON.stringify(listFilters);
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [listFiltersKey]);
+  const onListScroll = useRecordingListScroll(scrollRef, {
+    shown: !isCollapsed,
+    resetKey: JSON.stringify(listFilters),
+  });
   // Where focus goes once the rows an action took away have gone, or the
   // batch bar holding focus has closed: a row link by id, or the search box.
   const pendingFocusRef = useRef<RecordingId | "search" | null>(null);
@@ -1081,6 +1082,17 @@ export default function Sidebar() {
           </label>
         </div>
       )}
+      {/* Mounted while empty too, so the line is read out when it appears. */}
+      <p
+        aria-live="polite"
+        className={
+          selection.leftOut > 0
+            ? `px-5 pb-2 text-xs text-rail-fg-muted ${recordings.length > 0 ? "" : "pt-2"}`
+            : "sr-only"
+        }
+      >
+        {selection.leftOut > 0 ? leftOutOfSelection(selection.leftOut) : ""}
+      </p>
       </div>
 
       {/* Only the cards scroll. `relative` keeps absolutely positioned
@@ -1088,7 +1100,11 @@ export default function Sidebar() {
           this scroller. Without it their containing block is the aside, and
           the full list's height leaks out as scrollable overflow on the app
           shell. */}
-      <div ref={scrollRef} className="relative min-h-32 flex-1 basis-0 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={onListScroll}
+        className="relative min-h-32 flex-1 basis-0 overflow-y-auto"
+      >
       {/* Recording List */}
       {recordings.length === 0 && (
         <div className="text-center p-4 m-2 text-rail-fg-muted text-sm">
@@ -1153,6 +1169,7 @@ export default function Sidebar() {
                   // Only the card being renamed reads the name being typed.
                   renameValue={isRenaming ? renameValue : ""}
                   hasUnsentNotes={unsentRecordings.includes(recording.id)}
+                  renamesOnDoubleClick={isDesktopLayout}
                   actions={rowActions}
                 />
               );
