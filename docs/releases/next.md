@@ -40,6 +40,8 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 ### Meetings, tags and search
 
+- An Escape pressed just before a first-visit tour appears, to close a menu say, no longer closes the tour when you let go of it once it is showing. The tour closed and counted as seen, so it did not come back. Escape pressed while the tour is showing still closes it (#988).
+
 ### Notes and AI providers
 
 - **Test connection** under **Settings > AI providers** with no model selected says the provider is reachable and asks you to choose a model, in grey, where it read as a passed test (#1009).
