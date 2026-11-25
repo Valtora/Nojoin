@@ -38,8 +38,11 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - A name the AI suggested for a live speaker is withdrawn when a line it quoted moves to another speaker, and merging a speaker into one whose suggestion was dismissed drops the pending name. Turning off **Suggest speaker names during a meeting** hides names already offered until it is turned back on, an answer that is not a plausible personal name is refused, and **Accept** and **Dismiss** sit beside the name on a transcript line (#1016).
 - In the live transcript, editing a line no longer sends the first words of the reply after it back to that line's speaker. While your wording still ends with a full stop, question mark or exclamation mark, they stay with the person replying (#975).
 - In a processed transcript, the first words of a reply after a line you edited now move to the person replying, as they do live, while your wording ends with a full stop, question mark or exclamation mark. After a line whose speaker you chose, they keep the speaker processing found for them (#1035).
+- In a processed transcript, words without timings that follow two corrected lines, one inside the other, are placed after both. They could overlap the outer line and take the speaker chosen for it (#971).
 
 ### Meetings, tags and search
+
+- An Escape pressed just before a first-visit tour appears, to close a menu say, no longer closes the tour when you let go of it once it is showing. The tour closed and counted as seen, so it did not come back. Escape pressed while the tour is showing still closes it (#988).
 
 ### Notes and AI providers
 
@@ -50,6 +53,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - When the AI provider behind Meeting Edge fails during a recording, Nojoin waits before asking it again, from 30 seconds up to every 5 minutes, and stops asking for the rest of the recording when a key is refused, a model is missing or the account is out of credit, while a fallback provider carries on. One notification per kind of failure names the provider and model and says why, and the **Meeting Edge** tab says why it is paused. Changing the AI settings lifts a stop without a restart. The recording read carries the notices as `live_ai_notices` during a capture (#994).
 - With **Suggest speaker names during a meeting** on, a failing AI provider backs off for the speaker name ask as it does for Meeting Edge, and the two share the wait: neither asks a provider the other found failing until its wait is over. The notification names every feature a failure holds up, and the **Meeting Edge** tab says why it is paused when the failure came from a name ask (#994).
 - A Claude or ChatGPT subscription no longer shows as disconnected in **Settings > Your AI** after a token refresh that failed on a network or server error, and another subscription cannot be connected beside it meanwhile; Nojoin refreshes it again on the next request. Only a refresh the provider refuses asks you to reconnect (#994).
+- Text you type into a notes table row you have just added stays in that row. When the notes saved just after you added the row, the caret jumped to the end of the table's last cell and your text went there, and in notes that end with a table, text typed while a save was under way could be lost (#1074).
 - The **Analytics** note comparing a person with their usual delivery reads only the meetings their **Person Details** counts. It also read meetings in the bin and meetings where all their lines had moved to other speakers or their speaker was merged into another, so the meeting count behind it could run high (#985).
 - When two speakers in one meeting are the same person, the **Analytics** note comparing them with their usual delivery counts that meeting once, from all their speech in it. It counted the meeting once for each speaker, so the note could say "across 3 meetings" after two, and in the meeting you are viewing only one of the two speakers got the note (#1030).
 
@@ -63,10 +67,13 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - The users table under **Settings > Users and access** has a **Terms accepted** column with the day each account accepted, or **Not yet accepted** (#1007).
 - **Check speakers heard only briefly** in **Settings > Recording > Advanced > Speech and speaker tuning** stays where it is when you tick or untick it, and its description keeps a readable width beside the limits. On a wide screen the checkbox moved between the line below **Speakers heard only briefly** and the end of that line, and in a narrower window the limits could squeeze the description to a few characters (#975).
 - In a narrower window, settings with a wide box beside them, such as **Colour palette**, **Timezone**, the AI model choices and the calendar sign-in fields, keep room to read their name and description, and the box narrows instead. The box had taken nearly the whole row, leaving a few characters a line (#1043).
+- In **Settings > AI providers > Advanced > Model downloads**, the Nemotron row says **Waiting to retry** for the ten minutes after a failed preparation, as the word timing aligner's row does. A row in that wait no longer says **Retry** starts now while another preparation keeps the button disabled (#971).
+- The **AI providers** and **Transcription** settings pages ask for a provider's model list only when the provider has a key or address and you are an administrator. The server refused each such request on a fresh install with no AI key, and from anyone who is not an administrator (#971).
 
 ### API and MCP
 
 - `POST /api/v1/users/me/legal-acceptance` records the signed-in user's acceptance from a browser session, and `/users/me`, the users list and both sign-in answers carry `legal_acceptance_required`. The MCP consent page shows the terms first to an account that has not accepted them (#1007).
+- `GET /api/v1/system/download-progress` answers 422 for a `model` it does not know, where it returned idle progress. Without `model`, a Nemotron or aligner download that a stopped worker left behind no longer outranks a newer preparation's progress. Two `POST /api/v1/system/models/prepare` requests sent together queue one preparation, and the second answers 409 (#971).
 
 ### Deployment and dependencies
 

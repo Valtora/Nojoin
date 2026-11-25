@@ -54,7 +54,10 @@ from backend.models.system_public import ModelStatusInfo
 from backend.models.user import User
 from backend.preload_models import check_model_status
 from backend.seed_demo import seed_demo_data
-from backend.services.model_preparation import enqueue_model_preparation
+from backend.services.model_preparation import (
+    enqueue_model_preparation,
+    preparation_request,
+)
 from backend.services.model_status import add_nemotron_preparation_status
 from backend.utils.config_defaults import DEFAULT_SYSTEM_CONFIG
 from backend.utils.config_manager import (
@@ -62,6 +65,7 @@ from backend.utils.config_manager import (
     get_trusted_web_origin,
 )
 from backend.utils.download_progress import (
+    PROGRESS_MODELS,
     get_download_progress,
     is_download_in_progress,
 )
@@ -565,6 +569,10 @@ async def get_download_progress_endpoint(
     """
     Get current automatic model preparation progress.
     """
+    if model is not None and model not in PROGRESS_MODELS:
+        raise HTTPException(
+            status_code=422, detail=f"model must be one of {list(PROGRESS_MODELS)}"
+        )
     progress = get_download_progress(model)
     if progress is None:
         return {
@@ -685,12 +693,6 @@ async def prepare_models_endpoint(
     del current_user
     target = (payload or ModelPreparationRequest()).target
 
-    if is_download_in_progress():
-        raise HTTPException(
-            status_code=409,
-            detail="Model preparation is already running. Wait for it to finish.",
-        )
-
     # The transcription keys are install-wide, so config.json holds the model an
     # administrator chose. Reloaded in case the file was edited by hand since.
     config_manager.reload()
@@ -707,21 +709,27 @@ async def prepare_models_endpoint(
         transcription_backend = target
         include_core = False
 
-    try:
-        task_id = await enqueue_model_preparation(
-            transcription_backend=transcription_backend,
-            target=target
-            if target in {"nemotron", "forced_aligner"}
-            else "core"
-            if include_core
-            else "active",
-        )
-    except Exception as e:  # noqa: BLE001 -- boundary: a queue failure becomes a 503 the admin page can act on
-        logger.error("Failed to queue model preparation: %s", e, exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail="Could not queue model preparation. Is the worker running?",
-        )
+    async with preparation_request() as claimed:
+        if not claimed or is_download_in_progress():
+            raise HTTPException(
+                status_code=409,
+                detail="Model preparation is already running. Wait for it to finish.",
+            )
+        try:
+            task_id = await enqueue_model_preparation(
+                transcription_backend=transcription_backend,
+                target=target
+                if target in {"nemotron", "forced_aligner"}
+                else "core"
+                if include_core
+                else "active",
+            )
+        except Exception as e:  # noqa: BLE001 -- boundary: a queue failure becomes a 503 the admin page can act on
+            logger.error("Failed to queue model preparation: %s", e, exc_info=True)
+            raise HTTPException(
+                status_code=503,
+                detail="Could not queue model preparation. Is the worker running?",
+            )
 
     return {"task_id": task_id, "target": target, "status": "queued"}
 

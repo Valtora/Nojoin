@@ -81,11 +81,15 @@ def download_models_task(
     pinned = "nemotron" if nemotron_only else pinned_model
     if pinned not in {None, "nemotron", "forced_aligner"}:
         raise ValueError("Unknown pinned model preparation target")
-    control = None
+    control = inspect = None
     if pinned == "nemotron":
         from backend.utils.nemotron_lock import control
+        from backend.utils.nemotron_model_utils import inspect_nemotron_model as inspect
     elif pinned == "forced_aligner":
         from backend.utils.forced_aligner_model_utils import control
+        from backend.utils.forced_aligner_model_utils import (
+            inspect_forced_aligner_model as inspect,
+        )
     try:
         if control is not None:
             with control.model_lock():
@@ -105,12 +109,29 @@ def download_models_task(
         )
     except Exception:
         if control is not None:
-            control.record_failure()
+            _record_pinned_failure(control, inspect)
         raise
     finally:
         if control is not None:
             control.complete_pending(self.request.id)
     return {"status": "success", "message": "Model preparation complete."}
+
+
+def _record_pinned_failure(control, inspect) -> None:
+    """Hold off first-use requests after a failure, under the model lock.
+
+    Another preparation can take the lock once this one has failed, and verify
+    the model. A failure noted after that would hold off requests for a model
+    that is ready, so it is noted only while the model still does not verify.
+    When another run holds the lock, preparing or deleting the model, this one
+    does not wait for it: that run's outcome is the newer one.
+    """
+    try:
+        with control.model_lock(blocking=False) as acquired:
+            if acquired and inspect().state != "verified":
+                control.record_failure()
+    except (OSError, RuntimeError, ValueError):
+        logger.warning("Could not record the %s preparation failure", control.name)
 
 
 @celery_app.task(name="backend.worker.tasks.delete_model_task", bind=True)
