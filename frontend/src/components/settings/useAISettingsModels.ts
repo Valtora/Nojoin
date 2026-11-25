@@ -17,6 +17,7 @@ import {
   validateLLM,
 } from "@/lib/api";
 import type { ModelProbeResult } from "@/lib/api";
+import { getSecondaryProviderGap, getServerProviderGap } from "@/lib/aiAvailability";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
 import { useModelPreparation } from "./useModelPreparation";
@@ -39,6 +40,8 @@ export function validationKey(provider: string, role: ProviderRole): string {
 
 export interface UseAISettingsModelsOptions {
   settings: Settings;
+  /** The provider model lists come from an endpoint that serves administrators only. */
+  isAdmin: boolean;
 }
 
 export interface AISettingsModels {
@@ -80,8 +83,13 @@ export interface AISettingsModels {
 export function useAISettingsModels(
   options: UseAISettingsModelsOptions,
 ): AISettingsModels {
-  const { settings } = options;
+  const { settings, isAdmin } = options;
   const { addNotification } = useNotificationStore();
+  // A list needs the provider's key or address, and an administrator to ask
+  // for it; the server refuses any other request (#971).
+  const canListModels = isAdmin && getServerProviderGap(settings) !== "credential";
+  const canListSecondaryModels =
+    isAdmin && getSecondaryProviderGap(settings) !== "credential";
 
   const [validating, setValidating] = useState<string | null>(null);
   const [validationMsg, setValidationMsg] = useState<ValidationMessage | null>(
@@ -142,7 +150,7 @@ export function useAISettingsModels(
       const provider = settings.llm_provider;
       const url = provider === "ollama" ? settings.ollama_api_url || "" : "";
 
-      if (provider) {
+      if (provider && canListModels) {
         setFetchingModels(true);
         try {
           const res = await listModels(provider, "", url);
@@ -160,13 +168,13 @@ export function useAISettingsModels(
 
     const timeout = setTimeout(fetchModels, 1000);
     return () => clearTimeout(timeout);
-  }, [settings.llm_provider, settings.ollama_api_url]);
+  }, [settings.llm_provider, settings.ollama_api_url, canListModels]);
 
   // Fetch secondary provider models independently
   useEffect(() => {
     const fetchSecondaryModels = async () => {
       const provider = settings.secondary_llm_provider;
-      if (!provider) {
+      if (!provider || !canListSecondaryModels) {
         setSecondaryAvailableModels([]);
         return;
       }
@@ -187,7 +195,11 @@ export function useAISettingsModels(
 
     const timeout = setTimeout(fetchSecondaryModels, 1000);
     return () => clearTimeout(timeout);
-  }, [settings.secondary_llm_provider, settings.secondary_ollama_api_url]);
+  }, [
+    settings.secondary_llm_provider,
+    settings.secondary_ollama_api_url,
+    canListSecondaryModels,
+  ]);
 
   const validatingRef = useRef(false);
 

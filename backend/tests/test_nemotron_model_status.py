@@ -21,6 +21,7 @@ from backend.tests.nemotron_asset_helpers import local_files
 from backend.tests.nemotron_asset_helpers import native_assets as native_assets
 from backend.utils import nemotron_lock as control
 from backend.utils import nemotron_model_utils as assets
+from backend.utils import pinned_model_control
 
 
 @pytest.fixture
@@ -188,9 +189,28 @@ def test_explicit_worker_transfer_stays_downloading_during_silent_transfer(
     assert observations == ["downloading", "downloading"]
     assert control.pending_task() is None
     assert not control._control_path("pending.json").exists()
+    # A failed preparation holds first-use requests off, as the aligner's does.
     assert _response(app).json()["nemotron"]["state"] == (
-        "failed" if fails else "ready"
+        "retry_wait" if fails else "ready"
     )
+
+
+def test_a_failed_preparation_shows_its_retry_hold_until_it_ends(
+    native_assets: tuple[Path, dict[str, bytes]],
+    status_app: tuple[FastAPI, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, progress = status_app
+    clock = [1000.0]
+    monkeypatch.setattr(
+        pinned_model_control, "time", SimpleNamespace(time=lambda: clock[0])
+    )
+    control.control.record_failure()
+    progress.update(stage="nemotron", status="error", updated_at=clock[0])
+
+    assert _response(app).json()["nemotron"]["state"] == "retry_wait"
+    clock[0] += pinned_model_control.FAILURE_BACKOFF
+    assert _response(app).json()["nemotron"]["state"] == "failed"
 
 
 def test_first_use_pending_marker_is_read_without_a_write_lock(

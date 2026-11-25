@@ -190,4 +190,81 @@ describe.each(tours)('the $name tour', (tour) => {
       expect(popover()).toBeNull();
     });
   });
+
+  // An Escape pressed as the tour opens, to close a menu say, is let go once
+  // it is open. driver.js notes presses only while a tour is open (#988).
+  describe('an Escape pressed before it opened', () => {
+    const escape = (type: 'keyDown' | 'keyUp', repeat = false) => {
+      act(() => {
+        fireEvent[type](document.activeElement ?? document.body, { key: 'Escape', code: 'Escape', repeat });
+      });
+    };
+    // Renders the page and runs its clock to `before` ms short of the tour.
+    const nearlyOpen = async (before: number) => {
+      const view = render(tour.page());
+      await act(async () => {});
+      await advance(1500 - before);
+      expect(popover()).toBeNull();
+      return view;
+    };
+    const leftOpen = () => {
+      expect(popover()).not.toBeNull();
+      expect(document.body.classList.contains('driver-active')).toBe(true);
+      expect(tour.seen()).toBeUndefined();
+      expect(restored).not.toHaveBeenCalled();
+    };
+    // Escape pressed and released while the tour is open closes it for good.
+    const closedOnPurpose = async (view: ReturnType<typeof render>) => {
+      escape('keyDown');
+      escape('keyUp');
+      expect(popover()).toBeNull();
+      expect(document.body.classList.contains('driver-active')).toBe(false);
+      expect(tour.seen()).toBe(true);
+      expect(restored).toHaveBeenCalledTimes(tour.name === 'transcript' ? 1 : 0);
+      view.rerender(tour.page());
+      await advance(5000);
+      expect(popover()).toBeNull();
+    };
+
+    it.each([
+      ['just before', 100],
+      ['a second before', 1000],
+    ])('%s and released once it is open leaves it open and unseen', async (_, before) => {
+      const view = await nearlyOpen(before);
+      escape('keyDown');
+      await advance(before);
+      expect(popover()).not.toBeNull();
+      await advance(50);
+      escape('keyUp');
+
+      leftOpen();
+      await closedOnPurpose(view);
+    });
+
+    it('held since before the page and released as it opens leaves it open and unseen', async () => {
+      const view = await nearlyOpen(500);
+      // Only the held key's repeats reach the page, and it is let go before
+      // the next one. driver.js ignores the release of a key it saw repeat.
+      for (let repeat = 0; repeat < 10; repeat++) {
+        escape('keyDown', true);
+        await advance(50);
+      }
+      expect(popover()).not.toBeNull();
+      await advance(20);
+      escape('keyUp');
+
+      leftOpen();
+      await closedOnPurpose(view);
+    });
+
+    it('and released before it opened leaves Escape closing it', async () => {
+      const view = await nearlyOpen(100);
+      escape('keyDown');
+      escape('keyUp');
+      await advance(100);
+      expect(popover()).not.toBeNull();
+
+      await closedOnPurpose(view);
+    });
+  });
 });

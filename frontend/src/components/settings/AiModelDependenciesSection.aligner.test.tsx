@@ -4,7 +4,9 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ModelStatusInfo, SystemModelStatus } from "@/types";
 import AiModelDependenciesSection from "./AiModelDependenciesSection";
 
-function renderAligner(status: Partial<ModelStatusInfo> = {}, isAdmin = true) {
+function renderAligner(
+  status: Partial<ModelStatusInfo> = {}, isAdmin = true, preparationRunning = false,
+) {
   const startPreparation = vi.fn().mockResolvedValue(true);
   const handleDeleteModel = vi.fn();
   const ready: ModelStatusInfo = { downloaded: true, path: "/cache/model", checked_paths: [] };
@@ -23,7 +25,7 @@ function renderAligner(status: Partial<ModelStatusInfo> = {}, isAdmin = true) {
       handleDeleteModel={handleDeleteModel}
       isAdmin={isAdmin}
       downloadProgress={null}
-      preparationRunning={false}
+      preparationRunning={preparationRunning}
       startPreparation={startPreparation}
     />,
   );
@@ -47,10 +49,21 @@ describe("Forced aligner model downloads", () => {
     const { row, startPreparation } = renderAligner({ state: "retry_wait" });
     expect(row.getByText("Waiting to retry")).toBeTruthy();
     expect(row.getByText(/Automatic requests wait ten minutes/)).toBeTruthy();
+    expect(row.getByText(/Retry starts now/)).toBeTruthy();
     const retry = row.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
     expect(retry.disabled).toBe(false);
     fireEvent.click(retry);
     expect(startPreparation).toHaveBeenCalledExactlyOnceWith("forced_aligner");
+  });
+
+  it("does not offer Retry now while another preparation keeps it disabled (#971)", () => {
+    const { row, startPreparation } = renderAligner({ state: "retry_wait" }, true, true);
+    const retry = row.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(true);
+    expect(row.queryByText(/Retry starts now/)).toBeNull();
+    expect(row.getByText(/Retry is available once the running preparation finishes/)).toBeTruthy();
+    fireEvent.click(retry);
+    expect(startPreparation).not.toHaveBeenCalled();
   });
 
   it("disables download and partial clearing while its pending transfer is active", () => {
