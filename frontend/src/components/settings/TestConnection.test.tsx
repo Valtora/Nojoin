@@ -168,9 +168,11 @@ describe("handleValidate (issue #991)", () => {
   const settings = {
     whisper_model_size: "base",
     llm_provider: "gemini",
+    gemini_api_key: "AIz...abcd",
     gemini_model: "gemini-flash-latest",
     gemini_live_model: "gemini-old",
     secondary_llm_provider: "gemini",
+    secondary_gemini_api_key: "AIz...wxyz",
     secondary_gemini_model: "gemini-pro-latest",
     secondary_gemini_live_model: null,
   } as unknown as Settings;
@@ -189,7 +191,7 @@ describe("handleValidate (issue #991)", () => {
   });
 
   it("probes nothing until asked", () => {
-    renderHook(() => useAISettingsModels({ settings }));
+    renderHook(() => useAISettingsModels({ settings, isAdmin: true }));
 
     expect(mocks.validateLLM).not.toHaveBeenCalled();
   });
@@ -200,7 +202,7 @@ describe("handleValidate (issue #991)", () => {
       message: missing.message,
       results: [pass, missing],
     });
-    const { result } = renderHook(() => useAISettingsModels({ settings }));
+    const { result } = renderHook(() => useAISettingsModels({ settings, isAdmin: true }));
 
     await act(async () => {
       await result.current.handleValidate("gemini");
@@ -229,7 +231,7 @@ describe("handleValidate (issue #991)", () => {
 
   it("tests the fallback with its own models", async () => {
     mocks.validateLLM.mockResolvedValue({ valid: true, results: [] });
-    const { result } = renderHook(() => useAISettingsModels({ settings }));
+    const { result } = renderHook(() => useAISettingsModels({ settings, isAdmin: true }));
 
     await act(async () => {
       await result.current.handleValidate("gemini", "secondary");
@@ -256,7 +258,7 @@ describe("handleValidate (issue #991)", () => {
       message: missing.message,
       results: [pass, missing],
     });
-    const { result } = renderHook(() => useAISettingsModels({ settings }));
+    const { result } = renderHook(() => useAISettingsModels({ settings, isAdmin: true }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -287,7 +289,7 @@ describe("handleValidate (issue #991)", () => {
   });
 
   it("loads the fallback's models with the fallback's key", async () => {
-    renderHook(() => useAISettingsModels({ settings }));
+    renderHook(() => useAISettingsModels({ settings, isAdmin: true }));
 
     await waitFor(
       () =>
@@ -309,7 +311,7 @@ describe("handleValidate (issue #991)", () => {
         finish = resolve;
       }),
     );
-    const { result } = renderHook(() => useAISettingsModels({ settings }));
+    const { result } = renderHook(() => useAISettingsModels({ settings, isAdmin: true }));
 
     let first!: Promise<void>;
     act(() => {

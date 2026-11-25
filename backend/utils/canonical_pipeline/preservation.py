@@ -162,12 +162,15 @@ def _part_bounds(
     """
     if not words:
         # Unplaced edge runs have segment bounds, but no observed word times.
-        boundaries = sorted(line_bounds[index] for index in found)
+        # The first ``gap`` lines to end lie before the run and the rest after
+        # it. Nested or overlapping lines end in a different order from the
+        # one they start in, so each side is read by end, not by start.
+        by_end = sorted(found, key=lambda index: line_bounds[index][1])
         start, end = float(segment["start"]), float(segment["end"])
         if gap:
-            start = max(start, boundaries[gap - 1][1] / 1000)
-        if gap < len(boundaries):
-            end = min(end, boundaries[gap][0] / 1000)
+            start = max(start, line_bounds[by_end[gap - 1]][1] / 1000)
+        if gap < len(by_end):
+            end = min(end, min(line_bounds[i][0] for i in by_end[gap:]) / 1000)
             start = min(start, end)
         return start, max(start, end)
     start, end = float(words[0]["start"]), float(words[-1]["end"])
@@ -184,11 +187,14 @@ def _part_bounds(
 def _untimed_owner(
     before: tuple[int | None, int] | None,
     after: tuple[int | None, int] | None,
+    ended_with: Callable[[int], int],
 ) -> tuple[int | None, int]:
     """Only agreeing timed neighbours can place unknown words in a review.
 
     They agree on the protected line, not on how many lines have ended: an
-    overlapping line ending inside the line changes only the latter.
+    overlapping line ending inside the line changes only the latter. A run
+    trailing a reviewed word sits after that word's line, so it counts the
+    lines ended once that line has (``ended_with``).
     """
     if before is not None and after is not None and before[0] is not None:
         if before[0] == after[0]:
@@ -198,7 +204,9 @@ def _untimed_owner(
             return neighbour
     if after is not None:
         return None, after[1]
-    return None, before[1] + 1 if before is not None else 0
+    if before is None or before[0] is None:
+        return None, 0
+    return None, ended_with(before[0])
 
 
 def _consume_overlap(
@@ -248,10 +256,14 @@ def _consume_overlap(
     owners: list[tuple[int | None, int]] = [(None, 0)] * len(words)
     for position, assignment in timed_owners:
         owners[position] = assignment
+
+    def ended_with(line: int) -> int:
+        return sum(line_bounds[i][1] <= line_bounds[line][1] for i in found)
+
     for (before, before_owner), (after, after_owner) in zip(
         [(-1, None), *timed_owners], [*timed_owners, (len(words), None)]
     ):
-        assignment = _untimed_owner(before_owner, after_owner)
+        assignment = _untimed_owner(before_owner, after_owner, ended_with)
         owners[before + 1 : after] = [assignment] * (after - before - 1)
 
     parts: list[dict[str, Any]] = []

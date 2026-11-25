@@ -61,7 +61,7 @@ class _FakeConfigManager:
 
 
 @pytest.fixture()
-def prepare_app(monkeypatch):
+def prepare_app(monkeypatch, fake_single_flight):
     """System router with the enqueue call recorded rather than sent."""
     calls: list[dict] = []
 
@@ -217,6 +217,79 @@ def test_an_unknown_target_is_rejected(prepare_app):
 
     assert response.status_code == 422
     assert calls == []
+
+
+@pytest.fixture()
+def queue_app(monkeypatch, fake_single_flight, download_progress_in_memory):
+    """The real check and enqueue, with a publish the test can hold open.
+
+    The first publish waits for ``release``, as a slow broker would, so a second
+    request arrives before the first has written its queued progress.
+    """
+    entered, release = asyncio.Event(), asyncio.Event()
+    published: list[dict] = []
+
+    async def publish(name, *, kwargs, **options):
+        published.append(kwargs)
+        if len(published) == 1:
+            entered.set()
+            await release.wait()
+        return SimpleNamespace(id=f"task-{len(published)}")
+
+    monkeypatch.setattr(model_preparation, "dispatch_task", publish)
+    monkeypatch.setattr(system, "config_manager", _FakeConfigManager())
+    monkeypatch.setattr(model_preparation, "config_manager", _FakeConfigManager())
+    app = FastAPI()
+    app.include_router(system.router, prefix="/system")
+    _as_user(app)
+    return app, entered, release, published
+
+
+def test_two_quick_requests_queue_one_preparation(queue_app):
+    app, entered, release, published = queue_app
+
+    async def race():
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://t"
+        ) as client:
+            first = asyncio.create_task(
+                client.post("/system/models/prepare", json={"target": "core"})
+            )
+            await asyncio.wait_for(entered.wait(), timeout=5)
+            second = await client.post(
+                "/system/models/prepare", json={"target": "core"}
+            )
+            release.set()
+            third = await client.post("/system/models/prepare", json={"target": "core"})
+            return await first, second, third
+
+    first, second, third = asyncio.run(race())
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 409
+    # Once the claim is released, the queued progress refuses the next request.
+    assert third.status_code == 409
+    assert len(published) == 1
+
+
+def test_a_failed_queue_frees_the_claim(queue_app, monkeypatch):
+    app, *_ = queue_app
+
+    async def broker_down(name, *, kwargs, **options):
+        raise ConnectionError("broker unreachable")
+
+    monkeypatch.setattr(model_preparation, "dispatch_task", broker_down)
+    assert asyncio.run(_post_prepare(app, {"target": "core"})).status_code == 503
+
+    published: list[dict] = []
+
+    async def publish(name, *, kwargs, **options):
+        published.append(kwargs)
+        return SimpleNamespace(id="task-1")
+
+    monkeypatch.setattr(model_preparation, "dispatch_task", publish)
+    assert asyncio.run(_post_prepare(app, {"target": "core"})).status_code == 200
+    assert len(published) == 1
 
 
 # --- POST /settings ---------------------------------------------------------------

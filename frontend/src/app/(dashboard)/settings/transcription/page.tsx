@@ -11,7 +11,7 @@ import { useAISettingsModels } from "@/components/settings/useAISettingsModels";
 
 export default function TranscriptionSettingsPage() {
   const { settings, updateSetting, persistNow, isAdmin } = useSettingsContext();
-  const models = useAISettingsModels({ settings });
+  const models = useAISettingsModels({ settings, isAdmin });
 
   return (
     <SettingsCategoryLayout categoryId="transcription">

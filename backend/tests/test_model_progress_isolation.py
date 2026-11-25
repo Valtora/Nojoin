@@ -20,6 +20,7 @@ from backend.tests.test_forced_aligner_assets import tiny_assets as tiny_assets
 from backend.utils import download_progress
 from backend.utils import nemotron_model_utils as nemotron
 from backend.utils.download_progress import set_download_progress
+from backend.utils.forced_aligner_model_utils import control as aligner_control
 from backend.utils.pinned_model_assets import PinnedModelAssets
 
 
@@ -119,3 +120,71 @@ def test_concurrent_preparations_keep_separate_progress_through_real_readers(
                 event.set()
         native.result(timeout=15)
         aligner.result(timeout=15)
+
+
+@pytest.mark.parametrize("pending", [False, True], ids=["worker-lost", "queued"])
+def test_a_stale_pinned_transfer_outranks_a_newer_completion_only_while_pending(
+    pending: bool,
+    download_progress_in_memory: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [time.time()]
+    monkeypatch.setattr(
+        download_progress, "time", SimpleNamespace(time=lambda: clock[0])
+    )
+    set_download_progress(40, "Aligner transfer", stage="forced_aligner")
+    if pending:
+        aligner_control.write_pending("aligner-task")
+    # Silent past the freshness window: with no pending marker its worker is gone.
+    clock[0] += 31
+    set_download_progress(100, "Core complete", stage="complete", status="complete")
+
+    async def observe() -> dict[str, Any]:
+        async with settings_client() as client:
+            response = await client.get("/system/download-progress")
+            assert response.status_code == 200, response.text
+            return response.json()
+
+    aggregate = asyncio.run(observe())
+    assert aggregate["stage"] == ("forced_aligner" if pending else "complete")
+    assert aggregate["status"] == ("downloading" if pending else "complete")
+
+
+def test_download_progress_accepts_only_known_model_names(
+    download_progress_in_memory: dict[str, str],
+) -> None:
+    set_download_progress(37, "Core transfer", stage="whisper")
+
+    async def observe() -> None:
+        async with settings_client() as client:
+            for model in ("core", "whisper", "nemotron", "forced_aligner"):
+                response = await client.get(
+                    "/system/download-progress", params={"model": model}
+                )
+                assert response.status_code == 200, response.text
+            for model in ("bogus", "nojoin:model_download_progress", ""):
+                response = await client.get(
+                    "/system/download-progress", params={"model": model}
+                )
+                assert response.status_code == 422, (model, response.text)
+
+    asyncio.run(observe())
+
+
+def test_settings_reads_each_pinned_row_from_its_own_record(
+    download_progress_in_memory: dict[str, str],
+) -> None:
+    for model in ("nemotron", "forced_aligner"):
+        set_download_progress(0, "Preparation failed.", status="error", stage=model)
+    # Newer and downloading, so it is what the aggregate reading returns.
+    set_download_progress(20, "Core transfer", stage="whisper")
+
+    async def observe() -> dict[str, Any]:
+        async with settings_client() as client:
+            response = await client.get("/system/models/status")
+            assert response.status_code == 200, response.text
+            return response.json()
+
+    status = asyncio.run(observe())
+    assert status["nemotron"]["state"] == "failed"
+    assert status["forced_aligner"]["state"] == "failed"
