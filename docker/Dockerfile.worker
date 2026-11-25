@@ -120,8 +120,8 @@ RUN apt-get update && \
 # urllib3==2.8.0 closes CVE-2026-44431/44432 and CVE-2026-97687/97689;
 # fsspec==2026.9.0 keeps the CVE-2026-104851 fix;
 # filelock==4.2.1 (torch and huggingface_hub use this copy, as the venv has none)
-# closes CVE-2026-112940; dnspython==2.9.0 (only python-etcd from the base
-# image needs it) closes CVE-2026-114605.
+# closes CVE-2026-112940; dnspython==2.9.2 (only python-etcd from the base
+# image needs it) closes CVE-2026-114605 and CVE-2026-128089.
 #
 # certifi is the exception: no requirements file pins it, and the venv has no
 # copy of its own, so this system copy is the CA bundle the worker verifies TLS
@@ -142,7 +142,7 @@ RUN apt-get update && \
 # every ONNX Runtime session falls back to the CPU.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
     --root-user-action=ignore --upgrade pillow==13.0.0 urllib3==2.8.0 fsspec==2026.9.0 \
-    filelock==4.2.1 dnspython==2.9.0 \
+    filelock==4.2.1 dnspython==2.9.2 \
     "certifi>=2026.10.19" && \
     /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
     --root-user-action=ignore \

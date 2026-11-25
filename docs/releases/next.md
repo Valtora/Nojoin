@@ -37,6 +37,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - **Max Speakers** reads the same in the live recording toolbar, the import dialog and the reprocess dialog: its hint sits behind an "i" beside the box, which opens on hover, on keyboard focus or with a tap, and a rejected entry's message still shows under the box (#1014).
 - A name the AI suggested for a live speaker is withdrawn when a line it quoted moves to another speaker, and merging a speaker into one whose suggestion was dismissed drops the pending name. Turning off **Suggest speaker names during a meeting** hides names already offered until it is turned back on, an answer that is not a plausible personal name is refused, and **Accept** and **Dismiss** sit beside the name on a transcript line (#1016).
 - In the live transcript, editing a line no longer sends the first words of the reply after it back to that line's speaker. While your wording still ends with a full stop, question mark or exclamation mark, they stay with the person replying (#975).
+- In a processed transcript, the first words of a reply after a line you edited now move to the person replying, as they do live, while your wording ends with a full stop, question mark or exclamation mark. After a line whose speaker you chose, they keep the speaker processing found for them (#1035).
 
 ### Meetings, tags and search
 
@@ -50,10 +51,12 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - With **Suggest speaker names during a meeting** on, a failing AI provider backs off for the speaker name ask as it does for Meeting Edge, and the two share the wait: neither asks a provider the other found failing until its wait is over. The notification names every feature a failure holds up, and the **Meeting Edge** tab says why it is paused when the failure came from a name ask (#994).
 - A Claude or ChatGPT subscription no longer shows as disconnected in **Settings > Your AI** after a token refresh that failed on a network or server error, and another subscription cannot be connected beside it meanwhile; Nojoin refreshes it again on the next request. Only a refresh the provider refuses asks you to reconnect (#994).
 - The **Analytics** note comparing a person with their usual delivery reads only the meetings their **Person Details** counts. It also read meetings in the bin and meetings where all their lines had moved to other speakers or their speaker was merged into another, so the meeting count behind it could run high (#985).
+- When two speakers in one meeting are the same person, the **Analytics** note comparing them with their usual delivery counts that meeting once, from all their speech in it. It counted the meeting once for each speaker, so the note could say "across 3 meetings" after two, and in the meeting you are viewing only one of the two speakers got the note (#1030).
 
 ### People, tasks and calendar
 
 - On a phone, **Tasks** no longer scrolls sideways while **Create Task** or a task's **Edit** form is open. A long meeting name in the form's recording list is cut short to fit the screen, as it is on a wider one (#1001).
+- When Nojoin rebuilds a person's voiceprint in the background, it leaves out a speaker whose lines were all moved to other speakers, as **Person Details** leaves out that meeting. That speaker's voiceprint came from those lines, so it could pull the person's voiceprint towards whoever now holds them (#1031).
 
 ### Settings and administration
 
@@ -73,6 +76,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - When Whisper cannot launch its Triton GPU kernels and aligns word timestamps on the CPU instead, `worker-gpu` logs a warning the first time, where it said nothing. A worker image whose Triton does not import now fails to build (#1053).
 - `worker-gpu` restarts itself in place once it has gone 15 minutes without a task, never while a capture is recording or paused, and hands back about 1.4 GB of memory on a CUDA install. The first live caption after such a restart takes about 14 seconds while the models load; final transcripts are unaffected. `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES` in `.env` sets the minutes, and `0` turns the restart off (#1054).
 - In `docker-compose.example.yml`, `worker-cpu`, `worker-io` and `worker-parse` autoscale from one child, and a child that has used more than 400,000 KiB is replaced after its task, so an idle install runs three prefork children instead of nine (#1054).
+- The worker and worker-io images carry dnspython 2.9.2 in place of 2.9.0, which fixes CVE-2026-128089 (#1072).
 
 ## Upgrade
 
@@ -102,7 +106,6 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 <!-- Only problems Nojoin can fix, each with its open issue. A limit set by a dependency or a provider belongs in the guide for that feature. -->
 
 - Live lines can move words between speakers at a turn change before they lock, and past eight voices a live reply's first words can still go to the previous speaker (#776, #813, #888).
-- In a processed transcript, the first words of a reply that follows a line you edited stay with the previous speaker (#1035).
 
 ## Browser capture
 
