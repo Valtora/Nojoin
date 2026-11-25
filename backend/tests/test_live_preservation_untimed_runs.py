@@ -209,3 +209,62 @@ def test_an_untimed_word_inside_a_line_stays_in_its_review_past_an_overlapping_l
     assert [segment.get("id") for segment in result] == ["A", "B"]
     review = result[0]["confidence_payload"]["final_review"]["text"]
     assert review == "first middle last"
+
+
+def _corrected(public_id: str, start_ms: int, end_ms: int):
+    from backend.models.pipeline import TranscriptUtterance
+
+    return TranscriptUtterance(
+        id=int(start_ms / 1000) + 1,
+        public_id=public_id,
+        recording_id=1,
+        sort_key=f"{start_ms:09d}",
+        start_ms=start_ms,
+        end_ms=end_ms,
+        text=f"Corrected {public_id}",
+        speaker_label="SPEAKER_00",
+        source_kind="live",
+        state=TranscriptUtteranceState.STABLE,
+        revision=2,
+        manual_text_locked=True,
+        manual_speaker_locked=True,
+        recording_speaker_id=7,
+    )
+
+
+@pytest.mark.parametrize(
+    ("segment_end", "trailing_bounds"),
+    # The run trails a word reviewed into A, so it sits after A, which ends
+    # after B although it starts first. A segment ending inside A leaves it
+    # no width there.
+    [(8.0, (6.0, 8.0)), (3.5, (6.0, 6.0))],
+)
+def test_an_untimed_run_after_nested_lines_takes_no_corrected_line(
+    segment_end: float, trailing_bounds: tuple[float, float]
+) -> None:
+    from backend.utils.canonical_pipeline.preservation import preserve_human_segments
+
+    words = [
+        _word("early", 0.2, 0.8),
+        _word("inside", 2.2, 2.8),
+        *([_word("later", 4.0, 5.0)] if segment_end > 5 else []),
+        _word("tail"),
+    ]
+    final = {
+        "start": 0.0,
+        "end": segment_end,
+        "speaker": "SPEAKER_01",
+        "text": " ".join(word["word"].strip() for word in words),
+        "words": words,
+    }
+    # B (2-3 s) is nested inside A (1-6 s).
+    lines = [_corrected("A", 1000, 6000), _corrected("B", 2000, 3000)]
+    result = preserve_human_segments(lines, [final])
+
+    (tail,) = [segment for segment in result if segment.get("text") == "tail"]
+    assert (tail["start"], tail["end"]) == trailing_bounds
+    for line in lines:
+        overlap = min(tail["end"] * 1000, line.end_ms) - max(
+            tail["start"] * 1000, line.start_ms
+        )
+        assert overlap <= 0, line.public_id

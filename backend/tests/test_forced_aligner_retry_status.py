@@ -100,6 +100,7 @@ def test_settings_explicit_retry_bypasses_first_use_backoff(
     download_progress_in_memory: dict[str, str],
     stub_celery_dispatch: list[Any],
     retry_clock: list[float],
+    fake_single_flight: Any,
 ) -> None:
     task_id = model_preparation.request_pinned_preparation(
         "forced_aligner", recording_id=1

@@ -66,6 +66,10 @@ export default function AiModelDependencyRow({
   const retryWaiting = status?.state === "retry_wait";
   const failed = status?.state === "failed" || retryWaiting;
   const preparationBusy = preparationRunning || downloading;
+  const retryDisabled = !isAdmin || preparationBusy;
+  // The hold note names Retry only when the button can start it.
+  const retryNote = !retryDisabled ? "; Retry starts now."
+    : isAdmin ? "; Retry is available once the running preparation finishes." : ".";
 
   return (
     <SettingsRow
@@ -79,7 +83,7 @@ export default function AiModelDependencyRow({
           {status?.unused_reason && <span className="block">{status.unused_reason}</span>}
           {retryWaiting && (
             <span className="block">
-              Preparation failed. Automatic requests wait ten minutes before trying again; Retry starts now.
+              Preparation failed. Automatic requests wait ten minutes before trying again{retryNote}
             </span>
           )}
           {ready && reason && <span className="block">{reason}</span>}
@@ -149,7 +153,7 @@ export default function AiModelDependencyRow({
               chrome="action"
               type="button"
               onClick={() => void startPreparation(model.target)}
-              disabled={!isAdmin || preparationBusy}
+              disabled={retryDisabled}
               className={SETTINGS_BUTTON_SECONDARY}
             >
               <Download className="h-4 w-4" aria-hidden="true" />

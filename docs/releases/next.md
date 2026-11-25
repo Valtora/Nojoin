@@ -38,6 +38,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - A name the AI suggested for a live speaker is withdrawn when a line it quoted moves to another speaker, and merging a speaker into one whose suggestion was dismissed drops the pending name. Turning off **Suggest speaker names during a meeting** hides names already offered until it is turned back on, an answer that is not a plausible personal name is refused, and **Accept** and **Dismiss** sit beside the name on a transcript line (#1016).
 - In the live transcript, editing a line no longer sends the first words of the reply after it back to that line's speaker. While your wording still ends with a full stop, question mark or exclamation mark, they stay with the person replying (#975).
 - In a processed transcript, the first words of a reply after a line you edited now move to the person replying, as they do live, while your wording ends with a full stop, question mark or exclamation mark. After a line whose speaker you chose, they keep the speaker processing found for them (#1035).
+- In a processed transcript, words without timings that follow two corrected lines, one inside the other, are placed after both. They could overlap the outer line and take the speaker chosen for it (#971).
 
 ### Meetings, tags and search
 
@@ -63,10 +64,13 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - The users table under **Settings > Users and access** has a **Terms accepted** column with the day each account accepted, or **Not yet accepted** (#1007).
 - **Check speakers heard only briefly** in **Settings > Recording > Advanced > Speech and speaker tuning** stays where it is when you tick or untick it, and its description keeps a readable width beside the limits. On a wide screen the checkbox moved between the line below **Speakers heard only briefly** and the end of that line, and in a narrower window the limits could squeeze the description to a few characters (#975).
 - In a narrower window, settings with a wide box beside them, such as **Colour palette**, **Timezone**, the AI model choices and the calendar sign-in fields, keep room to read their name and description, and the box narrows instead. The box had taken nearly the whole row, leaving a few characters a line (#1043).
+- In **Settings > AI providers > Advanced > Model downloads**, the Nemotron row says **Waiting to retry** for the ten minutes after a failed preparation, as the word timing aligner's row does. A row in that wait no longer says **Retry** starts now while another preparation keeps the button disabled (#971).
+- The **AI providers** and **Transcription** settings pages ask for a provider's model list only when the provider has a key or address and you are an administrator. The server refused each such request on a fresh install with no AI key, and from anyone who is not an administrator (#971).
 
 ### API and MCP
 
 - `POST /api/v1/users/me/legal-acceptance` records the signed-in user's acceptance from a browser session, and `/users/me`, the users list and both sign-in answers carry `legal_acceptance_required`. The MCP consent page shows the terms first to an account that has not accepted them (#1007).
+- `GET /api/v1/system/download-progress` answers 422 for a `model` it does not know, where it returned idle progress. Without `model`, a Nemotron or aligner download that a stopped worker left behind no longer outranks a newer preparation's progress. Two `POST /api/v1/system/models/prepare` requests sent together queue one preparation, and the second answers 409 (#971).
 
 ### Deployment and dependencies
 

@@ -39,7 +39,7 @@ const tick = async (milliseconds = 2000) => {
   await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds); });
 };
 const openModels = async () => {
-  const hook = renderHook(() => useAISettingsModels({ settings }));
+  const hook = renderHook(() => useAISettingsModels({ settings, isAdmin: true }));
   await act(async () => {});
   return hook;
 };
@@ -191,7 +191,7 @@ describe("model preparation status transitions", () => {
     const large = deferred<SystemModelStatus>();
     mocks.getModelsStatus.mockReturnValueOnce(base.promise).mockReturnValueOnce(large.promise);
     const { result, rerender } = renderHook(
-      ({ size }) => useAISettingsModels({ settings: { ...settings, whisper_model_size: size } }),
+      ({ size }) => useAISettingsModels({ settings: { ...settings, whisper_model_size: size }, isAdmin: true }),
       { initialProps: { size: "base" } },
     );
     rerender({ size: "large" });
@@ -207,7 +207,7 @@ describe("model preparation status transitions", () => {
     const pending = deferred<SystemModelStatus>();
     mocks.getModelsStatus.mockReturnValueOnce(pending.promise);
     const { rerender, unmount } = renderHook(
-      ({ size }) => useAISettingsModels({ settings: { ...settings, whisper_model_size: size } }),
+      ({ size }) => useAISettingsModels({ settings: { ...settings, whisper_model_size: size }, isAdmin: true }),
       { initialProps: { size: "base" } },
     );
     rerender({ size: "large" });

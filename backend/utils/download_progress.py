@@ -12,6 +12,8 @@ from typing import Optional
 import redis
 
 from backend.core.redis import REDIS_URL
+from backend.utils.forced_aligner_model_utils import control as aligner_control
+from backend.utils.nemotron_lock import control as nemotron_control
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,8 @@ CORE_STAGES = (
 )
 PROGRESS_MODELS = (*CORE_STAGES, *PINNED_MODELS)
 PROGRESS_TTL = 3600  # 1 hour TTL to auto-cleanup stale progress
+# A record written this recently belongs to a transfer that is still running.
+FRESH_SECONDS = 30
 
 _redis_client: Optional[redis.Redis] = None
 
@@ -162,7 +166,7 @@ def get_download_progress(model: str | None = None) -> Optional[dict]:
         return max(
             records,
             key=lambda record: (
-                record.get("status") == "downloading",
+                _still_downloading(record),
                 record.get("updated_at", 0),
             ),
             default=None,
@@ -203,23 +207,30 @@ def is_download_in_progress(model: str | None = None) -> bool:
     if progress is None:
         return False
 
-    # Check if the progress is stale (more than 30 seconds old)
+    # Check if the progress is stale (more than FRESH_SECONDS old)
     updated_at = progress.get("updated_at", 0)
-    if time.time() - updated_at > 30:
+    if time.time() - updated_at > FRESH_SECONDS:
         # Stale progress, consider it inactive
         return False
 
     return progress.get("status") == "downloading"
 
 
-def is_download_complete() -> bool:
-    """
-    Check if download has been marked as complete.
+def _still_downloading(record: dict) -> bool:
+    """Whether a record's transfer may still be running, however long it is silent.
 
-    Returns:
-        True if status is "complete", False otherwise
+    A core stage stays downloading until its preparation writes again. A pinned
+    record outlives its task when the worker dies mid-transfer, so it counts
+    only while it is fresh or its model's pending marker shows a task queued or
+    running, the test Settings applies to that model's row. Otherwise it would
+    outrank every newer record until PROGRESS_TTL.
     """
-    progress = get_download_progress()
-    if progress is None:
+    if record.get("status") != "downloading":
         return False
-    return progress.get("status") == "complete"
+    stage = record.get("stage")
+    if stage not in PINNED_MODELS:
+        return True
+    if 0 <= time.time() - record.get("updated_at", 0) <= FRESH_SECONDS:
+        return True
+    control = nemotron_control if stage == "nemotron" else aligner_control
+    return control.pending_task() is not None
