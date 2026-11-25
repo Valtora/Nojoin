@@ -130,6 +130,8 @@ class SpeakerRow:
     embedding_speech_seconds: float | None = None
     # The people the drift guard refused this speaker's voiceprint for.
     refused_for: tuple[int, ...] = ()
+    # ``inactive`` once every line has moved to another speaker.
+    status: str = "active"
 
 
 def _add_speaker(connection, speaker: SpeakerRow) -> None:
@@ -144,7 +146,7 @@ def _add_speaker(connection, speaker: SpeakerRow) -> None:
             ) VALUES (
                 :id, :now, :now, :public_id, :recording_id,
                 :global_speaker_id, :label, :embedding,
-                :embedding_version, :seconds, NULL, 'active', 'automated', 0
+                :embedding_version, :seconds, NULL, :status, 'automated', 0
             )
             """
         ),
@@ -158,6 +160,7 @@ def _add_speaker(connection, speaker: SpeakerRow) -> None:
             "embedding": json.dumps(speaker.embedding),
             "embedding_version": speaker.embedding_version,
             "seconds": speaker.embedding_speech_seconds,
+            "status": speaker.status,
         },
     )
     for person_id in speaker.refused_for:
@@ -1244,3 +1247,91 @@ def test_a_rebuild_averages_only_confirmed_links_by_default(
         mean = [sum(values) for values in zip(*averaged)]
         norm = sum(x * x for x in mean) ** 0.5
         assert embedding == pytest.approx([x / norm for x in mean])
+
+
+def test_a_rebuild_leaves_out_a_speaker_whose_lines_all_moved_away(
+    tmp_path: Path,
+) -> None:
+    """Alice Example's SPEAKER_01 had every line moved to Bob Sample's speaker.
+
+    The row keeps its link to her and the voiceprint taken from those lines,
+    but it is inactive: the user has said the audio is not hers. Her rebuild
+    averages only the speaker whose lines are still hers.
+    """
+    moved_away = [0.0, 0.8, 0.6]
+    engine = _make_engine(tmp_path, "moved-away")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(connection, 5, 1, embedding=STALE_VECTOR, embedding_version=1)
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
+        _add_utterance(connection, 1, 10, 100, (0, 25000))
+        _add_speaker(
+            connection,
+            _current(
+                101,
+                10,
+                global_speaker_id=5,
+                embedding_speech_seconds=25.0,
+                status="inactive",
+            ),
+        )
+        connection.execute(
+            text("UPDATE recording_speakers SET embedding = :e WHERE id = 101"),
+            {"e": json.dumps(moved_away)},
+        )
+
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["people_rebuilt"] == 1
+    assert _person_row(engine, 5) == (
+        pytest.approx(REBUILT_VECTOR),
+        EMBEDDING_METHOD_VERSION,
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "in_bin", "rebuilt"),
+    [
+        pytest.param("active", False, True, id="active"),
+        # Every line moved to another speaker, so nothing of hers is left to
+        # rebuild from and the stale voiceprint is cleared.
+        pytest.param("inactive", False, False, id="lines-all-moved-away"),
+        # Moving a meeting to the bin says nothing about the voice in it.
+        pytest.param("active", True, True, id="meeting-in-the-bin"),
+    ],
+)
+def test_a_stale_person_is_rebuilt_only_from_a_speaker_that_still_counts(
+    tmp_path: Path, status: str, in_bin: bool, rebuilt: bool
+) -> None:
+    engine = _make_engine(tmp_path, "one-link")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(connection, 5, 1, embedding=STALE_VECTOR, embedding_version=1)
+        _add_recording(connection, 10, 1)
+        connection.execute(
+            text("UPDATE recordings SET is_deleted = :d WHERE id = 10"),
+            {"d": int(in_bin)},
+        )
+        _add_speaker(
+            connection,
+            _current(
+                100,
+                10,
+                global_speaker_id=5,
+                embedding_speech_seconds=25.0,
+                status=status,
+            ),
+        )
+
+    summary = _run_task(engine, user_id=1)
+
+    assert (summary["people_rebuilt"], summary["people_cleared_unrebuildable"]) == (
+        int(rebuilt),
+        int(not rebuilt),
+    )
+    if rebuilt:
+        expected = (pytest.approx(REBUILT_VECTOR), EMBEDDING_METHOD_VERSION)
+    else:
+        expected = (None, None)
+    assert _person_row(engine, 5) == expected
