@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import json
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -31,6 +32,7 @@ from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.services.meeting_analytics.query import compute_recording_analytics
+from backend.services.person_meetings import _MEETINGS, COUNTED_SPEAKER_STATUS
 from backend.tests.postgres_setup import fresh_schema
 from backend.utils.canonical_pipeline.speaker import (
     refresh_recording_speaker_usage_state,
@@ -464,6 +466,47 @@ async def test_malformed_legacy_segments_count_as_no_speech_for_that_meeting(
         "good": 2,
     }
     assert result["total_talk_time_seconds"] == 3.5
+
+
+@pytest.mark.anyio
+async def test_out_of_range_legacy_times_count_as_no_speech(
+    history: HistoryDatabase, client: AsyncClient
+) -> None:
+    # JSON numbers no float holds, written as raw jsonb as a restored archive or
+    # a hand edit could leave them. Each 1.7e308 fits a float on its own, but
+    # the pair overflows one when summed.
+    raw = {
+        "overflow": '[{"start": 0, "end": 1e400, "speaker": "SPEAKER_00"}]',
+        "mixed": """[
+            {"start": -1e400, "end": 5, "speaker": "SPEAKER_00"},
+            {"start": 0, "end": 1.7e308, "speaker": "SPEAKER_00"},
+            {"start": 0, "end": 1.7e308, "speaker": "SPEAKER_00"},
+            {"start": 1, "end": 3.5, "speaker": "SPEAKER_00"}
+        ]""",
+        "tiny": '[{"start": 1e-400, "end": 2, "speaker": "SPEAKER_00"}]',
+    }
+    with Session(history.engine) as session:
+        for name, segments in raw.items():
+            recording = _meeting(session, history.owner, name)
+            _link(session, recording, history.person)
+            session.add(Transcript(recording_id=recording.id, segments=[]))
+            session.flush()
+            session.execute(
+                text(
+                    "UPDATE transcripts SET segments = CAST(:segments AS jsonb) "
+                    "WHERE recording_id = :id"
+                ),
+                {"segments": segments, "id": recording.id},
+            )
+        session.commit()
+    result = await _read(client, history.person)
+    assert result["meeting_count"] == 3
+    assert {row["title"]: row["talk_time_seconds"] for row in result["meetings"]} == {
+        "overflow": 0,
+        "mixed": 2.5,
+        "tiny": 2,
+    }
+    assert result["total_talk_time_seconds"] == 4.5
 
 
 @pytest.mark.anyio
@@ -989,3 +1032,73 @@ async def test_read_query_count_does_not_grow_with_meeting_history(
         session.commit()
     large = await _select_count(client, history)
     assert small == large == 2
+
+
+def _plan_nodes(node: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    yield node
+    for child in node.get("Plans", []):
+        yield from _plan_nodes(child)
+
+
+@pytest.mark.anyio
+async def test_history_reads_its_lines_by_index_not_by_scanning_every_line(
+    history: HistoryDatabase,
+) -> None:
+    # Five speakers a meeting and the person in two meetings out of five, so
+    # their lines are a small share of the table. Joined to the lines, the
+    # person's links were answered with one pass over every line in the
+    # database rather than an index lookup per link.
+    with Session(history.engine) as session:
+        for index in range(60):
+            recording = _meeting(session, history.owner, f"meeting-{index}")
+            for slot in range(5):
+                session.add(
+                    RecordingSpeaker(
+                        recording_id=recording.id,
+                        global_speaker_id=(
+                            history.person.id if slot == 0 and index % 5 < 2 else None
+                        ),
+                        diarization_label=f"SPEAKER_0{slot}",
+                    )
+                )
+        session.flush()
+        session.execute(
+            text(
+                """
+                INSERT INTO transcript_utterances (
+                    created_at, updated_at, public_id, recording_id, sort_key,
+                    start_ms, end_ms, text, speaker_label, recording_speaker_id,
+                    state, source_kind, revision, overlap_rank, manual_text_locked,
+                    manual_speaker_locked, speaker_assignment_source,
+                    speaker_assignment_authority)
+                SELECT now(), now(), md5(rs.id || '-' || i), rs.recording_id,
+                       lpad(i::text, 8, '0'), i * 9000, i * 9000 + 8000, 'speech',
+                       rs.diarization_label, rs.id, 'finalized', 'legacy', 1, 0,
+                       false, false, 'legacy', 'provisional'
+                FROM recording_speakers rs CROSS JOIN generate_series(1, 80) AS i
+                """
+            )
+        )
+        session.commit()
+    with history.engine.begin() as connection:
+        connection.execute(text("ANALYZE"))
+    async with history.sessions() as session:
+        raw = (
+            await session.execute(
+                text("EXPLAIN (FORMAT JSON) " + _MEETINGS.text),
+                {
+                    "speaker_id": history.person.id,
+                    "user_id": history.owner.id,
+                    "person_name": history.person.name,
+                    "counted_status": COUNTED_SPEAKER_STATUS,
+                },
+            )
+        ).scalar_one()
+    plan = json.loads(raw) if isinstance(raw, str) else raw
+    scans = [
+        node["Node Type"]
+        for node in _plan_nodes(plan[0]["Plan"])
+        if node.get("Relation Name") == "transcript_utterances"
+    ]
+    assert scans
+    assert "Seq Scan" not in scans
