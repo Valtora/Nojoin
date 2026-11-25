@@ -388,9 +388,14 @@ Anything that overlays other content takes its z-index from a token, through a p
 | `--z-sticky` | 30 | sticky chrome |
 | `--z-dropdown` | 40 | dropdowns, menus, tooltips |
 | `--z-modal` | 50 | dialogs |
+| `--z-toast` | 52 | toasts: over a dialog, under a menu someone has opened |
 | `--z-popover` | 55 | a context menu or popover that can open from inside a dialog |
-| `--z-toast` | 60 | toasts |
 | `--z-tour` | 10001 | the guided tour, above driver.js's own overlay at 10000 |
+
+Toasts rest at the bottom right, across the bottom on a phone. A bar docked at the foot of the
+screen, such as the recordings list's batch bar, takes its ref from `useToastClearance`
+(`lib/toastClearance.ts`), and `NotificationToast` raises its stack above any such bar it would
+otherwise cover.
 
 ## Layout and density
 

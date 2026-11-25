@@ -307,6 +307,83 @@ describe("recordings list selection", () => {
     expect(selected()).toEqual(["Alpha review"]);
   });
 
+  describe("saying when a search takes selected recordings out (#974)", () => {
+    const notice = () => screen.queryByText(/no longer selected/);
+    const search = (value: string) =>
+      fireEvent.change(screen.getByPlaceholderText("Search..."), { target: { value } });
+
+    const showAll = async () => {
+      await showList("recordings", [ALPHA, BRAVO, CHARLIE]);
+      // The server answers the searches.
+      api.getRecordings.mockImplementation(async (filters?: { q?: string }) =>
+        filters?.q === "alpha"
+          ? [ALPHA]
+          : filters?.q === "charlie"
+            ? [CHARLIE]
+            : [ALPHA, BRAVO, CHARLIE],
+      );
+    };
+
+    it("says how many a search left out, and stops once the search is cleared", async () => {
+      await showAll();
+      fireEvent.click(checkbox("Alpha review"));
+      fireEvent.click(checkbox("Bravo planning"));
+      fireEvent.click(checkbox("Charlie retro"));
+
+      search("alpha");
+      await waitFor(() =>
+        expect(notice()).toHaveTextContent(
+          "2 recordings are no longer selected because they are not in these results.",
+        ),
+      );
+      expect(selected()).toEqual(["Alpha review"]);
+
+      search("");
+      await screen.findByRole("heading", { name: "Bravo planning" });
+      expect(notice()).toBeNull();
+      expect(selected()).toEqual(["Alpha review"]);
+    });
+
+    it("says it for one, even when nothing selected is left", async () => {
+      await showAll();
+      fireEvent.click(checkbox("Bravo planning"));
+
+      search("charlie");
+      await waitFor(() =>
+        expect(notice()).toHaveTextContent(
+          "1 recording is no longer selected because it is not in these results.",
+        ),
+      );
+      expect(screen.queryByRole("group", { name: "Selected recordings" })).toBeNull();
+    });
+
+    it("stops when the selection changes", async () => {
+      await showAll();
+      fireEvent.click(checkbox("Alpha review"));
+      fireEvent.click(checkbox("Bravo planning"));
+      search("alpha");
+      await waitFor(() => expect(notice()).not.toBeNull());
+
+      fireEvent.click(checkbox("Alpha review"));
+
+      expect(notice()).toBeNull();
+    });
+
+    it("says nothing when a recording's own menu moves it out", async () => {
+      await showAll();
+      api.batchArchiveRecordings.mockResolvedValue({ count: 1, skipped: 0, recording_ids: ["a"] });
+      fireEvent.click(checkbox("Alpha review"));
+      fireEvent.click(checkbox("Bravo planning"));
+
+      fireEvent.contextMenu(row("Alpha review"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+      await waitFor(() => expect(api.batchArchiveRecordings).toHaveBeenCalledWith(["a"]));
+
+      expect(selected()).toEqual(["Bravo planning"]);
+      expect(notice()).toBeNull();
+    });
+  });
+
   it("never deletes for good a meeting restored from its own menu while selected", async () => {
     const binned = [
       { ...ALPHA, is_deleted: true },
