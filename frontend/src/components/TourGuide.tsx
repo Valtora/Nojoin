@@ -51,6 +51,26 @@ function useScheduledTour(
   useEffect(() => {
     if (!enabled) return;
     let activeDriver: Driver | null = null;
+    // driver.js closes a tour when Escape is released, but notes presses only
+    // once the tour is open. An Escape pressed before then, to close a menu
+    // say, would close the tour on its release and mark it seen, so that
+    // release is ignored (#988). These listen in the capture phase on window,
+    // so each release is judged before driver.js's own listener acts on it.
+    let escapePressedEarly = false;
+    let ignoreEscape = false;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (event.type === 'keyup') {
+        ignoreEscape = escapePressedEarly;
+        escapePressedEarly = false;
+      } else if (!event.repeat || !activeDriver) {
+        // A repeat before the tour opens is a key held since before these
+        // listeners were added, so it counts as early too.
+        escapePressedEarly = !activeDriver;
+      }
+    };
+    window.addEventListener('keydown', onEscape, true);
+    window.addEventListener('keyup', onEscape, true);
     // Ends the tour once. Only a person closing it marks it seen: a route or
     // state change leaves it for a later visit.
     const end = (seen: boolean) => {
@@ -81,15 +101,20 @@ function useScheduledTour(
         overlayClickBehavior: () => {
           if (Date.now() - openedAt >= TOUR_CLICK_GRACE_MS) end(true);
         },
-        // Escape, the close button and Done arrive here, at any time.
-        // driver.js skips onDestroyed when a tour closes in the 400 ms a step
-        // takes to animate in, so the end can't wait for it (#915).
-        onDestroyStarted: () => end(true),
+        // Escape, the close button and Done arrive here, at any time, and
+        // all but an early Escape's release end the tour. driver.js skips
+        // onDestroyed when a tour closes in the 400 ms a step takes to
+        // animate in, so the end can't wait for it (#915).
+        onDestroyStarted: (_element, _step, { reason }) => {
+          if (reason !== 'escape' || !ignoreEscape) end(true);
+        },
       });
       activeDriver.drive();
     }, TOUR_DELAY_MS, TOUR_IDLE_MS);
     return () => {
       cancelOpen();
+      window.removeEventListener('keydown', onEscape, true);
+      window.removeEventListener('keyup', onEscape, true);
       end(false);
     };
   }, [enabled, onEnd, onSeen, scope, steps]);

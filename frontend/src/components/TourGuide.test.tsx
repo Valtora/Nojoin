@@ -20,13 +20,16 @@ const tour = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ usePathname: () => tour.pathname }));
 vi.mock('@/lib/api', () => ({ getUserMe: vi.fn() }));
 vi.mock('driver.js', () => ({
-  driver: vi.fn((options: { onDestroyStarted: () => void; steps: { element?: unknown }[] }) => {
+  driver: vi.fn((options: {
+    onDestroyStarted: (element: undefined, step: object, opts: { reason: string }) => void;
+    steps: { element?: unknown }[];
+  }) => {
     const instance = {
       drive: vi.fn(),
       destroy: vi.fn(),
       // A person closing the tour: driver.js hands the close to the hook,
       // which destroys it. TourGuide.close.test.tsx runs the real library.
-      finish: () => options.onDestroyStarted(),
+      finish: () => options.onDestroyStarted(undefined, {}, { reason: 'close' }),
       steps: options.steps,
     };
     tour.instances.push(instance);
