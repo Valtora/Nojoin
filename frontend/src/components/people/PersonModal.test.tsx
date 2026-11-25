@@ -1,11 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PersonModal } from "./PersonModal";
+import type { ComponentPropsWithoutRef } from "react";
+
+import { LEAVE_WITH_UNSAVED_PERSON, PersonModal } from "./PersonModal";
 import { pressWhileComposing } from "@/test/composition";
 import { httpError } from "@/test/httpErrors";
-import type { GlobalSpeaker } from "@/types";
-import { getPersonMeetings } from "@/lib/api";
+import type { GlobalSpeaker, PeopleTag } from "@/types";
+import { getPeopleTags, getPersonMeetings } from "@/lib/api";
 
 const addNotification = vi.fn();
 const updateGlobalSpeaker = vi.fn();
@@ -19,6 +21,22 @@ vi.mock("@/lib/notificationStore", () => ({
 }));
 
 vi.mock("@/lib/useUserTimeZone", () => ({ useUserTimeZone: () => "UTC" }));
+
+// Next's Link runs the link's onClick first, leaves a modified click to the
+// browser, and otherwise routes only when onClick left the default alone. Here
+// routing records where it would have gone, and jsdom navigates nowhere.
+const routedTo = vi.hoisted(() => vi.fn());
+vi.mock("next/link", () => ({
+  default: ({ children, onClick, ...props }: ComponentPropsWithoutRef<"a">) => (
+    <a {...props} onClick={(event) => {
+      onClick?.(event);
+      const modified = event.ctrlKey || event.metaKey || event.shiftKey || event.altKey;
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      if (!modified) routedTo(props.href);
+    }}>{children}</a>
+  ),
+}));
 
 vi.mock("@/lib/api", () => ({
   getPeopleTags: vi.fn().mockResolvedValue([]),
@@ -342,5 +360,79 @@ describe("PersonModal new tag", () => {
 
     await waitFor(() => expect(onTagCreated).toHaveBeenCalledWith(made));
     expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+describe("PersonModal unsaved edits and meeting links", () => {
+  const tag = (id: number, name: string): PeopleTag =>
+    ({ id, name, created_at: "", updated_at: "" }) as PeopleTag;
+  const tagged = { ...dana(false, false), tags: [tag(1, "Clients"), tag(2, "Board")] };
+
+  beforeEach(() => {
+    vi.mocked(getPersonMeetings).mockResolvedValueOnce({
+      meetings: [{
+        recording_id: "rec-1", title: "Planning sync", date: "2026-10-01T10:00:00",
+        duration_seconds: 600, talk_time_seconds: 120,
+      }],
+      meeting_count: 1, total_talk_time_seconds: 120,
+      first_seen: "2026-10-01T10:00:00", last_seen: "2026-10-01T10:00:00",
+      talk_time_by_month: [{ month: "2026-10", talk_time_seconds: 120 }],
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    routedTo.mockReset();
+  });
+
+  it("follows a meeting link at once when nothing was changed", async () => {
+    const confirm = vi.spyOn(window, "confirm");
+    render(modal(dana(false, false)));
+
+    fireEvent.click(await screen.findByRole("link", { name: /Planning sync/ }));
+
+    expect(routedTo).toHaveBeenCalledExactlyOnceWith("/recordings/rec-1");
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("asks before a meeting link drops unsaved edits, and staying keeps them", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(modal(dana(false, false)));
+    const link = await screen.findByRole("link", { name: /Planning sync/ });
+    fireEvent.change(screen.getByDisplayValue("Dana"), { target: { value: "Dana Q" } });
+
+    fireEvent.click(link);
+    expect(confirm).toHaveBeenCalledExactlyOnceWith(LEAVE_WITH_UNSAVED_PERSON);
+    expect(routedTo).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("Dana Q")).toBeTruthy();
+
+    // A modified click opens the meeting in another tab and leaves the dialog as it is.
+    fireEvent.click(link, { ctrlKey: true });
+    expect(confirm).toHaveBeenCalledTimes(1);
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(link);
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(routedTo).toHaveBeenCalledExactlyOnceWith("/recordings/rec-1");
+  });
+
+  it("counts an edit put back, or the same tags in another order, as no change", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.mocked(getPeopleTags).mockResolvedValueOnce([tag(1, "Clients"), tag(2, "Board")]);
+    render(modal(tagged));
+    const link = await screen.findByRole("link", { name: /Planning sync/ });
+    const clients = await screen.findByRole("button", { name: "Clients" });
+
+    fireEvent.click(clients);
+    fireEvent.click(link);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(routedTo).not.toHaveBeenCalled();
+    fireEvent.click(clients);
+    fireEvent.change(screen.getByDisplayValue("Dana"), { target: { value: "Dana Q" } });
+    fireEvent.change(screen.getByDisplayValue("Dana Q"), { target: { value: "Dana" } });
+
+    fireEvent.click(link);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(routedTo).toHaveBeenCalledOnce();
   });
 });

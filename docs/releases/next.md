@@ -55,6 +55,8 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - On a phone, **Tasks** no longer scrolls sideways while **Create Task** or a task's **Edit** form is open. A long meeting name in the form's recording list is cut short to fit the screen, as it is on a wider one (#1001).
 - When Nojoin rebuilds a person's voiceprint in the background, it leaves out a speaker whose lines were all moved to other speakers, as **Person Details** leaves out that meeting. That speaker's voiceprint came from those lines, so it could pull the person's voiceprint towards whoever now holds them (#1031).
+- Opening a meeting from **Person Details** while the person has changes you have not saved asks first, and staying keeps the dialog open with your changes. The link used to leave at once and lose them (#972).
+- **Person Details** shows a person's meetings when an older meeting's transcript holds a time too large to read, as one restored from an archive or edited by hand can, and counts that part of the transcript as no speech. The meetings failed to load (#972).
 
 ### Settings and administration
 

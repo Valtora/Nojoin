@@ -46,6 +46,35 @@ interface PersonModalProps {
   onTagCreated?: (tag: PeopleTag) => void;
 }
 
+type PersonForm = Partial<GlobalSpeaker> & { tag_ids: number[] };
+
+export const LEAVE_WITH_UNSAVED_PERSON =
+  "This person has changes that are not saved. Leave without saving them?";
+
+const TEXT_FIELDS = ["name", "color", "title", "company", "email", "phone_number", "notes"] as const;
+
+/** The form as the person is saved, or empty for a new person. */
+function savedForm(person: GlobalSpeaker | null): PersonForm {
+  return {
+    name: person?.name ?? "",
+    color: person?.color || "#3B82F6",
+    title: person?.title || "",
+    company: person?.company || "",
+    email: person?.email || "",
+    phone_number: person?.phone_number || "",
+    notes: person?.notes || "",
+    tag_ids: person?.tags?.map((t) => t.id) || [],
+  };
+}
+
+function formChanged(form: PersonForm, saved: PersonForm): boolean {
+  const tags = (ids: number[]) => [...ids].sort((a, b) => a - b).join(",");
+  return (
+    TEXT_FIELDS.some((field) => form[field] !== saved[field]) ||
+    tags(form.tag_ids) !== tags(saved.tag_ids)
+  );
+}
+
 export function PersonModal({
   person,
   isOpen,
@@ -57,18 +86,11 @@ export function PersonModal({
   onTagCreated,
 }: PersonModalProps) {
   const { addNotification } = useNotificationStore();
-  const [formData, setFormData] = useState<
-    Partial<GlobalSpeaker> & { tag_ids: number[] }
-  >({
-    name: "",
-    color: "#3B82F6",
-    title: "",
-    company: "",
-    email: "",
-    phone_number: "",
-    notes: "",
-    tag_ids: [],
-  });
+  const [formData, setFormData] = useState<PersonForm>(() => savedForm(null));
+  const hasUnsavedEdits = useMemo(
+    () => formChanged(formData, savedForm(person)),
+    [formData, person],
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newTagName, setNewTagName] = useState("");
@@ -135,17 +157,8 @@ export function PersonModal({
 
   useEffect(() => {
     if (isOpen) {
+      setFormData(savedForm(person));
       if (person) {
-        setFormData({
-          name: person.name,
-          color: person.color || "#3B82F6",
-          title: person.title || "",
-          company: person.company || "",
-          email: person.email || "",
-          phone_number: person.phone_number || "",
-          notes: person.notes || "",
-          tag_ids: person.tags?.map((t) => t.id) || [],
-        });
         setIsVoiceprintLocked(Boolean(person.is_voiceprint_locked));
 
         // Load speakers for merge (excluding current person)
@@ -154,17 +167,6 @@ export function PersonModal({
             setAvailableSpeakers(speakers.filter((s) => s.id !== person.id));
           })
           .catch(console.error);
-      } else {
-        setFormData({
-          name: "",
-          color: "#3B82F6",
-          title: "",
-          company: "",
-          email: "",
-          phone_number: "",
-          notes: "",
-          tag_ids: [],
-        });
       }
       setShowMerge(false);
       setMergeTarget(null);
@@ -364,7 +366,15 @@ interface TagNode extends PeopleTag {
         </>
       }
     >
-          {person && isOpen && <PersonMeetings key={person.id} personId={person.id} />}
+          {person && isOpen && (
+            <PersonMeetings
+              key={person.id}
+              personId={person.id}
+              confirmLeaving={() =>
+                !hasUnsavedEdits || window.confirm(LEAVE_WITH_UNSAVED_PERSON)
+              }
+            />
+          )}
           <form id="person-form" onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
