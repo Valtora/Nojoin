@@ -55,24 +55,31 @@ def final_merge_config(
 ) -> dict[str, Any]:
     """The owner's settings plus what the merge needs from the transcript.
 
-    The capture resume cuts, and the spans (ms) of every line a person edited:
-    a chosen speaker or protected wording or splits are applied after the
-    merge, so its sentence-start correction leaves those lines alone
-    (``backend/processing/sentence_start.py``).
+    The capture resume cuts, and every line a person edited with its kind of
+    edit (``EditedLine``): a chosen speaker, or protected wording or splits,
+    are applied after the merge, so its sentence-start correction moves no
+    word into or out of those lines. A reply after a line whose speaker a
+    person chose keeps its first words where the diariser put them; after
+    kept wording they move when that wording ends a sentence, as on the live
+    lane (``backend/processing/sentence_start.py``).
     """
     from sqlmodel import col, select
 
     from backend.models.pipeline import TranscriptUtterance as Line
-    from backend.processing.sentence_start import EDITED_LINE_SPANS
+    from backend.processing.sentence_start import (
+        EDITED_LINES,
+        EditedLine,
+        ends_sentence,
+    )
     from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
     # The payload's protection key alone, not the whole payload with its words;
-    # the test is line_is_protected's (canonical_pipeline/preservation.py), or
-    # a speaker a person chose.
+    # kept wording is line_is_protected's test (canonical_pipeline/preservation.py).
     lines = session.exec(
         select(
             Line.start_ms,
             Line.end_ms,
+            Line.text,
             Line.manual_speaker_locked,
             Line.manual_text_locked,
             col(Line.confidence_payload)["human_protection"],
@@ -80,13 +87,21 @@ def final_merge_config(
         .where(Line.recording_id == recording_id)
         .where(col(Line.state).in_(ACTIVE_UTTERANCE_STATES))
     ).all()
+    edited = [
+        EditedLine(
+            start_ms,
+            end_ms,
+            speaker_chosen=bool(speaker_locked),
+            wording_ends_sentence=ends_sentence(text or "")
+            if text_locked or protection
+            else None,
+        )
+        for start_ms, end_ms, text, speaker_locked, text_locked, protection in lines
+        if speaker_locked or text_locked or protection
+    ]
     return {
         **with_resume_boundaries(dict(config), transcript),
-        EDITED_LINE_SPANS: sorted(
-            (start_ms, end_ms)
-            for start_ms, end_ms, speaker_locked, text_locked, protection in lines
-            if speaker_locked or text_locked or protection
-        ),
+        EDITED_LINES: sorted(edited, key=lambda line: (line.start_ms, line.end_ms)),
     }
 
 
