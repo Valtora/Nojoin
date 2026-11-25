@@ -162,6 +162,12 @@ def _rebuild_global_speaker(
 ) -> _PersonRebuild:
     """Recompute a person's voiceprint from their linked current-version ones.
 
+    Only the speakers through which their People entry counts a meeting are
+    read (``counted_speaker()``). A speaker merged into another, or one whose
+    lines all moved to other speakers, keeps its link and a voiceprint of
+    audio the user has since given to someone else, so it stays out. A
+    meeting in the bin stays in, since binning says nothing about the voice.
+
     Only links that could found or join the voiceprint on any other path are
     averaged. Each recording's own voiceprint must meet
     ``LIBRARY_VOICEPRINT_MIN_SPEECH_S``, since a mean of short voiceprints is
@@ -177,22 +183,23 @@ def _rebuild_global_speaker(
     only when they are rebuilt; what becomes of a stale voiceprint that is not
     is ``_rebuild_people``'s decision.
     """
-    linked = session.exec(
-        select(RecordingSpeaker)
-        .where(RecordingSpeaker.global_speaker_id == global_speaker.id)
-        .where(RecordingSpeaker.merged_into_id.is_(None))
-    ).all()
-
     from backend.processing.embedding import (
         embedding_version_of,
         is_drift_refused,
         meets_library_evidence_floor,
     )
+    from backend.services.person_meetings import counted_speaker
     from backend.utils.speaker_names.preferences import (
         library_learns_automatically,
         owner_settings,
     )
     from backend.utils.speaker_names.sources import link_teaches_library
+
+    linked = session.exec(
+        select(RecordingSpeaker)
+        .where(RecordingSpeaker.global_speaker_id == global_speaker.id)
+        .where(counted_speaker())
+    ).all()
 
     current = [
         s for s in linked if s.embedding and embedding_version_of(s) == method_version
