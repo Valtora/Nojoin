@@ -1,7 +1,7 @@
 "use client";
 
 /** A person's meeting history, independent of the editable contact form. */
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { getPersonMeetings } from "@/lib/api";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
@@ -13,7 +13,13 @@ import type { PersonMeetingsRead, PersonTalkMonthRead } from "@/types";
 
 type Result = { personId: number; data: PersonMeetingsRead } | { personId: number; error: true };
 
-export function PersonMeetings({ personId }: { personId: number }) {
+interface PersonMeetingsProps {
+  personId: number;
+  /** Asked before a meeting link leaves the page; false keeps the user where they are. */
+  confirmLeaving?: () => boolean;
+}
+
+export function PersonMeetings({ personId, confirmLeaving }: PersonMeetingsProps) {
   const [result, setResult] = useState<Result | null>(null);
   const [attempt, setAttempt] = useState(0);
   const timeZone = useUserTimeZone();
@@ -37,7 +43,7 @@ export function PersonMeetings({ personId }: { personId: number }) {
             setResult(null);
             setAttempt((value) => value + 1);
           }}>Retry</ButtonBase>
-        </div> : <MeetingHistory data={shown.data} timeZone={timeZone} />}
+        </div> : <MeetingHistory data={shown.data} timeZone={timeZone} confirmLeaving={confirmLeaving} />}
     </section>
   );
 }
@@ -47,8 +53,15 @@ function displayDate(value: string | null, timeZone: string): string {
   return date ? formatTimeZoneDate(date, timeZone, "d MMM yyyy") : "Unknown date";
 }
 
-function MeetingHistory({ data, timeZone }: { data: PersonMeetingsRead; timeZone: string }) {
+function MeetingHistory({ data, timeZone, confirmLeaving }: {
+  data: PersonMeetingsRead; timeZone: string; confirmLeaving?: () => boolean;
+}) {
   const meetingsHeading = useId();
+  const openMeeting = (event: MouseEvent<HTMLAnchorElement>) => {
+    // A modified click opens the meeting in another tab or window and leaves this page as it is.
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (confirmLeaving && !confirmLeaving()) event.preventDefault();
+  };
   if (data.meeting_count === 0) return <p className="text-sm text-contrast-helper">
     No linked meetings yet. Meetings appear here when this person is linked to a speaker in one of your meetings.
   </p>;
@@ -72,7 +85,7 @@ function MeetingHistory({ data, timeZone }: { data: PersonMeetingsRead; timeZone
         <div role="region" aria-labelledby={meetingsHeading} className="relative mt-2 max-h-72 overflow-y-auto px-1">
           <ul className="divide-y divide-surface-border">
             {data.meetings.map((meeting) => <li key={meeting.recording_id}>
-              <Link href={`/recordings/${meeting.recording_id}`}
+              <Link href={`/recordings/${meeting.recording_id}`} onClick={openMeeting}
                 className="block rounded-md px-1 py-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring">
                 <span className="block truncate text-sm font-medium text-action-text hover:underline">
                   {meeting.title}

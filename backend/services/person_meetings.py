@@ -73,10 +73,15 @@ def person_sample_sources(person_id: int, user_id: int, scan: int) -> Select:
 # read, a restore still rebuilding) fall back to their JSON segments. A speaker
 # only becomes inactive while its meeting has lines, and keeps that status when
 # the lines go (a restore, every line deleted), so its JSON speech stays out as
-# the lines last had it; new lines set the status afresh. Only segments
-# with numeric times are summed, so one malformed row counts as no speech
-# instead of failing the whole history. Only scalar aggregates leave Postgres,
-# even for history beyond the fifty displayed meetings.
+# the lines last had it; new lines set the status afresh. Only segments whose
+# times are numbers a transcript line could hold, seconds whose milliseconds fit
+# its bigint, are summed, in numeric so nothing overflows: a malformed or
+# out-of-range segment such as 1e400 counts as no speech instead of failing the
+# whole history. Each link's lines are summed through the index on
+# recording_speaker_id, so the read grows with the person's own lines, never
+# with the whole utterance table, whatever the planner estimates for `links`.
+# Only scalar aggregates leave Postgres, even for history beyond the fifty
+# displayed meetings.
 _MEETINGS = text("""
     WITH links AS (
         SELECT rs.id, rs.recording_id, rs.diarization_label, rs.local_name, rs.name
@@ -91,12 +96,15 @@ _MEETINGS = text("""
         WHERE r.id IN (SELECT recording_id FROM links)
     ), canonical AS (
         SELECT m.id AS recording_id,
-               COALESCE(SUM(GREATEST(0, u.end_ms - u.start_ms)), 0) / 1000.0
-                   AS talk_time_seconds
+               COALESCE(SUM(spoken.ms), 0) / 1000.0 AS talk_time_seconds
         FROM meetings m
         JOIN links l ON l.recording_id = m.id
-        LEFT JOIN transcript_utterances u ON u.recording_speaker_id = l.id
-             AND u.state IN ('provisional', 'stable', 'finalized')
+        CROSS JOIN LATERAL (
+            SELECT SUM(GREATEST(0, u.end_ms - u.start_ms)) AS ms
+            FROM transcript_utterances u
+            WHERE u.recording_speaker_id = l.id
+              AND u.state IN ('provisional', 'stable', 'finalized')
+        ) AS spoken
         WHERE EXISTS (
             SELECT 1 FROM transcript_utterances a
             WHERE a.recording_id = m.id
@@ -104,22 +112,26 @@ _MEETINGS = text("""
         GROUP BY m.id
     ), legacy AS (
         SELECT t.recording_id,
-               SUM(GREATEST(0, (s->>'end')::double precision
-                               - (s->>'start')::double precision))
-                   AS talk_time_seconds
+               SUM(GREATEST(0, times.end_s - times.start_s)) AS talk_time_seconds
         FROM transcripts t
         JOIN meetings m ON m.id = t.recording_id
         CROSS JOIN LATERAL jsonb_array_elements(
             CASE WHEN jsonb_typeof(t.segments) = 'array'
                  THEN t.segments ELSE '[]'::jsonb END
         ) AS s
+        CROSS JOIN LATERAL (
+            SELECT CASE WHEN jsonb_typeof(s->'start') = 'number'
+                        THEN (s->'start')::numeric END AS start_s,
+                   CASE WHEN jsonb_typeof(s->'end') = 'number'
+                        THEN (s->'end')::numeric END AS end_s
+        ) AS times
         WHERE t.recording_id NOT IN (SELECT recording_id FROM canonical)
           AND NOT (
               COALESCE(t.settling_state->>'eligible', 'false') = 'true'
               AND COALESCE(t.settling_state->'policy'->>'enabled', 'false') = 'true'
           )
-          AND jsonb_typeof(s->'start') = 'number'
-          AND jsonb_typeof(s->'end') = 'number'
+          AND abs(times.start_s) <= 9223372036854775.807
+          AND abs(times.end_s) <= 9223372036854775.807
           AND EXISTS (
               SELECT 1 FROM links l
               WHERE l.recording_id = t.recording_id
