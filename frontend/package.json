@@ -52,13 +52,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
-    "baseline-browser-mapping": "^2.11.35",
+    "baseline-browser-mapping": "^2.11.38",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "fake-indexeddb": "^6.2.8",
-    "jsdom": "^31.0.0",
+    "jsdom": "^31.0.1",
     "postcss": "^8.5.18",
-    "postcss-selector-parser": "7.1.8",
+    "postcss-selector-parser": "7.2.1",
     "tailwindcss": "^4",
     "typescript": "^6",
     "vitest": "^5.1.0"
@@ -72,7 +72,7 @@
     "nanoid": "^3.3.17",
     "picomatch": "4.0.4",
     "postcss": "^8.5.18",
-    "postcss-selector-parser": "7.1.8",
+    "postcss-selector-parser": "7.2.1",
     "sharp": "^0.35.5"
   }
 }
