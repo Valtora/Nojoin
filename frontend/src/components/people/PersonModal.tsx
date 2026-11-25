@@ -48,6 +48,9 @@ interface PersonModalProps {
 
 type PersonForm = Partial<GlobalSpeaker> & { tag_ids: number[] };
 
+/** Full Name, where Skip to contact details lands past the meeting links. */
+const FULL_NAME_ID = "person-full-name";
+
 export const LEAVE_WITH_UNSAVED_PERSON =
   "This person has changes that are not saved. Leave without saving them?";
 
@@ -349,6 +352,11 @@ interface TagNode extends PeopleTag {
       size="lg"
       className="max-h-[90dvh]"
       title={person ? "Person Details" : "Add Person"}
+      skipLink={
+        person
+          ? { label: "Skip to contact details", targetId: FULL_NAME_ID }
+          : undefined
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -379,10 +387,14 @@ interface TagNode extends PeopleTag {
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-contrast-muted">
+                <label
+                  htmlFor={FULL_NAME_ID}
+                  className="text-sm font-medium text-contrast-muted"
+                >
                   Full Name *
                 </label>
                 <InputBase
+                  id={FULL_NAME_ID}
                   data-ui-fill="control"
                   data-ui-border="full"
                   type="text"

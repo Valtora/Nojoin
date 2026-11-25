@@ -436,3 +436,44 @@ describe("PersonModal unsaved edits and meeting links", () => {
     expect(routedTo).toHaveBeenCalledOnce();
   });
 });
+
+describe("PersonModal skip link", () => {
+  const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  /** Moves focus where Tab would: the next tabbable element in document order. */
+  const pressTab = () => {
+    const from = document.activeElement ?? document.body;
+    const next = [...document.querySelectorAll<HTMLElement>(TABBABLE)].find((element) =>
+      !element.hasAttribute("data-headlessui-focus-guard")
+      && Boolean(from.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING));
+    next?.focus();
+    return next;
+  };
+
+  it("is the first Tab stop, and takes focus past every meeting to Full Name", async () => {
+    vi.mocked(getPersonMeetings).mockResolvedValueOnce({
+      meetings: Array.from({ length: 50 }, (_, index) => ({
+        recording_id: `rec-${index}`, title: `Weekly sync ${index}`, date: "2026-10-01T10:00:00",
+        duration_seconds: 600, talk_time_seconds: 120,
+      })),
+      meeting_count: 50, total_talk_time_seconds: 6000,
+      first_seen: "2026-10-01T10:00:00", last_seen: "2026-10-01T10:00:00",
+      talk_time_by_month: [{ month: "2026-10", talk_time_seconds: 6000 }],
+    });
+    render(modal(dana(false, false)));
+    expect(await screen.findAllByRole("link", { name: /Weekly sync/ })).toHaveLength(50);
+    await waitFor(() => expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true));
+
+    const skip = pressTab();
+
+    expect(skip).toBe(screen.getByRole("link", { name: "Skip to contact details" }));
+    fireEvent.click(skip!);
+    expect(document.activeElement).toBe(screen.getByLabelText(/Full Name/));
+  });
+
+  it("is left out of Add Person, which has no meetings to pass", () => {
+    render(<PersonModal person={null} isOpen onClose={vi.fn()} onSave={vi.fn()} />);
+
+    expect(screen.queryByRole("link", { name: "Skip to contact details" })).toBeNull();
+  });
+});
