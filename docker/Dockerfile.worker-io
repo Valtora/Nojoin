@@ -28,7 +28,7 @@ ARG WORKER_BASE_IMAGE=ghcr.io/valtora/nojoin-worker:latest
 # in the Ubuntu base at all, and npm would pick the CLIs' musl builds. The
 # frontend image has the opposite requirement — it runs Node standalone, so it
 # takes the smaller Alpine base. The two therefore stay different on purpose.
-FROM node:26-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe AS node
+FROM node:26-bookworm-slim@sha256:0042e17d232a87a2cd485be1da7900fca4d10a4ad11b29e9285da1d2e54798c9 AS node
 
 # The two subscription CLIs, installed in the Node image so that npm, its cache
 # and its bundled deps (picomatch, sigstore, which would trip the Trivy HIGH
