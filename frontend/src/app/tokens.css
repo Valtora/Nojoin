@@ -172,11 +172,14 @@
   --z-sticky: 30;
   --z-dropdown: 40;
   --z-modal: 50;
+  /* Toasts sit over dialogs, so an error from a dialog's action shows, but
+     under context menus and popovers: a menu someone has just opened is never
+     hidden by a notification that arrived on its own (#974). */
+  --z-toast: 52;
   /* Above the modal deliberately: a context menu or a popover can be opened
      from inside an open dialog, and at --z-dropdown it would render behind the
      dialog that spawned it. */
   --z-popover: 55;
-  --z-toast: 60;
   --z-tour: 10001;
   /* Settings surface stack. Exactly two levels: the page, and one card on it.
      Nothing nests further, so these must stay monotonic — a card is always a
