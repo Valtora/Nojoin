@@ -9,8 +9,9 @@ import pytest
 from backend.processing import sentence_start as ss
 from backend.processing.diarization_union import native_annotation
 from backend.processing.sentence_start import (
-    EDITED_LINE_SPANS,
+    EDITED_LINES,
     RULES,
+    EditedLine,
     Words,
     activity_from_frames,
     activity_from_turns,
@@ -178,16 +179,22 @@ def test_keep_turn_vetoes_when_under_a_tenth_of_a_second_of_l_would_remain():
     assert corrected(words, _without(keep_turn)) == ["T", "L", "T", "T"]
 
 
-def test_keep_turn_does_not_count_a_manual_word_as_ls_turn():
-    """In the final pass a person's chosen speaker is applied later, so a
-    manual word before the tail is nobody's remainder yet."""
+def test_keep_turn_counts_kept_wording_as_ls_turn_but_not_a_chosen_speaker():
+    """In the final pass a person's chosen speaker is applied later, so a word
+    in that line is nobody's remainder yet. A line keeping a person's wording
+    takes the speaker of its words, so its words stay L's (#1035)."""
     tokens = [(" Fine.", 0.0, 0.3), (" so", 0.35, 0.6), (" we", 0.6, 0.8)]
     turns = [(0.0, 0.6, "L"), (0.4, 0.8, "T")]
     plain = _words(tokens, ["L", "L", "T"], turns)
-    manual_p = _words(tokens, ["L", "L", "T"], turns, manual=frozenset({0}))
+    kept_wording = _words(tokens, ["L", "L", "T"], turns, manual=frozenset({0}))
+    chosen = _words(
+        tokens, ["L", "L", "T"], turns, manual=frozenset({0}), chosen=frozenset({0})
+    )
 
     assert corrected(plain) == ["L", "T", "T"]
-    assert keep_turn(ss.candidates(manual_p)[0], manual_p)
+    assert corrected(kept_wording) == ["L", "T", "T"]
+    assert keep_turn(ss.candidates(chosen)[0], chosen)
+    assert corrected(chosen) == ["L", "L", "T"]
 
 
 # --- R2 complete_sentence ----------------------------------------------------------
@@ -402,7 +409,9 @@ def test_the_final_merge_moves_a_parakeet_reply_start():
 @pytest.mark.parametrize(
     "config",
     [
-        {EDITED_LINE_SPANS: [(1000, 1300)]},  # "so" lies in an edited line
+        # "so" lies in a line whose wording a person kept, or whose speaker they chose
+        {EDITED_LINES: [EditedLine(1000, 1300, False, False)]},
+        {EDITED_LINES: [EditedLine(1000, 1300, True, None)]},
         {RESUME_BOUNDARIES: [1020]},  # a capture resume between "done." and "so"
     ],
 )
@@ -422,3 +431,43 @@ def test_the_final_merge_skips_a_tail_carrying_an_untimed_word():
     result = combine_transcription_diarization(transcription, FakeDiarization(OVERLAP))
 
     assert _lines(result)[0] == ("L", "It is done. so uh")
+
+
+# "It is done." (0-1 s), the line before the reply "so we go", as a person edited it.
+@pytest.mark.parametrize(
+    ("line", "lines"),
+    [
+        (EditedLine(0, 1000, False, True), [("L", "It is done."), ("T", "so we go")]),
+        (EditedLine(0, 1000, True, None), [("L", "It is done. so"), ("T", "we go")]),
+        (EditedLine(0, 1000, True, True), [("L", "It is done. so"), ("T", "we go")]),
+        (EditedLine(0, 1000, False, False), [("L", "It is done. so"), ("T", "we go")]),
+    ],
+    ids=["wording-kept", "speaker-chosen", "both", "wording-without-a-full-stop"],
+)
+def test_only_a_chosen_speaker_or_wording_not_ending_a_sentence_keeps_the_reply_start(
+    line, lines
+):
+    """Kept wording takes the speaker of its words, so the reply after it moves
+    while the person's wording ends a sentence, as on the live lane (#1035)."""
+    result = combine_transcription_diarization(
+        _whisper(TOKENS), FakeDiarization(OVERLAP), {EDITED_LINES: [line]}
+    )
+
+    assert _lines(result) == lines
+
+
+def test_kept_wording_ends_a_sentence_where_the_recogniser_heard_none():
+    """The final pass reads the sentence end the processed transcript shows: a
+    person's wording replaces the recogniser's over the line (#1035)."""
+    tokens = [*TOKENS[:2], (" done", 0.6, 1.0), *TOKENS[3:]]
+    config = {EDITED_LINES: [EditedLine(0, 1000, False, True)]}
+
+    unedited = combine_transcription_diarization(
+        _whisper(tokens), FakeDiarization(OVERLAP)
+    )
+    edited = combine_transcription_diarization(
+        _whisper(tokens), FakeDiarization(OVERLAP), config
+    )
+
+    assert _lines(unedited) == [("L", "It is done so"), ("T", "we go")]
+    assert _lines(edited) == [("L", "It is done"), ("T", "so we go")]
