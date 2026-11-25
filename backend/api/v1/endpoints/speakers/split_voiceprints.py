@@ -5,13 +5,19 @@ or an existing person of that name), extracting one voiceprint per recording
 from the clips moved and one from the clips that remain. Both sides go
 through ``pool_recording_voiceprints``, so only recordings that meet the
 evidence floor on their own are used, and a link the drift guard refused for
-its person is left out (``is_drift_refused``).
+its person is left out (``is_drift_refused``). Which of the original's
+speakers stand for them is the rule their People entry and the voiceprint
+rebuild share (``counted_speaker()``).
 """
 
 from typing import Any, List
 
 from fastapi import HTTPException
+from sqlalchemy import not_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
+from backend.models.speaker import RecordingSpeaker
 from backend.processing.embedding import (
     LibraryVoiceprintUpdate,
     RecordingVoiceprint,
@@ -24,6 +30,7 @@ from backend.processing.embedding import (
     update_library_voiceprint,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
+from backend.services.person_meetings import counted_speaker
 from backend.utils.speaker_names.sources import link_teaches_library
 
 # The weight the moved clips fold into an existing person's voiceprint with.
@@ -70,6 +77,50 @@ def apply_split_to_original_speaker(
     speaker.embedding = voiceprint.embedding
     speaker.embedding_version = voiceprint.version
     speaker.embedding_speech_seconds = voiceprint.speech_seconds
+
+
+async def speakers_uncounted_before_split(
+    db: AsyncSession, person_id: int, split_recording_ids: List[int]
+) -> set[int]:
+    """The original's speakers in the split recordings that no longer count.
+
+    Those ``counted_speaker()`` leaves out: merged into another, or with every
+    line moved to someone else. Counted, one would stop the original's one
+    speaker in a recording taking the remainder's voiceprint, and a refusal
+    of its own would keep the remainder out of the original's. The split
+    reads them before it writes the moved lines, which refreshes speaker
+    statuses: a speaker the split empties then reads inactive too, and must
+    still lose its old voiceprint (``apply_split_to_original_speaker``).
+    """
+    rows = await db.execute(
+        select(RecordingSpeaker.id).where(
+            RecordingSpeaker.global_speaker_id == person_id,
+            RecordingSpeaker.recording_id.in_(split_recording_ids),
+            not_(counted_speaker()),
+        )
+    )
+    return set(rows.scalars().all())
+
+
+async def original_links_elsewhere(
+    db: AsyncSession, person_id: int, split_recording_ids: List[int]
+) -> List[RecordingSpeaker]:
+    """The original's links outside the split recordings that still count.
+
+    The fallback for when what remains of them inside is too little to
+    rebuild their voiceprint from. Only those the voiceprint rebuild reads
+    (``counted_speaker()``): a speaker merged into another, or one whose lines
+    all moved to other speakers, keeps a voiceprint of audio the user has
+    since given to someone else.
+    """
+    rows = await db.execute(
+        select(RecordingSpeaker).where(
+            RecordingSpeaker.global_speaker_id == person_id,
+            counted_speaker(),
+            RecordingSpeaker.recording_id.notin_(split_recording_ids),
+        )
+    )
+    return list(rows.scalars().all())
 
 
 def other_recording_voiceprints(
