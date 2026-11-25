@@ -1,5 +1,7 @@
 'use client';
 
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useHydrated } from '@/lib/useHydrated';
 import { X, CheckCircle, AlertTriangle, Info, AlertCircle } from 'lucide-react';
@@ -8,6 +10,7 @@ import {
   type Notification,
   type NotificationAction,
 } from '@/lib/notificationStore';
+import { TOAST_REST_PX, toastLift, useToastClearanceStore } from '@/lib/toastClearance';
 
 import Button from './ui/Button';
 import IconButton from './ui/IconButton';
@@ -36,6 +39,41 @@ const tints = {
 export default function NotificationToast() {
   const { activeNotifications, dismissToast } = useNotificationStore();
   const mounted = useHydrated();
+  const stackRef = useRef<HTMLDivElement>(null);
+  const bars = useToastClearanceStore((state) => state.bars);
+  // How far the stack rises to clear a bar at the foot of the screen (#974).
+  const [lift, setLift] = useState(0);
+
+  const measure = useCallback(() => {
+    const stack = stackRef.current;
+    if (!stack) return;
+    const box = stack.getBoundingClientRect();
+    setLift(
+      toastLift(
+        { left: box.left, right: box.right, height: box.height },
+        bars.map((bar) => bar.getBoundingClientRect()),
+        window.innerHeight,
+      ),
+    );
+  }, [bars]);
+
+  // Measured before paint whenever a toast or a bar comes or goes, and again
+  // as either changes size, the window resizes or the bar's list scrolls.
+  useLayoutEffect(() => {
+    measure();
+    if (bars.length === 0) return;
+    const stack = stackRef.current;
+    const observer = new ResizeObserver(measure);
+    if (stack) observer.observe(stack);
+    for (const bar of bars) observer.observe(bar);
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [measure, bars, activeNotifications, mounted]);
 
   if (!mounted) return null;
 
@@ -53,8 +91,10 @@ export default function NotificationToast() {
 
   return (
     <div
+      ref={stackRef}
       aria-live="polite"
-      className="fixed bottom-4 left-4 right-4 z-[var(--z-toast)] flex flex-col gap-2 pointer-events-none sm:left-auto sm:w-full sm:max-w-md"
+      style={{ bottom: TOAST_REST_PX + lift }}
+      className="fixed left-4 right-4 z-[var(--z-toast)] flex flex-col gap-2 pointer-events-none transition-[bottom] duration-200 motion-reduce:transition-none sm:left-auto sm:w-full sm:max-w-md"
     >
       {activeNotifications.map((notification) => (
         // The status tints are translucent in dark mode, so the tint sits on

@@ -54,6 +54,12 @@ export const UNDO_NOTIFICATION_MS = 10000;
 export const recordingsPhrase = (count: number): string =>
   `${count} ${count === 1 ? "recording" : "recordings"}`;
 
+/** What the list says when a new search or filter takes selected recordings out of the selection. */
+export const leftOutOfSelection = (count: number): string =>
+  count === 1
+    ? "1 recording is no longer selected because it is not in these results."
+    : `${count} recordings are no longer selected because they are not in these results.`;
+
 const theRecordings = (count: number): string =>
   count === 1 ? "the recording" : "the recordings";
 
