@@ -155,6 +155,13 @@ interface RecordingListRowProps {
   /** The name being typed; empty on every card but the one being renamed. */
   renameValue: string;
   hasUnsentNotes: boolean;
+  /**
+   * A double click on the name renames the meeting. Only where the list stays
+   * beside the meeting it opens: below the desktop breakpoint the meeting
+   * replaces the list, so the click that opens it would start a rename out of
+   * sight (#974). The card's menu renames at any width.
+   */
+  renamesOnDoubleClick: boolean;
   actions: RecordingListRowActions;
 }
 
@@ -174,6 +181,7 @@ function RecordingListRow({
   isRenaming,
   renameValue,
   hasUnsentNotes,
+  renamesOnDoubleClick,
   actions,
 }: RecordingListRowProps) {
   const startDate = parseServerTimestamp(recording.created_at);
@@ -265,9 +273,9 @@ function RecordingListRow({
             <div className="flex justify-between items-start mb-1">
               <h3
                 className={`min-w-0 text-sm font-semibold line-clamp-2 ${isActive && !isSelecting ? "text-action-text" : "text-foreground"}`}
-                title="Double-click to rename"
+                title={renamesOnDoubleClick ? "Double-click to rename" : undefined}
                 onDoubleClick={(e) => {
-                  if (isSelecting) return;
+                  if (isSelecting || !renamesOnDoubleClick) return;
                   e.preventDefault();
                   e.stopPropagation();
                   actions.onRenameStart(recording.id, recording.name);

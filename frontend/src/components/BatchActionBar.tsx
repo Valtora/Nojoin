@@ -3,6 +3,7 @@
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { cn } from "@/lib/cn";
 import type { ViewType } from "@/lib/store";
+import { useToastClearance } from "@/lib/toastClearance";
 import { X } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 import BatchTagModal from "./BatchTagModal";
@@ -29,7 +30,8 @@ interface BatchActionBarProps {
 /**
  * The actions on a selection, from the view's row of the action table. It
  * sits at the foot of the scrolling list rather than over it, so the last row
- * can always be scrolled clear of it.
+ * can always be scrolled clear of it, and notifications rise above it rather
+ * than cover it.
  */
 export default function BatchActionBar({
   view,
@@ -39,6 +41,7 @@ export default function BatchActionBar({
   onTag,
 }: BatchActionBarProps) {
   const [isTagModalOpen, setTagModalOpen] = useState(false);
+  const toastClearance = useToastClearance<HTMLDivElement>();
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -56,7 +59,10 @@ export default function BatchActionBar({
       </p>
 
       {count > 0 && (
-        <div className="sticky bottom-0 z-[var(--z-sticky)] px-2 pb-2">
+        <div
+          ref={toastClearance}
+          className="sticky bottom-0 z-[var(--z-sticky)] px-2 pb-2"
+        >
           <SurfaceBase
             data-ui-fill="float"
             data-ui-border="full"
