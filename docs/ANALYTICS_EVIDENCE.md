@@ -254,7 +254,17 @@ supports well, and it needs no model. The rules, in
   Figures from different versions look alike but are not comparable, as with
   voiceprints.
 - A baseline needs at least three measured meetings for a speaker linked to
-  the same person (`BASELINE_MIN_MEETINGS`, judgement).
+  the same person (`BASELINE_MIN_MEETINGS`, judgement). A meeting counts once
+  however many of its speakers are linked to the person, as in the People
+  count, and every one of those speakers in the meeting being viewed is
+  compared with the baseline.
+- Several speakers linked to the person in one meeting, usually one voice that
+  diarisation split, make one sample of all their speech: pace and pitch
+  movement as means weighted by each speaker's speech time, and pauses as the
+  summed count over the summed speech. The stored figures are per-speaker
+  medians and spreads, which cannot be pooled exactly, so the weighting is a
+  judgement: a brief second speaker moves the sample by its share of the
+  speech.
 - The meetings read are the ones the person's People entry counts
   (`counted_speaker()`): a speaker merged into another, one whose lines all
   moved to other speakers and a meeting in the bin add nothing.
