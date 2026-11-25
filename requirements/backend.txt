@@ -1,5 +1,5 @@
 -r base.txt
-fastapi==0.163.1
+fastapi==0.165.0
 uvicorn[standard]==0.54.0
 mcp==2.3.0
 # Backend specific dependencies
@@ -9,9 +9,9 @@ numpy==2.4.6
 # Decodes the FLAC segments browser capture uploads and writes the FLAC master
 # at finalize, in process. Pinned with worker.txt.
 soundfile==0.14.0
-openai>=3.52.0
-anthropic>=2.9.0
-google-genai>=3.4.0
+openai>=3.57.0
+anthropic>=2.12.0
+google-genai>=3.6.1
 # Exports (backend/services/exports): ReportLab lays out PDFs, python-docx
 # writes DOCX, and markdown-it-py parses the stored Markdown notes for all
 # three formats.
