@@ -51,6 +51,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - With **Suggest speaker names during a meeting** on, a failing AI provider backs off for the speaker name ask as it does for Meeting Edge, and the two share the wait: neither asks a provider the other found failing until its wait is over. The notification names every feature a failure holds up, and the **Meeting Edge** tab says why it is paused when the failure came from a name ask (#994).
 - A Claude or ChatGPT subscription no longer shows as disconnected in **Settings > Your AI** after a token refresh that failed on a network or server error, and another subscription cannot be connected beside it meanwhile; Nojoin refreshes it again on the next request. Only a refresh the provider refuses asks you to reconnect (#994).
 - The **Analytics** note comparing a person with their usual delivery reads only the meetings their **Person Details** counts. It also read meetings in the bin and meetings where all their lines had moved to other speakers or their speaker was merged into another, so the meeting count behind it could run high (#985).
+- When two speakers in one meeting are the same person, the **Analytics** note comparing them with their usual delivery counts that meeting once, from all their speech in it. It counted the meeting once for each speaker, so the note could say "across 3 meetings" after two, and in the meeting you are viewing only one of the two speakers got the note (#1030).
 
 ### People, tasks and calendar
 
