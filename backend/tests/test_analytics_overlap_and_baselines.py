@@ -23,7 +23,10 @@ from sqlmodel import Session
 import backend.worker.tasks.analytics as analytics_task
 import backend.worker.tasks.analytics_overlap as overlap_task
 from backend.processing.delivery_descriptors import DELIVERY_METHOD_VERSION
-from backend.services.meeting_analytics.baselines import compute_delivery_baselines
+from backend.services.meeting_analytics.baselines import (
+    _meeting_sample,
+    compute_delivery_baselines,
+)
 from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
@@ -553,3 +556,181 @@ class TestBaselineMeetingsFollowPeopleCount:
             "pitch_spread_semitones": 6.25,
             "pauses_per_minute": 3.0,
         }
+
+
+class TestBaselineCountsEachMeetingOnce:
+    """A meeting is one sample, however many of its speakers are one person.
+
+    Alice Example (person 77) was split in two by diarisation in meeting 23: a
+    long speaker and a brief one, both linked to her. The People count counts
+    that meeting once, so the baseline does too, from all her speech in it.
+    """
+
+    @staticmethod
+    def _figures(wpm: int, spread: float, pauses: int, speech_ms: int) -> dict:
+        return {
+            "words_per_minute": wpm,
+            "pitch_spread_semitones": spread,
+            "pause_count": pauses,
+            "speech_ms": speech_ms,
+        }
+
+    def _payload(self, figures: dict[int, dict]) -> dict:
+        return {
+            "method_version": DELIVERY_METHOD_VERSION,
+            "delivery": {
+                "speakers": {
+                    f"rs:{speaker_id}": speaker_figures
+                    for speaker_id, speaker_figures in figures.items()
+                }
+            },
+        }
+
+    def _seed_split_meeting(self, connection) -> None:
+        # Two minutes of speech each side: 90 s at 200 wpm with 9 pauses, and
+        # a brief 30 s at 120 wpm with none.
+        _seed_recording(
+            connection,
+            recording_id=23,
+            payload=self._payload(
+                {
+                    103: self._figures(200, 6.0, 9, 90_000),
+                    104: self._figures(120, 10.0, 0, 30_000),
+                }
+            ),
+        )
+        for speaker_id in (103, 104):
+            _seed_speaker(
+                connection,
+                speaker_id=speaker_id,
+                recording_id=23,
+                global_speaker_id=77,
+            )
+
+    def _seed_meeting(
+        self, connection, *, recording_id: int, speaker_id: int, figures: dict
+    ) -> None:
+        _seed_recording(
+            connection,
+            recording_id=recording_id,
+            payload=self._payload({speaker_id: figures}),
+        )
+        _seed_speaker(
+            connection,
+            speaker_id=speaker_id,
+            recording_id=recording_id,
+            global_speaker_id=77,
+        )
+
+    def _seed_viewed_meeting(self, connection, *speaker_ids: int) -> None:
+        _seed_user(connection)
+        _seed_recording(connection, recording_id=10)
+        for speaker_id in speaker_ids:
+            _seed_speaker(
+                connection,
+                speaker_id=speaker_id,
+                recording_id=10,
+                global_speaker_id=77,
+            )
+
+    @staticmethod
+    def _baselines(engine, *speaker_keys: str) -> dict:
+        with Session(engine) as session:
+            return compute_delivery_baselines(
+                session,
+                user_id=1,
+                recording_id=10,
+                speakers=[
+                    {"speaker_key": key, "global_speaker_id": 77}
+                    for key in speaker_keys
+                ],
+            )
+
+    def test_two_meetings_with_a_split_speaker_stay_below_the_minimum(
+        self, tmp_path: Path
+    ) -> None:
+        engine = _make_engine(tmp_path, "baselines-split-thin")
+        with engine.begin() as connection:
+            self._seed_viewed_meeting(connection, 1)
+            self._seed_meeting(
+                connection,
+                recording_id=21,
+                speaker_id=101,
+                figures=self._figures(150, 5.0, 4, 120_000),
+            )
+            self._seed_split_meeting(connection)
+
+        # Two meetings, three speaker rows: below the minimum of three meetings.
+        assert self._baselines(engine, "rs:1") == {}
+
+    def test_split_speaker_folds_into_one_sample_of_all_their_speech(
+        self, tmp_path: Path
+    ) -> None:
+        engine = _make_engine(tmp_path, "baselines-split")
+        with engine.begin() as connection:
+            self._seed_viewed_meeting(connection, 1)
+            self._seed_meeting(
+                connection,
+                recording_id=21,
+                speaker_id=101,
+                figures=self._figures(150, 5.0, 4, 120_000),
+            )
+            self._seed_meeting(
+                connection,
+                recording_id=22,
+                speaker_id=102,
+                figures=self._figures(190, 9.0, 12, 120_000),
+            )
+            self._seed_split_meeting(connection)
+
+        # Meeting 23 is one sample: pace (200 x 90 + 120 x 30) / 120 = 180,
+        # pitch movement (6.0 x 90 + 10.0 x 30) / 120 = 7.0, and 9 pauses over
+        # two minutes = 4.5 a minute. One sample per speaker row would give
+        # four meetings and medians of 170, 7.5 and 4.0.
+        assert self._baselines(engine, "rs:1")["rs:1"] == {
+            "meetings": 3,
+            "words_per_minute": 180,
+            "pitch_spread_semitones": 7.0,
+            "pauses_per_minute": 4.5,
+        }
+
+    def test_each_speaker_of_the_person_in_the_viewed_meeting_gets_it(
+        self, tmp_path: Path
+    ) -> None:
+        engine = _make_engine(tmp_path, "baselines-split-viewed")
+        with engine.begin() as connection:
+            # Alice is split in two in the meeting being viewed as well.
+            self._seed_viewed_meeting(connection, 1, 2)
+            for index, wpm in enumerate((150, 170, 190), start=1):
+                self._seed_meeting(
+                    connection,
+                    recording_id=20 + index,
+                    speaker_id=100 + index,
+                    figures=self._figures(wpm, 4.0 + index, 6, 120_000),
+                )
+
+        baselines = self._baselines(engine, "rs:1", "rs:2")
+
+        expected = {
+            "meetings": 3,
+            "words_per_minute": 170,
+            "pitch_spread_semitones": 6.0,
+            "pauses_per_minute": 3.0,
+        }
+        assert baselines == {"rs:1": expected, "rs:2": expected}
+
+    def test_a_meeting_sample_uses_each_figure_its_speakers_have(self) -> None:
+        # The brief speaker has no pitch movement: the long one's stands alone.
+        brief = {**self._figures(120, 0.0, 0, 30_000), "pitch_spread_semitones": None}
+        partial = _meeting_sample([self._figures(200, 6.0, 9, 90_000), brief])
+        assert partial == {"wpm": 180.0, "pitch_spread": 6.0, "pause_rate": 4.5}
+
+        # No speech time anywhere: pace counts each speaker equally, and there
+        # is no pause rate to give.
+        untimed = _meeting_sample(
+            [
+                {"words_per_minute": 200, "pause_count": 3},
+                {"words_per_minute": 120, "pause_count": 1},
+            ]
+        )
+        assert untimed == {"wpm": 160.0, "pitch_spread": None, "pause_rate": None}

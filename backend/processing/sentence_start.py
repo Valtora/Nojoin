@@ -25,7 +25,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -42,13 +42,32 @@ MAX_TAIL_WORDS = 8
 # keep_turn: the least of L's turn that must stay, in seconds. Consolidation
 # folds a shorter line away (``consolidate_diarized_transcript`` min_duration_s).
 MIN_REMAINDER_S = 0.1
-# Config key of the spans (ms) of lines a person edited, for the final pass.
-EDITED_LINE_SPANS = "edited_line_spans_ms"
+# Config key of the lines a person edited (``EditedLine``), for the final pass.
+EDITED_LINES = "edited_lines_ms"
 
 UNKNOWN = "UNKNOWN"
 
 # A word a person assigned, whose chosen speaker the final pass applies later.
 _MANUAL_OWNER = "\x00manual"
+
+
+class EditedLine(NamedTuple):
+    """A line a person edited, as the final pass's merge reads it (#1035).
+
+    The final pass applies the edit after the merge. A chosen speaker goes to
+    the line's words, so the merge cannot tell whose turn they end. Kept
+    wording (written, or protected by a split) replaces the words over the
+    line, and the line takes the speaker holding most of them
+    (``canonical_pipeline/preservation.py``), so its words stay the
+    diariser's and its own wording says whether it ends a sentence.
+    """
+
+    start_ms: int
+    end_ms: int
+    speaker_chosen: bool
+    # Whether the kept wording ends a sentence; None when the final wording
+    # replaces the line's (a speaker-only edit).
+    wording_ends_sentence: bool | None
 
 
 def ends_sentence(token: str) -> bool:
@@ -234,7 +253,8 @@ class Words:
     ``labels`` are the diariser's own decisions, never ones corrected earlier.
     ``stored`` (live) is what each word shows now; a ``locked`` word can no longer
     change and counts as its stored speaker. ``manual`` words are in lines a
-    person edited; ``unsafe`` words (untimed, or decided by another route) are
+    person edited, and ``chosen`` ones (final pass) in lines whose speaker a
+    person chose; ``unsafe`` words (untimed, or decided by another route) are
     never part of a candidate. ``regions`` are half-open index ranges a candidate
     never crosses (merge calls, capture resumes, immutable live rows).
     """
@@ -249,15 +269,17 @@ class Words:
     stored: Sequence[str] | None = None
     locked: frozenset[int] = frozenset()
     manual: frozenset[int] = frozenset()
+    chosen: frozenset[int] = frozenset()
     unsafe: frozenset[int] = frozenset()
 
     def owner(self, i: int) -> str:
         """Who the transcript shows for a word: a settled or assigned one keeps
-        its stored speaker; a final-pass manual word is nobody's yet."""
-        if i in self.manual:
-            return self.stored[i] if self.stored is not None else _MANUAL_OWNER
-        if self.stored is not None and i in self.locked:
+        its stored speaker. In the final pass a word whose speaker a person
+        chose is nobody's yet, and one under kept wording the diariser's."""
+        if self.stored is not None and (i in self.manual or i in self.locked):
             return self.stored[i]
+        if i in self.chosen:
+            return _MANUAL_OWNER
         return self.labels[i]
 
     def gap(self, i: int, j: int) -> float:
@@ -383,7 +405,7 @@ def correct_word_assignments(
 
     ``groups`` are the merge's timed anchors with the untimed words attached to
     each; ``speaker_turns`` is its diarisation annotation; ``config`` supplies
-    the capture resume cuts and the edited-line spans, and ``pause_s`` is the
+    the capture resume cuts and the edited lines, and ``pause_s`` is the
     owner's resolved line-break pause. Nothing changes when the
     ``sentence_start_correction`` setting is off.
     """
@@ -396,11 +418,14 @@ def correct_word_assignments(
     starts = [float(word["start"]) for word in anchors]
     ends = [float(word["end"]) for word in anchors]
     cuts = sorted(point / 1000 for point in (config or {}).get(RESUME_BOUNDARIES, []))
-    spans = (config or {}).get(EDITED_LINE_SPANS, [])
+    marks = [ends_sentence(str(word.get("word") or "")) for word in anchors]
+    manual, chosen = _read_edited_lines(
+        (config or {}).get(EDITED_LINES, []), starts, ends, marks
+    )
     words = Words(
         starts=starts,
         ends=ends,
-        marks=[ends_sentence(str(word.get("word") or "")) for word in anchors],
+        marks=marks,
         labels=[item["speaker"] for item in assignments],
         activity=activity_from_turns(
             (turn.start, turn.end, label)
@@ -410,15 +435,40 @@ def correct_word_assignments(
             [sum(not falls_short(s, cut) for cut in cuts) for s in starts]
         ),
         pause_s=pause_s,
-        manual=frozenset(
-            i
-            for i, (start, end) in enumerate(zip(starts, ends))
-            if any(a <= (start + end) * 500 < b for a, b in spans)
-        ),
+        manual=manual,
+        chosen=chosen,
         unsafe=frozenset(i for i, (_, group) in enumerate(groups) if len(group) > 1),
     )
     for item, label in zip(assignments, corrected(words)):
         item["speaker"] = label
+
+
+def _read_edited_lines(
+    lines: Iterable[EditedLine],
+    starts: Sequence[float],
+    ends: Sequence[float],
+    marks: list[bool],
+) -> tuple[frozenset[int], frozenset[int]]:
+    """The words in edited lines, and those of them whose speaker a person chose.
+
+    A word lies in the line holding its midpoint. The last word in a line with
+    kept wording ends a sentence when that wording does, whatever the
+    recogniser wrote (``marks`` is updated in place), as the live lane reads an
+    edited line's wording over its span (``live_sentence_start._context_words``).
+    """
+    middles = [(start + end) * 500 for start, end in zip(starts, ends)]
+    manual: set[int] = set()
+    chosen: set[int] = set()
+    for line in lines:
+        held = [
+            i for i, mid in enumerate(middles) if line.start_ms <= mid < line.end_ms
+        ]
+        manual.update(held)
+        if line.speaker_chosen:
+            chosen.update(held)
+        if held and line.wording_ends_sentence is not None:
+            marks[held[-1]] = line.wording_ends_sentence
+    return frozenset(manual), frozenset(chosen)
 
 
 def split_regions(keys: Sequence[object]) -> list[tuple[int, int]]:

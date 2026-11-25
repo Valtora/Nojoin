@@ -1,11 +1,14 @@
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 from uuid import uuid4
 
 from kombu.exceptions import KombuError
 
 from backend.celery_app import CPU_QUEUE, celery_app
+from backend.core.single_flight import claim, release_claim
 from backend.core.task_dispatch import dispatch_task
 from backend.services.model_status import nemotron_unused_reason
 from backend.utils import forced_aligner_model_utils as aligner_assets
@@ -21,6 +24,9 @@ from backend.utils.nemotron_model_utils import (
 logger = logging.getLogger(__name__)
 
 MODEL_PREPARATION_TASK = "backend.worker.tasks.download_models_task"
+PREPARATION_REQUEST_CLAIM = "model-preparation-request"
+# Only a backstop: the request releases the claim as soon as it has queued.
+PREPARATION_REQUEST_TTL_S = 60
 # Pinned targets only download and hash, so they run on the CPU lane, which
 # mounts the same model cache, rather than holding live ASR's GPU queue.
 _PINNED_TASK_KWARGS: dict[str, dict[str, Any]] = {
@@ -73,6 +79,27 @@ async def enqueue_model_preparation(
     )
     logger.info("Queued model preparation task %s with args %s", task.id, kwargs)
     return str(task.id)
+
+
+@asynccontextmanager
+async def preparation_request() -> AsyncIterator[bool]:
+    """Yield True to the one request that may check for a preparation and queue one.
+
+    A preparation is running once its queued progress is written, which
+    ``enqueue_model_preparation`` does after publishing. Without the claim, two
+    quick requests both pass the in-progress check before either has written
+    it, and both queue. The claim fails open, as every single-flight claim does.
+    """
+    token = await asyncio.to_thread(
+        claim, PREPARATION_REQUEST_CLAIM, ttl_seconds=PREPARATION_REQUEST_TTL_S
+    )
+    if token is None:
+        yield False
+        return
+    try:
+        yield True
+    finally:
+        await asyncio.to_thread(release_claim, PREPARATION_REQUEST_CLAIM, token)
 
 
 def request_nemotron_preparation(*, recording_id: int | None) -> str | None:
