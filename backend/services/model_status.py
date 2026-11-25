@@ -15,6 +15,7 @@ from backend.utils.forced_aligner_manifest import (
     load_asset_manifest as aligner_manifest,
 )
 from backend.utils.forced_aligner_model_utils import control as aligner_control
+from backend.utils.nemotron_lock import control as nemotron_control
 from backend.utils.nemotron_lock import pending_task
 from backend.utils.nemotron_manifest import load_asset_manifest
 from backend.utils.transcription_models import engine_has_native_word_timestamps
@@ -25,7 +26,9 @@ def add_nemotron_preparation_status(status: dict[str, Any]) -> None:
     native = status["nemotron"]
     progress = get_download_progress("nemotron")
     matching = progress if progress and progress.get("stage") == "nemotron" else {}
-    native["state"] = _preparation_state(native, matching)
+    native["state"] = _preparation_state(
+        native, matching, retry_wait=nemotron_control.failed_recently()
+    )
     native["size_bytes"] = sum(
         entry["size"] for entry in load_asset_manifest()["files"]
     )
