@@ -45,6 +45,7 @@ from backend.processing.embedding import (
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.services.person_meetings import (
+    counted_speaker,
     person_meeting_counts,
     person_sample_sources,
 )
@@ -870,7 +871,10 @@ async def split_speaker(
             original_speaker_voiceprints.append(voiceprint)
 
     # The original's links outside the split recordings, in case what remains
-    # of them inside is too little to rebuild their voiceprint from.
+    # of them inside is too little to rebuild their voiceprint from. Only those
+    # the voiceprint rebuild reads (``counted_speaker()``): a speaker merged
+    # into another, or one whose lines all moved to other speakers, keeps a
+    # voiceprint of audio the user has since given to someone else.
     split_recording_ids = [
         recordings_by_public_id[public_id].id
         for public_id in recording_segments
@@ -881,7 +885,7 @@ async def split_speaker(
             await db.execute(
                 select(RecordingSpeaker).where(
                     RecordingSpeaker.global_speaker_id == original_speaker.id,
-                    RecordingSpeaker.merged_into_id.is_(None),
+                    counted_speaker(),
                     RecordingSpeaker.recording_id.notin_(split_recording_ids),
                 )
             )
