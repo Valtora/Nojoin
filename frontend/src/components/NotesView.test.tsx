@@ -9,11 +9,14 @@ vi.mock("@/lib/api", () => ({
   listNotesTemplates: vi.fn().mockResolvedValue([]),
 }));
 
-// The editor is stubbed so a test can report any content as an editor update.
+// The editor is stubbed so a test can report any content as an editor update,
+// and read the content NotesView last gave it.
 let reportUpdate: (content: string) => void = () => {};
+let editorContent: string | null = null;
 vi.mock("./RichTextEditor", () => ({
-  default: ({ onChange }: { onChange: (content: string) => void }) => {
+  default: ({ content, onChange }: { content: string; onChange: (content: string) => void }) => {
     reportUpdate = onChange;
+    editorContent = content;
     return null;
   },
 }));
@@ -21,7 +24,11 @@ vi.mock("./RichTextEditor", () => ({
 const NOTES = "## Summary\n\n- First point";
 
 function renderNotes(onNotesChange: (notes: string) => void, overrides: Partial<ComponentProps<typeof NotesView>> = {}) {
-  return render(
+  return render(notesView(onNotesChange, overrides));
+}
+
+function notesView(onNotesChange: (notes: string) => void, overrides: Partial<ComponentProps<typeof NotesView>> = {}) {
+  return (
     <NotesView
       recordingId="r1"
       notes={NOTES}
@@ -35,7 +42,7 @@ function renderNotes(onNotesChange: (notes: string) => void, overrides: Partial<
       isGenerating={false}
       onExport={vi.fn()}
       {...overrides}
-    />,
+    />
   );
 }
 
@@ -98,5 +105,39 @@ describe("NotesView autosave", () => {
     });
 
     expect(onNotesChange).not.toHaveBeenCalled();
+  });
+
+  // The editor's Markdown ends in a newline when the notes end with a table,
+  // and the saved notes come back through the notes prop trimmed (#1074).
+  const WITH_TABLE = `${NOTES}\n\n| Owner | Task |\n| --- | --- |\n| Alice Example | Book the room |\n`;
+
+  it("keeps what was typed while a save was in flight when that save comes back", () => {
+    const onNotesChange = vi.fn();
+    const view = renderNotes(onNotesChange);
+
+    act(() => {
+      reportUpdate(WITH_TABLE);
+      vi.advanceTimersByTime(1100);
+    });
+    expect(onNotesChange).toHaveBeenCalledWith(WITH_TABLE);
+    const typed = WITH_TABLE.replace("Book the room", "Book the room for Friday");
+    act(() => reportUpdate(typed));
+
+    view.rerender(notesView(onNotesChange, { notes: WITH_TABLE }));
+
+    expect(editorContent).toBe(typed);
+  });
+
+  it("still passes notes changed elsewhere to the editor", () => {
+    const onNotesChange = vi.fn();
+    const view = renderNotes(onNotesChange);
+    act(() => {
+      reportUpdate(WITH_TABLE);
+      vi.advanceTimersByTime(1100);
+    });
+
+    view.rerender(notesView(onNotesChange, { notes: `${NOTES}\n- Added in another tab` }));
+
+    expect(editorContent).toBe(`${NOTES}\n- Added in another tab`);
   });
 });
