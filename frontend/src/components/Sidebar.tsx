@@ -36,6 +36,7 @@ import {
 } from "./recordings/_hooks/useRecordingSelection";
 import {
   LIST_ACTIONS,
+  leftOutOfSelection,
   permanentDeleteConfirmation,
   type ListActionId,
 } from "./recordings/recordingListActions";
@@ -261,7 +262,7 @@ export default function Sidebar() {
     () => recordings.map((recording) => recording.id),
     [recordings],
   );
-  const selection = useRecordingSelection(shownIds);
+  const selection = useRecordingSelection(shownIds, list.resultsKey);
   const longPress = useTouchLongPress(selection.toggle);
 
   // Confirmation Modal State
@@ -1081,6 +1082,17 @@ export default function Sidebar() {
           </label>
         </div>
       )}
+      {/* Mounted while empty too, so the line is read out when it appears. */}
+      <p
+        aria-live="polite"
+        className={
+          selection.leftOut > 0
+            ? `px-5 pb-2 text-xs text-rail-fg-muted ${recordings.length > 0 ? "" : "pt-2"}`
+            : "sr-only"
+        }
+      >
+        {selection.leftOut > 0 ? leftOutOfSelection(selection.leftOut) : ""}
+      </p>
       </div>
 
       {/* Only the cards scroll. `relative` keeps absolutely positioned

@@ -76,7 +76,7 @@ The **Recordings**, **Archived** and **Deleted** views select the same way.
 
 - Each recording has a checkbox, shown when you point at the recording or tab to it and on every recording once one is selected. On a touch screen, press and hold a recording to select it. **Select all** above the list selects every recording loaded so far, and shows a partial tick when only some are. To include older recordings, scroll down to load them first.
 - While anything is selected, clicking a recording selects or clears it instead of opening it. Ctrl-click (Cmd-click on a Mac) does the same at any time, and Shift-click selects every recording from the last one you selected or cleared. From the keyboard, Space selects or clears the focused recording, Shift+Space extends the selection to it, and Escape clears the selection.
-- The selection only holds recordings shown in the list, so a search or filter that hides a recording, or an action from its own menu that moves it, takes it out of the selection.
+- The selection only holds recordings shown in the list, so a search or filter that hides a recording, or an action from its own menu that moves it, takes it out of the selection. When a search or filter takes selected recordings out, a line above the list says how many, such as **2 recordings are no longer selected because they are not in these results.**, until you change the selection or the search.
 - The batch bar under the list acts on the selection: **Tag**, **Archive** and **Move to Bin** in **Recordings**, **Tag**, **Unarchive** and **Move to Bin** in **Archived**, and **Restore** and **Delete Permanently** in **Deleted**. **Delete Permanently** deletes only recordings still in the bin.
 
 ## People Workspace

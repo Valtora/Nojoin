@@ -43,6 +43,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 ### Meetings, tags and search
 
 - An Escape pressed just before a first-visit tour appears, to close a menu say, no longer closes the tour when you let go of it once it is showing. The tour closed and counted as seen, so it did not come back. Escape pressed while the tour is showing still closes it (#988).
+- When a search or filter in the recordings list hides recordings you had selected, a line above the list says how many are no longer selected, such as **2 recordings are no longer selected because they are not in these results.** They still leave the selection, so the batch bar acts only on recordings you can see, and the line goes once you change the selection or the search (#974).
 - Collapsing the recordings list and expanding it again brings the list back where you left it, with the same recording at the top. It went back to the newest (#974).
 - In a window narrower than 1024 px, such as a phone's, a double click on a recording's name in the list only opens the meeting. It also started a rename in the list behind the meeting. **Rename** in the recording's **⋯** menu renames it at any width (#974).
 - Notifications rise above the recordings list's batch bar rather than cover its buttons, on a phone or wherever the two meet, and a recording's **⋯** menu opens over a notification rather than under it (#974).
