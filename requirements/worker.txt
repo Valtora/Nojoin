@@ -105,7 +105,7 @@ torchcodec==0.17.0
 fastembed==0.9.1
 onnxruntime==1.32.0
 tokenizers==0.23.3
-loguru==0.8.0
+loguru==0.7.3
 mmh3==5.3.1
 py-rust-stemmers==0.1.8
 tqdm==4.70.1

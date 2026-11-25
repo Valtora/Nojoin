@@ -54,6 +54,10 @@ updates:
       # 2.x pin cannot resolve in the worker. Remove when fastembed allows 2.x.
       - dependency-name: "huggingface-hub"
         versions: [">=2.0.0"]
+      # fastembed 0.9.1, the newest release, declares loguru<0.8, so a 0.8 pin
+      # cannot resolve in the worker. Remove when fastembed allows 0.8.
+      - dependency-name: "loguru"
+        versions: [">=0.8.0"]
 
   # --- Frontend npm dependencies ---
   - package-ecosystem: npm
