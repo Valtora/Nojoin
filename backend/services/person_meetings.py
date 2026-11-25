@@ -25,7 +25,8 @@ from backend.utils.timezones import utc_naive_to_timezone
 # should. Every reader of a person's meetings shares it: the history and the
 # People list count here, the recordings list's person filter, the MCP
 # get_person tool, the voiceprint sample lines, the voiceprint rebuild, a
-# split's fallback to the person's other recordings and the delivery baselines
+# split (the person's speakers in the split recordings as they stood before
+# it, and its fallback to their other recordings) and the delivery baselines
 # through counted_speaker().
 COUNTED_SPEAKER_STATUS = "active"
 
