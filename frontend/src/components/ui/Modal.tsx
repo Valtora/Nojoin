@@ -28,6 +28,12 @@ interface ModalProps {
    * away sets it before closing. Null leaves focus to go back to the opener.
    */
   returnFocus?: RefObject<HTMLElement | null>;
+  /**
+   * A link first in the panel, before the title and the close control, that
+   * shows only while it has focus and moves focus to the element with
+   * `targetId`. For a dialog whose form sits below a long run of links.
+   */
+  skipLink?: { label: string; targetId: string };
   className?: string;
   children: ReactNode;
 }
@@ -60,6 +66,7 @@ export default function Modal({
   hideCloseButton = false,
   dismissible = true,
   returnFocus,
+  skipLink,
   className,
   children,
 }: ModalProps) {
@@ -113,6 +120,20 @@ export default function Modal({
                   if (event.key === "Escape" && isImeComposing(event)) event.stopPropagation();
                 }}
               >
+                {skipLink && (
+                  // Clipped to nothing until focused, so a pointer never meets it.
+                  // Focused, it takes its own line above the title.
+                  <a
+                    href={`#${skipLink.targetId}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.currentTarget.ownerDocument.getElementById(skipLink.targetId)?.focus();
+                    }}
+                    className="sr-only text-sm font-medium text-action-text underline focus:not-sr-only focus:mx-5 focus:mt-3 focus:self-start focus:rounded-md focus:px-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                  >
+                    {skipLink.label}
+                  </a>
+                )}
                 {(title || !hideCloseButton) && (
                   <div data-ui="modal-header" className="flex items-start justify-between gap-4 border-b border-surface-divider px-5 py-4">
                     <div className="min-w-0">

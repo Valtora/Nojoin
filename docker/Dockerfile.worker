@@ -57,7 +57,7 @@ RUN torchcodec_version="$(python -c 'import importlib.metadata as m; print(m.ver
 # builds target CUDA 13 from 1.27.0 and CUDA 12 before that, so this pin must
 # move with the CUDA major of the base image above.
 RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
-    pip install --no-cache-dir onnxruntime-gpu==1.31.1
+    pip install --no-cache-dir onnxruntime-gpu==1.32.0
 
 # Install Triton in the venv so Whisper word-level timestamps use GPU-accelerated
 # kernels instead of falling back to slower CPU implementations. The base PyTorch
