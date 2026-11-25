@@ -61,6 +61,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - On a phone, **Tasks** no longer scrolls sideways while **Create Task** or a task's **Edit** form is open. A long meeting name in the form's recording list is cut short to fit the screen, as it is on a wider one (#1001).
 - When Nojoin rebuilds a person's voiceprint in the background, it leaves out a speaker whose lines were all moved to other speakers, as **Person Details** leaves out that meeting. That speaker's voiceprint came from those lines, so it could pull the person's voiceprint towards whoever now holds them (#1031).
+- When Nojoin rebuilds a speaker's voiceprint in the background, it reads only the lines the transcript shows. A line you had split was still read whole beside its two halves, so the second half's speech counted for the original speaker even after you moved it to someone else (#1070).
 
 ### Settings and administration
 
