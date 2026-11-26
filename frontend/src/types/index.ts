@@ -40,6 +40,14 @@ export interface User {
   legal_accepted_at?: string | null;
   /** Whether the user must accept the terms of use before recording. */
   legal_acceptance_required?: boolean;
+  /** `oidc` accounts were made by the identity provider and have no password. */
+  auth_source?: "local" | "oidc";
+  /** Whether the account is linked to an identity at the provider. */
+  oidc_linked?: boolean;
+  display_name?: string | null;
+  email?: string | null;
+  /** The provider's groups as of the user's last single sign-on. */
+  oidc_groups?: string[];
 }
 
 export interface Invitation {

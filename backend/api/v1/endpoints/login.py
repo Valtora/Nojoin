@@ -12,7 +12,8 @@ from backend.api.deps import (
     get_db,
 )
 from backend.core import security
-from backend.models.user import User, needs_legal_acceptance
+from backend.core.oidc_config import PasswordLoginPolicy, get_password_login_policy
+from backend.models.user import User, UserRole, needs_legal_acceptance
 from backend.services.jwt_revocation_service import revoke_jwt_by_payload
 from backend.utils.rate_limit import enforce_rate_limit
 
@@ -36,10 +37,33 @@ def _build_login_metadata(user: User) -> dict[str, Any]:
     }
 
 
+PASSWORD_LOGIN_DISABLED_DETAIL = "password_login_disabled"
+
+
+def password_login_refusal() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=PASSWORD_LOGIN_DISABLED_DETAIL,
+    )
+
+
+def password_login_allowed_for(user: User) -> bool:
+    """Whether NOJOIN_PASSWORD_LOGIN lets ``user`` sign in with a password."""
+    policy = get_password_login_policy()
+    if policy is PasswordLoginPolicy.DISABLED:
+        return False
+    if policy is PasswordLoginPolicy.OWNER_ONLY:
+        return user.role == UserRole.OWNER
+    return True
+
+
 async def _authenticate_user_credentials(
     db: AsyncSession,
     form_data: OAuth2PasswordRequestForm,
 ) -> User:
+    if get_password_login_policy() is PasswordLoginPolicy.DISABLED:
+        raise password_login_refusal()
+
     query = select(User).where(User.username == form_data.username)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
@@ -53,8 +77,38 @@ async def _authenticate_user_credentials(
         )
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+    # Checked after the password, so the refusal tells nobody without the
+    # password which accounts exist or what role they have.
+    if not password_login_allowed_for(user):
+        raise password_login_refusal()
 
     return user
+
+
+def issue_browser_session(response: Response, user: User) -> dict[str, Any]:
+    """Set the HttpOnly session cookie for ``user`` and return UI metadata.
+
+    Shared by password and SSO sign-in so both produce the same session.
+    """
+    session_expires = timedelta(minutes=security.SESSION_TOKEN_EXPIRE_MINUTES)
+    token = security.create_access_token(
+        user.username,
+        token_type=security.SESSION_TOKEN_TYPE,
+        scopes=[security.WEB_SESSION_SCOPE],
+        expires_delta=session_expires,
+        token_version=user.token_version,
+    )
+
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=security.SESSION_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    return _build_login_metadata(user)
 
 
 @router.post("/login/access-token")
@@ -114,27 +168,7 @@ async def login_session(
     )
 
     user = await _authenticate_user_credentials(db, form_data)
-
-    session_expires = timedelta(minutes=security.SESSION_TOKEN_EXPIRE_MINUTES)
-    token = security.create_access_token(
-        user.username,
-        token_type=security.SESSION_TOKEN_TYPE,
-        scopes=[security.WEB_SESSION_SCOPE],
-        expires_delta=session_expires,
-        token_version=user.token_version,
-    )
-
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=security.SESSION_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
-    )
-
-    return _build_login_metadata(user)
+    return issue_browser_session(response, user)
 
 
 @router.post("/login/logout")

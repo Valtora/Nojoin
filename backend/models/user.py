@@ -3,7 +3,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import computed_field, field_validator
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -21,8 +21,18 @@ class UserRole(str, Enum):
     USER = "user"
 
 
+class AuthSource(str, Enum):
+    LOCAL = "local"
+    OIDC = "oidc"
+
+
 class User(BaseDBModel, table=True):
     __tablename__ = "users"
+    # Postgres treats NULLs as distinct, so local accounts (both columns null)
+    # never collide while each identity-provider account maps to one user.
+    __table_args__ = (
+        UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_users_oidc_identity"),
+    )
     username: str = Field(index=True, unique=True)
     hashed_password: str
     is_active: bool = Field(default=True)
@@ -41,6 +51,26 @@ class User(BaseDBModel, table=True):
     # then, and for the owner of an install set up before the time was recorded.
     legal_accepted_at: Optional[datetime] = Field(
         default=None, sa_type=DateTime, nullable=True
+    )
+
+    # How the account signs in. ``oidc`` accounts were created by the identity
+    # provider and have no usable password; a ``local`` account may still be
+    # linked to an identity (oidc_subject set) and then signs in either way.
+    auth_source: str = Field(
+        default=AuthSource.LOCAL,
+        max_length=16,
+        sa_column_kwargs={"server_default": AuthSource.LOCAL.value},
+    )
+    oidc_issuer: Optional[str] = Field(default=None, nullable=True)
+    oidc_subject: Optional[str] = Field(default=None, nullable=True)
+    # Shown in the UI only; never used to match an identity to an account.
+    email: Optional[str] = Field(default=None, nullable=True)
+    display_name: Optional[str] = Field(default=None, nullable=True)
+    # The identity provider's groups as of the user's last sign-in. Meetings
+    # shared with a group are visible to its members (recording_shares).
+    oidc_groups: List[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default="[]"),
     )
 
     invitation_id: Optional[int] = Field(default=None, foreign_key="invitations.id")
@@ -93,8 +123,18 @@ class UserRead(SQLModel):
     role: str
     ai_analysis_daily_limit: Optional[int] = None
     legal_accepted_at: Optional[datetime] = None
+    auth_source: str = AuthSource.LOCAL
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    oidc_subject: Optional[str] = Field(default=None, exclude=True)
+    oidc_groups: List[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]  # mypy doesn't support @computed_field over @property
+    @property
+    def oidc_linked(self) -> bool:
+        return self.oidc_subject is not None
 
     @computed_field  # type: ignore[prop-decorator]  # mypy doesn't support @computed_field over @property
     @property

@@ -15,10 +15,12 @@ from backend.api.deps import (
 )
 from backend.api.error_handling import sanitized_http_exception
 from backend.api.params import PageLimit, PageOffset, RowId
+from backend.core.oidc_config import PasswordLoginPolicy, get_password_login_policy
 from backend.core.security import hash_user_password, verify_password
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.models.user import (
+    AuthSource,
     User,
     UserCreate,
     UserList,
@@ -40,6 +42,8 @@ from backend.utils.time import utc_now
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+SSO_ACCOUNT_PASSWORD_DETAIL = "sso_account_has_no_password"
 
 REGISTER_RATE_LIMIT = 10
 REGISTER_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
@@ -170,6 +174,10 @@ async def register_user(
     """
     Register a new user with an invitation code.
     """
+    if get_password_login_policy() is not PasswordLoginPolicy.ENABLED:
+        # Accounts come from the identity provider; a password account made
+        # here could not sign in anyway.
+        raise HTTPException(status_code=403, detail="registration_disabled")
     await enforce_rate_limit(
         request,
         namespace="register",
@@ -544,6 +552,8 @@ async def update_password_me(
     """
     Update own password.
     """
+    if current_user.auth_source == AuthSource.OIDC:
+        raise HTTPException(status_code=403, detail=SSO_ACCOUNT_PASSWORD_DETAIL)
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect password")
 
@@ -595,6 +605,8 @@ async def update_user(
         user.username = user_in.username
 
     bump_required = False
+    if user_in.password and user.auth_source == AuthSource.OIDC:
+        raise HTTPException(status_code=400, detail=SSO_ACCOUNT_PASSWORD_DETAIL)
     if user_in.password:
         user.hashed_password = hash_user_password(user_in.password)
         user.force_password_change = True

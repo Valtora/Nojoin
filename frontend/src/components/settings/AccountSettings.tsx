@@ -1,7 +1,14 @@
 import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { updatePasswordMe, updateUserMe } from '@/lib/api';
+import {
+  getCurrentUser,
+  getLoginMethods,
+  updatePasswordMe,
+  updateUserMe,
+  type LoginMethods,
+} from '@/lib/api';
+import type { User } from '@/types';
 import { getErrorMessage } from '@/lib/errors';
 import { DEMO_MODE } from '@/lib/demo';
 import { consentReturnPathFromSearch } from '@/lib/passwordChangeReturn';
@@ -16,6 +23,7 @@ import SettingsBlock from './SettingsBlock';
 import SettingsCallout from './SettingsCallout';
 import SettingsCard from './SettingsCard';
 import SettingsRow from './SettingsRow';
+import SingleSignOnSettings from './SingleSignOnSettings';
 import {
   SETTINGS_BUTTON_PRIMARY,
   SETTINGS_INPUT_CLASS,
@@ -48,6 +56,22 @@ export default function AccountSettings({
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [username, setUsername] = useState('');
   const { addNotification } = useNotificationStore();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loginMethods, setLoginMethods] = useState<LoginMethods | null>(null);
+
+  useEffect(() => {
+    if (DEMO_MODE) {
+      return;
+    }
+    getCurrentUser().then(setCurrentUser).catch(() => {});
+    getLoginMethods().then(setLoginMethods).catch(() => {});
+  }, []);
+
+  const ssoProviderName = loginMethods?.oidc.enabled
+    ? loginMethods.oidc.display_name ?? 'SSO'
+    : null;
+  // An account the identity provider created has no password to change.
+  const hasPassword = currentUser?.auth_source !== 'oidc';
 
   const [passwordData, setPasswordData] = useState({
     current_password: '',
@@ -208,7 +232,11 @@ export default function AccountSettings({
         </SettingsCard>
       )}
 
-      {showSecurity && (
+      {showSecurity && ssoProviderName && currentUser && (
+        <SingleSignOnSettings user={currentUser} providerName={ssoProviderName} />
+      )}
+
+      {showSecurity && hasPassword && (
         <SettingsCard
           id="profile-password"
           title="Password"
