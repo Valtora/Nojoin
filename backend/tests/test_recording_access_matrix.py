@@ -1,0 +1,243 @@
+"""Every recording-scoped route, with the access level it requires.
+
+``ROUTE_ACCESS`` is the sharing policy in one reviewable table. A route marked
+``OWNER_ONLY`` has not opted in to sharing: it keeps the owner check in
+api/v1/endpoints/recordings/helpers.py. Every other route declares its level
+with ``require_recording`` (backend/services/recording_access.py), and the
+matrix below calls it as a stranger and as every share level below the one it
+needs, expecting the refusal each must get.
+
+When upstream adds a route that names a recording, the coverage test fails
+until the route is classified here.
+"""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from backend.models.recording_share import RecordingShare
+from backend.services.recording_access import Access, declared_access
+from backend.tests.sso_sharing_support import build_harness, recording_routes
+
+OWNER_ONLY = "owner-only"
+VIEW = Access.VIEW
+EDIT = Access.EDIT
+OWNER = Access.OWNER
+
+ROUTE_ACCESS = {
+    ("DELETE", "/recordings/{recording_id}"): OWNER_ONLY,
+    ("GET", "/recordings/{recording_id}"): OWNER_ONLY,
+    ("PATCH", "/recordings/{recording_id}"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/archive"): OWNER_ONLY,
+    ("PUT", "/recordings/{recording_id}/calendar-event"): OWNER_ONLY,
+    ("GET", "/recordings/{recording_id}/calendar-event/candidates"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/capture-source-report"): OWNER_ONLY,
+    ("PUT", "/recordings/{recording_id}/client_status"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/discard"): OWNER_ONLY,
+    ("GET", "/recordings/{recording_id}/documents"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/documents"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/finalize"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/infer-speakers"): OWNER_ONLY,
+    ("GET", "/recordings/{recording_id}/info"): OWNER_ONLY,
+    ("PUT", "/recordings/{recording_id}/max_speakers"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/pause"): OWNER_ONLY,
+    ("DELETE", "/recordings/{recording_id}/permanent"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/reprocess"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/restore"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/resume"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/segment"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/soft-delete"): OWNER_ONLY,
+    ("GET", "/recordings/{recording_id}/stream"): OWNER_ONLY,
+    ("POST", "/recordings/{recording_id}/upload-token"): OWNER_ONLY,
+    ("PUT", "/speakers/recordings/{recording_id}"): OWNER_ONLY,
+    ("PUT", "/speakers/recordings/{recording_id}/live/{label}"): OWNER_ONLY,
+    ("POST", "/speakers/recordings/{recording_id}/live/{label}/merge"): OWNER_ONLY,
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/live/{label}/suggestions/reject",
+    ): OWNER_ONLY,
+    ("POST", "/speakers/recordings/{recording_id}/merge"): OWNER_ONLY,
+    ("GET", "/speakers/recordings/{recording_id}/merged-speakers"): OWNER_ONLY,
+    (
+        "DELETE",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}",
+    ): OWNER_ONLY,
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/promote",
+    ): OWNER_ONLY,
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/split",
+    ): OWNER_ONLY,
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/suggestions/accept",
+    ): OWNER_ONLY,
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/suggestions/reject",
+    ): OWNER_ONLY,
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/unmerge",
+    ): OWNER_ONLY,
+    (
+        "DELETE",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/voiceprint",
+    ): OWNER_ONLY,
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/apply",
+    ): OWNER_ONLY,
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/extract",
+    ): OWNER_ONLY,
+    ("PUT", "/speakers/recordings/{recording_id}/speakers/{label}/color"): OWNER_ONLY,
+    ("POST", "/speakers/recordings/{recording_id}/voiceprints/extract-all"): OWNER_ONLY,
+    ("POST", "/tags/recordings/{recording_id}"): OWNER_ONLY,
+    ("DELETE", "/tags/recordings/{recording_id}/{tag_name}"): OWNER_ONLY,
+    ("GET", "/transcripts/{recording_id}/analytics"): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/analytics/ai/generate"): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/analytics/generate"): OWNER_ONLY,
+    ("GET", "/transcripts/{recording_id}/analytics/live"): OWNER_ONLY,
+    ("DELETE", "/transcripts/{recording_id}/chat"): OWNER_ONLY,
+    ("GET", "/transcripts/{recording_id}/chat"): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/chat"): OWNER_ONLY,
+    ("GET", "/transcripts/{recording_id}/export"): OWNER_ONLY,
+    ("PUT", "/transcripts/{recording_id}/meeting-edge-focus"): OWNER_ONLY,
+    ("GET", "/transcripts/{recording_id}/notes"): OWNER_ONLY,
+    ("PUT", "/transcripts/{recording_id}/notes"): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/notes/generate"): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/replace"): OWNER_ONLY,
+    ("PUT", "/transcripts/{recording_id}/segments"): OWNER_ONLY,
+    ("PUT", "/transcripts/{recording_id}/segments/{segment_index}"): OWNER_ONLY,
+    ("PUT", "/transcripts/{recording_id}/segments/{segment_index}/text"): OWNER_ONLY,
+    ("GET", "/transcripts/{recording_id}/timeline-notes"): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/timeline-notes"): OWNER_ONLY,
+    ("DELETE", "/transcripts/{recording_id}/timeline-notes/{note_id}"): OWNER_ONLY,
+    ("PATCH", "/transcripts/{recording_id}/timeline-notes/{note_id}"): OWNER_ONLY,
+    (
+        "DELETE",
+        "/transcripts/{recording_id}/timeline-notes/{note_id}/attachment",
+    ): OWNER_ONLY,
+    (
+        "PATCH",
+        "/transcripts/{recording_id}/timeline-notes/{note_id}/attachment",
+    ): OWNER_ONLY,
+    (
+        "POST",
+        "/transcripts/{recording_id}/timeline-notes/{note_id}/attachment",
+    ): OWNER_ONLY,
+    ("GET", "/transcripts/{recording_id}/utterances"): OWNER_ONLY,
+    (
+        "DELETE",
+        "/transcripts/{recording_id}/utterances/{utterance_id}/locks",
+    ): OWNER_ONLY,
+    (
+        "PATCH",
+        "/transcripts/{recording_id}/utterances/{utterance_id}/speaker",
+    ): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/utterances/{utterance_id}/split"): OWNER_ONLY,
+    ("PATCH", "/transcripts/{recording_id}/utterances/{utterance_id}/text"): OWNER_ONLY,
+}
+
+
+def test_every_recording_route_is_classified() -> None:
+    found = {(method, path): route for method, path, route in recording_routes()}
+    unclassified = sorted(set(found) - set(ROUTE_ACCESS))
+    stale = sorted(set(ROUTE_ACCESS) - set(found))
+    assert unclassified == [], "Classify these routes in ROUTE_ACCESS"
+    assert stale == [], "These routes no longer exist"
+
+
+@pytest.mark.parametrize(
+    ("method", "path"), sorted(ROUTE_ACCESS), ids=lambda value: str(value)
+)
+def test_route_declares_the_level_in_the_table(method: str, path: str) -> None:
+    routes = {(m, p): route for m, p, route in recording_routes()}
+    expected = ROUTE_ACCESS[(method, path)]
+    declared = declared_access(routes[(method, path)])
+    if expected == OWNER_ONLY:
+        assert declared is None
+    else:
+        assert declared is expected
+
+
+def _concrete(path: str, public_id: str) -> str:
+    path = path.replace("{recording_id}", public_id)
+    return re.sub(r"\{[^}]+\}", "1", path)
+
+
+@pytest.fixture
+async def harness():
+    async for built in build_harness():
+        yield built
+
+
+async def _share(harness, recording, user, level: str) -> None:
+    async with harness.session_maker() as session:
+        session.add(
+            RecordingShare(recording_id=recording.id, user_id=user.id, level=level)
+        )
+        await session.commit()
+
+
+def _client(harness, user) -> AsyncClient:
+    # A handler that runs with an empty body may fail in its own way; this
+    # test is only about whether the access check let the call through.
+    return AsyncClient(
+        transport=ASGITransport(app=harness.app, raise_app_exceptions=False),
+        base_url="https://localhost:14443",
+        headers={"Authorization": f"Bearer {harness.token_for(user)}"},
+    )
+
+
+def _refused(response) -> bool:
+    return response.status_code == 404 or (
+        response.status_code == 403
+        and response.json().get("detail") == "insufficient_access"
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("method", "path"), sorted(ROUTE_ACCESS), ids=lambda value: str(value)
+)
+async def test_route_refuses_callers_below_its_level(
+    harness, stub_celery_dispatch, method: str, path: str
+) -> None:
+    expected = ROUTE_ACCESS[(method, path)]
+    owner = await harness.add_user("owner")
+    recording = await harness.add_recording(owner)
+    url = _concrete(path, recording.public_id)
+
+    stranger = await harness.add_user("stranger")
+    async with _client(harness, stranger) as client:
+        response = await client.request(method, url)
+    assert (
+        response.status_code in (404, 422)
+        if expected == OWNER_ONLY
+        else (response.status_code == 404)
+    ), response.text
+
+    levels_below = {
+        OWNER_ONLY: ["view", "edit"],
+        OWNER: ["view", "edit"],
+        EDIT: ["view"],
+        VIEW: [],
+    }[expected]
+    for level in levels_below:
+        sharee = await harness.add_user(f"sharee-{level}")
+        await _share(harness, recording, sharee, level)
+        async with _client(harness, sharee) as client:
+            response = await client.request(method, url)
+        if expected == OWNER_ONLY:
+            # The owner check runs inside the handler, after body validation.
+            assert response.status_code in (404, 422), response.text
+        else:
+            assert _refused(response), (level, response.status_code, response.text)

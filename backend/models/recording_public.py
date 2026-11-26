@@ -248,8 +248,22 @@ class LiveAINoticeRead(BaseModel):
     message: str
 
 
+class RecordingOwnerRead(BaseModel):
+    """Who owns a recording, shown to the people it is shared with."""
+
+    username: str
+    display_name: Optional[str] = None
+
+
 class RecordingPublicRead(PublicModel):
     id: str
+    # The caller's level on this recording: "owner", "edit" or "view"
+    # (backend/services/recording_access.py). The client hides what the level
+    # does not allow; the server enforces it regardless.
+    access: str = "owner"
+    # Filled for a caller who is not the owner, so the UI can say whose meeting
+    # it is. None for the owner's own recordings.
+    owner: Optional[RecordingOwnerRead] = None
     created_at: datetime
     updated_at: datetime
     name: str
@@ -511,6 +525,8 @@ def serialize_recording(
     captured_audio_seconds: Optional[float] = None,
     live_audio_ms: Optional[int] = None,
     timeline_notes_list_signature: Optional[str] = None,
+    access: str = "owner",
+    owner: Optional[RecordingOwnerRead] = None,
 ) -> RecordingPublicRead:
     transcript = None
     notice = None
@@ -560,6 +576,8 @@ def serialize_recording(
 
     return RecordingPublicRead(
         id=recording.public_id,
+        access=access,
+        owner=owner,
         created_at=recording.created_at,
         updated_at=recording.updated_at,
         name=recording.name,

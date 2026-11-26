@@ -163,3 +163,30 @@ async def build_harness() -> AsyncIterator[Harness]:
         yield Harness(app=app, session_maker=session_maker)
     finally:
         await engine.dispose()
+
+
+def api_routes_with_paths(routes, prefix: str = ""):
+    """Every APIRoute under ``routes`` with its full path, through included routers."""
+    from fastapi.routing import APIRoute
+
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield prefix + route.path, route
+        included = getattr(route, "original_router", None)
+        if included is not None:
+            context = getattr(route, "include_context", None)
+            inner_prefix = prefix + (getattr(context, "prefix", "") or "")
+            yield from api_routes_with_paths(included.routes, inner_prefix)
+
+
+def recording_routes():
+    """(method, path, route) for every route whose path names a recording."""
+    rows = []
+    for path, route in api_routes_with_paths(api_router.routes):
+        if "{recording_id}" not in path:
+            continue
+        for method in sorted(route.methods or ()):
+            if method in {"HEAD", "OPTIONS"}:
+                continue
+            rows.append((method, path, route))
+    return sorted(rows, key=lambda row: (row[1], row[0]))
