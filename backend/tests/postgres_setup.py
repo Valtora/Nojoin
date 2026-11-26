@@ -25,6 +25,7 @@ from sqlmodel import SQLModel
 
 POSTGRES_TEST_URL_ENV = "NOJOIN_TEST_POSTGRES_URL"
 REPO_ROOT = Path(__file__).resolve().parents[2]
+ALEMBIC_INI = REPO_ROOT / "backend" / "alembic.ini"
 # A connection an earlier test left open can hold a lock on the tables a reset
 # empties. Fail the setup that waits on it rather than hang the suite.
 LOCK_TIMEOUT = "30s"
@@ -217,7 +218,7 @@ def _template(revision: str) -> str:
         admin.execute(f'CREATE DATABASE "{name}"')
     _templates[revision] = name
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", revision],
+        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), "upgrade", revision],
         cwd=REPO_ROOT,
         env={**os.environ, "DATABASE_URL": _psycopg_url(_admin_url(), name)},
         capture_output=True,

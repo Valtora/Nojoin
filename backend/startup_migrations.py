@@ -25,7 +25,7 @@ DOWN_REVISION_RE = re.compile(r"down_revision\s*(?::[^=]+)?=\s*(.+)")
 REVISION_ID_RE = re.compile(r"['\"]([0-9a-f]+)['\"]")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ALEMBIC_INI_PATH = REPO_ROOT / "alembic.ini"
+ALEMBIC_INI_PATH = REPO_ROOT / "backend" / "alembic.ini"
 ALEMBIC_VERSIONS_DIR = REPO_ROOT / "backend" / "alembic" / "versions"
 
 

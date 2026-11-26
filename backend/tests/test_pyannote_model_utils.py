@@ -1,10 +1,24 @@
 from __future__ import annotations
 
 from backend.utils.pyannote_model_utils import (
+    PYANNOTE_MODEL_ID_TO_DIRNAME,
     get_bundled_pyannote_models_root,
     is_repo_bundled_pyannote_path,
     resolve_local_pyannote_model,
 )
+
+
+def test_the_default_root_finds_every_model_the_repository_bundles(
+    monkeypatch,
+) -> None:
+    # A model missing from the bundled root falls back to the Hugging Face
+    # cache, then to a download, without an error, so a default root that no
+    # longer matches backend/bundled_models/ would go unnoticed.
+    monkeypatch.delenv("NOJOIN_PYANNOTE_MODELS_DIR", raising=False)
+
+    for model_id in PYANNOTE_MODEL_ID_TO_DIRNAME:
+        resolved = resolve_local_pyannote_model(model_id)
+        assert resolved.source == "bundled", resolved.checked_paths
 
 
 def test_resolve_local_pyannote_model_prefers_bundled_dir(

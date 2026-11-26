@@ -80,6 +80,7 @@ jobs:
               - '.github/workflows/ci.yml'
             migrations:
               - 'backend/alembic/**'
+              - 'backend/alembic.ini'
               - 'backend/models/**'
               - 'scripts/check_migrations.py'
             telemetry:

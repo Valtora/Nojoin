@@ -6,7 +6,7 @@ from regressing. Python is already covered by ``ruff format --check`` and the
 frontend by the ``no-trailing-spaces`` ESLint rule, but Markdown, YAML, shell,
 and config files have no other gate in CI, so this script covers everything.
 
-Vendored upstream model cards under ``bundled_models/`` are excluded: they are
+Vendored upstream model cards under ``backend/bundled_models/`` are excluded: they are
 third-party artefacts we do not reformat. Binary files are skipped.
 
     python scripts/check_whitespace.py
@@ -20,7 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Path prefixes that are tracked but not ours to reformat.
-EXCLUDED_PREFIXES = ("bundled_models/",)
+EXCLUDED_PREFIXES = ("backend/bundled_models/",)
 
 
 def tracked_files() -> list[str]:

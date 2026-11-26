@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import re
+import sys
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
 from backend import startup_migrations
@@ -38,6 +42,41 @@ def test_checked_in_migrations_have_single_head() -> None:
     heads = startup_migrations.get_head_revision_ids(versions_dir)
 
     assert len(heads) == 1, f"Expected a single migration head, found: {heads}"
+
+
+def test_alembic_config_runs_the_checked_in_chain_from_any_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # backend/alembic.ini resolves every path from its own location, so the
+    # entrypoint, scripts/check_migrations.py and a developer's shell agree on
+    # the chain and on where env.py imports backend.* from.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+
+    script = ScriptDirectory.from_config(
+        Config(str(startup_migrations.ALEMBIC_INI_PATH))
+    )
+
+    assert Path(script.dir).resolve() == startup_migrations.ALEMBIC_VERSIONS_DIR.parent
+    assert tuple(script.get_heads()) == startup_migrations.get_head_revision_ids()
+    assert Path(sys.path[0]).resolve() == startup_migrations.REPO_ROOT
+
+
+def test_the_api_image_points_the_alembic_cli_at_the_config() -> None:
+    # The release notes roll back with `docker compose exec api alembic
+    # downgrade <rev>`, which passes no `-c` and so relies on ALEMBIC_CONFIG.
+    dockerfile = startup_migrations.REPO_ROOT / "docker" / "Dockerfile.api"
+    match = re.search(
+        r"^ENV ALEMBIC_CONFIG=/app/(\S+)$",
+        dockerfile.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+
+    assert match is not None
+    assert (
+        startup_migrations.REPO_ROOT / match.group(1)
+        == startup_migrations.ALEMBIC_INI_PATH
+    )
 
 
 def test_repair_orphaned_revision_state_raises_when_auto_repair_disabled() -> None:

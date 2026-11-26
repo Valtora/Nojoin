@@ -49,7 +49,7 @@ def get_bundled_pyannote_models_root() -> Path:
             configured_path = path_manager.executable_directory / configured_path
         return configured_path
 
-    return path_manager.executable_directory / "bundled_models" / "pyannote"
+    return path_manager.executable_directory / "backend" / "bundled_models" / "pyannote"
 
 
 def _model_dirname(model_id: str) -> str | None:

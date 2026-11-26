@@ -16,7 +16,7 @@ MODEL_IDS = (
 
 def main() -> int:
     project_root = Path(__file__).resolve().parents[1]
-    target_root = project_root / "bundled_models" / "pyannote"
+    target_root = project_root / "backend" / "bundled_models" / "pyannote"
     target_root.mkdir(parents=True, exist_ok=True)
 
     token = os.getenv("HF_TOKEN", "").strip()
