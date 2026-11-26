@@ -1,11 +1,13 @@
 "use client";
 
-import { Trash2, UserPlus, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Plus, Search, Trash2, User, Users } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
+import { ButtonBase } from "@/components/ui/nativeBases";
 import {
   deleteShare,
   getGroupDirectory,
@@ -49,7 +51,7 @@ export default function ShareRecordingDialog({
   const [shares, setShares] = useState<RecordingShare[]>([]);
   const [people, setPeople] = useState<ShareUser[]>([]);
   const [groups, setGroups] = useState<DirectoryGroup[]>([]);
-  const [grantee, setGrantee] = useState("");
+  const [query, setQuery] = useState("");
   const [level, setLevel] = useState<ShareLevel>("edit");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,6 +87,18 @@ export default function ShareRecordingDialog({
   );
   const availablePeople = people.filter((person) => !sharedUserIds.has(person.id));
   const availableGroups = groups.filter((group) => !sharedGroups.has(group.name));
+  const needle = query.trim().toLowerCase();
+  const matchingPeople = availablePeople.filter(
+    (person) =>
+      !needle ||
+      person.username.toLowerCase().includes(needle) ||
+      (person.display_name ?? "").toLowerCase().includes(needle),
+  );
+  const matchingGroups = availableGroups.filter(
+    (group) => !needle || group.name.toLowerCase().includes(needle),
+  );
+  const nobodyElse = people.length === 0 && groups.length === 0;
+  const everyoneAdded = !nobodyElse && availablePeople.length === 0 && availableGroups.length === 0;
 
   const run = async (action: () => Promise<RecordingShare[]>) => {
     setBusy(true);
@@ -100,12 +114,9 @@ export default function ShareRecordingDialog({
     }
   };
 
-  const handleAdd = async () => {
-    if (!grantee) return;
-    const [kind, value] = [grantee.slice(0, grantee.indexOf(":")), grantee.slice(grantee.indexOf(":") + 1)];
-    const target = kind === "user" ? { user_id: Number(value) } : { group: value };
+  const add = async (target: { user_id: number } | { group: string }) => {
     if (await run(() => upsertShare(recordingId, target, level))) {
-      setGrantee("");
+      setQuery("");
     }
   };
 
@@ -122,54 +133,76 @@ export default function ShareRecordingDialog({
       }
     >
       <div className="space-y-5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <div className="min-w-0 flex-1">
-            <Select
-              label="Add people or a group"
-              value={grantee}
-              onChange={(event) => setGrantee(event.target.value)}
-              disabled={busy}
-            >
-              <option value="">Choose…</option>
-              {availablePeople.length > 0 ? (
-                <optgroup label="People">
-                  {availablePeople.map((person) => (
-                    <option key={person.id} value={`user:${person.id}`}>
-                      {userLabel(person)}
-                    </option>
+        {nobodyElse ? (
+          <p className="text-sm text-contrast-helper">
+            Nobody else has an account here yet. Once an administrator adds people, or
+            they sign in with single sign-on, you can share with them and with your
+            groups here.
+          </p>
+        ) : everyoneAdded ? (
+          <p className="text-sm text-contrast-helper">
+            Everyone you can share with already has access.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <Input
+                  type="search"
+                  aria-label="Search people and groups"
+                  placeholder="Search people and groups"
+                  iconLeft={<Search />}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  disabled={busy}
+                />
+              </div>
+              <div className="w-32 shrink-0">
+                <Select
+                  aria-label="Access for people you add"
+                  value={level}
+                  onChange={(event) => setLevel(event.target.value as ShareLevel)}
+                  disabled={busy}
+                >
+                  <option value="edit">{LEVEL_LABELS.edit}</option>
+                  <option value="view">{LEVEL_LABELS.view}</option>
+                </Select>
+              </div>
+            </div>
+            <div className="max-h-60 overflow-y-auto rounded-lg border border-surface-border">
+              {matchingPeople.length === 0 && matchingGroups.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-contrast-helper">
+                  No people or groups match &quot;{query.trim()}&quot;.
+                </p>
+              ) : (
+                <ul aria-label="People and groups you can add" className="divide-y divide-surface-border">
+                  {matchingPeople.map((person) => (
+                    <CandidateRow
+                      key={`user:${person.id}`}
+                      icon={<User aria-hidden="true" className="h-4 w-4" />}
+                      name={person.display_name || person.username}
+                      detail={person.display_name ? person.username : undefined}
+                      disabled={busy}
+                      onAdd={() => void add({ user_id: person.id })}
+                    />
                   ))}
-                </optgroup>
-              ) : null}
-              {availableGroups.length > 0 ? (
-                <optgroup label="Your groups">
-                  {availableGroups.map((group) => (
-                    <option key={group.name} value={`group:${group.name}`}>
-                      {group.name} ({group.member_count}{" "}
-                      {group.member_count === 1 ? "member" : "members"})
-                    </option>
+                  {matchingGroups.map((group) => (
+                    <CandidateRow
+                      key={`group:${group.name}`}
+                      icon={<Users aria-hidden="true" className="h-4 w-4" />}
+                      name={group.name}
+                      detail={`Group · ${group.member_count} ${
+                        group.member_count === 1 ? "member" : "members"
+                      }`}
+                      disabled={busy}
+                      onAdd={() => void add({ group: group.name })}
+                    />
                   ))}
-                </optgroup>
-              ) : null}
-            </Select>
+                </ul>
+              )}
+            </div>
           </div>
-          <Select
-            label="Access"
-            value={level}
-            onChange={(event) => setLevel(event.target.value as ShareLevel)}
-            disabled={busy}
-          >
-            <option value="edit">{LEVEL_LABELS.edit}</option>
-            <option value="view">{LEVEL_LABELS.view}</option>
-          </Select>
-          <Button
-            variant="primary"
-            onClick={() => void handleAdd()}
-            disabled={!grantee || busy}
-            iconLeft={<UserPlus aria-hidden="true" className="h-4 w-4" />}
-          >
-            Share
-          </Button>
-        </div>
+        )}
 
         {error ? (
           <p role="alert" className="text-sm text-status-danger-fg">
@@ -233,5 +266,42 @@ export default function ShareRecordingDialog({
         </p>
       </div>
     </Modal>
+  );
+}
+
+function CandidateRow({
+  icon,
+  name,
+  detail,
+  disabled,
+  onAdd,
+}: {
+  icon: ReactNode;
+  name: string;
+  detail?: string;
+  disabled: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <li>
+      <ButtonBase
+        type="button"
+        disabled={disabled}
+        onClick={onAdd}
+        aria-label={`Share with ${name}`}
+        className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-inset disabled:opacity-60"
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-inset text-contrast-icon-muted">
+          {icon}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm text-foreground">{name}</span>
+          {detail ? (
+            <span className="block truncate text-xs text-contrast-helper">{detail}</span>
+          ) : null}
+        </span>
+        <Plus aria-hidden="true" className="h-4 w-4 shrink-0 text-contrast-icon-muted" />
+      </ButtonBase>
+    </li>
   );
 }

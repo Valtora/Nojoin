@@ -43,10 +43,38 @@ describe("ShareRecordingDialog", () => {
     open();
 
     expect(await screen.findByText("rein")).toBeTruthy();
-    const options = screen.getAllByRole("option").map((option) => option.textContent);
-    expect(options).toContain("Harm (harm)");
-    expect(options).toContain("nolai (4 members)");
-    expect(options).not.toContain("rein");
+    expect(screen.getByRole("button", { name: "Share with Harm" })).toBeTruthy();
+    expect(screen.getByText("Group · 4 members")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Share with rein" })).toBeNull();
+  });
+
+  it("narrows the list to what the search matches", async () => {
+    api.listShares.mockResolvedValue([]);
+    api.getUserDirectory.mockResolvedValue([
+      { id: 3, username: "harm", display_name: "Harm" },
+      { id: 4, username: "bernard", display_name: "Bernard" },
+    ]);
+    api.getGroupDirectory.mockResolvedValue([{ name: "nolai", member_count: 4 }]);
+    open();
+
+    await screen.findByText("Only you.");
+    fireEvent.change(screen.getByLabelText("Search people and groups"), {
+      target: { value: "ber" },
+    });
+
+    expect(screen.getByRole("button", { name: "Share with Bernard" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Share with Harm" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Share with nolai" })).toBeNull();
+  });
+
+  it("says so when there is nobody else to share with", async () => {
+    api.listShares.mockResolvedValue([]);
+    api.getUserDirectory.mockResolvedValue([]);
+    api.getGroupDirectory.mockResolvedValue([]);
+    open();
+
+    expect(await screen.findByText(/Nobody else has an account here yet/)).toBeTruthy();
+    expect(screen.queryByLabelText("Search people and groups")).toBeNull();
   });
 
   it("shares with a group at the chosen level", async () => {
@@ -59,11 +87,10 @@ describe("ShareRecordingDialog", () => {
     open();
 
     await screen.findByText("Only you.");
-    fireEvent.change(screen.getByLabelText("Add people or a group"), {
-      target: { value: "group:nolai" },
+    fireEvent.change(screen.getByLabelText("Access for people you add"), {
+      target: { value: "view" },
     });
-    fireEvent.change(screen.getByLabelText("Access"), { target: { value: "view" } });
-    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    fireEvent.click(screen.getByRole("button", { name: "Share with nolai" }));
 
     await waitFor(() =>
       expect(api.upsertShare).toHaveBeenCalledWith(RECORDING, { group: "nolai" }, "view"),
