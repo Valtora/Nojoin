@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import UTC, datetime, timedelta, timezone
-from typing import Any, List, Optional
+from typing import Annotated, Any, List, Literal, Optional
 
 import aiofiles
 from fastapi import Depends, Header, HTTPException, Query, Request, Response, status
@@ -31,13 +31,24 @@ from backend.models.recording_public import (
     serialize_recording,
 )
 from backend.models.speaker import RecordingSpeaker
-from backend.models.tag import RecordingTag
+from backend.models.tag import RecordingTag, TagRead
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.live_ai_backoff import live_ai_notices
 from backend.services.calendar_link_service import (
     CANDIDATE_WINDOW_PADDING,
     score_event_match,
+)
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    access_levels_for,
+    accessible_recordings_filter,
+    owned_filter,
+    owner_reads,
+    require_recording,
+    resolve_grant,
+    shared_with_filter,
 )
 from backend.services.recording_search import (
     has_any_speaker,
@@ -48,6 +59,7 @@ from backend.services.recording_tag_reads import load_tags_by_recording
 from backend.services.timeline_note_service import (
     load_timeline_notes_list_signature_async,
 )
+from backend.services.user_identities import groups_of
 from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
@@ -82,6 +94,8 @@ RECORDING_AUDIO_UNAVAILABLE_DETAIL = (
     "backup taken without audio."
 )
 
+RecordingScope = Literal["all", "mine", "shared"]
+
 # Capture is still open, so the live view is watching for audio going missing.
 # A paused recording counts: it can be resumed, and the shortfall accrued before
 # the pause is still what the user needs told.
@@ -103,6 +117,7 @@ async def list_recordings_root(
     only_deleted: bool = Query(False, description="Only show deleted recordings"),
     status_filters: Optional[List[RecordingStatus]] = Query(None, alias="status"),
     user_filter: Optional[str] = Query(None, alias="user"),
+    scope: Annotated[RecordingScope, Query(description="all, mine or shared")] = "all",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -123,6 +138,7 @@ async def list_recordings_root(
         only_deleted=only_deleted,
         status_filters=status_filters,
         user_filter=user_filter,
+        scope=scope,
         db=db,
         current_user=current_user,
     )
@@ -143,17 +159,32 @@ async def list_recordings(
     only_deleted: bool = Query(False, description="Only show deleted recordings"),
     status_filters: Optional[List[RecordingStatus]] = Query(None, alias="status"),
     user_filter: Optional[str] = Query(None, alias="user"),
+    scope: Annotated[RecordingScope, Query(description="all, mine or shared")] = "all",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     List all recordings with optional search and filtering.
     By default, excludes archived and deleted recordings.
+
+    ``scope`` picks the caller's own meetings (``mine``), the ones shared with
+    them (``shared``) or both (``all``, the default). ``user=me`` means mine.
     """
     if user_filter is not None and user_filter != "me":
         raise HTTPException(status_code=400, detail="Only user=me is supported")
+    if user_filter == "me":
+        scope = "mine"
 
-    query = select(Recording).where(Recording.user_id == current_user.id)
+    if scope == "mine":
+        visibility = owned_filter(current_user)
+    else:
+        groups = await groups_of(db, current_user)
+        visibility = (
+            accessible_recordings_filter(current_user, groups)
+            if scope == "all"
+            else shared_with_filter(current_user, groups)
+        )
+    query = select(Recording).where(visibility)
 
     if status_filters:
         query = query.where(Recording.status.in_(list(status_filters)))
@@ -201,16 +232,21 @@ async def list_recordings(
 
     result = await db.execute(query)
     recordings = result.scalars().all()
-    # Every tag the meeting carries, not only those a tag filter matched.
+    # Every tag the caller put on the meeting, not only those a tag filter
+    # matched. Tags are personal, so a shared meeting shows the viewer's own.
     tags_by_recording = await load_tags_by_recording(
-        db, [recording.id for recording in recordings]
+        db, [recording.id for recording in recordings], user_id=current_user.id
     )
+    levels = await access_levels_for(db, recordings, current_user)
+    owners = await owner_reads(db, recordings, current_user)
     return [
         serialize_recording(
             recording,
             has_proxy=_recording_has_proxy(recording),
             has_audio=_recording_has_audio(recording),
             tags_override=tags_by_recording.get(recording.id, []),
+            access=levels[recording.id].label,
+            owner=owners.get(recording.user_id),
         )
         for recording in recordings
     ]
@@ -306,7 +342,7 @@ async def get_recordings_calendar(
     month_end = month_end_local.astimezone(UTC).replace(tzinfo=None)
 
     query = select(Recording.created_at).where(
-        Recording.user_id == current_user.id,
+        accessible_recordings_filter(current_user, await groups_of(db, current_user)),
         Recording.is_deleted == False,
         Recording.is_archived == False,
         Recording.created_at >= month_start,
@@ -351,22 +387,27 @@ def _recording_etag(
 
 
 async def _unchanged_since(
-    db: AsyncSession, recording_id: str, user_id: int, if_none_match: str
+    db: AsyncSession, recording_id: str, user: User, if_none_match: str
 ) -> str | None:
     """The current ETag when the caller already holds it, read without the body."""
-    row = (
-        await db.execute(
-            select(
-                Recording.status,
-                Transcript.change_sequence,
-                Transcript.notes_status,
-                Transcript.updated_at,
-            )
-            .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
-            .where(Recording.public_id == recording_id)
-            .where(Recording.user_id == user_id)
+    statement = (
+        select(
+            Recording.status,
+            Transcript.change_sequence,
+            Transcript.notes_status,
+            Transcript.updated_at,
         )
-    ).first()
+        .outerjoin(Transcript, col(Transcript.recording_id) == Recording.id)
+        .where(Recording.public_id == recording_id)
+    )
+    # The owner's own meeting first, as before sharing; shares only otherwise.
+    row = (await db.execute(statement.where(Recording.user_id == user.id))).first()
+    if row is None:
+        row = (
+            await db.execute(
+                statement.where(shared_with_filter(user, await groups_of(db, user)))
+            )
+        ).first()
     if row is None:
         return None
     etag = _recording_etag(*row)
@@ -381,6 +422,7 @@ async def get_recording(
     if_none_match: Optional[str] = Header(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Get a specific recording by ID with all relationships loaded.
@@ -390,16 +432,18 @@ async def get_recording(
     and gets a 304 until one of them moves. no-store keeps browsers from revalidating ordinary
     reads with it.
     """
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
     if if_none_match is not None:
-        etag = await _unchanged_since(db, recording_id, current_user.id, if_none_match)
+        etag = await _unchanged_since(db, recording_id, current_user, if_none_match)
         if etag is not None:
             return Response(
                 status_code=304, headers={"ETag": etag, "Cache-Control": "no-store"}
             )
     statement = (
         select(Recording)
-        .where(Recording.public_id == recording_id)
-        .where(Recording.user_id == current_user.id)
+        .where(Recording.id == grant.recording.id)
         .options(
             selectinload(Recording.transcript),
             selectinload(Recording.speakers).options(
@@ -552,6 +596,14 @@ async def get_recording(
         captured_audio_seconds=captured_audio_seconds,
         live_audio_ms=live_audio_ms,
         timeline_notes_list_signature=timeline_notes_list_signature,
+        # Tags are personal: the viewer's own, on their own meetings too.
+        tags_override=[
+            TagRead.model_validate(link.tag)
+            for link in recording.tags
+            if link.tag is not None and link.tag.user_id == current_user.id
+        ],
+        access=grant.access.label,
+        owner=(await owner_reads(db, [recording], current_user)).get(recording.user_id),
     )
     if recording.status in _LIVE_AI_STATUSES:
         notices = await run_in_threadpool(
@@ -568,11 +620,15 @@ async def get_recording_info(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ) -> Any:
     """
     Get detailed technical info about the recording audio file.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     from backend.processing.audio_preprocessing import analyze_audio_file
 
@@ -595,11 +651,15 @@ async def stream_recording(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_stream),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Stream the audio file for a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     file_path = confined_recording_path(recording.proxy_path)
     if not file_path or not os.path.exists(file_path):

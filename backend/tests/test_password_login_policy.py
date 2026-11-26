@@ -98,9 +98,7 @@ async def test_registration_closes_unless_password_login_is_enabled(
 @pytest.mark.anyio
 async def test_sso_accounts_cannot_get_a_password(harness, policy) -> None:
     policy(None)
-    sso_user = await harness.add_user(
-        "alice", auth_source="oidc", oidc_issuer="i", oidc_subject="s"
-    )
+    sso_user = await harness.add_user("alice", sso_created=True)
     async with harness.client(sso_user) as client:
         response = await client.put(
             "/api/v1/users/me/password",

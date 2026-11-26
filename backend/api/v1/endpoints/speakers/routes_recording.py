@@ -26,6 +26,12 @@ from backend.processing.embedding import (
     lock_blocks_user_link,
     offer_linked_voiceprint,
 )
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.canonical_pipeline import (
     list_merged_recording_speakers,
     record_recording_speaker_corrections,
@@ -598,12 +604,16 @@ async def get_merged_recording_speakers(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     List the clusters processing merged into other speakers, with how many
     lines an unmerge would give back to each.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     if not (
         _canonical_transcript_writes_enabled()
         and speakers_module.recording_ready_for_canonical_backfill(recording.status)

@@ -33,6 +33,7 @@ from backend.core import security
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.models.user_identity import UserIdentity
 
 for _module in pkgutil.iter_modules(backend.models.__path__):
     importlib.import_module(f"backend.models.{_module.name}")
@@ -77,18 +78,33 @@ class Harness:
         *,
         role: str = "user",
         groups: Optional[list[str]] = None,
+        display_name: Optional[str] = None,
+        sso_created: bool = False,
         **extra: Any,
     ) -> User:
+        """A user; with ``groups``, ``display_name`` or ``sso_created`` also a
+        linked identity at the provider."""
         async with self.session_maker() as session:
             user = User(
                 username=username,
                 hashed_password=security.get_password_hash("correct horse battery"),
                 role=role,
                 legal_accepted_at=None if extra.pop("needs_legal", False) else _now(),
-                oidc_groups=groups or [],
                 **extra,
             )
             session.add(user)
+            await session.flush()
+            if groups is not None or display_name is not None or sso_created:
+                session.add(
+                    UserIdentity(
+                        user_id=user.id,
+                        issuer="https://idp.test/",
+                        subject=f"sub-{username}",
+                        display_name=display_name,
+                        groups=groups or [],
+                        created_account=sso_created,
+                    )
+                )
             await session.commit()
             await session.refresh(user)
             return user

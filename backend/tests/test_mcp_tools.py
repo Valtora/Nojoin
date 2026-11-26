@@ -72,6 +72,7 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    SHARING_SCHEMAS,
     SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
 )
@@ -491,6 +492,8 @@ async def session_maker():
     )
     async with engine.begin() as conn:
         for stmt in SCHEMA_STATEMENTS:
+            await conn.execute(text(stmt))
+        for stmt in SHARING_SCHEMAS:
             await conn.execute(text(stmt))
         await conn.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
         await conn.execute(text(SPEAKER_NAME_EVENTS_SCHEMA))

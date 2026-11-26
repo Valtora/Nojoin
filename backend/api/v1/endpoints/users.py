@@ -1,8 +1,9 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
@@ -20,7 +21,6 @@ from backend.core.security import hash_user_password, verify_password
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.models.user import (
-    AuthSource,
     User,
     UserCreate,
     UserList,
@@ -29,8 +29,15 @@ from backend.models.user import (
     UserRole,
     UserUpdate,
 )
+from backend.models.user_identity import UserIdentity
 from backend.seed_demo import seed_demo_data
 from backend.services.jwt_revocation_service import bump_user_token_version
+from backend.services.user_identities import (
+    display_names,
+    groups_of,
+    has_no_password,
+    identity_of,
+)
 from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
@@ -242,6 +249,72 @@ async def register_user(
         logger.warning(f"Failed to seed demo data: {e}")
 
     return user
+
+
+class DirectoryUserRead(BaseModel):
+    id: int
+    username: str
+    display_name: Optional[str] = None
+
+
+class DirectoryGroupRead(BaseModel):
+    name: str
+    member_count: int
+
+
+@router.get("/directory", response_model=List[DirectoryUserRead])
+async def read_user_directory(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Active users other than the caller, for picking whom to share with.
+
+    Any signed-in user may read it: sharing a meeting needs to know who else
+    is on the install. It carries names only, never roles, emails or groups.
+    """
+    rows = (
+        await db.execute(
+            select(User.id, User.username)
+            .where(User.is_active == True, User.id != current_user.id)  # noqa: E712
+            .order_by(User.username)
+        )
+    ).all()
+    names = await display_names(db, [user_id for user_id, _ in rows])
+    return [
+        DirectoryUserRead(
+            id=user_id, username=username, display_name=names.get(user_id)
+        )
+        for user_id, username in rows
+    ]
+
+
+@router.get("/directory/groups", response_model=List[DirectoryGroupRead])
+async def read_group_directory(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """The identity-provider groups the caller belongs to, with member counts.
+
+    Only the caller's own groups: sharing with a group one is not in would
+    reveal meetings to people the sharer cannot see, and listing every group
+    would show the provider's group structure to anyone signed in.
+    """
+    own_groups = sorted(set(await groups_of(db, current_user)))
+    if not own_groups:
+        return []
+    rows = await db.execute(
+        select(UserIdentity.groups)
+        .join(User, col(User.id) == col(UserIdentity.user_id))
+        .where(User.is_active == True)  # noqa: E712
+    )
+    counts = dict.fromkeys(own_groups, 0)
+    for (groups,) in rows.all():
+        for group in set(groups or []):
+            if group in counts:
+                counts[group] += 1
+    return [
+        DirectoryGroupRead(name=name, member_count=counts[name]) for name in own_groups
+    ]
 
 
 @router.get("", response_model=UserList)
@@ -463,14 +536,39 @@ async def update_user_role(
     return user
 
 
-@router.get("/me", response_model=UserRead)
+class UserMeRead(UserRead):
+    """The signed-in user, with how they relate to the identity provider."""
+
+    auth_source: str = "local"
+    oidc_linked: bool = False
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    oidc_groups: List[str] = []
+
+
+@router.get("/me", response_model=UserMeRead)
 async def read_user_me(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
     Get current user.
     """
-    return current_user
+    assert current_user.id is not None
+    identity = await identity_of(db, current_user.id)
+    base = UserRead.model_validate(current_user).model_dump(
+        exclude={"legal_acceptance_required"}
+    )
+    if identity is None:
+        return UserMeRead(**base)
+    return UserMeRead(
+        **base,
+        auth_source="oidc" if identity.created_account else "local",
+        oidc_linked=True,
+        display_name=identity.display_name,
+        email=identity.email,
+        oidc_groups=list(identity.groups or []),
+    )
 
 
 @router.put("/me", response_model=UserRead)
@@ -552,7 +650,8 @@ async def update_password_me(
     """
     Update own password.
     """
-    if current_user.auth_source == AuthSource.OIDC:
+    assert current_user.id is not None
+    if await has_no_password(db, current_user.id):
         raise HTTPException(status_code=403, detail=SSO_ACCOUNT_PASSWORD_DETAIL)
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect password")
@@ -605,7 +704,7 @@ async def update_user(
         user.username = user_in.username
 
     bump_required = False
-    if user_in.password and user.auth_source == AuthSource.OIDC:
+    if user_in.password and await has_no_password(db, user_id):
         raise HTTPException(status_code=400, detail=SSO_ACCOUNT_PASSWORD_DETAIL)
     if user_in.password:
         user.hashed_password = hash_user_password(user_in.password)

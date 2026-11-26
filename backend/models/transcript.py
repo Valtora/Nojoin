@@ -41,17 +41,6 @@ class Transcript(BaseDBModel, table=True):
         default=None, sa_column=Column(JSONB)
     )
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
-    # Bumped by every change to ``notes`` (backend/utils/notes_revision.py), so
-    # people editing a shared meeting's notes at once get a conflict instead
-    # of silently overwriting each other. ``notes_edited_by_user_id`` is who
-    # made the last hand edit; generated notes clear it.
-    notes_revision: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
-    notes_edited_by_user_id: Optional[int] = Field(
-        default=None,
-        sa_column=Column(
-            BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-        ),
-    )
     meeting_edge_focus: Optional[str] = Field(default=None, sa_column=Column(Text))
     meeting_edge_payload: Optional[Dict[str, Any]] = Field(
         default=None, sa_column=Column(JSONB)

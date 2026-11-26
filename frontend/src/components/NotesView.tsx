@@ -61,6 +61,13 @@ interface NotesViewProps {
   isGenerating: boolean;
   onExport: () => void;
   disableExport?: boolean;
+  /**
+   * Whether generating notes with AI is offered. Off for a meeting shared
+   * with the caller: generation runs on the owner's AI settings and quota.
+   */
+  canGenerate?: boolean;
+  /** Notes are shown but not edited: a meeting shared with the caller to view. */
+  readOnly?: boolean;
 }
 
 export default function NotesView({
@@ -76,6 +83,8 @@ export default function NotesView({
   isGenerating,
   onExport,
   disableExport = false,
+  canGenerate = true,
+  readOnly = false,
 }: NotesViewProps) {
   const displayNotes = toDisplayNotes(notes);
   const generateNotesLabel = displayNotes
@@ -484,6 +493,7 @@ export default function NotesView({
             {/* Segmented control. items-stretch so the picker matches the main
                 button's height: its icon is shorter than the button's text line,
                 so equal padding alone leaves the two a few pixels apart. */}
+            {canGenerate ? (
             <div className="flex items-stretch">
               <ButtonBase
                 data-ui-fill="action"
@@ -506,6 +516,7 @@ export default function NotesView({
                 onSelect={(templateId) => onGenerateNotes(templateId)}
               />
             </div>
+            ) : null}
             <div className="w-px h-4 bg-surface-card mx-1" />
             <ButtonBase
               onClick={onUndo}
@@ -726,14 +737,17 @@ export default function NotesView({
               content={localNotes}
               onChange={handleEditorChange}
               onEditorReady={setEditor}
-              // The public demo cannot save, so its notes are read-only.
-              editable={!DEMO_MODE}
+              // The public demo cannot save, so its notes are read-only, as
+              // they are for someone the meeting is shared with to view.
+              editable={!DEMO_MODE && !readOnly}
             />
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center text-contrast-helper">
             <Sparkles className="w-12 h-12 mb-4 opacity-20" />
             <p className="text-lg mb-2">No meeting notes yet</p>
+            {canGenerate ? (
+            <>
             <p className="text-sm mb-4">
               Click &quot;Generate Notes&quot; to create AI-powered meeting
               notes from the transcript.
@@ -751,6 +765,10 @@ export default function NotesView({
               )}
               {isGenerating ? "Generating..." : generateNotesLabel}
             </ButtonBase>
+            </>
+            ) : (
+              <p className="text-sm mb-4">The meeting&apos;s owner has not generated notes yet.</p>
+            )}
           </div>
         )}
       </div>

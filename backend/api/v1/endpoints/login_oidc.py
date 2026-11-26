@@ -34,6 +34,7 @@ from backend.core.oidc_config import (
 from backend.models.user import User
 from backend.services import oidc_accounts, oidc_service
 from backend.services.oidc_service import OIDCError
+from backend.services.user_identities import identity_of
 from backend.utils.rate_limit import enforce_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -111,9 +112,11 @@ async def oidc_start(next: Optional[str] = Query(default=None)) -> RedirectRespo
 @router.post("/login/oidc/link")
 async def oidc_link(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     settings = _require_settings()
-    if current_user.oidc_subject is not None:
+    assert current_user.id is not None
+    if await identity_of(db, current_user.id) is not None:
         raise HTTPException(status_code=409, detail="sso_already_linked")
     try:
         start = await oidc_service.begin_login(

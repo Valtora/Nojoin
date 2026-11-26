@@ -2,8 +2,9 @@
 
 import { InputBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { ArrowLeft, Edit2, MoreHorizontal } from "lucide-react";
-import type { ReactNode, RefObject } from "react";
+import { ArrowLeft, Edit2, LogOut, MoreHorizontal, Share2 } from "lucide-react";
+import { useState, type ReactNode, type RefObject } from "react";
+import { useRouter } from "next/navigation";
 
 import IconButton from "@/components/ui/IconButton";
 
@@ -11,7 +12,13 @@ import AudioPlayer from "@/components/AudioPlayer";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
 import FitText from "@/components/ui/FitText";
+import ShareRecordingDialog from "@/components/ShareRecordingDialog";
+import Button from "@/components/ui/Button";
+import { leaveShare } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import { isImeComposing } from "@/lib/imeComposition";
+import { useNotificationStore } from "@/lib/notificationStore";
+import { canEditRecording, ownerLabel, ownsRecording } from "@/lib/sharing/access";
 import { Recording, RecordingStatus } from "@/types";
 
 interface RecordingHeaderProps {
@@ -55,6 +62,57 @@ export default function RecordingHeader({
   onPlay,
   onPause,
 }: RecordingHeaderProps) {
+  const router = useRouter();
+  const { addNotification } = useNotificationStore();
+  const [shareOpen, setShareOpen] = useState(false);
+  const owner = ownsRecording(recording);
+  const canEdit = canEditRecording(recording);
+  // Renaming changes the meeting for everyone it is shared with.
+  const startRename = () => {
+    if (canEdit) setIsEditingTitle(true);
+  };
+
+  const handleLeave = async () => {
+    try {
+      await leaveShare(recording.id);
+      router.push("/");
+    } catch (error: unknown) {
+      addNotification({
+        type: "error",
+        message: getErrorMessage(
+          error,
+          "This meeting was shared with a group you are in, so only its owner can remove you.",
+        ),
+      });
+    }
+  };
+
+  const sharingControl = owner ? (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={() => setShareOpen(true)}
+      iconLeft={<Share2 aria-hidden="true" className="h-4 w-4" />}
+    >
+      Share
+    </Button>
+  ) : (
+    <span className="inline-flex items-center gap-2 text-sm text-contrast-helper">
+      <span>
+        Shared by {ownerLabel(recording)}
+        {recording.access === "view" ? " · view only" : ""}
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => void handleLeave()}
+        iconLeft={<LogOut aria-hidden="true" className="h-4 w-4" />}
+      >
+        Leave
+      </Button>
+    </span>
+  );
+
   const renderMobileHeaderActions = () => (
     <div className="flex flex-wrap items-center gap-2">
       <RecordingTagEditor
@@ -63,12 +121,15 @@ export default function RecordingHeader({
         compact
         onTagsUpdated={onRefresh}
       />
-      <LinkedEventPanel
-        recordingId={recording.id}
-        linkedEvent={recording.calendar_event}
-        compact
-        onLinkChanged={onRefresh}
-      />
+      {owner ? (
+        <LinkedEventPanel
+          recordingId={recording.id}
+          linkedEvent={recording.calendar_event}
+          compact
+          onLinkChanged={onRefresh}
+        />
+      ) : null}
+      {sharingControl}
     </div>
   );
 
@@ -138,13 +199,13 @@ export default function RecordingHeader({
               ) : (
                 <h1
                   className="mt-1 flex cursor-pointer items-start gap-2 font-bold leading-[1.2] text-foreground hover:text-action-text group"
-                  onClick={() => setIsEditingTitle(true)}
-                  title="Click to rename"
+                  onClick={startRename}
+                  title={canEdit ? "Click to rename" : undefined}
                 >
                   <FitText maxRem={1.125} minRem={1} className="flex-1">
                     {recording?.name ?? ""}
                   </FitText>
-                  <Edit2 className="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
+                  {canEdit ? <Edit2 className="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" /> : null}
                 </h1>
               )}
             </div>
@@ -178,13 +239,13 @@ export default function RecordingHeader({
             ) : (
               <h1
                 className="group mb-2 flex cursor-pointer items-start gap-2 font-bold leading-[1.15] text-foreground hover:text-action-text"
-                onClick={() => setIsEditingTitle(true)}
-                title="Click to rename"
+                onClick={startRename}
+                title={canEdit ? "Click to rename" : undefined}
               >
                 <FitText maxRem={1.5} minRem={1.0625} className="flex-1">
                   {recording?.name ?? ""}
                 </FitText>
-                <Edit2 className="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
+                {canEdit ? <Edit2 className="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" /> : null}
               </h1>
             )}
 
@@ -196,11 +257,14 @@ export default function RecordingHeader({
               tags={recording.tags || []}
               onTagsUpdated={onRefresh}
             />
-            <LinkedEventPanel
-              recordingId={recording.id}
-              linkedEvent={recording.calendar_event}
-              onLinkChanged={onRefresh}
-            />
+            {owner ? (
+              <LinkedEventPanel
+                recordingId={recording.id}
+                linkedEvent={recording.calendar_event}
+                onLinkChanged={onRefresh}
+              />
+            ) : null}
+            {sharingControl}
           </div>
         </div>
       )}
@@ -221,6 +285,14 @@ export default function RecordingHeader({
             compact={isMobile}
           />
         ))}
+      {owner ? (
+        <ShareRecordingDialog
+          recordingId={recording.id}
+          recordingName={recording.name}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+        />
+      ) : null}
     </header>
   );
 }

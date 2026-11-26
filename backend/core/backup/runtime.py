@@ -31,6 +31,7 @@ from backend.models.document_page import DocumentPage  # noqa: F401
 from backend.models.notes_template import NotesTemplate  # noqa: F401
 from backend.models.people_tag import PeopleTag, PeopleTagLink  # noqa: F401
 from backend.models.recording import Recording  # noqa: F401
+from backend.models.recording_share import RecordingShare  # noqa: F401
 from backend.models.speaker import (  # noqa: F401
     GlobalSpeaker,
     RecordingSpeaker,
@@ -41,11 +42,15 @@ from backend.models.task import UserTask, UserTaskRecording, UserTaskTag  # noqa
 from backend.models.timeline_note import TimelineNote, TimelineNoteTombstone
 from backend.models.transcript import Transcript  # noqa: F401
 from backend.models.user import User  # noqa: F401
+from backend.models.user_identity import UserIdentity  # noqa: F401
 from backend.utils.path_manager import PathManager  # noqa: F401
 from backend.utils.version import get_installed_version
 
 MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("users", User),
+    # Kept so an SSO user signing in after a restore lands on their restored
+    # account, rather than the provider creating a second one beside it.
+    ("user_identities", UserIdentity),
     # Ahead of transcripts, which reference a template as provenance.
     ("notes_templates", NotesTemplate),
     ("calendar_provider_configs", CalendarProviderConfig),
@@ -59,6 +64,7 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("tags", Tag),
     ("user_task_tags", UserTaskTag),
     ("recordings", Recording),
+    ("recording_shares", RecordingShare),
     ("user_task_recordings", UserTaskRecording),
     ("recording_speakers", RecordingSpeaker),
     ("recording_speaker_drift_refusals", RecordingSpeakerDriftRefusal),

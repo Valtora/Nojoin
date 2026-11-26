@@ -1,16 +1,11 @@
-"""Add recording_shares and the notes revision columns.
+"""Add recording_shares.
 
 ``recording_shares`` grants a user, or every member of an identity-provider
 group, ``view`` or ``edit`` access to a recording. The owner is never a row.
 Exactly one of ``user_id`` and ``group_name`` is set; each grantee appears at
 most once per recording (partial unique indexes).
 
-``transcripts.notes_revision`` counts changes to the notes, so concurrent
-editors of a shared meeting get a conflict instead of a silent overwrite.
-``notes_edited_by_user_id`` is who made the last hand edit.
-
-No backfill: nothing is shared yet, and every existing transcript starts at
-revision 0.
+No backfill: nothing is shared yet.
 
 Revision ID: 3885627f5053
 Revises: 04b28b70a1fb
@@ -72,32 +67,8 @@ def upgrade() -> None:
         postgresql_where=sa.text("group_name IS NOT NULL"),
     )
 
-    op.add_column(
-        "transcripts",
-        sa.Column("notes_revision", sa.Integer(), nullable=False, server_default="0"),
-    )
-    op.add_column(
-        "transcripts",
-        sa.Column("notes_edited_by_user_id", sa.BigInteger(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_transcripts_notes_edited_by_user_id_users",
-        "transcripts",
-        "users",
-        ["notes_edited_by_user_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
-
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "fk_transcripts_notes_edited_by_user_id_users",
-        "transcripts",
-        type_="foreignkey",
-    )
-    op.drop_column("transcripts", "notes_edited_by_user_id")
-    op.drop_column("transcripts", "notes_revision")
     op.drop_index("uq_recording_shares_group", table_name="recording_shares")
     op.drop_index("uq_recording_shares_user", table_name="recording_shares")
     op.drop_index("ix_recording_shares_group_name", table_name="recording_shares")

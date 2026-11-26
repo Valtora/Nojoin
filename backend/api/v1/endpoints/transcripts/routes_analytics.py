@@ -17,6 +17,12 @@ from backend.services.ai_analysis_budget import (
 )
 from backend.services.meeting_analytics import compute_recording_analytics
 from backend.services.meeting_analytics.live import compute_live_recording_analytics
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.analytics_preferences import is_auto_remeasure_delivery_enabled
 from backend.utils.canonical_pipeline import (
     ensure_canonical_backfill,
@@ -108,9 +114,13 @@ async def get_live_recording_analytics(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ) -> LiveRecordingAnalyticsRead:
     """Transcript estimates with no backfill, audio work or analysis budget."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     transcript = await _get_recording_transcript(db, recording.id)
     payload = await db.run_sync(
         lambda session: compute_live_recording_analytics(session, recording, transcript)
@@ -244,6 +254,7 @@ async def get_recording_analytics(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """Deterministic meeting analytics for a processed recording.
 
@@ -253,7 +264,10 @@ async def get_recording_analytics(
     merge or transcript edit is reflected on the next read with no
     invalidation path to get wrong.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     _require_final_analytics(recording)
     transcript = await _get_recording_transcript(db, recording.id)
 

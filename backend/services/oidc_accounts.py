@@ -1,11 +1,11 @@
 """Map a verified OpenID Connect identity to a Nojoin account.
 
-An identity is matched by ``(issuer, subject)`` and nothing else. It is never
-attached to an existing account because a username or email matches: many
-providers let users choose those, and matching on them would let anyone who
-can register at the provider take over the account with that name, the owner's
-included. A local account is linked to an identity only by its signed-in user
-starting the flow in link mode.
+An identity is matched by ``(issuer, subject)`` in ``user_identities`` and
+nothing else. It is never attached to an existing account because a username
+or email matches: many providers let users choose those, and matching on them
+would let anyone who can register at the provider take over the account with
+that name, the owner's included. A local account is linked to an identity only
+by its signed-in user starting the flow in link mode.
 """
 
 from __future__ import annotations
@@ -20,9 +20,12 @@ from sqlmodel import select
 
 from backend.core import security
 from backend.core.oidc_config import OIDCSettings
-from backend.models.user import AuthSource, User, UserRole
+from backend.models.user import User, UserRole
+from backend.models.user_identity import UserIdentity
 from backend.services.jwt_revocation_service import bump_user_token_version
 from backend.services.oidc_service import OIDCError, VerifiedIdentity
+from backend.services.user_identities import forget_cached_groups, identity_of
+from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +72,11 @@ def _role_from_groups(
 
 async def _find_by_identity(
     db: AsyncSession, identity: VerifiedIdentity
-) -> Optional[User]:
+) -> Optional[UserIdentity]:
     result = await db.execute(
-        select(User).where(
-            User.oidc_issuer == identity.issuer,
-            User.oidc_subject == identity.subject,
+        select(UserIdentity).where(
+            UserIdentity.issuer == identity.issuer,
+            UserIdentity.subject == identity.subject,
         )
     )
     return result.scalar_one_or_none()
@@ -83,30 +86,58 @@ async def _link_identity(
     db: AsyncSession,
     identity: VerifiedIdentity,
     *,
-    existing: Optional[User],
+    existing: Optional[UserIdentity],
     link_user_id: Optional[int],
-) -> User:
+) -> tuple[User, UserIdentity]:
     """Attach ``identity`` to the signed-in account that started a link."""
     if link_user_id is None:
         raise OIDCError("sso_state", "Link mode without a signed-in user")
     target = await db.get(User, link_user_id)
     if target is None or not target.is_active:
         raise OIDCError("sso_no_account", "The account to link no longer exists")
-    if existing is not None and existing.id != target.id:
+    assert target.id is not None
+    if existing is not None and existing.user_id != target.id:
         raise OIDCError(
             "sso_identity_in_use",
             "That identity is already linked to another account",
         )
-    if target.oidc_subject is not None and (
-        target.oidc_issuer != identity.issuer or target.oidc_subject != identity.subject
-    ):
+    if existing is not None:
+        return target, existing
+    if await identity_of(db, target.id) is not None:
         raise OIDCError(
             "sso_already_linked", "This account is linked to another identity"
         )
-    target.oidc_issuer = identity.issuer
-    target.oidc_subject = identity.subject
     logger.info("Linked user %s to an OIDC identity", target.id)
-    return target
+    return target, UserIdentity(
+        user_id=target.id,
+        issuer=identity.issuer,
+        subject=identity.subject,
+        created_account=False,
+    )
+
+
+async def _create_account(
+    db: AsyncSession, settings: OIDCSettings, identity: VerifiedIdentity
+) -> tuple[User, UserIdentity]:
+    if not settings.auto_create:
+        raise OIDCError(
+            "sso_no_account", "No account is linked and auto-create is off"
+        )
+    user = User(
+        username=await _free_username(db, _username_base(identity)),
+        hashed_password=_unusable_password_hash(),
+        role=UserRole.USER.value,
+    )
+    db.add(user)
+    await db.flush()
+    assert user.id is not None
+    logger.info("Created an account from an OIDC sign-in: %s", user.username)
+    return user, UserIdentity(
+        user_id=user.id,
+        issuer=identity.issuer,
+        subject=identity.subject,
+        created_account=True,
+    )
 
 
 async def resolve_user(
@@ -129,41 +160,35 @@ async def resolve_user(
             f"Subject {identity.subject!r} is in none of the allowed groups",
         )
 
-    user = await _find_by_identity(db, identity)
-
+    existing = await _find_by_identity(db, identity)
     if mode == "link":
-        user = await _link_identity(
-            db, identity, existing=user, link_user_id=link_user_id
+        user, row = await _link_identity(
+            db, identity, existing=existing, link_user_id=link_user_id
         )
-    elif user is None:
-        if not settings.auto_create:
-            raise OIDCError(
-                "sso_no_account", "No account is linked and auto-create is off"
-            )
-        user = User(
-            username=await _free_username(db, _username_base(identity)),
-            hashed_password=_unusable_password_hash(),
-            role=UserRole.USER.value,
-            auth_source=AuthSource.OIDC.value,
-            oidc_issuer=identity.issuer,
-            oidc_subject=identity.subject,
-        )
-        db.add(user)
-        logger.info("Created an account from an OIDC sign-in: %s", user.username)
+    elif existing is not None:
+        found = await db.get(User, existing.user_id)
+        if found is None:
+            raise OIDCError("sso_no_account", "The linked account no longer exists")
+        user, row = found, existing
+    else:
+        user, row = await _create_account(db, settings, identity)
 
     if not user.is_active:
         raise OIDCError("sso_inactive", "The account is deactivated")
 
-    user.email = identity.email
-    user.display_name = identity.display_name
-    user.oidc_groups = list(identity.groups)
+    row.email = identity.email
+    row.display_name = identity.display_name
+    row.groups = list(identity.groups)
+    row.last_sign_in_at = utc_now()
+    db.add(row)
+    forget_cached_groups(user)
+
     new_role = _role_from_groups(user, identity.groups, settings)
     role_changed = new_role != user.role
     user.role = new_role
-
     db.add(user)
     await db.flush()
-    if role_changed and user.id is not None:
+    if role_changed:
         # Sessions minted under the old role stop working; the one about to be
         # issued carries the new version.
         await bump_user_token_version(db, user, commit=False)

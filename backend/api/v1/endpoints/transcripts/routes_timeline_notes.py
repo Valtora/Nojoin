@@ -51,6 +51,12 @@ from backend.models.timeline_note_public import (
 )
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.services.timeline_note_service import (
     load_attachments_async,
     load_author_names_async,
@@ -103,6 +109,29 @@ def _refused(
         status_code=status_code,
         detail={"code": code.value, "message": message, **extra},
     )
+
+
+def _recording_not_found() -> HTTPException:
+    return _refused(
+        404, TimelineNoteErrorCode.RECORDING_NOT_FOUND, RECORDING_NOT_FOUND_DETAIL
+    )
+
+
+def _note_recording(need: Access):
+    """require_recording; _resolve_note_grant keeps the notes' own 404."""
+    return require_recording(need)
+
+
+async def _resolve_note_grant(grant, db, recording_id, user) -> RecordingGrant:
+    """resolve_grant, keeping the notes' own 404 for a direct caller too."""
+    try:
+        return await resolve_grant(
+            grant, db, recording_id, user, owned=_get_owned_recording
+        )
+    except HTTPException as refusal:
+        if refusal.status_code == status.HTTP_404_NOT_FOUND:
+            raise _recording_not_found() from refusal
+        raise
 
 
 def _token(value: UUID | None) -> str | None:
@@ -436,9 +465,11 @@ async def list_timeline_notes(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(_note_recording(Access.VIEW)),
 ):
     """Every note on the recording, in timeline order."""
-    recording = await _owned_recording(db, recording_id, current_user.id)
+    grant = await _resolve_note_grant(grant, db, recording_id, current_user)
+    recording = grant.recording
     return serialize_recording_timeline_notes(
         await load_recording_timeline_notes_async(db, recording.id, with_files=True),
         recording_public_id=recording.public_id,

@@ -1,6 +1,7 @@
 "use client";
 
 import { ButtonBase } from "@/components/ui/nativeBases";
+import { canEditRecording } from "@/lib/sharing/access";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
@@ -174,8 +175,8 @@ export default function RecordingPage({ params }: PageProps) {
     onSpeakerRenamed={handleSpeakerRenamed}
     onPeopleChanged={refreshPeople}
     onShowTranscript={showTranscript}
-    readOnly={!isLiveCaptureInProgress(recording) && (showCaptureSlot ||
-      (hasRetainedPublication && (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0)))}
+    readOnly={!canEditRecording(recording) || (!isLiveCaptureInProgress(recording) && (showCaptureSlot ||
+      (hasRetainedPublication && (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0))))}
   />;
   const myNotesContent = <RecordingMyNotes
     recording={recording}

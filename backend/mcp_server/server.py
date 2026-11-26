@@ -369,6 +369,9 @@ async def list_recordings(
             only_deleted=False,
             status_filters=None,
             user_filter=None,
+            # The MCP tools work on the user's own library; meetings shared
+            # with them are not offered to connected AI clients.
+            scope="mine",
             db=db,
             current_user=user,
         )

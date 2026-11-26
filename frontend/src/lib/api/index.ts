@@ -7,6 +7,7 @@ import api from "./client";
 export { API_BASE_URL } from "./client";
 
 export * from "./auth";
+export * from "./shares";
 export * from "./recordings";
 export * from "./capture";
 export * from "./tasks";

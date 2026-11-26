@@ -1,12 +1,9 @@
-"""Add OpenID Connect identity columns to users.
+"""Add user_identities, an account's identity at an OpenID Connect provider.
 
-``auth_source`` says how an account signs in: ``local`` (password, the default
-for every existing account) or ``oidc`` (created by the identity provider, no
-usable password). ``oidc_issuer`` and ``oidc_subject`` hold the identity an
-account is linked to, unique together; Postgres treats NULLs as distinct, so
-the many unlinked local accounts do not collide. ``email`` and
-``display_name`` come from the provider and are shown in the UI only.
-``oidc_groups`` is the provider's group list as of the last sign-in.
+One row per linked account, unique on ``(issuer, subject)`` and on
+``user_id``. ``email``, ``display_name`` and ``groups`` are refreshed at every
+sign-in through the provider. ``created_account`` marks an account the
+provider's first sign-in created, which has no usable password.
 
 No backfill: existing accounts stay local and unlinked.
 
@@ -25,38 +22,32 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "users",
+    op.create_table(
+        "user_identities",
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("id", sa.BigInteger(), nullable=False),
+        sa.Column("user_id", sa.BigInteger(), nullable=False),
+        sa.Column("issuer", sa.String(), nullable=False),
+        sa.Column("subject", sa.String(), nullable=False),
+        sa.Column("email", sa.String(), nullable=True),
+        sa.Column("display_name", sa.String(), nullable=True),
         sa.Column(
-            "auth_source",
-            sa.String(length=16),
-            nullable=False,
-            server_default="local",
-        ),
-    )
-    op.add_column("users", sa.Column("oidc_issuer", sa.String(), nullable=True))
-    op.add_column("users", sa.Column("oidc_subject", sa.String(), nullable=True))
-    op.add_column("users", sa.Column("email", sa.String(), nullable=True))
-    op.add_column("users", sa.Column("display_name", sa.String(), nullable=True))
-    op.add_column(
-        "users",
-        sa.Column(
-            "oidc_groups",
+            "groups",
             postgresql.JSONB(astext_type=sa.Text()),
             nullable=False,
             server_default="[]",
         ),
-    )
-    op.create_unique_constraint(
-        "uq_users_oidc_identity", "users", ["oidc_issuer", "oidc_subject"]
+        sa.Column("created_account", sa.Boolean(), nullable=False),
+        sa.Column("last_sign_in_at", sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id"),
+        sa.UniqueConstraint(
+            "issuer", "subject", name="uq_user_identities_issuer_subject"
+        ),
     )
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_users_oidc_identity", "users", type_="unique")
-    op.drop_column("users", "oidc_groups")
-    op.drop_column("users", "display_name")
-    op.drop_column("users", "email")
-    op.drop_column("users", "oidc_subject")
-    op.drop_column("users", "oidc_issuer")
-    op.drop_column("users", "auth_source")
+    op.drop_table("user_identities")

@@ -667,3 +667,37 @@ CREATE TABLE calendar_events (
     UNIQUE(calendar_id, provider_event_id)
 )
 """
+
+# Sharing (backend/services/recording_access.py). A test whose requests list
+# recordings, or reach a recording as someone other than its owner, needs both.
+RECORDING_SHARES_SCHEMA = """
+CREATE TABLE recording_shares (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    group_name VARCHAR,
+    level VARCHAR(8) NOT NULL,
+    created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+)
+"""
+
+USER_IDENTITIES_SCHEMA = """
+CREATE TABLE user_identities (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    issuer VARCHAR NOT NULL,
+    subject VARCHAR NOT NULL,
+    email VARCHAR,
+    display_name VARCHAR,
+    groups JSON NOT NULL DEFAULT '[]',
+    created_account BOOLEAN NOT NULL DEFAULT 0,
+    last_sign_in_at DATETIME,
+    UNIQUE (issuer, subject)
+)
+"""
+
+SHARING_SCHEMAS = (RECORDING_SHARES_SCHEMA, USER_IDENTITIES_SCHEMA)

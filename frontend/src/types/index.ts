@@ -671,8 +671,15 @@ export interface LanguageNotice {
   reprocess_language: string;
 }
 
+/** The caller's level on a meeting. The server enforces it; the UI hides what it does not allow. */
+export type RecordingAccess = "owner" | "edit" | "view";
+
 export interface Recording extends Omit<BaseDBModel, "id"> {
   id: RecordingId;
+  /** Absent from servers without sharing, which means the caller owns it. */
+  access?: RecordingAccess;
+  /** Who owns a meeting shared with the caller; null for their own. */
+  owner?: { username: string; display_name?: string | null } | null;
   name: string;
   meeting_uid: string;
   audio_path: string;

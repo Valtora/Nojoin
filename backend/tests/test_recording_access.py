@@ -112,12 +112,14 @@ async def test_list_filters(harness) -> None:
     async with harness.session_maker() as session:
         visible = (
             await session.execute(
-                select(Recording.name).where(accessible_recordings_filter(alice))
+                select(Recording.name).where(
+                    accessible_recordings_filter(alice, ["research"])
+                )
             )
         ).scalars()
         shared = (
             await session.execute(
-                select(Recording.name).where(shared_with_filter(alice))
+                select(Recording.name).where(shared_with_filter(alice, ["research"]))
             )
         ).scalars()
         visible, shared = set(visible), set(shared)

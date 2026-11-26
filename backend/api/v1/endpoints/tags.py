@@ -11,6 +11,12 @@ from backend.api.params import PageLimit, PageOffset, RowId
 from backend.models.recording import Recording
 from backend.models.tag import RecordingTag, Tag, TagCreate, TagRead, TagUpdate
 from backend.models.user import User
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.services.recording_identity_service import (
     get_recording_by_public_id,
     get_recordings_by_public_ids,
@@ -151,11 +157,15 @@ async def add_tag_to_recording(
     tag_in: TagCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Add a tag to a recording. Creates the tag if it doesn't exist.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     tag, created = await get_or_create_tag(
         db, Tag, tag_in.name, current_user.id, color=tag_in.color
@@ -174,11 +184,15 @@ async def remove_tag_from_recording(
     tag_name: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Remove a tag from a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     tag = await find_tag_by_name(db, Tag, tag_name, current_user.id)
     if not tag:

@@ -22,6 +22,11 @@ from backend.models.user import UserCreate, UserPasswordUpdate, UserUpdate
 SECURE_TEST_BASE_URL = "https://test"
 
 
+class _NoRows:
+    def scalar_one_or_none(self):
+        return None
+
+
 class _WritableSession:
     def add(self, value):
         return None
@@ -30,7 +35,8 @@ class _WritableSession:
         return None
 
     async def execute(self, *args, **kwargs):
-        return None
+        # The password route asks whether the account has a provider identity.
+        return _NoRows()
 
     async def refresh(self, value):
         return None

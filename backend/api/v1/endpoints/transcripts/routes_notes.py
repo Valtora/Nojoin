@@ -14,6 +14,12 @@ from backend.models.recording import Recording, is_live_capture
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.models.user import User
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.generation_claim import claim_generation, generation_active
@@ -55,11 +61,15 @@ async def get_notes(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Get the meeting notes for a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)

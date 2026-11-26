@@ -25,6 +25,7 @@ from sqlmodel import select
 
 from backend.core.oidc_config import reset_oidc_settings_cache
 from backend.models.user import User
+from backend.models.user_identity import UserIdentity
 from backend.services import oidc_service
 from backend.tests.sso_sharing_support import build_harness
 
@@ -197,6 +198,21 @@ async def _user(harness, **where) -> Optional[User]:
         return (await session.execute(query)).scalar_one_or_none()
 
 
+async def _linked(
+    harness, subject: str = "sub-alice"
+) -> Optional[tuple[User, UserIdentity]]:
+    """The account linked to ``subject``, with its identity row."""
+    async with harness.session_maker() as session:
+        row = (
+            await session.execute(
+                select(User, UserIdentity)
+                .join(UserIdentity, UserIdentity.user_id == User.id)
+                .where(UserIdentity.subject == subject)
+            )
+        ).first()
+        return (row[0], row[1]) if row else None
+
+
 def _error_of(response: httpx.Response) -> Optional[str]:
     location = response.headers.get("location", "")
     values = parse_qs(urlparse(location).query).get("error")
@@ -241,9 +257,9 @@ async def test_second_sign_in_reuses_the_account_and_refreshes_groups(
     provider.username = "renamed-at-provider"
     async with harness.client() as client:
         await _sign_in(client, provider)
-    user = await _user(harness, oidc_subject="sub-alice")
+    user, identity = await _linked(harness)
     assert user.username == "alice"
-    assert user.oidc_groups == ["nojoin-users", "research"]
+    assert identity.groups == ["nojoin-users", "research"]
 
 
 @pytest.mark.anyio
@@ -253,11 +269,16 @@ async def test_never_attaches_to_a_local_account_with_the_same_name(
     local = await harness.add_user("alice", role="owner")
     async with harness.client() as client:
         await _sign_in(client, provider)
-    created = await _user(harness, oidc_subject="sub-alice")
+    created, _ = await _linked(harness)
     assert created.id != local.id
     assert created.username == "alice-2"
-    untouched = await _user(harness, id=local.id)
-    assert untouched.oidc_subject is None
+    async with harness.session_maker() as session:
+        links = (
+            await session.execute(
+                select(UserIdentity).where(UserIdentity.user_id == local.id)
+            )
+        ).all()
+    assert links == []
 
 
 @pytest.mark.anyio
@@ -285,7 +306,7 @@ async def test_rejects_bad_id_tokens(harness, provider, change, expected) -> Non
     assert response.status_code == 303
     assert response.headers["location"].startswith("/login?")
     assert _error_of(response) == expected
-    assert await _user(harness, oidc_subject="sub-alice") is None
+    assert await _linked(harness) is None
 
 
 @pytest.mark.anyio
@@ -345,7 +366,7 @@ async def test_allowed_groups_gate_sign_in(harness, provider, monkeypatch) -> No
     async with harness.client() as client:
         response = await _sign_in(client, provider)
     assert _error_of(response) == "sso_not_allowed"
-    assert await _user(harness, oidc_subject="sub-alice") is None
+    assert await _linked(harness) is None
 
 
 @pytest.mark.anyio
@@ -354,8 +375,8 @@ async def test_groups_fall_back_to_userinfo(harness, provider) -> None:
     provider.userinfo_groups = ["from-userinfo"]
     async with harness.client() as client:
         await _sign_in(client, provider)
-    user = await _user(harness, oidc_subject="sub-alice")
-    assert user.oidc_groups == ["from-userinfo"]
+    _, identity = await _linked(harness)
+    assert identity.groups == ["from-userinfo"]
 
 
 @pytest.mark.anyio
@@ -388,13 +409,13 @@ async def test_admin_group_grants_and_revokes_admin(
     provider.groups = ["nojoin-admins"]
     async with harness.client() as client:
         await _sign_in(client, provider)
-    admin = await _user(harness, oidc_subject="sub-alice")
+    admin, _ = await _linked(harness)
     assert admin.role == "admin"
 
     provider.groups = ["nojoin-users"]
     async with harness.client() as client:
         await _sign_in(client, provider)
-    demoted = await _user(harness, oidc_subject="sub-alice")
+    demoted, _ = await _linked(harness)
     assert demoted.role == "user"
     # Sessions minted while the user was an admin stop working.
     assert demoted.token_version > admin.token_version
@@ -417,10 +438,10 @@ async def test_owner_role_is_never_changed_by_groups(
             "/api/v1/login/oidc/callback", params={"code": code, "state": state}
         )
     assert response.headers["location"] == "/settings/profile?sso_linked=1"
-    after = await _user(harness, id=owner.id)
-    assert after.oidc_subject == "sub-alice"
+    after, identity = await _linked(harness)
+    assert after.id == owner.id
     assert after.role == "owner"
-    assert after.auth_source == "local"
+    assert identity.created_account is False
 
     # Signing in through the provider now lands on the same account.
     async with harness.client() as client:
@@ -443,7 +464,8 @@ async def test_cannot_link_an_identity_already_used_elsewhere(
             "/api/v1/login/oidc/callback", params={"code": code, "state": state}
         )
     assert "sso_error=sso_identity_in_use" in response.headers["location"]
-    assert (await _user(harness, id=other.id)).oidc_subject is None
+    linked_user, _ = await _linked(harness)
+    assert linked_user.id != other.id
 
 
 @pytest.mark.anyio

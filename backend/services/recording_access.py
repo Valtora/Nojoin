@@ -5,7 +5,7 @@ transcript, speakers, notes, timeline notes, documents), ``OWNER`` covers the
 recording's lifecycle and anything that spends the owner's processing or AI
 budget. The owner is ``recordings.user_id``; everyone else gets the highest
 level among the shares that apply to them, directly or through one of their
-identity-provider groups (``users.oidc_groups``).
+identity-provider groups (``user_identities.groups``).
 
 A route opts in to sharing by declaring :func:`require_recording` with the
 level it needs. Routes that do not keep the owner-only check in
@@ -25,14 +25,14 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Callable, Optional, Sequence
 
-from fastapi import Depends, HTTPException, status
+from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, and_, exists, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_user, get_db
 from backend.models.recording import Recording
 from backend.models.recording_share import RecordingShare, ShareLevel
 from backend.models.user import User
+from backend.services.user_identities import display_names, groups_of
 
 INSUFFICIENT_ACCESS_DETAIL = "insufficient_access"
 NOT_FOUND_DETAIL = "Recording not found"
@@ -54,37 +54,37 @@ class Access(IntEnum):
 _LEVEL_ACCESS = {ShareLevel.VIEW.value: Access.VIEW, ShareLevel.EDIT.value: Access.EDIT}
 
 
-def user_groups(user: User) -> list[str]:
-    groups = getattr(user, "oidc_groups", None) or []
-    return [group for group in groups if isinstance(group, str) and group]
-
-
-def share_applies_to(user: User) -> ColumnElement[bool]:
-    """A ``recording_shares`` row grants something to ``user``."""
-    groups = user_groups(user)
+def share_applies_to(user: User, groups: Sequence[str]) -> ColumnElement[bool]:
+    """A ``recording_shares`` row grants something to ``user``, a member of
+    ``groups`` (from :func:`groups_of`)."""
     direct = RecordingShare.user_id == user.id
     if not groups:
         return direct
-    return or_(direct, RecordingShare.group_name.in_(groups))
+    return or_(direct, RecordingShare.group_name.in_(list(groups)))
 
 
-def accessible_recordings_filter(user: User) -> ColumnElement[bool]:
+def _shared_exists(user: User, groups: Sequence[str]) -> ColumnElement[bool]:
+    return exists().where(
+        and_(
+            RecordingShare.recording_id == Recording.id,
+            share_applies_to(user, groups),
+        )
+    )
+
+
+def accessible_recordings_filter(
+    user: User, groups: Sequence[str]
+) -> ColumnElement[bool]:
     """Recordings ``user`` owns or has any share of. For list and search queries."""
-    shared = exists().where(
-        and_(RecordingShare.recording_id == Recording.id, share_applies_to(user))
-    )
-    return or_(Recording.user_id == user.id, shared)
+    return or_(Recording.user_id == user.id, _shared_exists(user, groups))
 
 
-def shared_with_filter(user: User) -> ColumnElement[bool]:
+def shared_with_filter(user: User, groups: Sequence[str]) -> ColumnElement[bool]:
     """Recordings shared with ``user`` that ``user`` does not own."""
-    shared = exists().where(
-        and_(RecordingShare.recording_id == Recording.id, share_applies_to(user))
-    )
-    return and_(Recording.user_id != user.id, shared)
+    return and_(Recording.user_id != user.id, _shared_exists(user, groups))
 
 
-def owned_filter(user: User) -> ColumnElement[bool]:
+def owned_filter(user: User, groups: Sequence[str] = ()) -> ColumnElement[bool]:
     return Recording.user_id == user.id
 
 
@@ -93,14 +93,29 @@ def no_recordings() -> ColumnElement[bool]:
 
 
 async def share_level_for(db: AsyncSession, recording_id: int, user: User) -> Access:
-    """The highest level any share of ``recording_id`` gives ``user``."""
-    result = await db.execute(
-        select(RecordingShare.level).where(
-            RecordingShare.recording_id == recording_id, share_applies_to(user)
+    """The highest level any share of ``recording_id`` gives ``user``.
+
+    Reads the recording's shares first and the user's groups only when one of
+    them is a group share, so the common case (not shared, or shared with
+    named people) costs one small query.
+    """
+    rows = (
+        await db.execute(
+            select(
+                RecordingShare.user_id, RecordingShare.group_name, RecordingShare.level
+            ).where(RecordingShare.recording_id == recording_id)
         )
-    )
-    levels = [_LEVEL_ACCESS.get(level, Access.NONE) for level in result.scalars()]
-    return max(levels, default=Access.NONE)
+    ).all()
+    if not rows:
+        return Access.NONE
+    groups: set[str] = set()
+    if any(group_name is not None for _, group_name, _ in rows):
+        groups = set(await groups_of(db, user))
+    best = Access.NONE
+    for user_id, group_name, level in rows:
+        if user_id == user.id or (group_name is not None and group_name in groups):
+            best = max(best, _LEVEL_ACCESS.get(level, Access.NONE))
+    return best
 
 
 async def access_level(db: AsyncSession, recording: Recording, user: User) -> Access:
@@ -124,9 +139,11 @@ async def access_levels_for(
             levels[recording.id] = Access.NONE
             others.append(recording.id)
     if others:
+        groups = await groups_of(db, user)
         result = await db.execute(
             select(RecordingShare.recording_id, RecordingShare.level).where(
-                RecordingShare.recording_id.in_(others), share_applies_to(user)
+                RecordingShare.recording_id.in_(others),
+                share_applies_to(user, groups),
             )
         )
         for recording_id, level in result.all():
@@ -172,9 +189,9 @@ async def get_recording_for(
 
 @dataclass(frozen=True)
 class RecordingGrant:
-    """What :func:`require_recording` resolved: the recording, the caller's
-    level, and the caller. ``recording`` is loaded without relationship
-    options; :meth:`load` reloads it with the ones a handler needs."""
+    """A resolved :func:`require_recording`: the recording, the caller's level,
+    and the caller. ``recording`` is loaded without relationship options;
+    :meth:`load` reloads it with the ones a handler needs."""
 
     recording: Recording
     access: Access
@@ -201,24 +218,70 @@ class RecordingGrant:
         return (await db.execute(statement)).scalar_one()
 
 
-def require_recording(need: Access) -> Callable[..., Any]:
-    """A dependency that resolves ``{recording_id}`` for a caller with ``need``.
+@dataclass(frozen=True)
+class PendingGrant:
+    """What a route's ``require_recording`` dependency hands the handler: the
+    level it declared, not yet checked. :func:`resolve_grant` checks it."""
 
-    Runs before FastAPI validates the request body, so a refused caller gets
-    the 404 or 403 whatever they sent.
+    need: Access
+
+
+def require_recording(need: Access) -> Callable[..., Any]:
+    """Declare the level a route needs on ``{recording_id}``.
+
+    The dependency itself touches nothing: FastAPI validates the request first,
+    and the handler's first step is ``resolve_grant``, which loads the
+    recording and refuses a caller below ``need``. Declaring the level here,
+    rather than only in the handler, lets
+    backend/tests/test_recording_access_matrix.py read every route's level.
     """
 
-    async def dependency(
-        recording_id: str,
-        db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user),
-    ) -> RecordingGrant:
-        recording, level = await get_recording_for(db, recording_id, current_user, need)
-        return RecordingGrant(recording=recording, access=level, user=current_user)
+    def dependency() -> PendingGrant:
+        return PendingGrant(need=need)
 
     dependency.required_access = need  # type: ignore[attr-defined]
     dependency.__name__ = f"require_recording_{need.label}"
     return dependency
+
+
+async def resolve_grant(
+    grant: Any,
+    db: AsyncSession,
+    recording_id: str,
+    user: User,
+    *,
+    owned: Optional[Callable[..., Any]] = None,
+) -> RecordingGrant:
+    """Check the level a handler declared with ``require_recording``.
+
+    ``owned`` is the route module's own owner-only loader
+    (``_get_owned_recording(db, recording_id, user_id)``). It runs first, so
+    the owner's path is exactly what it was before sharing existed; shares are
+    consulted only when it answers 404.
+
+    Over HTTP the handler receives a :class:`PendingGrant`. Called as a Python
+    function (the MCP tools, tests) it receives the unresolved ``Depends(...)``
+    default instead, and the level is read off that, so a direct caller is
+    held to the route's level too.
+    """
+    if isinstance(grant, RecordingGrant):
+        return grant
+    if isinstance(grant, PendingGrant):
+        need = grant.need
+    else:
+        need = getattr(getattr(grant, "dependency", None), "required_access", None)
+    if not isinstance(need, Access):
+        raise TypeError("grant must come from require_recording")
+    if owned is not None:
+        try:
+            recording = await owned(db, recording_id, user.id)
+        except HTTPException as refusal:
+            if refusal.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+        else:
+            return RecordingGrant(recording=recording, access=Access.OWNER, user=user)
+    recording, level = await get_recording_for(db, recording_id, user, need)
+    return RecordingGrant(recording=recording, access=level, user=user)
 
 
 def declared_access(route: Any) -> Optional[Access]:
@@ -234,3 +297,21 @@ def declared_access(route: Any) -> Optional[Access]:
             return level
         stack.extend(current.dependencies)
     return None
+
+
+async def owner_reads(
+    db: AsyncSession, recordings: Sequence[Recording], viewer: User
+) -> dict[int, Any]:
+    """``RecordingOwnerRead`` for the owners of the recordings ``viewer`` does
+    not own, keyed by owner id, in one query."""
+    from backend.models.recording_public import RecordingOwnerRead
+
+    owner_ids = {r.user_id for r in recordings if r.user_id != viewer.id}
+    if not owner_ids:
+        return {}
+    rows = await db.execute(select(User.id, User.username).where(User.id.in_(owner_ids)))
+    names = await display_names(db, owner_ids)
+    return {
+        user_id: RecordingOwnerRead(username=username, display_name=names.get(user_id))
+        for user_id, username in rows.all()
+    }

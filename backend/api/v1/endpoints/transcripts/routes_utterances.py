@@ -18,6 +18,12 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.user import User
 from backend.processing.live_state import LIVE_BEHIND_LAG_MS, live_lane_lag_ms
 from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.canonical_pipeline import (
     build_transient_utterance_payloads_from_segments,
     ensure_canonical_backfill,
@@ -85,8 +91,12 @@ async def get_transcript_utterances(
     after_revision: Optional[RevisionCursor] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:

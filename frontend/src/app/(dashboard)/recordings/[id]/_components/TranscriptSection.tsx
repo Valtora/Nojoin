@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { canEditRecording } from "@/lib/sharing/access";
 import { AlertCircle, RefreshCw } from "lucide-react";
 
 import ReprocessDialog from "@/components/ReprocessDialog";
@@ -138,7 +139,10 @@ export default function TranscriptSection({
   // defer its old row even after that read. Wait for the displayed replacement.
   const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
     hasRetainedPublication;
-  const readOnly = (isRecordingInFlight(recording) || awaitingPublication) && !activeCapture;
+  // A meeting shared with the caller to view only is never editable here.
+  const readOnly =
+    !canEditRecording(recording) ||
+    ((isRecordingInFlight(recording) || awaitingPublication) && !activeCapture);
   const transcriptStatus = recording.transcript?.transcript_status;
   // The live presentation is a capture's own run: recording, paused, or
   // processing what it heard (only capture start makes a "processing"

@@ -42,6 +42,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKERS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SHARING_SCHEMAS,
     TAGS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
@@ -64,6 +65,7 @@ async def _sqlite_engine() -> AsyncEngine:
     async with built.begin() as connection:
         for schema in (
             RECORDINGS_SCHEMA,
+            *SHARING_SCHEMAS,
             TRANSCRIPTS_SCHEMA,
             TRANSCRIPT_UTTERANCES_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,

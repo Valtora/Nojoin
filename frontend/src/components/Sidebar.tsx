@@ -27,8 +27,11 @@ import {
   RecordingFilters,
   getTags,
   getRecordingsCalendar,
+  leaveShare,
   type BatchRecordingResult,
 } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
+import { useNotificationStore } from "@/lib/notificationStore";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import {
   useRecordingSelection,
@@ -51,6 +54,7 @@ import MonthCalendar from "./MonthCalendar";
 import { localDayRangeToUtc } from "@/lib/timezone";
 import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import { format, startOfMonth } from "date-fns";
+import { canEditRecording, ownsRecording } from "@/lib/sharing/access";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import { DISCARD_RECORDING_MESSAGE, DISCARD_RECORDING_TITLE } from "./recordings/DiscardRecordingDialog";
@@ -104,6 +108,7 @@ export default function Sidebar() {
   const mounted = useHydrated();
   // The menu's items are built when it opens, as they act on the list. A
   // right-click opens it at the pointer; a row's actions button anchors it.
+  const { addNotification } = useNotificationStore();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -513,6 +518,23 @@ export default function Sidebar() {
     selection.clear();
   };
 
+  const handleLeaveShared = async (id: RecordingId) => {
+    setContextMenu(null);
+    try {
+      await leaveShare(id);
+      updateRows((prev) => prev.filter((r) => r.id !== id));
+      leaveIfOpen([id]);
+    } catch (error: unknown) {
+      addNotification({
+        type: "error",
+        message: getErrorMessage(
+          error,
+          "This meeting was shared with a group you are in, so only its owner can remove you.",
+        ),
+      });
+    }
+  };
+
   const handleRenameStart = (id: RecordingId, currentName: string) => {
     setRenamingId(id);
     setRenameValue(currentName);
@@ -621,6 +643,31 @@ export default function Sidebar() {
 
   const getContextMenuItems = (recording: Recording) => {
     const items: RowMenuItem[] = [];
+
+    if (!ownsRecording(recording)) {
+      // A meeting someone shared with the caller: its lifecycle, processing
+      // and AI stay with the owner, so only what a sharee may do is offered.
+      if (canEditRecording(recording)) {
+        items.push({
+          label: "Rename",
+          onClick: () => handleRenameStart(recording.id, recording.name),
+        });
+      }
+      items.push(
+        {
+          label: "Show Recording Info",
+          onClick: () => {
+            setInfoModalRecording(recording);
+            setShowInfoModal(true);
+          },
+        },
+        {
+          label: "Leave Shared Meeting",
+          onClick: () => void handleLeaveShared(recording.id),
+        },
+      );
+      return items;
+    }
 
     if (view === "recordings") {
       items.push(
@@ -1169,7 +1216,7 @@ export default function Sidebar() {
                   // Only the card being renamed reads the name being typed.
                   renameValue={isRenaming ? renameValue : ""}
                   hasUnsentNotes={unsentRecordings.includes(recording.id)}
-                  renamesOnDoubleClick={isDesktopLayout}
+                  renamesOnDoubleClick={isDesktopLayout && canEditRecording(recording)}
                   actions={rowActions}
                 />
               );
