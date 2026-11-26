@@ -31,8 +31,11 @@ from backend.processing.embedding import (
 from backend.services.recording_access import (
     Access,
     RecordingGrant,
+    get_recording_for,
+    people_in_reach,
     require_recording,
     resolve_grant,
+    viewer_owns_library,
 )
 from backend.utils.canonical_pipeline import (
     list_merged_recording_speakers,
@@ -114,10 +117,10 @@ async def apply_recording_speaker_update(  # noqa: PLR0913 - one keyword per cal
     Update a speaker label in a recording with a name.
 
     ``recording`` is the one the caller already resolved access to (the REST
-    route and name review, which allow editors). Without it the recording is
-    loaded for its owner only, as the MCP naming tool needs. Names are looked
-    up in and linked to the recording owner's people library whoever edits:
-    the meeting's speakers belong to its owner's library.
+    route and name review). Without it, as from the MCP naming tool, the
+    caller must be able to edit the recording. Names link to the recording owner's people
+    library, whoever edits; for an editor only to the people already in the
+    meeting (:func:`people_in_reach`).
 
     Shared by the REST handler (source="api") and the MCP naming tool
     (source="mcp"). `source` is deliberately not a request field: exposing it
@@ -131,16 +134,21 @@ async def apply_recording_speaker_update(  # noqa: PLR0913 - one keyword per cal
     logger.info(f"Updating speaker for recording {recording_id}: {update}")
 
     if recording is None:
-        recording = await _get_owned_recording(db, recording_id, current_user.id)
+        recording, level = await get_recording_for(
+            db, recording_id, current_user, Access.EDIT
+        )
+        viewer_owns_library.set(level is Access.OWNER)
     if not recording:
         logger.error(f"Recording {recording_id} not found")
         raise HTTPException(status_code=404, detail="Recording not found")
 
     await _require_recording_speaker_mutations_supported(db, recording)
 
+    # An editor's name links only to someone already in the meeting; any other
+    # name stays local to it rather than reaching into the owner's library.
     statement = select(GlobalSpeaker).where(
         GlobalSpeaker.name == update.global_speaker_name,
-        GlobalSpeaker.user_id == recording.user_id,
+        people_in_reach(recording, current_user.id),
     )
     result = await db.execute(statement)
     global_speaker = result.scalar_one_or_none()
@@ -421,13 +429,7 @@ async def get_speaker_candidates(
         grant, db, recording_id, current_user, owned=_get_owned_recording
     )
     recording = grant.recording
-    query = select(GlobalSpeaker).where(GlobalSpeaker.user_id == recording.user_id)
-    if not grant.is_owner:
-        linked = select(RecordingSpeaker.global_speaker_id).where(
-            RecordingSpeaker.recording_id == recording.id,
-            RecordingSpeaker.global_speaker_id.is_not(None),
-        )
-        query = query.where(GlobalSpeaker.id.in_(linked))
+    query = select(GlobalSpeaker).where(people_in_reach(recording, current_user.id))
     rows = (await db.execute(query.order_by(GlobalSpeaker.name))).scalars().all()
     return [
         SpeakerCandidateRead(id=row.id, name=row.name, color=row.color) for row in rows
@@ -443,10 +445,12 @@ async def promote_speaker_to_global(
     diarization_label: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
+    grant: RecordingGrant = Depends(require_recording(Access.OWNER)),
 ):
     """
     Promote a recording speaker to the global speaker library.
+
+    The owner's only: it adds a person to the owner's People library.
     """
     grant = await resolve_grant(
         grant, db, recording_id, current_user, owned=_get_owned_recording
@@ -490,7 +494,6 @@ async def promote_speaker_to_global(
     if existing_global:
         target_global_speaker_id = existing_global.id
     else:
-        # Into the meeting owner's library, whoever promotes the speaker.
         global_speaker = GlobalSpeaker(name=speaker_name, user_id=recording.user_id)
         if recording_speaker.embedding:
             created_library_update = offer_linked_voiceprint(

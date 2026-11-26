@@ -69,8 +69,11 @@ interface SpeakerPanelProps {
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
   disablePlayback?: boolean;
   disableEditing?: boolean;
-  /** False hides voiceprint actions, which only a meeting's owner may take. */
-  canManageVoiceprints?: boolean;
+  /**
+   * False for a meeting someone else owns: voiceprints and Add to People act
+   * on the owner's People library, so only the owner may.
+   */
+  ownsLibrary?: boolean;
   liveSpeakerNames?: Record<string, string>;
   onRenameLiveSpeaker?: RenameLiveSpeaker;
   onMergeLiveSpeaker?: MergeLiveSpeaker;
@@ -96,7 +99,7 @@ export default function SpeakerPanel({
   onSpeakerRenamed,
   disablePlayback = false,
   disableEditing = false,
-  canManageVoiceprints = true,
+  ownsLibrary = true,
   liveSpeakerNames = {},
   onRenameLiveSpeaker,
   onMergeLiveSpeaker,
@@ -327,7 +330,7 @@ export default function SpeakerPanel({
             const absorbedClusters = mergedClusters.filter((cluster) =>
               memberIds.has(cluster.merged_into_id),
             );
-            const offersPeople = !getResolvedGlobalSpeakerId(speaker) &&
+            const offersPeople = ownsLibrary && !getResolvedGlobalSpeakerId(speaker) &&
               !globalSpeakers.some((person) => person.name === entry.displayName);
             const menuItems: TranscriptMenuItem[] = [
               {
@@ -615,7 +618,7 @@ export default function SpeakerPanel({
               onClick: () => handleSplitStart(contextMenu.speaker),
             },
             // Voiceprint option - only show if speaker doesn't have one
-            ...(canManageVoiceprints && !contextMenu.speaker.hasVoiceprint
+            ...(ownsLibrary && !contextMenu.speaker.hasVoiceprint
               ? [
                   {
                     label: "Create Voiceprint",
@@ -624,7 +627,8 @@ export default function SpeakerPanel({
                 ]
               : []),
             // Add to Speaker Library option - only show if not already global (and no name match)
-            ...(!getResolvedGlobalSpeakerId(contextMenu.speaker.speaker) &&
+            ...(ownsLibrary &&
+            !getResolvedGlobalSpeakerId(contextMenu.speaker.speaker) &&
             !globalSpeakers.some(
               (gs) => gs.name === contextMenu.speaker.displayName,
             )
@@ -703,7 +707,7 @@ export default function SpeakerPanel({
       )}
 
       <VoiceprintModal
-        isOpen={voiceprintModalOpen && !disableEditing && canManageVoiceprints}
+        isOpen={voiceprintModalOpen && !disableEditing && ownsLibrary}
         onClose={() => {
           setVoiceprintModalOpen(false);
           setVoiceprintExtractResult(null);

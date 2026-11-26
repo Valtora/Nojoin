@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.recording import Recording
 from backend.models.recording_share import RecordingShare, ShareLevel
+from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.user import User
 from backend.services.user_identities import display_names, groups_of
 
@@ -327,3 +328,42 @@ async def owner_reads(
         user_id: RecordingOwnerRead(username=username, display_name=names.get(user_id))
         for user_id, username in rows.all()
     }
+
+
+def people_in_reach(recording: Recording, actor_user_id: int) -> ColumnElement[bool]:
+    """The people of the owner's library ``actor_user_id`` may pick in a meeting.
+
+    The meeting's speakers belong to its owner's People library. The owner may
+    pick anyone in it. Anyone else the meeting is shared with may pick only the
+    people already linked to one of its speakers: they never see or link the
+    rest of the owner's contacts, and a new name they type stays a name on the
+    meeting (``RecordingSpeaker.local_name``) instead of joining the library.
+    """
+    in_library = GlobalSpeaker.user_id == recording.user_id
+    if actor_user_id == recording.user_id:
+        return in_library
+    linked = select(RecordingSpeaker.global_speaker_id).where(
+        RecordingSpeaker.recording_id == recording.id,
+        RecordingSpeaker.global_speaker_id.is_not(None),
+        RecordingSpeaker.merged_into_id.is_(None),
+    )
+    return and_(in_library, GlobalSpeaker.id.in_(linked))
+
+
+async def require_person_in_reach(
+    db: AsyncSession,
+    recording: Recording,
+    actor_user_id: int,
+    global_speaker_id: Optional[int],
+) -> None:
+    """404 unless ``actor_user_id`` may pick person ``global_speaker_id`` here."""
+    if global_speaker_id is None or actor_user_id == recording.user_id:
+        return
+    found = await db.scalar(
+        select(GlobalSpeaker.id).where(
+            GlobalSpeaker.id == global_speaker_id,
+            people_in_reach(recording, actor_user_id),
+        )
+    )
+    if found is None:
+        raise HTTPException(status_code=404, detail="Global speaker not found")

@@ -24,6 +24,7 @@ from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.services.recording_access import (
     Access,
     RecordingGrant,
+    require_person_in_reach,
     require_recording,
     resolve_grant,
 )
@@ -105,6 +106,9 @@ async def update_segment_speaker(  # noqa: PLR0913 - FastAPI dependencies are pa
         grant, db, recording_id, current_user, owned=_get_owned_recording
     )
     recording = grant.recording
+    await require_person_in_reach(
+        db, recording, current_user.id, update.global_speaker_id
+    )
 
     stmt = (
         select(Transcript)

@@ -21,6 +21,7 @@ from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.services.recording_access import (
     Access,
     RecordingGrant,
+    require_person_in_reach,
     require_recording,
     resolve_grant,
 )
@@ -413,6 +414,9 @@ async def apply_canonical_utterance_speaker_update(  # noqa: PLR0913 - one keywo
     (source="mcp"), so the event log records which surface authored the
     edit while everything else stays identical.
     """
+    await require_person_in_reach(
+        db, recording, actor_user_id, update.global_speaker_id
+    )
     await _prepare_live_transcript_mutation(db, recording.id)
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)

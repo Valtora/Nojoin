@@ -248,7 +248,7 @@ async def test_notes_generation_still_runs_on_a_finished_meeting(
 
     assert response.status_code == 200, response.text
     assert response.json()["notes_status"] == "generating"
-    assert stub_celery_dispatch == [(NOTES_TASK, [1, None], None)]
+    assert stub_celery_dispatch == [(NOTES_TASK, [1, None, 1], None)]
 
 
 @LIVE_CAPTURES
@@ -285,7 +285,7 @@ async def test_mcp_regenerate_notes_still_runs_on_a_finished_meeting(
         "notes_status": "generating",
         "message": "Note generation started",
     }
-    assert stub_celery_dispatch == [(NOTES_TASK, [1, None], None)]
+    assert stub_celery_dispatch == [(NOTES_TASK, [1, None, 1], None)]
 
 
 @pytest.mark.parametrize("client_status", ["PAUSED", None])

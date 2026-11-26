@@ -95,10 +95,11 @@ An owner can share a meeting with another user or with a provider group, to view
 
 - A route that serves a shared meeting declares the level it needs. A route that does not keeps the owner-only check, so a route added later stays closed to everyone but the owner until it opts in. `backend/tests/test_recording_access_matrix.py` calls every route that declares a level as owner, editor, viewer and stranger.
 - A stranger gets `404`, the same answer as for a meeting that does not exist, so sharing reveals nothing. An account with too low a level gets `403` with the detail `insufficient_access`.
-- Deleting, archiving, reprocessing, recording controls, calendar links, voiceprints, AI analyses, note generation and sharing stay with the owner. They act on the owner's library or spend the owner's processing and AI budget.
+- Deleting, archiving, reprocessing, recording controls, calendar links, voiceprints, adding people to the owner's **People** and sharing stay with the owner. Note generation and AI analyses are open to editors and run on the AI settings and daily allowance of whoever starts them, never the owner's.
+- An editor links a speaker only to a person already linked in that meeting (`people_in_reach` in `services/recording_access.py`), whether by name or by id. Any other name stays local to the meeting, so an editor can neither see nor add to the rest of the owner's library.
 - A person's contact details (title, company, email, phone number, notes and tags) are left out of a shared meeting's speaker data for everyone but the owner.
 - A user can share with a group only when they are in it themselves. Group membership comes from the provider at sign-in and is not checked with the provider in between.
-- MCP tools list and read only the caller's own meetings. Meeting chat and tags stay with each user, and a chat answer runs on the asker's own AI settings.
+- MCP tools act with the caller's access: they list and search the caller's own and shared meetings, and each tool checks the level it needs, as the web app's routes do. Meeting chat and tags stay with each user, and a chat answer runs on the asker's own AI settings.
 
 ## Browser Session Request Protection
 

@@ -36,6 +36,7 @@ from starlette.types import ASGIApp
 
 from backend.api.params import PageOffset, RevisionCursor
 from backend.core.security import MCP_READ_SCOPE, MCP_WRITE_SCOPE
+from backend.mcp_server.access import recording_for
 from backend.mcp_server.auth import (
     MCPAuthMiddleware,
     current_mcp_user,
@@ -43,6 +44,7 @@ from backend.mcp_server.auth import (
     get_current_mcp_user,
 )
 from backend.mcp_server.tool_logging import logged_tool
+from backend.services.recording_access import Access
 from backend.utils.config_manager import get_trusted_web_origin
 from backend.utils.generation_claim import reported_generation_status
 from backend.utils.mcp_flags import is_mcp_anonymous_discovery_enabled
@@ -218,10 +220,14 @@ def _require_write_scope(capability: str) -> None:
         )
 
 
-def _compact_recording(
+def _compact_recording(  # noqa: PLR0913 - one keyword per optional field
     recording: Any,
     transcript_revision: int = 0,
     match_query: Optional[str] = None,
+    *,
+    viewer_id: Optional[int] = None,
+    access: Optional[str] = None,
+    owner: Optional[str] = None,
 ) -> dict[str, Any]:
     """Compact a Recording ORM row for the MCP client.
 
@@ -249,10 +255,12 @@ def _compact_recording(
             if not speaker.merged_into_id
         )
     )
+    # Tags are personal: on a meeting shared with the viewer, only their own.
     tags = [
         recording_tag.tag.name
         for recording_tag in recording.tags
         if recording_tag.tag is not None
+        and (viewer_id is None or recording_tag.tag.user_id == viewer_id)
     ]
     transcript = recording.transcript
     match_field: Optional[str] = None
@@ -286,6 +294,8 @@ def _compact_recording(
         "speakers": speakers,
         "is_archived": recording.is_archived,
         "is_deleted": recording.is_deleted,
+        **({"access": access} if access is not None else {}),
+        **({"owner": owner} if owner is not None else {}),
         **({"match_field": match_field} if match_field is not None else {}),
     }
 
@@ -299,6 +309,11 @@ async def list_recordings(
     end_date: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """List and search the user's meeting recordings, newest first.
+
+    Includes meetings other users shared with this user. Each result carries
+    `access`: "owner", "edit" (the transcript, speakers and notes can be
+    changed) or "view" (read only), and a shared meeting also carries `owner`,
+    who shared it.
 
     Search covers the whole library: archived and soft-deleted recordings are
     included, so a search can find a meeting the user has archived or removed.
@@ -369,22 +384,21 @@ async def list_recordings(
             only_deleted=False,
             status_filters=None,
             user_filter=None,
-            # The MCP tools work on the user's own library; meetings shared
-            # with them are not offered to connected AI clients.
-            scope="mine",
+            # Owned and shared alike: a connected assistant sees what the user
+            # sees in the web app, and every tool checks the level it needs.
+            scope="all",
             db=db,
             current_user=user,
         )
         ordered_public_ids = [recording.id for recording in results]
         if not ordered_public_ids:
             return []
+        listed = {recording.id: recording for recording in results}
 
+        # Only rows api_list_recordings returned, so only rows the user may see.
         orm_result = await db.execute(
             select(Recording)
-            .where(
-                Recording.user_id == user.id,
-                Recording.public_id.in_(ordered_public_ids),
-            )
+            .where(Recording.public_id.in_(ordered_public_ids))
             .options(
                 selectinload(Recording.tags).selectinload(RecordingTag.tag),
                 selectinload(Recording.speakers).selectinload(
@@ -417,10 +431,19 @@ async def list_recordings(
             by_public_id[public_id],
             transcript_revision=revisions.get(by_public_id[public_id].id, 0),
             match_query=match_query,
+            viewer_id=user.id,
+            access=listed[public_id].access,
+            owner=_owner_name(listed[public_id].owner),
         )
         for public_id in ordered_public_ids
         if public_id in by_public_id
     ]
+
+
+def _owner_name(owner: Any) -> Optional[str]:
+    if owner is None:
+        return None
+    return getattr(owner, "display_name", None) or getattr(owner, "username", None)
 
 
 @mcp_tool()
@@ -433,7 +456,6 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
     from backend.api.v1.endpoints.transcripts.helpers import (
         _build_speaker_map,
         _format_transcript_text,
-        _get_owned_recording,
     )
     from backend.core.db import async_session_maker
     from backend.models.recording import Recording
@@ -443,10 +465,11 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
-        recording = await _get_owned_recording(
+        recording = await recording_for(
             db,
             recording_id,
-            user.id,
+            user,
+            Access.VIEW,
             options=(
                 selectinload(Recording.speakers).options(
                     selectinload(RecordingSpeaker.global_speaker)
@@ -570,7 +593,6 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     Args:
         recording_id: The recording's string id from list_recordings.
     """
-    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.core.db import async_session_maker
     from backend.models.transcript import Transcript
     from backend.services.timeline_note_service import (
@@ -580,7 +602,7 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
-        recording = await _get_owned_recording(db, recording_id, user.id)
+        recording = await recording_for(db, recording_id, user, Access.VIEW)
         result = await db.execute(
             select(Transcript).where(Transcript.recording_id == recording.id)
         )
@@ -673,7 +695,6 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     Args:
         recording_id: The recording's string id from list_recordings.
     """
-    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.core.db import async_session_maker
     from backend.models.document import Document
     from backend.models.document_page import DocumentPage
@@ -682,7 +703,7 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
-        recording = await _get_owned_recording(db, recording_id, user.id)
+        recording = await recording_for(db, recording_id, user, Access.VIEW)
         docs_result = await db.execute(
             select(Document)
             .where(Document.recording_id == recording.id)
@@ -768,7 +789,6 @@ async def append_meeting_notes(
     """
     from fastapi import Response
 
-    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.api.v1.endpoints.transcripts.routes_timeline_notes import (
         create_timeline_note,
     )
@@ -811,7 +831,7 @@ async def append_meeting_notes(
             # records there is no end to check against. Its last second counts
             # in whole, so a time read off the last line is not refused over a
             # fraction.
-            recording = await _get_owned_recording(db, recording_id, user.id)
+            recording = await recording_for(db, recording_id, user, Access.EDIT)
             duration = recording.duration_seconds
             if duration and at_seconds > math.ceil(duration):
                 raise ToolError(

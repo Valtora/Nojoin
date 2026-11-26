@@ -4,14 +4,12 @@ from typing import Optional
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.params import RowId
 from backend.core.task_dispatch import dispatch_task
-from backend.models.recording import Recording, is_live_capture
-from backend.models.speaker import RecordingSpeaker
+from backend.models.recording import is_live_capture
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.models.user import User
 from backend.services.recording_access import (
@@ -183,9 +181,14 @@ async def generate_notes(
     request: Optional[GenerateNotesRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Generate meeting notes using the configured LLM provider.
+
+    Editors of a shared meeting may run it too. The notes are written with the
+    caller's own AI provider, settings and templates, so it never spends the
+    owner's AI budget.
 
     An optional ``notes_template_id`` picks the structure for this run. Omitting
     it falls through to the user's default, then the install default, then the
@@ -196,16 +199,10 @@ async def generate_notes(
     its worker strands only the notes, and only until the claim expires
     (issue #828).
     """
-    recording = await _get_owned_recording(
-        db,
-        recording_id,
-        current_user.id,
-        options=(
-            selectinload(Recording.speakers).options(
-                selectinload(RecordingSpeaker.global_speaker)
-            ),
-        ),
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
     )
+    recording = grant.recording
     if is_live_capture(recording):
         raise HTTPException(status_code=409, detail=NOTES_DURING_CAPTURE_MESSAGE)
 
@@ -274,7 +271,7 @@ async def generate_notes(
 
     task = await dispatch_task(
         "backend.worker.tasks.generate_notes_task",
-        args=[recording.id, requested_template_id],
+        args=[recording.id, requested_template_id, current_user.id],
     )
     from backend.models.task import register_task_ownership
 

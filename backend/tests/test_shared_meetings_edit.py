@@ -150,29 +150,29 @@ async def test_editor_renames_but_cannot_change_the_language(harness, meeting) -
 async def test_owner_only_actions_stay_with_the_owner(harness, meeting) -> None:
     _, editor, _, recording, _ = meeting
     async with harness.client(editor) as client:
-        generate = await client.post(
-            f"/api/v1/transcripts/{recording.public_id}/notes/generate"
-        )
+        archive = await client.post(f"/api/v1/recordings/{recording.public_id}/archive")
         delete = await client.delete(f"/api/v1/recordings/{recording.public_id}")
         reprocess = await client.post(
             f"/api/v1/recordings/{recording.public_id}/reprocess"
         )
     # Not migrated to sharing: the owner check answers as for any stranger.
-    assert generate.status_code in (404, 422)
+    assert archive.status_code == 404
     assert delete.status_code == 404
     assert reprocess.status_code in (404, 422)
 
 
 @pytest.mark.anyio
-async def test_editor_promotes_a_speaker_into_the_owners_library(
-    harness, meeting
-) -> None:
+async def test_only_the_owner_adds_people_to_their_library(harness, meeting) -> None:
     owner, editor, _, recording, _ = meeting
+    url = (
+        f"/api/v1/speakers/recordings/{recording.public_id}/speakers/SPEAKER_01/promote"
+    )
     async with harness.client(editor) as client:
-        response = await client.post(
-            f"/api/v1/speakers/recordings/{recording.public_id}/speakers/SPEAKER_01/promote",
-        )
-    assert response.status_code in (200, 201), response.text
+        refused = await client.post(url)
+    assert refused.status_code == 403
+    async with harness.client(owner) as client:
+        promoted = await client.post(url)
+    assert promoted.status_code in (200, 201), promoted.text
     async with harness.session_maker() as session:
         dave = (
             await session.execute(
@@ -180,7 +180,6 @@ async def test_editor_promotes_a_speaker_into_the_owners_library(
             )
         ).scalar_one()
     assert dave.user_id == owner.id
-    assert dave.user_id != editor.id
 
 
 @pytest.mark.anyio
@@ -240,13 +239,42 @@ async def test_shared_reads_leave_out_the_owners_contact_details(
     assert alice(shared)["notes"] is None
 
 
+async def _speaker(harness, recording, label: str) -> RecordingSpeaker:
+    async with harness.session_maker() as session:
+        return (
+            await session.execute(
+                select(RecordingSpeaker).where(
+                    RecordingSpeaker.recording_id == recording.id,
+                    RecordingSpeaker.diarization_label == label,
+                )
+            )
+        ).scalar_one()
+
+
 @pytest.mark.anyio
-async def test_editor_rename_links_the_owners_person_not_their_own(
+async def test_editor_name_links_someone_already_in_the_meeting(
+    harness, meeting
+) -> None:
+    _, editor, _, recording, ids = meeting
+    async with harness.client(editor) as client:
+        response = await client.put(
+            f"/api/v1/speakers/recordings/{recording.public_id}",
+            json={"diarization_label": "SPEAKER_01", "global_speaker_name": "Alice"},
+        )
+    assert response.status_code == 200, response.text
+    assert (await _speaker(harness, recording, "SPEAKER_01")).global_speaker_id == ids[
+        "alice"
+    ]
+
+
+@pytest.mark.anyio
+async def test_editor_name_for_anyone_else_stays_on_the_meeting(
     harness, meeting
 ) -> None:
     _, editor, _, recording, ids = meeting
     async with harness.session_maker() as session:
-        # The editor keeps a Carol of their own; the meeting is the owner's.
+        # Carol is in the owner's library but not in this meeting, and the
+        # editor keeps a Carol of their own: neither is linked.
         session.add(GlobalSpeaker(name="Carol", user_id=editor.id))
         await session.commit()
     async with harness.client(editor) as client:
@@ -255,13 +283,70 @@ async def test_editor_rename_links_the_owners_person_not_their_own(
             json={"diarization_label": "SPEAKER_01", "global_speaker_name": "Carol"},
         )
     assert response.status_code == 200, response.text
+    speaker = await _speaker(harness, recording, "SPEAKER_01")
+    assert speaker.global_speaker_id is None
+    assert speaker.local_name == "Carol"
     async with harness.session_maker() as session:
-        speaker = (
-            await session.execute(
-                select(RecordingSpeaker).where(
-                    RecordingSpeaker.recording_id == recording.id,
-                    RecordingSpeaker.diarization_label == "SPEAKER_01",
+        owners_people = (
+            (
+                await session.execute(
+                    select(GlobalSpeaker.name).where(
+                        GlobalSpeaker.user_id == recording.user_id
+                    )
                 )
             )
-        ).scalar_one()
-    assert speaker.global_speaker_id == ids["carol"]
+            .scalars()
+            .all()
+        )
+    assert sorted(owners_people) == ["Alice", "Carol"]
+
+
+@pytest.mark.anyio
+async def test_owner_name_links_anyone_in_their_library(harness, meeting) -> None:
+    owner, _, _, recording, ids = meeting
+    async with harness.client(owner) as client:
+        response = await client.put(
+            f"/api/v1/speakers/recordings/{recording.public_id}",
+            json={"diarization_label": "SPEAKER_01", "global_speaker_name": "Carol"},
+        )
+    assert response.status_code == 200, response.text
+    assert (await _speaker(harness, recording, "SPEAKER_01")).global_speaker_id == ids[
+        "carol"
+    ]
+
+
+@pytest.mark.anyio
+async def test_editor_picks_only_people_in_the_meeting_by_id(harness, meeting) -> None:
+    owner, editor, _, recording, ids = meeting
+    from fastapi import HTTPException
+
+    from backend.services.recording_access import require_person_in_reach
+
+    async with harness.session_maker() as session:
+        loaded = await session.get(Recording, recording.id)
+        await require_person_in_reach(session, loaded, editor.id, ids["alice"])
+        await require_person_in_reach(session, loaded, owner.id, ids["carol"])
+        with pytest.raises(HTTPException) as refused:
+            await require_person_in_reach(session, loaded, editor.id, ids["carol"])
+    assert refused.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_editor_runs_ai_analysis_on_their_own_settings_and_budget(
+    harness, meeting, stub_celery_dispatch
+) -> None:
+    _, editor, viewer, recording, _ = meeting
+    url = f"/api/v1/transcripts/{recording.public_id}/analytics/ai/generate"
+    async with harness.client(viewer) as client:
+        refused = await client.post(url)
+    async with harness.client(editor) as client:
+        started = await client.post(url)
+    assert refused.status_code == 403
+    assert started.status_code == 200, started.text
+    assert stub_celery_dispatch == [
+        (
+            "backend.worker.tasks.compute_meeting_analysis_task",
+            [recording.id, editor.id],
+            None,
+        )
+    ]

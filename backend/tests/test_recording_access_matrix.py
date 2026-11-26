@@ -77,7 +77,7 @@ ROUTE_ACCESS = {
     (
         "POST",
         "/speakers/recordings/{recording_id}/speakers/{diarization_label}/promote",
-    ): EDIT,
+    ): OWNER,
     (
         "POST",
         "/speakers/recordings/{recording_id}/speakers/{diarization_label}/split",
@@ -111,8 +111,8 @@ ROUTE_ACCESS = {
     ("POST", "/tags/recordings/{recording_id}"): VIEW,
     ("DELETE", "/tags/recordings/{recording_id}/{tag_name}"): VIEW,
     ("GET", "/transcripts/{recording_id}/analytics"): VIEW,
-    ("POST", "/transcripts/{recording_id}/analytics/ai/generate"): OWNER_ONLY,
-    ("POST", "/transcripts/{recording_id}/analytics/generate"): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/analytics/ai/generate"): EDIT,
+    ("POST", "/transcripts/{recording_id}/analytics/generate"): EDIT,
     ("GET", "/transcripts/{recording_id}/analytics/live"): VIEW,
     ("DELETE", "/transcripts/{recording_id}/chat"): VIEW,
     ("GET", "/transcripts/{recording_id}/chat"): VIEW,
@@ -121,7 +121,7 @@ ROUTE_ACCESS = {
     ("PUT", "/transcripts/{recording_id}/meeting-edge-focus"): OWNER_ONLY,
     ("GET", "/transcripts/{recording_id}/notes"): VIEW,
     ("PUT", "/transcripts/{recording_id}/notes"): EDIT,
-    ("POST", "/transcripts/{recording_id}/notes/generate"): OWNER_ONLY,
+    ("POST", "/transcripts/{recording_id}/notes/generate"): EDIT,
     ("POST", "/transcripts/{recording_id}/replace"): EDIT,
     ("PUT", "/transcripts/{recording_id}/segments"): EDIT,
     ("PUT", "/transcripts/{recording_id}/segments/{segment_index}"): EDIT,

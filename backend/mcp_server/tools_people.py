@@ -61,17 +61,19 @@ async def get_speakers(recording_id: str) -> dict[str, Any]:
     Args:
         recording_id: The recording's string id from list_recordings.
     """
-    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.core.db import async_session_maker
+    from backend.mcp_server.access import recording_for
     from backend.models.recording import Recording
     from backend.models.speaker import RecordingSpeaker
+    from backend.services.recording_access import Access
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
-        recording = await _get_owned_recording(
+        recording = await recording_for(
             db,
             recording_id,
-            user.id,
+            user,
+            Access.VIEW,
             options=(
                 selectinload(Recording.speakers).options(
                     selectinload(RecordingSpeaker.global_speaker)
@@ -367,7 +369,8 @@ async def set_speaker_name(
     "SPEAKER_00") in a meeting. If a person with that exact name already
     exists in the People library, the speaker is linked to them (so the
     person's meeting list and voiceprint stay in sync); otherwise the name
-    is applied to this recording only. To link to a new person, import them
+    is applied to this recording only. On a meeting someone else shared
+    with the user, it links only to a person already in that meeting. To link to a new person, import them
     first with import_people, then call this. Requires the mcp:write scope.
 
     When the speaker is linked, ``library_voiceprint`` says what happened to

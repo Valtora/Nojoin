@@ -6,7 +6,7 @@ import { FileText, RefreshCw, X } from "lucide-react";
 
 import NotesView from "@/components/NotesView";
 import RichTextEditor from "@/components/RichTextEditor";
-import { canEditRecording, ownsRecording } from "@/lib/sharing/access";
+import { canEditRecording } from "@/lib/sharing/access";
 import type { Recording } from "@/types";
 
 interface NotesSectionProps {
@@ -49,9 +49,10 @@ export default function NotesSection({
   // Dismissal is local and deliberately not persisted: the banner is advice,
   // not a task, and it reappears on reload while the notes remain stale.
   const [dismissed, setDismissed] = useState(false);
-  const owner = ownsRecording(recording);
+  // Editors generate notes too, on their own AI settings.
+  const canGenerate = canEditRecording(recording);
   const showStaleBanner =
-    owner &&
+    canGenerate &&
     !inFlight &&
     !isGenerating &&
     !dismissed &&
@@ -107,8 +108,8 @@ export default function NotesSection({
         isGenerating={isGenerating}
         onExport={onExport}
         disableExport={!canExport}
-        canGenerate={owner}
-        readOnly={!canEditRecording(recording)}
+        canGenerate={canGenerate}
+        readOnly={!canGenerate}
       />}
     </div>
   );

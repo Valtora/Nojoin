@@ -39,8 +39,8 @@ const userLabel = (user: ShareUser) =>
 
 /**
  * Who else can open a meeting. Only the owner sees this dialog. People who
- * can edit fix the transcript, speakers and notes; processing, AI generation,
- * deleting and sharing stay with the owner.
+ * can edit fix the transcript, speakers and notes and may run AI on their own
+ * settings; reprocessing, voiceprints, deleting and sharing stay with the owner.
  */
 export default function ShareRecordingDialog({
   recordingId,
@@ -169,7 +169,7 @@ export default function ShareRecordingDialog({
                 </Select>
               </div>
             </div>
-            <div className="max-h-60 overflow-y-auto rounded-lg border border-surface-border">
+            <div className="relative max-h-60 overflow-y-auto rounded-lg border border-surface-border">
               {matchingPeople.length === 0 && matchingGroups.length === 0 ? (
                 <p className="px-3 py-3 text-sm text-contrast-helper">
                   No people or groups match &quot;{query.trim()}&quot;.
@@ -260,9 +260,11 @@ export default function ShareRecordingDialog({
         </div>
 
         <p className="text-xs leading-5 text-contrast-helper">
-          People who can edit can fix the transcript, rename speakers and edit the notes.
-          Reprocessing, generating notes with AI, deleting and sharing stay with you.
-          Chat and tags stay personal to each person.
+          People who can edit can fix the transcript, name speakers, edit the notes and
+          generate notes or analyses with their own AI settings. A name they give a
+          speaker stays on this meeting unless it is already one of your People.
+          Reprocessing, voiceprints, deleting and sharing stay with you, and chat and
+          tags stay personal to each person.
         </p>
       </div>
     </Modal>

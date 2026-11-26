@@ -247,8 +247,8 @@ describe("SpeakerPanel", () => {
     ]);
   });
 
-  it("leaves voiceprints out of the menu on a meeting someone else owns", () => {
-    renderPanel({ canManageVoiceprints: false });
+  it("leaves voiceprints and Add to People out of the menu on a meeting someone else owns", () => {
+    renderPanel({ ownsLibrary: false });
 
     fireEvent.contextMenu(screen.getByText("Alice"));
 
@@ -256,7 +256,6 @@ describe("SpeakerPanel", () => {
       "Rename / Assign",
       "Merge into...",
       "Split / Unmerge Speaker",
-      "Add to People",
       "Delete",
     ]);
   });

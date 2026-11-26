@@ -18,6 +18,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from starlette.exceptions import HTTPException
 
 from backend.mcp_server.auth import current_mcp_user
+from backend.services.recording_access import INSUFFICIENT_ACCESS_DETAIL
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,8 @@ def _route_refusal(exc: HTTPException) -> str:
     detail = exc.detail
     if isinstance(detail, dict):
         detail = detail.get("message")
+    if detail == INSUFFICIENT_ACCESS_DETAIL:
+        return "The user's access to this shared meeting does not allow that."
     if isinstance(detail, str) and detail.strip():
         return detail
     try:

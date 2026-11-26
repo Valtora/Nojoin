@@ -38,7 +38,7 @@ export default function RecordingSpeakers({ recording, liveTranscript, readOnly 
   const capturing = isLiveCaptureInProgress(recording) && !readOnly && owner;
   const panelSpeakers = useMemo(() => [...speakers], [speakers]);
   return <SpeakerPanel {...props} speakers={panelSpeakers} disableEditing={readOnly || props.disableEditing}
-    canManageVoiceprints={owner}
+    ownsLibrary={owner}
     liveSpeakerNames={liveTranscript?.liveSpeakerNames}
     onRenameLiveSpeaker={capturing ? naming.renameLiveSpeaker : undefined}
     onMergeLiveSpeaker={capturing ? naming.mergeLiveSpeaker : undefined}

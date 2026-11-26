@@ -19,7 +19,12 @@ from .speaker_name_apply import apply_inferred_names
 @celery_app.task(
     name="backend.worker.tasks.generate_notes_task", base=DatabaseTask, bind=True
 )
-def generate_notes_task(self, recording_id: int, notes_template_id: int | None = None):
+def generate_notes_task(
+    self,
+    recording_id: int,
+    notes_template_id: int | None = None,
+    requested_by_user_id: int | None = None,
+):
     """
     Generate meeting notes for a recording.
 
@@ -27,6 +32,10 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
     ``None`` falls back through the user's default, the install default and then
     the built-in structure, so an existing queued task with a single argument
     behaves exactly as before.
+
+    ``requested_by_user_id`` is who asked: an editor of a shared meeting runs
+    the notes on their own AI settings and templates, never on the owner's.
+    ``None`` (automatic runs after processing, older queued tasks) is the owner.
     """
     session = self.session
     recording = None
@@ -64,15 +73,14 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         session.add(transcript)
         session.commit()
 
+        ai_user_id = requested_by_user_id or recording.user_id
         user_settings = {}
-        if recording.user_id:
-            user = session.get(User, recording.user_id)
+        if ai_user_id:
+            user = session.get(User, ai_user_id)
             if user and user.settings:
                 user_settings = user.settings
 
-        llm_config = resolve_llm_config(
-            session, user_settings, user_id=recording.user_id
-        )
+        llm_config = resolve_llm_config(session, user_settings, user_id=ai_user_id)
         missing_llm_config = llm_config.missing_configuration_message()
         if missing_llm_config:
             logger.warning("Cannot generate notes: %s", missing_llm_config)
@@ -120,7 +128,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             recording=recording,
             speakers=speakers,
             settings=llm_config.merged_config,
-            user_id=recording.user_id,
+            user_id=ai_user_id,
             explicit_template_id=notes_template_id,
         )
         notes_arguments = {

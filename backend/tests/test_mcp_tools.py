@@ -2244,7 +2244,7 @@ async def test_searchable_recording_ids_scopes_to_owner(
     )
 
     async with session_maker() as session:
-        result = await session.execute(searchable_recording_ids(test_user.id))
+        result = await session.execute(searchable_recording_ids(test_user))
         assert result.scalars().all() == [1]
 
 
@@ -2291,7 +2291,7 @@ async def test_search_context_resolves_speakers_and_provenance(
     )
 
     async def fake_search(db, **kwargs):
-        assert kwargs["user_id"] == test_user.id
+        assert kwargs["user"].id == test_user.id
         return [
             (transcript_chunk, 0.12),
             (document_chunk, 0.31),
@@ -3020,3 +3020,65 @@ async def test_both_transcript_tools_show_the_name_a_live_label_was_given(
     assert "LIVE_PROVISIONAL" not in json.dumps(utterances, default=str)
     assert "Alex:" in transcript["transcript"]
     assert "Speaker 4" not in transcript["transcript"]
+
+
+async def _share_with(
+    session_maker, recording_id: int, user_id: int, level: str
+) -> None:
+    from backend.models.recording_share import RecordingShare
+
+    async with session_maker() as session:
+        session.add(
+            RecordingShare(recording_id=recording_id, user_id=user_id, level=level)
+        )
+        await session.commit()
+
+
+async def _another_user(session_maker, username: str) -> User:
+    async with session_maker() as session:
+        user = User(
+            username=username, hashed_password="hashed", role="user", is_active=True
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
+@pytest.mark.anyio
+async def test_mcp_tools_reach_meetings_shared_with_the_user(
+    session_maker, test_user: User, mcp_context
+):
+    """An assistant gets the user's access: shared meetings are listed and
+    readable, an edit share can be changed, a view share cannot, and a
+    stranger's meeting stays not found."""
+    bind_mcp_identity(test_user)
+    owner = await _another_user(session_maker, "bob")
+    for recording_id, public_id in (
+        (1, "rec-view"),
+        (2, "rec-edit"),
+        (3, "rec-stranger"),
+    ):
+        await seed_bare_recording(
+            session_maker,
+            recording_id=recording_id,
+            public_id=public_id,
+            user_id=owner.id,
+            state="active",
+        )
+    await _share_with(session_maker, 1, test_user.id, "view")
+    await _share_with(session_maker, 2, test_user.id, "edit")
+
+    listed = {r["id"]: r for r in await list_recordings()}
+    assert set(listed) == {"rec-view", "rec-edit"}
+    assert listed["rec-view"]["access"] == "view"
+    assert listed["rec-edit"]["access"] == "edit"
+    assert listed["rec-edit"]["owner"] == "bob"
+
+    assert (await get_meeting_notes("rec-view"))["name"] == "Recording 1"
+    with pytest.raises(ToolError, match="view only"):
+        await rename_recording("rec-view", "Renamed")
+    renamed = await rename_recording("rec-edit", "Renamed by an editor")
+    assert renamed["name"] == "Renamed by an editor"
+    with pytest.raises(ToolError, match="Recording not found"):
+        await get_meeting_notes("rec-stranger")

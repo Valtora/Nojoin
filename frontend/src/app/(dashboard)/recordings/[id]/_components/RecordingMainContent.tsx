@@ -401,7 +401,7 @@ export default function RecordingMainContent({
         />
 
         <AnalyticsSection
-          canGenerate={ownsRecording(recording)}
+          canGenerate={canEditRecording(recording)}
           inFlight={inFlight}
           active={activePanel === "analytics"}
           recordingId={recording.id}
