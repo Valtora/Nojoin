@@ -5,7 +5,7 @@ import type { NotificationAction } from "@/lib/notificationStore";
 import {
   ClientStatus, RecordingStatus, type Recording, type TimelineNote, type TranscriptUtteranceList,
 } from "@/types";
-import { useRecordingDetail } from "./useRecordingDetail";
+import { IDLE_RECORDING_POLL_INTERVAL_MS, useRecordingDetail } from "./useRecordingDetail";
 
 // A shared meeting's notes can be edited by several people. Each save sends
 // the revision it started from; a save refused as a conflict is not lost
@@ -66,6 +66,11 @@ const mount = async () => {
   await advance(0);
   return hook;
 };
+
+const withNotes = (changeSequence: number, notes: string, revision: string): Recording => ({
+  ...recording(changeSequence),
+  transcript: { ...recording(changeSequence).transcript!, notes, notes_revision: revision },
+});
 
 const conflict = (notes: string, revision: string) => Object.assign(new Error("conflict"), {
   response: { status: 409, data: { detail: { code: "notes_conflict", notes, notes_revision: revision } } },
@@ -162,5 +167,47 @@ describe("saving notes someone else may also be editing", () => {
 
     expect(hook.result.current.recording?.transcript?.notes).toBe("Bob's notes");
     expect(mocks.updateNotes).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks an undo against this tab's own last save, not a later poll", async () => {
+    mocks.updateNotes
+      .mockResolvedValueOnce({ notes: "Mine", notes_revision: "rev-mine", status: "ok" })
+      .mockRejectedValueOnce(conflict("Bob's notes", "rev-bob"));
+    const hook = await mount();
+    mocks.getRecording.mockResolvedValue(withNotes(1, "Mine", "rev-mine"));
+    await act(async () => { await hook.result.current.handleNotesChange("Mine"); });
+
+    // A poll then loads Bob's edit, saved after that.
+    mocks.getRecordingIfChanged.mockResolvedValue({ recording: withNotes(2, "Bob's notes", "rev-bob"), etag: null });
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(hook.result.current.recording?.transcript?.notes_revision).toBe("rev-bob");
+
+    await act(async () => { await hook.result.current.handleNotesUndo(); });
+
+    // Putting back the text from before "Mine" would drop Bob's edit, so the
+    // undo is checked against rev-mine and refused, with the usual choices.
+    expect(mocks.updateNotes).toHaveBeenLastCalledWith(
+      "rec-1", "Alice Example will send the plan.", "rev-mine",
+    );
+    expect(conflictActions().map((action) => action.label)).toEqual(["Show their version", "Keep mine"]);
+  });
+
+  it("checks a redo against the revision its undo left", async () => {
+    mocks.updateNotes
+      .mockResolvedValueOnce({ notes: "Mine", notes_revision: "rev-mine", status: "ok" })
+      .mockResolvedValueOnce({ notes: "Alice Example will send the plan.", notes_revision: "rev-undone", status: "ok" })
+      .mockRejectedValueOnce(conflict("Bob's notes", "rev-bob"));
+    const hook = await mount();
+    mocks.getRecording.mockResolvedValue(withNotes(1, "Mine", "rev-mine"));
+    await act(async () => { await hook.result.current.handleNotesChange("Mine"); });
+    await act(async () => { await hook.result.current.handleNotesUndo(); });
+
+    mocks.getRecordingIfChanged.mockResolvedValue({ recording: withNotes(3, "Bob's notes", "rev-bob"), etag: null });
+    await advance(IDLE_RECORDING_POLL_INTERVAL_MS);
+    expect(hook.result.current.recording?.transcript?.notes_revision).toBe("rev-bob");
+    await act(async () => { await hook.result.current.handleNotesRedo(); });
+
+    expect(mocks.updateNotes).toHaveBeenLastCalledWith("rec-1", "Mine", "rev-undone");
+    expect(conflictActions().map((action) => action.label)).toEqual(["Show their version", "Keep mine"]);
   });
 });

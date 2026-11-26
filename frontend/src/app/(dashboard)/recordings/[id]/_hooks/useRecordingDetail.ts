@@ -1028,7 +1028,13 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     setNotesFuture((prev) => [currentNotes, ...prev]);
     setNotesHistory((prev) => prev.slice(0, -1));
 
-    await saveNotes(previousNotes || "", "Failed to undo notes changes.");
+    // Checked against the revision this tab's own last save left, not a later
+    // poll's: restoring older text over someone else's edit is a conflict.
+    await saveNotes(
+      previousNotes || "",
+      "Failed to undo notes changes.",
+      () => notesOwnRevisionRef.current,
+    );
   };
 
   const handleNotesRedo = async () => {
@@ -1040,7 +1046,11 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     setNotesHistory((prev) => [...prev, currentNotes]);
     setNotesFuture((prev) => prev.slice(1));
 
-    await saveNotes(nextNotes || "", "Failed to redo notes changes.");
+    await saveNotes(
+      nextNotes || "",
+      "Failed to redo notes changes.",
+      () => notesOwnRevisionRef.current,
+    );
   };
 
   const handleMeetingEdgeFocusChange = useCallback(async (focus: string) => {
