@@ -65,6 +65,9 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("recordings", "title_user_edited"): "BOOLEAN NOT NULL DEFAULT false",
     ("users", "legal_accepted_at"): "TIMESTAMP",
 }
+# Backed-up tables a later revision creates. An archive made at BEFORE has no
+# member for them, so the old archive is made without them.
+TABLES_ADDED_AFTER_BEFORE = {"user_identities", "recording_shares"}
 
 
 def _alembic(database_url: str, *args: str) -> None:
@@ -233,6 +236,15 @@ def _add_columns_added_after_before(conn: psycopg.Connection) -> None:
         "List each column a revision after BEFORE adds in COLUMNS_ADDED_AFTER_BEFORE: "
         f"{sorted(missing)}"
     )
+    missing_tables = {
+        model.__tablename__
+        for _, model in runtime.MODELS
+        if model.__tablename__ not in tables
+    }
+    assert missing_tables == TABLES_ADDED_AFTER_BEFORE, (
+        "List each backed-up table a revision after BEFORE creates in "
+        f"TABLES_ADDED_AFTER_BEFORE: {sorted(missing_tables)}"
+    )
     for (table, column), ddl in COLUMNS_ADDED_AFTER_BEFORE.items():
         conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {ddl}')
 
@@ -315,7 +327,17 @@ def test_an_old_archive_restores_as_the_upgraded_install_would(
     with psycopg.connect(databases.src) as conn:
         _seed_before(conn)
         _add_columns_added_after_before(conn)
-    old_archive = _back_up(databases.src, monkeypatch)
+    with monkeypatch.context() as before:
+        before.setattr(
+            runtime,
+            "MODELS",
+            [
+                (name, model)
+                for name, model in runtime.MODELS
+                if model.__tablename__ not in TABLES_ADDED_AFTER_BEFORE
+            ],
+        )
+        old_archive = _back_up(databases.src, before)
     with psycopg.connect(databases.src) as conn:
         _drop_columns_added_after_before(conn)
     _alembic(databases.src, "upgrade", "head")

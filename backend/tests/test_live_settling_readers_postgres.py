@@ -181,8 +181,9 @@ async def test_notes_dispatch_with_live_canonical_speech_and_empty_snapshot(
 
     assert response.status_code == 200, response.text
     assert response.json()["notes_status"] == "generating"
+    # The last argument is who asked: the notes run on their AI settings.
     assert stub_celery_dispatch == [
-        ("backend.worker.tasks.generate_notes_task", [recording_id, None], None)
+        ("backend.worker.tasks.generate_notes_task", [recording_id, None, 1], None)
     ]
     async with reader_sessions() as session:
         transcript = (
