@@ -276,6 +276,25 @@ async def begin_login(
     )
 
 
+def _provider_error_suffix(response: httpx.Response) -> str:
+    """The provider's own error code and description, for the log.
+
+    RFC 6749 section 5.2 puts them in the JSON body of a refused token request;
+    they say which setting is wrong (``invalid_client``, ``invalid_grant`` for
+    a redirect URI mismatch) and carry no secrets.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    parts = [
+        str(body[key])[:300] for key in ("error", "error_description") if body.get(key)
+    ]
+    return f": {' - '.join(parts)}" if parts else ""
+
+
 async def _exchange_code(
     settings: OIDCSettings, metadata: dict[str, Any], code: str, code_verifier: str
 ) -> dict[str, Any]:
@@ -299,7 +318,8 @@ async def _exchange_code(
     if response.status_code != 200:
         raise OIDCError(
             "token_exchange_failed",
-            f"Token endpoint returned HTTP {response.status_code}",
+            f"Token endpoint returned HTTP {response.status_code}"
+            + _provider_error_suffix(response),
         )
     try:
         body = response.json()
