@@ -20,7 +20,7 @@ from backend import celery_app as celery_app_module
 from backend import preload_models
 from backend.processing import segmentation_model
 
-BUNDLED_ROOT = Path(__file__).resolve().parents[2] / "bundled_models" / "pyannote"
+BUNDLED_ROOT = Path(__file__).resolve().parents[1] / "bundled_models" / "pyannote"
 BUNDLED_SEGMENTATION = BUNDLED_ROOT / "segmentation-3.0"
 
 

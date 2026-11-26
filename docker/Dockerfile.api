@@ -95,6 +95,10 @@ WORKDIR /app
 ARG NOJOIN_SERVER_VERSION
 ENV NOJOIN_SERVER_VERSION=${NOJOIN_SERVER_VERSION}
 
+# The Alembic config lives in backend/, so `docker compose exec api alembic ...`
+# (the rollback step in the release notes) finds it without `-c`.
+ENV ALEMBIC_CONFIG=/app/backend/alembic.ini
+
 COPY --chown=appuser:appuser . .
 
 RUN set -eu; \

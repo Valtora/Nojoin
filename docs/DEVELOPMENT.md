@@ -60,7 +60,7 @@ The `CI` workflow in [ci.yml](../.github/workflows/ci.yml) runs on pull requests
 | Check | Runs when these changed |
 | --- | --- |
 | `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json`, `scripts/**` |
-| `Migrations (Postgres)` | `backend/alembic/**`, `backend/models/**`, `scripts/check_migrations.py` |
+| `Migrations (Postgres)` | `backend/alembic/**`, `backend/alembic.ini`, `backend/models/**`, `scripts/check_migrations.py` |
 | `Python quality` (Ruff lint and format check, file-size and blind-except gates, mypy) | the `Backend tests` paths |
 | `Frontend lint` (ESLint and the contrast gate) | `frontend/**` |
 | `Frontend unit tests` | `frontend/**` |
@@ -269,11 +269,12 @@ A URL set in the environment is the install's configured Ollama URL, which the U
 ## Backend Development Notes
 
 ```bash
-alembic upgrade head                            # apply migrations
-alembic revision --autogenerate -m "message"    # create a revision
-python -m backend.startup_canonical_cutover     # run the legacy recording sweep alone
+alembic -c backend/alembic.ini upgrade head                           # apply migrations
+alembic -c backend/alembic.ini revision --autogenerate -m "message"   # create a revision
+python -m backend.startup_canonical_cutover                           # run the legacy recording sweep alone
 ```
 
+- The Alembic config is `backend/alembic.ini`, and it resolves its paths from its own directory, so `-c` works from any working directory. The API image sets `ALEMBIC_CONFIG` to it, so `docker compose exec api alembic ...` needs no `-c`.
 - Never delete or rename a committed Alembic revision.
 - The API image's entrypoint runs Alembic (`backend.startup_migrations`), then the canonical cutover sweep for pending legacy recordings, then the server. `NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER=1` skips the sweep for local debugging, and `NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE` sets its batch size (default `100`).
 - The dev template sets `NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS=true` on `api`. A database stamped with a revision that is missing from your checkout is then restamped to the current head before `alembic upgrade head`. Use it only on disposable databases; on a persistent one, repair the graph or the stamp by hand.
