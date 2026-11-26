@@ -1,5 +1,6 @@
 "use client";
 
+import type { NotesSaveOutcome } from "@/lib/notesSave";
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { useState } from "react";
 import { FileText, RefreshCw, X } from "lucide-react";
@@ -18,7 +19,10 @@ interface NotesSectionProps {
   isGenerating: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  onNotesChange: (notes: string) => void;
+  onNotesChange: (
+    notes: string,
+    baseRevision: () => string | undefined,
+  ) => Promise<NotesSaveOutcome> | void;
   onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
   onFindAndReplace: (
     find: string,
@@ -98,6 +102,7 @@ export default function NotesSection({
       ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the transcript.</p> : <NotesView
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
+        notesRevision={recording.transcript?.notes_revision}
         onNotesChange={onNotesChange}
         onGenerateNotes={onGenerateNotes}
         onFindAndReplace={onFindAndReplace}

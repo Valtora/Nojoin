@@ -7,6 +7,7 @@ from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.params import RowId, RowIdsQuery
+from backend.models.recording import Recording
 from backend.models.tag import Tag, TagRead
 from backend.models.task import (
     UserTask,
@@ -18,10 +19,12 @@ from backend.models.task import (
     UserTaskUpdate,
 )
 from backend.models.user import User
-from backend.services.recording_identity_service import (
-    get_recording_by_public_id,
-    get_recordings_by_public_ids,
+from backend.services.recording_access import (
+    Access,
+    accessible_recordings_filter,
+    get_recording_for,
 )
+from backend.services.user_identities import groups_of
 from backend.utils.time import utc_now
 from backend.utils.timezones import (
     convert_datetime_to_utc_naive,
@@ -149,10 +152,21 @@ async def _replace_task_recordings(
         task.recording_links = []
         return
 
-    recordings = await get_recordings_by_public_ids(
-        db,
-        unique_public_ids,
-        user_id=current_user.id,
+    # A task is its user's own, so it may point at any meeting they can open,
+    # their own or one shared with them.
+    recordings = (
+        (
+            await db.execute(
+                select(Recording).where(
+                    Recording.public_id.in_(unique_public_ids),
+                    accessible_recordings_filter(
+                        current_user, await groups_of(db, current_user)
+                    ),
+                )
+            )
+        )
+        .scalars()
+        .all()
     )
     recordings_by_public_id = {
         recording.public_id: recording for recording in recordings
@@ -215,11 +229,11 @@ async def read_tasks(
     )
 
     if recording_id is not None:
-        recording = await get_recording_by_public_id(
-            db, recording_id, user_id=current_user.id
+        # Only the caller's own tasks are listed, so any meeting they can open
+        # will do, shared ones included.
+        recording, _ = await get_recording_for(
+            db, recording_id, current_user, Access.VIEW
         )
-        if recording is None:
-            raise HTTPException(status_code=404, detail="Recording not found")
         statement = statement.where(
             UserTask.recording_links.any(UserTaskRecording.recording_id == recording.id)
         )

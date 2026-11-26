@@ -208,7 +208,10 @@ async def test_switching_on_starts_the_parse_and_either_way_marks_notes_stale(
 
     assert (on.json()["use_in_notes"], on.json()["status"]) == (True, "PENDING")
     assert uploads == [
-        ("backend.worker.tasks.process_document_task", [attachment["id"], False])
+        (
+            "backend.worker.tasks.process_document_task",
+            [attachment["id"], False, notes_api.OWNER_ID],
+        )
     ]
     assert off.json()["use_in_notes"] is False
     assert repeat.status_code == 200

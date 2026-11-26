@@ -135,13 +135,22 @@ async def update_notes(
 ):
     """
     Update the meeting notes for a recording.
+
+    With ``base_revision``, the revision the edited text started from, a save
+    made after someone else's is refused with 409 ``notes_conflict``.
     """
     grant = await resolve_grant(
         grant, db, recording_id, current_user, owned=_get_owned_recording
     )
     recording = grant.recording
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    # Lock the row so two saves from the same base cannot both pass the
+    # revision check: the second waits, then sees the first one's notes.
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 

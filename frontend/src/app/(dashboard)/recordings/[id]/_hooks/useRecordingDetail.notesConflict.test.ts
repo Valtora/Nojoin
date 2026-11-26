@@ -111,6 +111,21 @@ describe("saving notes someone else may also be editing", () => {
     expect(mocks.notify).not.toHaveBeenCalled();
   });
 
+  it("sends the base the editor's text was edited from, read when the save runs", async () => {
+    mocks.updateNotes.mockResolvedValueOnce({ notes: "Mine", notes_revision: "rev-c", status: "ok" });
+    const hook = await mount();
+    let editorBase = "rev-from-editor";
+
+    await act(async () => {
+      const pending = hook.result.current.handleNotesChange("Mine", () => editorBase);
+      editorBase = "rev-moved-later";
+      await pending;
+    });
+
+    // The page has since loaded rev-a from a poll; the editor's base wins.
+    expect(mocks.updateNotes.mock.calls).toEqual([["rec-1", "Mine", "rev-moved-later"]]);
+  });
+
   it("offers their version or mine when someone else saved first", async () => {
     mocks.updateNotes
       .mockRejectedValueOnce(conflict("Bob's notes", "rev-bob"))

@@ -127,11 +127,23 @@ async def share_level_for(db: AsyncSession, recording_id: int, user: User) -> Ac
     return best
 
 
+def shelved_cap(recording: Recording, level: Access) -> Access:
+    """A share's level on a meeting its owner archived or binned: view at most.
+
+    The meeting stays readable for the people it is shared with, who can ask
+    the owner to bring it back (``POST /recordings/{id}/shares/me/restore-request``),
+    but nobody else changes a meeting its owner put away.
+    """
+    if level is Access.EDIT and (recording.is_archived or recording.is_deleted):
+        return Access.VIEW
+    return level
+
+
 async def access_level(db: AsyncSession, recording: Recording, user: User) -> Access:
     if recording.user_id == user.id:
         return Access.OWNER
     assert recording.id is not None
-    return await share_level_for(db, recording.id, user)
+    return shelved_cap(recording, await share_level_for(db, recording.id, user))
 
 
 async def access_levels_for(
@@ -159,6 +171,9 @@ async def access_levels_for(
             levels[recording_id] = max(
                 levels[recording_id], _LEVEL_ACCESS.get(level, Access.NONE)
             )
+        for recording in recordings:
+            assert recording.id is not None
+            levels[recording.id] = shelved_cap(recording, levels[recording.id])
     return levels
 
 
@@ -367,3 +382,22 @@ async def require_person_in_reach(
     )
     if found is None:
         raise HTTPException(status_code=404, detail="Global speaker not found")
+
+
+async def directly_shared(
+    db: AsyncSession, recording_ids: Sequence[int], user: User
+) -> set[int]:
+    """Which of ``recording_ids`` are shared with ``user`` by name.
+
+    Those are the ones they can leave; a group share is the group's.
+    """
+    ids = list(recording_ids)
+    if not ids:
+        return set()
+    result = await db.execute(
+        select(RecordingShare.recording_id).where(
+            RecordingShare.user_id == user.id,
+            RecordingShare.recording_id.in_(ids),
+        )
+    )
+    return set(result.scalars().all())

@@ -682,6 +682,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   access?: RecordingAccess;
   /** Who owns a meeting shared with the caller; null for their own. */
   owner?: { username: string; display_name?: string | null } | null;
+  /** Shared with the caller by name, so they can leave it; a group share cannot be left. */
+  can_leave?: boolean;
   name: string;
   meeting_uid: string;
   audio_path: string;

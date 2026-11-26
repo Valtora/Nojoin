@@ -149,7 +149,8 @@ async def create_text_document(
     await db.refresh(document)
 
     task = await dispatch_task(
-        "backend.worker.tasks.process_document_task", args=[document.id]
+        "backend.worker.tasks.process_document_task",
+        args=[document.id, False, user_id],
     )
     from backend.models.task import register_task_ownership
 
@@ -378,8 +379,10 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     await db.commit()
     await db.refresh(document)
 
+    # Visual analysis runs on the uploader's AI settings, an editor's too.
     task = await dispatch_task(
-        "backend.worker.tasks.process_document_task", args=[document.id]
+        "backend.worker.tasks.process_document_task",
+        args=[document.id, False, current_user.id],
     )
     from backend.models.task import register_task_ownership
 
@@ -400,14 +403,13 @@ async def reparse_document(
     The escape hatch for a document parsed before a vision model was configured,
     or one whose visual parse was downgraded. Always a full re-parse rather than
     a resume, since the point is to redo work the stored pages already hold.
+    It runs on the AI settings of whoever asks, an editor of a shared meeting
+    included.
     """
-    document = await db.get(Document, document_id)
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    recording = await db.get(Recording, document.recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Document not found")
+    # Editors of a shared meeting may parse again too, on their own AI settings.
+    document, recording = await _document_for(
+        db, document_id, current_user, Access.EDIT
+    )
 
     # A live parse touches the row on every page batch, so a PROCESSING
     # document that has not been written to in a long time is one whose worker
@@ -447,7 +449,7 @@ async def reparse_document(
 
     task = await dispatch_task(
         "backend.worker.tasks.process_document_task",
-        args=[document.id, True],
+        args=[document.id, True, current_user.id],
     )
     from backend.models.task import register_task_ownership
 

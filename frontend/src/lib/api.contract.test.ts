@@ -196,6 +196,7 @@ describe("api public surface", () => {
         "reportRecordingCaptureSources",
         "reprocessRecording",
         "requestBackup",
+        "requestRestore",
         "resetNotesTemplate",
         "restoreRecording",
         "resumeRecordingCapture",

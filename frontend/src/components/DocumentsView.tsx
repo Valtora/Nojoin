@@ -33,7 +33,7 @@ interface DocumentsViewProps {
   recordingId: RecordingId;
   /** False for view-only access: no upload or delete. */
   canEdit?: boolean;
-  /** Parsing again runs on the owner's AI settings, so only the owner may. */
+  /** Parsing again: for editors too, on their own AI settings. */
   canReparse?: boolean;
 }
 

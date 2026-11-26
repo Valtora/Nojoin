@@ -117,8 +117,15 @@ _PICTURES_LEFT_OUT_NOTE = (
 )
 
 
-def _resolve_backend_for_document(session, document: Document):
-    """``(backend, reason)`` for this document's owner.
+def _resolve_backend_for_document(
+    session, document: Document, requested_by_user_id: Optional[int] = None
+):
+    """``(backend, reason)`` for whoever asked for the parse.
+
+    That is ``requested_by_user_id``: the person who uploaded or reparsed the
+    document, an editor of a shared meeting included, so it runs on their AI
+    settings and never on the owner's. ``None`` (automatic runs, older queued
+    tasks) falls back to the meeting's owner.
 
     ``backend`` is None when visual analysis cannot run, and ``reason`` says
     why, in the user's terms. The two are returned together because the reason
@@ -129,10 +136,11 @@ def _resolve_backend_for_document(session, document: Document):
     if recording is None or recording.user_id is None:
         return None, "this document is not linked to a user account."
 
-    user = session.get(User, recording.user_id)  # noqa: F405
+    ai_user_id = requested_by_user_id or recording.user_id
+    user = session.get(User, ai_user_id)  # noqa: F405
     user_settings = (user.settings if user else None) or {}
     llm_config = resolve_llm_config(  # noqa: F405
-        session, user_settings, user_id=recording.user_id
+        session, user_settings, user_id=ai_user_id
     )
     missing = llm_config.missing_configuration_message()
     if missing:
@@ -320,11 +328,17 @@ def _clear_previous_parse(session, document: Document) -> None:
     base=DatabaseTask,  # noqa: F405
     bind=True,
 )
-def process_document_task(self, document_id: int, force_reparse: bool = False):
+def process_document_task(
+    self,
+    document_id: int,
+    force_reparse: bool = False,
+    requested_by_user_id: Optional[int] = None,
+):
     """Parse an uploaded document into pages, then embed those pages.
 
     ``force_reparse`` discards any previous result first; without it the task
-    resumes, skipping pages already stored.
+    resumes, skipping pages already stored. Visual analysis runs on the AI
+    settings of ``requested_by_user_id``, who uploaded or reparsed it.
     """
     session = self.session
     document = session.get(Document, document_id)
@@ -353,7 +367,7 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
         if not file_path or not os.path.exists(file_path):
             raise FileNotFoundError("The uploaded file is no longer on disk.")
 
-        _parse_document(session, document, file_path)
+        _parse_document(session, document, file_path, requested_by_user_id)
 
     except Exception as e:  # noqa: BLE001 -- boundary: any parse failure marks the document
         _record_parse_failure(session, document, document_id, e)
@@ -592,11 +606,15 @@ def _flag_notes_stale(session, document: Document) -> None:
     session.commit()
 
 
-def _resolve_vision(session, document: Document):
+def _resolve_vision(
+    session, document: Document, requested_by_user_id: Optional[int] = None
+):
     """(backend, use_vision, warning) for this document's requested parse mode."""
     if document.parse_mode != DocumentParseMode.VISUAL:
         return None, False, None
-    backend, reason = _resolve_backend_for_document(session, document)
+    backend, reason = _resolve_backend_for_document(
+        session, document, requested_by_user_id
+    )
     if backend is None:
         return None, False, _NO_VISION_WARNING.format(reason=reason)
     return backend, True, None
@@ -663,9 +681,16 @@ def _parse_warning(
     return parse_warning
 
 
-def _parse_document(session, document: Document, file_path: str) -> None:
+def _parse_document(
+    session,
+    document: Document,
+    file_path: str,
+    requested_by_user_id: Optional[int] = None,
+) -> None:
     """Read ``file_path`` page by page, persist each page, then index it."""
-    backend, use_vision, warning = _resolve_vision(session, document)
+    backend, use_vision, warning = _resolve_vision(
+        session, document, requested_by_user_id
+    )
 
     source = open_document(file_path, want_images=use_vision)
     is_rendered = is_rendered_page_format(file_path)

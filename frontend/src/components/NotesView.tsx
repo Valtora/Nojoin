@@ -35,6 +35,7 @@ import { spellCheckService } from "@/lib/spellCheckService";
 import { getSpellCheckErrorAtPos } from "@/lib/SpellCheckExtension";
 import { getSettings } from "@/lib/api";
 import type { RecordingId } from "@/types";
+import type { NotesSaveOutcome } from "@/lib/notesSave";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 /** Notes as the editor is given them: without the generated title, trimmed. */
@@ -45,7 +46,17 @@ function toDisplayNotes(notes: string | null): string | null {
 interface NotesViewProps {
   recordingId: RecordingId;
   notes: string | null;
-  onNotesChange: (notes: string) => void;
+  /** Revision of ``notes``, the base a save of the edited text is checked against. */
+  notesRevision?: string;
+  /**
+   * Saves the edited notes. ``baseRevision`` is read when the save runs: the
+   * revision this text was edited from. A conflict's outcome settles once the
+   * user has chosen between the other version and theirs.
+   */
+  onNotesChange: (
+    notes: string,
+    baseRevision: () => string | undefined,
+  ) => Promise<NotesSaveOutcome> | void;
   onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
   /** Template that produced the current notes, for the picker's tick. */
   activeTemplateId?: number | null;
@@ -72,6 +83,7 @@ interface NotesViewProps {
 
 export default function NotesView({
   notes,
+  notesRevision,
   onNotesChange,
   onGenerateNotes,
   activeTemplateId = null,
@@ -128,8 +140,24 @@ export default function NotesView({
   >([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
 
+  // Several people may edit a shared meeting's notes. The editor's text keeps
+  // the revision it was edited from, and a save is checked against it. While
+  // the text holds changes not yet saved, or a save the server refused, notes
+  // arriving from a poll wait rather than replace it, and do not move the base:
+  // otherwise a stale save would pass the check and drop someone's edit.
+  const baseRevisionRef = useRef(notesRevision);
+  const holdRef = useRef(false);
+  const savesInFlightRef = useRef(0);
+  const incomingRef = useRef({ displayNotes, notesRevision });
+  incomingRef.current = { displayNotes, notesRevision };
+
+  useEffect(() => {
+    if (!holdRef.current) baseRevisionRef.current = notesRevision;
+  }, [notesRevision]);
+
   // Update localNotes when notes prop changes externally
   useEffect(() => {
+    if (holdRef.current) return;
     const normalizedProp = displayNotes || "";
     // Updates local state if prop differs from local and last saved value.
     // A save comes back here in its display form, while lastSavedNotes holds
@@ -142,22 +170,67 @@ export default function NotesView({
     }
   }, [displayNotes]);
 
+  /** Let go of the held text and show the notes as they are now. */
+  const adoptIncoming = () => {
+    holdRef.current = false;
+    const { displayNotes: incoming, notesRevision: revision } = incomingRef.current;
+    setLocalNotes(incoming || "");
+    lastSavedNotes.current = incoming || "";
+    baseRevisionRef.current = revision;
+  };
+
+  const releaseIfSettled = () => {
+    if (savesInFlightRef.current === 0 && !saveTimeoutRef.current) {
+      holdRef.current = false;
+    }
+  };
+
+  const followOutcome = (outcome: NotesSaveOutcome | void) => {
+    if (!outcome) {
+      releaseIfSettled();
+      return;
+    }
+    if (outcome.status === "saved") {
+      if (outcome.revision) baseRevisionRef.current = outcome.revision;
+      releaseIfSettled();
+    } else if (outcome.status === "conflict") {
+      // Keep holding the refused text until the user chooses.
+      void outcome.resolution.then((resolved) => {
+        if (resolved.choice === "theirs") {
+          adoptIncoming();
+        } else {
+          followOutcome(resolved.outcome);
+        }
+      });
+    }
+    // A failed save keeps the text held; the next edit saves it again.
+  };
+
   const handleEditorChange = (newContent: string) => {
     setLocalNotes(newContent);
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
     }
 
     // The editor can report the notes exactly as they were saved: on load, or
     // after an edit is undone. Saving that would rewrite them for nothing.
     if (newContent === lastSavedNotes.current) {
+      releaseIfSettled();
       return;
     }
 
+    holdRef.current = true;
     saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null;
       lastSavedNotes.current = newContent;
-      onNotesChange(newContent);
+      savesInFlightRef.current += 1;
+      void Promise.resolve(onNotesChange(newContent, () => baseRevisionRef.current))
+        .finally(() => {
+          savesInFlightRef.current -= 1;
+        })
+        .then(followOutcome, () => releaseIfSettled());
     }, 1000); // 1 second debounce
   };
 

@@ -42,6 +42,7 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 import { useNotificationStore } from "@/lib/notificationStore";
+import type { NotesConflictChoice, NotesSaveOutcome } from "@/lib/notesSave";
 import { useSessionStore } from "@/lib/session";
 import { libraryVoiceprintNotices } from "@/lib/libraryVoiceprint";
 import { useNavigationStore } from "@/lib/store";
@@ -105,7 +106,11 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   // The revision of the notes this tab last read or saved, sent as the base of
   // the next save (saveNotes). Saves queue on the chain so they run in order.
   const notesRevisionRef = useRef<string | undefined>(undefined);
-  const notesSaveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const notesSaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  // How many of this tab's saves are queued or running, and the revision the
+  // last of them left (saveNotes).
+  const notesSavesQueuedRef = useRef(0);
+  const notesOwnRevisionRef = useRef<string | undefined>(undefined);
   const loadedNotesRevision = recording?.transcript?.notes_revision;
   useEffect(() => {
     notesRevisionRef.current = loadedNotesRevision;
@@ -917,59 +922,83 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   };
 
   /**
-   * Saves notes one at a time, each from the revision the last one left.
+   * Saves notes one at a time, each from the revision it was edited from.
    *
    * A shared meeting's notes can be edited by several people. Every save sends
-   * the revision it started from, and the server refuses it if someone else
-   * saved meanwhile (409). Running this tab's saves in order keeps its own
-   * quick successive saves from counting as each other's conflicts. On a real
-   * conflict the change is not saved, and the user chooses between the other
-   * version and theirs.
+   * the revision its text was based on (``baseRevision``, read when the save
+   * runs), and the server refuses it with 409 if someone else saved since. A
+   * save queued behind this tab's own earlier save builds on that save's
+   * result instead, so quick successive saves are not each other's conflicts.
+   *
+   * On a real conflict nothing is saved, and the user chooses between the other
+   * version and theirs. The outcome's ``resolution`` settles with that choice,
+   * so the editor can hold the refused text until then.
    */
-  const saveNotes = (notes: string, failureMessage: string): Promise<void> => {
+  const saveNotes = (
+    notes: string,
+    failureMessage: string,
+    baseRevision: () => string | undefined = () => notesRevisionRef.current,
+  ): Promise<NotesSaveOutcome> => {
     const recordingId = recording?.id;
-    if (!recordingId) return Promise.resolve();
-    const run = async () => {
+    if (!recordingId) return Promise.resolve({ status: "failed" });
+    const followsOwnSave = notesSavesQueuedRef.current > 0;
+    notesSavesQueuedRef.current += 1;
+    const run = async (): Promise<NotesSaveOutcome> => {
+      const base = followsOwnSave ? notesOwnRevisionRef.current : baseRevision();
+      // A save behind a refused one is refused too: it builds on the same text.
+      notesOwnRevisionRef.current = base;
       try {
-        const saved = await updateNotes(recordingId, notes, notesRevisionRef.current);
-        if (saved?.notes_revision) notesRevisionRef.current = saved.notes_revision;
+        const saved = await updateNotes(recordingId, notes, base);
+        const revision = saved?.notes_revision;
+        if (revision) {
+          notesRevisionRef.current = revision;
+          notesOwnRevisionRef.current = revision;
+        }
         // A notes save moves the transcript change counter itself, so the read
         // keeps the page's and the next poll loads the transcript once, rather
         // than after every save.
         const updated = await metadataReader.read(recordingId);
-        if (!updated) return;
-        await storeRecordingRead(updated, false);
+        if (updated) await storeRecordingRead(updated, false);
+        return { status: "saved", revision };
       } catch (e: unknown) {
         const conflict = notesConflictOf(e);
         if (conflict) {
           notesRevisionRef.current = conflict.notes_revision;
-          addNotification({
-            type: "warning",
-            persistent: true,
-            message:
-              "Someone else changed these notes while you were editing, so your last change was not saved.",
-            actions: [
-              {
-                label: "Show their version",
-                variant: "primary",
-                onClick: () => {
-                  void metadataReader.read(recordingId).then((updated) => {
-                    if (updated) void storeRecordingRead(updated, false);
-                  });
+          const resolution = new Promise<NotesConflictChoice>((resolve) => {
+            addNotification({
+              type: "warning",
+              persistent: true,
+              message:
+                "Someone else changed these notes while you were editing, so your last change was not saved.",
+              actions: [
+                {
+                  label: "Show their version",
+                  variant: "primary",
+                  onClick: () => {
+                    void metadataReader.read(recordingId).then(async (updated) => {
+                      if (updated) await storeRecordingRead(updated, false);
+                      resolve({ choice: "theirs" });
+                    });
+                  },
                 },
-              },
-              {
-                label: "Keep mine",
-                onClick: () => {
-                  void saveNotes(notes, failureMessage);
+                {
+                  label: "Keep mine",
+                  onClick: () => {
+                    void saveNotes(notes, failureMessage, () => conflict.notes_revision).then(
+                      (outcome) => resolve({ choice: "mine", outcome }),
+                    );
+                  },
                 },
-              },
-            ],
+              ],
+            });
           });
-          return;
+          return { status: "conflict", resolution };
         }
         console.error(failureMessage, e);
         addNotification({ type: "error", message: failureMessage });
+        return { status: "failed" };
+      } finally {
+        notesSavesQueuedRef.current -= 1;
       }
     };
     const next = notesSaveChainRef.current.then(run, run);
@@ -977,14 +1006,17 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     return next;
   };
 
-  const handleNotesChange = async (notes: string) => {
-    if (!recording) return;
+  const handleNotesChange = async (
+    notes: string,
+    baseRevision?: () => string | undefined,
+  ): Promise<NotesSaveOutcome> => {
+    if (!recording) return { status: "failed" };
 
     // Always push current notes to history (even if null) before making changes
     setNotesHistory((prev) => [...prev, recording.transcript?.notes ?? null]);
     setNotesFuture([]); // Clear redo stack
 
-    await saveNotes(notes, "Failed to update notes.");
+    return saveNotes(notes, "Failed to update notes.", baseRevision);
   };
 
   const handleNotesUndo = async () => {

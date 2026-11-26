@@ -206,8 +206,10 @@ async def set_note_file_use_in_notes(  # noqa: PLR0913 - FastAPI dependencies ar
     await db.commit()
     await db.refresh(document)
     if parse:
+        # On the AI settings of whoever turned it on, an editor's too.
         task = await dispatch_task(
-            "backend.worker.tasks.process_document_task", args=[document.id, reparse]
+            "backend.worker.tasks.process_document_task",
+            args=[document.id, reparse, user_id],
         )
         from backend.models.task import register_task_ownership
 

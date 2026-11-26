@@ -661,11 +661,14 @@ export default function Sidebar() {
             setShowInfoModal(true);
           },
         },
-        {
+      );
+      // Shared through a group, it is the group's: only the owner removes it.
+      if (recording.can_leave) {
+        items.push({
           label: "Leave Shared Meeting",
           onClick: () => void handleLeaveShared(recording.id),
-        },
-      );
+        });
+      }
       return items;
     }
 

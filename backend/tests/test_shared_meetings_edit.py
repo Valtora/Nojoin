@@ -350,3 +350,42 @@ async def test_editor_runs_ai_analysis_on_their_own_settings_and_budget(
             None,
         )
     ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("shelf", ["is_archived", "is_deleted"])
+async def test_a_put_away_meeting_is_read_only_and_the_owner_can_be_asked(
+    harness, meeting, shelf: str
+) -> None:
+    owner, editor, _, recording, _ = meeting
+    detail_url = f"/api/v1/recordings/{recording.public_id}"
+    ask_url = f"/api/v1/recordings/{recording.public_id}/shares/me/restore-request"
+    async with harness.client(editor) as client:
+        too_early = await client.post(ask_url)
+    assert too_early.status_code == 409
+
+    async with harness.session_maker() as session:
+        stored = await session.get(Recording, recording.id)
+        setattr(stored, shelf, True)
+        await session.commit()
+
+    async with harness.client(editor) as client:
+        detail = await client.get(detail_url)
+        edit = await client.put(
+            f"/api/v1/transcripts/{recording.public_id}/notes", json={"notes": "Late"}
+        )
+        first = await client.post(ask_url)
+        again = await client.post(ask_url)
+    assert detail.status_code == 200 and detail.json()["access"] == "view"
+    assert edit.status_code == 403
+    assert first.status_code == 200 and first.json()["already_asked"] is False
+    assert again.json() == {"task_id": first.json()["task_id"], "already_asked": True}
+
+    async with harness.client(owner) as client:
+        tasks = await client.get(
+            "/api/v1/tasks/", params={"recording_id": recording.public_id}
+        )
+    verb = "unarchive" if shelf == "is_archived" else "restore"
+    assert [task["title"] for task in tasks.json()] == [
+        f'editor asks you to {verb} "{recording.name}"'
+    ]

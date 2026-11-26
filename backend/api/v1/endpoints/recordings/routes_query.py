@@ -44,6 +44,7 @@ from backend.services.recording_access import (
     RecordingGrant,
     access_levels_for,
     accessible_recordings_filter,
+    directly_shared,
     owned_filter,
     owner_reads,
     require_recording,
@@ -202,7 +203,7 @@ async def list_recordings(
             query = query.where(Recording.is_archived == False)
 
     # 1. Text search across title, tags, speaker names and transcript.
-    search = recording_search_condition(q) if q else None
+    search = recording_search_condition(q, current_user.id) if q else None
     if search is not None:
         query = query.where(search)
 
@@ -239,6 +240,11 @@ async def list_recordings(
     )
     levels = await access_levels_for(db, recordings, current_user)
     owners = await owner_reads(db, recordings, current_user)
+    leavable = await directly_shared(
+        db,
+        [r.id for r in recordings if r.id is not None and levels[r.id] < Access.OWNER],
+        current_user,
+    )
     return [
         serialize_recording(
             recording,
@@ -247,6 +253,7 @@ async def list_recordings(
             tags_override=tags_by_recording.get(recording.id, []),
             access=levels[recording.id].label,
             owner=owners.get(recording.user_id),
+            can_leave=recording.id in leavable,
         )
         for recording in recordings
     ]
@@ -604,6 +611,8 @@ async def get_recording(
         ],
         access=grant.access.label,
         owner=(await owner_reads(db, [recording], current_user)).get(recording.user_id),
+        can_leave=not grant.is_owner
+        and recording.id in await directly_shared(db, [recording.id], current_user),
     )
     if recording.status in _LIVE_AI_STATUSES:
         notices = await run_in_threadpool(

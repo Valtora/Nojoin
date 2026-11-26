@@ -57,6 +57,19 @@ export const leaveShare = async (recordingId: RecordingId): Promise<void> => {
   await api.delete(`/recordings/${recordingId}/shares/me`);
 };
 
+/**
+ * Asks the owner to bring back a shared meeting they archived or binned. It
+ * lands in their Tasks; asking again while that task is open adds nothing.
+ */
+export const requestRestore = async (
+  recordingId: RecordingId,
+): Promise<{ task_id: number; already_asked: boolean }> => {
+  const response = await api.post<{ task_id: number; already_asked: boolean }>(
+    `/recordings/${recordingId}/shares/me/restore-request`,
+  );
+  return response.data;
+};
+
 export const getUserDirectory = async (): Promise<ShareUser[]> => {
   const response = await api.get<ShareUser[]>("/users/directory");
   return response.data;

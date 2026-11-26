@@ -23,7 +23,12 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from backend.models.recording_share import RecordingShare
-from backend.services.recording_access import Access, declared_access
+from backend.services.recording_access import (
+    INSUFFICIENT_ACCESS_DETAIL,
+    NOT_FOUND_DETAIL,
+    Access,
+    declared_access,
+)
 from backend.tests.sso_sharing_support import build_harness, recording_routes
 
 OWNER_ONLY = "owner-only"
@@ -58,6 +63,7 @@ ROUTE_ACCESS = {
     ("GET", "/recordings/{recording_id}/shares"): OWNER,
     ("PUT", "/recordings/{recording_id}/shares"): OWNER,
     ("DELETE", "/recordings/{recording_id}/shares/me"): VIEW,
+    ("POST", "/recordings/{recording_id}/shares/me/restore-request"): VIEW,
     ("DELETE", "/recordings/{recording_id}/shares/{share_id}"): OWNER,
     ("POST", "/recordings/{recording_id}/upload-token"): OWNER_ONLY,
     ("PUT", "/speakers/recordings/{recording_id}"): EDIT,
@@ -204,9 +210,16 @@ def test_handler_checks_access_before_anything_else(method: str, path: str) -> N
     assert awaits and awaits[0] in ACCESS_CHECKS, awaits[:3]
 
 
+# Path parameters a route checks the form of before its access check: the live
+# naming routes take a live label (LIVE_PROVISIONAL_<n>), not a diarization one.
+PATH_VALUES = {"label": "LIVE_PROVISIONAL_1"}
+
+
 def _concrete(path: str, public_id: str) -> str:
     path = path.replace("{recording_id}", public_id)
-    return re.sub(r"\{[^}]+\}", "1", path)
+    return re.sub(
+        r"\{([^}]+)\}", lambda match: PATH_VALUES.get(match.group(1), "1"), path
+    )
 
 
 @pytest.fixture
@@ -224,8 +237,8 @@ async def _share(harness, recording, user, level: str) -> None:
 
 
 def _client(harness, user) -> AsyncClient:
-    # A handler that runs with an empty body may fail in its own way; this
-    # test is only about whether the access check let the call through.
+    # A handler that runs past its access check may still fail in its own way
+    # on these thin fixtures; this test is only about the access check.
     return AsyncClient(
         transport=ASGITransport(app=harness.app, raise_app_exceptions=False),
         base_url="https://localhost:14443",
@@ -233,52 +246,211 @@ def _client(harness, user) -> AsyncClient:
     )
 
 
+# A request each route accepts as valid, so that validation (which runs before
+# the access check) passes and the call reaches the check. Routes not listed
+# take no body and no required query parameter.
+_UPLOAD = {"files": {"file": ("agenda.txt", b"Agenda", "text/plain")}}
+REQUESTS: dict[tuple[str, str], dict] = {
+    ("PATCH", "/recordings/{recording_id}"): {"json": {"name": "Renamed"}},
+    ("PUT", "/recordings/{recording_id}/calendar-event"): {"json": {}},
+    ("POST", "/recordings/{recording_id}/capture-source-report"): {
+        "json": {"attempt_kind": "start", "outcome": "ok", "mode": "microphone"}
+    },
+    ("PUT", "/recordings/{recording_id}/client_status"): {"params": {"status": "IDLE"}},
+    ("POST", "/recordings/{recording_id}/documents"): _UPLOAD,
+    ("POST", "/recordings/{recording_id}/reprocess"): {
+        "json": {"transcription_backend": "whisper"}
+    },
+    ("POST", "/recordings/{recording_id}/segment"): {
+        **_UPLOAD,
+        "params": {"sequence": 0},
+    },
+    ("PUT", "/recordings/{recording_id}/shares"): {
+        "json": {"group": "nobody", "level": "view"}
+    },
+    ("PUT", "/speakers/recordings/{recording_id}"): {
+        "json": {"diarization_label": "SPEAKER_00", "global_speaker_name": "Ann"}
+    },
+    ("PUT", "/speakers/recordings/{recording_id}/live/{label}"): {
+        "json": {"name": "Ann"}
+    },
+    ("POST", "/speakers/recordings/{recording_id}/live/{label}/merge"): {
+        "json": {"into_label": "LIVE_PROVISIONAL_2"}
+    },
+    ("POST", "/speakers/recordings/{recording_id}/merge"): {
+        "json": {
+            "target_speaker_label": "SPEAKER_00",
+            "source_speaker_label": "SPEAKER_01",
+        }
+    },
+    ("PUT", "/speakers/recordings/{recording_id}/speakers/{label}/color"): {
+        "json": {"color": "blue"}
+    },
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/split",
+    ): {"json": {"new_speaker_name": "Ann", "segments": []}},
+    (
+        "POST",
+        "/speakers/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/apply",
+    ): {"json": {"action": "create_new"}},
+    ("POST", "/tags/recordings/{recording_id}"): {"json": {"name": "Planning"}},
+    ("POST", "/transcripts/{recording_id}/chat"): {"json": {"message": "Hi"}},
+    ("PUT", "/transcripts/{recording_id}/meeting-edge-focus"): {
+        "json": {"meeting_edge_focus": "Decisions"}
+    },
+    ("PUT", "/transcripts/{recording_id}/notes"): {"json": {"notes": "Notes"}},
+    ("POST", "/transcripts/{recording_id}/replace"): {
+        "json": {"find_text": "a", "replace_text": "b"}
+    },
+    ("PUT", "/transcripts/{recording_id}/segments"): {"json": {"segments": []}},
+    ("PUT", "/transcripts/{recording_id}/segments/{segment_index}"): {
+        "json": {"new_speaker_name": "Ann"}
+    },
+    ("PUT", "/transcripts/{recording_id}/segments/{segment_index}/text"): {
+        "json": {"text": "Hello"}
+    },
+    ("POST", "/transcripts/{recording_id}/timeline-notes"): {
+        "json": {"kind": "point", "body": "Note", "anchor_ms": 0}
+    },
+    ("PATCH", "/transcripts/{recording_id}/timeline-notes/{note_id}"): {
+        "json": {"expected_revision": 1, "body": "Note"}
+    },
+    (
+        "POST",
+        "/transcripts/{recording_id}/timeline-notes/{note_id}/attachment",
+    ): _UPLOAD,
+    ("PATCH", "/transcripts/{recording_id}/timeline-notes/{note_id}/attachment"): {
+        "json": {"use_in_notes": True}
+    },
+    ("PATCH", "/transcripts/{recording_id}/utterances/{utterance_id}/speaker"): {
+        "json": {"new_speaker_name": "Ann"}
+    },
+    ("POST", "/transcripts/{recording_id}/utterances/{utterance_id}/split"): {
+        "json": {"before_word_id": "w1", "expected_revision": 1}
+    },
+    ("PATCH", "/transcripts/{recording_id}/utterances/{utterance_id}/text"): {
+        "json": {"text": "Hello"}
+    },
+}
+
+
+# Routes retired upstream answer 410 Gone to everyone.
+RETIRED = {("POST", "/recordings/{recording_id}/upload-token")}
+
+
+def _detail(response):
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    detail = body.get("detail") if isinstance(body, dict) else None
+    # The notes routes nest it: {"code": "recording_not_found", "message": ...}.
+    if isinstance(detail, dict):
+        return detail.get("message")
+    return detail
+
+
 def _refused(response) -> bool:
-    return response.status_code == 404 or (
-        response.status_code == 403
-        and response.json().get("detail") == "insufficient_access"
+    """The access check said no: not found, or found but too low a level."""
+    detail = _detail(response)
+    return (response.status_code == 404 and detail == NOT_FOUND_DETAIL) or (
+        response.status_code == 403 and detail == INSUFFICIENT_ACCESS_DETAIL
     )
+
+
+async def _call(harness, user, method: str, path: str, public_id: str):
+    async with _client(harness, user) as client:
+        return await client.request(
+            method,
+            "/api/v1" + _concrete(path, public_id),
+            **REQUESTS.get((method, path), {}),
+        )
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("method", "path"), sorted(ROUTE_ACCESS), ids=lambda value: str(value)
 )
-async def test_route_refuses_callers_below_its_level(
+async def test_route_refuses_callers_below_its_level_and_admits_the_rest(
     harness, stub_celery_dispatch, method: str, path: str
 ) -> None:
+    """Each route answers the access check's refusal to everyone below its
+    level, and lets a caller at its level past the check. A 422 or an
+    unmatched path fails the test, so the check is really reached."""
     expected = ROUTE_ACCESS[(method, path)]
+    if (method, path) in RETIRED:
+        pytest.skip("retired upstream: 410 for every caller")
     owner = await harness.add_user("owner")
     recording = await harness.add_recording(owner)
-    url = _concrete(path, recording.public_id)
+
+    stranger = await harness.add_user("stranger")
+    response = await _call(harness, stranger, method, path, recording.public_id)
+    assert _refused(response) and response.status_code == 404, response.text
+
+    levels = ["view", "edit"]
+    for level in levels:
+        sharee = await harness.add_user(f"sharee-{level}")
+        await _share(harness, recording, sharee, level)
+        response = await _call(harness, sharee, method, path, recording.public_id)
+        assert response.status_code != 422, (level, response.text)
+        sharee_level = Access.VIEW if level == "view" else Access.EDIT
+        if expected == OWNER_ONLY or sharee_level < expected:
+            assert _refused(response), (level, response.status_code, response.text)
+        else:
+            assert not _refused(response), (level, response.status_code, response.text)
+
+    response = await _call(harness, owner, method, path, recording.public_id)
+    assert response.status_code != 422, response.text
+    assert not _refused(response), (response.status_code, response.text)
+
+
+# The document routes name a document, not a recording, and take the level of
+# the recording it belongs to.
+DOCUMENT_ROUTE_ACCESS = {
+    ("GET", "/documents/{document_id}/download"): VIEW,
+    ("GET", "/documents/{document_id}/preview"): VIEW,
+    ("DELETE", "/documents/{document_id}"): EDIT,
+    ("POST", "/documents/{document_id}/reparse"): EDIT,
+}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("method", "path"), sorted(DOCUMENT_ROUTE_ACCESS), ids=lambda value: str(value)
+)
+async def test_document_route_follows_its_recordings_level(
+    harness, method: str, path: str
+) -> None:
+    from backend.models.document import Document, DocumentStatus
+
+    expected = DOCUMENT_ROUTE_ACCESS[(method, path)]
+    owner = await harness.add_user("owner")
+    recording = await harness.add_recording(owner)
+    async with harness.session_maker() as session:
+        document = Document(
+            recording_id=recording.id,
+            title="Agenda",
+            file_path="/nonexistent/agenda.txt",
+            file_type="text/plain",
+            status=DocumentStatus.READY,
+        )
+        session.add(document)
+        await session.commit()
+        await session.refresh(document)
+    url = "/api/v1" + path.replace("{document_id}", str(document.id))
 
     stranger = await harness.add_user("stranger")
     async with _client(harness, stranger) as client:
         response = await client.request(method, url)
-    # 422: the request failed validation, which runs before any access check
-    # (an empty body, a missing query parameter). It reveals nothing.
-    if expected == OWNER_ONLY:
-        assert response.status_code in (404, 422), response.text
-    else:
-        assert response.status_code in (404, 422), response.text
+    assert response.status_code == 404, response.text
 
-    levels_below = {
-        OWNER_ONLY: ["view", "edit"],
-        OWNER: ["view", "edit"],
-        EDIT: ["view"],
-        VIEW: [],
-    }[expected]
-    for level in levels_below:
+    for level, sharee_level in (("view", Access.VIEW), ("edit", Access.EDIT)):
         sharee = await harness.add_user(f"sharee-{level}")
         await _share(harness, recording, sharee, level)
         async with _client(harness, sharee) as client:
             response = await client.request(method, url)
-        if expected == OWNER_ONLY:
-            # The owner-only check answers 404 to everyone else.
-            assert response.status_code in (404, 422), response.text
+        if sharee_level < expected:
+            assert response.status_code == 403, (level, response.text)
         else:
-            assert response.status_code == 422 or _refused(response), (
-                level,
-                response.status_code,
-                response.text,
-            )
+            assert response.status_code not in (403, 422), (level, response.text)

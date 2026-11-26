@@ -261,13 +261,17 @@ A line whose text was changed by hand in the web app is marked `Edited`. `AI cor
 **Share** in a meeting's header lets the owner give other people access. Search for a person or, on an installation with [single sign-on](ADMIN.md#single-sign-on), one of your own groups, choose **Can edit** or **Can view**, and click the row to share. **Who has access** lists everyone the meeting is shared with, where you can change their access or remove them. Sharing with a group covers everyone in it at their latest sign-in.
 
 - **Can view** opens the meeting, its transcript, notes, documents and analytics, plays the audio and exports it.
-- **Can edit** also changes the transcript, speakers and their names, the meeting notes, timeline notes and documents, and renames the meeting. It can also generate the notes and run the analyses, which use the AI settings and daily allowance of whoever starts them.
+- **Can edit** also changes the transcript, speakers and their names, the meeting notes, timeline notes and documents, and renames the meeting. It can also generate the notes, run the analyses and parse documents again. Generating, analysing, and reading a document or a note's picture with AI all use the AI settings and daily allowance of whoever uploads or starts them.
 - A speaker's name is the owner's to manage. Someone who can edit can pick a person already in the meeting, but a new name they type stays a name in this meeting only and is not added to the owner's **People**. The owner can add it later with **Add to People**.
 - Deleting, archiving, reprocessing, voiceprints, **Add to People**, linking a calendar event and sharing stay with the owner.
 - **Meeting Chat** and tags are your own: others don't see your questions or your tags, and chat answers use your own AI settings.
 - An assistant connected through the [MCP connector](MCP.md) has the same access as you: it sees the meetings shared with you, and changes them only where you can.
 
-A meeting shared with you shows a people icon in the recordings list and **Shared by** with the owner's name in its header. **Leave** in the header, or **Leave Shared Meeting** in the list's **⋯** menu, removes it from your list. A meeting shared with a group you are in can only be removed by its owner.
+A meeting shared with you shows a people icon in the recordings list and **Shared by** with the owner's name in its header. **Leave** in the header, or **Leave Shared Meeting** in the list's **⋯** menu, removes it from your list. A meeting shared with a group you are in has neither: only its owner can remove it.
+
+When the owner archives a shared meeting or moves it to the bin, the people it is shared with can still open it but only read it. Its header says so, with **Ask to unarchive it** or **Ask to restore it**, which adds a task to the owner's **Tasks** linked to the meeting. Asking again while that task is open adds nothing.
+
+Your own tasks can link to any meeting you can open, shared ones included.
 
 When two people edit the meeting notes at once, the one who saves second sees a notice that someone else changed them. **Show their version** loads the other version, and **Keep mine** saves yours over it.
 

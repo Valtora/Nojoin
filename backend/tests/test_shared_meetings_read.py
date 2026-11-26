@@ -295,3 +295,84 @@ async def test_user_directory_lists_names_only(harness, people) -> None:
     assert {u["username"] for u in users} == {"viewer", "member", "stranger"}
     assert set(users[0]) == {"id", "username", "display_name"}
     assert groups == [{"name": "research", "member_count": 2}]
+
+
+@pytest.mark.anyio
+async def test_sharee_links_and_lists_their_own_tasks_for_a_shared_meeting(
+    harness, people
+) -> None:
+    owner, viewer, _, stranger = people
+    recording = await harness.add_recording(owner)
+    harness_session = harness.session_maker
+    async with harness_session() as session:
+        session.add(
+            RecordingShare(recording_id=recording.id, user_id=viewer.id, level="view")
+        )
+        await session.commit()
+
+    async with harness.client(viewer) as client:
+        created = await client.post(
+            "/api/v1/tasks/",
+            json={"title": "Send the slides", "recording_ids": [recording.public_id]},
+        )
+        listed = await client.get(
+            "/api/v1/tasks/", params={"recording_id": recording.public_id}
+        )
+    assert created.status_code in (200, 201), created.text
+    assert [task["title"] for task in listed.json()] == ["Send the slides"]
+
+    async with harness.client(owner) as client:
+        owners = await client.get(
+            "/api/v1/tasks/", params={"recording_id": recording.public_id}
+        )
+    assert owners.json() == []
+    async with harness.client(stranger) as client:
+        refused = await client.get(
+            "/api/v1/tasks/", params={"recording_id": recording.public_id}
+        )
+    assert refused.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_only_a_share_by_name_can_be_left(harness, people) -> None:
+    owner, viewer, member, _ = people
+    recording = await harness.add_recording(owner)
+    async with harness.session_maker() as session:
+        session.add(
+            RecordingShare(recording_id=recording.id, user_id=viewer.id, level="view")
+        )
+        session.add(
+            RecordingShare(
+                recording_id=recording.id, group_name="research", level="view"
+            )
+        )
+        await session.commit()
+
+    async def can_leave(caller) -> tuple[bool, bool]:
+        async with harness.client(caller) as client:
+            detail = await client.get(f"/api/v1/recordings/{recording.public_id}")
+            listed = await client.get("/api/v1/recordings/")
+        row = next(r for r in listed.json() if r["id"] == recording.public_id)
+        return detail.json()["can_leave"], row["can_leave"]
+
+    assert await can_leave(viewer) == (True, True)
+    assert await can_leave(member) == (False, False)
+    assert await can_leave(owner) == (False, False)
+
+
+@pytest.mark.anyio
+async def test_search_matches_only_the_searchers_own_tags(harness, people) -> None:
+    owner, viewer, *_ = people
+    recording = await harness.add_recording(owner)
+    async with harness.session_maker() as session:
+        session.add(
+            RecordingShare(recording_id=recording.id, user_id=viewer.id, level="view")
+        )
+        tag = Tag(name="Confidential", user_id=owner.id)
+        session.add(tag)
+        await session.flush()
+        session.add(RecordingTag(recording_id=recording.id, tag_id=tag.id))
+        await session.commit()
+
+    assert recording.public_id in await _list_ids(harness, owner, q="confid")
+    assert recording.public_id not in await _list_ids(harness, viewer, q="confid")

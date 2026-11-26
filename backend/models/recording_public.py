@@ -269,6 +269,9 @@ class RecordingPublicRead(PublicModel):
     # Filled for a caller who is not the owner, so the UI can say whose meeting
     # it is. None for the owner's own recordings.
     owner: Optional[RecordingOwnerRead] = None
+    # Whether the caller can leave this shared meeting: shared with them by
+    # name. A group share applies to the group, so its members cannot.
+    can_leave: bool = False
     created_at: datetime
     updated_at: datetime
     name: str
@@ -552,6 +555,7 @@ def serialize_recording(
     timeline_notes_list_signature: Optional[str] = None,
     access: str = "owner",
     owner: Optional[RecordingOwnerRead] = None,
+    can_leave: bool = False,
 ) -> RecordingPublicRead:
     transcript = None
     notice = None
@@ -603,6 +607,7 @@ def serialize_recording(
         id=recording.public_id,
         access=access,
         owner=owner,
+        can_leave=can_leave,
         created_at=recording.created_at,
         updated_at=recording.updated_at,
         name=recording.name,
