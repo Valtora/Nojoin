@@ -174,9 +174,16 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> FakeProvider:
 
 
 @pytest.fixture
-async def harness():
+async def bare_harness():
     async for built in build_harness():
         yield built
+
+
+@pytest.fixture
+async def harness(bare_harness):
+    # First-run setup has run: single sign-on creates accounts only after it.
+    await bare_harness.add_user("setup-owner", role="owner", is_superuser=True)
+    yield bare_harness
 
 
 async def _sign_in(
@@ -245,6 +252,19 @@ async def test_first_sign_in_creates_account_and_session(harness, provider) -> N
     assert body["role"] == "user"
     # PKCE: the verifier sent to the token endpoint matched the challenge.
     assert provider.token_requests and provider.token_requests[0]["code_verifier"]
+
+
+@pytest.mark.anyio
+async def test_no_account_is_created_before_first_run_setup(
+    bare_harness, provider
+) -> None:
+    # Otherwise the first person through the provider would shut setup out
+    # and become the Owner at the next api start.
+    async with bare_harness.client() as client:
+        response = await _sign_in(client, provider)
+    assert _error_of(response) == "sso_setup_required"
+    assert "access_token" not in response.cookies
+    assert await _user(bare_harness, username="alice") is None
 
 
 @pytest.mark.anyio

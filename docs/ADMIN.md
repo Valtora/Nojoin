@@ -70,7 +70,7 @@ In Authentik:
 
 Nojoin matches a provider identity by its issuer and subject, never by email address, so an account at the provider cannot take over a Nojoin account that happens to share its email.
 
-- **New people.** With auto-create on, the first sign-in creates a User account named after the username claim. If that username is taken, Nojoin adds `-2`, `-3` and so on. Such an account has no password. Its owner cannot set one, and an administrator cannot give it one either.
+- **New people.** With auto-create on, the first sign-in creates a User account named after the username claim. If that username is taken, Nojoin adds `-2`, `-3` and so on. Such an account has no password. Its owner cannot set one, and an administrator cannot give it one either. No account is created before first-run setup has made the owner, so single sign-on cannot take the place of setup.
 - **Existing accounts.** Someone who already has a Nojoin account links it under **Settings > Profile and security > Single sign-on > Link**. The provider asks them to sign in again, so a session left open on a shared computer cannot be linked to someone else's identity. An account links to one identity, and an identity to one account. The password keeps working as long as the password policy allows it.
 - **Each sign-in** refreshes the account's email, display name and groups from the provider. If `NOJOIN_OIDC_ADMIN_GROUPS` changes someone's role, their other sessions end. An Owner's role never changes through the provider, so an empty or misconfigured admin group cannot lock the installation out. A deactivated account cannot sign in through the provider either.
 

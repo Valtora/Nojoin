@@ -104,6 +104,7 @@ const SSO_ERROR_MESSAGES: Record<string, string> = {
   sso_cancelled: "Sign-in was cancelled at the identity provider.",
   sso_not_allowed: "Your account at the identity provider is not allowed to use Nojoin. Ask an administrator for access.",
   sso_no_account: "No Nojoin account is linked to this identity. Ask an administrator to create or link one.",
+  sso_setup_required: "Nojoin is not set up yet. Single sign-on works once its owner has finished first-run setup.",
   sso_inactive: "This Nojoin account is deactivated.",
   sso_identity_in_use: "That identity is already linked to another Nojoin account.",
   sso_already_linked: "This account is already linked to another identity.",

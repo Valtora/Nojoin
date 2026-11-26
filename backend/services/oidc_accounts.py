@@ -121,6 +121,13 @@ async def _create_account(
 ) -> tuple[User, UserIdentity]:
     if not settings.auto_create:
         raise OIDCError("sso_no_account", "No account is linked and auto-create is off")
+    # First-run setup creates the owner behind FIRST_RUN_PASSWORD, and only
+    # while no account exists. An account made here first would shut setup out
+    # and be promoted to Owner at the next api start (ensure_owner_exists).
+    if (await db.execute(select(User.id).limit(1))).first() is None:
+        raise OIDCError(
+            "sso_setup_required", "First-run setup has not created the owner yet"
+        )
     user = User(
         username=await _free_username(db, _username_base(identity)),
         hashed_password=_unusable_password_hash(),
