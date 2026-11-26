@@ -63,7 +63,7 @@ interface NotesViewProps {
   disableExport?: boolean;
   /**
    * Whether generating notes with AI is offered. Off for a meeting shared
-   * with the caller: generation runs on the owner's AI settings and quota.
+   * with the caller to view; an editor generates on their own AI settings.
    */
   canGenerate?: boolean;
   /** Notes are shown but not edited: a meeting shared with the caller to view. */

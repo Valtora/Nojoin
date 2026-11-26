@@ -71,8 +71,9 @@ In Authentik:
 Nojoin matches a provider identity by its issuer and subject, never by email address, so an account at the provider cannot take over a Nojoin account that happens to share its email.
 
 - **New people.** With auto-create on, the first sign-in creates a User account named after the username claim. If that username is taken, Nojoin adds `-2`, `-3` and so on. Such an account has no password. Its owner cannot set one, and an administrator cannot give it one either. No account is created before first-run setup has made the owner, so single sign-on cannot take the place of setup.
-- **Existing accounts.** Someone who already has a Nojoin account links it under **Settings > Profile and security > Single sign-on > Link**. The provider asks them to sign in again, so a session left open on a shared computer cannot be linked to someone else's identity. An account links to one identity, and an identity to one account. The password keeps working as long as the password policy allows it.
+- **Existing accounts.** Someone who already has a Nojoin account links it under **Settings > Profile and security > Single sign-on** with the **Link** button, which carries the provider's name. The provider asks them to sign in again, so a session left open on a shared computer cannot be linked to someone else's identity. An account links to one identity, and an identity to one account. The password keeps working as long as the password policy allows it.
 - **Each sign-in** refreshes the account's email, display name and groups from the provider. If `NOJOIN_OIDC_ADMIN_GROUPS` changes someone's role, their other sessions end. An Owner's role never changes through the provider, so an empty or misconfigured admin group cannot lock the installation out. A deactivated account cannot sign in through the provider either.
+- **Taking access away** at the provider, such as removing someone from `NOJOIN_OIDC_ALLOWED_GROUPS`, stops their next sign-in through it. Sessions already open run until they expire, after at most 12 hours, and a password sign-in still works while the password policy allows it. To end someone's access at once, the setup account deactivates them in **Settings > Users and access**.
 
 ### Password Sign-In
 
@@ -80,11 +81,11 @@ Nojoin matches a provider identity by its issuer and subject, never by email add
 
 - `enabled` keeps passwords and invitation links working as before.
 - `owner_only` lets only Owners sign in with a password, as a way back in when the provider is down. Invitation links stop working, so new people arrive through the provider.
-- `disabled` turns the password form off for everyone. The api refuses to start with this value when SSO is not configured, since nobody could sign in.
+- `disabled` turns the password form off for everyone. The api refuses to start with this value when SSO is not configured, since nobody could sign in. It also stops the setup account signing in with its password, so link that account to its identity first, or it cannot sign in at all.
 
 ### Groups and Sharing
 
-The groups from the provider are also share targets. Someone sharing a meeting can pick any group they are a member of themselves, and the meeting is then shared with everyone who is in that group at their latest sign-in. Removing a person from a group at the provider takes effect the next time they sign in. Nojoin does not query the provider in between. Groups exist only for accounts that sign in through the provider. An account without a linked identity has none.
+The groups from the provider are also share targets. Someone sharing a meeting can pick any group they are a member of themselves, and the meeting is then shared with everyone who is in that group at their latest sign-in. Removing a person from a group at the provider takes effect the next time they sign in through it. Nojoin does not query the provider in between, and a password sign-in does not refresh the groups. Groups exist only for accounts that sign in through the provider. An account without a linked identity has none.
 
 ## Settings Structure
 
