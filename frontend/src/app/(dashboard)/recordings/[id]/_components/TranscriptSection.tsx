@@ -139,6 +139,7 @@ export default function TranscriptSection({
   // defer its old row even after that read. Wait for the displayed replacement.
   const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
     hasRetainedPublication;
+  const canEditNotes = canEditRecording(recording);
   // A meeting shared with the caller to view only is never editable here.
   const readOnly =
     !canEditRecording(recording) ||
@@ -357,12 +358,13 @@ export default function TranscriptSection({
             onActiveEditUtteranceChange={onActiveEditUtteranceChange}
             pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
             timelineNotes={notes}
-            onAddNote={addNote}
+            // Viewers read the notes but cannot add, change or move them.
+            onAddNote={canEditNotes ? addNote : undefined}
             onRetryNote={outbox.retry}
             onDiscardNote={discardNote}
-            onEditNote={editNote}
-            onDeleteNote={deleteNote}
-            onMoveNote={!liveTranscript || transcriptSegments.some((segment) => segment.settling_required) ? moveNote : undefined}
+            onEditNote={canEditNotes ? editNote : undefined}
+            onDeleteNote={canEditNotes ? deleteNote : undefined}
+            onMoveNote={canEditNotes && (!liveTranscript || transcriptSegments.some((segment) => segment.settling_required)) ? moveNote : undefined}
           />
         </div>
       ) : (

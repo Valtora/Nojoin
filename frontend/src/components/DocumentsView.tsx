@@ -31,6 +31,10 @@ import { useUserTimeZone } from "@/lib/useUserTimeZone";
 
 interface DocumentsViewProps {
   recordingId: RecordingId;
+  /** False for view-only access: no upload or delete. */
+  canEdit?: boolean;
+  /** Parsing again runs on the owner's AI settings, so only the owner may. */
+  canReparse?: boolean;
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -152,7 +156,11 @@ function StatusCell({ doc }: { doc: Document }) {
   );
 }
 
-export default function DocumentsView({ recordingId }: DocumentsViewProps) {
+export default function DocumentsView({
+  recordingId,
+  canEdit = true,
+  canReparse = true,
+}: DocumentsViewProps) {
   const timeZone = useUserTimeZone();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
@@ -292,7 +300,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
           <FileText className="w-4 h-4 text-action-text" />
           Attached Documents
         </h3>
-        <ButtonBase
+        {canEdit ? <ButtonBase
           data-ui-fill="action"
           data-ui-hover="action-hover" chrome="action"
           onClick={() => setIsUploadModalOpen(true)}
@@ -300,7 +308,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
         >
           <Upload className="w-4 h-4" />
           Upload
-        </ButtonBase>
+        </ButtonBase> : null}
       </div>
 
       <div className="relative flex-1 overflow-y-auto pb-clear-floating-0">
@@ -329,7 +337,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             <p className="text-lg font-medium text-contrast-helper">
               No documents yet
             </p>
-            <p className="text-sm mt-1 mb-6">
+            {canEdit ? <><p className="text-sm mt-1 mb-6">
               Upload a PDF, deck, document, spreadsheet, or image for context.
             </p>
             <ButtonBase
@@ -340,7 +348,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             >
               <Upload className="w-4 h-4" />
               Upload Document
-            </ButtonBase>
+            </ButtonBase></> : null}
           </div>
         ) : (
           // Under 40rem, as on a phone, Format, Size, Pages and Status move
@@ -422,7 +430,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                             <Download className="h-4 w-4" />
                           )}
                         </ButtonBase>
-                        <ButtonBase
+                        {canReparse ? <ButtonBase
                           {...loadingButtonProps(reparsingId === doc.id, isBusy(doc) && !looksStalled(doc), () => handleReparse(doc))}
                           className="rounded-lg p-1.5 text-contrast-icon-muted transition-colors hover:bg-action-tint hover:text-action-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-contrast-icon-muted aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-contrast-icon-muted"
                           title="Parse again with visual analysis"
@@ -432,14 +440,14 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                           ) : (
                             <RefreshCw className="h-4 w-4" />
                           )}
-                        </ButtonBase>
-                        <ButtonBase
+                        </ButtonBase> : null}
+                        {canEdit ? <ButtonBase
                           onClick={() => setDocumentToDelete(doc)}
                           className="rounded-lg p-1.5 text-contrast-icon-muted transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg"
                           title="Delete document"
                         >
                           <Trash2 className="h-4 w-4" />
-                        </ButtonBase>
+                        </ButtonBase> : null}
                       </div>
                     </td>
                   </tr>

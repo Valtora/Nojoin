@@ -224,8 +224,8 @@ export default function RecordingPage({ params }: PageProps) {
       tasksLoading={tasksLoading}
       playerSlot={showCaptureSlot ? <RecordingCaptureSlot recording={recording}
         audioClock={audioClock} onDiscarded={navigateToRecordings} liveTextMark={liveTextMark} /> : undefined}
-      inFlightContent={<RecordingNoteComposer recording={recording} segments={transcriptSegments}
-        audioClock={audioClock} boxRef={liveNoteBoxRef} />}
+      inFlightContent={canEditRecording(recording) ? <RecordingNoteComposer recording={recording}
+        segments={transcriptSegments} audioClock={audioClock} boxRef={liveNoteBoxRef} /> : undefined}
       timelineNotes={timelineNotes}
       noteEdits={noteEdits}
       isMobile={isMobile}

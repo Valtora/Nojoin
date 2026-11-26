@@ -36,6 +36,7 @@ from backend.models.timeline_note_public import (
     TimelineNoteErrorCode,
 )
 from backend.models.user import User
+from backend.services.recording_access import Access, RecordingGrant
 from backend.services.timeline_note_service import serialize_attachment
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.document_storage import delete_document_files
@@ -55,9 +56,10 @@ from .routes_timeline_notes import (
     _locked_note,
     _mark_written_notes_stale,
     _missing,
-    _owned_recording,
+    _note_recording,
     _read,
     _refused,
+    _resolve_note_grant,
     _tombstone_on,
 )
 
@@ -115,13 +117,15 @@ async def attach_file_to_note(  # noqa: PLR0913 - FastAPI dependencies are param
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(_note_recording(Access.EDIT)),
 ):
     """Store a file of any type on a note, switched off and unread.
 
     A second file is a 409, and any file for a note whose file was removed a 410.
     """
     user_id = current_user.id
-    recording = await _owned_recording(db, recording_id, user_id)
+    grant = await _resolve_note_grant(grant, db, recording_id, current_user)
+    recording = grant.recording
     note = await _note(db, recording, note_id)
     note_pk = note.id
     if note.file_removed:
@@ -164,12 +168,13 @@ async def attach_file_to_note(  # noqa: PLR0913 - FastAPI dependencies are param
     "/{recording_id}/timeline-notes/{note_id}/attachment",
     response_model=NoteAttachmentRead,
 )
-async def set_note_file_use_in_notes(
+async def set_note_file_use_in_notes(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     note_id: str,
     payload: NoteAttachmentUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(_note_recording(Access.EDIT)),
 ):
     """Turn a note's file on or off for the AI.
 
@@ -178,7 +183,8 @@ async def set_note_file_use_in_notes(
     document parsed after them does; regenerating stays the user's choice.
     """
     user_id = current_user.id
-    recording = await _owned_recording(db, recording_id, user_id)
+    grant = await _resolve_note_grant(grant, db, recording_id, current_user)
+    recording = grant.recording
     document = await _attachment(db, await _note(db, recording, note_id))
     if document is None:
         raise HTTPException(status_code=404, detail=NO_ATTACHMENT_DETAIL)
@@ -218,6 +224,7 @@ async def remove_file_from_note(
     note_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(_note_recording(Access.EDIT)),
 ):
     """Remove a note's file, and the note with it if nobody captioned it.
 
@@ -230,9 +237,9 @@ async def remove_file_from_note(
     would give, and one with no file a 404.
     """
     # Read before any rollback, which expires the request's user.
-    user_id = current_user.id
     edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
-    recording = await _owned_recording(db, recording_id, user_id)
+    grant = await _resolve_note_grant(grant, db, recording_id, current_user)
+    recording = grant.recording
     recording_pk, recording_public_id = recording.id, recording.public_id
     # The same locks as the note's delete, in the same order: the id, then the row.
     await _lock_note_id(db, note_id)
@@ -247,7 +254,7 @@ async def remove_file_from_note(
         raise HTTPException(status_code=404, detail=NO_ATTACHMENT_DETAIL)
     if note_goes_with_its_file(note, document.title):
         await _delete_note_and_its_file(
-            db, note, write_token=None, edge_enabled=edge_enabled
+            db, note, write_token=None, edge_enabled=edge_enabled and grant.is_owner
         )
         return NoteFileRemovedRead(note=None)
     file_path, fed_notes = document.file_path, bool(document.use_in_notes)

@@ -23,15 +23,46 @@ export const getNotes = async (
   return response.data;
 };
 
+export interface NotesSaveResult {
+  notes: string;
+  /** The saved notes' revision, to send as the base of the next save. */
+  notes_revision?: string;
+  status: string;
+}
+
+/**
+ * Saves the notes. With `baseRevision`, the revision the edit started from,
+ * the server refuses the save with 409 if someone else changed the notes
+ * meanwhile; `notesConflictOf` reads what they hold now.
+ */
 export const updateNotes = async (
   recordingId: RecordingId,
   notes: string,
-): Promise<{ notes: string; status: string }> => {
-  const response = await api.put<{ notes: string; status: string }>(
-    `/transcripts/${recordingId}/notes`,
-    { notes },
-  );
+  baseRevision?: string,
+): Promise<NotesSaveResult> => {
+  const response = await api.put<NotesSaveResult>(`/transcripts/${recordingId}/notes`, {
+    notes,
+    ...(baseRevision ? { base_revision: baseRevision } : {}),
+  });
   return response.data;
+};
+
+/** The notes someone else saved, when a save was refused as a conflict. */
+export interface NotesConflict {
+  notes: string | null;
+  notes_revision: string;
+}
+
+export const notesConflictOf = (error: unknown): NotesConflict | null => {
+  const response = (error as { response?: { status?: number; data?: unknown } })?.response;
+  if (response?.status !== 409) return null;
+  const detail = (response.data as { detail?: unknown } | undefined)?.detail as
+    | { code?: string; notes?: string | null; notes_revision?: string }
+    | undefined;
+  if (detail?.code !== "notes_conflict" || typeof detail.notes_revision !== "string") {
+    return null;
+  }
+  return { notes: detail.notes ?? null, notes_revision: detail.notes_revision };
 };
 
 const timelineNotesPath = (recordingId: RecordingId) =>

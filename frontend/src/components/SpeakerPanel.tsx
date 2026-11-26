@@ -69,6 +69,8 @@ interface SpeakerPanelProps {
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
   disablePlayback?: boolean;
   disableEditing?: boolean;
+  /** False hides voiceprint actions, which only a meeting's owner may take. */
+  canManageVoiceprints?: boolean;
   liveSpeakerNames?: Record<string, string>;
   onRenameLiveSpeaker?: RenameLiveSpeaker;
   onMergeLiveSpeaker?: MergeLiveSpeaker;
@@ -94,6 +96,7 @@ export default function SpeakerPanel({
   onSpeakerRenamed,
   disablePlayback = false,
   disableEditing = false,
+  canManageVoiceprints = true,
   liveSpeakerNames = {},
   onRenameLiveSpeaker,
   onMergeLiveSpeaker,
@@ -612,7 +615,7 @@ export default function SpeakerPanel({
               onClick: () => handleSplitStart(contextMenu.speaker),
             },
             // Voiceprint option - only show if speaker doesn't have one
-            ...(!contextMenu.speaker.hasVoiceprint
+            ...(canManageVoiceprints && !contextMenu.speaker.hasVoiceprint
               ? [
                   {
                     label: "Create Voiceprint",
@@ -700,7 +703,7 @@ export default function SpeakerPanel({
       )}
 
       <VoiceprintModal
-        isOpen={voiceprintModalOpen && !disableEditing}
+        isOpen={voiceprintModalOpen && !disableEditing && canManageVoiceprints}
         onClose={() => {
           setVoiceprintModalOpen(false);
           setVoiceprintExtractResult(null);

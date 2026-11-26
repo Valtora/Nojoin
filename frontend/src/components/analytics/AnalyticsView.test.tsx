@@ -325,6 +325,19 @@ describe("AnalyticsView", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers no measuring or analysing on a meeting someone else owns", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        ai_budget: { limit: 5, used: 3, remaining: 2, resets_at: "2026-10-12T00:00:00+00:00" },
+      }),
+    );
+    renderWithProviders(<AnalyticsView recordingId="rec-1" canGenerate={false} />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Measure delivery" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Analyse meeting" })).toBeNull();
+  });
+
   it("starts a delivery measurement on request", async () => {
     generateRecordingAnalytics.mockResolvedValue({
       recording_id: "rec-1",

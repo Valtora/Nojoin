@@ -1,5 +1,6 @@
 "use client";
 
+import { canEditRecording, ownsRecording } from "@/lib/sharing/access";
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -395,9 +396,12 @@ export default function RecordingMainContent({
         <DocumentsSection
           active={activePanel === "documents"}
           recordingId={recording.id}
+          canEdit={canEditRecording(recording)}
+          canReparse={ownsRecording(recording)}
         />
 
         <AnalyticsSection
+          canGenerate={ownsRecording(recording)}
           inFlight={inFlight}
           active={activePanel === "analytics"}
           recordingId={recording.id}

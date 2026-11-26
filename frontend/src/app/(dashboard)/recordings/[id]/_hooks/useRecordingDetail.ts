@@ -12,9 +12,11 @@ import {
   updateTranscriptUtteranceText,
   findAndReplace,
   getGlobalSpeakers,
+  getSpeakerCandidates,
   updateSpeakerColor,
   generateNotes,
   updateNotes,
+  notesConflictOf,
   updateMeetingEdgeFocus,
   exportContent,
   type ExportSelection,
@@ -25,6 +27,7 @@ import {
 } from "@/lib/meetingEdgeContext";
 import { getErrorDetail, getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
 import { notesErrorDetail } from "@/lib/transcriptErrors";
+import { ownsRecording } from "@/lib/sharing/access";
 import {
   RECORDING_UPDATED_EVENT,
   dispatchRecordingRenamed,
@@ -99,6 +102,14 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
   const [recording, setRecording] = useState<Recording | null>(null);
   // For a read that returns after the recording on screen has changed.
   const recordingRef = useRef(recording);
+  // The revision of the notes this tab last read or saved, sent as the base of
+  // the next save (saveNotes). Saves queue on the chain so they run in order.
+  const notesRevisionRef = useRef<string | undefined>(undefined);
+  const notesSaveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const loadedNotesRevision = recording?.transcript?.notes_revision;
+  useEffect(() => {
+    notesRevisionRef.current = loadedNotesRevision;
+  }, [loadedNotesRevision]);
   useEffect(() => {
     recordingRef.current = recording;
   }, [recording]);
@@ -243,7 +254,12 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
       recordingNotFound.loaded(id);
       recordingNotFound.found();
       setRecording(recData);
-      void speakersAndSettings.then(([gsData, settingsData]) => {
+      // Someone the meeting is shared with picks from the owner's people in
+      // it, not from their own library.
+      const speakerChoices = ownsRecording(recData)
+        ? speakersAndSettings.then(([gsData]) => gsData)
+        : getSpeakerCandidates(recData.id).catch(() => []);
+      void Promise.all([speakerChoices, speakersAndSettings]).then(([gsData, [, settingsData]]) => {
         if (!metadataReader.isActive()) return;
         setGlobalSpeakers(gsData);
         // Settings that cannot load leave Meeting Edge on.
@@ -900,6 +916,67 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     }
   };
 
+  /**
+   * Saves notes one at a time, each from the revision the last one left.
+   *
+   * A shared meeting's notes can be edited by several people. Every save sends
+   * the revision it started from, and the server refuses it if someone else
+   * saved meanwhile (409). Running this tab's saves in order keeps its own
+   * quick successive saves from counting as each other's conflicts. On a real
+   * conflict the change is not saved, and the user chooses between the other
+   * version and theirs.
+   */
+  const saveNotes = (notes: string, failureMessage: string): Promise<void> => {
+    const recordingId = recording?.id;
+    if (!recordingId) return Promise.resolve();
+    const run = async () => {
+      try {
+        const saved = await updateNotes(recordingId, notes, notesRevisionRef.current);
+        if (saved?.notes_revision) notesRevisionRef.current = saved.notes_revision;
+        // A notes save moves the transcript change counter itself, so the read
+        // keeps the page's and the next poll loads the transcript once, rather
+        // than after every save.
+        const updated = await metadataReader.read(recordingId);
+        if (!updated) return;
+        await storeRecordingRead(updated, false);
+      } catch (e: unknown) {
+        const conflict = notesConflictOf(e);
+        if (conflict) {
+          notesRevisionRef.current = conflict.notes_revision;
+          addNotification({
+            type: "warning",
+            persistent: true,
+            message:
+              "Someone else changed these notes while you were editing, so your last change was not saved.",
+            actions: [
+              {
+                label: "Show their version",
+                variant: "primary",
+                onClick: () => {
+                  void metadataReader.read(recordingId).then((updated) => {
+                    if (updated) void storeRecordingRead(updated, false);
+                  });
+                },
+              },
+              {
+                label: "Keep mine",
+                onClick: () => {
+                  void saveNotes(notes, failureMessage);
+                },
+              },
+            ],
+          });
+          return;
+        }
+        console.error(failureMessage, e);
+        addNotification({ type: "error", message: failureMessage });
+      }
+    };
+    const next = notesSaveChainRef.current.then(run, run);
+    notesSaveChainRef.current = next;
+    return next;
+  };
+
   const handleNotesChange = async (notes: string) => {
     if (!recording) return;
 
@@ -907,19 +984,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     setNotesHistory((prev) => [...prev, recording.transcript?.notes ?? null]);
     setNotesFuture([]); // Clear redo stack
 
-    try {
-      await updateNotes(recording.id, notes);
-      // A notes save moves the transcript change counter itself, so the read
-      // keeps the page's and the next poll loads the transcript once, rather
-      // than after every save.
-      const updated = await metadataReader.read(recording.id);
-      if (!updated) return;
-      await storeRecordingRead(updated, false);
-
-        } catch (e: unknown) {
-      console.error("Failed to update notes:", e);
-      addNotification({ type: "error", message: "Failed to update notes." });
-    }
+    await saveNotes(notes, "Failed to update notes.");
   };
 
   const handleNotesUndo = async () => {
@@ -931,16 +996,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     setNotesFuture((prev) => [currentNotes, ...prev]);
     setNotesHistory((prev) => prev.slice(0, -1));
 
-    try {
-      await updateNotes(recording.id, previousNotes || "");
-      const updated = await metadataReader.read(recording.id);
-      if (!updated) return;
-      await storeRecordingRead(updated, false);
-
-        } catch (e: unknown) {
-      console.error("Notes undo failed:", e);
-      addNotification({ type: "error", message: "Failed to undo notes changes." });
-    }
+    await saveNotes(previousNotes || "", "Failed to undo notes changes.");
   };
 
   const handleNotesRedo = async () => {
@@ -952,16 +1008,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     setNotesHistory((prev) => [...prev, currentNotes]);
     setNotesFuture((prev) => prev.slice(1));
 
-    try {
-      await updateNotes(recording.id, nextNotes || "");
-      const updated = await metadataReader.read(recording.id);
-      if (!updated) return;
-      await storeRecordingRead(updated, false);
-
-        } catch (e: unknown) {
-      console.error("Notes redo failed:", e);
-      addNotification({ type: "error", message: "Failed to redo notes changes." });
-    }
+    await saveNotes(nextNotes || "", "Failed to redo notes changes.");
   };
 
   const handleMeetingEdgeFocusChange = useCallback(async (focus: string) => {
@@ -1016,7 +1063,14 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     return { ...transcriptSpeakerNames, ...speakers };
   }, [globalSpeakerById, transcriptSpeakers, transcriptSpeakerNames]);
   const refreshPeople = useCallback(async () => {
-    try { setGlobalSpeakers(await getGlobalSpeakers()); }
+    const current = recordingRef.current;
+    try {
+      setGlobalSpeakers(
+        current && !ownsRecording(current)
+          ? await getSpeakerCandidates(current.id)
+          : await getGlobalSpeakers(),
+      );
+    }
     catch (error) { console.error("Failed to refresh People after speaker naming", error); }
   }, []);
   const presentedRecording = useMemo(() => recording && hasRetainedPublication

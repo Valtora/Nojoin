@@ -592,6 +592,8 @@ export interface Transcript extends BaseDBModel {
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;
+  /** Token for the notes' content; a save sends it back to detect a concurrent edit. */
+  notes_revision?: string;
   meeting_edge_focus?: string | null;
   meeting_edge_payload?: MeetingEdgePayload | null;
   meeting_edge_status?: string;

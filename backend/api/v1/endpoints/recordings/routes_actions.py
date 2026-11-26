@@ -22,6 +22,13 @@ from backend.processing.speaker_cap import (
     MIN_SPEAKER_CAP,
     normalize_speaker_cap,
 )
+from backend.services.recording_access import (
+    INSUFFICIENT_ACCESS_DETAIL,
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.document_storage import (
     delete_document_files,
@@ -95,11 +102,23 @@ async def update_recording(
     recording_update: RecordingUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Update a recording.
+
+    Anyone who may edit the meeting may rename it. Its transcription language
+    decides how the owner's processing runs, so only the owner sets that.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
+    if (
+        "transcription_language" in recording_update.model_fields_set
+        and not grant.is_owner
+    ):
+        raise HTTPException(status_code=403, detail=INSUFFICIENT_ACCESS_DETAIL)
 
     if recording_update.name is not None and recording_update.name != recording.name:
         recording.name = recording_update.name

@@ -24,7 +24,8 @@ interface DeliveryPanelProps {
   baselines: Record<string, AnalyticsDeliveryBaseline>;
   /** This meeting's speaker colours, so a person is one colour throughout. */
   colors: Record<string, string>;
-  onGenerate: () => void;
+  /** Omitted when the viewer may not run it: only a meeting's owner can. */
+  onGenerate?: () => void;
   generating: boolean;
 }
 

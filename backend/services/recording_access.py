@@ -21,6 +21,7 @@ having made a change.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Callable, Optional, Sequence
@@ -35,6 +36,13 @@ from backend.models.user import User
 from backend.services.user_identities import display_names, groups_of
 
 INSUFFICIENT_ACCESS_DETAIL = "insufficient_access"
+
+# Whether the caller of the current request owns the recording it resolved.
+# Speaker reads consult it to leave out the contact details the owner keeps on
+# the people in their library (email, phone, notes): people a meeting is
+# shared with see who spoke, not the owner's address book. True outside a
+# request (workers, MCP), which only ever act for the owner.
+viewer_owns_library: ContextVar[bool] = ContextVar("viewer_owns_library", default=True)
 NOT_FOUND_DETAIL = "Recording not found"
 
 
@@ -279,8 +287,10 @@ async def resolve_grant(
             if refusal.status_code != status.HTTP_404_NOT_FOUND:
                 raise
         else:
+            viewer_owns_library.set(True)
             return RecordingGrant(recording=recording, access=Access.OWNER, user=user)
     recording, level = await get_recording_for(db, recording_id, user, need)
+    viewer_owns_library.set(level is Access.OWNER)
     return RecordingGrant(recording=recording, access=level, user=user)
 
 
@@ -309,7 +319,9 @@ async def owner_reads(
     owner_ids = {r.user_id for r in recordings if r.user_id != viewer.id}
     if not owner_ids:
         return {}
-    rows = await db.execute(select(User.id, User.username).where(User.id.in_(owner_ids)))
+    rows = await db.execute(
+        select(User.id, User.username).where(User.id.in_(owner_ids))
+    )
     names = await display_names(db, owner_ids)
     return {
         user_id: RecordingOwnerRead(username=username, display_name=names.get(user_id))

@@ -77,3 +77,29 @@ describe("DocumentsView failure notices", () => {
     expect(failureNotices()).toHaveLength(2);
   });
 });
+
+describe("DocumentsView on a meeting shared with the caller", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mocks.getDocuments.mockResolvedValue([failed]);
+  });
+
+  it("lets a viewer download but not upload, parse again or delete", async () => {
+    render(<DocumentsView recordingId="rec-1" canEdit={false} canReparse={false} />);
+    await screen.findByText("Agenda.pdf");
+
+    expect(screen.queryByRole("button", { name: /upload/i })).toBeNull();
+    expect(screen.queryByTitle("Delete document")).toBeNull();
+    expect(screen.queryByTitle("Parse again with visual analysis")).toBeNull();
+  });
+
+  it("lets an editor upload and delete, leaving parsing again to the owner", async () => {
+    render(<DocumentsView recordingId="rec-1" canEdit canReparse={false} />);
+    await screen.findByText("Agenda.pdf");
+
+    expect(screen.getByRole("button", { name: /upload/i })).toBeTruthy();
+    expect(screen.getByTitle("Delete document")).toBeTruthy();
+    expect(screen.queryByTitle("Parse again with visual analysis")).toBeNull();
+  });
+});

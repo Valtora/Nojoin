@@ -134,21 +134,17 @@ async def _resolve_note_grant(grant, db, recording_id, user) -> RecordingGrant:
         raise
 
 
+async def _require_recording_exists(db: AsyncSession, recording_id: str) -> None:
+    """Refuse with the notes' 404 if the recording went since access was checked."""
+    found = await db.execute(
+        select(Recording.id).where(Recording.public_id == recording_id)
+    )
+    if found.scalar_one_or_none() is None:
+        raise _recording_not_found()
+
+
 def _token(value: UUID | None) -> str | None:
     return str(value) if value is not None else None
-
-
-async def _owned_recording(
-    db: AsyncSession, recording_id: str, user_id: int
-) -> Recording:
-    try:
-        return await _get_owned_recording(db, recording_id, user_id)
-    except HTTPException as error:
-        if error.status_code != status.HTTP_404_NOT_FOUND:
-            raise
-        raise _refused(
-            404, TimelineNoteErrorCode.RECORDING_NOT_FOUND, RECORDING_NOT_FOUND_DETAIL
-        ) from error
 
 
 async def _read(
@@ -481,19 +477,21 @@ async def list_timeline_notes(
     response_model=TimelineNoteRead,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_timeline_note(
+async def create_timeline_note(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     payload: TimelineNoteCreate,
     response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(_note_recording(Access.EDIT)),
 ):
     """Add a note. Retrying with the same client ``id`` returns the first one (200)."""
     # Read before any rollback, which expires every row the session holds,
     # the request's user included.
     user_id = current_user.id
     edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
-    recording = await _owned_recording(db, recording_id, user_id)
+    grant = await _resolve_note_grant(grant, db, recording_id, current_user)
+    recording = grant.recording
     recording_pk, recording_public_id = recording.id, recording.public_id
     client_id = str(payload.id) if payload.id is not None else None
     write_token = _token(payload.write_token)
@@ -540,26 +538,30 @@ async def create_timeline_note(
                 ) from None
         # Not a clash of ids: the recording was deleted meanwhile (404), or
         # something else refused the row.
-        await _owned_recording(db, recording_id, user_id)
+        await _require_recording_exists(db, recording_id)
         raise
     await db.refresh(note)
-    await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
+    await _dispatch_meeting_edge_refresh(
+        recording_pk, enabled=edge_enabled and grant.is_owner
+    )
     return await _read(db, note, recording_public_id)
 
 
 @router.patch(
     "/{recording_id}/timeline-notes/{note_id}", response_model=TimelineNoteRead
 )
-async def update_timeline_note(
+async def update_timeline_note(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     note_id: str,
     payload: TimelineNoteUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(_note_recording(Access.EDIT)),
 ):
     """Edit a note's text, or move a point note."""
     edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
-    recording = await _owned_recording(db, recording_id, current_user.id)
+    grant = await _resolve_note_grant(grant, db, recording_id, current_user)
+    recording = grant.recording
     recording_pk, recording_public_id = recording.id, recording.public_id
     write_token = _token(payload.write_token)
     note = await _locked_note(db, recording_pk, note_id)
@@ -601,7 +603,9 @@ async def update_timeline_note(
     await db.commit()
     await db.refresh(note)
     if changes:
-        await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
+        await _dispatch_meeting_edge_refresh(
+            recording_pk, enabled=edge_enabled and grant.is_owner
+        )
     return await _read(db, note, recording_public_id)
 
 
@@ -609,12 +613,13 @@ async def update_timeline_note(
     "/{recording_id}/timeline-notes/{note_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_timeline_note(
+async def delete_timeline_note(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     note_id: str,
     conditions: _DeleteConditions = Depends(_delete_conditions),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(_note_recording(Access.EDIT)),
 ):
     """Remove a note; with ``expected_revision``, only if it is still that one.
 
@@ -625,9 +630,9 @@ async def delete_timeline_note(
     tombstones on the recording, it is the 404 instead.
     """
     # Read before any rollback, which expires the request's user.
-    user_id = current_user.id
     edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
-    recording = await _owned_recording(db, recording_id, user_id)
+    grant = await _resolve_note_grant(grant, db, recording_id, current_user)
+    recording = grant.recording
     recording_pk, recording_public_id = recording.id, recording.public_id
     token = conditions.write_token
     await _lock_note_id(db, note_id)
@@ -644,7 +649,7 @@ async def delete_timeline_note(
         except IntegrityError:
             # The recording was deleted meanwhile: its 404, as for a create.
             await db.rollback()
-            await _owned_recording(db, recording_id, user_id)
+            await _require_recording_exists(db, recording_id)
             raise
         if recorded:
             return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -655,6 +660,6 @@ async def delete_timeline_note(
     if expected_revision is not None and note.revision != expected_revision:
         await _refuse_stale_revision(db, note, recording_public_id)
     await _delete_note_and_its_file(
-        db, note, write_token=token, edge_enabled=edge_enabled
+        db, note, write_token=token, edge_enabled=edge_enabled and grant.is_owner
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

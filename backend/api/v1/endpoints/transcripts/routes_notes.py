@@ -24,6 +24,7 @@ from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.generation_claim import claim_generation, generation_active
 from backend.utils.llm_config import resolve_llm_config_async
+from backend.utils.notes_revision import NOTES_CONFLICT_CODE, notes_revision
 from backend.utils.notes_templates import resolve_notes_template_async
 from backend.utils.reprocess_publication import (
     REPROCESS_RUNNING_MESSAGE,
@@ -80,6 +81,7 @@ async def get_notes(
 
     return {
         "notes": transcript.notes,
+        "notes_revision": notes_revision(transcript.notes),
         # Provenance for the UI: which structure produced these notes. NULL means
         # they predate templates, which is the shipped built-in structure.
         "notes_template_id": transcript.notes_template_id,
@@ -131,11 +133,15 @@ async def update_notes(
     update: NotesUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Update the meeting notes for a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
@@ -144,13 +150,31 @@ async def update_notes(
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
+    current_revision = notes_revision(transcript.notes)
+    if update.base_revision is not None and update.base_revision != current_revision:
+        # Someone else saved since this edit started. Hand back what is there
+        # now, so the client can show it and let its user choose.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": NOTES_CONFLICT_CODE,
+                "message": "The notes changed since you started editing.",
+                "notes": transcript.notes,
+                "notes_revision": current_revision,
+            },
+        )
+
     transcript.notes = update.notes
     db.add(transcript)
     await db.execute(change_sequence_bump(recording.id))
     await db.commit()
     await db.refresh(transcript)
 
-    return {"notes": transcript.notes, "status": "success"}
+    return {
+        "notes": transcript.notes,
+        "notes_revision": notes_revision(transcript.notes),
+        "status": "success",
+    }
 
 
 @router.post("/{recording_id}/notes/generate")

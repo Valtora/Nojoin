@@ -151,16 +151,22 @@ export const StaleBanner = ({
 }: {
   message: string;
   actionLabel: string;
-  onAction: () => void;
+  /** Omitted for someone who may read these figures but not run them again. */
+  onAction?: () => void;
 }) => (
   <p className="rounded-surface-subtle border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg">
-    {message}{" "}
-    <ButtonBase
-      type="button"
-      onClick={onAction}
-      className="font-medium underline underline-offset-2 hover:no-underline"
-    >
-      {actionLabel}
-    </ButtonBase>
+    {message}
+    {onAction ? (
+      <>
+        {" "}
+        <ButtonBase
+          type="button"
+          onClick={onAction}
+          className="font-medium underline underline-offset-2 hover:no-underline"
+        >
+          {actionLabel}
+        </ButtonBase>
+      </>
+    ) : null}
   </p>
 );

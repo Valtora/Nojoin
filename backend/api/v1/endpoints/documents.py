@@ -340,6 +340,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     deep_parse: FormBoolWithDefault = Form(FormBoolWithDefault(True)),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """Upload a document to be included in the meeting's context.
 
@@ -352,7 +353,10 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     # read: the client uploads a batch two at a time, and a row stamped at
     # completion would list a small file ahead of the larger one queued first.
     started_at = utc_now()
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     file_path, size_bytes = await store_upload(
         request, file, user_id=current_user.id, recording=recording

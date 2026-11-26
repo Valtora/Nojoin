@@ -6,6 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.models.recording_public import TranscriptPublicRead, serialize_transcript
 from backend.models.user import User
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.canonical_pipeline.guards import settling_required
 from backend.utils.canonical_pipeline.split import SplitCommand, split_utterance
 from backend.utils.config_manager import is_meeting_edge_enabled
@@ -26,15 +32,19 @@ from .router import router
     "/{recording_id}/utterances/{utterance_id}/split",
     response_model=TranscriptPublicRead,
 )
-async def split_transcript_utterance(
+async def split_transcript_utterance(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     utterance_id: str,
     update: TranscriptUtteranceSplit,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ) -> TranscriptPublicRead:
     """Split only after the service validates every source fact under its fence."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     _require_recording_transcript_mutations_supported(recording)
     transcript = await _get_recording_transcript(db, recording.id)
     if transcript is None:

@@ -120,9 +120,7 @@ async def _create_account(
     db: AsyncSession, settings: OIDCSettings, identity: VerifiedIdentity
 ) -> tuple[User, UserIdentity]:
     if not settings.auto_create:
-        raise OIDCError(
-            "sso_no_account", "No account is linked and auto-create is off"
-        )
+        raise OIDCError("sso_no_account", "No account is linked and auto-create is off")
     user = User(
         username=await _free_username(db, _username_base(identity)),
         hashed_password=_unusable_password_hash(),
