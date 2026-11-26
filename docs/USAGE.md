@@ -256,6 +256,19 @@ Longer transcript lines produce fewer timestamps and paragraphs. Text exports re
 
 A line whose text was changed by hand in the web app is marked `Edited`. `AI corrected text` and `AI corrected speaker` mark changes an assistant made through the [MCP connector](MCP.md), and a speaker an assistant named shows `AI named` in the speaker panel. Edits made before Nojoin recorded where they came from show as `Edited`.
 
+## Sharing A Meeting
+
+**Share** in a meeting's header lets the owner give other people access. Search for a person or, on an installation with [single sign-on](ADMIN.md#single-sign-on), one of your own groups, choose **Can edit** or **Can view**, and click the row to share. **Who has access** lists everyone the meeting is shared with, where you can change their access or remove them. Sharing with a group covers everyone in it at their latest sign-in.
+
+- **Can view** opens the meeting, its transcript, notes, documents and analytics, plays the audio and exports it.
+- **Can edit** also changes the transcript, speakers and their names, the meeting notes, timeline notes and documents, and renames the meeting. A name given to a speaker goes into the owner's **People**, so the owner sees it in their other meetings too.
+- Deleting, archiving, reprocessing, generating notes or analyses with AI, voiceprints, linking a calendar event and sharing stay with the owner.
+- **Meeting Chat** and tags are your own: others don't see your questions or your tags, and chat answers use your own AI settings.
+
+A meeting shared with you shows a people icon in the recordings list and **Shared by** with the owner's name in its header. **Leave** in the header, or **Leave Shared Meeting** in the list's **⋯** menu, removes it from your list. A meeting shared with a group you are in can only be removed by its owner.
+
+When two people edit the meeting notes at once, the one who saves second sees a notice that someone else changed them. **Show their version** loads the other version, and **Keep mine** saves yours over it.
+
 ## Speaker Management
 
 The speaker panel lists the meeting's speakers. Right-click one for **Rename / Assign**, **Merge into...**, **Split / Unmerge Speaker**, **Create Voiceprint**, **Add to People** and **Delete**.

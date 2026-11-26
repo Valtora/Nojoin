@@ -366,7 +366,7 @@ class RecordingsCalendarRead(BaseModel):
 
 # The fields an owner keeps about a person in their library. Left out for
 # anyone else a meeting is shared with (services/recording_access.py).
-_CONTACT_FIELDS = {
+_CONTACT_FIELDS: dict[str, object] = {
     "title": None,
     "company": None,
     "email": None,
