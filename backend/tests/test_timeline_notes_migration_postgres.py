@@ -19,7 +19,7 @@ import psycopg
 import pytest
 from sqlalchemy.engine import make_url
 
-from backend.tests.postgres_setup import migrate_empty_database
+from backend.tests.postgres_setup import ALEMBIC_INI, migrate_empty_database
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BEFORE = "7c3e5a91d2f4"
@@ -29,7 +29,7 @@ NOTED_AT = datetime(2026, 3, 2, 11, 0)
 
 def _alembic(database_url: str, *args: str) -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
+        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
         cwd=REPO_ROOT,
         env={**os.environ, "DATABASE_URL": database_url},
         capture_output=True,

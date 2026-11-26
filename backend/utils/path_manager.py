@@ -274,11 +274,6 @@ class PathManager:
         return self._executable_directory
 
     @property
-    def assets_directory(self) -> Path:
-        """Get the assets directory path (where icons, images, etc. are bundled)."""
-        return self._executable_directory / "assets"
-
-    @property
     def user_data_directory(self) -> Path:
         """Get the user data directory path."""
         return self._user_data_directory

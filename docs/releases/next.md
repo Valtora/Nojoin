@@ -94,6 +94,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - `worker-gpu` restarts itself in place once it has gone 15 minutes without a task, never while a capture is recording or paused, and hands back about 1.4 GB of memory on a CUDA install. The first live caption after such a restart takes about 14 seconds while the models load; final transcripts are unaffected. `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES` in `.env` sets the minutes, and `0` turns the restart off (#1054).
 - In `docker-compose.example.yml`, `worker-cpu`, `worker-io` and `worker-parse` autoscale from one child, and a child that has used more than 400,000 KiB is replaced after its task, so an idle install runs three prefork children instead of nine (#1054).
 - The worker and worker-io images carry dnspython 2.9.2 in place of 2.9.0, which fixes CVE-2026-128089 (#1072).
+- `alembic.ini` moves from the repository root to `backend/alembic.ini`, and the bundled Pyannote models from `bundled_models/` to `backend/bundled_models/`. `docker compose exec api alembic ...` works as before, and in a source checkout Alembic now runs as `alembic -c backend/alembic.ini ...` (#1089).
 
 ## Upgrade
 

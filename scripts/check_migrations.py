@@ -30,6 +30,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+ALEMBIC_INI = REPO_ROOT / "backend" / "alembic.ini"
 
 # Values that are legal in the column's type but break naive predicates. The
 # jsonb `null` entries are the ones that mattered: they are what the manual
@@ -184,7 +185,7 @@ UPDATE timeline_notes SET file_removed = true WHERE public_id = 'mc-tn4';
 def _alembic(database_url: str, *args: str) -> None:
     env = {**os.environ, "DATABASE_URL": database_url}
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
+        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,

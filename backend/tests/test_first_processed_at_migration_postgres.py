@@ -22,7 +22,7 @@ import psycopg
 import pytest
 from sqlalchemy.engine import make_url
 
-from backend.tests.postgres_setup import migrate_empty_database
+from backend.tests.postgres_setup import ALEMBIC_INI, migrate_empty_database
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BEFORE = "f2a6e1d9c735"
@@ -46,7 +46,7 @@ CASES = [
 
 def _alembic(database_url: str, *args: str) -> str:
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
+        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
         cwd=REPO_ROOT,
         env={**os.environ, "DATABASE_URL": database_url},
         capture_output=True,
