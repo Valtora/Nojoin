@@ -67,7 +67,11 @@ COLUMNS_ADDED_AFTER_BEFORE = {
 }
 # Backed-up tables a later revision creates. An archive made at BEFORE has no
 # member for them, so the old archive is made without them.
-TABLES_ADDED_AFTER_BEFORE = {"user_identities", "recording_shares", "recording_restore_requests"}
+TABLES_ADDED_AFTER_BEFORE = {
+    "user_identities",
+    "recording_shares",
+    "recording_restore_requests",
+}
 
 
 def _alembic(database_url: str, *args: str) -> None:
