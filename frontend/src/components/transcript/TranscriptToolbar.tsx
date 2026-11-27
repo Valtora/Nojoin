@@ -155,7 +155,7 @@ export default function TranscriptToolbar({
       {/* Row 1: Header & Global Actions */}
       {/* The 40 px buttons sit in less padding, so the row keeps its height
           from sm up. */}
-      <div className="flex items-center justify-end overflow-x-auto px-2 py-1 sm:px-4 sm:py-1.5 md:px-5 md:py-2">
+      <div className="relative flex items-center justify-end overflow-x-auto px-2 py-1 sm:px-4 sm:py-1.5 md:px-5 md:py-2">
         <div className="flex items-center gap-0.5 sm:gap-1">
           <IconButton
             size="sm"

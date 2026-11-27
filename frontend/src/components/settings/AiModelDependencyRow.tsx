@@ -43,6 +43,9 @@ function ModelBadge({ status }: { status?: ModelStatusInfo }) {
   if (state === "failed") {
     return <SettingsStatusBadge tone="error">Failed</SettingsStatusBadge>;
   }
+  if (state === "retry_wait") {
+    return <SettingsStatusBadge tone="info">Waiting to retry</SettingsStatusBadge>;
+  }
   if (state === "ready") {
     const label = status?.source === "bundled" ? "Bundled"
       : status?.source === "external" ? "External" : "Ready";
@@ -60,8 +63,13 @@ export default function AiModelDependencyRow({
   const busy = deleting === model.id;
   const ready = status?.state ? status.state === "ready" : status?.downloaded;
   const downloading = status?.state === "downloading";
-  const failed = status?.state === "failed";
+  const retryWaiting = status?.state === "retry_wait";
+  const failed = status?.state === "failed" || retryWaiting;
   const preparationBusy = preparationRunning || downloading;
+  const retryDisabled = !isAdmin || preparationBusy;
+  // The hold note names Retry only when the button can start it.
+  const retryNote = !retryDisabled ? "; Retry starts now."
+    : isAdmin ? "; Retry is available once the running preparation finishes." : ".";
 
   return (
     <SettingsRow
@@ -73,6 +81,11 @@ export default function AiModelDependencyRow({
             <span className="block">Download size: {Math.round(status.size_bytes / 1_000_000)} MB.</span>
           )}
           {status?.unused_reason && <span className="block">{status.unused_reason}</span>}
+          {retryWaiting && (
+            <span className="block">
+              Preparation failed. Automatic requests wait ten minutes before trying again{retryNote}
+            </span>
+          )}
           {ready && reason && <span className="block">{reason}</span>}
           {failed && status?.verification_error && (
             <span className="block">
@@ -140,7 +153,7 @@ export default function AiModelDependencyRow({
               chrome="action"
               type="button"
               onClick={() => void startPreparation(model.target)}
-              disabled={!isAdmin || preparationBusy}
+              disabled={retryDisabled}
               className={SETTINGS_BUTTON_SECONDARY}
             >
               <Download className="h-4 w-4" aria-hidden="true" />

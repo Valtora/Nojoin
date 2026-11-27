@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import col, select
@@ -44,6 +44,9 @@ from .constants import (
     _load_transcript,
 )
 from .segmentation import _speaker_state_for_utterance
+
+if TYPE_CHECKING:
+    from backend.processing.sentence_start import NativeActivity
 
 LIVE_SPEAKER_LABEL_EVENT = "live_speaker_label"
 
@@ -197,15 +200,24 @@ def _label_line(
 
 
 def apply_live_speaker_labels(
-    session, *, recording_id: int, settled_ms: int, decide: DecideFn
+    session,
+    *,
+    recording_id: int,
+    settled_ms: int,
+    decide: DecideFn,
+    activity: NativeActivity | None = None,
 ) -> LiveLabelWrite:
-    """Bring every unsettled live line's label up to date. The caller commits."""
+    """Bring every unsettled live line's label up to date. The caller commits.
+
+    ``activity`` (a ``NativeActivity``) lets the settling lane correct
+    sentence starts; the legacy line labels never read it.
+    """
     transcript = _load_transcript(session, recording_id, lock=True)
     from .live_settling import project_live_settling_speakers, settling_enabled
 
     if transcript is not None and settling_enabled(transcript):
         result, settled, open_from = project_live_settling_speakers(
-            session, transcript, decide
+            session, transcript, decide, activity
         )
         return LiveLabelWrite(result.changed, max(settled_ms, settled), open_from)
     held = {

@@ -83,7 +83,7 @@ const renderSection = () => {
 };
 
 const openReview = () =>
-  fireEvent.click(screen.getByRole("button", { name: "Confirm or dismiss the name Alex" }));
+  fireEvent.click(screen.getByRole("button", { name: "Suggested: confirm or dismiss the name Alex" }));
 
 describe("TranscriptSection suggested names", () => {
   beforeEach(() => {

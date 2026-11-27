@@ -87,7 +87,8 @@ SCHEMA_STATEMENTS = [
         settings JSON,
         has_seen_demo_recording BOOLEAN NOT NULL DEFAULT 0,
         invitation_id INTEGER,
-    ai_analysis_daily_limit INTEGER
+    ai_analysis_daily_limit INTEGER,
+    legal_accepted_at DATETIME
     )
     """,
     """

@@ -1,3 +1,6 @@
+const TRANSCRIPT_REGION =
+  '#transcript-view [data-testid="transcript-scroll-region"], #panel-transcript [data-testid="live-transcript-scroll"]';
+
 /**
  * Scrolls the active transcript so a body note sits in the middle of it.
  *
@@ -8,9 +11,7 @@
  * Only the transcript's scroll region moves, never the page around it.
  */
 export function scrollTranscriptToNote(noteId: string, afterIndex: number): void {
-  const region = document.querySelector<HTMLElement>(
-    '#transcript-view [data-testid="transcript-scroll-region"], #panel-transcript [data-testid="live-transcript-scroll"]',
-  );
+  const region = document.querySelector<HTMLElement>(TRANSCRIPT_REGION);
   if (!region) return;
   const id = CSS.escape(noteId);
   const target =
@@ -21,6 +22,24 @@ export function scrollTranscriptToNote(noteId: string, afterIndex: number): void
     region.scrollTo({ top: 0, behavior: "smooth" });
     return;
   }
+  centre(region, target);
+}
+
+/**
+ * Scrolls the live transcript so the line offering live speaker `label`'s
+ * pending name sits in the middle of it: the line where the name was heard,
+ * else the speaker's last line. The live transcript draws every line it has
+ * read, so that line is always there while the name is offered; with no
+ * transcript shown, nothing moves.
+ */
+export function scrollTranscriptToLiveSuggestion(label: string): void {
+  const region = document.querySelector<HTMLElement>(TRANSCRIPT_REGION);
+  const target = region?.querySelector<HTMLElement>(`[data-live-suggestion-label="${CSS.escape(label)}"]`)
+    ?.closest<HTMLElement>("[data-order-index]");
+  if (region && target) centre(region, target);
+}
+
+function centre(region: HTMLElement, target: HTMLElement): void {
   const box = region.getBoundingClientRect();
   const rect = target.getBoundingClientRect();
   const top = region.scrollTop + rect.top - box.top - (region.clientHeight - rect.height) / 2;

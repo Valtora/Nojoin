@@ -23,8 +23,8 @@ describe("validateProcessingTuning", () => {
   });
 
   it("rejects a phantom floor at or above the default merge similarity", () => {
-    expect(validateProcessingTuning({ phantom_embedding_floor: 0.65 })).toMatch(
-      /floor/,
+    expect(validateProcessingTuning({ phantom_embedding_floor: 0.65 })).toBe(
+      "Speakers heard only briefly: the noise limit (0.65) must be lower than the merge limit (0.6).",
     );
     expect(
       validateProcessingTuning({
@@ -44,7 +44,7 @@ describe("validateProcessingTuning", () => {
     expect(
       validateProcessingTuning({ ...installFloor, phantom_merge_threshold: 0.5 }),
     ).toBe(
-      "The phantom speaker non-speech floor (0.55, the installation's value) must be lower than its merge similarity (0.5).",
+      "Speakers heard only briefly: the noise limit (0.55, the installation's value) must be lower than the merge limit (0.5).",
     );
 
     // Above the shipped 0.6 merge similarity, but below the installation's 0.8.

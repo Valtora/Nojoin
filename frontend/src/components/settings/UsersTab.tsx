@@ -18,6 +18,9 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { parseServerTimestamp } from "@/lib/serverTimestamp";
+import { formatTimeZoneDay } from "@/lib/timezone";
+import { useUserTimeZone } from "@/lib/useUserTimeZone";
 import ConfirmationModal from "../ConfirmationModal";
 import Button from "../ui/Button";
 import Input from "../ui/Input";
@@ -65,6 +68,30 @@ function RoleOptions({ includeOwner }: { includeOwner: boolean }) {
 }
 
 /**
+ * When a user accepted the terms of use (#1004), as the page's other dates
+ * read: the day in the viewer's timezone. Without a date, a user the server
+ * still asks has not accepted. One it does not ask, the setup account of an
+ * install set up before the time was recorded, has nothing to show.
+ */
+function TermsAccepted({ user, timeZone }: { user: User; timeZone: string }) {
+  const acceptedAt = parseServerTimestamp(user.legal_accepted_at);
+  if (acceptedAt) {
+    return <>{formatTimeZoneDay(acceptedAt, timeZone)}</>;
+  }
+  if (user.legal_acceptance_required) {
+    return <span className="contrast-helper">Not yet accepted</span>;
+  }
+  return (
+    <>
+      <span aria-hidden="true" className="contrast-helper">
+        —
+      </span>
+      <span className="sr-only">No date recorded</span>
+    </>
+  );
+}
+
+/**
  * The users table. What it offers follows the API: any Owner or Admin may
  * create, delete and change the role of accounts (an Owner's only if they are
  * an Owner themselves), while editing an account's other details is for the
@@ -77,6 +104,7 @@ export default function UsersTab() {
     role: viewerRole,
   } = useSettingsContext();
   const includeOwner = canGrantOwner(viewerRole);
+  const timeZone = useUserTimeZone();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotificationStore();
@@ -262,7 +290,7 @@ export default function UsersTab() {
     <SettingsCard
       id="users-accounts"
       title="Users"
-      description="Each person's role and whether their account is active."
+      description="Each person's role, whether their account is active, and when they accepted the terms of use."
       headerAside={
         <ButtonBase
           data-ui-fill="action"
@@ -404,6 +432,7 @@ export default function UsersTab() {
               <th className="py-2 pr-4 font-medium">Username</th>
               <th className="py-2 pr-4 font-medium">Role</th>
               <th className="py-2 pr-4 font-medium">Status</th>
+              <th className="py-2 pr-4 font-medium">Terms accepted</th>
               <th className="py-2 text-right font-medium">
                 <span className="sr-only">Actions</span>
               </th>
@@ -412,7 +441,7 @@ export default function UsersTab() {
           <tbody className="divide-y divide-surface-divider">
             {loading ? (
               <tr>
-                <td colSpan={4} className="py-6 text-center">
+                <td colSpan={5} className="py-6 text-center">
                   <Loader2
                     className="mx-auto h-5 w-5 animate-spin contrast-icon-muted"
                     aria-label="Loading"
@@ -421,7 +450,7 @@ export default function UsersTab() {
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-6 text-center contrast-helper">
+                <td colSpan={5} className="py-6 text-center contrast-helper">
                   No users match that search.
                 </td>
               </tr>
@@ -448,6 +477,9 @@ export default function UsersTab() {
                       <SettingsStatusBadge tone={user.is_active ? "success" : "error"}>
                         {user.is_active ? "Active" : "Inactive"}
                       </SettingsStatusBadge>
+                    </td>
+                    <td data-label="Terms accepted" className="py-3 pr-4">
+                      <TermsAccepted user={user} timeZone={timeZone} />
                     </td>
                     <td className="py-3">
                       <div className="flex justify-end gap-2">

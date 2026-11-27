@@ -78,6 +78,14 @@ def signed_in(module) -> TestClient:
     return client
 
 
+def test_sign_in_never_asks_for_the_terms(demo):
+    client = TestClient(demo.app, base_url="https://testserver")
+    response = client.post(
+        "/api/v1/login/session", data={"username": "x", "password": "y"}
+    )
+    assert response.json()["legal_acceptance_required"] is False
+
+
 def test_writes_are_refused(demo):
     client = signed_in(demo)
     for method in ("post", "put", "patch", "delete"):

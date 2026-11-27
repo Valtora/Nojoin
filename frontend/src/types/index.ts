@@ -31,6 +31,15 @@ export interface User {
   force_password_change: boolean;
   /** Per-user cap on AI analysis runs per UTC day. Null inherits the install default; 0 is no cap. */
   ai_analysis_daily_limit?: number | null;
+  /**
+   * When the user accepted the terms of use, in UTC with no offset, as the
+   * API gives every time (read it with `parseServerTimestamp`). Null until
+   * they do, and for the setup account of an install set up before the time
+   * was recorded.
+   */
+  legal_accepted_at?: string | null;
+  /** Whether the user must accept the terms of use before recording. */
+  legal_acceptance_required?: boolean;
 }
 
 export interface Invitation {
@@ -77,6 +86,30 @@ export interface GlobalSpeaker extends BaseDBModel {
   phone_number?: string | null;
   notes?: string | null;
   tags?: PeopleTag[];
+}
+
+export interface PersonMeetingRead {
+  recording_id: RecordingId;
+  title: string;
+  date: string;
+  duration_seconds: number | null;
+  talk_time_seconds: number;
+}
+
+export interface PersonTalkMonthRead {
+  /** Calendar month in the user's time-zone setting, formatted YYYY-MM. */
+  month: string;
+  talk_time_seconds: number;
+}
+
+/** Full-history figures alongside the newest 50 owned, linked meetings. */
+export interface PersonMeetingsRead {
+  meetings: PersonMeetingRead[];
+  meeting_count: number;
+  total_talk_time_seconds: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  talk_time_by_month: PersonTalkMonthRead[];
 }
 
 /**
@@ -133,7 +166,7 @@ export interface RecordingSpeaker extends BaseDBModel {
   /**
    * The name was suggested (by a self-introduction, the AI or a voiceprint)
    * and nobody has confirmed it yet. Strong voice matches are not pending.
-   * Worked out by the backend; the views show it with a "?" and offer
+   * Worked out by the backend; the transcript marks it Suggested and offers
    * Confirm and Not {name}.
    */
   name_pending?: boolean;
@@ -346,12 +379,25 @@ export interface TranscriptUtteranceList {
   live_speaker_merges?: Record<string, string>;
   /** The live lane is behind a running capture's uploads. */
   live_behind?: boolean;
+  /** Pending names heard in this meeting, kept separate from accepted names. Whole on every read. */
+  live_speaker_suggestions?: Record<string, string>;
+  /** Where each pending name came from: "heuristic" (a self-introduction) or "llm". */
+  live_speaker_suggestion_sources?: Record<string, SpeakerNameSource>;
+  /**
+   * Where each pending name's evidence starts, in seconds: the introduction's
+   * line. Left out for a name with no single timed span (most AI names).
+   */
+  live_speaker_suggestion_starts?: Record<string, number>;
 }
 
 /** The answer to naming or merging a live speaker, as the live read gives it. */
 export interface LiveSpeakerNames {
   live_speaker_names: Record<string, string>;
   live_speaker_merges?: Record<string, string>;
+}
+
+export interface LiveSpeakerSuggestionReview extends LiveSpeakerNames {
+  live_speaker_suggestions: Record<string, string>;
 }
 
 export interface TranscriptSegment extends LiveTranscriptSettling {
@@ -594,6 +640,12 @@ export interface Tag extends BaseDBModel {
   children?: Tag[];
 }
 
+export interface UserTaskListParams {
+  status?: "active" | "open" | "completed" | "archived" | "all";
+  recording_id?: RecordingId;
+  tag_ids?: number[];
+}
+
 export interface UserTask extends BaseDBModel {
   title: string;
   body?: string | null;
@@ -726,6 +778,29 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   speakers?: RecordingSpeaker[];
   tags?: Tag[];
   calendar_event?: CalendarEventLink | null;
+  /** Detail read of a capture in progress only; absent otherwise. */
+  live_ai_notices?: LiveAiNotice[];
+}
+
+/**
+ * A live AI provider failing during this capture (#994): waiting out a backoff
+ * ("retrying") or stopped until the AI settings change. The message is worded
+ * for the viewer from the classified reason, never from the provider's text.
+ */
+export interface LiveAiNotice {
+  /** Stable for one provider's kind of failure; shown once. */
+  id: string;
+  purposes: string[];
+  provider: string;
+  model: string;
+  kind: string;
+  action: "retrying" | "stopped";
+  retry_at: string | null;
+  /** "you" when the viewer can fix it in Settings, else "admin". */
+  fixable_by: "you" | "admin";
+  /** The Settings page that fixes it, when the viewer can open it. */
+  settings: "ai-providers" | "your-ai" | null;
+  message: string;
 }
 
 export interface RecordingInitResponse {
@@ -761,7 +836,7 @@ export interface ActiveRecordingConflictDetail {
   status: RecordingStatus;
 }
 
-/** Off; Auto: GPU only; always: GPU and CPU. */
+/** "Refine live words": off; auto, on with a GPU (the default); always, also without one. */
 export type LiveTextSettlingMode = "off" | "auto" | "always";
 
 export interface Settings {
@@ -775,6 +850,8 @@ export interface Settings {
   enable_live_transcription?: boolean;
   /** Install-wide, admin-only: provisional labels require CUDA. */
   live_speaker_labels?: "off" | "auto";
+  /** Install-wide, admin-only: a reply's first words go to the person replying, live and final. */
+  sentence_start_correction?: boolean;
   /** Install-wide: rolling word agreement; "auto" (the default) on CUDA, "always" on CPU too. */
   live_text_settling?: LiveTextSettlingMode;
   live_text_settling_k?: number;
@@ -789,6 +866,8 @@ export interface Settings {
   auto_analyse_meetings?: boolean;
   /** Take suggested speaker names as given when processing finishes, rather than asking to confirm each. */
   confirm_suggested_names?: boolean;
+  /** Offer names for unnamed speakers while a meeting records (on unless false). */
+  suggest_live_speaker_names?: boolean;
   /**
    * "confirmed" (the default): a person's library voiceprint learns only from
    * names the user gave or confirmed. "automatic": also from voiceprint matches
@@ -853,9 +932,8 @@ export interface Settings {
   glossary_terms?: string;
   install_glossary_terms?: string;
   enable_vad?: boolean;
-  // With VAD on, whether transcription and speaker separation hear the muted
-  // audio. Transcription defaults true, speaker separation false.
-  vad_mute_transcription?: boolean;
+  // "Faster speaker separation": with VAD on, whether speaker separation hears
+  // the muted audio. Default false. Transcription always does (#961).
   vad_mute_diarization?: boolean;
   enable_diarization?: boolean;
   // Processing tuning (lib/processingTuning.ts). null means inherit the
@@ -866,6 +944,8 @@ export interface Settings {
   phantom_max_segments?: number | null;
   phantom_embedding_floor?: number | null;
   phantom_merge_threshold?: number | null;
+  // True skips the phantom filter; null or absent runs it.
+  phantom_filter_off?: boolean | null;
   word_flip_max_duration_s?: number | null;
   word_flip_max_gap_s?: number | null;
   line_break_pause_s?: number | null;
@@ -1182,7 +1262,7 @@ export interface ModelStatusInfo {
   path: string | null;
   checked_paths: string[];
   /** Optional assets report their preparation lifecycle separately from presence. */
-  state?: "absent" | "downloading" | "ready" | "failed" | null;
+  state?: "absent" | "downloading" | "ready" | "failed" | "retry_wait" | null;
   /** Total expected download size from the model's asset manifest. */
   size_bytes?: number | null;
   unused_reason?: string | null;

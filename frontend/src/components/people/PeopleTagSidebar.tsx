@@ -292,7 +292,7 @@ export function PeopleTagSidebar({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+        <div className="relative flex-1 overflow-y-auto custom-scrollbar p-2">
           {isAddingRoot && (
             <div className="mb-2 px-2 flex items-center gap-1">
               <InputBase

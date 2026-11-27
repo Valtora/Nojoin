@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Iterable, Mapping, Sequence
@@ -54,6 +55,49 @@ DISALLOWED_NAME_TOKENS = {
     "team",
     "thanks",
 }
+# A model asked to name a speaker sometimes answers with what they do
+# ("Industrial Designer", "the project lead"), though the prompt forbids it.
+# With DISALLOWED_NAME_TOKENS these mark an answer as a role, which
+# `is_personal_name` refuses. A backstop for common roles, not a list of them all.
+# None of these is a name, so any one of them makes an answer a role.
+ROLE_WORDS = frozenset(
+    """
+    accountant administrator adviser advisor analyst architect assistant
+    attorney auditor chair chairman chairperson committee consultant
+    coordinator department deputy design designer developer director editor
+    engineering executive expert facilitator founder intern interviewer keynote
+    lawyer marketing member moderator officer participant planner presenter
+    product programme programmer project recruiter representative researcher
+    scientist secretary software specialist student supervisor teacher tech
+    technical technician user
+    """.split()
+)
+# Role words that are also names ("Alice Head", "Christopher Guest", "Olive
+# Senior"): an answer is a role only when every word in it is one of these, as
+# "Guest", "Sales Lead" and "Head of Sales" are.
+ROLE_OR_NAME_WORDS = frozenset(
+    """
+    chief clerk co guest head host junior lead leader owner sales senior
+    speaker special vice
+    """.split()
+)
+# The longest name the live rename route accepts, which Accept goes through,
+# and so the longest an AI suggestion may offer.
+MAX_PERSONAL_NAME_LENGTH = 255
+# What may sit between the letters and combining marks of a name in any
+# script, besides any space separator (Zs: a no-break space, the ideographic
+# space between a Japanese family and given name) and any dash (Pd: hyphens,
+# the Hebrew maqaf). Tab and line breaks are control characters and stay out.
+NAME_SEPARATOR_CATEGORIES = frozenset({"Zs", "Pd"})
+# The zero-width non-joiner and joiner that Persian and Indic names need; no
+# other format character, so bidi controls stay out.
+NAME_JOINERS = frozenset("\u200c\u200d")
+# Punctuation that sits inside names: apostrophes, straight and typographic,
+# with the left quotation mark typed for the Hawaiian okina; full stops; the
+# middle dots of Catalan, Chinese transliteration and Japanese katakana (full
+# and half width); the Hebrew geresh and gershayim; and the Tibetan tsheg
+# between syllables.
+NAME_PUNCTUATION = frozenset("'\u2018\u2019.\u00b7\u30fb\uff65\u05f3\u05f4\u0f0b\u0f0c")
 NAME_STOPWORDS = {"at", "for", "from", "in", "on", "with"}
 # Words that follow "I'm", "my name is", "this is", or precede "here"/"speaking",
 # without being a name. They are capitalised in title-case or all-caps
@@ -746,6 +790,51 @@ def _clean_candidate_name(candidate: str) -> str | None:
         return None
 
     return " ".join(part.capitalize() for part in cleaned.split())
+
+
+# "A" and "an" are articles before a role ("a guest") and names too: an
+# initial ("A. Example") or a given name ("Nguyễn Văn An"). Alone, or with only
+# role words beside them, they make no name.
+_ARTICLES = frozenset({"a", "an"})
+# "of" and "and" join roles and people ("Head of Sales", "Alice and Bob").
+_NOT_IN_A_NAME = (
+    (DISALLOWED_NAME_TOKENS - _ARTICLES)
+    | ROLE_WORDS
+    | NAME_STOPWORDS
+    | NON_NAME_WORDS
+    | {"of", "and"}
+)
+
+
+def is_personal_name(name: str) -> bool:
+    """Whether a model's suggested name reads as a person's.
+
+    Any script ("李明", "Ana Maria de Souza"), up to
+    ``MAX_PERSONAL_NAME_LENGTH`` characters of letters and combining marks,
+    with spaces, dashes, ``NAME_JOINERS`` and ``NAME_PUNCTUATION`` between
+    them. Anything else is no name: it is refused whole, never
+    trimmed into a different name. Nor is a placeholder ("Speaker 2"), a role
+    ("industrial designer", "the manager", "Guest") or a phrase; a role word
+    that is also a surname passes beside a name ("Alice Head").
+    """
+    if not name or len(name) > MAX_PERSONAL_NAME_LENGTH:
+        return False
+    categories = [unicodedata.category(character) for character in name]
+    if not any(category.startswith("L") for category in categories) or any(
+        not category.startswith(("L", "M"))
+        and category not in NAME_SEPARATOR_CATEGORIES
+        and character not in NAME_JOINERS | NAME_PUNCTUATION
+        for character, category in zip(name, categories, strict=True)
+    ):
+        return False
+    if is_placeholder_speaker_name(name):
+        return False
+    words = re.findall(r"\w+", unicodedata.normalize("NFC", name).casefold())
+    return (
+        bool(words)
+        and not _NOT_IN_A_NAME.intersection(words)
+        and not set(words) <= ROLE_OR_NAME_WORDS | _ARTICLES
+    )
 
 
 def _normalize_name(value: str) -> str:

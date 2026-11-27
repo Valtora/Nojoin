@@ -54,7 +54,7 @@ interface TranscriptSectionProps {
   hasRetainedPublication?: boolean;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes?: readonly TimelineNote[] | null;
-  /** The page's note edits, which My notes shares. */
+  /** The page's note edits, which Your notes shares. */
   noteEdits: NoteEdits;
   transcriptSegments: TranscriptSegment[];
   currentTime: number;
@@ -130,7 +130,8 @@ export default function TranscriptSection({
     addNotification({ type: "error", message })), [addNotification]);
   const applyLiveNames = liveTranscript?.applyLiveSpeakerNames ?? IGNORE_LIVE_NAMES;
   const liveNaming = useLiveSpeakerNaming(
-    recording.id, applyLiveNames, undefined, liveTranscript?.applyLiveSpeakerMerges,
+    recording.id, applyLiveNames, liveTranscript?.refresh, liveTranscript?.applyLiveSpeakerMerges,
+    liveTranscript?.applyLiveSpeakerSuggestions,
   );
   const activeCapture = isLiveCaptureInProgress(recording);
   // Terminal metadata can precede the replacement read; an open editor can
@@ -163,7 +164,7 @@ export default function TranscriptSection({
   // A note added here from a line's menu shows on its line while it saves;
   // the others still on their way are listed above the transcript.
   const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id, selectNoteList);
-  // Edits, moves and deletes made here or in My notes show at once: a finished
+  // Edits, moves and deletes made here or in Your notes show at once: a finished
   // recording's list is not fetched again.
   const { apply: applyEdits, edit: editNote, remove: removeNote, move: moveNote } = noteEdits;
   const notes = useMemo(
@@ -218,9 +219,16 @@ export default function TranscriptSection({
     onNoteAtTime: activeCapture ? noteAtTime : undefined,
     onRenameLiveSpeaker: activeCapture ? liveNaming.renameLiveSpeaker : undefined,
     onMergeLiveSpeaker: activeCapture ? liveNaming.mergeLiveSpeaker : undefined,
+    liveSpeakerSuggestions: activeCapture ? liveTranscript?.liveSpeakerSuggestions : undefined,
+    liveSpeakerSuggestionSources: liveTranscript?.liveSpeakerSuggestionSources,
+    liveSpeakerSuggestionStarts: liveTranscript?.liveSpeakerSuggestionStarts,
+    onDismissLiveSpeakerSuggestion: activeCapture ? liveNaming.dismissLiveSpeakerSuggestion : undefined,
     loadPeopleNames: liveNaming.loadPeopleNames,
   }) : undefined, [usesLiveFeed, presentFeed, hasLoaded, paused, liveBehind, liveLineHandlers, activeCapture,
-    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.mergeLiveSpeaker, liveNaming.loadPeopleNames]);
+    noteOnLine, noteAtTime, liveNaming.renameLiveSpeaker, liveNaming.mergeLiveSpeaker, liveNaming.loadPeopleNames,
+    liveTranscript?.liveSpeakerSuggestions, liveTranscript?.liveSpeakerSuggestionSources,
+    liveTranscript?.liveSpeakerSuggestionStarts,
+    liveNaming.dismissLiveSpeakerSuggestion]);
   const discardNote = useCallback(
     (key: string) => {
       outbox.discard(key);
@@ -309,7 +317,7 @@ export default function TranscriptSection({
         composerOwnsDraft={inFlightContent !== undefined}
         readEndMs={readEndMs}
         onEmptied={focusSection}
-        className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
+        className="relative mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
       />
       {transcriptSegments.length > 0 || notes.length > 0 || liveTranscript ? (
         <div className="min-h-0 flex-1">
@@ -384,7 +392,7 @@ export default function TranscriptSection({
       {/* Inset like the transcript above it, so the box's focus rings are not
           clipped, and clear of the phone's floating chat button. */}
       {inFlightContent ? <div data-testid="note-box-region"
-        className="max-h-[50%] shrink-0 overflow-y-auto pb-2 pl-2 pr-clear-floating-2 md:pl-4 md:pr-clear-floating-4">
+        className="relative max-h-[50%] shrink-0 overflow-y-auto pb-2 pl-2 pr-clear-floating-2 md:pl-4 md:pr-clear-floating-4">
         {inFlightContent}
       </div> : null}
     </div>

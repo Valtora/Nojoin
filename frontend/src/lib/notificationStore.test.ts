@@ -16,6 +16,33 @@ describe("notificationStore", () => {
     vi.useRealTimers();
   });
 
+  it.each(["dismissToast", "removeActiveNotification"] as const)(
+    "%s of a notification that is not on screen notifies no subscriber",
+    (action) => {
+      add({ type: "info", message: "Update available", persistent: true, id: "kept" });
+      const before = useNotificationStore.getState();
+      const listener = vi.fn();
+      const unsubscribe = useNotificationStore.subscribe(listener);
+
+      useNotificationStore.getState()[action]("absent");
+
+      unsubscribe();
+      expect(listener).not.toHaveBeenCalled();
+      expect(useNotificationStore.getState().activeNotifications).toBe(before.activeNotifications);
+    },
+  );
+
+  it.each(["dismissToast", "removeActiveNotification"] as const)(
+    "%s of a notification on screen removes it",
+    (action) => {
+      add({ type: "info", message: "Update available", persistent: true, id: "kept" });
+
+      useNotificationStore.getState()[action]("kept");
+
+      expect(active()).toHaveLength(0);
+    },
+  );
+
   it("removes a transient notification after its timeout", () => {
     add({ type: "success", message: "Saved" });
 

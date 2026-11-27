@@ -29,6 +29,7 @@ from backend.utils.canonical_pipeline.constants import (
 from backend.utils.speaker_assignment import remap_overlapping_speakers
 from backend.utils.speaker_names.anchors import first_turn, lines_from_final_segments
 from backend.utils.speaker_names.events import add_event
+from backend.utils.speaker_names.placeholder import is_placeholder_speaker_name
 from backend.utils.speaker_names.preferences import (
     confirm_suggested_names_enabled,
     library_learns_automatically,
@@ -181,12 +182,6 @@ def _identity_from_existing_row(
 
 def _matchable_global_speakers(session, user_id) -> list:
     """Load this user's people, excluding placeholder-named or empty voiceprints."""
-    import re
-
-    placeholder_pattern = re.compile(
-        r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE
-    )
-
     candidates = session.exec(
         select(GlobalSpeaker)
         .where(GlobalSpeaker.embedding != None)  # noqa: E711 -- SQL NULL comparison
@@ -196,7 +191,7 @@ def _matchable_global_speakers(session, user_id) -> list:
     return [
         gs
         for gs in candidates
-        if not placeholder_pattern.match(gs.name)
+        if not is_placeholder_speaker_name(gs.name)
         and gs.embedding
         and len(gs.embedding) > 0
         and not any(x is None for x in gs.embedding)

@@ -33,7 +33,8 @@ CREATE TABLE users (
     is_superuser BOOLEAN NOT NULL, force_password_change BOOLEAN NOT NULL, role VARCHAR NOT NULL,
     token_version INTEGER NOT NULL, settings JSON, has_seen_demo_recording BOOLEAN NOT NULL,
     invitation_id INTEGER,
-    ai_analysis_daily_limit INTEGER
+    ai_analysis_daily_limit INTEGER,
+    legal_accepted_at DATETIME
 );
 CREATE TABLE recordings (
     max_speakers INTEGER,

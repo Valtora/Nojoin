@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING
@@ -11,6 +10,7 @@ import numpy as np
 
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
 from backend.utils.live_speaker_labels import live_speaker_label
+from backend.utils.time_units import NATIVE_FRAME_MS, frame_range, seconds_to_ms
 
 from .lines import LabelTimeline
 
@@ -25,9 +25,9 @@ def label_line(
     *,
     shadow_timeline: LabelTimeline | None = None,
 ) -> LiveLabelDecision:
-    native_end_s = engine.native_complete_frame / 100
     if engine.route == "nemotron" or (
-        engine.switch_emitted_at_n is not None and end_s <= native_end_s
+        engine.switch_emitted_at_n is not None
+        and seconds_to_ms(end_s) <= engine.native_complete_frame * NATIVE_FRAME_MS
     ):
         return native_line(engine, start_s, end_s)
     timeline = (
@@ -67,10 +67,12 @@ def prepare_label_line(
 def native_line(
     engine: HybridLiveState, start_s: float, end_s: float
 ) -> LiveLabelDecision:
-    first = max(0, math.floor(start_s * 100) - engine.posterior_first_frame)
-    stop = max(0, math.ceil(end_s * 100) - engine.posterior_first_frame)
+    start_ms, end_ms = seconds_to_ms(start_s), seconds_to_ms(end_s)
+    first, stop = frame_range(
+        start_ms, end_ms, NATIVE_FRAME_MS, engine.posterior_first_frame
+    )
     probabilities = engine.posteriors[first:stop]
-    complete = end_s <= engine.native_complete_frame / 100
+    complete = end_ms <= engine.native_complete_frame * NATIVE_FRAME_MS
     if not complete:
         return LiveLabelDecision("UNKNOWN", False, None, True)
     if not len(probabilities):

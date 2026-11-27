@@ -8,6 +8,7 @@ import { usePausedRecordingGuard } from "@/lib/capture/usePausedRecordingGuard";
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 
+import CaptureSourceDialog from "./CaptureSourceDialog";
 import ResumeRecordingModal from "./ResumeRecordingModal";
 import SessionSignInDialog from "./SessionSignInDialog";
 import { useResumeRecoveryOffer } from "./useResumeRecoveryOffer";
@@ -21,7 +22,7 @@ export default function CaptureShell({ children }: CaptureShellProps) {
   const pathname = usePathname();
   const { pausedRecording, hasPausedRecording } = usePausedRecordingGuard();
   const {
-    cancel, controller, dismissRecoveryOffer, runtimeActive, status, stop, support,
+    cancel, controller, dismissRecoveryOffer, runtimeActive, sourceChoice, status, stop, support,
   } = useCapture();
   const resumeOffer = useResumeRecoveryOffer();
   const [busyAction, setBusyAction] = useState<
@@ -34,7 +35,9 @@ export default function CaptureShell({ children }: CaptureShellProps) {
   // dialog would ask for it again over the share picker (#887). Its own
   // Resume keeps it open, showing the wait.
   const ownCaptureStarting = status === "starting" && busyAction === null;
-  const modalOpen = hasPausedRecording && !runtimeActive && !ownCaptureStarting;
+  // The source question comes first, one dialog at a time: Cancel there
+  // brings this one back while the recording is still offered (#958).
+  const modalOpen = hasPausedRecording && !runtimeActive && !ownCaptureStarting && !sourceChoice;
 
   const handleResume = async () => {
     if (!pausedRecording) {
@@ -119,6 +122,7 @@ export default function CaptureShell({ children }: CaptureShellProps) {
         onStop={handleStop}
         onDismiss={dismissRecoveryOffer}
       />
+      <CaptureSourceDialog />
       <SessionSignInDialog />
     </>
   );

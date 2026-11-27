@@ -2,15 +2,18 @@
 
 Answers the Ollama API calls Nojoin makes (``GET /api/tags``, ``POST
 /api/show`` and ``POST /api/chat``, streamed or not, with images or without),
-so an end-to-end stack can run notes, Meeting Chat, Meeting Edge, AI analytics
-and document image parsing with no model and no outside network. Standard
-library only. Run it on the stack's internal network and point the stack at it
+so an end-to-end stack can run notes, Meeting Chat, Meeting Edge, AI analytics,
+document image parsing and Test connection's model probe with no model and no
+outside network. Standard library only. Run it on the stack's internal network and point the stack at it
 with ``OLLAMA_API_URL``; docs/DEVELOPMENT.md has the commands.
 
 Each request is classified by the instruction its prompt opens with, and gets
-the same answer every time. Two models are listed: ``fake-llm:latest`` accepts
-images and ``fake-text:latest`` does not, so the downgrade a text-only model
-causes can be exercised too. The context window behaves as Ollama's does with
+the same answer every time. ``fake-llm:latest`` accepts images and
+``fake-text:latest`` does not, so the downgrade a text-only model causes can be
+exercised too. Four more fail on purpose, for the live calls' backoff:
+``fake-401`` refuses the credential, ``fake-429`` rate limits with a
+``Retry-After`` (``--retry-after`` seconds), ``fake-500`` answers a server error,
+and ``fake-slow`` answers only after ``--slow-seconds``. The context window behaves as Ollama's does with
 the ``truncate`` and ``shift`` options Nojoin sends, with tokens estimated at
 four bytes each, so a small ``OLLAMA_CONTEXT_WINDOW`` drives the long-meeting
 paths. The log line for a request names its task and sizes, never its text.
@@ -24,6 +27,7 @@ import argparse
 import json
 import signal
 import sys
+import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -41,7 +45,20 @@ TOKENS_PER_IMAGE = 256
 MODELS = {
     "fake-llm:latest": ("completion", "vision"),
     "fake-text:latest": ("completion",),
+    "fake-401:latest": ("completion",),
+    "fake-429:latest": ("completion",),
+    "fake-500:latest": ("completion",),
+    "fake-slow:latest": ("completion",),
 }
+# What each failing model answers every chat with: its status and error.
+FAILURES = {
+    "fake-401:latest": (HTTPStatus.UNAUTHORIZED, "unauthorized"),
+    "fake-429:latest": (HTTPStatus.TOO_MANY_REQUESTS, "too many requests"),
+    "fake-500:latest": (HTTPStatus.INTERNAL_SERVER_ERROR, "the model crashed"),
+}
+SLOW_MODEL = "fake-slow:latest"
+DEFAULT_RETRY_AFTER_SECONDS = 60
+DEFAULT_SLOW_SECONDS = 120.0
 
 NOTES = (
     "## Summary\n\n"
@@ -55,6 +72,11 @@ CHAT_ANSWER = (
     "This answer comes from the fake LLM server. It has not read the meeting, "
     "so it cannot say what was discussed."
 )
+# Test connection's probe, PROBE_PROMPT in
+# backend/processing/llm_backends/model_probe.py. A copy, since this server
+# imports nothing from the backend; test_fake_llm_server.py fails when the two
+# differ.
+PROBE_PROMPT = 'Reply with exactly this JSON object and nothing else: {"ok": true}'
 
 # The task each prompt asks for, by the instruction it opens with. The earliest
 # marker in a prompt wins, so one quoted further down, in a transcript or in
@@ -78,6 +100,7 @@ TASK_MARKERS = (
     ("notes", "Generate meeting notes from the transcript below."),
     ("title", "provide a title that summarises the main topic"),
     ("chat", "You are a helpful AI assistant. You have access to the following"),
+    ("probe", PROBE_PROMPT),
 )
 
 ANSWERS: dict[str, str] = {
@@ -121,16 +144,20 @@ ANSWERS: dict[str, str] = {
     "notes": NOTES,
     "title": TITLE,
     "chat": CHAT_ANSWER,
+    "probe": json.dumps({"ok": True}),
 }
 
 
 class RequestError(Exception):
     """An error Ollama would answer with, as its status and message."""
 
-    def __init__(self, status: HTTPStatus, message: str) -> None:
+    def __init__(
+        self, status: HTTPStatus, message: str, headers: dict[str, str] | None = None
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
+        self.headers = headers or {}
 
 
 @dataclass(frozen=True)
@@ -218,6 +245,19 @@ def read_messages(body: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
         raise RequestError(HTTPStatus.BAD_REQUEST, "each message must be an object")
     images = sum(len(m.get("images") or []) for m in messages)
     return messages, images
+
+
+def failure_for(model: str, retry_after: int) -> RequestError | None:
+    """The error a failing model answers every chat with, or None."""
+    if model not in FAILURES:
+        return None
+    status, message = FAILURES[model]
+    headers = (
+        {"Retry-After": str(retry_after)}
+        if status == HTTPStatus.TOO_MANY_REQUESTS
+        else {}
+    )
+    return RequestError(status, message, headers)
 
 
 def chat_answer(body: dict[str, Any]) -> Answer:
@@ -345,9 +385,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_text(HTTPStatus.NOT_FOUND, "404 page not found")
         except RequestError as error:
             self._note(f"{self.path} refused: {error.status.value}")
-            self._send_json(error.status, {"error": error.message})
+            self._send_json(error.status, {"error": error.message}, error.headers)
 
     def _chat(self, body: dict[str, Any]) -> None:
+        model = model_name(body.get("model"))
+        failure = failure_for(model, self.server.retry_after)  # type: ignore[attr-defined]
+        if failure is not None:
+            self._note(f"/api/chat {model} fails with {failure.status.value}")
+            raise failure
+        if model == SLOW_MODEL:
+            time.sleep(self.server.slow_seconds)  # type: ignore[attr-defined]
         answer = chat_answer(body)
         # Ollama streams unless a request says otherwise.
         stream = body.get("stream", True) is not False
@@ -376,11 +423,18 @@ class Handler(BaseHTTPRequestHandler):
             raise RequestError(HTTPStatus.BAD_REQUEST, "the body must be an object")
         return body
 
-    def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
+    def _send_json(
+        self,
+        status: HTTPStatus,
+        payload: dict[str, Any],
+        headers: dict[str, str] | None = None,
+    ) -> None:
         data = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(data)
 
@@ -399,9 +453,18 @@ class Handler(BaseHTTPRequestHandler):
         self._note(format % args)
 
 
-def build_server(host: str, port: int) -> ThreadingHTTPServer:
+def build_server(
+    host: str,
+    port: int,
+    *,
+    retry_after: int = DEFAULT_RETRY_AFTER_SECONDS,
+    slow_seconds: float = DEFAULT_SLOW_SECONDS,
+) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), Handler)
     server.daemon_threads = True
+    # Read by the handler for fake-429 and fake-slow.
+    server.retry_after = retry_after  # type: ignore[attr-defined]
+    server.slow_seconds = slow_seconds  # type: ignore[attr-defined]
     return server
 
 
@@ -409,9 +472,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=11434)
+    parser.add_argument(
+        "--retry-after",
+        type=int,
+        default=DEFAULT_RETRY_AFTER_SECONDS,
+        help="the Retry-After fake-429 sends, in seconds",
+    )
+    parser.add_argument(
+        "--slow-seconds",
+        type=float,
+        default=DEFAULT_SLOW_SECONDS,
+        help="how long fake-slow takes to answer",
+    )
     args = parser.parse_args(argv)
 
-    server = build_server(args.host, args.port)
+    server = build_server(
+        args.host,
+        args.port,
+        retry_after=args.retry_after,
+        slow_seconds=args.slow_seconds,
+    )
     # As a container's PID 1, Python ignores SIGTERM unless it handles it, and
     # `docker stop` would wait out its timeout.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

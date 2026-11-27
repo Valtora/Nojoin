@@ -44,6 +44,8 @@ export interface RecordingListPages {
   recordings: Recording[];
   /** Some answer has arrived since the list mounted. */
   hasLoaded: boolean;
+  /** The search and filter the rows answer, keyed as the list keys its requests; null before the first answer. */
+  resultsKey: string | null;
   /** The rows answer an earlier search or filter, or none yet: a new one is on its way. */
   isLoadingQuery: boolean;
   /** The current search or filter could not be read, and nothing answers it yet. */
@@ -240,6 +242,7 @@ export function useRecordingListPages(
   return {
     recordings: state.rows,
     hasLoaded: state.key !== null,
+    resultsKey: state.key,
     isLoadingQuery: state.key !== key && state.failedKey !== key,
     loadFailed: state.key !== key && state.failedKey === key,
     hasMore: state.key === key && state.hasMore,

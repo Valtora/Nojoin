@@ -58,13 +58,13 @@ function tuningSpec(key: ProcessingTuningKey, label: string, step: number): Proc
 
 export const PROCESSING_TUNING_SPECS: Record<ProcessingTuningKey, ProcessingTuningSpec> = {
   vad_threshold: tuningSpec("vad_threshold", "Speech detection threshold", 0.05),
-  asr_word_length_cap_s: tuningSpec("asr_word_length_cap_s", "Word length cap (seconds)", 0.05),
-  phantom_max_duration_s: tuningSpec("phantom_max_duration_s", "Max speech (seconds)", 0.5),
-  phantom_max_segments: tuningSpec("phantom_max_segments", "Max segments", 1),
-  phantom_embedding_floor: tuningSpec("phantom_embedding_floor", "Non-speech floor", 0.05),
-  phantom_merge_threshold: tuningSpec("phantom_merge_threshold", "Merge similarity", 0.05),
-  word_flip_max_duration_s: tuningSpec("word_flip_max_duration_s", "Max word length (seconds)", 0.05),
-  word_flip_max_gap_s: tuningSpec("word_flip_max_gap_s", "Max gap (seconds)", 0.05),
+  asr_word_length_cap_s: tuningSpec("asr_word_length_cap_s", "Longest word (seconds)", 0.05),
+  phantom_max_duration_s: tuningSpec("phantom_max_duration_s", "Check speakers under (seconds)", 0.5),
+  phantom_max_segments: tuningSpec("phantom_max_segments", "And up to (turns)", 1),
+  phantom_embedding_floor: tuningSpec("phantom_embedding_floor", "Treat as noise below (voice match)", 0.05),
+  phantom_merge_threshold: tuningSpec("phantom_merge_threshold", "Merge from (voice match)", 0.05),
+  word_flip_max_duration_s: tuningSpec("word_flip_max_duration_s", "Words up to (seconds)", 0.05),
+  word_flip_max_gap_s: tuningSpec("word_flip_max_gap_s", "Pause up to (seconds)", 0.05),
   line_break_pause_s: tuningSpec("line_break_pause_s", "Line break pause (seconds)", 0.1),
 };
 
@@ -175,7 +175,7 @@ export function validateProcessingTuning(settings: Settings): string | null {
   const floor = effectiveValue(settings, "phantom_embedding_floor");
   const merge = effectiveValue(settings, "phantom_merge_threshold");
   if ((floor.source === "user" || merge.source === "user") && floor.value >= merge.value) {
-    return `The phantom speaker non-speech floor (${describe(floor)}) must be lower than its merge similarity (${describe(merge)}).`;
+    return `Speakers heard only briefly: the noise limit (${describe(floor)}) must be lower than the merge limit (${describe(merge)}).`;
   }
   return null;
 }

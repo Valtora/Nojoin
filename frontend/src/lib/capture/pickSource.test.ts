@@ -165,6 +165,46 @@ describe("capture source picker", () => {
     expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { error: Object.assign(new Error("Permission denied by system"), { name: "NotAllowedError" }), why: "the operating system" },
+    { error: Object.assign(new Error("getDisplayMedia() requires transient activation"), { name: "InvalidStateError" }), why: "a lapsed user activation" },
+  ])("classifies a share refused by $why as display_denied", async ({ error }) => {
+    const mediaDevices = {
+      getDisplayMedia: vi.fn().mockRejectedValue(error),
+      getUserMedia: vi.fn(),
+      enumerateDevices: vi.fn().mockResolvedValue([]),
+    } as unknown as MediaDevices;
+
+    await expect(
+      pickCaptureSource({ mode: "shared_audio", mediaDevices, settings: DEFAULT_CAPTURE_SETTINGS }),
+    ).rejects.toMatchObject({ code: "display_denied" } satisfies Partial<PickSourceError>);
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it("refuses a share with no sound before asking for the microphone", async () => {
+    const picture = buildTrack("video", "Meeting Window", { displaySurface: "window" });
+    const mediaDevices = {
+      getDisplayMedia: vi.fn().mockResolvedValue(buildStream({ videoTracks: [picture] })),
+      getUserMedia: vi.fn(),
+      enumerateDevices: vi.fn().mockResolvedValue([]),
+    } as unknown as MediaDevices;
+
+    const error = await pickCaptureSource({
+      mode: "shared_audio",
+      mediaDevices,
+      settings: DEFAULT_CAPTURE_SETTINGS,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PickSourceError);
+    expect(error).toMatchObject({
+      code: "missing_display_audio",
+      displaySurface: "window",
+      captureReport: { shared_audio_available: false, notes: ["display_capture_without_audio"] },
+    });
+    expect(picture.stop).toHaveBeenCalledOnce();
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  });
+
   it("fails closed when the selected microphone is unavailable", async () => {
     const mediaDevices = {
       getDisplayMedia: vi.fn(),

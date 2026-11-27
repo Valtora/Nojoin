@@ -35,29 +35,45 @@ import numpy as np
 from .constants import *  # noqa: F403
 
 
-def _ranges_from_utterances(session, recording_id: int) -> dict:
-    """Map recording_speaker_id -> [(start_s, end_s)] from the canonical table."""
+def _ranges_from_utterances(session, recording_id: int) -> tuple[dict, set[int]]:
+    """Map recording_speaker_id -> [(start_s, end_s)] from the canonical table.
+
+    Only the lines the transcript shows (``ACTIVE_UTTERANCE_STATES``) give a
+    range. A superseded or deleted line keeps its speaker: a split supersedes
+    the line and gives both halves its speaker, so reading it would take that
+    span twice, and once a half moves to someone else, would still give the
+    half's audio to the original speaker.
+
+    Also returns every speaker a line names in any state, since the table
+    speaks for those speakers even when none of their lines is shown.
+    """
     from backend.models.pipeline import TranscriptUtterance
+    from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
     ranges: dict[int, list[tuple[float, float]]] = {}
+    named: set[int] = set()
 
     rows = session.execute(
         select(
             TranscriptUtterance.recording_speaker_id,
             TranscriptUtterance.start_ms,
             TranscriptUtterance.end_ms,
+            TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES),
         )
         .where(TranscriptUtterance.recording_id == recording_id)
         .where(TranscriptUtterance.recording_speaker_id.isnot(None))
     ).all()
-    for speaker_id, start_ms, end_ms in rows:
-        if speaker_id is None or start_ms is None or end_ms is None:
+    for speaker_id, start_ms, end_ms, shown in rows:
+        if speaker_id is None:
+            continue
+        named.add(int(speaker_id))
+        if not shown or start_ms is None or end_ms is None:
             continue
         ranges.setdefault(int(speaker_id), []).append(
             (float(start_ms) / 1000.0, float(end_ms) / 1000.0)
         )
 
-    return ranges
+    return ranges, named
 
 
 def _ranges_from_transcript_segments(session, recording_id: int) -> dict:
@@ -91,19 +107,21 @@ def _ranges_from_transcript_segments(session, recording_id: int) -> dict:
 def _speaker_time_ranges(session, recording_id: int) -> dict:
     """Map recording_speaker_id -> list of (start_s, end_s).
 
-    Prefers the canonical utterance table and fills the remaining speakers from
-    the transcript's segment blob. The fallback is applied per speaker rather
-    than per recording: a recording processed across a pipeline change can have
-    utterance rows for some of its speakers and only transcript segments for the
-    rest, and an all-or-nothing fallback leaves exactly those speakers with no
-    audio to rebuild from.
+    Prefers the canonical utterance table and fills the speakers no utterance
+    names from the transcript's segment blob. The fallback is applied per
+    speaker rather than per recording: a recording processed across a pipeline
+    change can have utterance rows for some of its speakers and only transcript
+    segments for the rest, and an all-or-nothing fallback leaves exactly those
+    speakers with no audio to rebuild from. A speaker whose lines were all
+    superseded or deleted is not filled in: the table says it has no speech
+    left, whatever the blob still says.
     """
-    ranges = _ranges_from_utterances(session, recording_id)
+    ranges, named = _ranges_from_utterances(session, recording_id)
 
     for speaker_id, segments in _ranges_from_transcript_segments(
         session, recording_id
     ).items():
-        if speaker_id not in ranges:
+        if speaker_id not in named:
             ranges[speaker_id] = segments
 
     return ranges
@@ -162,6 +180,12 @@ def _rebuild_global_speaker(
 ) -> _PersonRebuild:
     """Recompute a person's voiceprint from their linked current-version ones.
 
+    Only the speakers through which their People entry counts a meeting are
+    read (``counted_speaker()``). A speaker merged into another, or one whose
+    lines all moved to other speakers, keeps its link and a voiceprint of
+    audio the user has since given to someone else, so it stays out. A
+    meeting in the bin stays in, since binning says nothing about the voice.
+
     Only links that could found or join the voiceprint on any other path are
     averaged. Each recording's own voiceprint must meet
     ``LIBRARY_VOICEPRINT_MIN_SPEECH_S``, since a mean of short voiceprints is
@@ -177,22 +201,23 @@ def _rebuild_global_speaker(
     only when they are rebuilt; what becomes of a stale voiceprint that is not
     is ``_rebuild_people``'s decision.
     """
-    linked = session.exec(
-        select(RecordingSpeaker)
-        .where(RecordingSpeaker.global_speaker_id == global_speaker.id)
-        .where(RecordingSpeaker.merged_into_id.is_(None))
-    ).all()
-
     from backend.processing.embedding import (
         embedding_version_of,
         is_drift_refused,
         meets_library_evidence_floor,
     )
+    from backend.services.person_meetings import counted_speaker
     from backend.utils.speaker_names.preferences import (
         library_learns_automatically,
         owner_settings,
     )
     from backend.utils.speaker_names.sources import link_teaches_library
+
+    linked = session.exec(
+        select(RecordingSpeaker)
+        .where(RecordingSpeaker.global_speaker_id == global_speaker.id)
+        .where(counted_speaker())
+    ).all()
 
     current = [
         s for s in linked if s.embedding and embedding_version_of(s) == method_version

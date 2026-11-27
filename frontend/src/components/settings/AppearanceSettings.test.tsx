@@ -124,7 +124,7 @@ describe("AppearanceSettings", () => {
     expect(within(select).getAllByRole("option").map((option) => option.textContent))
       .toEqual(["Default", "Classic", "Depth"]);
     expect(select).toHaveAccessibleDescription(
-      "The shape and depth of controls and panels. Classic looks best with Square corners.",
+      "The shape and depth of controls and panels, with corners to match.",
     );
     expect(document.getElementById("appearance-style")).toContainElement(select);
     expect(screen.getByTitle("Saved in this browser only, not with your account")).toBeInTheDocument();
@@ -190,16 +190,80 @@ describe("AppearanceSettings", () => {
     expect(localStorage.getItem("nojoin-palette")).toBeNull();
   });
 
-  it("applies and persists a corner style", () => {
+  it("applies and persists a corner style, and Automatic leaves no trace", () => {
     renderSettings();
 
     choose("Corner style", "square");
     expect(root.dataset.corners).toBe("square");
     expect(localStorage.getItem("nojoin-corners")).toBe("square");
 
+    // Rounded is a choice of its own now, kept whatever Style brings.
     choose("Corner style", "rounded");
     expect(root.hasAttribute("data-corners")).toBe(false);
+    expect(localStorage.getItem("nojoin-corners")).toBe("rounded");
+
+    choose("Corner style", "auto");
+    expect(root.hasAttribute("data-corners")).toBe(false);
     expect(localStorage.getItem("nojoin-corners")).toBeNull();
+  });
+
+  it("offers Automatic first, and describes it as following Style", () => {
+    renderSettings();
+
+    const select = screen.getByRole("combobox", { name: "Corner style" });
+    expect(select).toHaveValue("auto");
+    expect(within(select).getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["Automatic (matches Style)", "Rounded", "Subtle", "Square"]);
+    expect(screen.getByText(/Automatic takes them from Style/)).toBeInTheDocument();
+  });
+
+  it("takes the corners from Style while Corner style is Automatic", () => {
+    renderSettings();
+    expect(root.hasAttribute("data-corners")).toBe(false);
+
+    choose("Style", "classic");
+    expect(root.dataset.corners).toBe("square");
+    expect(screen.getByRole("combobox", { name: "Corner style" })).toHaveValue("auto");
+    expect(localStorage.getItem("nojoin-corners")).toBeNull();
+
+    choose("Style", "depth");
+    expect(root.hasAttribute("data-corners")).toBe(false);
+
+    choose("Style", "classic");
+    choose("Style", "default");
+    expect(root.hasAttribute("data-corners")).toBe(false);
+  });
+
+  it.each([
+    ["rounded", null],
+    ["subtle", "subtle"],
+  ])("keeps an explicit %s corner style through a Style change and a reload", (corners, attribute) => {
+    const view = renderSettings();
+    choose("Corner style", corners);
+
+    choose("Style", "classic");
+    expect(root.getAttribute("data-corners")).toBe(attribute);
+
+    view.unmount();
+    root.removeAttribute("data-corners");
+    renderSettings();
+
+    expect(screen.getByRole("combobox", { name: "Corner style" })).toHaveValue(corners);
+    expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("classic");
+    expect(root.getAttribute("data-corners")).toBe(attribute);
+  });
+
+  it("describes Density in one line, without window sizes", () => {
+    renderSettings();
+
+    const description = screen.getByText(/^How closely lists, panels and controls are spaced\./);
+    expect(description).toHaveTextContent(
+      "How closely lists, panels and controls are spaced. Automatic fits the spacing to your window.",
+    );
+    expect(description.textContent).not.toMatch(/\d/);
+    expect(within(screen.getByRole("combobox", { name: "Density" })).getAllByRole("option")
+      .map((option) => option.textContent))
+      .toEqual(["Automatic (by window size)", "Comfortable", "Compact", "Dense"]);
   });
 
   it("overrides the automatic density and hands back to it", () => {
@@ -270,6 +334,20 @@ describe("AppearanceSettings across tabs", () => {
     expect(screen.getByRole("combobox", { name: "Style" })).toHaveValue("depth");
     finishStyleLoad();
     expect(root.dataset.style).toBe("depth");
+  });
+
+  it("follows a Style changed in another tab with Automatic corners", () => {
+    renderSettings();
+
+    changeInAnotherTab("nojoin-style", "classic");
+    expect(root.dataset.corners).toBe("square");
+
+    changeInAnotherTab("nojoin-corners", "subtle");
+    expect(root.dataset.corners).toBe("subtle");
+
+    changeInAnotherTab("nojoin-corners", null);
+    expect(root.dataset.corners).toBe("square");
+    expect(screen.getByRole("combobox", { name: "Corner style" })).toHaveValue("auto");
   });
 
   it("returns to the defaults when another tab clears a setting", () => {

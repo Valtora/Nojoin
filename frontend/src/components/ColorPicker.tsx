@@ -86,7 +86,7 @@ export default function ColorPicker({
           data-ui-border="full" kind="float"
           ref={panelRef}
           style={panelStyle}
-          className="z-[var(--z-dropdown)] overflow-y-auto p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]"
+          className="fixed z-[var(--z-dropdown)] overflow-y-auto p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]"
         >
           <div className="grid grid-cols-6 gap-2">
             {COLOR_PALETTE.map((color) => (
@@ -164,7 +164,7 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
           data-ui-border="full" kind="float"
           ref={panelRef}
           style={panelStyle}
-          className="z-[var(--z-dropdown)] overflow-y-auto p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"
+          className="fixed z-[var(--z-dropdown)] overflow-y-auto p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="grid grid-cols-6 gap-2">

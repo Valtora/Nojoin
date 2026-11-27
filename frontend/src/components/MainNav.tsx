@@ -398,7 +398,7 @@ export default function MainNav() {
         >
           <div
             ref={setRootNodeRef}
-            className={`min-h-0 flex-1 overflow-y-auto p-2 border-2 border-transparent rounded-lg transition-all ${isOverRoot ? "border-action-border bg-action-tint" : ""}`}
+            className={`relative min-h-0 flex-1 overflow-y-auto p-2 border-2 border-transparent rounded-lg transition-all ${isOverRoot ? "border-action-border bg-action-tint" : ""}`}
           >
             {!collapsed && (
               <div className="flex items-center justify-between px-3 py-2">

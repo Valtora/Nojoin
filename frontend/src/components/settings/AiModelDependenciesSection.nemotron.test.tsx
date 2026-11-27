@@ -47,6 +47,15 @@ describe("Nemotron model downloads", () => {
       .toBeTruthy();
   });
 
+  it("shows its ten-minute hold as the aligner does (#971)", () => {
+    const { row, startPreparation } = renderNemotron({ state: "retry_wait" });
+
+    expect(row.getByText("Waiting to retry")).toBeTruthy();
+    expect(row.getByText(/Automatic requests wait ten minutes/)).toBeTruthy();
+    fireEvent.click(row.getByRole("button", { name: "Retry" }));
+    expect(startPreparation).toHaveBeenCalledExactlyOnceWith("nemotron");
+  });
+
   it.each([
     ["absent", "Download"],
     ["failed", "Retry"],

@@ -3,10 +3,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from backend.utils.live_speaker_labels import speaker_prompt_name
-
-PLACEHOLDER_SPEAKER_PATTERN = re.compile(
-    r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$",
-    re.IGNORECASE,
+from backend.utils.speaker_names.placeholder import (
+    is_placeholder_speaker_name as is_placeholder_speaker_name,
 )
 
 # The meeting-notes body is assembled from four parts, three of which are
@@ -130,13 +128,6 @@ def resolve_recording_speaker_name(speaker: Any) -> Optional[str]:
 
     cleaned_name = str(resolved_name).strip()
     return cleaned_name or None
-
-
-def is_placeholder_speaker_name(name: Optional[str]) -> bool:
-    cleaned_name = (name or "").strip()
-    if not cleaned_name:
-        return True
-    return bool(PLACEHOLDER_SPEAKER_PATTERN.match(cleaned_name))
 
 
 def build_recording_speaker_map(speakers: Iterable[Any]) -> Dict[str, str]:

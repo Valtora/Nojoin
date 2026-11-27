@@ -303,7 +303,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
         </ButtonBase>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-clear-floating-0">
+      <div className="relative flex-1 overflow-y-auto pb-clear-floating-0">
         {loading ? (
           <div className="flex items-center justify-center h-full text-contrast-helper">
             <Loader2 className="w-6 h-6 animate-spin mr-2" />
@@ -346,7 +346,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
           // Under 40rem, as on a phone, Format, Size, Pages and Status move
           // under the name, so the actions stay in view and the name has room
           // to wrap rather than hiding both behind a sideways scroll.
-          <div className="@container overflow-x-auto">
+          <div className="@container relative overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b border-surface-border text-xs font-semibold uppercase tracking-wider text-contrast-helper">

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import TranscriptView from "./TranscriptView";
+import SpeakerPanel from "./SpeakerPanel";
 import TranscriptSection from "@/app/(dashboard)/recordings/[id]/_components/TranscriptSection";
 import { NoteFilesProvider } from "./notes/NoteFiles";
 import RecordingNoteComposer from "./notes/RecordingNoteComposer";
@@ -12,13 +13,14 @@ import { useNoteEdits } from "@/lib/notes/useNoteEdits";
 import { useRecordingNotes } from "@/lib/notes/useNoteOutbox";
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 import { renderCounter } from "@/test/renderCounts";
-import { line, viewProps } from "./transcript/transcriptTestFixtures";
+import { line, panelProps, viewProps } from "./transcript/transcriptTestFixtures";
 import { RecordingStatus, type Recording, type TimelineNote } from "@/types";
 
 // Network only; all component, note-store and persistence code runs unchanged.
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api")>(),
   getGlobalSpeakers: vi.fn(async () => []),
+  getMergedRecordingSpeakers: vi.fn(async () => []),
   getUnfinishedCaptures: vi.fn(async () => []),
   listTimelineNotes: vi.fn(async () => notes),
 }));
@@ -117,7 +119,7 @@ it("a note-box keystroke executes no file components or transcript lines", async
     } });
     rerender(<CaptureProvider><Page listed={withFile} /></CaptureProvider>);
     const attached = await counter.take();
-    expect(attached("components/notes/NoteFiles.tsx", "NoteFile")).toBe(2); // Transcript and My notes; the other 29 mount none.
+    expect(attached("components/notes/NoteFiles.tsx", "NoteFile")).toBe(2); // Transcript and Your notes; the other 29 mount none.
     fireEvent.change(screen.getByRole("textbox", { name: /note/i }), { target: { value: "ab" } });
     const nextKey = await counter.take();
     expect(nextKey("components/notes/NoteFiles.tsx", "NoteFile")).toBe(0);
@@ -150,5 +152,77 @@ it("changing the last live line executes only the overlap indicators whose overl
     const grown = await counter.take();
     expect(grown("components/transcript/OverlapIndicator.tsx", "OverlapIndicator")).toBe(2);
     expect(screen.getAllByRole("button", { name: "Overlap" })).toHaveLength(42);
+  } finally { await counter.stop(); }
+});
+
+it("a new live name proposal executes only its speaker's latest line", async () => {
+  const counter = await renderCounter();
+  try {
+    const live = segments.map((segment, i) => ({
+      ...segment, provisional: true, speaker: i % 2 ? "LIVE_PROVISIONAL_2" : "LIVE_PROVISIONAL_1",
+    }));
+    const props = viewProps(live);
+    const handlers = { onRenameLiveSpeaker: vi.fn(), onDismissLiveSpeakerSuggestion: vi.fn() };
+    const { rerender } = render(<TranscriptView {...props} live={{ hasLoaded: true, ...handlers,
+      liveSpeakerSuggestions: {}, liveSpeakerSuggestionSources: {} }} />);
+    await counter.take();
+
+    rerender(<TranscriptView {...props} live={{ hasLoaded: true, ...handlers,
+      liveSpeakerSuggestions: { LIVE_PROVISIONAL_1: "Alex" },
+      liveSpeakerSuggestionSources: { LIVE_PROVISIONAL_1: "heuristic" } }} />);
+    const proposed = await counter.take();
+    expect(proposed("components/transcript/TranscriptLine.tsx", "TranscriptLine")).toBe(1);
+    expect(screen.getAllByText("Suggested")).toHaveLength(1);
+  } finally { await counter.stop(); }
+});
+
+it("a proposal heard on an earlier line executes only that line, and later lines leave it there", async () => {
+  const counter = await renderCounter();
+  try {
+    const live = segments.map((segment, i) => ({
+      ...segment, provisional: true, speaker: i % 2 ? "LIVE_PROVISIONAL_2" : "LIVE_PROVISIONAL_1",
+    }));
+    const props = viewProps(live);
+    const handlers = { onRenameLiveSpeaker: vi.fn(), onDismissLiveSpeakerSuggestion: vi.fn() };
+    const proposal = { liveSpeakerSuggestions: { LIVE_PROVISIONAL_1: "Alex" },
+      liveSpeakerSuggestionSources: { LIVE_PROVISIONAL_1: "heuristic" as const } };
+    const { rerender } = render(<TranscriptView {...props} live={{ hasLoaded: true, ...handlers,
+      liveSpeakerSuggestions: {}, liveSpeakerSuggestionSources: {}, liveSpeakerSuggestionStarts: {} }} />);
+    await counter.take();
+
+    // Heard at line 50's start (200 s), far from the speaker's last line.
+    rerender(<TranscriptView {...props} live={{ hasLoaded: true, ...handlers, ...proposal,
+      liveSpeakerSuggestionStarts: { LIVE_PROVISIONAL_1: 200 } }} />);
+    const proposed = await counter.take();
+    expect(proposed("components/transcript/TranscriptLine.tsx", "TranscriptLine")).toBe(1);
+    const offered = screen.getByText("Suggested").closest("[data-order-index]");
+    expect(offered).toHaveAttribute("data-segment-id", "line-50");
+
+    // The speaker says more: the proposal stays on line 50, and only the new line draws.
+    const more = [...live, { ...live[198], id: "line-200", start: 800, end: 803, text: "More" }];
+    rerender(<TranscriptView {...viewProps(more)} live={{ hasLoaded: true, ...handlers, ...proposal,
+      liveSpeakerSuggestionStarts: { LIVE_PROVISIONAL_1: 200 } }} />);
+    const added = await counter.take();
+    expect(added("components/transcript/TranscriptLine.tsx", "TranscriptLine")).toBe(1);
+    expect(screen.getByText("Suggested").closest("[data-order-index]")).toHaveAttribute("data-segment-id", "line-50");
+  } finally { await counter.stop(); }
+});
+
+it("a new live name proposal executes only its speaker's card in the speaker panel", async () => {
+  const counter = await renderCounter();
+  try {
+    const labels = Array.from({ length: 40 }, (_, i) => `LIVE_PROVISIONAL_${i + 1}`);
+    const live = labels.map((label, i) => line({ id: `live-${i}`, speaker: label, start: i, end: i + 1 }));
+    const base = { ...panelProps(), speakers: [], segments: live, onRenameLiveSpeaker: vi.fn(),
+      onDismissLiveSpeakerSuggestion: vi.fn(), liveSpeakerSuggestionSources: {} };
+    // The page hands over a new transcript switch on every render.
+    const { rerender } = render(<SpeakerPanel {...base} liveSpeakerSuggestions={{}} onShowTranscript={() => {}} />);
+    await counter.take();
+
+    rerender(<SpeakerPanel {...base} liveSpeakerSuggestions={{ LIVE_PROVISIONAL_7: "Alex" }}
+      onShowTranscript={() => {}} />);
+    const proposed = await counter.take();
+    expect(proposed("components/speakers/LiveSpeakerRows.tsx", "LiveSpeakerRow")).toBe(1);
+    expect(screen.getAllByText("Suggested")).toHaveLength(1);
   } finally { await counter.stop(); }
 });

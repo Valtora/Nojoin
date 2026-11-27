@@ -10,6 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import col, select
+from starlette.concurrency import run_in_threadpool
 
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_user, get_current_user_stream, get_db
@@ -24,6 +25,7 @@ from backend.models.pipeline import RecordingAudioChunk
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.recording_public import (
     CalendarEventLinkRead,
+    LiveAINoticeRead,
     RecordingPublicRead,
     RecordingsCalendarRead,
     serialize_recording,
@@ -32,6 +34,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.processing.live_ai_backoff import live_ai_notices
 from backend.services.calendar_link_service import (
     CANDIDATE_WINDOW_PADDING,
     score_event_match,
@@ -54,6 +57,7 @@ from backend.utils.live_audio_clock import (
     capture_is_advancing,
     estimate_live_audio_ms,
 )
+from backend.utils.notes_templates import is_admin_role
 from backend.utils.processing_eta import estimate_processing_eta
 from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
@@ -326,6 +330,11 @@ async def get_recordings_calendar(
     )
 
 
+# A capture in progress, when live AI runs; only then does the detail read
+# carry live_ai_notices.
+_LIVE_AI_STATUSES = frozenset({RecordingStatus.UPLOADING, RecordingStatus.PAUSED})
+
+
 def _recording_etag(
     status: RecordingStatus,
     change_sequence: int | None,
@@ -525,7 +534,7 @@ async def get_recording(
         transcript.updated_at if transcript else None,
     )
     response.headers["Cache-Control"] = "no-store"
-    return serialize_recording(
+    read = serialize_recording(
         recording,
         has_proxy=_recording_has_proxy(recording),
         has_audio=_recording_has_audio(recording),
@@ -544,6 +553,14 @@ async def get_recording(
         live_audio_ms=live_audio_ms,
         timeline_notes_list_signature=timeline_notes_list_signature,
     )
+    if recording.status in _LIVE_AI_STATUSES:
+        notices = await run_in_threadpool(
+            live_ai_notices,
+            recording.id,
+            viewer_is_admin=is_admin_role(current_user),
+        )
+        read.live_ai_notices = [LiveAINoticeRead(**notice) for notice in notices]
+    return read
 
 
 @router.get("/{recording_id}/info")

@@ -75,6 +75,7 @@ const readDraft = (value: unknown): ComposerDraft | null => {
   const selection = readSelection(value.selection);
   return {
     text: value.text,
+    // A mode this version lacks, such as "send" from before #959, is "typing".
     mode: isKnownMode(value.mode) ? value.mode : "typing",
     typingStartMs: isTime(value.typingStartMs) ? value.typingStartMs : null,
     ...(selection ? { selection } : {}),

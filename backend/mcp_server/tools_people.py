@@ -148,12 +148,17 @@ async def list_people(
 async def get_person(person_id: RowId) -> dict[str, Any]:
     """Get one person from the People library, with the meetings they are in.
 
+    The meetings are the ones their People entry counts, newest first: every
+    meeting of yours they are in, leaving out deleted meetings and any where
+    all of their lines were moved to other speakers.
+
     Args:
         person_id: The person's integer id from list_people.
     """
     from backend.core.db import async_session_maker
     from backend.models.recording import Recording
     from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+    from backend.services.person_meetings import counted_speaker
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
@@ -161,13 +166,15 @@ async def get_person(person_id: RowId) -> dict[str, Any]:
         if person is None or person.user_id != user.id:
             raise ToolError(f"No person with id {person_id} in your library.")
 
+        # The meetings Person Details and list_people count for this person.
         meetings_result = await db.execute(
             select(Recording)
             .join(RecordingSpeaker, RecordingSpeaker.recording_id == Recording.id)
             .where(RecordingSpeaker.global_speaker_id == person_id)
+            .where(Recording.user_id == user.id)
             .where(Recording.is_deleted.is_(False))
-            .where(RecordingSpeaker.merged_into_id.is_(None))
-            .order_by(Recording.created_at.desc())
+            .where(counted_speaker())
+            .order_by(Recording.created_at.desc(), Recording.id.desc())
             .distinct()
         )
         meetings = [

@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from pydantic import ValidationError
 
 from backend.api.v1.endpoints.settings import SettingsUpdate
+from backend.tests.test_install_wide_transcription_settings import _call_settings
+from backend.tests.test_install_wide_transcription_settings import (
+    install_config as install_config,
+)
+from backend.utils.config_manager import ConfigManager
 from backend.utils.speaker_names import preferences
 
 
@@ -44,3 +51,18 @@ def test_voiceprint_learning_accepts_its_two_choices(value) -> None:
 def test_voiceprint_learning_refuses_anything_else() -> None:
     with pytest.raises(ValidationError, match="voiceprint_learning"):
         SettingsUpdate(voiceprint_learning="always")
+
+
+def test_live_name_suggestions_are_on_until_the_user_turns_them_off(
+    install_config: ConfigManager,
+) -> None:
+    status, body, _ = asyncio.run(_call_settings("user", {}, "GET"))
+    assert status == 200
+    assert body["suggest_live_speaker_names"] is True
+
+    status, body, row = asyncio.run(
+        _call_settings("user", {}, "POST", {"suggest_live_speaker_names": False})
+    )
+    assert status == 200
+    assert body["suggest_live_speaker_names"] is False
+    assert row["suggest_live_speaker_names"] is False

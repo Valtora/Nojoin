@@ -175,34 +175,48 @@ def test_an_out_of_range_value_is_rejected(body) -> None:
     assert row == {"vad_threshold": 0.4}
 
 
-def test_the_vad_mute_switches_default_and_save_independently() -> None:
-    """#486: transcription reads muted and speaker separation unmuted until
-    set, and each switch saves alone."""
-    (before, diar_on, asr_off, after), row = _run(
+def test_faster_speaker_separation_defaults_off_and_saves() -> None:
+    """#486: speaker separation hears the unmuted audio until set."""
+    (before, diar_on, after), row = _run(
         [
             ("GET", None),
             ("POST", {"vad_mute_diarization": True}),
-            ("POST", {"vad_mute_transcription": False}),
             ("GET", None),
         ]
     )
 
-    assert before.json()["vad_mute_transcription"] is True
     assert before.json()["vad_mute_diarization"] is False
-    assert diar_on.json()["vad_mute_diarization"] is True
-    assert diar_on.json()["vad_mute_transcription"] is True
-    assert asr_off.status_code == 200
-    assert after.json()["vad_mute_transcription"] is False
+    assert diar_on.status_code == 200
     assert after.json()["vad_mute_diarization"] is True
-    assert row["vad_mute_transcription"] is False
     assert row["vad_mute_diarization"] is True
 
 
-@pytest.mark.parametrize(
-    "body", [{"vad_mute_transcription": "maybe"}, {"vad_mute_diarization": [1]}]
-)
-def test_a_vad_mute_switch_must_be_a_bool(body) -> None:
-    (response,), row = _run([("POST", body)])
+def test_a_retired_transcription_mute_is_hidden_and_dropped_on_save(
+    fake_config,
+) -> None:
+    """#961: a row that turned transcription muting off loads without it, an
+    older page that still sends it is ignored, and the next save drops it."""
+    fake_config.config = {"vad_mute_transcription": False}
+    (before, saved), row = _run(
+        [
+            ("GET", None),
+            ("POST", {"vad_mute_transcription": False, "enable_vad": True}),
+        ],
+        stored={"vad_mute_transcription": False, "vad_mute_diarization": True},
+    )
+
+    assert before.status_code == 200
+    assert "vad_mute_transcription" not in before.json()
+    assert before.json()["vad_mute_diarization"] is True
+    assert saved.status_code == 200
+    assert "vad_mute_transcription" not in saved.json()
+    assert "vad_mute_transcription" not in row
+    assert row["vad_mute_diarization"] is True
+    assert row["enable_vad"] is True
+
+
+def test_faster_speaker_separation_must_be_a_bool() -> None:
+    (response,), row = _run([("POST", {"vad_mute_diarization": [1]})])
 
     assert response.status_code == 422
     assert row == {}
@@ -258,7 +272,10 @@ def test_a_merge_threshold_under_the_installs_floor_is_rejected(fake_config) -> 
     (response,), row = _run([("POST", {"phantom_merge_threshold": 0.5})])
 
     assert response.status_code == 400
-    assert "phantom_embedding_floor to 0.55" in response.json()["detail"]
+    assert response.json()["detail"] == (
+        "Speakers heard only briefly: the noise limit (0.55) must be lower than "
+        "the merge limit (0.5). The installation sets the noise limit to 0.55."
+    )
     assert "phantom_merge_threshold" not in row
 
 

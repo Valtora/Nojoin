@@ -1,5 +1,6 @@
 """Scoped word partitions and canonical events for the marked live lane."""
 
+from bisect import bisect_left
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from itertools import groupby
@@ -148,6 +149,170 @@ def _rows_by_kept_flags(
     return sorted(rows, key=lambda row: (row.start_ms, row.sort_key, row.id))
 
 
+def locked_context(
+    session: Session, recording_id: int, rows: Sequence[TranscriptUtterance]
+) -> tuple[TranscriptUtterance, ...]:
+    """The locked live lines an unwindowed read leaves out that bound ``rows``.
+
+    The newest at or before the first of them, then those starting among
+    their words, from one read of the kept flags (#776).
+    """
+    locked = locked_line_ids(session, recording_id) if rows else None
+    previous = locked_line_before(session, recording_id, rows, locked)
+    return (
+        *((previous,) if previous is not None else ()),
+        *locked_lines_between(session, recording_id, rows, locked),
+    )
+
+
+def locked_line_ids(session: Session, recording_id: int) -> frozenset[int] | None:
+    """The recording's locked live lines by their kept flags (#776).
+
+    None on other databases, which keep no flags: there a line's own payload
+    says whether it is locked.
+    """
+    from .live_settling_flags import flags_readable, live_lines
+
+    if not flags_readable(session):
+        return None
+    return frozenset(
+        line.id
+        for line in live_lines(session, recording_id)
+        if line.line_locked is True
+    )
+
+
+def locked_line_before(
+    session: Session,
+    recording_id: int,
+    rows: Sequence[TranscriptUtterance],
+    locked: frozenset[int] | None,
+) -> TranscriptUtterance | None:
+    """The newest locked live line starting at or before the first of ``rows``.
+
+    Streamed newest first: the line just before them usually qualifies, so a
+    long meeting's older lines are never read. On PostgreSQL the kept flags
+    (``locked``, from ``locked_line_ids``) pick the line, so only its payload
+    is read.
+    """
+    if not rows:
+        return None
+    before = (
+        select(TranscriptUtterance)
+        .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(col(TranscriptUtterance.id).not_in([row.id for row in rows]))
+        .where(TranscriptUtterance.start_ms <= rows[0].start_ms)
+        .order_by(
+            col(TranscriptUtterance.start_ms).desc(),
+            col(TranscriptUtterance.id).desc(),
+        )
+        .execution_options(yield_per=8)
+    )
+    if locked is None:
+        with session.execute(before) as lines:
+            return next(
+                (line for line in lines.scalars() if line_is_locked(line)), None
+            )
+    with session.execute(before.with_only_columns(TranscriptUtterance.id)) as ids:
+        line_id = next((row_id for row_id in ids.scalars() if row_id in locked), None)
+    if line_id is None:
+        return None
+    return session.execute(
+        select(TranscriptUtterance).where(col(TranscriptUtterance.id) == line_id)
+    ).scalar_one()
+
+
+def locked_lines_between(
+    session: Session,
+    recording_id: int,
+    rows: Sequence[TranscriptUtterance],
+    locked: frozenset[int] | None,
+) -> list[TranscriptUtterance]:
+    """The locked live lines starting among the words of ``rows``, in line order.
+
+    A person's edit or choice of speaker locks a line while lines either side
+    of it are still open. Later than the first of ``rows`` (``locked_line_before``
+    has the rest) and no later than their last word; of the lines no word of
+    ``rows`` separates, only the newest. The sentence-start correction cuts the
+    words at each such line's start and reads the newest before a cut, so the
+    others change nothing, and the payloads read are bounded by the open words,
+    not by the lines locked since the oldest of them. On PostgreSQL the kept
+    flags (``locked``, from ``locked_line_ids``) pick the lines before any
+    payload is read.
+    """
+    starts = sorted(
+        int(word["start_ms"])
+        for row in rows
+        for word in row_words(row)
+        if word.get("start_ms") is not None
+    )
+    if not starts or starts[-1] <= rows[0].start_ms:
+        return []
+    own = {row.id for row in rows}
+    among = (
+        select(TranscriptUtterance)
+        .where(TranscriptUtterance.recording_id == recording_id)
+        .where(TranscriptUtterance.state == TranscriptUtteranceState.PROVISIONAL)
+        .where(TranscriptUtterance.source_kind == "live")
+        .where(TranscriptUtterance.start_ms > rows[0].start_ms)
+        .where(TranscriptUtterance.start_ms <= starts[-1])
+    )
+    if locked is None:
+        lines = [
+            line
+            for line in session.execute(among).scalars()
+            if line.id not in own and line_is_locked(line)
+        ]
+        newest = _newest_per_gap(
+            [(line.start_ms, line.sort_key, line.id) for line in lines], starts
+        )
+        lines = [line for line in lines if line.id in newest]
+    else:
+        order = among.with_only_columns(
+            col(TranscriptUtterance.start_ms),
+            col(TranscriptUtterance.sort_key),
+            col(TranscriptUtterance.id),
+        )
+        newest = _newest_per_gap(
+            [
+                (start_ms, sort_key, line_id)
+                for start_ms, sort_key, line_id in session.execute(order)
+                if line_id in locked and line_id not in own
+            ],
+            starts,
+        )
+        lines = [
+            line
+            for batch in bind_batches(sorted(newest))
+            for line in session.execute(
+                select(TranscriptUtterance).where(
+                    col(TranscriptUtterance.id).in_(batch)
+                )
+            ).scalars()
+        ]
+    return sorted(lines, key=lambda row: (row.start_ms, row.sort_key, row.id))
+
+
+def _newest_per_gap(
+    lines: Sequence[tuple[int, str, int | None]], starts: Sequence[int]
+) -> set[int]:
+    """The id of the newest line in each gap between ascending word ``starts``.
+
+    ``lines`` are (start, sort key, id), the order the correction ranks lines by.
+    """
+    newest: dict[int, tuple[int, str, int]] = {}
+    for start_ms, sort_key, line_id in lines:
+        if line_id is None:
+            continue
+        gap = bisect_left(starts, start_ms)
+        line = (start_ms, sort_key, line_id)
+        if gap not in newest or line > newest[gap]:
+            newest[gap] = line
+    return {line_id for _start_ms, _sort_key, line_id in newest.values()}
+
+
 LeadSpeaker = Callable[[str | None], str | None]
 
 
@@ -208,6 +373,38 @@ def mutable_row(row: TranscriptUtterance) -> bool:
     )
 
 
+def stored_speakers(
+    rows: Sequence[TranscriptUtterance],
+) -> dict[Any, LiveLabelDecision]:
+    """The speaker each stored word shows now, by word ID."""
+    return {
+        word.get("id"): _stored_speaker(row, word)
+        for row in rows
+        for word in row_words(row)
+    }
+
+
+def speaker_locked(word: dict[str, Any], stored: LiveLabelDecision) -> bool:
+    """Whether a stored word's speaker can no longer change.
+
+    Today a word's speaker settles only once its text has locked as well; this
+    is the one place that says so.
+    """
+    return bool(word.get("locked")) and stored.locked
+
+
+def speaker_locked_word_ids(
+    stored: dict[Any, LiveLabelDecision], rows: Sequence[TranscriptUtterance]
+) -> set[Any]:
+    """IDs of the stored words whose speaker can no longer change."""
+    return {
+        word.get("id")
+        for row in rows
+        for word in row_words(row)
+        if speaker_locked(word, stored[word.get("id")])
+    }
+
+
 def word_decisions(
     words: Sequence[dict[str, Any]],
     rows: Sequence[TranscriptUtterance],
@@ -217,17 +414,8 @@ def word_decisions(
     closing: Closing | None = None,
 ) -> list[LiveLabelDecision]:
     """Assign timed words independently; untimed atoms follow their neighbour."""
-    previous = {
-        word.get("id"): _stored_speaker(row, word)
-        for row in rows
-        for word in row_words(row)
-    }
-    immutable_speakers = {
-        word.get("id")
-        for row in rows
-        for word in row_words(row)
-        if word.get("locked") and previous[word.get("id")].locked
-    }
+    previous = stored_speakers(rows)
+    immutable_speakers = speaker_locked_word_ids(previous, rows)
     decisions: list[LiveLabelDecision | None] = []
     covered_untimed: dict[int, LiveLabelDecision] = {}
     for word in words:

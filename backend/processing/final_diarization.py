@@ -276,8 +276,8 @@ def choose_capped_speakers(  # noqa: PLR0913 - the pass's inputs and its status
     Nemotron's speech. When that is over the cap, the union is counted again
     after the phantom filter, as the pipeline applies it to the kept result
     next (``_union_speakers_after_filter``), and that count decides. The union
-    is kept unfiltered, so the pipeline's own run of the filter still records
-    which turns it found were not speech (#678).
+    is kept unfiltered, so the pipeline's own run of the filter is the only
+    one applied to it.
 
     Community-1 with the cap is the uncapped run when that already fits:
     pyannote applies ``max_speakers`` only when it finds more speakers than

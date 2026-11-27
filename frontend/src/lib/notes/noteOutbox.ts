@@ -52,8 +52,12 @@ export const SLOW_SAVE_MS = 8_000;
 export const OUTBOX_KINDS = ["point", "selection", "head", "tail"] as const;
 export type OutboxKind = (typeof OUTBOX_KINDS)[number];
 
-export const NOTE_INSERT_MODES = ["typing", "send", "head", "tail"] as const;
-/** Where the note box puts a note that is not on chosen text. */
+/**
+ * Where the note box puts a note that is not on chosen text: where typing
+ * started, or on the whole meeting. "send", which anchored a note on Enter,
+ * was dropped in #959; a kept draft that has it reads as "typing".
+ */
+export const NOTE_INSERT_MODES = ["typing", "head", "tail"] as const;
 export type NoteInsertMode = (typeof NOTE_INSERT_MODES)[number];
 
 /** The words a selection note quotes, and their span on the audio timeline. */
@@ -93,9 +97,9 @@ export interface ComposerDraft {
 export const EMPTY_DRAFT: ComposerDraft = { text: "", mode: "typing", typingStartMs: null };
 
 /**
- * The note a draft makes: on the chosen text when there is some; else "at
- * typing start" anchors it where the box's first character went in, "at
- * send" where the recording is now.
+ * The note a draft makes: on the chosen text when there is some, on the whole
+ * meeting before or after the transcript, or else anchored where the box's
+ * first character went in (where the recording is now, if none has).
  */
 export const noteFromDraft = (
   draft: ComposerDraft,
@@ -108,9 +112,7 @@ export const noteFromDraft = (
   if (mode === "head" || mode === "tail") {
     return { kind: mode, body: draft.text, anchorMs: null };
   }
-  const anchorMs =
-    mode === "typing" ? (draft.typingStartMs ?? readAudioNow()) : readAudioNow();
-  return { kind: "point", body: draft.text, anchorMs };
+  return { kind: "point", body: draft.text, anchorMs: draft.typingStartMs ?? readAudioNow() };
 };
 
 export interface OutboxEntry {

@@ -799,3 +799,25 @@ def test_restoring_a_backup_voiceprint_restores_its_version(overwrite) -> None:
     _resolve_global_speakers(ctx)
 
     assert find_matching_global_speaker(VOICE, [existing])[0] is existing
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("name", "loaded"),
+    [("Dana", True), ("N:L0", False), ("C:SPEAKER_03", False), ("Speaker 2", False)],
+)
+async def test_identification_loads_only_people_with_a_real_name(
+    session_maker, name, loaded
+) -> None:
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "embedding": VOICE}],
+        people=[{"id": 7, "name": name, "embedding": VOICE, "version": CURRENT}],
+    )
+
+    async with SQLModelAsyncSession(session_maker.kw["bind"]) as session:
+        people = await session.run_sync(
+            lambda sync_session: _matchable_global_speakers(sync_session, ALICE)
+        )
+
+    assert [person.name for person in people] == ([name] if loaded else [])

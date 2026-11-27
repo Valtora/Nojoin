@@ -2,6 +2,34 @@ import type { Recording, RecordingId } from "@/types";
 
 export type CaptureMode = "shared_audio" | "microphone_only";
 
+/**
+ * What Start does in a browser that can share audio, from Settings > Recording:
+ * a capture mode, or `ask` for the source chooser before the share picker.
+ */
+export type CaptureStartMode = CaptureMode | "ask";
+
+/** What a share's picture is of, as the browser reports it on the video track. */
+export type CaptureDisplaySurface = "browser" | "window" | "monitor";
+
+/**
+ * Why Nojoin is asking which source to record from (issue #958):
+ * - `ask`: Recording source is Ask each time, or the picker was cancelled under it;
+ * - `cancelled`: the share picker was cancelled;
+ * - `refused`: the browser or the operating system refused the share;
+ * - `no_audio`: the share came back without sound.
+ */
+export type CaptureSourceChoiceReason = "ask" | "cancelled" | "refused" | "no_audio";
+
+/** A question about the capture source, open until the user answers it. */
+export interface CaptureSourceChoice {
+  /** A new recording, or the paused one named here. */
+  action: "start" | "resume";
+  reason: CaptureSourceChoiceReason;
+  recordingId?: RecordingId;
+  /** For `no_audio`, what was shared, when the browser said. */
+  displaySurface?: CaptureDisplaySurface | null;
+}
+
 export interface CaptureSupport {
   supported: boolean;
   mode?: CaptureMode;
@@ -22,7 +50,8 @@ export interface CaptureLevels {
 }
 
 export interface CaptureSettings {
-  startMode: CaptureMode;
+  /** Recording source: what Start records where the browser can share audio. */
+  startMode: CaptureStartMode;
   microphoneDeviceId: string | null;
   releaseMicrophoneOnPause: boolean;
   microphoneGain: number;
@@ -42,6 +71,11 @@ export interface PausedCaptureContext {
    * can take the capture back without waiting for it to stall (issue #778).
    */
   epoch?: number;
+  /**
+   * The source this capture was recording from, so a Resume after a reload
+   * records from the same one without asking (issue #958).
+   */
+  mode?: CaptureMode;
 }
 
 export interface FinalizeRetryProgress {
@@ -134,6 +168,8 @@ export interface CaptureState {
    * to send before the recording can be finalized.
    */
   uploadQueue: UploadQueueSize;
+  /** The source question the capture dialog asks, or null when none is open. */
+  sourceChoice: CaptureSourceChoice | null;
 }
 
 export interface UploadQueueSize {
@@ -181,6 +217,11 @@ export const DEFAULT_CAPTURE_LEVELS: CaptureLevels = {
 
 export const DEFAULT_CAPTURE_MODE: CaptureMode = "shared_audio";
 
+const CAPTURE_START_MODES: readonly CaptureStartMode[] = ["shared_audio", "microphone_only", "ask"];
+
+const isCaptureStartMode = (value: unknown): value is CaptureStartMode =>
+  CAPTURE_START_MODES.includes(value as CaptureStartMode);
+
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   startMode: DEFAULT_CAPTURE_MODE,
   microphoneDeviceId: null,
@@ -216,10 +257,7 @@ export const readCaptureSettings = (): CaptureSettings => {
       version?: unknown;
     };
     const settings: CaptureSettings = {
-      startMode:
-        parsed.startMode === "microphone_only" || parsed.startMode === "shared_audio"
-          ? parsed.startMode
-          : DEFAULT_CAPTURE_MODE,
+      startMode: isCaptureStartMode(parsed.startMode) ? parsed.startMode : DEFAULT_CAPTURE_MODE,
       microphoneDeviceId:
         typeof parsed.microphoneDeviceId === "string"
           ? parsed.microphoneDeviceId
@@ -305,6 +343,9 @@ export const readPausedCaptureContext = (): PausedCaptureContext | null => {
       lastSequence: parsed.lastSequence,
       persistedAt: parsed.persistedAt,
       ...(typeof parsed.epoch === "number" ? { epoch: parsed.epoch } : {}),
+      ...(parsed.mode === "shared_audio" || parsed.mode === "microphone_only"
+        ? { mode: parsed.mode }
+        : {}),
     };
   } catch {
     return null;

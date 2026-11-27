@@ -12,6 +12,7 @@ from pydantic import (
     field_validator,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
@@ -19,6 +20,7 @@ from backend.api.params import RowId
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
+from backend.processing.live_ai_backoff import bump_epoch, touches_ai_settings
 from backend.processing.processing_tuning import (
     PHANTOM_EMBEDDING_FLOOR_KEY,
     PHANTOM_MERGE_THRESHOLD_KEY,
@@ -99,6 +101,8 @@ class SettingsUpdate(BaseModel):
     enable_live_transcription: Optional[bool] = None
     # Install-wide, admin-only; selection is frozen when capture labels start.
     live_speaker_labels: Optional[str] = None
+    # Install-wide, admin-only: reply starts go to the speaker who says them.
+    sentence_start_correction: Optional[bool] = None
     live_text_settling: Optional[Literal["off", "auto", "always"]] = None
     live_text_settling_k: Optional[int] = Field(default=None, strict=True, ge=1, le=10)
     live_text_settling_window_s: Optional[float] = Field(
@@ -134,6 +138,7 @@ class SettingsUpdate(BaseModel):
     secondary_anthropic_api_key: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
     confirm_suggested_names: Optional[bool] = None
+    suggest_live_speaker_names: Optional[bool] = None
     voiceprint_learning: Optional[str] = None
     prefer_short_titles: Optional[bool] = None
     # Notes structure and vocabulary (issue #137). The install_* keys are
@@ -143,7 +148,6 @@ class SettingsUpdate(BaseModel):
     glossary_terms: Optional[str] = None
     install_glossary_terms: Optional[str] = None
     enable_vad: Optional[bool] = None
-    vad_mute_transcription: Optional[bool] = None
     vad_mute_diarization: Optional[bool] = None
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
@@ -156,6 +160,7 @@ class SettingsUpdate(BaseModel):
     phantom_max_segments: Optional[int] = None
     phantom_embedding_floor: Optional[float] = None
     phantom_merge_threshold: Optional[float] = None
+    phantom_filter_off: Optional[bool] = None
     word_flip_max_duration_s: Optional[float] = None
     word_flip_max_gap_s: Optional[float] = None
     line_break_pause_s: Optional[float] = None
@@ -403,6 +408,11 @@ def _apply_default_user_settings(
 
 
 PHANTOM_PAIR_KEYS = (PHANTOM_EMBEDDING_FLOOR_KEY, PHANTOM_MERGE_THRESHOLD_KEY)
+# The settings page's words for each half of the pair, used in its error.
+_PHANTOM_PAIR_NAMES = {
+    PHANTOM_EMBEDDING_FLOOR_KEY: "the noise limit",
+    PHANTOM_MERGE_THRESHOLD_KEY: "the merge limit",
+}
 # Read-only in GET: the install's flat config.json tuning values the settings
 # page needs, keyed by tuning key (null where unset or unusable). Today that
 # is the phantom pair, so the page runs the floor/merge check on the values
@@ -476,7 +486,7 @@ def _validate_processing_tuning(
         validate_tuning_candidate(_phantom_pair_in_effect(install, candidate))
     except PhantomThresholdConflict as exc:
         inherited = [
-            f"{key} to {value}"
+            f"{_PHANTOM_PAIR_NAMES[key]} to {value}"
             for key in PHANTOM_PAIR_KEYS
             if candidate.get(key) is None
             and (value := normalise_tuning_value(key, install.get(key))) is not None
@@ -534,6 +544,9 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
         merged.update(
             {k: v for k, v in sanitized_user_settings.items() if v is not None}
         )
+    # Never shown, so the page's whole-object save cannot send one back.
+    for key in RETIRED_USER_SETTING_KEYS:
+        merged.pop(key, None)
     _normalise_processing_tuning(merged, config_manager.get_all())
     _normalise_speaker_settings(merged)
     merged.update(
@@ -734,7 +747,7 @@ async def _save_user_settings(
         validate_language_settings(candidate_settings)
         _validate_processing_tuning(candidate_settings, update_data)
     except PhantomThresholdConflict as e:
-        # Only this error's message is shown: it holds key names and numbers,
+        # Only this error's message is shown: it holds fixed wording and numbers,
         # and names an install value the user cannot see on the page.
         raise sanitized_http_exception(
             logger=logger,
@@ -780,6 +793,10 @@ async def _save_user_settings(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
+
+    # A provider stopped during a capture is tried again under the new settings.
+    if touches_ai_settings(update_data):
+        await run_in_threadpool(bump_epoch)
 
     meeting_edge_keys = {"meeting_edge_context_level", "enable_meeting_edge"}
     if meeting_edge_keys.intersection(update_data):

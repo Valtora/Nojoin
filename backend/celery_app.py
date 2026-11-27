@@ -6,6 +6,7 @@ import redis
 from celery import Celery, bootsteps
 from celery.signals import setup_logging, task_postrun, task_prerun, worker_ready
 
+import backend.utils.worker_idle_recycle  # noqa: F401 -- connects the idle restart's worker signals (#1054)
 from backend.core.redis import REDIS_URL
 from backend.utils.deployment_warnings import log_deployment_warnings
 from backend.utils.logging_config import setup_logging as configure_logging
@@ -218,6 +219,8 @@ TASK_ROUTES = {
     "backend.worker.tasks.cleanup_backup_artifacts": {"queue": IO_QUEUE},
     # IO/LLM lane: network-bound (LLM APIs, calendar) and light bookkeeping.
     "backend.worker.tasks.refresh_meeting_edge_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.refresh_live_speaker_names_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.ask_live_speaker_names_task": {"queue": IO_QUEUE},
     # One long LLM call over a finished transcript. Network-bound for every
     # provider but local Ollama, so it belongs with the rest of the meeting
     # intelligence rather than on a lane a live meeting is waiting for.
@@ -469,7 +472,7 @@ class HeartbeatThread(threading.Thread):
                     r.set("nojoin:worker:heartbeat", "1", ex=self.expire)
                 except Exception as e:  # noqa: BLE001 -- boundary: the heartbeat loop must survive a Redis outage and retry
                     logger.warning(f"Heartbeat error: {e}")
-                time.sleep(self.interval)
+                self.stop_event.wait(self.interval)
         except Exception as e:  # noqa: BLE001 -- boundary: a failed heartbeat thread is logged; the worker keeps serving
             logger.error(f"Heartbeat thread failed to start: {e}")
 

@@ -5,7 +5,6 @@ from backend.processing.engines.errors import (
     is_task_interruption,
     transcription_error_from,
 )
-from backend.utils.capture_resume import with_resume_boundaries
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
 from backend.utils.reprocess_publication import restore_retained_publication
 from backend.utils.transcription_models import known_engine_override
@@ -22,7 +21,11 @@ from .final_publication import (
     staged_publication_required,
 )
 from .final_publication import persist_final_transcript as _persist_final_transcript
-from .final_segments import combine_and_consolidate_segments, drop_unheard_words
+from .final_segments import (
+    combine_and_consolidate_segments,
+    drop_unheard_words,
+    final_merge_config,
+)
 from .notes_handoff import defer_automatic_notes
 from .side_runs import release_holds_among
 from .speaker_assignment import assign_and_identify_speakers
@@ -58,9 +61,6 @@ class _PipelineRunContext:
     # Set once the VAD stage picks the diarisation side's (16k mono) audio;
     # consumed by the speaker-assignment stage for voiceprints.
     diarization_audio_path: str | None = None
-    # (segment, track) of each turn the phantom filter confirmed as non-speech;
-    # the union file transcription reads keeps them muted (#678).
-    non_speech_turns: tuple = ()
     final_transcript_published: bool = False
     speaker_voiceprints: dict | None = None
 
@@ -622,7 +622,7 @@ def process_recording_task(
             diarization_result,
             enable_diarization=enable_diarization,
             recording_id=recording_id,
-            config=with_resume_boundaries(merged_config, transcript),
+            config=final_merge_config(merged_config, transcript, session, recording_id),
         )
 
         if not staged:
@@ -861,11 +861,11 @@ def _sweeps_recordings(sender, queue: str | None = None) -> bool:
 
 @worker_ready.connect
 def check_queued_recordings(sender, **kwargs):
-    """
-    On worker startup, re-queue recordings left QUEUED, and reclaim any left
-    PROCESSING by a worker that died mid-pipeline.
-    """
-    if not _sweeps_recordings(sender):
+    """On worker startup, re-queue recordings left QUEUED, and reclaim any left
+    PROCESSING by a worker that died mid-pipeline. An idle restart skips it."""
+    from backend.utils.worker_idle_recycle import skip_startup_sweep
+
+    if not _sweeps_recordings(sender) or skip_startup_sweep():
         return
 
     logger.info("Checking for pending QUEUED recordings...")

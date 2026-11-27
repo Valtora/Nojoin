@@ -430,7 +430,7 @@ export default function SpeakerAssignmentPopover({
         })}
       </div>}
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div className="relative min-h-0 flex-1 overflow-y-auto py-1">
         {/* Current Recording Speakers */}
         {(filteredAvailable.length > 0 || filteredLive.length > 0) && (
           <div className="px-2 py-1">

@@ -31,7 +31,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from backend.core.security import MCP_READ_SCOPE, MCP_TOKEN_TYPE
 from backend.models.user import User
-from backend.utils.config_manager import is_mcp_anonymous_discovery_enabled
+from backend.utils.mcp_flags import is_mcp_anonymous_discovery_enabled
 
 logger = logging.getLogger(__name__)
 

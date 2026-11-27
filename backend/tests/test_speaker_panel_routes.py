@@ -79,3 +79,25 @@ async def test_visible_promotion_still_rejects_placeholder_until_renamed(
     promoted = await client.post(route)
     assert promoted.status_code == 200
     assert promoted.json()["global_speaker_id"] is not None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("label", ["N:L0", "C:SPEAKER_03"])
+async def test_promotion_rejects_an_unnamed_final_diarisation_label(
+    client: AsyncClient,
+    session_maker: Any,
+    write_path: str,
+    label: str,
+) -> None:
+    await _seed(session_maker, speakers=[{"label": label, "name": label}])
+
+    refused = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/speakers/{label}/promote"
+    )
+
+    assert refused.status_code == 400
+    assert "placeholder" in refused.json()["detail"]
+    async with session_maker() as session:
+        assert (
+            await session.execute(text("SELECT count(*) FROM global_speakers"))
+        ).scalar_one() == 0

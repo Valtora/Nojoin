@@ -1,5 +1,5 @@
 -r base.txt
-celery[redis]==5.6.3
+celery[redis]==5.7.0
 openai-whisper==20250625
 # Parakeet ASR engine (pluggable transcription backend)
 onnx-asr==0.12.0
@@ -7,11 +7,11 @@ onnx-asr==0.12.0
 # replace the CPU-only onnxruntime pinned below, not coexist with it.
 silero-vad==6.2.3
 numpy==2.4.6
-pandas==3.1.0
-openai>=3.42.1
-anthropic>=2.4.0
-google-genai>=2.34.0
-watchdog==7.0.0
+pandas==3.1.1
+openai>=3.57.0
+anthropic>=2.12.0
+google-genai>=3.6.1
+watchdog==7.1.1
 
 # Document parsing. pypdfium2 (PDFium) reads PDF text and renders pages for the
 # vision tier; pdfplumber finds ruled tables, on pdfminer.six, which it pins
@@ -20,8 +20,8 @@ watchdog==7.0.0
 # so no headless-office renderer is needed here. python-docx is also pinned in
 # backend.txt (Markdown-to-DOCX export); the worker needs its own copy because
 # the two images share no layer.
-pypdfium2==5.14.0
-pdfplumber==0.11.10
+pypdfium2==5.15.2
+pdfplumber==0.11.11
 pdfminer.six==20260107
 python-pptx==1.0.2
 python-docx==1.2.0
@@ -53,9 +53,9 @@ opentelemetry-exporter-otlp==1.45.2
 # Arrives with opentelemetry-exporter-otlp. Pinned because 1.84.1 is the first
 # release whose bundled roots.pem drops the distrusted emSign ECC Root CA - G3
 # (#585), and an image built while 1.84.0 was current would otherwise keep it.
-grpcio==1.85.1
+grpcio==1.85.3
 pyannote-core==6.1.0
-pyannote-database==6.2.0
+pyannote-database==6.3.0
 pyannote-metrics==4.2.0
 pyannote-pipeline==4.1.0
 # Held on 2.x: 3.0 requires numpy>=2.5.3, and numpy is held below 2.5 (see
@@ -69,19 +69,19 @@ safetensors==0.8.0
 # Native Nemotron inference. No broad Transformers extras or NeMo dependency.
 # Dependabot moves this pin; run the opt-in Nemotron inference regression
 # (docs/DEVELOPMENT.md) to check a bump's outputs.
-transformers==5.21.0
-librosa==1.0.0
+transformers==5.24.0
+librosa==1.0.1
 soxr==1.1.0
 lazy-loader==0.6
 msgpack==1.2.4
-decorator==5.3.1
+decorator==5.3.2
 pooch==1.9.0
-platformdirs==4.14.3
+platformdirs==4.14.8
 # Transformers' CLI dependency and its helpers, present in a clean
 # worker-stack resolution even though native inference uses neither CLI.
-typer==0.27.3
+typer==0.29.2
 shellingham==1.5.4
-annotated-doc==0.0.5
+annotated-doc==0.0.7
 torch-audiomentations==0.12.0
 torchmetrics==1.9.0
 soundfile==0.14.0
@@ -103,7 +103,7 @@ torchcodec==0.17.0
 # onnxruntime in step with onnxruntime-gpu in docker/Dockerfile.worker, which
 # replaces it in the image.
 fastembed==0.9.1
-onnxruntime==1.31.1
+onnxruntime==1.32.0
 tokenizers==0.23.3
 loguru==0.7.3
 mmh3==5.3.1

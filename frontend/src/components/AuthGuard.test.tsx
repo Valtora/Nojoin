@@ -1,12 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  requireLegalAcceptance,
+  resetLegalAcceptanceForTests,
+  useLegalAcceptanceStore,
+} from "@/lib/legalAcceptance";
 import { holdSignInInPlace, resetSessionForTests } from "@/lib/session";
-import { renderWithProviders, waitFor } from "@/test/renderWithProviders";
+import {
+  act,
+  fireEvent,
+  renderWithProviders,
+  waitFor,
+} from "@/test/renderWithProviders";
 
 import AuthGuard from "./AuthGuard";
 
 const routerPush = vi.fn();
 const getCurrentUser = vi.fn();
+const acceptLegalTerms = vi.fn();
 let pathname = "/";
 
 vi.mock("next/navigation", () => ({
@@ -16,6 +27,8 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api", () => ({
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
+  acceptLegalTerms: (...args: unknown[]) => acceptLegalTerms(...args),
+  logout: vi.fn(),
 }));
 
 function visit(path: string) {
@@ -134,5 +147,131 @@ describe("AuthGuard once the session has ended", () => {
     await waitFor(() => expect(getCurrentUser).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(routerPush).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthGuard before the terms of use are accepted (#1004)", () => {
+  const notAccepted = {
+    username: "alice",
+    force_password_change: false,
+    legal_acceptance_required: true,
+  };
+
+  beforeEach(() => {
+    resetSessionForTests();
+    resetLegalAcceptanceForTests();
+    getCurrentUser.mockResolvedValue(notAccepted);
+  });
+
+  afterEach(() => {
+    resetSessionForTests();
+    resetLegalAcceptanceForTests();
+  });
+
+  it.each(["/", "/recordings/rec-1", "/settings/users", "/tasks?view=week"])(
+    "shows the notice in place of %s",
+    async (path) => {
+      visit(path);
+
+      const { findByRole, queryByText } = renderWithProviders(
+        <AuthGuard>content</AuthGuard>,
+      );
+
+      expect(
+        await findByRole("heading", { level: 1, name: "Legal disclaimer" }),
+      ).toBeInTheDocument();
+      expect(queryByText("content")).not.toBeInTheDocument();
+      expect(routerPush).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the consent page's URL and shows it once the terms are accepted", async () => {
+    const consent = "/oauth/authorize?client_id=abc&redirect_uri=https%3A%2F%2Fclaude.ai%2Fcb";
+    visit(consent);
+    acceptLegalTerms.mockResolvedValue({ ...notAccepted, legal_acceptance_required: false });
+
+    const { findByRole, findByText } = renderWithProviders(
+      <AuthGuard>consent</AuthGuard>,
+    );
+    fireEvent.click(await findByRole("button", { name: "I accept" }));
+
+    expect(await findByText("consent")).toBeInTheDocument();
+    expect(acceptLegalTerms).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname + window.location.search).toBe(consent);
+  });
+
+  it("asks the setup account of an older install nothing", async () => {
+    getCurrentUser.mockResolvedValue({
+      username: "owner",
+      force_password_change: false,
+      is_superuser: true,
+      legal_acceptance_required: false,
+    });
+    visit("/");
+
+    const { findByText } = renderWithProviders(<AuthGuard>content</AuthGuard>);
+
+    expect(await findByText("content")).toBeInTheDocument();
+  });
+
+  it("puts a pending password change first", async () => {
+    getCurrentUser.mockResolvedValue({ ...notAccepted, force_password_change: true });
+    visit("/settings/profile");
+
+    const { findByText } = renderWithProviders(<AuthGuard>password</AuthGuard>);
+
+    expect(await findByText("password")).toBeInTheDocument();
+    expect(useLegalAcceptanceStore.getState().required).toBe(false);
+  });
+
+  it("lets a running capture keep its page, then shows the notice", async () => {
+    visit("/recordings/rec-1");
+    holdSignInInPlace(true);
+
+    const { findByText, findByRole } = renderWithProviders(
+      <AuthGuard>capture</AuthGuard>,
+    );
+
+    expect(await findByText("capture")).toBeInTheDocument();
+    act(() => holdSignInInPlace(false));
+    expect(
+      await findByRole("heading", { level: 1, name: "Legal disclaimer" }),
+    ).toBeInTheDocument();
+  });
+
+  it("answers the API's refusal of a capture with the notice", async () => {
+    getCurrentUser.mockResolvedValue({
+      ...notAccepted,
+      legal_acceptance_required: false,
+    });
+    visit("/");
+    const { findByText, findByRole } = renderWithProviders(
+      <AuthGuard>content</AuthGuard>,
+    );
+    expect(await findByText("content")).toBeInTheDocument();
+    // Every check of the account has answered before the upgrade lands, and
+    // from then on the server asks, as it does for the refused start.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    getCurrentUser.mockResolvedValue(notAccepted);
+
+    act(() => requireLegalAcceptance());
+
+    expect(
+      await findByRole("heading", { level: 1, name: "Legal disclaimer" }),
+    ).toBeInTheDocument();
+  });
+
+  it("never asks on the sign-in pages", async () => {
+    getCurrentUser.mockRejectedValue(
+      Object.assign(new Error("401"), { response: { status: 401, data: {} } }),
+    );
+    requireLegalAcceptance();
+    visit("/login");
+
+    const { findByText } = renderWithProviders(<AuthGuard>sign in</AuthGuard>);
+
+    expect(await findByText("sign in")).toBeInTheDocument();
   });
 });

@@ -20,6 +20,11 @@ from backend.utils.canonical_pipeline import append_utterances_from_segments
 from backend.utils.capture_resume import load_resume_boundaries, mark_capture_intervals
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_audio_sync import lock_recording_audio
+from backend.utils.speaker_names.live_suggestions import has_unnamed_live_labels
+from backend.utils.speaker_names.preferences import (
+    live_name_suggestions_enabled,
+    owner_settings,
+)
 from backend.utils.transcript_settling import (
     CapturePublicationToken,
     load_capture_publication,
@@ -36,6 +41,7 @@ class LivePublicationResult:
 
     accepted: bool
     dispatch_meeting_edge: bool = False
+    queue_live_naming: bool = False
 
 
 def _load_recording_audio_window_manifests(
@@ -87,12 +93,13 @@ def _persist_live_run(
     Takes the audio lock and then the Transcript fence, the order Stop, pause and
     resume use; finalize holds both to its commit. Writes only while the capture is
     UPLOADING/PAUSED, so a late status flip rejects the result without advancing
-    the obsolete lane checkpoint. Returns acceptance and whether to refresh
-    Meeting Edge.
+    the obsolete lane checkpoint. Returns acceptance, whether to refresh
+    Meeting Edge, and whether a live naming check should be queued.
     """
     from backend.core.db import get_sync_session
 
     should_dispatch_meeting_edge = False
+    should_queue_live_naming = False
     session = get_sync_session()
     try:
         lock_recording_audio(session, recording_id)
@@ -101,17 +108,16 @@ def _persist_live_run(
             resolve_capture_settling_policy(
                 transcript, device=live_config.get("_settling_device")
             )
+            use_canonical_live_writes = (
+                bool(config_manager.get("enable_canonical_transcript_writes", True))
+                and hasattr(session, "exec")
+                and hasattr(session, "execute")
+            )
             if new_segments:
                 mark_capture_intervals(
                     new_segments, load_resume_boundaries(session, transcript)
                 )
                 _mark_pending_speakers(new_segments, live_config)
-                use_canonical_live_writes = (
-                    bool(config_manager.get("enable_canonical_transcript_writes", True))
-                    and hasattr(session, "exec")
-                    and hasattr(session, "execute")
-                )
-
                 if use_canonical_live_writes:
                     append_utterances_from_segments(
                         session,
@@ -154,6 +160,13 @@ def _persist_live_run(
                     user_settings = getattr(user, "settings", None) if user else None
 
                 should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
+                # Live labels exist only on canonical utterances.
+                should_queue_live_naming = (
+                    use_canonical_live_writes
+                    and transcript is not None
+                    and live_name_suggestions_enabled(user_settings)
+                    and has_unnamed_live_labels(session, transcript)
+                )
 
             manifest_rows = _load_recording_audio_window_manifests(
                 session, recording_id
@@ -187,10 +200,38 @@ def _persist_live_run(
                     },
                     log=logger,
                 )
-            return LivePublicationResult(True, should_dispatch_meeting_edge)
+            return LivePublicationResult(
+                True, should_dispatch_meeting_edge, should_queue_live_naming
+            )
     finally:
         session.close()
     return LivePublicationResult(False)
+
+
+def live_naming_wanted_after_labels(recording_id: int) -> bool:
+    """Whether a label write that changed lines leaves a label open to a name.
+
+    A first introduction is usually published before its line has a label, so
+    its publication finds nothing to name; the label write that follows is the
+    first point a naming check can act on it.
+    """
+    from backend.core.db import get_sync_session
+
+    session = get_sync_session()
+    try:
+        transcript, recording = load_capture_publication(
+            session, recording_id, lock=False
+        )
+        return (
+            transcript is not None
+            and publication_is_current(recording, transcript, None)
+            and live_name_suggestions_enabled(
+                owner_settings(session, recording.user_id)
+            )
+            and has_unnamed_live_labels(session, transcript)
+        )
+    finally:
+        session.close()
 
 
 def _mark_pending_speakers(segments: list[dict], config: dict) -> None:

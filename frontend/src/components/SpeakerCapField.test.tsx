@@ -184,53 +184,73 @@ describe("SpeakerCapField stepper", () => {
   });
 });
 
-describe("SpeakerCapField inline layout", () => {
-  it("keeps the hint available without occupying a line", () => {
-    render(<SpeakerCapField value={null} onCommit={vi.fn()} layout="inline" />);
+const HINT =
+  "Leave empty to auto-detect. Set this only if the meeting is split into more speakers than there were people.";
+const LIVE_HINT =
+  "Applied when you stop. Live labels are a preview and can show more speakers than this.";
 
-    const hint = screen.getByText(/leave empty to auto-detect/i);
-    expect(hint).toHaveClass("sr-only");
-    expect(screen.getByLabelText(/max speakers/i)).toBeInTheDocument();
-  });
+// Both hints sit behind an "i" beside the box in every layout, so the control
+// looks the same in the live toolbar and both dialogs (#1000).
+describe("SpeakerCapField hint", () => {
+  it.each([
+    ["stacked", false, HINT],
+    ["inline", false, HINT],
+    ["stacked", true, LIVE_HINT],
+    ["inline", true, LIVE_HINT],
+  ] as const)(
+    "keeps the %s hint (live: %s) off the page and announces it with the field",
+    (layout, liveHint, hint) => {
+      render(
+        <SpeakerCapField
+          value={null}
+          onCommit={vi.fn()}
+          layout={layout}
+          liveHint={liveHint}
+        />,
+      );
 
-  // The live labels ignore the cap, and the field is where the user sets it
-  // during a capture, so the explanation is text there, not a tooltip (#871).
-  it("shows the capture hint beneath the field, not only as a tooltip", () => {
-    render(
-      <SpeakerCapField value={null} onCommit={vi.fn()} layout="inline" liveHint />,
-    );
+      // The sentence's only copy is the closed bubble: no line under the box.
+      expect(screen.getByText(hint)).not.toBeVisible();
+      expect(screen.getByLabelText(/max speakers/i)).toHaveAccessibleDescription(hint);
+      expect(
+        screen.getByRole("button", { name: "About the speaker limit" }),
+      ).toHaveAccessibleDescription(hint);
+    },
+  );
 
-    const hint = screen.getByText(
-      "Applied when you stop. Live labels are a preview and can show more speakers than this.",
-    );
-    expect(hint).not.toHaveClass("sr-only");
-    expect(screen.getByLabelText(/max speakers/i)).toHaveAttribute(
-      "aria-describedby",
-      hint.id,
-    );
-    expect(screen.queryByTitle(/applied when you stop/i)).not.toBeInTheDocument();
+  it("shows the hint when the info button has keyboard focus", () => {
+    render(<SpeakerCapField value={null} onCommit={vi.fn()} liveHint />);
+
+    fireEvent.focus(screen.getByRole("button", { name: "About the speaker limit" }));
+
+    expect(screen.getByRole("tooltip")).toHaveTextContent(LIVE_HINT);
   });
 
   // jsdom has no layout. In a 390px toolbar the icon alone wrapped onto a
   // third line, under the label (#538).
-  it("wraps the hint icon with the stepper, not on its own", () => {
+  it("wraps the info button with the stepper, not on its own", () => {
     render(<SpeakerCapField value={null} onCommit={vi.fn()} layout="inline" />);
 
     const increase = screen.getByRole("button", { name: "Increase speaker limit" });
-    const icon = screen.getByTitle(/leave empty to auto-detect/i);
+    const info = screen.getByRole("button", { name: "About the speaker limit" });
     const unit = increase.parentElement?.parentElement;
-    expect(unit?.contains(icon)).toBe(true);
+    expect(unit?.contains(info)).toBe(true);
     expect(unit?.contains(screen.getByText("Max Speakers"))).toBe(false);
   });
 
-  it("surfaces the hint visibly when an entry is rejected", () => {
-    render(<SpeakerCapField value={2} onCommit={vi.fn()} layout="inline" />);
+  it.each(["stacked", "inline"] as const)(
+    "keeps a rejected entry's message in view under the %s box",
+    (layout) => {
+      render(<SpeakerCapField value={2} onCommit={vi.fn()} layout={layout} />);
 
-    const input = screen.getByLabelText(/max speakers/i);
-    fireEvent.change(input, { target: { value: "99" } });
-    fireEvent.blur(input);
+      const input = screen.getByLabelText(/max speakers/i);
+      fireEvent.change(input, { target: { value: "99" } });
+      fireEvent.blur(input);
 
-    const hint = screen.getByText(/enter a whole number between 1 and 50/i);
-    expect(hint).not.toHaveClass("sr-only");
-  });
+      const error = screen.getByText(/enter a whole number between 1 and 50/i);
+      expect(error).toBeVisible();
+      expect(input).toHaveAccessibleDescription(`${error.textContent} ${HINT}`);
+      expect(screen.getByText(HINT)).not.toBeVisible();
+    },
+  );
 });

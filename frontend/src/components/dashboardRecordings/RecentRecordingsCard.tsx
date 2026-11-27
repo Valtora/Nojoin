@@ -43,7 +43,7 @@ export default function RecentRecordingsCard({
         <h2 className="text-base font-semibold text-foreground">Recent Meetings</h2>
       </div>
 
-      <ul className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto">
+      <ul className="relative mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto">
         {recordings.map((recording) => {
           const duration = formatDuration(recording.duration_seconds);
           const createdAt = parseServerTimestamp(recording.created_at);

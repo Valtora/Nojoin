@@ -7,14 +7,16 @@ import {
   applyCornerStyle,
   applyPalette,
   applyUiStyle,
-  readStoredCornerStyle,
+  readStoredCornerPreference,
   readStoredPalette,
   readStoredTheme,
   readStoredUiStyle,
-  storeCornerStyle,
+  resolveCornerStyle,
+  storeCornerPreference,
   storePalette,
   storeTheme,
   storeUiStyle,
+  type CornerPreference,
   type CornerStyle,
   type Palette,
   type Theme,
@@ -30,8 +32,11 @@ interface ThemeContextValue {
   setTheme: (theme: Theme) => void;
   palette: Palette;
   setPalette: (palette: Palette) => void;
+  /** The Corner style setting, Automatic included. */
+  cornerPreference: CornerPreference;
+  setCornerPreference: (cornerPreference: CornerPreference) => void;
+  /** The corners that show: the setting, or under Automatic the style's own. */
   cornerStyle: CornerStyle;
-  setCornerStyle: (cornerStyle: CornerStyle) => void;
   uiStyle: UiStyle;
   setUiStyle: (uiStyle: UiStyle) => void;
 }
@@ -67,8 +72,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // hydration, so these initialisers only have to agree with it; reading the
   // same storage keeps the settings controls showing the active choice.
   const [palette, setPaletteState] = useState<Palette>(readStoredPalette);
-  const [cornerStyle, setCornerStyleState] = useState<CornerStyle>(readStoredCornerStyle);
+  const [cornerPreference, setCornerPreferenceState] = useState<CornerPreference>(readStoredCornerPreference);
   const [uiStyle, setUiStyleState] = useState<UiStyle>(readStoredUiStyle);
+  const cornerStyle = resolveCornerStyle(cornerPreference, uiStyle);
+
+  // Corners follow both settings: Automatic takes them from the style, so a
+  // change of either, here or in another tab, can change them.
+  useEffect(() => {
+    applyCornerStyle(cornerStyle);
+  }, [cornerStyle]);
 
   // Initialize theme from localStorage on mount. readStoredTheme validates
   // against the allowed values and survives blocked storage, so a junk value
@@ -122,9 +134,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyPalette(nextPalette);
       }
       if (event.key === null || event.key === keys.corners) {
-        const nextCorners = readStoredCornerStyle();
-        setCornerStyleState(nextCorners);
-        applyCornerStyle(nextCorners);
+        setCornerPreferenceState(readStoredCornerPreference());
       }
       if (event.key === null || event.key === keys.style) {
         const nextStyle = readStoredUiStyle();
@@ -151,10 +161,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     applyPalette(newPalette);
   }, []);
 
-  const setCornerStyle = useCallback((newCornerStyle: CornerStyle) => {
-    setCornerStyleState(newCornerStyle);
-    storeCornerStyle(newCornerStyle);
-    applyCornerStyle(newCornerStyle);
+  const setCornerPreference = useCallback((newPreference: CornerPreference) => {
+    setCornerPreferenceState(newPreference);
+    storeCornerPreference(newPreference);
   }, []);
 
   const setUiStyle = useCallback((newStyle: UiStyle) => {
@@ -171,8 +180,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setTheme,
     palette,
     setPalette,
+    cornerPreference,
+    setCornerPreference,
     cornerStyle,
-    setCornerStyle,
     uiStyle,
     setUiStyle,
   };

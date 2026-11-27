@@ -36,7 +36,7 @@ export function useRecordingPanel(
 /**
  * Opens each panel the transcript tour asks for, and puts back the panels the
  * tour found once it ends, or when the page goes while it runs. On desktop
- * Speakers, My notes, Captures and Meeting Edge open in the side column, so
+ * Speakers, Your notes, Captures and Meeting Edge open in the side column, so
  * its tab is put back as well as the main one.
  */
 function useTourPanels(

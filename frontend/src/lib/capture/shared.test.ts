@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { pickCaptureSource } from "./pickSource";
-import { readCaptureSettings, writeCaptureSettings } from "./shared";
+import {
+  readCaptureSettings,
+  readPausedCaptureContext,
+  writeCaptureSettings,
+  writePausedCaptureContext,
+} from "./shared";
 
 const STORAGE_KEY = "nojoin.capture.settings";
 
@@ -156,5 +161,29 @@ describe("noise suppression migration for settings saved before it defaulted off
     expect(settings.noiseSuppression).toBe(false);
     expect(settings.microphoneGain).toBe(1.4);
     setItem.mockRestore();
+  });
+});
+
+describe("Recording source (issue #958)", () => {
+  it.each(["shared_audio", "microphone_only", "ask"])("keeps a saved %s", (startMode) => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ startMode, version: 2 }));
+    expect(readCaptureSettings().startMode).toBe(startMode);
+  });
+
+  it.each([["screen"], [null], [3]])("falls back to system audio for a saved %s", (startMode) => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ startMode, version: 2 }));
+    expect(readCaptureSettings().startMode).toBe("shared_audio");
+  });
+
+  it("remembers the paused meeting's source, and only a source it knows", () => {
+    const context = { recordingId: "rec-1", lastSequence: 4, persistedAt: 1 };
+    writePausedCaptureContext({ ...context, mode: "microphone_only" });
+    expect(readPausedCaptureContext()).toEqual({ ...context, mode: "microphone_only" });
+
+    window.sessionStorage.setItem(
+      "nojoin.capture.paused-recording",
+      JSON.stringify({ ...context, mode: "ask" }),
+    );
+    expect(readPausedCaptureContext()).toEqual(context);
   });
 });

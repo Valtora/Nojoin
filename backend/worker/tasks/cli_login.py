@@ -15,6 +15,7 @@ from backend.processing.cli.codex_login import (
     codex_home_for,
     run_device_login,
 )
+from backend.processing.live_ai_backoff import bump_epoch
 from backend.services.cli_oauth import codex_oauth
 from backend.services.cli_oauth.persistence import store_codex_auth_blob_sync
 
@@ -39,6 +40,10 @@ def codex_device_login_task(self, user_id: int) -> None:
     try:
         auth_blob = run_device_login(user_id, _publish_code)
         store_codex_auth_blob_sync(user_id, auth_blob)
+        # A subscription stopped for a lost credential is tried again. Here,
+        # not where the browser polls: the dialog may have closed before the
+        # user approved on the other device.
+        bump_epoch()
         # No plaintext credential left at rest: the driver re-materialises
         # auth.json per inference from the encrypted store.
         _wipe_auth_json(user_id)

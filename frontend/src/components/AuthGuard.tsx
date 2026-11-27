@@ -4,20 +4,26 @@ import { ButtonBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import LegalAcceptanceNotice from '@/components/legal/LegalAcceptanceNotice';
 import { getCurrentUser } from '@/lib/api';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
+import { noteLegalAcceptance, useLegalAcceptanceStore } from '@/lib/legalAcceptance';
 import { passwordChangePath } from '@/lib/passwordChangeReturn';
 import { isSessionEndedError, useSessionStore } from '@/lib/session';
+
+const PUBLIC_PATHS = ['/login', '/setup', '/register'];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [checked, setChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const legalAcceptanceRequired = useLegalAcceptanceStore((state) => state.required);
+  const heldInPlace = useSessionStore((state) => state.heldInPlace);
 
   useEffect(() => {
     const checkAuth = async () => {
-      const publicPaths = ['/login', '/setup', '/register'];
+      const publicPaths = PUBLIC_PATHS;
       // Neutral paths are reachable signed-in or signed-out. The OAuth
       // consent page renders its own inline sign-in so the authorization
       // parameters survive instead of being lost on a /login redirect.
@@ -27,6 +33,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       let currentUser = null;
       try {
         currentUser = await getCurrentUser();
+        // Whether the terms of use come first follows the account as it is
+        // now, so a session from before an upgrade meets them here (#1004).
+        noteLegalAcceptance(currentUser);
 
             } catch (e: unknown) {
         currentUser = null;
@@ -116,6 +125,20 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!checked) {
       return null;
+  }
+
+  // An account that has not accepted the terms of use sees them in place of
+  // any page it asks for (#1004). /users/me and the sign-in set the flag, and
+  // so does the API's refusal of a new capture or import. A running capture,
+  // or notes not saved yet, keep the page until they let go of it: swapping
+  // the page out would end the capture, and the server lets one that already
+  // exists finish.
+  if (
+    legalAcceptanceRequired &&
+    !heldInPlace &&
+    !PUBLIC_PATHS.some(p => pathname?.startsWith(p))
+  ) {
+    return <LegalAcceptanceNotice />;
   }
 
   return <>{children}</>;

@@ -317,6 +317,7 @@ def _publish_step(
                     for word in segment.get("words", [])
                 ],
                 decide_speaker=decide,
+                activity=evidence.native_activity() if evidence is not None else None,
             )
         accepted = publication.accepted
         transcript, recording = load_capture_publication(session, step.recording_id)

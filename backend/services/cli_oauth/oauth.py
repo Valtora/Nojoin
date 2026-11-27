@@ -38,7 +38,22 @@ _EXCHANGE_TIMEOUT_SECONDS = 120.0
 
 
 class CliOAuthExchangeError(RuntimeError):
-    """Raised when the authorize-code or refresh-token exchange fails."""
+    """Raised when the authorize-code or refresh-token exchange fails.
+
+    ``http_status`` is the token endpoint's answer when it gave one, and None
+    for a request that failed or a 200 without a token. Named so that the
+    live calls' failure classifier, which reads ``status_code``, does not take
+    a token endpoint's status for the model provider's.
+    """
+
+    def __init__(self, message: str, *, http_status: int | None = None) -> None:
+        super().__init__(message)
+        self.http_status = http_status
+
+    @property
+    def grant_rejected(self) -> bool:
+        """The endpoint refused the grant itself: only reconnecting helps."""
+        return self.http_status in (400, 401, 403)
 
 
 @dataclass(frozen=True)
@@ -132,7 +147,8 @@ async def _post_token(data: dict[str, str]) -> OAuthTokens:
         except Exception:  # noqa: BLE001 -- boundary: non-JSON error body
             detail = response.text[:200]
         raise CliOAuthExchangeError(
-            f"Token exchange returned HTTP {response.status_code}: {detail}"
+            f"Token exchange returned HTTP {response.status_code}: {detail}",
+            http_status=response.status_code,
         )
     return _tokens_from_response(response.json())
 

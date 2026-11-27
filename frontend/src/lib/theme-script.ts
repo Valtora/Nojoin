@@ -12,6 +12,7 @@ import {
   APPEARANCE_STORAGE_KEYS,
   CORNER_STYLES,
   DEFAULT_CORNER_STYLE,
+  STYLE_CORNERS,
   DEFAULT_PALETTE,
   DEFAULT_UI_STYLE,
   DENSITY_PREFERENCES,
@@ -59,13 +60,15 @@ export const themeScript = `
     root.setAttribute('data-palette', palette);
   }
 
-  var corners = read(keys.corners, ${JSON.stringify(CORNER_STYLES)});
-  if (corners && corners !== ${JSON.stringify(DEFAULT_CORNER_STYLE)}) {
-    root.setAttribute('data-corners', corners);
-  }
-
   var style = read(keys.style, ${JSON.stringify(UI_STYLES)}) || ${JSON.stringify(DEFAULT_UI_STYLE)};
   (${applyUiStyleToRoot.toString()})(style, root, true);
+
+  // An explicit corner style, else (Automatic) the one the style brings.
+  var corners = read(keys.corners, ${JSON.stringify(CORNER_STYLES)}) ||
+    ${JSON.stringify(STYLE_CORNERS)}[style];
+  if (corners !== ${JSON.stringify(DEFAULT_CORNER_STYLE)}) {
+    root.setAttribute('data-corners', corners);
+  }
 
   var density = read(keys.density, ${JSON.stringify(DENSITY_PREFERENCES)}) || 'auto';
   if (density === 'auto') {

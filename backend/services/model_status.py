@@ -15,6 +15,7 @@ from backend.utils.forced_aligner_manifest import (
     load_asset_manifest as aligner_manifest,
 )
 from backend.utils.forced_aligner_model_utils import control as aligner_control
+from backend.utils.nemotron_lock import control as nemotron_control
 from backend.utils.nemotron_lock import pending_task
 from backend.utils.nemotron_manifest import load_asset_manifest
 from backend.utils.transcription_models import engine_has_native_word_timestamps
@@ -23,20 +24,26 @@ from backend.utils.transcription_models import engine_has_native_word_timestamps
 def add_nemotron_preparation_status(status: dict[str, Any]) -> None:
     """Add lifecycle and manifest size only to the native speaker model row."""
     native = status["nemotron"]
-    progress = get_download_progress()
+    progress = get_download_progress("nemotron")
     matching = progress if progress and progress.get("stage") == "nemotron" else {}
-    native["state"] = _preparation_state(native, matching)
+    native["state"] = _preparation_state(
+        native, matching, retry_wait=nemotron_control.failed_recently()
+    )
     native["size_bytes"] = sum(
         entry["size"] for entry in load_asset_manifest()["files"]
     )
     native["unused_reason"] = nemotron_unused_reason()
     if "forced_aligner" in status:
         aligner = status["forced_aligner"]
+        progress = get_download_progress("forced_aligner")
         matching = (
             progress if progress and progress.get("stage") == "forced_aligner" else {}
         )
         aligner["state"] = _preparation_state(
-            aligner, matching, bool(aligner_control.pending_task())
+            aligner,
+            matching,
+            bool(aligner_control.pending_task()),
+            retry_wait=aligner_control.failed_recently(),
         )
         aligner["size_bytes"] = sum(
             entry["size"] for entry in aligner_manifest()["files"]
@@ -53,6 +60,8 @@ def _preparation_state(
     native: dict[str, Any],
     progress: dict[str, Any],
     pending: bool | None = None,
+    *,
+    retry_wait: bool = False,
 ) -> ModelPreparationState:
     # Use the same freshness window as is_download_in_progress. A stale Redis
     # record must not leave the row downloading after the worker disappears.
@@ -63,6 +72,8 @@ def _preparation_state(
         return "downloading"
     if native["downloaded"]:
         return "ready"
+    if retry_wait:
+        return "retry_wait"
     if progress.get("status") == "error" or native["verification_state"] == "invalid":
         return "failed"
     return "absent"

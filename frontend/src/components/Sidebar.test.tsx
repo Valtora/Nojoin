@@ -13,9 +13,9 @@ import type { ViewType } from "@/lib/store";
 import Sidebar from "./Sidebar";
 import ImportAudioHost from "./importAudio/ImportAudioHost";
 import { ClientStatus, RecordingStatus, type Recording } from "@/types";
+import { pressWhileComposing } from "@/test/composition";
 import { fillMarkerViolations } from "@/test/fillMarkerContracts";
 import { activeTransitions, animatesWidth } from "@/test/widthTransition";
-import { renderCounter } from "@/test/renderCounts";
 
 const routerPush = vi.fn();
 const routerReplace = vi.fn();
@@ -508,6 +508,24 @@ describe("Sidebar", () => {
       ]);
       expect(addNotification).toHaveBeenCalledWith({ type: "error", message: "Failed to rename recording." });
     });
+
+    it("leaves the Enter and Escape of an input method's composition to the card's name", async () => {
+      renderWithProviders(<Sidebar />);
+      fireEvent.contextMenu(await screen.findByRole("heading", { name: "Latest meeting" }));
+      act(() => lastMenuItems.find((item) => item.label === "Rename")?.onClick?.());
+      const input = screen.getByDisplayValue("Latest meeting");
+      fireEvent.change(input, { target: { value: "きゃく" } });
+
+      pressWhileComposing(input, "Enter");
+      pressWhileComposing(input, "Escape");
+      expect(renameRecording).not.toHaveBeenCalled();
+      expect(screen.getByDisplayValue("きゃく")).toBe(input);
+
+      fireEvent.keyDown(input, { key: "Enter" });
+      await waitFor(() => {
+        expect(renameRecording).toHaveBeenCalledExactlyOnceWith("rec-1", "きゃく");
+      });
+    });
   });
 
   describe("collapsed recordings rail", () => {
@@ -844,6 +862,111 @@ describe("Sidebar", () => {
       expect(searched).toEqual(["budget"]);
     });
 
+    it("scrolls only the cards: the head, Select all included, sits outside the scroller", async () => {
+      // Loading more watches the end of the list against the list's scroller.
+      const roots: (Element | Document | null | undefined)[] = [];
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          constructor(_callback: unknown, options?: IntersectionObserverInit) {
+            roots.push(options?.root);
+          }
+          observe = vi.fn();
+          disconnect = vi.fn();
+        },
+      );
+      try {
+        serveLibrary();
+        renderWithProviders(<Sidebar />);
+        await screen.findByRole("heading", { name: "Meeting 49" });
+        await waitFor(() => expect(roots.length).toBeGreaterThan(0));
+
+        const scroller = roots.at(-1);
+        expect(scroller).toBeInstanceOf(HTMLElement);
+        const inScroller = (element: HTMLElement) => (scroller as HTMLElement).contains(element);
+        expect(inScroller(screen.getByRole("list", { name: "Recordings list" }))).toBe(true);
+        expect(inScroller(screen.getByRole("textbox", { name: "Search recordings" }))).toBe(false);
+        expect(inScroller(screen.getByRole("checkbox", { name: "Select all" }))).toBe(false);
+        for (const start of screen.getAllByRole("button", { name: "Start Meeting" })) {
+          expect(inScroller(start)).toBe(false);
+        }
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("starts a new search at the top of its results, not where the old list was left", async () => {
+      const roots: (Element | Document | null | undefined)[] = [];
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          constructor(_callback: unknown, options?: IntersectionObserverInit) {
+            roots.push(options?.root);
+          }
+          observe = vi.fn();
+          disconnect = vi.fn();
+        },
+      );
+      try {
+        serveLibrary();
+        renderWithProviders(<Sidebar />);
+        await screen.findByRole("heading", { name: "Meeting 49" });
+        await waitFor(() => expect(roots.length).toBeGreaterThan(0));
+        const scroller = roots.at(-1) as HTMLElement;
+        scroller.scrollTop = 4000;
+
+        fireEvent.change(screen.getByRole("textbox", { name: "Search recordings" }), {
+          target: { value: "budget" },
+        });
+
+        await waitFor(() =>
+          expect(getRecordings).toHaveBeenLastCalledWith(
+            expect.objectContaining({ q: "budget", skip: 0 }),
+          ),
+        );
+        expect(scroller.scrollTop).toBe(0);
+
+        // Choosing a date mode with no date set asks for the same list, so it stays put.
+        scroller.scrollTop = 4000;
+        fireEvent.click(screen.getByRole("button", { name: "Filter recordings" }));
+        fireEvent.click(screen.getByRole("button", { name: "After" }));
+        expect(screen.getByRole("button", { name: "After" })).toHaveClass("bg-action-tint");
+        expect(scroller.scrollTop).toBe(4000);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("clears the search with Escape, keeps focus, and leaves a composition's Escape alone", async () => {
+      renderWithProviders(<Sidebar />);
+      await screen.findByRole("heading", { name: "Latest meeting" });
+      const search = screen.getByRole("textbox", { name: "Search recordings" });
+      search.focus();
+      fireEvent.change(search, { target: { value: "budget" } });
+      await waitFor(() =>
+        expect(getRecordings).toHaveBeenLastCalledWith(expect.objectContaining({ q: "budget" })),
+      );
+
+      pressWhileComposing(search, "Escape");
+      expect(search).toHaveValue("budget");
+
+      // The Escape that clears the box goes no further, so a page-wide
+      // Escape (a tour, a dialog) does not act on it too.
+      const pageEscapes = vi.fn();
+      window.addEventListener("keydown", pageEscapes);
+      expect(fireEvent.keyDown(search, { key: "Escape" })).toBe(false);
+      window.removeEventListener("keydown", pageEscapes);
+      expect(pageEscapes).not.toHaveBeenCalled();
+      expect(search).toHaveValue("");
+      expect(search).toHaveFocus();
+      await waitFor(() =>
+        expect(getRecordings).toHaveBeenLastCalledWith(expect.not.objectContaining({ q: expect.anything() })),
+      );
+
+      // An empty box leaves Escape to whatever else listens for it.
+      expect(fireEvent.keyDown(search, { key: "Escape" })).toBe(true);
+    });
+
     it("loads older recordings from the end of the list and says when there are none", async () => {
       serveLibrary();
       renderWithProviders(<Sidebar />);
@@ -908,46 +1031,6 @@ describe("Sidebar", () => {
         expect(getRecordings).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 0, limit: 100 })),
       );
       expect(screen.getAllByRole("heading", { name: /^Meeting \d+$/ })).toHaveLength(60);
-    });
-  });
-
-  describe("the 15 s poll at library size", () => {
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it("redraws only the row whose processing step moved", async () => {
-      vi.useFakeTimers({ shouldAdvanceTime: true });
-      const rows = (step: string) =>
-        Array.from({ length: 100 }, (_, i) => ({
-          ...recording,
-          id: `rec-${i}`,
-          name: `Meeting ${i}`,
-          ...(i === 7
-            ? { status: RecordingStatus.PROCESSING, processing_step: step, processing_progress: 97 }
-            : {}),
-        }));
-      // Each read answers with new objects, as a fetch does.
-      let step = "Drafting notes, part 1 of 5... (GPU)";
-      getRecordings.mockImplementation(async () => rows(step));
-      renderWithProviders(<Sidebar />);
-      await screen.findByRole("heading", { name: "Meeting 99" });
-
-      const counter = await renderCounter();
-      try {
-        await counter.take();
-        step = "Drafting notes, part 2 of 5... (GPU)";
-        const calls = getRecordings.mock.calls.length;
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(15_000);
-        });
-        expect(getRecordings.mock.calls.length).toBe(calls + 1);
-        const renders = await counter.take();
-
-        expect(renders("components/recordings/RecordingRailRow.tsx", "RecordingRailRow")).toBe(1);
-      } finally {
-        await counter.stop();
-      }
     });
   });
 });

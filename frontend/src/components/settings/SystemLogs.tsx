@@ -530,7 +530,7 @@ export default function SystemLogs() {
             onScroll={handleLogScroll}
             role="log"
             aria-label="Service logs"
-            className="flex-1 overflow-y-auto overscroll-contain p-3 font-mono text-[11px] leading-relaxed"
+            className="relative flex-1 overflow-y-auto overscroll-contain p-3 font-mono text-[11px] leading-relaxed"
           >
             {filteredLogs.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 select-none contrast-helper">

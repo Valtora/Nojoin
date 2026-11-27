@@ -39,6 +39,11 @@ import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 const NotesEditor = memo(RichTextEditor);
 
+/** Notes as the editor is given them: without the generated title, trimmed. */
+function toDisplayNotes(notes: string | null): string | null {
+  return notes ? notes.replace(/^#+\s*Meeting Notes\s*/i, "").trim() : null;
+}
+
 interface NotesViewProps {
   recordingId: RecordingId;
   notes: string | null;
@@ -81,9 +86,7 @@ export default function NotesView({
   onExport,
   disableExport = false,
 }: NotesViewProps) {
-  const displayNotes = notes
-    ? notes.replace(/^#+\s*Meeting Notes\s*/i, "").trim()
-    : null;
+  const displayNotes = toDisplayNotes(notes);
   const generateNotesLabel = displayNotes
     ? "Regenerate Notes"
     : "Generate Notes";
@@ -129,7 +132,11 @@ export default function NotesView({
   useEffect(() => {
     const normalizedProp = displayNotes || "";
     // Updates local state if prop differs from local and last saved value.
-    if (normalizedProp !== lastSavedNotes.current) {
+    // A save comes back here in its display form, while lastSavedNotes holds
+    // the editor's own Markdown, which ends in a newline after a table. Compare
+    // like with like, or a save's echo replaces what was typed while it was in
+    // flight (#1074).
+    if (normalizedProp !== (toDisplayNotes(lastSavedNotes.current) ?? "")) {
       setLocalNotes(normalizedProp);
       lastSavedNotes.current = normalizedProp;
     }
@@ -708,7 +715,7 @@ export default function NotesView({
       </SurfaceBase>
 
       {/* Notes Content */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="relative flex-1 overflow-y-auto min-h-0">
         {localNotes || isGenerating ? (
           <div className="relative h-full">
             <NotesEditor

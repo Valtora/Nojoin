@@ -15,22 +15,35 @@ import pytest
 from backend import preload_models
 from backend.api.v1.endpoints import system
 from backend.services import model_preparation, model_status
+from backend.tests.test_forced_aligner_assets import tiny_assets as tiny_assets
+from backend.utils import download_progress
 from backend.utils import forced_aligner_model_utils as assets
+from backend.utils.forced_aligner_manifest import ForcedAlignerError
+from backend.utils.pinned_model_assets import PinnedModelAssets
 
 
 @pytest.fixture
-def progress(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+def progress(
+    monkeypatch: pytest.MonkeyPatch, download_progress_in_memory: dict[str, str]
+) -> dict[str, Any]:
     updates: dict[str, Any] = {}
 
     def record(percent: int, message: str, *args: Any, **kwargs: Any) -> None:
-        updates.update(
-            progress=percent, message=message, updated_at=time.time(), **kwargs
-        )
+        download_progress.set_download_progress(percent, message, *args, **kwargs)
+        updates.clear()
+        updates.update(download_progress.get_download_progress() or {})
 
-    monkeypatch.setattr(preload_models, "clear_download_progress", updates.clear)
+    def clear(model: str | None = None) -> None:
+        download_progress.clear_download_progress(model)
+        updates.clear()
+        updates.update(download_progress.get_download_progress() or {})
+
+    monkeypatch.setattr(preload_models, "clear_download_progress", clear)
     monkeypatch.setattr(preload_models, "set_download_progress", record)
     monkeypatch.setattr(model_preparation, "set_download_progress", record)
-    monkeypatch.setattr(model_status, "get_download_progress", lambda: updates or None)
+    monkeypatch.setattr(
+        model_status, "get_download_progress", lambda _model=None: updates or None
+    )
     return updates
 
 
@@ -128,7 +141,8 @@ def test_active_and_preload_failures_retain_aligner_stage_for_retry(
     assert progress["status"] == "error"
     status = preload_models.check_model_status()
     model_status.add_nemotron_preparation_status(status)
-    assert status["forced_aligner"]["state"] == "failed"
+    # The worker's persistent failure marker exposes first-use retry backoff.
+    assert status["forced_aligner"]["state"] == "retry_wait"
 
 
 @pytest.mark.parametrize("backend", ["whisper", "parakeet", "canary"])
@@ -290,6 +304,7 @@ def test_api_prepares_the_selected_or_explicit_engine(
     selection: tuple[str, str, str, bool],
     stub_celery_dispatch: list,
     progress: dict[str, Any],
+    fake_single_flight: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     backend, target, expected_backend, expected_core = selection
@@ -317,6 +332,7 @@ def test_explicit_api_target_dispatches_no_asr_or_core_work(
     stub_celery_dispatch: list,
     progress: dict[str, Any],
     model_cache_env: Path,
+    fake_single_flight: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(system, "is_download_in_progress", lambda: False)
@@ -359,6 +375,48 @@ def test_worker_cleans_its_pending_marker_on_success_and_failure(
     finally:
         download_models_task.pop_request()
     assert assets.control.pending_task() is None
+
+
+def test_a_failure_is_not_held_against_a_model_another_run_has_since_verified(
+    tiny_assets: tuple[Path, dict[str, Any]],
+    progress: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.worker.tasks.system import download_models_task
+
+    path, _manifest = tiny_assets
+    weights = path / "model.safetensors"
+    payload = weights.read_bytes()
+    weights.unlink()
+    prepare = preload_models.prepare_forced_aligner_model
+
+    def offline(_self: Any, _destination: Path) -> None:
+        raise ForcedAlignerError("Forced aligner asset transfer failed")
+
+    def online(_self: Any, destination: Path) -> None:
+        destination.write_bytes(payload)
+
+    def repaired_elsewhere(**kwargs: Any) -> Path:
+        monkeypatch.setattr(PinnedModelAssets, "download", offline)
+        try:
+            return prepare(**kwargs)
+        finally:
+            # Another worker takes the lock this run has just released, and
+            # verifies the model before this run reaches its failure handling.
+            monkeypatch.setattr(PinnedModelAssets, "download", online)
+            prepare(progress=lambda *_args: None)
+
+    monkeypatch.setattr(
+        preload_models, "prepare_forced_aligner_model", repaired_elsewhere
+    )
+    monkeypatch.setattr(download_models_task, "update_state", lambda **_: None)
+    with pytest.raises(ForcedAlignerError):
+        _run_preparation_task(
+            {"pinned_model": "forced_aligner", "include_core": False}, "aligner-task"
+        )
+
+    assert assets.inspect_forced_aligner_model().state == "verified"
+    assert not assets.control.failed_recently()
 
 
 @pytest.mark.parametrize("backend", ["whisper", "parakeet", "canary"])
@@ -462,6 +520,7 @@ def test_offline_failure_holds_off_live_requests_until_the_backoff_passes(
         ("first_use", "forced_aligner", "cpu"),
         ("first_use", "nemotron", "cpu"),
         ("settings", "forced_aligner", "cpu"),
+        ("settings", "nemotron", "cpu"),
         ("settings", "active", "gpu"),
     ],
 )

@@ -34,7 +34,7 @@ import backend.core.backup.restore.stages as backup_stages
 from backend.core.backup import BackupManager, runtime
 from backend.core.backup import export as backup_export
 from backend.core.db import driver_urls
-from backend.tests.postgres_setup import migrate_empty_database
+from backend.tests.postgres_setup import ALEMBIC_INI, migrate_empty_database
 from backend.tests.test_backup_legacy_owners import (
     PEOPLE,
     PEOPLE_TAGS,
@@ -63,6 +63,7 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("timeline_notes", "file_removed"): "BOOLEAN NOT NULL DEFAULT false",
     ("recordings", "first_processed_at"): "TIMESTAMP",
     ("recordings", "title_user_edited"): "BOOLEAN NOT NULL DEFAULT false",
+    ("users", "legal_accepted_at"): "TIMESTAMP",
     ("transcripts", "notes_progress"): "VARCHAR(255)",
     ("transcripts", "notes_run_id"): "UUID",
 }
@@ -70,7 +71,7 @@ COLUMNS_ADDED_AFTER_BEFORE = {
 
 def _alembic(database_url: str, *args: str) -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
+        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
         cwd=REPO_ROOT,
         env={**os.environ, "DATABASE_URL": database_url},
         capture_output=True,

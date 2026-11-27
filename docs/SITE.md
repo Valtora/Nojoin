@@ -15,8 +15,8 @@ gate.
 | any other path | `site/src/pages/404.astro` | Not found |
 
 Every page uses `site/src/layouts/Base.astro`, with `Header`, `Footer`, `Shot` (a framed
-screenshot) and `Mark` (the logo, inlined from `assets/images/nojoin-mark.svg`) in
-`site/src/components/`.
+screenshot) and `Mark` (the logo, inlined from `site/src/assets/nojoin-mark.svg`, of which
+`site/public/favicon.svg` is a copy) in `site/src/components/`.
 
 Documentation stays on GitHub and the site links to it. `/docs` redirects (301) to
 `docs/README.md` on GitHub and `/docs/<PAGE>` to `docs/<PAGE>.md`, with any trailing `.html` or

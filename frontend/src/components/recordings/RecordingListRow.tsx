@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, type KeyboardEvent, type MouseEvent } from "react";
+import { memo } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -18,12 +19,17 @@ import IconButton from "@/components/ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "@/components/ui/touchTarget";
 import { Badge } from "@/components/ui/Badge";
 import RecordingAttentionBadge from "@/components/RecordingAttentionBadge";
-import RecordingTagDots, { tagDotsLayout } from "./RecordingTagDots";
-import type { TouchLongPress } from "./_hooks/useRecordingSelection";
 import { cn } from "@/lib/cn";
+import { isImeComposing } from "@/lib/imeComposition";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { formatTimeZoneDay, formatTimeZoneLocale } from "@/lib/timezone";
-import { Recording, RecordingId, RecordingStatus } from "@/types";
+import { RecordingStatus, type Recording, type RecordingId } from "@/types";
+
+import type { TouchLongPress } from "./_hooks/useRecordingSelection";
+import RecordingTagDots, { tagDotsLayout } from "./RecordingTagDots";
+
+/** The accessible name of a card's actions button and of the menu it opens. */
+export const rowMenuLabel = (recording: Recording) => `Actions for ${recording.name}`;
 
 const formatDurationString = (seconds?: number) => {
   if (!seconds) return "0s";
@@ -116,51 +122,68 @@ const StatusIcon = ({ recording }: { recording: Recording }) => {
   }
 };
 
-export const rowMenuLabel = (recording: Recording) => `Actions for ${recording.name}`;
-
 /**
- * What a row does, as one object whose identity never changes: the list
- * re-reads its rows every 15 s, and a row whose recording, state and handlers
- * are all unchanged is then not drawn again.
+ * What a card asks of the list. The list hands every card the same object
+ * for its whole life, and each handler reads the list's current state when it
+ * runs, so a card never draws again because the list did.
  */
-export interface RecordingRailRowHandlers {
+export interface RecordingListRowActions {
   onClick: (event: MouseEvent, id: RecordingId) => void;
   onKeyDown: (event: KeyboardEvent, id: RecordingId) => void;
   onContextMenu: (event: MouseEvent<HTMLElement>, recording: Recording) => void;
+  /** The checkbox: Shift extends from the anchor, anything else toggles. */
+  onToggleSelect: (id: RecordingId, extend: boolean) => void;
   onToggleMenu: (button: HTMLButtonElement, recording: Recording) => void;
-  onToggleSelected: (id: RecordingId) => void;
-  onExtendSelection: (id: RecordingId) => void;
   onRenameStart: (id: RecordingId, currentName: string) => void;
-  onRenameValueChange: (value: string) => void;
+  onRenameChange: (value: string) => void;
   onRenameSubmit: (id: RecordingId) => void;
   onRenameCancel: () => void;
-  longPressProps: TouchLongPress["bind"];
+  /** Touch long-press handlers for one card. */
+  bindLongPress: TouchLongPress["bind"];
 }
 
-interface RecordingRailRowProps {
+interface RecordingListRowProps {
   recording: Recording;
+  timeZone: string;
+  /** The card's recording is the one open. */
   isActive: boolean;
   isSelected: boolean;
+  /** Anything in the list is selected. */
   isSelecting: boolean;
   isMenuOpen: boolean;
+  isRenaming: boolean;
+  /** The name being typed; empty on every card but the one being renamed. */
+  renameValue: string;
   hasUnsentNotes: boolean;
-  /** Set only on the row being renamed, so typing redraws that row alone. */
-  renameValue: string | null;
-  userTimeZone: string;
-  handlers: RecordingRailRowHandlers;
+  /**
+   * A double click on the name renames the meeting. Only where the list stays
+   * beside the meeting it opens: below the desktop breakpoint the meeting
+   * replaces the list, so the click that opens it would start a rename out of
+   * sight (#974). The card's menu renames at any width.
+   */
+  renamesOnDoubleClick: boolean;
+  actions: RecordingListRowActions;
 }
 
-function RecordingRailRow({
+/**
+ * One meeting card in the recordings rail. Memoised, so a new page, a search
+ * keystroke, a poll or a change to one card draws only the cards whose props
+ * changed (issue #907): the list keeps an unchanged recording's object across
+ * pages and polls, and passes the rest as primitives.
+ */
+function RecordingListRow({
   recording,
+  timeZone,
   isActive,
   isSelected,
   isSelecting,
   isMenuOpen,
-  hasUnsentNotes,
+  isRenaming,
   renameValue,
-  userTimeZone,
-  handlers,
-}: RecordingRailRowProps) {
+  hasUnsentNotes,
+  renamesOnDoubleClick,
+  actions,
+}: RecordingListRowProps) {
   const startDate = parseServerTimestamp(recording.created_at);
   // A capture's length is known only once Stop has joined its
   // audio, so until then the row shows when it started and no
@@ -174,19 +197,20 @@ function RecordingRailRow({
 
   return (
     <li className="relative group">
-      {renameValue !== null ? (
+      {isRenaming ? (
         <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 rounded-lg border bg-surface-card border-action">
           <InputBase
             autoFocus
             type="text"
             value={renameValue}
-            onChange={(e) => handlers.onRenameValueChange(e.target.value)}
-            onBlur={() => handlers.onRenameSubmit(recording.id)}
+            onChange={(e) => actions.onRenameChange(e.target.value)}
+            onBlur={() => actions.onRenameSubmit(recording.id)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handlers.onRenameSubmit(recording.id);
+              if (isImeComposing(e)) return;
+              if (e.key === "Enter") actions.onRenameSubmit(recording.id);
               if (e.key === "Escape") {
                 e.stopPropagation();
-                handlers.onRenameCancel();
+                actions.onRenameCancel();
               }
             }}
             className="w-full text-sm font-semibold bg-transparent focus:outline-none"
@@ -204,13 +228,7 @@ function RecordingRailRow({
             checked={isSelected}
             // Handled on click, which knows whether Shift is held.
             onChange={() => undefined}
-            onClick={(e) => {
-              if (e.shiftKey) {
-                handlers.onExtendSelection(recording.id);
-              } else {
-                handlers.onToggleSelected(recording.id);
-              }
-            }}
+            onClick={(e) => actions.onToggleSelect(recording.id, e.shiftKey)}
             className={`absolute left-3 top-3.5 z-10 h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
               isSelecting
                 ? ""
@@ -231,14 +249,14 @@ function RecordingRailRow({
                 : undefined
             }
             aria-current={isActive ? "page" : undefined}
-            onClick={(e) => handlers.onClick(e, recording.id)}
-            onKeyDown={(e) => handlers.onKeyDown(e, recording.id)}
+            onClick={(e) => actions.onClick(e, recording.id)}
+            onKeyDown={(e) => actions.onKeyDown(e, recording.id)}
             onMouseDown={(e) => {
               // Shift-click extends the selection, not a text selection.
               if (e.shiftKey) e.preventDefault();
             }}
-            onContextMenu={(e) => handlers.onContextMenu(e, recording)}
-            {...handlers.longPressProps(recording.id)}
+            onContextMenu={(e) => actions.onContextMenu(e, recording)}
+            {...actions.bindLongPress(recording.id)}
             // The left padding keeps the text clear of the checkbox
             // wherever it can show, which on touch is only while
             // selecting; the right of the tag dots and the button.
@@ -255,12 +273,12 @@ function RecordingRailRow({
             <div className="flex justify-between items-start mb-1">
               <h3
                 className={`min-w-0 text-sm font-semibold line-clamp-2 ${isActive && !isSelecting ? "text-action-text" : "text-foreground"}`}
-                title="Double-click to rename"
+                title={renamesOnDoubleClick ? "Double-click to rename" : undefined}
                 onDoubleClick={(e) => {
-                  if (isSelecting) return;
+                  if (isSelecting || !renamesOnDoubleClick) return;
                   e.preventDefault();
                   e.stopPropagation();
-                  handlers.onRenameStart(recording.id, recording.name);
+                  actions.onRenameStart(recording.id, recording.name);
                 }}
               >
                 {recording.name}
@@ -270,7 +288,7 @@ function RecordingRailRow({
 
             <div className="flex items-center overflow-hidden text-xs text-contrast-helper gap-2">
               <span className="whitespace-nowrap">
-                {formatDate(recording.created_at, userTimeZone)}
+                {formatDate(recording.created_at, timeZone)}
               </span>
               {/* The time range yields first when the rail narrows; date and duration stay. */}
               <span className="hidden whitespace-nowrap text-contrast-icon-muted @min-[19rem]:inline">
@@ -280,8 +298,8 @@ function RecordingRailRow({
                 {!startDate
                   ? "Time unavailable"
                   : endDate
-                    ? `${formatTime(startDate, userTimeZone)} - ${formatTime(endDate, userTimeZone)}`
-                    : `Started ${formatTime(startDate, userTimeZone)}`}
+                    ? `${formatTime(startDate, timeZone)} - ${formatTime(endDate, timeZone)}`
+                    : `Started ${formatTime(startDate, timeZone)}`}
               </span>
               {!lengthPending && (
                 <>
@@ -324,11 +342,11 @@ function RecordingRailRow({
             title="Recording actions"
             aria-haspopup="menu"
             aria-expanded={isMenuOpen}
-            onClick={(e) => handlers.onToggleMenu(e.currentTarget, recording)}
+            onClick={(e) => actions.onToggleMenu(e.currentTarget, recording)}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown" && !isMenuOpen) {
                 e.preventDefault();
-                handlers.onToggleMenu(e.currentTarget, recording);
+                actions.onToggleMenu(e.currentTarget, recording);
               }
             }}
             className={cn(
@@ -345,4 +363,4 @@ function RecordingRailRow({
   );
 }
 
-export default memo(RecordingRailRow);
+export default memo(RecordingListRow);

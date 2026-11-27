@@ -74,18 +74,40 @@ function renderView(overrides: Partial<ComponentProps<typeof TranscriptView>> = 
   return { onReviewSpeakerName };
 }
 
-const reviewButtons = () => screen.queryAllByRole("button", { name: /^Confirm or dismiss the name/ });
+const reviewButtons = () => screen.queryAllByRole("button", { name: /^Suggested: confirm or dismiss the name/ });
 const lineOf = (element: Element) => element.closest("[data-order-index]")?.getAttribute("data-segment-id");
 
 describe("suggested names on transcript lines", () => {
-  it("puts a ? on the first line of the speaker whose name is pending, and no other", () => {
+  it("puts a Suggested chip on the first line of the speaker whose name is pending, and no other", () => {
     renderView();
 
     expect(reviewButtons().map(lineOf)).toEqual(["u0"]);
-    expect(reviewButtons()[0]).toHaveAccessibleName("Confirm or dismiss the name Alex");
+    // Its name starts with the word it shows and says what it does, with no hover needed.
+    expect(reviewButtons()[0]).toHaveTextContent(/^Suggested$/);
+    expect(reviewButtons()[0]).toHaveAccessibleName("Suggested: confirm or dismiss the name Alex");
+    expect(reviewButtons()[0]).not.toHaveAttribute("title");
+    expect(reviewButtons()[0]).toHaveAttribute("aria-haspopup", "dialog");
+    expect(screen.queryByText("?")).not.toBeInTheDocument();
   });
 
-  it("moves the ? to the speaker's next line when the first is hidden", () => {
+  it("opens Confirm and Not {name} from the keyboard, and Escape gives focus back to the chip", () => {
+    renderView();
+
+    const chip = reviewButtons()[0];
+    chip.focus();
+    // A browser turns Enter or Space on a button into a click.
+    fireEvent.click(chip, { detail: 0 });
+    const popover = screen.getByRole("dialog", { name: "Suggested name Alex" });
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+    expect(within(popover).getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    expect(within(popover).getByRole("button", { name: "Not Alex" })).toBeInTheDocument();
+
+    fireEvent.keyDown(within(popover).getByRole("button", { name: "Confirm" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(chip).toHaveFocus();
+  });
+
+  it("moves the chip to the speaker's next line when the first is hidden", () => {
     renderView({ segments: [SEGMENTS[1], SEGMENTS[2]] });
 
     expect(reviewButtons().map(lineOf)).toEqual(["u2"]);
@@ -120,7 +142,7 @@ describe("suggested names on transcript lines", () => {
     expect(reviewButtons()).toEqual([]);
   });
 
-  it("confirms the line's speaker from the ?'s popover", async () => {
+  it("confirms the line's speaker from the chip's popover", async () => {
     const { onReviewSpeakerName } = renderView();
 
     fireEvent.click(reviewButtons()[0]);
@@ -225,7 +247,7 @@ describe("suggested names on transcript lines", () => {
     expect(alexName).toHaveFocus();
   });
 
-  it("ignores the ? while its decision is sent", async () => {
+  it("ignores the chip while its decision is sent", async () => {
     let finish = () => {};
     const onReviewSpeakerName = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     renderView({ onReviewSpeakerName });
@@ -269,7 +291,7 @@ describe("suggested names on transcript lines", () => {
 
   it("stays open on a blur with nowhere to go, which a press outside closes instead", () => {
     // Safari blurs to nothing on a press of a button; closing then would let
-    // that press of the "?" open the popover again.
+    // that press of the chip open the popover again.
     renderView();
 
     fireEvent.click(reviewButtons()[0]);

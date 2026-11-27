@@ -2,7 +2,9 @@
 
 import { useCallback, useRef } from "react";
 
-import { getGlobalSpeakers, mergeLiveSpeaker, nameLiveSpeaker } from "@/lib/api/speakers";
+import {
+  dismissLiveSpeakerSuggestion, getGlobalSpeakers, mergeLiveSpeaker, nameLiveSpeaker,
+} from "@/lib/api/speakers";
 import { getErrorDetail } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import type { RecordingId } from "@/types";
@@ -12,6 +14,8 @@ export interface LiveSpeakerNaming {
   renameLiveSpeaker: (label: string, name: string, createPerson?: boolean) => Promise<boolean>;
   /** Merges live speaker `label` into `intoLabel`; a failure is reported, never thrown. */
   mergeLiveSpeaker: (label: string, intoLabel: string) => Promise<boolean>;
+  /** Dismisses the pending name for `label`; a failure is reported, never thrown. */
+  dismissLiveSpeakerSuggestion: (label: string) => Promise<boolean>;
   /** People's names, read once on the first rename and kept. */
   loadPeopleNames: () => Promise<readonly string[]>;
 }
@@ -27,6 +31,7 @@ export function useLiveSpeakerNaming(
   applyNames: (names: Record<string, string>) => void,
   onAccepted?: () => Promise<void> | void,
   applyMerges?: (merges: Record<string, string>) => void,
+  applySuggestions?: (suggestions: Record<string, string>) => void,
 ): LiveSpeakerNaming {
   const { addNotification } = useNotificationStore();
   const peopleNames = useRef<Promise<readonly string[]> | null>(null);
@@ -85,5 +90,24 @@ export function useLiveSpeakerNaming(
     return peopleNames.current;
   }, []);
 
-  return { renameLiveSpeaker, mergeLiveSpeaker: mergeLive, loadPeopleNames };
+  const dismissSuggestion = useCallback(async (label: string) => {
+    try {
+      const response = await dismissLiveSpeakerSuggestion(recordingId, label);
+      applyNames(response.live_speaker_names);
+      applySuggestions?.(response.live_speaker_suggestions);
+      try { await onAccepted?.(); }
+      catch (error) { console.error("Failed to refresh speaker naming", error); }
+      return true;
+    } catch (error) {
+      console.error("Failed to dismiss the live speaker suggestion", error);
+      addNotification({ type: "error",
+        message: getErrorDetail(error) ?? "Failed to dismiss the suggested name." });
+      return false;
+    }
+  }, [recordingId, applyNames, applySuggestions, onAccepted, addNotification]);
+
+  return {
+    renameLiveSpeaker, mergeLiveSpeaker: mergeLive,
+    dismissLiveSpeakerSuggestion: dismissSuggestion, loadPeopleNames,
+  };
 }

@@ -102,9 +102,20 @@ export default function RichTextEditor({
     },
   });
 
-  // Update content if it changes externally (e.g. reset)
+  // Update content if it changes externally (e.g. reset). Whitespace around
+  // the Markdown is not a change: the editor's ends in a newline when the
+  // notes end with a table, and NotesView trims the notes a save sends back.
+  // Replacing the document for that moved the caret to the end of the last
+  // table cell just after an edit (#1074).
   useEffect(() => {
-    if (editor && content !== getMarkdown(editor)) {
+    if (!editor) {
+      return;
+    }
+    // Tiptap calls onCreate a tick after these effects, and setEditable below
+    // emits an update on mount, so the loaded Markdown is recorded here first
+    // or that update would reach the autosave as an edit.
+    reported.current ??= getMarkdown(editor);
+    if (content.trim() !== getMarkdown(editor).trim()) {
       editor.commands.setContent(content, { emitUpdate: false });
       reported.current = getMarkdown(editor);
     }
@@ -128,7 +139,7 @@ export default function RichTextEditor({
     // anywhere still lands in the editor) and grows past it when long, and
     // the clearance padding is room after long notes, never extra height
     // for short ones.
-    <SurfaceBase data-ui-fill="card" kind="pane" className="flex h-full w-full flex-col overflow-y-auto bg-surface-card pb-clear-floating-0">
+    <SurfaceBase data-ui-fill="card" kind="pane" className="relative flex h-full w-full flex-col overflow-y-auto bg-surface-card pb-clear-floating-0">
       <EditorContent editor={editor} className="flex-1" />
     </SurfaceBase>
   );

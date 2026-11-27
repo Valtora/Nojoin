@@ -335,16 +335,13 @@ def _detection_audio_handed_to_asr(monkeypatch, **settings) -> dict:
     return seen["config"]
 
 
-@pytest.mark.parametrize("mute_transcription", [True, False])
-def test_the_vad_stage_hands_asr_the_muted_file_for_detection(
-    monkeypatch, mute_transcription
-):
-    config = _detection_audio_handed_to_asr(
-        monkeypatch, vad_mute_transcription=mute_transcription
-    )
+@pytest.mark.parametrize("settings", [{}, {"vad_mute_transcription": False}])
+def test_the_vad_stage_hands_asr_the_muted_file_for_detection(monkeypatch, settings):
+    """A retired vad_mute_transcription on a user's row changes nothing (#961)."""
+    config = _detection_audio_handed_to_asr(monkeypatch, **settings)
 
     assert config[LANGUAGE_DETECTION_AUDIO] == _MUTED
-    assert config[VAD_MUTED_INPUT] is mute_transcription
+    assert config[VAD_MUTED_INPUT] is True
 
 
 def test_detection_reads_vad_speech_while_asr_reads_the_union(monkeypatch):

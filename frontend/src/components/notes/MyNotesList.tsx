@@ -180,7 +180,7 @@ export default function MyNotesList({
       ref={listRef}
       tabIndex={-1}
       data-testid="my-notes"
-      className={cn("min-h-0 overflow-y-auto p-3 pb-clear-floating-3 outline-none", className)}
+      className={cn("relative min-h-0 overflow-y-auto p-3 pb-clear-floating-3 outline-none", className)}
     >
       {notes === null ? (
         <p className="p-4 text-center text-sm italic text-contrast-helper">Loading notes…</p>
@@ -189,7 +189,7 @@ export default function MyNotesList({
           No notes yet. Add one from a line&apos;s ⋯ menu, or select words in the transcript.
         </p>
       ) : (
-        <ul aria-label="My notes" className="space-y-2">
+        <ul aria-label="Your notes" className="space-y-2">
           {placements.map(renderRow)}
         </ul>
       )}

@@ -131,7 +131,7 @@ describe("a note's file", () => {
     expect(setNoteFileUseInNotes).toHaveBeenCalledWith(RECORDING, "early", true);
   });
 
-  it("names a note on the whole meeting as My notes does, not by a time", async () => {
+  it("names a note on the whole meeting as Your notes does, not by a time", async () => {
     const head: TimelineNote = { ...note("head", 0, file({ title: "agenda.png" })), kind: "head", anchor_ms: null };
     const tail: TimelineNote = {
       ...note("tail", 0, file({ id: 9, title: "actions.pdf", is_image: false })),

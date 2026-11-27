@@ -69,3 +69,33 @@ describe("SpeakerNamesSection voiceprint learning", () => {
     });
   });
 });
+
+const LIVE = "Suggest speaker names during a meeting";
+
+describe("SpeakerNamesSection live suggestions", () => {
+  it("is on until the user turns it off", () => {
+    renderSection({});
+
+    expect(screen.getByRole("switch", { name: LIVE })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("saves it turned off, keeping the others", () => {
+    const { onPersist } = renderSection({ confirm_suggested_names: true });
+
+    fireEvent.click(screen.getByRole("switch", { name: LIVE }));
+
+    expect(onPersist).toHaveBeenCalledWith({
+      confirm_suggested_names: true,
+      suggest_live_speaker_names: false,
+    });
+  });
+
+  it("shows it off once saved off, and saves it on again", () => {
+    const { onPersist } = renderSection({ suggest_live_speaker_names: false });
+
+    expect(screen.getByRole("switch", { name: LIVE })).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(screen.getByRole("switch", { name: LIVE }));
+
+    expect(onPersist).toHaveBeenCalledWith({ suggest_live_speaker_names: true });
+  });
+});

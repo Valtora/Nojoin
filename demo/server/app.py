@@ -52,9 +52,13 @@ PUBLIC_PATHS = frozenset(
     }
 )
 
+# As a real sign-in answers. The demo account never meets the terms of use
+# notice (#1004): nothing here can record their acceptance, and the demo
+# records nothing that would need it.
 LOGIN_METADATA = {
     "force_password_change": False,
     "is_superuser": False,
+    "legal_acceptance_required": False,
     "username": "demo",
 }
 

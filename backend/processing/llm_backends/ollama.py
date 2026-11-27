@@ -1,5 +1,7 @@
+import copy
 import logging
 from functools import partial
+from time import monotonic
 from typing import Dict, Generator, List, Optional, Sequence
 
 from requests import HTTPError
@@ -65,8 +67,14 @@ PARTS_MEASURED_MARGIN = 1.1
 # still refused is halved.
 PARTS_ESTIMATED_BYTES_PER_TOKEN = 2.2
 
+# A live Meeting Edge call repairs a broken answer only with at least this much
+# of its deadline left; any less and the repair could not finish in time.
+MIN_LIVE_REPAIR_SECONDS = 5.0
+
 
 class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
+    provider_id = "ollama"
+
     think: bool = False  # Class level: a backend built without __init__ says no.
 
     def __init__(
@@ -107,6 +115,26 @@ class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
         self.think = (
             bool(config_manager.get("ollama_think")) if think is None else think
         )
+
+    def for_live_calls(self) -> "OllamaLLMBackend":
+        """A copy whose Meeting Edge repair call fits inside the first's deadline.
+
+        Ollama is called without retries already, so the JSON repair after a
+        broken answer is the one second request a live call can make.
+        """
+        live = copy.copy(self)
+        live._live_calls = True
+        return live
+
+    def _repair_timeout(self, timeout: int, started: float) -> float | None:
+        """The repair call's timeout, or None when the deadline leaves no time.
+
+        Outside a live call the repair gets a timeout of its own, as before.
+        """
+        if not self._live_calls:
+            return timeout
+        left = timeout - (monotonic() - started)
+        return left if left >= MIN_LIVE_REPAIR_SECONDS else None
 
     def _post_chat(self, payload: dict, **kwargs):
         """POST ``/api/chat`` with Ollama as the judge of whether it fits.
@@ -585,6 +613,7 @@ class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
                 "No Ollama model configured. Please select a model in Settings."
             )
 
+        started = monotonic()
         try:
             payload = {
                 "model": self.model,
@@ -601,6 +630,9 @@ class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
             try:
                 return self.parse_meeting_edge_result(text, request)
             except JSON_CONTRACT_ERRORS as parse_error:
+                repair_timeout = self._repair_timeout(timeout, started)
+                if repair_timeout is None:
+                    raise
                 logger.warning(
                     "Ollama Meeting Edge response failed JSON contract; retrying repair: %s; response_shape=%s",
                     parse_error,
@@ -622,7 +654,7 @@ class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
                     "format": "json",
                     "options": self._chat_options(temperature=0.0),
                 }
-                repair_resp = self._post_chat(repair_payload, timeout=timeout)
+                repair_resp = self._post_chat(repair_payload, timeout=repair_timeout)
                 repair_resp.raise_for_status()
                 repair_json = repair_resp.json()
                 self._raise_if_truncated(repair_json)
@@ -880,6 +912,13 @@ class OllamaLLMBackend(OllamaModelFactsMixin, LLMBackend):
             return self.parse_title(text)
         except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting title", e)
+
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The JSON chat request the Meeting Edge and analysis calls send. No
+        # output cap: Ollama is local, and real calls send none.
+        if not self.model:
+            raise ValueError("No Ollama model configured.")
+        return self._chat_json(prompt, timeout)
 
     def validate_api_key(self) -> bool:
         # Not list_models, which answers [] for any failure: validation has to

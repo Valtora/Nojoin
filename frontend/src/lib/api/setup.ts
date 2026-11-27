@@ -71,24 +71,64 @@ export const getInitialConfig = async (
   return response.data;
 };
 
+/** What a Test connection probe found, as the server words it (#991). */
+export type ModelProbeKind =
+  | "ok"
+  | "unknown_model"
+  | "auth"
+  | "quota"
+  | "timeout"
+  | "bad_response"
+  | "error";
+
+export type ModelProbeRole = "main" | "meeting_edge";
+
+export interface ModelProbeRequest {
+  model: string;
+  role: ModelProbeRole;
+}
+
+export interface ModelProbeResult {
+  model: string;
+  role: ModelProbeRole;
+  ok: boolean;
+  kind: ModelProbeKind;
+  message: string;
+}
+
+export interface ValidateLLMResult {
+  /** False when any probed model failed; a refused key is a 400 instead. */
+  valid: boolean;
+  message?: string;
+  models?: string[];
+  /** One row per probed model; empty when no model was asked for. */
+  results?: ModelProbeResult[];
+}
+
+export interface ValidateLLMOptions {
+  /** Which configured provider to test: the default or the fallback. */
+  providerRole?: "primary" | "secondary";
+  /** Models to run one small generation on. Each is probed once, at most three. */
+  probeModels?: ModelProbeRequest[];
+}
+
 export const validateLLM = async (
   provider: string,
   apiKey: string,
   apiUrl?: string,
   model?: string,
   bootstrapPassword?: string,
-): Promise<{ valid: boolean; message?: string; models?: string[] }> => {
-  const response = await api.post<{
-    valid: boolean;
-    message?: string;
-    models?: string[];
-  }>(
+  options: ValidateLLMOptions = {},
+): Promise<ValidateLLMResult> => {
+  const response = await api.post<ValidateLLMResult>(
     "/setup/validate-llm",
     {
       provider,
       api_key: apiKey,
       api_url: apiUrl,
       model,
+      provider_role: options.providerRole ?? "primary",
+      probe_models: options.probeModels ?? [],
     },
     buildFirstRunRequestConfig(bootstrapPassword),
   );

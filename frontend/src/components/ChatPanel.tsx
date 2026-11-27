@@ -347,7 +347,7 @@ export default function ChatPanel({
       <div
         ref={messagesRef}
         data-testid="chat-messages"
-        className="flex-1 overflow-y-auto p-3 @min-[20rem]:p-4"
+        className="relative flex-1 overflow-y-auto p-3 @min-[20rem]:p-4"
       >
         {!recordingId ? (
           // No opacity on these empty states: the helper token is pitched to

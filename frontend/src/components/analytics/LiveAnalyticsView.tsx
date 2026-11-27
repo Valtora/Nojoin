@@ -20,7 +20,7 @@ export default function LiveAnalyticsView({
     [analytics?.speakers, speakerColors]);
 
   return (
-    <div className="custom-scrollbar @container/tab h-full space-y-5 overflow-y-auto p-4 pb-clear-floating-4">
+    <div className="custom-scrollbar @container/tab relative h-full space-y-5 overflow-y-auto p-4 pb-clear-floating-4">
       <p className="text-sm text-contrast-helper">
         Transcript estimates: wording, timings and speakers may still change.
       </p>
@@ -31,7 +31,7 @@ export default function LiveAnalyticsView({
         <p className="text-sm text-contrast-helper">Estimates appear as speech arrives.</p>
       ) : (
         <Section title="Who spoke so far" hint="Estimated speaking time, share and longest turns from the transcript so far.">
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="analytics-table w-full text-sm">
               <thead>
                 <tr className="border-b border-surface-divider text-left text-xs text-contrast-helper">

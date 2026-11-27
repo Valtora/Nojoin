@@ -5,8 +5,7 @@ import type { Settings } from "@/types";
 
 import GeneralSettings from "./GeneralSettings";
 
-const TRANSCRIPTION = "Mute non-speech for transcription";
-const SPEAKERS = "Mute non-speech for speaker separation";
+const SPEAKERS = "Faster speaker separation";
 
 function renderProcessing(settings: Settings) {
   const onUpdate = vi.fn();
@@ -16,15 +15,27 @@ function renderProcessing(settings: Settings) {
   return onUpdate;
 }
 
-describe("GeneralSettings processing: muting per stage (#486)", () => {
-  it("shows transcription muted and speaker separation unmuted until set", () => {
+describe("GeneralSettings processing: faster speaker separation (#486, #961)", () => {
+  it("shows faster speaker separation off until set", () => {
     renderProcessing({});
 
-    expect(screen.getByRole("switch", { name: TRANSCRIPTION })).toBeChecked();
     expect(screen.getByRole("switch", { name: SPEAKERS })).not.toBeChecked();
   });
 
-  it("turns speaker separation's muting back on", () => {
+  it("offers no switch for muting before transcription", () => {
+    renderProcessing({});
+
+    expect(screen.queryByRole("switch", { name: /transcription/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mute non-speech/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("switch").map((s) => s.getAttribute("aria-labelledby"))).toEqual([
+      "recording-vad-label",
+      "recording-vad-mute-diarization-label",
+      "recording-remeasure-delivery-label",
+      "recording-diarization-label",
+    ]);
+  });
+
+  it("turns faster speaker separation on", () => {
     const onUpdate = renderProcessing({ enable_vad: true });
 
     fireEvent.click(screen.getByRole("switch", { name: SPEAKERS }));
@@ -34,23 +45,20 @@ describe("GeneralSettings processing: muting per stage (#486)", () => {
     );
   });
 
-  it("turns off one stage's muting and leaves the other's as it was", () => {
-    const onUpdate = renderProcessing({ enable_vad: true, vad_mute_diarization: true });
+  it("says what it trades, in outcome terms", () => {
+    renderProcessing({});
 
-    fireEvent.click(screen.getByRole("switch", { name: TRANSCRIPTION }));
-
-    expect(onUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ vad_mute_transcription: false, vad_mute_diarization: true }),
+    expect(screen.getByRole("switch", { name: SPEAKERS })).toHaveAccessibleDescription(
+      /Long recordings finish sooner.*speakers are told apart less well/,
     );
   });
 
-  it("disables both switches while voice activity detection is off", () => {
+  it("disables the switch while voice activity detection is off", () => {
     const onUpdate = renderProcessing({ enable_vad: false });
 
-    const transcription = screen.getByRole("switch", { name: TRANSCRIPTION });
-    expect(transcription).toBeDisabled();
-    expect(screen.getByRole("switch", { name: SPEAKERS })).toBeDisabled();
-    fireEvent.click(transcription);
+    const speakers = screen.getByRole("switch", { name: SPEAKERS });
+    expect(speakers).toBeDisabled();
+    fireEvent.click(speakers);
     expect(onUpdate).not.toHaveBeenCalled();
   });
 });

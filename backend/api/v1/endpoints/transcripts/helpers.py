@@ -227,6 +227,13 @@ class TranscriptUtteranceListRead(BaseModel):
     )
     # The live lane is behind a running capture's uploads.
     live_behind: bool = Field(default=False, exclude_if=lambda value: value is False)
+    live_speaker_suggestions: dict[str, str] = {}
+    # Label -> where its proposal came from: "heuristic" (a self-introduction)
+    # or "llm" (the AI provider), as a speaker's name_source says it.
+    live_speaker_suggestion_sources: dict[str, str] = {}
+    # Label -> where its proposal's evidence starts (seconds), when it has one
+    # timed span: the line the live view offers the proposal on.
+    live_speaker_suggestion_starts: dict[str, float] = {}
 
 
 class TranscriptUtteranceSplit(BaseModel):

@@ -24,7 +24,7 @@ interface RecordingUnsavedNotesProps {
   recordingId: RecordingId;
   /** The kinds to list; another panel may list the rest. Every kind by default. */
   kinds?: readonly OutboxKind[];
-  /** Where an "at send" draft goes now that capture is over: its end. */
+  /** Where a draft typing never anchored goes now that capture is over: its end. */
   readEndMs: () => number;
   /** Where focus goes when the last thing listed here is removed. */
   onEmptied?: () => void;
@@ -42,8 +42,6 @@ const draftPlace = (draft: ComposerDraft) => {
       return draft.typingStartMs === null
         ? "At the end of the recording"
         : `At ${formatTimelineMs(draft.typingStartMs)}`;
-    case "send":
-      return "At the end of the recording";
     case "head":
       return "Before the transcript";
     case "tail":

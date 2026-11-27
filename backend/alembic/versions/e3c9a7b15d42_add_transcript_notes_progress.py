@@ -11,14 +11,14 @@ Nullable with no backfill: no run is in progress across an upgrade that
 restarts the workers, and None reads as "no step to show".
 
 Revision ID: e3c9a7b15d42
-Revises: bb518dd1f469
+Revises: ed5d42732014
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "e3c9a7b15d42"
-down_revision = "bb518dd1f469"
+down_revision = "ed5d42732014"
 branch_labels = None
 depends_on = None
 

@@ -78,7 +78,7 @@ describe("ExportModal sections", () => {
 
   it("includes the reader's notes unless unticked, in the notes and the transcript alike", () => {
     const { onExport } = renderModal();
-    const myNotes = section("Include my notes");
+    const myNotes = section("Include your notes");
 
     // The meeting notes end with the reader's notes, so the tick applies to them.
     expect(myNotes).toBeEnabled();
@@ -107,13 +107,13 @@ describe("ExportModal sections", () => {
     fireEvent.click(section("Analytics"));
     fireEvent.click(section("Meeting notes"));
 
-    expect(section("Include my notes")).toBeDisabled();
-    expect(section("Include my notes")).not.toBeChecked();
+    expect(section("Include your notes")).toBeDisabled();
+    expect(section("Include your notes")).not.toBeChecked();
     expect(
       screen.getByText("Tick Meeting notes or Transcript to include them"),
     ).toBeInTheDocument();
     fireEvent.click(section("Transcript"));
-    expect(section("Include my notes")).toBeChecked();
+    expect(section("Include your notes")).toBeChecked();
     expect(
       screen.getByText("Your notes, each where it falls in the transcript"),
     ).toBeInTheDocument();
@@ -124,7 +124,7 @@ describe("ExportModal sections", () => {
 
     expect(section("Transcript")).toBeInTheDocument();
     expect(
-      screen.queryByRole("checkbox", { name: "Include my notes" }),
+      screen.queryByRole("checkbox", { name: "Include your notes" }),
     ).not.toBeInTheDocument();
     fireEvent.click(section("Transcript"));
     fireEvent.click(exportButton());
@@ -148,13 +148,13 @@ describe("ExportModal sections", () => {
       />
     );
     const { rerender } = renderWithProviders(modal(true));
-    fireEvent.click(section("Include my notes"));
-    expect(section("Include my notes")).not.toBeChecked();
+    fireEvent.click(section("Include your notes"));
+    expect(section("Include your notes")).not.toBeChecked();
 
     rerender(modal(false));
     rerender(modal(true));
 
-    expect(section("Include my notes")).toBeChecked();
+    expect(section("Include your notes")).toBeChecked();
   });
 
   it("cannot export nothing", () => {

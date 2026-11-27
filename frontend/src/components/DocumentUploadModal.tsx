@@ -421,7 +421,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                 {/* One row per file: what it is, whether it gets visual
                     analysis, and where it got to. */}
                 {queue.length > 0 && (
-                    <ul className="max-h-[20rem] space-y-2 overflow-y-auto pr-1">
+                    <ul className="relative max-h-[20rem] space-y-2 overflow-y-auto pr-1">
                         {queue.map((item) => {
                             const visionOnly = isVisionOnlyFile(item.file);
                             const isLargeFile = item.file.size > DOCUMENT_SIZE_WARNING_BYTES;

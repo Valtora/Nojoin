@@ -12,7 +12,7 @@ from backend.api.deps import (
     get_db,
 )
 from backend.core import security
-from backend.models.user import User
+from backend.models.user import User, needs_legal_acceptance
 from backend.services.jwt_revocation_service import revoke_jwt_by_payload
 from backend.utils.rate_limit import enforce_rate_limit
 
@@ -27,6 +27,12 @@ def _build_login_metadata(user: User) -> dict[str, Any]:
         "force_password_change": user.force_password_change,
         "is_superuser": user.is_superuser,
         "username": user.username,
+        # Tells an API client up front that a new capture or import will be
+        # refused until the terms are accepted in the web app (#1004).
+        "legal_acceptance_required": needs_legal_acceptance(
+            is_superuser=user.is_superuser,
+            legal_accepted_at=user.legal_accepted_at,
+        ),
     }
 
 

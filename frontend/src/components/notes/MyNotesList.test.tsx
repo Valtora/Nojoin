@@ -163,7 +163,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("My notes", () => {
+describe("Your notes", () => {
   it("asks before the page is left while an edit is unsaved, and not once it is saved", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<><a href="/people">People</a><button id="nav-logout" type="button">Log Out</button>
@@ -282,7 +282,7 @@ describe("My notes", () => {
 
     rerender(<Page notes={[]} />);
     expect(screen.getByText(/^No notes yet\./)).toBeInTheDocument();
-    expect(screen.queryByRole("list", { name: "My notes" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Your notes" })).toBeNull();
   });
 
   it("marks a selection note whose words are gone, as its line does", () => {

@@ -44,6 +44,10 @@ from backend.processing.embedding import (
     too_little_speech_detail,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
+from backend.services.person_meetings import (
+    person_meeting_counts,
+    person_sample_sources,
+)
 from backend.services.recording_identity_service import get_recordings_by_public_ids
 from backend.services.tag_ownership import require_own_tag_ids
 from backend.utils.canonical_pipeline import (
@@ -77,7 +81,9 @@ from .split_voiceprints import (
     apply_split_to_new_person,
     apply_split_to_original,
     apply_split_to_original_speaker,
+    original_links_elsewhere,
     other_recording_voiceprints,
+    speakers_uncounted_before_split,
     split_extraction_failed,
 )
 
@@ -93,13 +99,12 @@ async def list_global_speakers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all global speakers (People) with filtering."""
-    # Query with left join to count recordings
+    """List all global speakers (People), each with their distinct owned meetings."""
+    counts = person_meeting_counts(current_user.id)
+    recording_count = func.coalesce(counts.c.meeting_count, 0).label("recording_count")
     query = (
-        select(GlobalSpeaker, func.count(RecordingSpeaker.id).label("recording_count"))
-        .outerjoin(
-            RecordingSpeaker, GlobalSpeaker.id == RecordingSpeaker.global_speaker_id
-        )
+        select(GlobalSpeaker, recording_count)
+        .outerjoin(counts, counts.c.global_speaker_id == GlobalSpeaker.id)
         .where(GlobalSpeaker.user_id == current_user.id)
     )
 
@@ -122,7 +127,7 @@ async def list_global_speakers(
         )
 
     query = (
-        query.group_by(GlobalSpeaker.id)
+        query.group_by(GlobalSpeaker.id, counts.c.meeting_count)
         .order_by(GlobalSpeaker.name)
         .offset(skip)
         .limit(limit)
@@ -462,16 +467,8 @@ async def get_speaker_segments(
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
 
-    statement = (
-        select(RecordingSpeaker, Recording, Transcript)
-        .join(Recording, Recording.id == RecordingSpeaker.recording_id)
-        .outerjoin(Transcript, Transcript.recording_id == RecordingSpeaker.recording_id)
-        .where(RecordingSpeaker.global_speaker_id == speaker_id)
-        .where(Recording.is_deleted == False)
-        .order_by(Recording.created_at.desc())
-        .limit(20)  # Scan last 20 recordings
-    )
-    result = await db.execute(statement)
+    # Scan the last 20 recordings.
+    result = await db.execute(person_sample_sources(speaker_id, current_user.id, 20))
     rows = result.all()
 
     segments = []
@@ -810,6 +807,14 @@ async def split_speaker(
     # The split label's linked speaker must exist before canonical writes
     # resolve it, or they create an unlinked placeholder speaker instead.
     await db.flush()
+    split_recording_ids = [
+        recordings_by_public_id[public_id].id
+        for public_id in recording_segments
+        if public_id in recordings_by_public_id
+    ]
+    uncounted_before_split = await speakers_uncounted_before_split(
+        db, original_speaker.id, split_recording_ids
+    )
     for rec, transcript, new_trans_segments in split_segments:
         await _persist_segments_for_speaker_work(
             db, recording=rec, transcript=transcript, segments=new_trans_segments
@@ -829,11 +834,14 @@ async def split_speaker(
         if not transcript:
             continue
 
-        # A row merged into another keeps its link but is not a speaker any more.
+        # A row merged into another keeps its link but is not a speaker any
+        # more, and nor is one whose lines had all moved to someone else
+        # before the split (``speakers_uncounted_before_split``).
         stmt = select(RecordingSpeaker).where(
             RecordingSpeaker.recording_id == rec_id,
             RecordingSpeaker.global_speaker_id == original_speaker.id,
             RecordingSpeaker.merged_into_id.is_(None),
+            RecordingSpeaker.id.notin_(uncounted_before_split),
         )
         result = await db.execute(stmt)
         original_rss = result.scalars().all()
@@ -874,31 +882,14 @@ async def split_speaker(
         if voiceprint and not any(is_drift_refused(rs) for rs in original_rss):
             original_speaker_voiceprints.append(voiceprint)
 
-    # The original's links outside the split recordings, in case what remains
-    # of them inside is too little to rebuild their voiceprint from.
-    split_recording_ids = [
-        recordings_by_public_id[public_id].id
-        for public_id in recording_segments
-        if public_id in recordings_by_public_id
-    ]
-    other_links = (
-        (
-            await db.execute(
-                select(RecordingSpeaker).where(
-                    RecordingSpeaker.global_speaker_id == original_speaker.id,
-                    RecordingSpeaker.merged_into_id.is_(None),
-                    RecordingSpeaker.recording_id.notin_(split_recording_ids),
-                )
-            )
-        )
-        .scalars()
-        .all()
+    other_links = await original_links_elsewhere(
+        db, original_speaker.id, split_recording_ids
     )
     original_update = apply_split_to_original(
         original_speaker,
         original_speaker_voiceprints,
         other_recording_voiceprints(
-            list(other_links),
+            other_links,
             include_unconfirmed=library_learns_automatically(current_user.settings),
         ),
     )

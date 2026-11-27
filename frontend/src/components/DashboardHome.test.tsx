@@ -139,6 +139,25 @@ describe("DashboardHome", () => {
     expect(agenda).toHaveClass("order-3", "@min-[54rem]:order-2");
   });
 
+  it("sizes the two rows only when there is no third column", () => {
+    useDashboardRecordings.mockReturnValue({ recent: [], processing: [] });
+    const { container, unmount } = renderWithProviders(<DashboardHome />);
+
+    // Without it both rows are auto and the spare height splits between them,
+    // leaving a band under Meet Now.
+    expect(container.querySelector("section")).toHaveClass(
+      "@min-[54rem]:grid-rows-[auto_1fr]",
+    );
+    unmount();
+
+    useDashboardRecordings.mockReturnValue({ recent: [recording("1")], processing: [] });
+    const withRecents = renderWithProviders(<DashboardHome />);
+
+    expect(withRecents.container.querySelector("section")).not.toHaveClass(
+      "@min-[54rem]:grid-rows-[auto_1fr]",
+    );
+  });
+
   it("puts the action first on a phone, and the month grid last", () => {
     useDashboardRecordings.mockReturnValue({
       recent: [recording("1")],

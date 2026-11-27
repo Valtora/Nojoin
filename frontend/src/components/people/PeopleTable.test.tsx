@@ -17,6 +17,18 @@ function People() {
 }
 
 describe("people card fill contract", () => {
+  it("opens details from the name in both layouts without selecting the person", () => {
+    const onEdit = vi.fn();
+    const onToggleSelection = vi.fn();
+    render(<PeopleTable people={[person]} isLoading={false} selectedIds={new Set()}
+      onToggleSelection={onToggleSelection} onSelectAll={vi.fn()} onEdit={onEdit} onDelete={vi.fn()} />);
+    const names = screen.getAllByRole("button", { name: "Details for Dana" });
+    expect(names).toHaveLength(2);
+    names.forEach((name) => fireEvent.click(name));
+    expect(onEdit.mock.calls).toEqual([[person], [person]]);
+    expect(onToggleSelection).not.toHaveBeenCalled();
+  });
+
   it("checks the mobile card as its checkbox selects and deselects the person", () => {
     const { baseElement } = render(<People />);
     const card = screen.getAllByText("Dana").map((name) => name.closest('[data-ui-surface="card"]'))

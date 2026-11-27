@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildMeetingSpeakerColors,
   buildRecordingSpeakerDisplayMap,
+  isPlaceholderSpeakerName,
   liveSpeakerDisplayName,
   segmentSpeakerDisplayName,
 } from "./recordingSpeakerUtils";
@@ -178,5 +179,37 @@ describe("live speaker labels", () => {
     expect(segmentSpeakerDisplayName(speakerMap, "LIVE_PROVISIONAL_4")).toBe("Ada");
     expect(segmentSpeakerDisplayName(speakerMap, "LIVE_PROVISIONAL_7")).toBe("Speaker 7");
     expect(segmentSpeakerDisplayName(speakerMap, "SPEAKER_09")).toBe("SPEAKER_09");
+  });
+});
+
+// The same cases as backend/tests/test_placeholder_speaker_name.py: the two
+// rules must agree.
+describe("isPlaceholderSpeakerName", () => {
+  it.each([
+    "",
+    "   ",
+    "SPEAKER_03",
+    "Speaker 1",
+    "unknown",
+    "New Voice 3",
+    "N:L0",
+    "n:l7",
+    " N:L12 ",
+    "C:SPEAKER_02",
+  ])("treats the fallback label %j as a placeholder", (name) => {
+    expect(isPlaceholderSpeakerName(name)).toBe(true);
+  });
+
+  it.each([
+    "Alice Example",
+    "N:Dubz",
+    "C:Drive",
+    "c:3po",
+    "C: Drive Team",
+    "N:L0 team",
+    "C:SPEAKER",
+    "Sam: Finance",
+  ])("keeps the real name %j", (name) => {
+    expect(isPlaceholderSpeakerName(name)).toBe(false);
   });
 });

@@ -163,10 +163,16 @@ describe("the header of a tab reloaded while it records", () => {
     await screen.findByRole("dialog");
 
     expect(within(slot()).getByTitle("Discard recording")).toBeEnabled();
+    // A stop that succeeds asks the page to refresh 300 ms later. Awaiting that
+    // keeps the timer from firing after this file's jsdom is torn down (#1003).
+    const refreshed = new Promise<Event>((resolve) => {
+      window.addEventListener("recording-updated", resolve, { once: true });
+    });
     fireEvent.click(within(slot()).getByTitle("Stop recording"));
 
     await waitFor(() => expect(api.finalizeRecordingCapture).toHaveBeenCalledOnce());
     expect(api.finalizeRecordingCapture.mock.calls[0][0]).toBe(base.id);
+    expect(((await refreshed) as CustomEvent).detail).toEqual({ id: base.id });
   });
 
   it("resumes from the header's Resume as from the dialog's, with no runtime", async () => {

@@ -1,0 +1,28 @@
+{
+  "sections": [
+    {
+      "heading": "Compliance with laws",
+      "blocks": [
+        {
+          "paragraph": "You acknowledge that many legal jurisdictions require the consent of all parties before a conversation can be recorded. It is your sole responsibility to ensure compliance with all applicable laws and regulations regarding audio recording and transcription in your jurisdiction."
+        }
+      ]
+    },
+    {
+      "heading": "Data privacy and local processing",
+      "blocks": [
+        {
+          "paragraph": "Nojoin is designed with a privacy-first architecture."
+        },
+        {
+          "list": [
+            "Your meeting data (audio, transcripts, meeting notes, chat, uploaded documents, speaker voiceprints, and calendar content) is never stored or transmitted to third parties without your explicit consent.",
+            "All audio processing (transcription, diarisation, and similar) is performed locally on your machine or your self-hosted server, unless you explicitly configure an external provider."
+          ]
+        }
+      ]
+    }
+  ],
+  "closing": "By proceeding, you agree to these terms and accept full responsibility for the lawful use of this software.",
+  "ownerResponsibility": "As the owner, you are also responsible for the people you give accounts to, who each accept these terms the first time they sign in."
+}

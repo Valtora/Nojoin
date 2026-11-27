@@ -128,7 +128,7 @@ class HygieneOptions:
 def storage_hygiene_mode() -> str:
     """What the daily cleanup does with files no row names: ``flag`` or ``delete``.
 
-    Read as ``MCP_ENABLED`` is in config_manager: unset or blank means the
+    Read as ``MCP_ENABLED`` is in mcp_flags: unset or blank means the
     default, ``flag``, which only reports. Any value other than ``delete`` reads
     as ``flag``, so a typo never turns deletion on. Changing it takes a worker
     restart, like other environment settings.

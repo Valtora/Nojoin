@@ -23,7 +23,9 @@ def utf8_size(text: str) -> int:
 # opening "[Note".
 TIMESTAMP_PATTERN = r"\d+:\d{2}(?::\d{2})?"
 _LINE_SPAN = re.compile(rf"^\[({TIMESTAMP_PATTERN})(?:\s*-\s*({TIMESTAMP_PATTERN}))?\]")
-_LINE_PREFIX = re.compile(r"^\[[^\]\n]*\][^:\n]*:\s*")
+# Up to the first colon that is followed by a space: a speaker label can hold a
+# colon (``N:L0``), which "up to the first colon" would cut in two.
+_LINE_PREFIX = re.compile(r"^\[[^\]\n]*\][^\n]*?:\s+")
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
 
 

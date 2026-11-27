@@ -8,7 +8,7 @@
 # never runs on. Both stages below must move together, or the venv is built on a
 # different interpreter than it executes on. scripts/check_held_pins.py enforces
 # this, and .github/dependabot.yml holds the base image at 3.12.
-FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS builder
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir --require-hashes -r requirements/pip.txt && \
 
 # --- Runtime Stage ---
 # Must be the same image as the builder stage above; see the note there.
-FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS runtime
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -78,12 +78,28 @@ RUN /usr/local/bin/python3 -m pip uninstall -y --root-user-action=ignore pip && 
 
 COPY --from=builder /opt/venv /opt/venv
 
+# Create the non-root appuser and the mounted-volume directories it must own.
+# The image intentionally does NOT `USER appuser`: the entrypoint enters as root
+# only to repair ./data bind-mount ownership, then drops to appuser via gosu, so
+# the long-running process runs as uid 1000 (asserted by the release smoke test).
+#
+# The user exists before the source is copied so that COPY --chown can own the
+# files as they land. A `chown -R /app` after the copy stored every file in /app
+# a second time, in a layer of its own (#1053).
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app /shared_model_cache && \
+    chown appuser:appuser /app /shared_model_cache
+
 WORKDIR /app
 
 ARG NOJOIN_SERVER_VERSION
 ENV NOJOIN_SERVER_VERSION=${NOJOIN_SERVER_VERSION}
 
-COPY . .
+# The Alembic config lives in backend/, so `docker compose exec api alembic ...`
+# (the rollback step in the release notes) finds it without `-c`.
+ENV ALEMBIC_CONFIG=/app/backend/alembic.ini
+
+COPY --chown=appuser:appuser . .
 
 RUN set -eu; \
     version="${NOJOIN_SERVER_VERSION:-}"; \
@@ -94,17 +110,10 @@ RUN set -eu; \
     if [ -z "$version" ]; then \
         version="0.0.0"; \
     fi; \
-    printf '%s\n' "$version" > /app/.build-version
+    printf '%s\n' "$version" > /app/.build-version; \
+    chown appuser:appuser /app/.build-version
 
 RUN chmod +x /app/backend/entrypoint.sh
-
-# Create the non-root appuser and the mounted-volume directories it must own.
-# The image intentionally does NOT `USER appuser`: the entrypoint enters as root
-# only to repair ./data bind-mount ownership, then drops to appuser via gosu, so
-# the long-running process runs as uid 1000 (asserted by the release smoke test).
-RUN useradd -m -u 1000 appuser && \
-    mkdir -p /shared_model_cache && \
-    chown -R appuser:appuser /app /shared_model_cache
 
 EXPOSE 8000
 

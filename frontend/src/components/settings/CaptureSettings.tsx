@@ -6,7 +6,7 @@ import { Loader2, Mic, RefreshCw } from "lucide-react";
 
 import { startAudioContext } from "@/lib/capture/audioStart";
 import { useCapture } from "@/lib/capture/CaptureProvider";
-import { AudioNotStartedError } from "@/lib/capture/shared";
+import { AudioNotStartedError, type CaptureStartMode } from "@/lib/capture/shared";
 import { getErrorMessage } from "@/lib/errors";
 
 import SettingsBlock from "./SettingsBlock";
@@ -25,6 +25,13 @@ interface MicrophoneOption {
   deviceId: string;
   label: string;
 }
+
+/** Recording source's choices, in the order the select lists them (#958). */
+const RECORDING_SOURCE_OPTIONS: { value: CaptureStartMode; label: string }[] = [
+  { value: "shared_audio", label: "Microphone and system audio" },
+  { value: "microphone_only", label: "Microphone only" },
+  { value: "ask", label: "Ask each time" },
+];
 
 const GAIN_MIN = 0;
 const GAIN_MAX = 3;
@@ -393,13 +400,52 @@ export default function CaptureSettings() {
         </SettingsBlock>
       ) : null}
 
+      {/* A browser that cannot share audio is told so rather than offered
+          choices that would do nothing. */}
+      {microphoneOnly ? (
+        <SettingsRow
+          id="recording-source"
+          label="Recording source"
+          description="This browser can't share system audio, so Start Meeting records your microphone only."
+          controlClassName={SETTINGS_CONTROL_END}
+        >
+          <p className={SETTINGS_VALUE_CLASS}>Microphone only</p>
+        </SettingsRow>
+      ) : (
+        <SettingsRow
+          id="recording-source"
+          label="Recording source"
+          controlId="recording-source-select"
+          description="What Start Meeting records in this browser. Microphone and system audio opens the browser's share picker; Ask each time lets you choose at every Start."
+        >
+          <SelectBase
+            id="recording-source-select"
+            aria-describedby="recording-source-select-help"
+            data-ui-fill="control"
+            data-ui-disabled-fill="control-disabled"
+            data-ui-border="full"
+            value={settings.startMode}
+            onChange={(event) =>
+              updateSettings({ startMode: event.target.value as CaptureStartMode })
+            }
+            className={SETTINGS_SELECT_CLASS}
+          >
+            {RECORDING_SOURCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </SelectBase>
+        </SettingsRow>
+      )}
+
       <SettingsRow
         id="recording-microphone"
         label="Microphone"
         description={
           microphoneOnly
-            ? "Recorded on its own: this browser cannot share tab or system audio."
-            : "Recorded on its own or with shared tab or system audio, as chosen at Start."
+            ? "Recorded on its own: this browser cannot share system audio."
+            : "Recorded with system audio, or on its own, as Recording source sets."
         }
       >
         <SelectBase

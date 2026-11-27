@@ -97,7 +97,7 @@ describe("the recording's composed capture ownership", () => {
     expect(screen.getByTestId("desktop-presentation")).toBeInTheDocument();
     expect(activeKeyListeners()).toHaveLength(1);
     act(() => {
-      outbox.setDraft({ text: "A carried thought", mode: "send", typingStartMs: 12_000 });
+      outbox.setDraft({ text: "A carried thought", mode: "typing", typingStartMs: 12_000 });
       outbox.setDraftFile(file);
     });
     await shortcut();
@@ -125,15 +125,14 @@ describe("the recording's composed capture ownership", () => {
     expect(activeKeyListeners()).toHaveLength(0);
     expect(screen.queryByRole("button", { name: "Capture the shared screen" })).toBeNull();
     expect(screen.getByRole("textbox", { name: "New note" })).toHaveValue("A carried thought");
-    expect(screen.getByLabelText("Place note")).toHaveValue("send");
+    expect(screen.getByTestId("note-placement-chip")).toHaveTextContent("At 00:12");
     expect(screen.getByTestId("note-draft-file")).toHaveTextContent("context.png");
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("where capture stopped");
     await shortcut();
     expect(grabDisplayFrame).toHaveBeenCalledTimes(3);
     expect(outbox.getSnapshot().entries).toHaveLength(3);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Add note" })));
     expect(outbox.getSnapshot().entries).toHaveLength(4);
-    expect(outbox.getSnapshot().entries[3]).toMatchObject({ body: "A carried thought", anchorMs: 65_000 });
+    expect(outbox.getSnapshot().entries[3]).toMatchObject({ body: "A carried thought", anchorMs: 12_000 });
     expect(outbox.getSnapshot().uploads.get(outbox.getSnapshot().entries[3].id)).toMatchObject({ fileName: "context.png" });
   });
 

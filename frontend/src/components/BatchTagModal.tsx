@@ -110,7 +110,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
         />
       </div>
 
-      <div className="max-h-60 overflow-y-auto rounded-lg border border-surface-border">
+      <div className="relative max-h-60 overflow-y-auto rounded-lg border border-surface-border">
         {filteredTags.map(tag => {
           const color = getColorByKey(tag.color);
           return (

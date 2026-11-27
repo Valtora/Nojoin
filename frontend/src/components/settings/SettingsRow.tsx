@@ -62,7 +62,9 @@ export default function SettingsRow({
       )}
     >
       {/* 26rem = the control's 14rem floor + the 1.5rem gap + at least
-          10.5rem for the label before the two sit side by side. */}
+          10.5rem for the label before the two sit side by side. The control
+          column's max width keeps that 10.5rem for the label at every width
+          beside it, whatever width a row gives its control. */}
       <div className="flex flex-col gap-3 @min-[26rem]:flex-row @min-[26rem]:items-start @min-[26rem]:justify-between @min-[26rem]:gap-6">
         <div className="min-w-0 @min-[26rem]:max-w-md">
           <div className="flex flex-wrap items-center gap-2">
@@ -97,7 +99,7 @@ export default function SettingsRow({
         {children && (
           <div
             className={cn(
-              "w-full shrink-0 @min-[26rem]:w-auto @min-[26rem]:min-w-56 @min-[26rem]:max-w-sm",
+              "w-full shrink-0 @min-[26rem]:w-auto @min-[26rem]:min-w-56 @min-[26rem]:max-w-[min(24rem,calc(100%_-_12rem))]",
               controlClassName,
             )}
           >

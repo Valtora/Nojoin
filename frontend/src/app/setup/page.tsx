@@ -52,6 +52,10 @@ export default function SetupPage() {
     setAiRoute,
     validatingLLM,
     llmValidationMsg,
+    testingModel,
+    modelUnderTest,
+    modelTest,
+    testSelectedModel,
     availableModels,
     serverProvider,
     serverProviderSelected,
@@ -273,6 +277,10 @@ export default function SetupPage() {
               llmValidationMsg={llmValidationMsg}
               availableModels={availableModels}
               selectedModel={formData.selected_model}
+              testingModel={testingModel}
+              modelUnderTest={modelUnderTest}
+              modelTest={modelTest}
+              onTestModel={() => void testSelectedModel()}
               reloadingConfig={reloadingConfig}
               savingAi={savingAi}
               connectedCliProvider={connectedCliProvider}

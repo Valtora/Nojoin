@@ -16,18 +16,32 @@ import {
   listModels,
   validateLLM,
 } from "@/lib/api";
+import type { ModelProbeResult } from "@/lib/api";
+import { getSecondaryProviderGap, getServerProviderGap } from "@/lib/aiAvailability";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
 import { useModelPreparation } from "./useModelPreparation";
+import { probeModelsForRole, type ProviderRole } from "./aiSettingsModels";
 
 export interface ValidationMessage {
   type: "success" | "error";
   msg: string;
   provider: string;
+  /** Which card ran the test; see {@link validationKey}. */
+  key: string;
+  /** One row per model the test ran (#991); empty for a key-only check. */
+  results: ModelProbeResult[];
+}
+
+/** Names one Test connection: the default and the fallback can share a provider. */
+export function validationKey(provider: string, role: ProviderRole): string {
+  return `${role}:${provider}`;
 }
 
 export interface UseAISettingsModelsOptions {
   settings: Settings;
+  /** The provider model lists come from an endpoint that serves administrators only. */
+  isAdmin: boolean;
 }
 
 export interface AISettingsModels {
@@ -55,7 +69,7 @@ export interface AISettingsModels {
   secondaryFetchingModels: boolean;
   setSecondaryFetchingModels: React.Dispatch<React.SetStateAction<boolean>>;
 
-  handleValidate: (provider: string) => Promise<void>;
+  handleValidate: (provider: string, role?: ProviderRole) => Promise<void>;
   handleDeleteModel: (modelName: string) => Promise<void>;
   refreshStatus: () => Promise<SystemModelStatus | null>;
 }
@@ -69,8 +83,13 @@ export interface AISettingsModels {
 export function useAISettingsModels(
   options: UseAISettingsModelsOptions,
 ): AISettingsModels {
-  const { settings } = options;
+  const { settings, isAdmin } = options;
   const { addNotification } = useNotificationStore();
+  // A list needs the provider's key or address, and an administrator to ask
+  // for it; the server refuses any other request (#971).
+  const canListModels = isAdmin && getServerProviderGap(settings) !== "credential";
+  const canListSecondaryModels =
+    isAdmin && getSecondaryProviderGap(settings) !== "credential";
 
   const [validating, setValidating] = useState<string | null>(null);
   const [validationMsg, setValidationMsg] = useState<ValidationMessage | null>(
@@ -131,7 +150,7 @@ export function useAISettingsModels(
       const provider = settings.llm_provider;
       const url = provider === "ollama" ? settings.ollama_api_url || "" : "";
 
-      if (provider) {
+      if (provider && canListModels) {
         setFetchingModels(true);
         try {
           const res = await listModels(provider, "", url);
@@ -149,13 +168,13 @@ export function useAISettingsModels(
 
     const timeout = setTimeout(fetchModels, 1000);
     return () => clearTimeout(timeout);
-  }, [settings.llm_provider, settings.ollama_api_url]);
+  }, [settings.llm_provider, settings.ollama_api_url, canListModels]);
 
   // Fetch secondary provider models independently
   useEffect(() => {
     const fetchSecondaryModels = async () => {
       const provider = settings.secondary_llm_provider;
-      if (!provider) {
+      if (!provider || !canListSecondaryModels) {
         setSecondaryAvailableModels([]);
         return;
       }
@@ -164,7 +183,7 @@ export function useAISettingsModels(
 
       setSecondaryFetchingModels(true);
       try {
-        const res = await listModels(provider, "", url);
+        const res = await listModels(provider, "", url, undefined, "secondary");
         setSecondaryAvailableModels(res.models);
       } catch (e: unknown) {
         console.error("Failed to fetch secondary models", e);
@@ -176,15 +195,26 @@ export function useAISettingsModels(
 
     const timeout = setTimeout(fetchSecondaryModels, 1000);
     return () => clearTimeout(timeout);
-  }, [settings.secondary_llm_provider, settings.secondary_ollama_api_url]);
+  }, [
+    settings.secondary_llm_provider,
+    settings.secondary_ollama_api_url,
+    canListSecondaryModels,
+  ]);
 
-  const handleValidate = async (provider: string) => {
-    setValidating(provider);
+  const validatingRef = useRef(false);
+
+  const handleValidate = async (
+    provider: string,
+    role: ProviderRole = "primary",
+  ) => {
+    // One test at a time: a second click while one runs starts nothing.
+    if (validatingRef.current) return;
+    validatingRef.current = true;
+    const key = validationKey(provider, role);
+    setValidating(key);
     setValidationMsg(null);
 
-    const isSecondary =
-      provider === settings.secondary_llm_provider &&
-      provider !== settings.llm_provider;
+    const isSecondary = role === "secondary";
     const url =
       provider === "ollama"
         ? isSecondary
@@ -193,7 +223,10 @@ export function useAISettingsModels(
         : "";
 
     try {
-      const res = await validateLLM(provider, "", url);
+      const res = await validateLLM(provider, "", url, undefined, undefined, {
+        providerRole: role,
+        probeModels: probeModelsForRole(settings, role),
+      });
       // If models are returned (e.g. from Ollama), update the appropriate list
       if (res.models) {
         if (isSecondary) {
@@ -202,29 +235,41 @@ export function useAISettingsModels(
           setAvailableModels(res.models);
         }
       } else {
-        // Otherwise refresh models explicitly
-        const modelsRes = await listModels(provider, "", url);
-        if (isSecondary) {
-          setSecondaryAvailableModels(modelsRes.models);
-        } else {
-          setAvailableModels(modelsRes.models);
+        // Otherwise refresh the list with the same role's key. A refresh that
+        // fails keeps the list as it was and never hides the test's results.
+        try {
+          const modelsRes = await listModels(provider, "", url, undefined, role);
+          if (isSecondary) {
+            setSecondaryAvailableModels(modelsRes.models);
+          } else {
+            setAvailableModels(modelsRes.models);
+          }
+        } catch (refreshError: unknown) {
+          console.error("Failed to refresh the model list", refreshError);
         }
       }
 
       // Validation only tests the connection. Settings save through their own
       // controls, so pressing Validate never commits an edit as a side effect.
+      // A model that fails is reported beside its name; saving is never
+      // blocked by it.
       setValidationMsg({
-        type: "success",
+        type: res.valid ? "success" : "error",
         msg: res.message || "Connection works.",
         provider,
+        key,
+        results: res.results ?? [],
       });
     } catch (e: unknown) {
       setValidationMsg({
         type: "error",
         msg: getErrorMessage(e, "Validation failed"),
         provider,
+        key,
+        results: [],
       });
     } finally {
+      validatingRef.current = false;
       setValidating(null);
     }
   };

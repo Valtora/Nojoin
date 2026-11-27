@@ -3,20 +3,19 @@
 import { ButtonBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Mic } from "lucide-react";
-import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { isCaptureInterrupted } from "@/lib/capture/recovery";
+import type { CaptureStartMode } from "@/lib/capture/shared";
 import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
-import { useNotificationStore } from "@/lib/notificationStore";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import { CaptureNotices } from "./LiveMeetingControls";
-import MeetingCaptureModeSelect from "./MeetingCaptureModeSelect";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
+import { useStartMeeting } from "./useStartMeeting";
 
 type MeetingControlsProps =
   | {
@@ -36,6 +35,12 @@ type MeetingControlsProps =
 
 type ButtonMode = "start" | "open-settings" | "wait";
 
+const START_TOOLTIPS: Record<CaptureStartMode, string> = {
+  shared_audio: "Start recording your microphone and the meeting's system audio.",
+  microphone_only: "Start recording your microphone only.",
+  ask: "Start a recording and choose what to record.",
+};
+
 interface MeetingSurfaceState {
   buttonLabel: string;
   buttonMode: ButtonMode;
@@ -50,27 +55,22 @@ export default function MeetingControls({
 }: MeetingControlsProps) {
   const backend = useConnectivityStore((state) => isReachable(state.status));
   const {
-    controller,
     finalizeRetry,
     pausedRecording,
     runtimeActive,
     settings,
-    start,
     status,
     stopStage,
     support,
   } = useCapture();
   const uploadQueue = useCaptureState((state) => state.uploadQueue);
-
-  const { addNotification } = useNotificationStore();
-  const router = useRouter();
+  const startMeeting = useStartMeeting(onMeetingEnd);
   const hasLiveRecording =
     runtimeActive && (status === "recording" || status === "paused");
   const hasPausedBlock = Boolean(pausedRecording && (!runtimeActive || status === "error"));
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
   const microphoneOnly = support.supported && support.mode === "microphone_only";
-  const canChooseMode = support.supported && support.mode === "shared_audio";
 
   // Naming the stage keeps a slow stop legible instead of looking hung.
   const stopStageLabel = !stopStage
@@ -159,48 +159,15 @@ export default function MeetingControls({
               buttonLabel: "Start Meeting",
               buttonMode: "start",
               buttonDisabled: false,
+              // What Start does follows Recording source in Settings (#958).
               buttonTooltip: microphoneOnly
                 ? "Start a microphone-only recording."
-                : settings.startMode === "microphone_only"
-                  ? "Start a microphone-only recording without sharing a tab or screen."
-                  : "Start a new meeting recording.",
+                : START_TOOLTIPS[settings.startMode],
             };
-
-  const modeSelect = canChooseMode ? (
-    <MeetingCaptureModeSelect disabled={meetingSurfaceState.buttonDisabled} />
-  ) : null;
-
-  const sendStart = async () => {
-    try {
-      return await start("");
-    } catch (err: unknown) {
-      console.error("Failed to start browser recording:", err);
-      if (!controller.getState().error) {
-        addNotification({
-          type: "error",
-          message:
-            err instanceof Error && err.message
-              ? err.message
-              : err
-                ? String(err)
-                : "Failed to start browser recording.",
-        });
-      }
-      return null;
-    }
-  };
-
-  const handleStart = async () => {
-    const response = await sendStart();
-    if (response && response.recordingId) {
-      router.push(`/recordings/${response.recordingId}`);
-      if (onMeetingEnd) onMeetingEnd();
-    }
-  };
 
   const handlePrimaryAction = () => {
     if (meetingSurfaceState.buttonMode === "start") {
-      void handleStart();
+      void startMeeting();
     }
   };
 
@@ -231,25 +198,21 @@ export default function MeetingControls({
   if (variant === "rail") {
     if (liveStatus) return liveStatus;
     return (
-      <div className="flex flex-col items-center gap-1">
-        <IconButton
-          size="sm"
-          icon={<Mic aria-hidden="true" />}
-          onClick={handlePrimaryAction}
-          disabled={meetingSurfaceState.buttonDisabled}
-          title={meetingSurfaceState.buttonTooltip}
-          aria-label={meetingSurfaceState.buttonLabel}
-          className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
-        />
-        {modeSelect}
-      </div>
+      <IconButton
+        size="sm"
+        icon={<Mic aria-hidden="true" />}
+        onClick={handlePrimaryAction}
+        disabled={meetingSurfaceState.buttonDisabled}
+        title={meetingSurfaceState.buttonTooltip}
+        aria-label={meetingSurfaceState.buttonLabel}
+        className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
+      />
     );
   }
 
   if (variant === "compact") {
     if (liveStatus) return liveStatus;
     return (
-      <div className="flex items-center gap-2">
       <Button
         variant="primary"
         iconLeft={<Mic aria-hidden="true" className="h-4 w-4 shrink-0" />}
@@ -261,8 +224,6 @@ export default function MeetingControls({
       >
         Start
       </Button>
-      {modeSelect}
-      </div>
     );
   }
 
@@ -311,11 +272,6 @@ export default function MeetingControls({
                 <Mic className="h-[1.15em] w-[1.15em] shrink-0" />
                 {meetingSurfaceState.buttonLabel}
               </ButtonBase>
-              {canChooseMode ? (
-                <div className="mt-3">
-                  <MeetingCaptureModeSelect labelled disabled={meetingSurfaceState.buttonDisabled} />
-                </div>
-              ) : null}
             </div>
           ) : (
             <div className="space-y-3">
@@ -352,7 +308,7 @@ export default function MeetingControls({
             <div
               className={
                 meetingSurfaceState.buttonMode === "start"
-                  ? "flex min-w-fit grow basis-0 items-center gap-2 whitespace-nowrap"
+                  ? "min-w-fit grow basis-0 whitespace-nowrap"
                   : "basis-full"
               }
             >
@@ -370,7 +326,6 @@ export default function MeetingControls({
                 <Mic className="h-4 w-4" />
                 {meetingSurfaceState.buttonLabel}
               </ButtonBase>
-              {modeSelect}
             </div>
             {pairedAction ? (
               <div className="flex min-w-fit grow basis-0">{pairedAction}</div>

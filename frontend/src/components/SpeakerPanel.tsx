@@ -7,6 +7,7 @@ import {
   RecordingId,
   TranscriptSegment,
   GlobalSpeaker,
+  SpeakerNameSource,
 } from "@/types";
 import {
   Play,
@@ -71,6 +72,10 @@ interface SpeakerPanelProps {
   liveSpeakerNames?: Record<string, string>;
   onRenameLiveSpeaker?: RenameLiveSpeaker;
   onMergeLiveSpeaker?: MergeLiveSpeaker;
+  liveSpeakerSuggestions?: Readonly<Record<string, string>>;
+  liveSpeakerSuggestionSources?: Readonly<Record<string, SpeakerNameSource>>;
+  onDismissLiveSpeakerSuggestion?: (label: string) => Promise<boolean>;
+  onShowTranscript?: () => void;
 }
 
 export default function SpeakerPanel({
@@ -92,6 +97,10 @@ export default function SpeakerPanel({
   liveSpeakerNames = {},
   onRenameLiveSpeaker,
   onMergeLiveSpeaker,
+  liveSpeakerSuggestions,
+  liveSpeakerSuggestionSources,
+  onDismissLiveSpeakerSuggestion,
+  onShowTranscript,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const highlight = useSpeakerTurnHighlight();
@@ -217,11 +226,13 @@ export default function SpeakerPanel({
       data-ui-fill="inset"
       className="@container flex h-full min-w-0 flex-col bg-surface-inset outline-none data-reviewing:ring-2 data-reviewing:ring-inset data-reviewing:ring-action"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
+      <div className="relative min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         <LiveSpeakerRows labels={liveLabels} names={liveSpeakerNames} speakers={speakers}
           globalSpeakers={globalSpeakers} speakerColors={speakerColors} onRename={onRenameLiveSpeaker}
           onMerge={onMergeLiveSpeaker}
-          readOnly={disableEditing} />
+          readOnly={disableEditing} suggestions={liveSpeakerSuggestions}
+          suggestionSources={liveSpeakerSuggestionSources} onDismissSuggestion={onDismissLiveSpeakerSuggestion}
+          onShowTranscript={onShowTranscript} />
         {pendingEntries.length >= 2 && !disableEditing && (
           <div className="flex justify-end">
             <ButtonBase

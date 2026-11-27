@@ -70,7 +70,9 @@ def silence_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     )
     monkeypatch.setattr(label_step, "live_speaker_labels_device", lambda: None)
     spans: list[tuple[float, float]] = []
-    evidence = SimpleNamespace(speech_spans=lambda: spans, decide=None)
+    evidence = SimpleNamespace(
+        speech_spans=lambda: spans, decide=None, native_activity=lambda: None
+    )
     monkeypatch.setattr(worker, "_speaker_evidence", lambda _step: evidence)
     monkeypatch.setattr(
         worker, "_decode_words", lambda *_args: ({"asr_segments": []}, "cuda")

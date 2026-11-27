@@ -42,6 +42,7 @@ files = [
     "backend/utils/config_defaults.py",
     "backend/utils/env_comments.py",
     "backend/utils/time.py",
+    "backend/utils/time_units.py",
     "backend/utils/primary_owner.py",
     "backend/utils/url_redaction.py",
     "backend/core/exceptions.py",
@@ -58,6 +59,7 @@ files = [
     "backend/utils/storage_hygiene_scan.py",
     "backend/storage_hygiene.py",
     "backend/utils/beat_schedule_store.py",
+    "backend/utils/worker_idle_recycle.py",
     "backend/core/backup/restore/legacy_owners.py",
     "backend/services/recording_search.py",
     "backend/services/exports",
@@ -88,6 +90,8 @@ files = [
     "backend/processing/vad_muting.py",
     "backend/processing/documents/vision_input.py",
     "backend/processing/unheard_words.py",
+    "backend/processing/sentence_start.py",
+    "backend/utils/canonical_pipeline/live_sentence_start.py",
     "backend/processing/live_diarization",
     "backend/utils/canonical_pipeline/live_labels.py",
     "backend/utils/canonical_pipeline/manual_speaker_parts.py",
@@ -102,7 +106,7 @@ cache-dir = ".cache/ruff"
 # Vendored third-party model cards (e.g. pyannote) ship Markdown with embedded
 # Python snippets. Ruff 0.16+ formats code blocks inside Markdown, so exclude the
 # vendored tree to avoid reformatting upstream content we do not own.
-extend-exclude = ["bundled_models"]
+extend-exclude = ["backend/bundled_models"]
 
 [tool.ruff.lint]
 select = [

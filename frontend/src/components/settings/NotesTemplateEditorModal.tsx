@@ -392,7 +392,7 @@ export default function NotesTemplateEditorModal({
                 Preview
               </ButtonBase>
             </div>
-            <pre className="flex-1 min-h-[12rem] overflow-auto whitespace-pre-wrap break-words p-3 rounded-lg border border-surface-border bg-surface-page text-[11px] leading-relaxed text-contrast-muted">
+            <pre className="relative flex-1 min-h-[12rem] overflow-auto whitespace-pre-wrap break-words p-3 rounded-lg border border-surface-border bg-surface-page text-[11px] leading-relaxed text-contrast-muted">
               {preview ??
                 "Select Preview to see the exact prompt this structure produces, using a short sample transcript. No AI request is made."}
             </pre>

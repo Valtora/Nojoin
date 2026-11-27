@@ -8,6 +8,11 @@ with no call-site changes.
 
 import logging
 
+from backend.processing.live_ai_backoff import (
+    live_ai_chain,
+    live_ai_error_message,
+    log_failed_run,
+)
 from backend.services.timeline_note_service import (
     RecordingTimelineNotes,
     load_recording_timeline_notes,
@@ -486,6 +491,19 @@ def _refresh_meeting_edge(self, recording_id: int):
             ),
         )
 
+        # Every provider still in its backoff window: skipped. The wait may be
+        # the name ask's, so the panel says why once, not on every trigger.
+        llm = live_ai_chain(_llm_backend_from_config(llm_config), recording_id)
+        if llm.skip_if_waiting(logger):
+            paused = llm.paused_message()
+            if transcript.meeting_edge_error_message != paused:
+                _set_meeting_edge_state(
+                    session,
+                    transcript,
+                    status=MEETING_EDGE_STATUS_ERROR,
+                    error_message=paused,
+                )
+            return None
         _set_meeting_edge_state(
             session,
             transcript,
@@ -494,7 +512,6 @@ def _refresh_meeting_edge(self, recording_id: int):
             source_signature=source_signature,
         )
 
-        llm = _llm_backend_from_config(llm_config)
         result = llm.generate_meeting_edge(
             request,
             timeout=MEETING_EDGE_TIMEOUT_SECONDS,
@@ -538,13 +555,8 @@ def _refresh_meeting_edge(self, recording_id: int):
         ):
             return None
         return payload
-    except Exception as exc:
-        logger.error(
-            "Meeting Edge refresh failed for recording %s: %s",
-            recording_id,
-            exc,
-            exc_info=True,
-        )
+    except Exception as exc:  # noqa: BLE001 -- boundary: a failed refresh is logged and stored as the panel's state
+        log_failed_run(logger, "Meeting Edge refresh", recording_id, exc)
 
         transcript = session.exec(
             select(Transcript).where(Transcript.recording_id == recording_id)
@@ -555,8 +567,7 @@ def _refresh_meeting_edge(self, recording_id: int):
                 transcript,
                 run_key,
                 status=MEETING_EDGE_STATUS_ERROR,
-                error_message=str(exc).strip()[:500]
-                or "Meeting Edge could not be updated.",
+                error_message=live_ai_error_message(exc),
             )
         return None
 

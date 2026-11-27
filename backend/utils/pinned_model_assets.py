@@ -162,6 +162,7 @@ class PinnedModelAssets:
                 "files": before,
             },
         )
+        self.control.clear_failure()
         report(f"{self.label} assets are verified.", 100)
         return path
 

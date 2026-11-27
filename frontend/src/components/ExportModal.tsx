@@ -251,7 +251,7 @@ export default function ExportModal({
               disabled={!carriesMyNotes}
               onChange={() => setIncludeNotes((current) => !current)}
               icon={<NotebookPen className="h-5 w-5" />}
-              label="Include my notes"
+              label="Include your notes"
               description={myNotesDescription(hasNotesSection, hasTranscript)}
             />
           ) : null}

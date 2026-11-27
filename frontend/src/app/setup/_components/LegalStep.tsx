@@ -1,6 +1,7 @@
 import { InputBase } from '@/components/ui/nativeBases';
 import { ArrowRight } from "lucide-react";
 
+import LegalTerms, { LEGAL_TERMS } from "@/components/legal/LegalTerms";
 import Button from "@/components/ui/Button";
 
 const TELEMETRY_DOC_URL =
@@ -41,41 +42,13 @@ export default function LegalStep({
         </p>
       </div>
 
-      {/* Deliberately not its own scroll region. A nested scroller inside a page
-          that also scrolls traps the wheel, and these terms are short enough to
-          flow. */}
-      <div className="prose prose-sm dark:prose-invert max-w-none bg-surface-inset p-4 rounded-lg border border-surface-border">
-        <h3 className="text-base font-semibold mt-0">1. Compliance with Laws</h3>
-        <p>
-          You acknowledge that many legal jurisdictions require the consent of all
-          parties before a conversation can be recorded. It is your sole
-          responsibility to ensure compliance with all applicable laws and
-          regulations regarding audio recording and transcription in your
-          jurisdiction.
-        </p>
+      <LegalTerms headingLevel={3} />
 
-        <h3 className="text-base font-semibold">
-          2. Data Privacy &amp; Local Processing
-        </h3>
-        <p>Nojoin is designed with a privacy-first architecture.</p>
-        <ul className="list-disc pl-4 space-y-1">
-          <li>
-            Your meeting data — audio, transcripts, notes, chat, documents,
-            voiceprints, and calendar content — is never stored or transmitted to
-            third parties without your explicit consent.
-          </li>
-          <li>
-            All audio processing (transcription, diarization, etc.) is performed
-            locally on your machine or your self-hosted server, unless you
-            explicitly configure an external provider.
-          </li>
-        </ul>
-
-        <p className="font-medium mt-4">
-          By proceeding, you agree to these terms and accept full responsibility
-          for the lawful use of this software.
-        </p>
-      </div>
+      {/* For the owner alone: everyone else is asked to accept the terms
+          themselves the first time they sign in (#1004). */}
+      <p className="text-sm text-foreground">
+        {LEGAL_TERMS.ownerResponsibility}
+      </p>
 
       {/* A separate decision from accepting the terms, and labelled as one, so
           the continue button is not silently carrying two consents. The full

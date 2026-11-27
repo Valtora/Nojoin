@@ -194,6 +194,39 @@ def build_eligible_speaker_labels_prompt_section(
 
 
 class LLMBackend:
+    # Set on the copy for_live_calls returns.
+    _live_calls: bool = False
+    # The provider this backend calls, as model_probe.PROVIDER_LABELS keys it.
+    provider_id: str = ""
+    model: Optional[str] = None
+
+    def tiers(self) -> Tuple["LLMBackend", ...]:
+        """The providers this backend calls, in the order it tries them.
+
+        One for a single provider; a fallback chain lists each of its own.
+        """
+        return (self,)
+
+    @property
+    def provider_label(self) -> str:
+        """The provider's name as the interface writes it."""
+        from backend.processing.llm_backends.model_probe import PROVIDER_LABELS
+
+        return PROVIDER_LABELS.get(self.provider_id, self.provider_id or "AI")
+
+    def for_live_calls(self) -> "LLMBackend":
+        """This backend as Meeting Edge and the live naming ask use it.
+
+        A live call makes one request, bounded by the timeout it is given:
+        no SDK retries, no waiting out a ``Retry-After`` inside the call, and
+        nothing sent after the deadline. A failing provider then fails once,
+        within its timeout, and the caller decides when to try again (#994).
+        Every other call keeps the backend's own behaviour. The default is the
+        backend itself, for one whose calls already work that way: a CLI
+        subscription's timeout bounds its whole turn.
+        """
+        return self
+
     def infer_speaker_suggestions(
         self,
         transcript: str,
@@ -451,6 +484,15 @@ class LLMBackend:
         """
         raise NotImplementedError
 
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        """Send Test connection's probe to ``self.model`` and return the raw reply.
+
+        Uses the client, options and JSON mode of the backend's Meeting Edge
+        call, so the probe fails where real calls would. SDK errors propagate
+        unwrapped: ``model_probe.classify_probe_error`` reads their status.
+        """
+        raise NotImplementedError
+
     def _build_chat_prompt(
         self,
         user_question: str,
@@ -505,6 +547,7 @@ class LLMBackend:
 - Omit a label entirely if the transcript evidence is weak or ambiguous.
 - Each suggestion must include at least one direct evidence span quoted from the transcript.
 - Prefer names already present in the transcript or linked meeting attendees. Do not invent names.
+- `suggested_name` must be the person's name. Never a role, job title or description such as "Accountant" or "the project lead"; if only a role is known, omit the label.
 - Be conservative. If you are unsure, omit the suggestion instead of guessing.
 - `confidence` must be between 0.0 and 1.0."""
 
@@ -861,3 +904,13 @@ Preserve the same schema and do not invent facts not supported by the original t
                 logger.error(
                     f"Could not find transcript for recording {recording_id} to update notes"
                 )
+
+
+def live_call_backend(backend: Any) -> Any:
+    """``backend`` set up for a live call (``LLMBackend.for_live_calls``).
+
+    Anything outside the LLMBackend family is used as it is.
+    """
+    if isinstance(backend, LLMBackend):
+        return backend.for_live_calls()
+    return backend

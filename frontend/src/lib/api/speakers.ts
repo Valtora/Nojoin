@@ -2,7 +2,9 @@ import type {
   GlobalSpeaker,
   GlobalSpeakerUpdate,
   LiveSpeakerNames,
+  LiveSpeakerSuggestionReview,
   MergedRecordingSpeaker,
+  PersonMeetingsRead,
   RecalibrateResult,
   Recording,
   RecordingId,
@@ -31,6 +33,12 @@ export const getGlobalSpeakers = async (
   const response = await api.get<GlobalSpeaker[]>(
     `/speakers/?${params.toString()}`,
   );
+  return response.data;
+};
+
+/** Read full-history figures and the newest 50 meetings linked to a person. */
+export const getPersonMeetings = async (speakerId: number): Promise<PersonMeetingsRead> => {
+  const response = await api.get<PersonMeetingsRead>(`/speakers/${speakerId}/meetings`);
   return response.data;
 };
 
@@ -139,6 +147,17 @@ export const mergeLiveSpeaker = async (
   const response = await api.post<LiveSpeakerNames>(
     `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}/merge`,
     { into_label: intoLabel },
+  );
+  return response.data;
+};
+
+/** Dismisses a name heard during capture without naming or linking its speaker. */
+export const dismissLiveSpeakerSuggestion = async (
+  recordingId: RecordingId,
+  label: string,
+): Promise<LiveSpeakerSuggestionReview> => {
+  const response = await api.post<LiveSpeakerSuggestionReview>(
+    `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}/suggestions/reject`,
   );
   return response.data;
 };

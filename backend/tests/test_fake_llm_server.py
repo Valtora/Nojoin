@@ -11,13 +11,16 @@ import sys
 import threading
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
+from backend.processing.llm_backends import model_probe
 from backend.processing.llm_backends import ollama as ollama_module
 from backend.processing.llm_backends import ollama_model_facts as ollama_facts_module
 from backend.processing.llm_backends.base import LLMBackend
+from backend.processing.llm_backends.failures import Failure, classify_failure
 from backend.processing.llm_backends.ollama import OllamaLLMBackend
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.meeting_analysis import (
@@ -53,9 +56,9 @@ def _load_script():
 fake = _load_script()
 
 
-@pytest.fixture
-def fake_llm_url():
-    server = fake.build_server("127.0.0.1", 0)
+@contextmanager
+def _serving(**options):
+    server = fake.build_server("127.0.0.1", 0, **options)
     # A short poll keeps shutdown() from waiting out the default half second.
     thread = threading.Thread(
         target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
@@ -70,6 +73,12 @@ def fake_llm_url():
 
 
 @pytest.fixture
+def fake_llm_url():
+    with _serving() as url:
+        yield url
+
+
+@pytest.fixture
 def make_backend(fake_llm_url, monkeypatch):
     """Build Ollama backends on the fake server.
 
@@ -81,9 +90,9 @@ def make_backend(fake_llm_url, monkeypatch):
     )
     monkeypatch.setattr(ollama_facts_module, "_model_facts_cache", {})
 
-    def _make(model="fake-llm", context_window=32768):
+    def _make(model="fake-llm", context_window=32768, api_url=None):
         return OllamaLLMBackend(
-            api_url=fake_llm_url, model=model, context_window=context_window
+            api_url=api_url or fake_llm_url, model=model, context_window=context_window
         )
 
     return _make
@@ -102,7 +111,14 @@ def _post(url, path, body):
 def test_the_models_are_listed_with_their_capabilities(make_backend):
     backend = make_backend()
 
-    assert backend.list_models() == ["fake-llm:latest", "fake-text:latest"]
+    assert backend.list_models() == [
+        "fake-401:latest",
+        "fake-429:latest",
+        "fake-500:latest",
+        "fake-llm:latest",
+        "fake-slow:latest",
+        "fake-text:latest",
+    ]
     assert backend.validate_api_key() is True
     assert backend.supports_vision() is True
     assert make_backend(model="fake-text:latest").supports_vision() is False
@@ -215,6 +231,75 @@ def test_a_meeting_longer_than_the_window_is_written_in_parts(make_backend):
         long_transcript, {}, overflow=notes_refused.value
     )
     assert notes.startswith("## Summary")
+
+
+def test_test_connection_passes_on_each_listed_model(make_backend):
+    results = model_probe.run_probes(
+        lambda model: make_backend(model=model),
+        "ollama",
+        [("fake-llm:latest", "main"), ("fake-text:latest", "meeting_edge")],
+        include_detail=True,
+    )
+
+    assert [(r.model, r.kind) for r in results] == [
+        ("fake-llm:latest", "ok"),
+        ("fake-text:latest", "ok"),
+    ]
+
+
+def test_test_connection_reads_a_model_it_does_not_list_as_unknown(make_backend):
+    (result,) = model_probe.run_probes(
+        lambda model: make_backend(model=model),
+        "ollama",
+        [("llama3", "main")],
+        include_detail=False,
+    )
+
+    assert result.kind == "unknown_model"
+
+
+def test_the_probe_prompt_matches_test_connection():
+    """The server keeps a copy of the prompt, so a change to either fails here."""
+    assert fake.PROBE_PROMPT == model_probe.PROBE_PROMPT
+    assert fake.classify(model_probe.PROBE_PROMPT, wants_json=True) == "probe"
+
+
+def _live_edge_failure(backend, timeout=5):
+    with pytest.raises(RuntimeError) as raised:
+        backend.for_live_calls().generate_meeting_edge(
+            MeetingEdgeRequest(recent_transcript=TRANSCRIPT), timeout=timeout
+        )
+    return classify_failure(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        ("fake-401", Failure("auth")),
+        ("fake-429", Failure("rate_limit", 60)),
+        ("fake-500", Failure("unavailable")),
+    ],
+)
+def test_a_failing_model_fails_as_its_name_says(make_backend, model, expected):
+    assert _live_edge_failure(make_backend(model=model)) == expected
+
+
+def test_the_rate_limits_retry_after_can_be_set(make_backend):
+    with _serving(retry_after=7) as url:
+        backend = make_backend(model="fake-429", api_url=url)
+
+        assert _live_edge_failure(backend) == Failure("rate_limit", 7)
+
+
+def test_the_slow_model_answers_only_after_its_delay(make_backend):
+    with _serving(slow_seconds=0.5) as url:
+        backend = make_backend(model="fake-slow", api_url=url)
+
+        assert _live_edge_failure(backend, timeout=0.2) == Failure("timeout")
+        result = backend.generate_meeting_edge(
+            MeetingEdgeRequest(recent_transcript=TRANSCRIPT), timeout=5
+        )
+    assert result.questions == ("Is the fake LLM server answering?",)
 
 
 def test_a_json_repair_prompt_keeps_its_original_task():

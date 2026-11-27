@@ -99,15 +99,19 @@ export const useNotificationStore = create<NotificationState>()(
       },
 
       dismissToast: (id) => {
+        // Nothing to remove changes nothing: no new array, so no subscriber
+        // re-renders and nothing is persisted.
+        if (!get().activeNotifications.some((n) => n.id === id)) return;
         set((state) => ({
           activeNotifications: state.activeNotifications.filter((n) => n.id !== id),
         }));
       },
 
       removeActiveNotification: (id) => {
-          set((state) => ({
-              activeNotifications: state.activeNotifications.filter((n) => n.id !== id),
-          }));
+        if (!get().activeNotifications.some((n) => n.id === id)) return;
+        set((state) => ({
+          activeNotifications: state.activeNotifications.filter((n) => n.id !== id),
+        }));
       },
 
       clearHistory: () => {

@@ -8,8 +8,12 @@ words the line covers.
 
 A segment with timed words is split at its word timings where the choice
 differs from the speaker the final pass gave it. A word belongs to the
-corrected line holding its midpoint, and an untimed word goes with its timed
-neighbour, as in preservation. Runs of words outside every corrected line keep
+corrected line holding its midpoint, and an untimed word goes with the timed
+word before it (the first timed word when none precedes it): a wrong speaker is
+one click to fix. Preservation is stricter on purpose, because there the same
+decision removes words from ``transcript.text``: it places an untimed run in a
+review only when the timed words on both sides of it belong to that same line
+(``_untimed_owner``). Runs of words outside every corrected line keep
 the final speaker. A corrected line whose speaker the segment already has
 leaves it whole, so a correction the final pass agrees with does not break up
 the line, and the lock covers that segment as before.

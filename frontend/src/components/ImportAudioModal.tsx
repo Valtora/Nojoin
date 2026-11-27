@@ -9,6 +9,8 @@ import Input from '@/components/ui/Input';
 import Modal from '@/components/ui/Modal';
 import ModernDatePicker from '@/components/ui/ModernDatePicker';
 import { importAudio, getSupportedAudioFormats } from '@/lib/api';
+import { getErrorDetail } from '@/lib/errors';
+import { isLegalAcceptanceRefusal, legalRefusalMessage } from '@/lib/legalAcceptance';
 import SpeakerCapField from '@/components/SpeakerCapField';
 import RecordingLanguageField from '@/components/RecordingLanguageField';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -178,11 +180,24 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
       }, 1500);
     } catch (error: unknown) {
       setUploadState('idle');
+      if (isLegalAcceptanceRefusal(error)) {
+        // Refused until the terms of use are accepted (#1004): the notice
+        // takes the page, and the dialog is not there to come back to.
+        const message = legalRefusalMessage('import');
+        if (message) {
+          addNotification({ type: 'error', message });
+        }
+        // Not handleClose: this render's copy still sees the upload running.
+        resetState();
+        onClose();
+        return;
+      }
       if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as { response?: { data?: { detail?: string } } };
+        // The detail can be a list (a 422) or a coded object as well as text,
+        // and the toast renders only text (#1008).
         addNotification({
           type: 'error',
-          message: axiosError.response?.data?.detail || 'Upload failed. Please try again.',
+          message: getErrorDetail(error) ?? 'Upload failed. Please try again.',
         });
       } else {
         addNotification({

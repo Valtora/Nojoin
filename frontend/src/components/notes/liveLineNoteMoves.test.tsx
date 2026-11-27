@@ -116,7 +116,8 @@ describe("moving a newly saved note during live capture", () => {
     expect(server.creates[0]).toMatchObject({ kind: "point" });
     expect(server.creates[0]).not.toHaveProperty("start_ms");
     expect(note.querySelector("[data-note-grip]")).toBeNull();
-    expect(within(note).queryByRole("button", { name: /^Move note/ })).toBeNull();
+    fireEvent.click(within(note).getByRole("button", { name: /^Edit note/ }));
+    expect(within(screen.getByRole("dialog")).queryByRole("button", { name: /^Move/ })).toBeNull();
     expect(updateTimelineNote).not.toHaveBeenCalled();
   });
 });

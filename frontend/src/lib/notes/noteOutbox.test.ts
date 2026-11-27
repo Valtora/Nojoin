@@ -567,14 +567,19 @@ describe("NoteOutbox: a sign-in that ends during a capture", () => {
 describe("noteFromDraft", () => {
   const now = vi.fn(() => 9_000);
 
-  it("anchors at typing start, or where the recording is at send, and meeting-wide notes nowhere", () => {
+  it("anchors at typing start, or where the recording is with none, and meeting-wide notes nowhere", () => {
     expect(
       noteFromDraft({ text: "A", mode: "typing", typingStartMs: 1_000 }, now),
     ).toEqual({ kind: "point", body: "A", anchorMs: 1_000 });
-    expect(noteFromDraft({ text: "B", mode: "send", typingStartMs: 1_000 }, now)).toEqual({
+    expect(noteFromDraft({ text: "B", mode: "typing", typingStartMs: null }, now)).toEqual({
       kind: "point",
       body: "B",
       anchorMs: 9_000,
+    });
+    expect(noteFromDraft({ text: "Before", mode: "head", typingStartMs: 1_000 }, now)).toEqual({
+      kind: "head",
+      body: "Before",
+      anchorMs: null,
     });
     expect(noteFromDraft({ text: "C", mode: "tail", typingStartMs: 1_000 }, now)).toEqual({
       kind: "tail",
@@ -742,7 +747,7 @@ describe("NoteOutbox: notes on chosen text", () => {
 
   it("makes a selection note from a draft on chosen text, whatever its mode", () => {
     const selection = { startMs: 1_000, endMs: 2_000, quotedText: "Hello" };
-    for (const mode of ["typing", "send", "head", "tail"] as const) {
+    for (const mode of ["typing", "head", "tail"] as const) {
       expect(
         noteFromDraft({ text: "A", mode, typingStartMs: 500, selection }, () => 9_000),
       ).toEqual({ kind: "selection", body: "A", anchorMs: null, selection });

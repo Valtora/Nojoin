@@ -125,7 +125,7 @@ export default function AgendaCard({
       {/* A container rather than a viewport query: this module is full width on
           a phone and a third of the workspace at 1600px, so the timeline has to
           answer to how wide the module actually is. */}
-      <div className="@container mt-4 min-h-0 flex-1 overflow-y-auto">
+      <div className="@container relative mt-4 min-h-0 flex-1 overflow-y-auto">
         {calendarLoading ? (
           <div className="inline-flex items-center gap-2 text-sm text-contrast-helper">
             <Loader2 className="h-4 w-4 animate-spin" />

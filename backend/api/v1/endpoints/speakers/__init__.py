@@ -8,6 +8,7 @@ from backend.utils.config_manager import config_manager
 from . import (
     routes_global,
     routes_live_names,
+    routes_meetings,
     routes_name_review,
     routes_recording,
     routes_voiceprint,

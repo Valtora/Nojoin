@@ -2447,7 +2447,7 @@ async def _seed_split_with_other_recordings(
                         pipeline_generation, is_archived, is_deleted, user_id
                     ) VALUES (:id, :now, :now, 'Other', :public_id, :uid,
                               '/tmp/other.wav', 'PROCESSED', 100, 100, 'unified',
-                              0, 0, 1)
+                              0, :in_bin, 1)
                     """
                 ),
                 {
@@ -2455,6 +2455,7 @@ async def _seed_split_with_other_recordings(
                     "id": offset,
                     "public_id": f"vp-other-{offset}",
                     "uid": f"uid-{offset}",
+                    "in_bin": int(other.get("in_bin", False)),
                 },
             )
             await session.execute(
@@ -2467,7 +2468,7 @@ async def _seed_split_with_other_recordings(
                         speaker_status, speaker_kind, identity_locked, name_source
                     ) VALUES (:id, :now, :now, :public_id, :id, 7, 'SPEAKER_00',
                               'Dana', :embedding, :version, :seconds,
-                              'active', 'automated', 0, :source)
+                              :status, 'automated', 0, :source)
                     """
                 ),
                 {
@@ -2477,6 +2478,7 @@ async def _seed_split_with_other_recordings(
                     "embedding": json.dumps(other["embedding"]),
                     "version": other.get("version", 2),
                     "seconds": other.get("seconds"),
+                    "status": other.get("status", "active"),
                     "source": other.get("name_source"),
                 },
             )
@@ -2594,6 +2596,47 @@ async def test_a_split_rebuilds_the_original_from_no_merged_row(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("link", "rebuilt"),
+    [
+        pytest.param({}, True, id="active"),
+        # Every line of Dana's speaker there moved to Bob Sample's, so its
+        # voiceprint is of his audio, and the split has nothing of hers left.
+        pytest.param({"status": "inactive"}, False, id="lines-all-moved-away"),
+        # Moving a meeting to the bin says nothing about the voice in it.
+        pytest.param({"in_bin": True}, True, id="meeting-in-the-bin"),
+    ],
+)
+async def test_a_split_falls_back_only_to_a_link_that_still_counts(
+    client, session_maker, extraction, link: dict[str, Any], rebuilt: bool
+) -> None:
+    """Too little of Dana remains in the split recording; one other link qualifies.
+
+    The fallback reads her other recordings as the voiceprint rebuild does
+    (``counted_speaker()``), so a speaker whose lines all moved to someone else
+    doesn't stand in for her.
+    """
+    elsewhere = _at_cosine(0.9)
+    await _seed_split_with_other_recordings(
+        session_maker,
+        [{"embedding": elsewhere, "seconds": 30.0, **link}],
+        locked=True,
+    )
+
+    response = await _split_one_line_off(client, extraction, 12.0)
+
+    assert response.status_code == 200
+    if rebuilt:
+        outcome = _outcome("saved_from_other_recordings", 30.0)
+        person = (pytest.approx(elsewhere), 2, True)
+    else:
+        outcome = _outcome("skipped_insufficient_speech", 12.0)
+        person = (None, 2, False)
+    assert response.json()["original_library_voiceprint"] == outcome
+    assert await _person_row(session_maker, 7) == person
+
+
+@pytest.mark.anyio
 async def test_a_split_clears_the_original_only_when_no_link_qualifies(
     client, session_maker, extraction
 ) -> None:
@@ -2663,6 +2706,75 @@ async def test_a_split_gives_the_remainder_to_the_original_beside_a_merged_row(
     assert await _speaker_row(session_maker, "SPEAKER_00") == (
         pytest.approx(_at_cosine(0.95)),
         25.0,
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("refused", [False, True], ids=["unrefused", "refused"])
+async def test_a_split_gives_the_remainder_to_the_original_beside_an_inactive_row(
+    client, session_maker, extraction, write_path, refused: bool
+) -> None:
+    """Every line of Dana's second speaker had moved to Bob Sample before the split.
+
+    That speaker is still linked to her, but it no longer stands for her
+    (``counted_speaker()``). Counted as a second speaker of hers, it stopped
+    her one speaker taking the remainder's voiceprint, which kept the moved
+    clips in it for the rebuild to average back into her, and a refusal of
+    its own kept the remainder out of her voiceprint.
+    """
+    bobs_voice = _at_cosine(0.1)
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "global_speaker_id": 7,
+                "name": "Dana",
+                "embedding": _at_cosine(0.2),
+                "seconds": 30.0,
+            },
+            {
+                "label": "SPEAKER_01",
+                "global_speaker_id": 7,
+                "name": "Dana",
+                "embedding": bobs_voice,
+                "seconds": 30.0,
+                "refused_for": 7 if refused else None,
+            },
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+    )
+    segments = [
+        {"start": 0.0, "end": 5.0, "speaker": "SPEAKER_00", "text": "theirs"},
+        {"start": 5.0, "end": 10.0, "speaker": "SPEAKER_00", "text": "mine"},
+    ]
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recording_speakers SET speaker_status = 'inactive' "
+                "WHERE diarization_label = 'SPEAKER_01'"
+            )
+        )
+        await session.execute(
+            text("UPDATE transcripts SET segments = :segments WHERE id = 1"),
+            {"segments": json.dumps(segments)},
+        )
+        await session.commit()
+
+    response = await _split_one_line_off(client, extraction, 25.0)
+
+    assert response.status_code == 200
+    remainder = pytest.approx(_at_cosine(0.95))
+    assert response.json()["original_library_voiceprint"] == _outcome("saved", 25.0)
+    assert await _person_voiceprint(session_maker, "Dana") == remainder
+    assert await _speaker_row(session_maker, "SPEAKER_00") == (remainder, 25.0)
+    # The split leaves the inactive speaker as it was, refusal included.
+    assert await _speaker_row(session_maker, "SPEAKER_01") == (
+        pytest.approx(bobs_voice),
+        30.0,
+    )
+    assert (await _refused_for(session_maker))["SPEAKER_01"] == (
+        (7,) if refused else ()
     )
 
 

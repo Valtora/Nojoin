@@ -57,7 +57,7 @@ RUN torchcodec_version="$(python -c 'import importlib.metadata as m; print(m.ver
 # builds target CUDA 13 from 1.27.0 and CUDA 12 before that, so this pin must
 # move with the CUDA major of the base image above.
 RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
-    pip install --no-cache-dir onnxruntime-gpu==1.31.1
+    pip install --no-cache-dir onnxruntime-gpu==1.32.0
 
 # Install Triton in the venv so Whisper word-level timestamps use GPU-accelerated
 # kernels instead of falling back to slower CPU implementations. The base PyTorch
@@ -120,8 +120,8 @@ RUN apt-get update && \
 # urllib3==2.8.0 closes CVE-2026-44431/44432 and CVE-2026-97687/97689;
 # fsspec==2026.9.0 keeps the CVE-2026-104851 fix;
 # filelock==4.2.1 (torch and huggingface_hub use this copy, as the venv has none)
-# closes CVE-2026-112940; dnspython==2.9.0 (only python-etcd from the base
-# image needs it) closes CVE-2026-114605.
+# closes CVE-2026-112940; dnspython==2.9.2 (only python-etcd from the base
+# image needs it) closes CVE-2026-114605 and CVE-2026-128089.
 #
 # certifi is the exception: no requirements file pins it, and the venv has no
 # copy of its own, so this system copy is the CA bundle the worker verifies TLS
@@ -142,7 +142,7 @@ RUN apt-get update && \
 # every ONNX Runtime session falls back to the CPU.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
     --root-user-action=ignore --upgrade pillow==13.0.0 urllib3==2.8.0 fsspec==2026.9.0 \
-    filelock==4.2.1 dnspython==2.9.0 \
+    filelock==4.2.1 dnspython==2.9.2 \
     "certifi>=2026.10.19" && \
     /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
     --root-user-action=ignore \
@@ -195,21 +195,31 @@ RUN HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -c \
      processor = Nemotron3DiarizationProcessor(NemotronAsrStreamingFeatureExtractor()); \
      model = Nemotron3DiarizationForAudioFrameClassification(Nemotron3DiarizationConfig())"
 
-WORKDIR /app
-
-COPY . .
+# Fail the build if Triton cannot import. Whisper aligns word timestamps with
+# Triton GPU kernels, and when they cannot load it falls back to slower CPU
+# kernels for every recording (whisper_engine.py logs a WARNING when it does).
+# whisper.triton_ops raises at import if Triton does, and needs no GPU to import.
+RUN python -c "import whisper.triton_ops"
 
 # Create the non-root appuser that the entrypoint drops to at runtime.
 # The Ubuntu 24.04-based PyTorch image ships a default user at UID 1000; remove
 # whatever occupies 1000 first so appuser keeps UID 1000 for mounted-volume
 # ownership. Create directories for volumes to ensure they are owned by appuser.
+#
+# The user exists before the source is copied so that COPY --chown can own the
+# files as they land. A `chown -R /app` after the copy stored every file in /app
+# a second time, in a layer of its own (#1053).
 RUN if getent passwd 1000 >/dev/null 2>&1; then \
         userdel -r "$(getent passwd 1000 | cut -d: -f1)" 2>/dev/null || true; \
     fi && \
     useradd -m -u 1000 appuser && \
-    mkdir -p /home/appuser/.cache/huggingface && \
-    mkdir -p /app/data && \
-    chown -R appuser:appuser /app /home/appuser
+    mkdir -p /home/appuser/.cache/huggingface /app/data && \
+    chown -R appuser:appuser /home/appuser && \
+    chown appuser:appuser /app /app/data
+
+WORKDIR /app
+
+COPY --chown=appuser:appuser . .
 
 RUN chmod +x backend/worker_entrypoint.sh
 

@@ -67,12 +67,19 @@ uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts` exec
 | --- | --- | --- |
 | Theme | `.dark` class | follows the system |
 | Palette | `data-palette` = `graphite`, `classic`, `ultraviolet` or `marigold` | no attribute (the `:root` / `.dark` tokens) |
-| Corner style | `data-corners` = `subtle` or `square` | no attribute (rounded) |
+| Corner style | `data-corners` = `subtle` or `square` | Automatic: the style's corners (`STYLE_CORNERS`), which for Default is no attribute (rounded) |
 | Density | `data-ui-density` = `comfortable`, `compact` or `dense` | resolved from the viewport (never `dense`) |
 | Style | `data-style` = `default`, `classic` or `depth` | Default |
 
 A new preference must keep the same property: its default leaves the product exactly as it looks
 without the preference.
+
+Corner style is the one preference that depends on another. Its default, **Automatic (matches
+Style)**, stores no key and takes the corners from `STYLE_CORNERS` in `lib/appearance.ts`: Square
+for Classic, Rounded for Default and Depth. An explicit Rounded, Subtle or Square is stored and
+overrides it under every style. `resolveCornerStyle()` makes the decision and the pre-paint script
+mirrors it. Before Automatic existed, Rounded was stored as no key, so a browser left on Rounded now
+follows Style.
 
 `nojoin-style` is validated by the same storage helpers as the other preferences; Default
 removes the key. The pre-paint script prepares the validated style before first paint, and
@@ -125,8 +132,7 @@ The new Style row is the intentional addition to the Appearance page under every
   pixels inside their existing boxes. Enabled actions press in while active or toggled on;
   disabled and busy actions do not. Fine pointers get tighter vertical field padding; actions
   keep their own spacing, and field icon gutters and touch targets keep their existing dimensions.
-  Classic looks best with **Square**
-  corners, which remains a separate choice.
+  Classic brings **Square** corners while Corner style is Automatic.
 - **Depth** gives inset, card, pane and floating surfaces increasing separation, with a slight
   lift for enabled action buttons and a supplemental focus halo. Transcript bubbles and speaker
   cards use Card elevation; the speaker panel, meeting tab strip and chat use Pane elevation.
@@ -382,9 +388,14 @@ Anything that overlays other content takes its z-index from a token, through a p
 | `--z-sticky` | 30 | sticky chrome |
 | `--z-dropdown` | 40 | dropdowns, menus, tooltips |
 | `--z-modal` | 50 | dialogs |
+| `--z-toast` | 52 | toasts: over a dialog, under a menu someone has opened |
 | `--z-popover` | 55 | a context menu or popover that can open from inside a dialog |
-| `--z-toast` | 60 | toasts |
 | `--z-tour` | 10001 | the guided tour, above driver.js's own overlay at 10000 |
+
+Toasts rest at the bottom right, across the bottom on a phone. A bar docked at the foot of the
+screen, such as the recordings list's batch bar, takes its ref from `useToastClearance`
+(`lib/toastClearance.ts`), and `NotificationToast` raises its stack above any such bar it would
+otherwise cover.
 
 ## Layout and density
 
@@ -584,8 +595,9 @@ only. Build a surface from these before reaching for raw elements.
 | `Card` | The resting surface. `interactive` turns on the tint-and-border hover. |
 | `Badge`, `StatusBadge` | Pills. `StatusBadge` maps a `RecordingStatus` to a tone, a glyph and a label. |
 | `Input`, `Select` | Form fields, both built on the shared `fieldChrome` helper. `Select` is a native select, for the platform picker on a phone; it relies on `color-scheme` (see [Themes](#themes)). |
-| `Modal` | Every dialog. Wraps the Headless UI dialog for the focus trap, scroll lock, Escape handling and portal, and adds the plain scrim, the float surface and shadow, `--z-modal`, and a height cap so a tall modal keeps its actions on screen on a phone. Headless UI puts focus back on the element that opened the dialog; an action that removes that element sets `returnFocus` first, and focus goes there once the dialog has gone. |
-| `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Widgets on the same tokens. |
+| `Modal` | Every dialog. Wraps the Headless UI dialog for the focus trap, scroll lock, Escape handling and portal, and adds the plain scrim, the float surface and shadow, `--z-modal`, and a height cap so a tall modal keeps its actions on screen on a phone. Headless UI puts focus back on the element that opened the dialog; an action that removes that element sets `returnFocus` first, and focus goes there once the dialog has gone. A dialog whose form sits below a long run of links passes `skipLink`: the first Tab stop, before the title and the close control, hidden until it has focus, which moves focus to the element it names (**Skip to contact details** in **Person Details**). |
+| `Switch`, `ModernDatePicker`, `MultiSelect` | Widgets on the same tokens. |
+| `Tooltip`, `InfoTip` | Short text on hover or keyboard focus, in the inverted `--tooltip-*` colours. `InfoTip` is a small "i" `IconButton` with the touch target, for explaining the control beside it: a press pins the text, so it opens on a phone too. Escape closes either without closing the dialog it sits in, and a press outside lets a pinned one go. The bubble stays in the page while hidden and is positioned with `useAnchoredPanel`, so a field can name its `id` in `aria-describedby` and a dialog does not clip it. |
 | `useAnchoredPanel` | Positions a dropdown or popover against its trigger with `position: fixed`, flipping above when there is more room and clamping to the viewport, so a panel opened inside a modal is not clipped. |
 | `FitText` | A single line that must fit its container, such as the meeting title. Steps the font down from a designed size to a readability floor, then wraps to two clamped lines. |
 
@@ -630,7 +642,9 @@ built from them alone.
 - **`SettingsCard`** is the only container: a title with optional description, status badge and
   header control, then rows and blocks separated by hairlines. No card nests inside another.
 - **`SettingsRow`** puts a label and description on the left and one control on the right, and
-  stacks them below 26rem of its own width. Pass `controlId` for a single control: the label
+  stacks them below 26rem of its own width. Side by side, the control column never takes the
+  label's last 10.5rem: a column a row widens, such as `SETTINGS_CONTROL_COLUMN_WIDE`, narrows
+  in a narrow row instead, so never pass a `max-w` class to it. Pass `controlId` for a single control: the label
   becomes a real `<label>` for it, and the description takes the id `${controlId}-help` for the
   control's `aria-describedby`. A group of controls takes `labelId` and `aria-labelledby`
   instead. Rows carry no leading icon; category icons stay in the navigation.

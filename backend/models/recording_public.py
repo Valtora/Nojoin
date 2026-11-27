@@ -49,6 +49,13 @@ class PublicModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LiveSpeakerSuggestionsRead(BaseModel):
+    """Live names and proposals after dismissing a live suggestion."""
+
+    live_speaker_names: dict[str, str]
+    live_speaker_suggestions: dict[str, str]
+
+
 class LibraryVoiceprintRead(PublicModel):
     """What linking a recording speaker did to the person's library voiceprint."""
 
@@ -220,6 +227,33 @@ class LanguageNoticeRead(PublicModel):
     reprocess_language: str
 
 
+class LiveAINoticeRead(BaseModel):
+    """A live AI provider that is failing during this capture (#994).
+
+    One per provider in the chain that is waiting out a backoff or has
+    stopped. The message is built from the classified reason and worded for
+    the viewer; it never carries the provider's own error text.
+    """
+
+    # Stable for one provider's kind of failure and the features it names,
+    # until the AI settings change, so a client shows each notice once.
+    id: str
+    # The live features it holds up: "meeting_edge", "live_naming".
+    purposes: list[str]
+    provider: str
+    model: str
+    kind: str
+    # "retrying" until retry_at, or "stopped" until the AI settings change.
+    action: Literal["retrying", "stopped"]
+    retry_at: Optional[datetime] = None
+    # Who can fix it: "you" (an administrator, or a user's own subscription)
+    # or "admin".
+    fixable_by: Literal["you", "admin"]
+    # The Settings page that fixes it, when the viewer can open it.
+    settings: Optional[Literal["ai-providers", "your-ai"]] = None
+    message: str
+
+
 class RecordingPublicRead(PublicModel):
     id: str
     created_at: datetime
@@ -303,6 +337,12 @@ class RecordingPublicRead(PublicModel):
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
     calendar_event: Optional[CalendarEventLinkRead] = None
+    # Only on the detail read of a recording being captured (UPLOADING or
+    # PAUSED); absent otherwise, so a finished recording's payload does not
+    # grow. backend/processing/live_ai_backoff.py.
+    live_ai_notices: Optional[list[LiveAINoticeRead]] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class RecordingsCalendarRead(BaseModel):
@@ -363,6 +403,7 @@ def serialize_transcript(
     text_override: Optional[str] = None,
 ) -> TranscriptPublicRead:
     from backend.utils.canonical_pipeline.guards import settling_required
+    from backend.utils.speaker_names.live_suggestions import shown_in_transcript_read
 
     assert transcript.id is not None
     notes_status = reported_generation_status(
@@ -394,7 +435,7 @@ def serialize_transcript(
         speaker_name_suggestions=[
             SpeakerNameSuggestionRead.model_validate(item)
             for item in (transcript.speaker_name_suggestions or [])
-            if isinstance(item, dict)
+            if isinstance(item, dict) and shown_in_transcript_read(item)
         ],
         # A claim lost with its worker reads as failed, and says so, so the
         # page offers generation again (issue #828). A failed transcription's

@@ -31,7 +31,7 @@ import VersionTag from "./VersionTag";
 export default function SettingsShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { viewer, loading, forcePasswordChange } = useSettingsContext();
+  const { settings, viewer, loading, forcePasswordChange } = useSettingsContext();
   const [searchQuery, setSearchQuery] = useState("");
 
   const groups = useMemo(
@@ -42,9 +42,9 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
   const matching = useMemo<Set<SettingsCategoryId>>(
     () =>
       searchQuery
-        ? getMatchingSettingsCategories(searchQuery, viewer)
+        ? getMatchingSettingsCategories(searchQuery, viewer, settings)
         : new Set<SettingsCategoryId>(),
-    [searchQuery, viewer],
+    [searchQuery, viewer, settings],
   );
 
   // A category the account cannot see is one whose every action the API
@@ -100,12 +100,13 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
             <div className="border-b p-4 contrast-border">
               <SettingsSearch
                 viewer={viewer}
+                settings={settings}
                 onQueryChange={handleQueryChange}
               />
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="relative min-h-0 flex-1 overflow-y-auto">
             <SettingsNav groups={groups} matching={matching} />
           </div>
 
@@ -114,7 +115,11 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
           </div>
         </aside>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Positioned so it is the containing block of the absolute elements
+            inside, screen-reader-only text among them. Otherwise they resolve
+            against <main>, which this column neither clips nor scrolls, and a
+            long page lets <main> scroll on past the last card. */}
+        <div className="relative min-h-0 flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex h-full items-center justify-center py-16 contrast-helper">
               <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
@@ -128,6 +133,7 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
                 <div className="space-y-3 border-b p-4 contrast-border lg:hidden">
                   <SettingsSearch
                     viewer={viewer}
+                    settings={settings}
                     onQueryChange={handleQueryChange}
                   />
                   <SettingsAutosaveFooter />

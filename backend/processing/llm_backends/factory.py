@@ -1,3 +1,4 @@
+import copy
 import logging
 
 from backend.processing.llm_backends.anthropic import AnthropicLLMBackend
@@ -80,6 +81,17 @@ def get_llm_backend(
         raise ValueError(f"Unknown LLM provider: {provider}")
 
 
+def _given_timeout(timeout):
+    """``timeout=`` for a wrapped backend, or nothing when the caller gave none.
+
+    Each backend then applies its own default: a hosted one its per-request
+    default, a CLI subscription the manager's whole-turn default (#980). The
+    wrapper's methods used to send 60, 120 or 300 s whatever the caller did,
+    which hid "not given" from the CLI.
+    """
+    return {} if timeout is None else {"timeout": timeout}
+
+
 class SecondaryLLMBackend(LLMBackend):
     """Wraps a primary and secondary LLM backend. On any error from primary,
     falls back to the secondary backend. If both fail, raises the primary error."""
@@ -92,6 +104,16 @@ class SecondaryLLMBackend(LLMBackend):
             getattr(primary, "model", "unknown"),
             getattr(secondary, "model", "unknown"),
         )
+
+    def tiers(self) -> tuple[LLMBackend, ...]:
+        return (*self._primary.tiers(), *self._secondary.tiers())
+
+    def for_live_calls(self) -> "SecondaryLLMBackend":
+        """The same chain, each provider in it set up for a live call."""
+        live = copy.copy(self)
+        live._primary = self._primary.for_live_calls()
+        live._secondary = self._secondary.for_live_calls()
+        return live
 
     def _call_with_secondary(self, method_name: str, *args, **kwargs):
         try:
@@ -166,7 +188,7 @@ class SecondaryLLMBackend(LLMBackend):
         self,
         transcript,
         prompt_template=None,
-        timeout=60,
+        timeout=None,
         user_notes=None,
         meeting_context=None,
         eligible_labels=None,
@@ -175,15 +197,20 @@ class SecondaryLLMBackend(LLMBackend):
             "infer_speaker_suggestions",
             transcript,
             prompt_template,
-            timeout,
+            **_given_timeout(timeout),
             user_notes=user_notes,
             meeting_context=meeting_context,
             eligible_labels=eligible_labels,
         )
 
-    def generate_meeting_intelligence(self, request, prompt_template=None, timeout=60):
+    def generate_meeting_intelligence(
+        self, request, prompt_template=None, timeout=None
+    ):
         return self._call_with_secondary(
-            "generate_meeting_intelligence", request, prompt_template, timeout
+            "generate_meeting_intelligence",
+            request,
+            prompt_template,
+            **_given_timeout(timeout),
         )
 
     # The two below are reached only after the secondary has failed on the whole
@@ -197,12 +224,12 @@ class SecondaryLLMBackend(LLMBackend):
     def generate_meeting_intelligence_in_parts(self, request, **kwargs):
         return self._primary.generate_meeting_intelligence_in_parts(request, **kwargs)
 
-    def generate_text(self, prompt, timeout=60, max_tokens=4096):
+    def generate_text(self, prompt, timeout=None, max_tokens=4096):
         return self._call_with_secondary(
-            "generate_text", prompt, timeout, max_tokens=max_tokens
+            "generate_text", prompt, **_given_timeout(timeout), max_tokens=max_tokens
         )
 
-    def generate_text_from_images(self, prompt, images, timeout=120, max_tokens=8192):
+    def generate_text_from_images(self, prompt, images, timeout=None, max_tokens=8192):
         # Must be forwarded explicitly. Without this the call reaches
         # LLMBackend's default, which raises VisionUnsupportedError, and every
         # document downgrades to a structural parse even when the primary
@@ -217,7 +244,7 @@ class SecondaryLLMBackend(LLMBackend):
             "generate_text_from_images",
             prompt,
             images,
-            timeout=timeout,
+            **_given_timeout(timeout),
             max_tokens=max_tokens,
         )
 
@@ -238,14 +265,17 @@ class SecondaryLLMBackend(LLMBackend):
             return False
         return None
 
-    def generate_meeting_edge(self, request, prompt_template=None, timeout=60):
+    def generate_meeting_edge(self, request, prompt_template=None, timeout=None):
         return self._call_with_secondary(
-            "generate_meeting_edge", request, prompt_template, timeout
+            "generate_meeting_edge", request, prompt_template, **_given_timeout(timeout)
         )
 
-    def generate_meeting_analysis(self, request, prompt_template=None, timeout=300):
+    def generate_meeting_analysis(self, request, prompt_template=None, timeout=None):
         return self._call_with_secondary(
-            "generate_meeting_analysis", request, prompt_template, timeout
+            "generate_meeting_analysis",
+            request,
+            prompt_template,
+            **_given_timeout(timeout),
         )
 
     def generate_meeting_notes(  # noqa: PLR0913 - matches the LLMBackend contract
@@ -253,7 +283,7 @@ class SecondaryLLMBackend(LLMBackend):
         transcript,
         speaker_mapping,
         prompt_template=None,
-        timeout=60,
+        timeout=None,
         user_notes=None,
         meeting_context=None,
         output_language_instruction=None,
@@ -264,7 +294,7 @@ class SecondaryLLMBackend(LLMBackend):
             transcript,
             speaker_mapping,
             prompt_template,
-            timeout,
+            **_given_timeout(timeout),
             user_notes=user_notes,
             meeting_context=meeting_context,
             output_language_instruction=output_language_instruction,
@@ -275,14 +305,14 @@ class SecondaryLLMBackend(LLMBackend):
         self,
         transcript,
         prompt_template=None,
-        timeout=60,
+        timeout=None,
         output_language_instruction=None,
     ):
         return self._call_with_secondary(
             "infer_meeting_title",
             transcript,
             prompt_template,
-            timeout,
+            **_given_timeout(timeout),
             output_language_instruction=output_language_instruction,
         )
 
@@ -292,7 +322,7 @@ class SecondaryLLMBackend(LLMBackend):
         meeting_notes,
         diarized_transcript,
         conversation_history=None,
-        timeout=60,
+        timeout=None,
         recording_id=None,
     ):
         return self._call_with_secondary(
@@ -301,7 +331,7 @@ class SecondaryLLMBackend(LLMBackend):
             meeting_notes,
             diarized_transcript,
             conversation_history,
-            timeout,
+            **_given_timeout(timeout),
             recording_id=recording_id,
         )
 
@@ -311,7 +341,7 @@ class SecondaryLLMBackend(LLMBackend):
         meeting_notes,
         diarized_transcript,
         conversation_history=None,
-        timeout=60,
+        timeout=None,
         recording_id=None,
     ):
         return self._stream_with_secondary(
@@ -320,7 +350,7 @@ class SecondaryLLMBackend(LLMBackend):
             meeting_notes,
             diarized_transcript,
             conversation_history,
-            timeout,
+            **_given_timeout(timeout),
             recording_id=recording_id,
         )
 

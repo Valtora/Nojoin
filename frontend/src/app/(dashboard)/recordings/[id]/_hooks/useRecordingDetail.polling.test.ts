@@ -24,7 +24,9 @@ vi.mock("@/lib/api/transcript", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/api/transcript")>(),
   getTranscriptUtterances: (...args: unknown[]) => mocks.getTranscript(...args),
 }));
-vi.mock("@/lib/notificationStore", () => ({ useNotificationStore: () => ({ addNotification: mocks.notify }) }));
+vi.mock("@/lib/notificationStore", () => ({
+  useNotificationStore: () => ({ addNotification: mocks.notify, removeActiveNotification: vi.fn() }),
+}));
 vi.mock("@/lib/store", () => ({ useNavigationStore: () => mocks.navigation }));
 vi.mock("@/lib/notes/useNoteOutbox", () => ({ useRecordingNotes: () => mocks.notes }));
 vi.mock("@/lib/notes/useNoteEdits", () => ({ useNoteEdits: () => ({}) }));
@@ -63,6 +65,7 @@ describe("recording detail polling", () => {
     mocks.getRecordingIfChanged.mockReset().mockResolvedValue(null);
     mocks.getTranscript.mockReset().mockResolvedValue(delta());
     mocks.notify.mockReset();
+    window.sessionStorage.clear();
     mocks.navigation.setActivePanel.mockReset();
     mocks.navigation.activePanel = "transcript";
     mocks.isMobile = false;
@@ -133,22 +136,31 @@ describe("recording detail polling", () => {
     },
   );
 
-  it("toasts active and paused errors once per recording and message, even after clear and recurrence", async () => {
+  it("toasts each live AI notice once, and not the stored Meeting Edge error", async () => {
+    const notice = {
+      id: "notice-1", purposes: ["meeting_edge"], provider: "Ollama", model: "fake-500",
+      kind: "unavailable", action: "retrying" as const, retry_at: "2026-10-27T10:00:30Z",
+      fixable_by: "you" as const, settings: null,
+      message: "Meeting Edge: Ollama returned a server error for fake-500. Nojoin will try it again in 30 seconds.",
+    };
     const failed = recording({ status: RecordingStatus.UPLOADING, client_status: ClientStatus.RECORDING,
-      transcript: { meeting_edge_status: "error", meeting_edge_error_message: "Edge failed" } as Recording["transcript"] });
+      transcript: { meeting_edge_status: "error", meeting_edge_error_message: "Edge failed" } as Recording["transcript"],
+      live_ai_notices: [notice] });
     mocks.getRecording.mockResolvedValue(failed);
     mount();
     await advance(0);
-    expect(mocks.notify).toHaveBeenCalledWith({ type: "error", message: "Edge failed" });
-    mocks.getRecording.mockResolvedValue({ ...failed, transcript: { ...failed.transcript, meeting_edge_status: "ready" } });
+    expect(mocks.notify).toHaveBeenCalledTimes(1);
+    expect(mocks.notify).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: "live-ai-notice-1", type: "warning", message: notice.message, persistent: false,
+    }));
     await advance(1_000);
     mocks.getRecording.mockResolvedValue({ ...failed, status: RecordingStatus.PAUSED, client_status: ClientStatus.PAUSED });
     await advance(1_000);
     expect(mocks.notify).toHaveBeenCalledTimes(1);
-    mocks.getRecording.mockResolvedValue({ ...failed, transcript: { ...failed.transcript, meeting_edge_error_message: "New failure" } });
+    mocks.getRecording.mockResolvedValue({ ...failed, live_ai_notices: [{ ...notice, id: "notice-2" }] });
     await advance(1_000);
-    expect(mocks.notify).toHaveBeenLastCalledWith({ type: "error", message: "New failure" });
     expect(mocks.notify).toHaveBeenCalledTimes(2);
+    expect(mocks.notify).not.toHaveBeenCalledWith(expect.objectContaining({ message: "Edge failed" }));
   });
 
   it("discovers a live capture on the slow check and starts full then three-second delta reads", async () => {

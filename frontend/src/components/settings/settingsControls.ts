@@ -42,9 +42,11 @@ export const SETTINGS_VALUE_CLASS =
 
 /**
  * A row's control column at a fixed width, for cards whose selects would
- * otherwise size to their longest option and leave the columns ragged.
+ * otherwise size to their longest option and leave the columns ragged. The
+ * row's own max width still applies, so in a narrow row the column gives way
+ * and the label keeps its 10.5rem; a max-w class here would override that.
  */
-export const SETTINGS_CONTROL_COLUMN_WIDE = "@min-[26rem]:w-80 @min-[26rem]:max-w-none";
+export const SETTINGS_CONTROL_COLUMN_WIDE = "@min-[26rem]:w-80";
 
 /**
  * A row's control column that holds a switch or a lone button against the

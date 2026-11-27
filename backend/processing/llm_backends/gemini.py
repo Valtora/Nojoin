@@ -1,3 +1,4 @@
+import copy
 import logging
 from typing import Any, Dict, Generator, List, Optional, Sequence
 
@@ -36,8 +37,17 @@ from backend.processing.llm_backends.base import (
     raise_if_output_truncated,
 )
 
+# The Gemini API version every request names. This backend was written against
+# v1beta, which serves the -latest model aliases (gemini-flash-latest and the
+# rest) and the features it uses. google-genai 3.0.0 moved the default for an
+# API-key client to v1, where those aliases answer 404 (#990). A per-call
+# HttpOptions, such as a timeout, keeps the client's version.
+GEMINI_API_VERSION = "v1beta"
+
 
 class GeminiLLMBackend(LLMBackend):
+    provider_id = "gemini"
+
     def __init__(self, api_key=None, model=None):
         # Lazy import to avoid errors when google-genai isn't installed
         try:
@@ -57,7 +67,27 @@ class GeminiLLMBackend(LLMBackend):
         self.api_key = api_key
         self.model = model or None
         self.genai = genai
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = genai.Client(
+            api_key=self.api_key,
+            http_options=genai.types.HttpOptions(api_version=GEMINI_API_VERSION),
+        )
+
+    def for_live_calls(self) -> "GeminiLLMBackend":
+        """A copy that sends each live call once, within its timeout."""
+        live = copy.copy(self)
+        live._live_calls = True
+        return live
+
+    def _http_options(self, timeout: int) -> Any:
+        """A call's HttpOptions: its timeout, and for a live call one attempt.
+
+        google-genai makes one attempt when no retry options are given; a live
+        call says so, so a change of that default cannot bring retries back.
+        """
+        options: dict[str, Any] = {"timeout": int(timeout * 1000)}
+        if self._live_calls:
+            options["retry_options"] = self.genai.types.HttpRetryOptions(attempts=1)
+        return self.genai.types.HttpOptions(**options)
 
     @staticmethod
     def _raise_if_truncated(response) -> None:
@@ -143,11 +173,23 @@ class GeminiLLMBackend(LLMBackend):
             raise ValueError(
                 "No Gemini model configured. Please select a model in Settings."
             )
+        # Only a live ask is held to its timeout; the suggestions made after
+        # processing keep the client's own.
+        live_config = (
+            {
+                "config": self.genai.types.GenerateContentConfig(
+                    http_options=self._http_options(timeout)
+                )
+            }
+            if self._live_calls
+            else {}
+        )
         try:
             check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
+                **live_config,
             )
             text = self._extract_text_from_response(response)
             return self.parse_speaker_inference_result(text, eligible_labels)
@@ -328,9 +370,7 @@ class GeminiLLMBackend(LLMBackend):
                 config=self.genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.2,
-                    http_options=self.genai.types.HttpOptions(
-                        timeout=int(timeout * 1000),
-                    ),
+                    http_options=self._http_options(timeout),
                 ),
             )
             text = self._extract_text_from_response(response)
@@ -536,6 +576,24 @@ class GeminiLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (meeting title): {e}")
             raise RuntimeError(f"Gemini API error (meeting title): {e}")
+
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The Meeting Edge request. No output cap, as real calls send none: a
+        # thinking model that spent a cap on thought would read as a bad reply.
+        if not self.model:
+            raise ValueError("No Gemini model configured.")
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=self.genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+                http_options=self.genai.types.HttpOptions(
+                    timeout=int(timeout * 1000),
+                ),
+            ),
+        )
+        return self._extract_text_from_response(response)
 
     def validate_api_key(self) -> bool:
         """

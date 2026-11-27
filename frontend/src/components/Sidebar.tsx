@@ -19,7 +19,7 @@ import IconButton from "./ui/IconButton";
 import ImportAudioButton from "./importAudio/ImportAudioButton";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
-import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useHydrated } from "@/lib/useHydrated";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "@/lib/useDebouncedValue";
 import {
@@ -36,6 +36,7 @@ import {
 } from "./recordings/_hooks/useRecordingSelection";
 import {
   LIST_ACTIONS,
+  leftOutOfSelection,
   permanentDeleteConfirmation,
   type ListActionId,
 } from "./recordings/recordingListActions";
@@ -64,13 +65,16 @@ import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useRecordingListPages } from "./recordings/_hooks/useRecordingListPages";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
-import RecordingRailRow, {
+import { useRecordingListScroll } from "./recordings/_hooks/useRecordingListScroll";
+import RecordingListRow, {
   rowMenuLabel,
-  type RecordingRailRowHandlers,
-} from "./recordings/RecordingRailRow";
+  type RecordingListRowActions,
+} from "./recordings/RecordingListRow";
+import { useStableCallback } from "./transcript/_hooks/useStableCallback";
 import RecordingListFooter from "./recordings/RecordingListFooter";
 import { RECORDINGS_PAGE_SIZE } from "./recordings/recordingListPages";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { isImeComposing } from "@/lib/imeComposition";
 
 interface RowMenuItem {
   label: string;
@@ -258,7 +262,7 @@ export default function Sidebar() {
     () => recordings.map((recording) => recording.id),
     [recordings],
   );
-  const selection = useRecordingSelection(shownIds);
+  const selection = useRecordingSelection(shownIds, list.resultsKey);
   const longPress = useTouchLongPress(selection.toggle);
 
   // Confirmation Modal State
@@ -358,6 +362,13 @@ export default function Sidebar() {
   const listRef = useRef<HTMLUListElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // The list keeps its place while the rail is collapsed, and a new search,
+  // filter or view starts at the top. Keyed as the list hook keys its
+  // requests, so filters rebuilt with the same values leave the list alone.
+  const onListScroll = useRecordingListScroll(scrollRef, {
+    shown: !isCollapsed,
+    resetKey: JSON.stringify(listFilters),
+  });
   // Where focus goes once the rows an action took away have gone, or the
   // batch bar holding focus has closed: a row link by id, or the search box.
   const pendingFocusRef = useRef<RecordingId | "search" | null>(null);
@@ -592,48 +603,20 @@ export default function Sidebar() {
     }
   };
 
-  // Rows are memoised, so they get one handlers object for good, which calls
-  // whatever the latest render's handlers are. A poll that changes one
-  // recording then redraws that row alone.
-  const rowHandlerTargets: RecordingRailRowHandlers = {
-    onClick: handleRecordingClick,
-    onKeyDown: handleRecordingKeyDown,
-    onContextMenu: handleContextMenu,
-    onToggleMenu: toggleRowMenu,
-    onToggleSelected: selection.toggle,
-    onExtendSelection: selection.extendTo,
-    onRenameStart: handleRenameStart,
-    onRenameValueChange: setRenameValue,
-    onRenameSubmit: (id) => void handleRenameSubmit(id),
-    onRenameCancel: () => setRenamingId(null),
-    longPressProps: longPress.bind,
-  };
-  const rowHandlersRef = useRef(rowHandlerTargets);
-  useLayoutEffect(() => {
-    rowHandlersRef.current = rowHandlerTargets;
-  });
-  const [rowHandlers] = useState<RecordingRailRowHandlers>(
-    () => ({
-      onClick: (e, id) => rowHandlersRef.current.onClick(e, id),
-      onKeyDown: (e, id) => rowHandlersRef.current.onKeyDown(e, id),
-      onContextMenu: (e, recording) => rowHandlersRef.current.onContextMenu(e, recording),
-      onToggleMenu: (button, recording) => rowHandlersRef.current.onToggleMenu(button, recording),
-      onToggleSelected: (id) => rowHandlersRef.current.onToggleSelected(id),
-      onExtendSelection: (id) => rowHandlersRef.current.onExtendSelection(id),
-      onRenameStart: (id, name) => rowHandlersRef.current.onRenameStart(id, name),
-      onRenameValueChange: (value) => rowHandlersRef.current.onRenameValueChange(value),
-      onRenameSubmit: (id) => rowHandlersRef.current.onRenameSubmit(id),
-      onRenameCancel: () => rowHandlersRef.current.onRenameCancel(),
-      longPressProps: (id) => rowHandlersRef.current.longPressProps(id),
-    }),
-  );
-
   const handleListKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape" && selection.isSelecting) {
       e.preventDefault();
       e.stopPropagation();
       selection.clear();
     }
+  };
+
+  /** Escape empties a search box that holds text; focus stays in the box. */
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Escape" || !searchQuery || isImeComposing(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSearchQuery("");
   };
 
   const getContextMenuItems = (recording: Recording) => {
@@ -770,6 +753,52 @@ export default function Sidebar() {
   // Determine if we should hide the sidebar on mobile
   const isRecordingView = pathname?.startsWith("/recordings/");
 
+  // The cards' handlers, one object for the list's life, so a memoised card
+  // draws again only when its own props change (issue #907). Each one runs
+  // this render's handler, which reads the current selection, menu and name.
+  const onRowClick = useStableCallback(handleRecordingClick);
+  const onRowKeyDown = useStableCallback(handleRecordingKeyDown);
+  const onRowContextMenu = useStableCallback(handleContextMenu);
+  const onRowToggleMenu = useStableCallback(toggleRowMenu);
+  const onRowRenameStart = useStableCallback(handleRenameStart);
+  const onRowRenameSubmit = useStableCallback((id: RecordingId) => {
+    void handleRenameSubmit(id);
+  });
+  const onRowToggleSelect = useStableCallback((id: RecordingId, extend: boolean) => {
+    if (extend) {
+      selection.extendTo(id);
+    } else {
+      selection.toggle(id);
+    }
+  });
+  const onRowRenameCancel = useCallback(() => setRenamingId(null), []);
+  const bindLongPress = longPress.bind;
+  const rowActions = useMemo<RecordingListRowActions>(
+    () => ({
+      onClick: onRowClick,
+      onKeyDown: onRowKeyDown,
+      onContextMenu: onRowContextMenu,
+      onToggleSelect: onRowToggleSelect,
+      onToggleMenu: onRowToggleMenu,
+      onRenameStart: onRowRenameStart,
+      onRenameChange: setRenameValue,
+      onRenameSubmit: onRowRenameSubmit,
+      onRenameCancel: onRowRenameCancel,
+      bindLongPress,
+    }),
+    [
+      onRowClick,
+      onRowKeyDown,
+      onRowContextMenu,
+      onRowToggleSelect,
+      onRowToggleMenu,
+      onRowRenameStart,
+      onRowRenameSubmit,
+      onRowRenameCancel,
+      bindLongPress,
+    ],
+  );
+
   // Collapse and expand animate the width. A drag sets it on every pointer
   // move, so it goes without a transition and the edge stays on the pointer.
   const widthTransition = isResizing
@@ -823,11 +852,11 @@ export default function Sidebar() {
         </div>
       )}
       {!isCollapsed && (
-      // `relative` keeps absolutely positioned descendants, such as the batch
-      // bar's sr-only status line, inside this scroller. Without it their
-      // containing block is the aside, and the full list's height leaks out
-      // as scrollable overflow on the app shell.
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col">
+      {/* The head (meeting controls, search, filters and Select all) stays
+          put while the cards scroll beneath it. It gives way, and scrolls on
+          its own, only when open filters would leave the cards too little room. */}
+      <div className="relative min-h-0 shrink overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
           <MeetingControls
@@ -882,6 +911,7 @@ export default function Sidebar() {
                 aria-label="Search recordings"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 className="w-full pl-9 pr-9 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
               />
               <ButtonBase
@@ -1034,6 +1064,47 @@ export default function Sidebar() {
         )}
       </div>
 
+      {recordings.length > 0 && (
+        // Escape here, as in the list, clears the selection.
+        <div onKeyDown={handleListKeyDown} className="pb-2">
+          <label className="flex w-fit cursor-pointer items-center gap-2 px-5 pt-2 text-xs text-rail-fg-muted pointer-coarse:min-h-[44px] pointer-coarse:pt-0">
+            <InputBase
+              type="checkbox"
+              aria-controls="recordings-list"
+              checked={selection.headerState === "all"}
+              ref={(input) => {
+                if (input) input.indeterminate = selection.headerState === "some";
+              }}
+              onChange={selection.toggleAll}
+              className="h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            />
+            Select all
+          </label>
+        </div>
+      )}
+      {/* Mounted while empty too, so the line is read out when it appears. */}
+      <p
+        aria-live="polite"
+        className={
+          selection.leftOut > 0
+            ? `px-5 pb-2 text-xs text-rail-fg-muted ${recordings.length > 0 ? "" : "pt-2"}`
+            : "sr-only"
+        }
+      >
+        {selection.leftOut > 0 ? leftOutOfSelection(selection.leftOut) : ""}
+      </p>
+      </div>
+
+      {/* Only the cards scroll. `relative` keeps absolutely positioned
+          descendants, such as the batch bar's sr-only status line, inside
+          this scroller. Without it their containing block is the aside, and
+          the full list's height leaks out as scrollable overflow on the app
+          shell. */}
+      <div
+        ref={scrollRef}
+        onScroll={onListScroll}
+        className="relative min-h-32 flex-1 basis-0 overflow-y-auto"
+      >
       {/* Recording List */}
       {recordings.length === 0 && (
         <div className="text-center p-4 m-2 text-rail-fg-muted text-sm">
@@ -1073,21 +1144,8 @@ export default function Sidebar() {
         </div>
       )}
       {recordings.length > 0 && (
-        // Escape anywhere in the list, header checkbox included, clears the selection.
+        // Escape anywhere in the list clears the selection.
         <div onKeyDown={handleListKeyDown}>
-          <label className="flex w-fit cursor-pointer items-center gap-2 px-5 pt-2 text-xs text-rail-fg-muted pointer-coarse:min-h-[44px] pointer-coarse:pt-0">
-            <InputBase
-              type="checkbox"
-              aria-controls="recordings-list"
-              checked={selection.headerState === "all"}
-              ref={(input) => {
-                if (input) input.indeterminate = selection.headerState === "some";
-              }}
-              onChange={selection.toggleAll}
-              className="h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-            />
-            Select all
-          </label>
           <ul
             id="recordings-list"
             ref={listRef}
@@ -1095,20 +1153,27 @@ export default function Sidebar() {
             aria-busy={list.isLoadingQuery || undefined}
             className="@container p-2 space-y-2"
           >
-            {recordings.map((recording) => (
-              <RecordingRailRow
-                key={recording.id}
-                recording={recording}
-                isActive={pathname === `/recordings/${recording.id}`}
-                isSelected={selection.isSelected(recording.id)}
-                isSelecting={selection.isSelecting}
-                isMenuOpen={contextMenu?.buttonFor === recording.id}
-                hasUnsentNotes={unsentRecordings.includes(recording.id)}
-                renameValue={renamingId === recording.id ? renameValue : null}
-                userTimeZone={userTimeZone}
-                handlers={rowHandlers}
-              />
-            ))}
+            {recordings.map((recording) => {
+              const isActive = pathname === `/recordings/${recording.id}`;
+              const isRenaming = renamingId === recording.id;
+              return (
+                <RecordingListRow
+                  key={recording.id}
+                  recording={recording}
+                  timeZone={userTimeZone}
+                  isActive={isActive}
+                  isSelected={selection.isSelected(recording.id)}
+                  isSelecting={selection.isSelecting}
+                  isMenuOpen={contextMenu?.buttonFor === recording.id}
+                  isRenaming={isRenaming}
+                  // Only the card being renamed reads the name being typed.
+                  renameValue={isRenaming ? renameValue : ""}
+                  hasUnsentNotes={unsentRecordings.includes(recording.id)}
+                  renamesOnDoubleClick={isDesktopLayout}
+                  actions={rowActions}
+                />
+              );
+            })}
           </ul>
           <RecordingListFooter
             rowCount={recordings.length}
@@ -1194,6 +1259,7 @@ export default function Sidebar() {
           onClose={() => setReprocessRecordingId(null)}
         />
       )}
+      </div>
       </div>
       )}
 

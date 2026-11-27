@@ -1264,7 +1264,7 @@ async def test_cors_preflight_allows_configured_web_app_url(monkeypatch) -> None
 async def test_models_status_admin(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(model_status, "get_download_progress", lambda: None)
+    monkeypatch.setattr(model_status, "get_download_progress", lambda _model=None: None)
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
@@ -1291,7 +1291,7 @@ async def test_models_status_admin(
 async def test_models_status_non_admin(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(model_status, "get_download_progress", lambda: None)
+    monkeypatch.setattr(model_status, "get_download_progress", lambda _model=None: None)
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(

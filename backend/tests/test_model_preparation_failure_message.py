@@ -27,7 +27,7 @@ def progress(monkeypatch) -> list[dict]:
         reports.append({"message": message, "status": status, "stage": stage})
         return True
 
-    monkeypatch.setattr(preload_models, "clear_download_progress", lambda: None)
+    monkeypatch.setattr(preload_models, "clear_download_progress", lambda *_args: None)
     monkeypatch.setattr(preload_models, "set_download_progress", _record)
     monkeypatch.setattr(preload_models, "_release_validation_caches", lambda: None)
     return reports

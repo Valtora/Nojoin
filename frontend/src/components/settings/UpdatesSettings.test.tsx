@@ -119,6 +119,47 @@ describe("UpdatesSettings", () => {
     expect(await screen.findByText(/sha256:9\.2\.0/)).toBeTruthy();
   });
 
+  it("folds a short body's image digests and commits away from its notes", async () => {
+    const short = [
+      "## Nojoin 9.3.0",
+      "",
+      "### What's new",
+      "",
+      "- **Headline 9.3.0.** What changed.",
+      "",
+      "<details>",
+      "<summary>Container images</summary>",
+      "",
+      "- `ghcr.io/example/api@sha256:9.3.0`",
+      "",
+      "</details>",
+      "",
+      "<details>",
+      "<summary>Commits</summary>",
+      "",
+      "- **ui:** Add a tooltip (`ddd4444`)",
+      "",
+      "</details>",
+    ].join("\n");
+    getVersion.mockResolvedValue({
+      ...versionInfo,
+      current_version: "9.3.0",
+      latest_version: "9.3.0",
+      releases: [{ ...release("9.3.0"), body: short }],
+    });
+    render(<UpdatesSettings />);
+
+    await screen.findByText("Headline 9.3.0.");
+    expect(screen.queryByText(/sha256:9\.3\.0/)).toBeNull();
+    expect(screen.queryByText(/ddd4444/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Container images" }));
+    expect(await screen.findByText(/sha256:9\.3\.0/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Commits" }));
+    expect(await screen.findByText(/ddd4444/)).toBeTruthy();
+  });
+
   it("shows the upgrade commands to administrators only", async () => {
     const { unmount } = render(<UpdatesSettings />);
     await screen.findByText("Headline 9.2.0.");

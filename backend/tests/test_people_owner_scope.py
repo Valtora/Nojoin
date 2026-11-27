@@ -404,3 +404,19 @@ async def test_the_demo_meetings_people_belong_to_the_user_it_is_seeded_for(
     assert len(links) == 8
     assert all(recording_owner == owner for recording_owner, owner in links)
     assert alice_host == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name", ["N:L0", "C:SPEAKER_03"])
+async def test_a_final_diarisation_label_is_not_a_name_for_a_new_person(
+    client, session_maker, name
+) -> None:
+    await _seed(session_maker, speaker_voiceprint=VOICE)
+
+    response = await client.post(
+        APPLY, json={"action": "create_new", "new_speaker_name": name}
+    )
+
+    assert response.status_code == 400
+    assert "placeholder" in response.json()["detail"]
+    assert sorted(await _people(session_maker)) == [7, 8]

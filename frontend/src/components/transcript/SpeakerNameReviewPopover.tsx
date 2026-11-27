@@ -20,13 +20,13 @@ interface SpeakerNameReviewPopoverProps {
   /** Why the name was suggested, or null. */
   reason: string | null;
   onReview: (label: string, name: string, decision: SpeakerNameDecision) => Promise<void>;
-  /** Where focus goes after a decision, which removes the "?" itself. */
+  /** Where focus goes after a decision, which removes the chip itself. */
   focusAfterDecision: () => void;
 }
 
 /**
- * The "?" after a suggested speaker name on a transcript line, and the small
- * popover it opens with Confirm and Not {name}. The button ignores clicks
+ * The Suggested chip after a suggested speaker name on a transcript line, and
+ * the small popover it opens with Confirm and Not {name}. The button ignores clicks
  * while its decision is sent; the line drops it once the name is settled.
  * The popover closes on Escape, a press outside it, or focus leaving it.
  */
@@ -80,7 +80,7 @@ export default function SpeakerNameReviewPopover({
 
   // Tab past the last button, or Shift+Tab before the first, leaves the
   // popover; it closes then rather than stay open behind the focus. A blur
-  // with nowhere to go (Safari, on a press of the "?") is left to the
+  // with nowhere to go (Safari, on a press of the chip) is left to the
   // outside-press handler: closing here would let the press reopen it.
   const onPanelBlur = (event: FocusEvent<HTMLDivElement>) => {
     const next = event.relatedTarget as Node | null;
@@ -101,8 +101,8 @@ export default function SpeakerNameReviewPopover({
       <ButtonBase
         ref={triggerRef}
         type="button"
-        aria-label={`Confirm or dismiss the name ${name}`}
-        title="Suggested name, not confirmed yet"
+        // Starts with the words it shows, so it can be named by them.
+        aria-label={`Suggested: confirm or dismiss the name ${name}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
@@ -116,9 +116,9 @@ export default function SpeakerNameReviewPopover({
       >
         <span
           aria-hidden="true"
-          className="rounded-pill border border-status-warning-border bg-status-warning-bg px-1.5 text-xs font-bold leading-5 text-status-warning-fg"
+          className="rounded-pill border border-status-warning-border bg-status-warning-bg px-2 text-xs font-semibold leading-5 text-status-warning-fg"
         >
-          ?
+          Suggested
         </span>
       </ButtonBase>
       {/* On the body, as the line's menu is: a translucent group is a

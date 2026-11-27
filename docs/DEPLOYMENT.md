@@ -108,6 +108,8 @@ docker compose exec worker-gpu ldconfig -p | grep libcudnn_adv
 
 An empty result means the base image moved cuDNN and the image needs rebuilding against the new path. A handful of memcpy nodes in ONNX Runtime's log is normal. Hundreds or thousands mean the graph is running on the CPU.
 
+Whisper's word timestamps fall back the same way. When its Triton kernels cannot launch, it aligns words with slower CPU kernels, and `worker-gpu` logs a warning the first time, once per worker process, beginning `Whisper could not launch its Triton GPU kernels`. The image build fails if Triton does not import, so on a released image the warning means Triton loaded but could not compile or launch its kernels on this GPU.
+
 ## Data Directory Ownership
 
 The `api` and `worker-*` containers run as UID 1000 (`appuser`). Their entrypoints start as root only to fix ownership of the `./data` bind mount, because Docker creates a missing bind-mount source as `root:root`, then drop to `appuser` through `gosu`. Each directory Nojoin writes to under `data/` is created and checked on its own. A mis-owned data root, as on the first boot of a fresh `data/`, gets one recursive pass.
@@ -171,7 +173,7 @@ Models live in the `model_cache` volume (`XDG_CACHE_HOME` and `HF_HOME` on the w
 
 Changing the transcription model downloads nothing by itself. **Settings > Transcription** offers to fetch the new model, and **Model downloads**, under **Advanced** in **Settings > AI providers**, has a **Download** action with progress. A model that was never prepared is fetched on first use, which holds up live transcription and Meeting Edge. One preparation runs at a time, and a second request gets a 409. Deleting a cached model runs on a worker too, because the API mounts `model_cache` read-only, so both actions need running workers.
 
-After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation.
+After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation. What the process keeps after a release, the imported ML libraries and what a first inference leaves behind, goes only when `worker-gpu` restarts itself after an idle spell ([Idle Worker Restart](#idle-worker-restart)).
 
 `worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Beat records each job's last run in `data/celerybeat-schedule.json`, the `-s` path plus `.json`, and replaces the whole file after every task it sends, so the cadence survives restarts, even when Docker has to kill a busy `worker-io`. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
 
@@ -191,13 +193,13 @@ The native Qwen feature extractor now supplies the encoder's mel padding for arb
 
 The native Nemotron runtime supplies live speaker labels on eligible CUDA captures when `speaker_engine` is `auto` and live labels are enabled ([Live Speaker Labels](#live-speaker-labels)). The same install-level engine setting also enables the offline final speaker pass on CUDA captures, imports and reprocessing with verified assets. A recording with a speaker cap keeps the combined result only when it fits the cap ([Final Speaker Pass](ARCHITECTURE.md#final-speaker-pass)). The live-label master switch does not control final processing.
 
-An administrator can prepare it ahead of the first recording, or repair it, through **Settings > AI providers > Advanced > Model downloads > Nemotron**, or `POST /api/v1/system/models/prepare` with `{"target":"nemotron"}`. This prepares only Nemotron, regardless of the transcription engine. The existing `active` and `core` targets retain their meaning. `GET /api/v1/system/models/status` reports its download `state` (`absent`, `downloading`, `ready` or `failed`), manifest-derived `size_bytes`, `verification_state` (`missing`, `partial`, `verified` or `invalid`), revision and manifest identity. The row stays visible when unused and explains the CUDA/automatic-engine requirement. `DELETE /api/v1/system/models/nemotron` removes its managed cache through a worker, using the same shared-blob safeguards as other models. These operations require running workers; explicit preparation and deletion require an administrator.
+An administrator can prepare it ahead of the first recording, or repair it, through **Settings > AI providers > Advanced > Model downloads > Nemotron**, or `POST /api/v1/system/models/prepare` with `{"target":"nemotron"}`. This prepares only Nemotron, regardless of the transcription engine. The existing `active` and `core` targets retain their meaning. `GET /api/v1/system/models/status` reports its download `state` (`absent`, `downloading`, `ready`, `failed` or `retry_wait`), manifest-derived `size_bytes`, `verification_state` (`missing`, `partial`, `verified` or `invalid`), revision and manifest identity. The row stays visible when unused and explains the CUDA/automatic-engine requirement. `DELETE /api/v1/system/models/nemotron` removes its managed cache through a worker, using the same shared-blob safeguards as other models. These operations require running workers; explicit preparation and deletion require an administrator.
 
 The three official files occupy **396,956,673 bytes**, including **396,954,592 bytes** of safetensors weights, under `$HF_HOME/hub/models--nvidia--Nemotron-3-Diarization/snapshots/f667ed73aee57d40cc39428eb768b4fd87a0a29e/`. `HF_HUB_CACHE` overrides the hub root when set. Keep that directory on the existing `model_cache` volume. Its `nojoin-verification.json` receipt sits in the repository directory, outside the upstream snapshot. A completed receipt and unchanged file metadata indicate completed preparation; the worker rehashes the actual files before its first model load. An interrupted download or a changed file is never reported as verified. Explicit preparation repairs it.
 
 The worker pins Transformers in `requirements/worker.txt`, loads only the verified local safetensors snapshot with remote code disabled, and uses fp32/SDPA on CUDA. No checkpoint is baked into an image or fetched by settings saves or health polling, and startup never makes a first download. The clean worker build adds **55,894,050 bytes** of installed package payload, excluding bytecode and console scripts; this is not a compressed image-layer measurement. The API has no Transformers dependency, and CPU-only workers do not import the native runtime's ML dependencies.
 
-If verified assets are missing when live labels start, the worker uses clustering for the whole capture without requesting preparation. After a capture ends, an eligible CUDA final pass requests preparation when assets are absent and keeps community-1 for that recording. Imports and reprocessing use the same final-pass request, independently of the live-label setting. Requests are deduplicated: another recording does not queue a second download while one is pending. The final pass does not wait for the download; a later eligible capture can use Nemotron for live labels, and a later eligible final pass can use the union once preparation completes. CPU processing and `classic` mode do not request final-pass preparation. A recording with a speaker cap requests it as any other does. A failed request needs administrator repair or another eligible recording's request. Preparation runs on `worker-cpu`, and administrators can prepare ahead to avoid first-use fallback. Native packet timing measures neither the complete live lane nor final processing.
+If verified assets are missing when live labels start, the worker uses clustering for the whole capture without requesting preparation. After a capture ends, an eligible CUDA final pass requests preparation when assets are absent and keeps community-1 for that recording. Imports and reprocessing use the same final-pass request, independently of the live-label setting. Requests are deduplicated: another recording does not queue a second download while one is pending. The final pass does not wait for the download; a later eligible capture can use Nemotron for live labels, and a later eligible final pass can use the union once preparation completes. CPU processing and `classic` mode do not request final-pass preparation. A recording with a speaker cap requests it as any other does. After a failed preparation, other recordings' requests wait ten minutes before queueing it again, and its row says **Waiting to retry** meanwhile; **Retry** in **Model downloads** runs at once. Preparation runs on `worker-cpu`, and administrators can prepare ahead to avoid first-use fallback. Native packet timing measures neither the complete live lane nor final processing.
 
 An installed copy that no longer verifies is prepared again at startup. An upgrade that changes the asset manifest, such as a new checkpoint revision, leaves a receipt naming the old manifest, which reads as `invalid`. A Transformers update leaves the manifest unchanged; only the upgrade that removed the Transformers version from it re-verifies once this way. The preparation the API queues when it starts sees that once the transcription engine is ready and queues Nemotron's preparation on `worker-cpu`, as it does the [forced aligner's](#forced-aligner-assets). That task re-hashes the unchanged files and writes a new receipt without downloading them, so live labels and the final pass use Nemotron again once it finishes. It is queued only for a copy prepared before, with `speaker_engine` on `auto` and `processing_device` other than `cpu`; a missing or interrupted copy still waits for a final pass or an administrator, as above.
 
@@ -208,21 +210,46 @@ Worker tasks are split across four Celery queues, each drained by its own contai
 | Service | Queue | Shipped pool | Work |
 | --- | --- | --- | --- |
 | `worker-gpu` | `gpu` | `--pool=solo --concurrency=1` | Final processing, live ASR, speaker embeddings, overlap analytics, transcription and Pyannote speaker model preparation. The only lane with GPU access. |
-| `worker-cpu` | `cpu` | `--pool=prefork --concurrency=3` | ffmpeg transcodes, playback proxies, imported audio, delivery analytics, backups, all Nemotron and forced aligner downloads, including the aligner download that preparing Canary queues. |
-| `worker-io` | `io` | `--pool=prefork --concurrency=4`, plus Celery Beat | Meeting Edge, notes, chat, transcript indexing, calendar sync, restores, cleanup, model deletion, telemetry. |
-| `worker-parse` | `parse` | `--pool=prefork --concurrency=2 --max-tasks-per-child=25` | Document parsing and search index rebuilds. |
+| `worker-cpu` | `cpu` | `--pool=prefork --autoscale=3,1 --max-memory-per-child=400000` | ffmpeg transcodes, playback proxies, imported audio, delivery analytics, backups, all Nemotron and forced aligner downloads, including the aligner download that preparing Canary queues. |
+| `worker-io` | `io` | `--pool=prefork --autoscale=4,1 --max-memory-per-child=400000`, plus Celery Beat | Meeting Edge, notes, chat, transcript indexing, calendar sync, restores, cleanup, model deletion, telemetry. |
+| `worker-parse` | `parse` | `--pool=prefork --autoscale=2,1 --max-memory-per-child=400000 --max-tasks-per-child=25` | Document parsing and search index rebuilds. |
 
 `worker-parse` runs the `worker-io` image, because visual parsing can use a subscription CLI that ships only there. It is a separate lane because a parse has no page cap, and one large upload on the IO lane could slow Meeting Edge during a live meeting. Routing is `TASK_ROUTES` in `backend/celery_app.py`, and an unrouted task goes to the GPU lane.
 
-Tune `--concurrency` in `docker-compose.yml` to your host. Keep the GPU lane at 1 unless you have several GPUs or one card that can hold two pipelines. PostgreSQL's default `max_connections` (100) covers the shipped sizing, so raise it if you widen the lanes a lot.
+Tune the pools in `docker-compose.yml` to your host: `--autoscale=<most>,<fewest>` children on a prefork lane, or a fixed `--concurrency`. Keep the GPU lane at `--concurrency=1` unless you have several GPUs or one card that can hold two pipelines. PostgreSQL's default `max_connections` (100) covers the shipped sizing, so raise it if you widen the lanes a lot.
 
 Keep `--pool` at `solo` or `prefork`. Worker code queues follow-on tasks with a blocking call, which is safe only while each task has an operating-system process to itself. A pool that runs several tasks in one process, such as `gevent`, `eventlet` or `threads`, lets one blocked dispatch stall the others, and no test catches the change.
 
 #### Worker Child Recycling
 
-Prefork children are replaced after 500 tasks (`worker_max_tasks_per_child` in `backend/celery_app.py`). A lane's `--max-tasks-per-child` flag overrides that, as `worker-parse` does with 25, because one document can leave a child far heavier than any other task. The setting has no effect on `worker-gpu`, whose solo pool has no children, and does not touch Celery Beat.
+The prefork lanes autoscale. `worker-io` keeps one child while it is idle, adds children up to four while tasks wait, and removes the extra ones once the lane has been quiet for about a minute. `worker-cpu` grows to three children and `worker-parse` to two. An idle install then runs three prefork children instead of nine.
 
-A recycle never interrupts or loses a task, and the new child re-imports what its first task needs. Recycling bounds how far an undetected leak can grow. It does not lower steady-state memory. Raise the limit for a lane whose tasks are slow to warm up, and lower it for one whose tasks are memory-hungry.
+`--max-memory-per-child=400000` replaces a child after its task once the child has used more than 400,000 KiB (about 390 MiB) of resident memory. Celery measures the child's peak, not what it holds when the task ends, so one heavy task, such as a long backup, a large document or a model preparation, is enough. The task always finishes first.
+
+Prefork children are also replaced after 500 tasks (`worker_max_tasks_per_child` in `backend/celery_app.py`). A lane's `--max-tasks-per-child` flag overrides that, as `worker-parse` does with 25, because one document can leave a child far heavier than any other task. None of these settings affects `worker-gpu`, whose solo pool has no children, or Celery Beat.
+
+A recycle never interrupts or loses a task, and the new child re-imports what its first task needs. The task limit bounds how far an undetected leak can grow, and the memory limit hands back what a heavy task left behind. Raise either limit for a lane whose tasks are slow to warm up, and lower it for one whose tasks are memory-hungry.
+
+A `docker-compose.yml` from before 3.2.0 keeps fixed pools. To adopt autoscaling, replace `--concurrency=<n>` with `--autoscale=<n>,1` and add `--max-memory-per-child=400000` on `worker-cpu`, `worker-io` and `worker-parse`, as `docker-compose.example.yml` has them.
+
+### Idle Worker Restart
+
+`worker-gpu` releases its models after every task, but its process keeps what importing the ML libraries and running a first inference leave behind: about 1.5 GB of host memory on a CUDA install, and the GPU's CUDA context, with no model loaded. Only a process exit returns that memory, so once the worker has been idle long enough it restarts itself in place. It finishes a warm shutdown and then runs its own command line again in the same process: the container, process ID and environment stay the same, and nothing depends on the restart policy.
+
+It restarts once all of these hold:
+
+- `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES`, 15 by default, have passed since its last task finished.
+- It has run at least one task since it started, so a worker that has just restarted waits for work first.
+- No capture is recording or paused. While one is, the idle time does not count, and it starts counting when the capture stops or is discarded.
+- No task is running or waiting on the worker.
+
+It logs one line as it goes, `Idle for 15.4 minutes: restarting this worker in place to free memory. Models load again on the next task.`, followed by its usual startup lines. A task sent during the few seconds it takes waits in the queue and runs once the worker is back. The restarted worker skips the startup sweep that sends waiting recordings to the queue again ([Runs Lost With A Worker](ARCHITECTURE.md#runs-lost-with-a-worker)): it held no task, so each one still has its task queued, and a second would process the recording twice. A container restart or a crash still runs the sweep.
+
+The next task loads its models again. The first live caption of a capture that starts after a restart arrives about 14 seconds after its segment, against about 12.5 seconds when the models were only released, and about 20 seconds with live speaker labels. Final transcripts are unaffected.
+
+Set `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES` in `.env` in minutes, or `0` to turn the restart off. The shipped compose file passes it to `worker-gpu` alone. A `docker-compose.yml` from before 3.2.0 does not pass it, so the worker restarts after the default 15 minutes until you add `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES: ${NOJOIN_WORKER_IDLE_RECYCLE_MINUTES:-}` to `worker-gpu`'s `environment:` block.
+
+Only a solo pool restarts this way; the prefork lanes shed children instead ([Worker Child Recycling](#worker-child-recycling)). While **Settings > System and logs** is open, it asks `worker-gpu` for its processing device every 30 seconds, and each of those requests is a task, so close the page to see the worker restart.
 
 ## CPU-Only Deployment
 
@@ -314,6 +341,7 @@ Operations:
 | `NOJOIN_STALL_WATCHDOG_ENABLED` | `true` | Logs API stalls and host pressure ([Stall Detection](#stall-detection)). |
 | `WHISPER_ENABLE_WORD_TIMESTAMPS` | `true` | Whisper word timestamps, which let the merge assign speakers word by word. |
 | `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES` | `all`, `compute,utility` | GPU passthrough for `worker-gpu`. |
+| `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES` | `15` | Minutes `worker-gpu` stays idle before it restarts itself in place to free memory. `0` turns it off ([Idle Worker Restart](#idle-worker-restart)). |
 | `NOJOIN_CODEX_PATH` | `/usr/local/bin/codex` | Codex CLI path on the workers ([CLI OAuth](#cli-oauth-worker-io-image)). Not in `.env.example`. |
 
 Not in `.env.example` and not passed by the shipped compose file. Set them in the service's `environment:` block:
@@ -366,16 +394,17 @@ First-run setup can pre-fill values from environment variables, and that prefill
 
 Speech and speaker tuning is per user (**Settings > Recording > Advanced**, **Speech and speaker tuning**), and each value inherits by default. Set an installation default for any key as a flat entry in `data/config.json`. It applies to every user who has not set their own:
 
-| Key | Shipped default | Accepted range |
-| --- | --- | --- |
-| `vad_threshold` | 0.5 | 0.15 to 0.90 |
-| `asr_word_length_cap_s` | 0.4 | 0.2 to 0.45 |
-| `phantom_max_duration_s` | 3.0 | 0 to 10 |
-| `phantom_max_segments` | 3 | 0 to 20 (whole number) |
-| `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
-| `phantom_merge_threshold` | 0.60 | 0.05 to 1.0 |
-| `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
-| `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
+| Key | Field on the settings page | Shipped default | Accepted range |
+| --- | --- | --- | --- |
+| `vad_threshold` | Speech detection threshold | 0.5 | 0.15 to 0.90 |
+| `asr_word_length_cap_s` | Longest word (Parakeet only) | 0.4 | 0.2 to 0.45 |
+| `phantom_max_duration_s` | Speakers heard only briefly: Check speakers under (seconds) | 3.0 | 0 to 10 |
+| `phantom_max_segments` | Speakers heard only briefly: And up to (turns) | 3 | 0 to 20 (whole number) |
+| `phantom_embedding_floor` | Speakers heard only briefly: Treat as noise below (voice match) | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
+| `phantom_merge_threshold` | Speakers heard only briefly: Merge from (voice match) | 0.60 | 0.05 to 1.0 |
+| `phantom_filter_off` | Speakers heard only briefly: Check speakers heard only briefly (unticked sets it) | unset (the check runs) | `true` skips the check; unset, `null` or `false` runs it |
+| `word_flip_max_duration_s` | Stray one-word speaker changes: Words up to (seconds) | 0.45 | 0 to 2.0 |
+| `word_flip_max_gap_s` | Stray one-word speaker changes: Pause up to (seconds) | 0.25 | 0 to 1.0 |
 
 `asr_word_length_cap_s` is the longest a Parakeet word can last. Its maximum is the default `word_flip_max_duration_s`, so at default smoothing every capped word is short enough to smooth. It replaces the retired `asr_word_end_padding_s` ([Version Notes](#version-notes)).
 
@@ -393,6 +422,8 @@ A user's own value replaces the flat key entirely, so an unusable per-user value
 An existing `config.json` without `live_speaker_labels` inherits `auto`; a stored `off` stays off. CPU workers may import the label engine, but do no label-model inference or live clustering.
 
 Any other value is off. Workers re-read `config.json` before each task, so changing the master switch reaches the next live segment. Turning labels on after a capture has begun uses clustering if the earlier audio is unavailable to the label engine.
+
+`sentence_start_correction` (`true` by default, with no setting on the page) moves the first words of a reply from the previous speaker to the person replying, in live labels and in processed transcripts ([ADMIN.md](ADMIN.md#transcription)). `false` turns it off; a configuration without the key keeps it on.
 
 The install-wide `speaker_engine` key selects the speaker engine independently of that master switch:
 
@@ -647,9 +678,21 @@ If your `docker-compose.yml` has its own `build:` directives, run `docker compos
 
 These run on the first start after the upgrade and need no action unless a note says so.
 
+#### Upgrading From Before 3.2.0
+
+- **Idle restart and autoscaling lanes (#1054).** `worker-gpu` now restarts itself in place 15 minutes after its last task, never while a capture is recording or paused, to hand back the memory its process keeps ([Idle Worker Restart](#idle-worker-restart)). An existing `docker-compose.yml` gets this without a change; to set `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES`, or `0` to turn it off, add the variable to `worker-gpu` as that section shows. The example's `worker-cpu`, `worker-io` and `worker-parse` now autoscale from one child and replace a child that has used more than 400,000 KiB, while an existing `docker-compose.yml` keeps its fixed pools until you copy those commands ([Worker Child Recycling](#worker-child-recycling)).
+- **Each user accepts the terms of use (#1004).** Alembic revision `ed5d42732014` adds the nullable `users.legal_accepted_at`, a naive UTC timestamp like the schema's others, with no backfill. From the upgrade, every account except the setup account is shown the terms of use once, at its next page load, and the API refuses it a new capture or import until it accepts ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)). A capture or import already under way finishes normally. The setup account is not asked again and keeps an empty date, since none was recorded when it accepted during setup. A downgrade drops the column and every recorded acceptance. A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.
+
 #### Upgrading From Before 3.1.0
 
+- **Live speaker name suggestions (#803).** A new per-user setting, `suggest_live_speaker_names`, on by default, shown as **Suggest speaker names during a meeting** under **Settings > Notes and live assistance** ([USAGE.md](USAGE.md#live-transcription)). From the first capture after the upgrade, Nojoin checks unnamed live speakers for a self-introduction and, with an AI provider set up, sends recent transcript lines to it whether Meeting Edge is on or off. A user who does not want that turns the setting off before recording.
+- **Reply starts and the brief-speaker check (#922).** A new install-wide key, `sentence_start_correction` in `data/config.json`, `true` by default, has no setting on the page ([ADMIN.md](ADMIN.md#transcription)). On, processing and live Nemotron labels move the first words of a reply that the speaker model gave to the previous speaker to the person replying. A new per-user setting, `phantom_filter_off`, empty by default, shows as **Check speakers heard only briefly**, ticked while it is empty or `false`; unticking it stores `true` and skips the check ([USAGE.md](USAGE.md#tuning-speech-detection-and-speaker-separation)). A speaker the check folds into another now keeps their words. Reprocess a recording to apply both to it.
+- **Muting for transcription is no longer a setting (#961).** **Mute non-speech for transcription** (`vad_mute_transcription`) is retired and fixed at its default: with voice activity detection on, transcription always hears what it kept plus what speaker separation heard as speech. Anyone who had turned it off gets the default from the next recording processed or reprocessed. To have transcription hear the whole recording again, turn off **Voice activity detection** under **Settings > Recording > Advanced**. A stored value is ignored, dropped from a user's settings on their next save, and dropped from `config.json` like any key it no longer reads. An older settings page that still sends it is ignored. **Mute non-speech for speaker separation** keeps its key, `vad_mute_diarization`, and its default, off, as **Faster speaker separation**.
+- **Settings renamed (#961).** **Live word settling** is now **Refine live words**, with **Off**, **On with a GPU** (`auto`) and **On, also without a GPU (heavy)** (`always`), and its two timing values sit under **Fine-tune**. The tuning rows **Word length cap**, **Phantom speaker filter** and **Single-word flip smoothing** are now **Longest word (Parakeet only)**, **Speakers heard only briefly** and **Stray one-word speaker changes**. No key, value or default changes.
+- **Ollama thinking (#937).** New install-wide keys `ollama_think` and `secondary_ollama_think`, `false` by default, set as **Thinking** on the default and fallback provider cards in **Settings > AI providers** ([ADMIN.md](ADMIN.md#ai-providers)), with no environment variable. Ollama makes every model that can think do so unless told not to, so from the upgrade a thinking model answers without reasoning until an administrator turns **Thinking** on.
+- **Model files checked again (#868, #896).** The worker moves to Transformers 5.21.0, and the Nemotron and forced aligner asset manifests no longer name a Transformers version, so a copy prepared on 3.0.0 no longer matches its manifest. On the first start the API queues a repair that hashes the unchanged files again and downloads nothing.
 - **Beat schedule kept in a JSON file (#917).** Celery Beat on `worker-io` now keeps its schedule in `data/celerybeat-schedule.json`. It used to be a Berkeley DB file, `data/celerybeat-schedule.db`, which a `worker-io` killed at the end of `docker stop`'s grace period could leave unreadable; beat then deleted it and every periodic job waited a full interval again. The first start carries each job's last run over from the old file and deletes it. If the old file is unreadable, every interval starts again this once, and the `worker-io` log says so. The `-s /app/data/celerybeat-schedule` argument in `docker-compose.yml` stays as it is. A downgrade ignores the JSON file and starts a new schedule.
+- **Chosen meeting names (#889).** Alembic revision `bb518dd1f469` adds `recordings.title_user_edited`, `false` by default and set by a rename or a name given at import or capture start; processing writes the AI title over a recording's name only while it is false. Nothing recorded which existing names were chosen, so the revision sets it on every recording whose name is not a default one such as `Monday 2nd Nov, Morning Meeting`. A meeting renamed before the upgrade then keeps its name through a reprocess, at the cost of an older AI title staying where a reprocess would have written a new one. Restoring an archive from an earlier release applies the same rule. A downgrade drops the column, and 3.0.0 writes the AI title over every name again.
 
 #### Upgrading From Before 3.0.0
 

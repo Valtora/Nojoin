@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from typing import Any, Dict, Generator, List, Optional, Sequence
@@ -43,6 +44,8 @@ from backend.processing.llm_backends.base import (
 
 
 class OpenAILLMBackend(LLMBackend):
+    provider_id = "openai"
+
     def __init__(self, api_key=None, model=None):
         import openai
 
@@ -55,6 +58,17 @@ class OpenAILLMBackend(LLMBackend):
         self.api_key = api_key
         self.model = model or None
         self.client = openai.OpenAI(api_key=self.api_key)
+
+    def for_live_calls(self) -> "OpenAILLMBackend":
+        """A copy that sends each live call once, within its timeout.
+
+        The SDK otherwise retries a timeout, a 429 and a 5xx twice, and waits
+        out whatever ``Retry-After`` the provider sends.
+        """
+        live = copy.copy(self)
+        live.client = self.client.with_options(max_retries=0)
+        live._live_calls = True
+        return live
 
     def list_models(self) -> List[str]:
         """
@@ -346,7 +360,17 @@ class OpenAILLMBackend(LLMBackend):
             except NotesRunCancelled:
                 raise
             except Exception as json_mode_error:  # noqa: BLE001 -- boundary: OpenAI-compatible endpoints reject response_format with assorted errors; the plain retry is the fallback
-                # OpenAI-compatible endpoints may reject response_format; retry without it.
+                # OpenAI-compatible endpoints may reject response_format; retry
+                # without it. A live call does so only after the server refused
+                # the request itself (400 or 422), as the probe does: after a
+                # timeout, a 429 or a 5xx a second request would only fail again
+                # and double the call's time.
+                from backend.processing.llm_backends.model_probe import (
+                    is_request_refusal,
+                )
+
+                if self._live_calls and not is_request_refusal(json_mode_error):
+                    raise
                 logger.warning(
                     "OpenAI JSON mode failed for Meeting Edge (%s); retrying without response_format.",
                     json_mode_error,
@@ -614,6 +638,35 @@ class OpenAILLMBackend(LLMBackend):
                 )
             logger.error(f"OpenAI API error (meeting title): {e}")
             raise RuntimeError(f"OpenAI API error (meeting title): {e}")
+
+    def probe_model(self, prompt: str, *, timeout: int, max_output_tokens: int) -> str:
+        # The Meeting Edge request, JSON mode first. No output cap: real calls
+        # send none, and OpenAI-compatible servers disagree on its name.
+        from backend.processing.llm_backends.model_probe import is_request_refusal
+
+        if not self.model:
+            raise ValueError("No OpenAI model configured.")
+        request_kwargs = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "timeout": timeout,
+        }
+        if "gpt" in self.model:
+            request_kwargs["temperature"] = 0.2
+        # No SDK retries: one probe is one request, and a timeout is one timeout.
+        client = self.client.with_options(max_retries=0)
+        try:
+            response = client.chat.completions.create(
+                **request_kwargs, response_format={"type": "json_object"}
+            )
+        except Exception as json_mode_error:  # noqa: BLE001 -- boundary: retried without JSON mode only when the server refused the request itself
+            # Meeting Edge retries without response_format. Only a server that
+            # refuses the request (400 or 422, as one without JSON mode does)
+            # gets the plain retry: anything else would only fail again.
+            if not is_request_refusal(json_mode_error):
+                raise
+            response = client.chat.completions.create(**request_kwargs)
+        return response.choices[0].message.content or ""
 
     def validate_api_key(self) -> bool:
         """

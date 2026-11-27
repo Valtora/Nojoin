@@ -102,7 +102,7 @@ export function PeopleTable({
         data-ui-fill="card"
         data-ui-border="full"
         kind="card" className="hidden lg:block bg-surface-card rounded-xl shadow-card border border-surface-border">
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-inset border-b border-surface-border">
@@ -172,7 +172,11 @@ export function PeopleTable({
                       </div>
                       <div>
                         <div className="font-medium text-foreground flex items-center gap-1.5">
-                          {person.name}
+                          <ButtonBase type="button" onClick={() => onEdit(person)}
+                            className="rounded-md text-left hover:text-action-text hover:underline focus-visible:outline-2 focus-visible:outline-focus-ring"
+                            aria-label={`Details for ${person.name}`}>
+                            {person.name}
+                          </ButtonBase>
                           {person.is_voiceprint_locked && (
                             <div className="group/lock relative">
                               <Lock className="w-3.5 h-3.5 text-status-success-fg" />
@@ -333,7 +337,11 @@ export function PeopleTable({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 font-medium text-foreground">
-                  <span className="truncate">{person.name}</span>
+                  <ButtonBase type="button" onClick={() => onEdit(person)}
+                    className="truncate rounded-md text-left hover:text-action-text hover:underline focus-visible:outline-2 focus-visible:outline-focus-ring"
+                    aria-label={`Details for ${person.name}`}>
+                    {person.name}
+                  </ButtonBase>
                   {person.is_voiceprint_locked && (
                     <Lock
                       className="h-3.5 w-3.5 shrink-0 text-status-success-fg"
