@@ -258,10 +258,10 @@ def _create_notes_task_database(
     return engine
 
 
-def _run_generate_notes_task(engine: Any) -> None:
+def _run_generate_notes_task(engine: Any, *args: Any) -> None:
     tasks_module.generate_notes_task._session = None
     try:
-        tasks_module.generate_notes_task.run(1)
+        tasks_module.generate_notes_task.run(1, *args)
     finally:
         if tasks_module.generate_notes_task._session is not None:
             tasks_module.generate_notes_task._session.close()
@@ -699,3 +699,58 @@ def test_regenerated_notes_follow_the_recordings_language(
     _run_generate_notes_task(engine)
 
     assert "in French." in captured["instruction"]
+
+
+def test_notes_asked_for_by_an_editor_run_on_the_editors_ai_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stub_text_embedding,
+) -> None:
+    """A shared meeting's editor runs the notes on their own AI settings (and
+    their own subscription, when they connected one), not the owner's."""
+    import backend.worker.tasks.intelligence as intelligence
+
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
+    engine = _create_notes_task_database(
+        tmp_path,
+        owner_settings={"llm_provider": "anthropic", "anthropic_model": "claude-test"},
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO users (
+                    id, created_at, updated_at, username, hashed_password,
+                    is_active, is_superuser, force_password_change, role,
+                    token_version, settings, has_seen_demo_recording,
+                    invitation_id
+                ) VALUES (
+                    2, :now, :now, 'editor', 'hash', 1, 0, 0, 'user',
+                    0, :settings, 0, NULL
+                )
+                """
+            ),
+            {"now": "2026-11-26 10:00:00", "settings": json.dumps({"tone": "editor"})},
+        )
+    asked_for: list[tuple[int | None, dict[str, Any]]] = []
+    real_resolve = intelligence.resolve_llm_config
+
+    def recording_resolve(session, user_settings=None, *args, user_id=None, **kwargs):
+        asked_for.append((user_id, dict(user_settings or {})))
+        return real_resolve(session, user_settings, *args, user_id=user_id, **kwargs)
+
+    class FakeLLM:
+        def generate_meeting_notes(self, *args, **kwargs) -> str:
+            return "# Notes\n\nWritten for the editor."
+
+    monkeypatch.setattr(intelligence, "resolve_llm_config", recording_resolve)
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(
+        "backend.processing.llm_backends.factory.get_llm_backend",
+        lambda *args, **kwargs: FakeLLM(),
+    )
+
+    _run_generate_notes_task(engine, None, 2)
+
+    assert asked_for == [(2, {"tone": "editor"})]

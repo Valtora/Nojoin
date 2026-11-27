@@ -11,6 +11,7 @@ from backend.api.v1.endpoints import (
     invitations,
     llm,
     login,
+    login_oidc,
     notes_templates,
     oauth,
     people_tags,
@@ -113,6 +114,7 @@ async def retired_companion_routes() -> JSONResponse:
 
 api_router.include_router(api_docs.router, tags=["docs"])
 api_router.include_router(login.router, tags=["login"])
+api_router.include_router(login_oidc.router, tags=["login"])
 api_router.include_router(oauth.router, prefix="/oauth", tags=["oauth"])
 api_router.include_router(legacy_companion_router)
 api_router.include_router(system.router, prefix="/system", tags=["system"])

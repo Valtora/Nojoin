@@ -58,6 +58,7 @@ from . import (
     routes_capture,
     routes_import_upload,
     routes_query,
+    routes_shares,
 )
 from .capture_audio import (
     _accept_browser_flac_segment,

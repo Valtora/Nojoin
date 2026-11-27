@@ -31,6 +31,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKERS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SHARING_SCHEMAS,
     TAGS_SCHEMA,
     TRANSCRIPTS_SCHEMA,
 )
@@ -51,6 +52,7 @@ async def engine() -> AsyncIterator[AsyncEngine]:
     async with built.begin() as connection:
         for schema in (
             RECORDINGS_SCHEMA,
+            *SHARING_SCHEMAS,
             TRANSCRIPTS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
             RECORDING_TAGS_SCHEMA,
@@ -235,11 +237,12 @@ async def test_a_page_reads_its_tags_in_one_query_whatever_its_size(
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == order
     assert all(len(item["tags"]) == 4 for item in response.json())
-    # The page itself, then every tag on it. Never one per meeting.
+    # The caller's provider groups (for meetings shared with a group), the
+    # page itself, then every tag on it. Never one per meeting.
     reads = [
         statement for statement in statements if statement.lstrip().startswith("SELECT")
     ]
-    assert len(reads) == 2
+    assert len(reads) == 3
     assert sum("recording_tags" in statement for statement in reads) == 1
 
 

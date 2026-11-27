@@ -24,7 +24,8 @@ interface MeetingAnalysisPanelProps {
   speakers: AnalyticsSpeaker[];
   /** This meeting's speaker colours, so a person is one colour throughout. */
   colors: Record<string, string>;
-  onGenerate: () => void;
+  /** Omitted when the viewer may not run it: only a meeting's owner can. */
+  onGenerate?: () => void;
   generating: boolean;
   onPlaySegment?: (startMs: number) => void;
   /** The user's daily budget for this tier; absent on older servers. */

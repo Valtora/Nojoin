@@ -6,10 +6,18 @@ import axios from "axios";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { login, getCurrentUser } from "@/lib/api";
+import {
+  login,
+  getCurrentUser,
+  getLoginMethods,
+  ssoErrorMessage,
+  ssoSignInUrl,
+  type LoginMethods,
+} from "@/lib/api";
 import { DEMO_MODE, DEMO_PASSWORD, DEMO_USERNAME } from "@/lib/demo";
-import { Lock, User } from "lucide-react";
+import { KeyRound, Lock, User } from "lucide-react";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+import { useLocationSearchParam } from "@/lib/useLocationSearchParam";
 
 function formatLoginError(error: unknown): string {
   if (!axios.isAxiosError(error)) {
@@ -40,7 +48,31 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [methods, setMethods] = useState<LoginMethods | null>(null);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const router = useRouter();
+
+  // An SSO failure comes back as /login?error=<code>. A password attempt's
+  // own error replaces it.
+  const ssoErrorCode = useLocationSearchParam("error");
+  const shownError = error || (ssoErrorCode ? ssoErrorMessage(ssoErrorCode) : "");
+
+  useEffect(() => {
+    getLoginMethods()
+      .then(setMethods)
+      .catch(() => {
+        // An older server has no /login/methods: offer the password form.
+        setMethods(null);
+      });
+  }, []);
+
+  const ssoEnabled = Boolean(methods?.oidc.enabled);
+  const passwordPolicy = methods?.password_policy ?? "enabled";
+  // With SSO on, a password form that only the owner may use is tucked away
+  // behind a link, so everyone else is not tempted to try it.
+  const passwordFormVisible =
+    passwordPolicy === "enabled" ||
+    (passwordPolicy === "owner_only" && (showPasswordForm || !ssoEnabled));
 
   useEffect(() => {
     const checkCurrentUser = async () => {
@@ -126,11 +158,40 @@ export default function LoginPage() {
             </ButtonBase>
           </div>
         ) : (
+          <div className="mt-8 space-y-6">
+          {ssoEnabled ? (
+            <a
+              href={ssoSignInUrl("/")}
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring transition-colors"
+            >
+              <KeyRound aria-hidden="true" className="h-4 w-4" />
+              Sign in with {methods?.oidc.display_name ?? "SSO"}
+            </a>
+          ) : null}
+          {shownError && !passwordFormVisible ? (
+            <div
+              role="alert"
+              aria-live="polite"
+              className="text-status-danger-fg text-sm text-center bg-status-danger-bg p-3 rounded-lg border border-status-danger-border"
+            >
+              {shownError}
+            </div>
+          ) : null}
+          {ssoEnabled && passwordPolicy === "owner_only" && !showPasswordForm ? (
+            <button
+              type="button"
+              onClick={() => setShowPasswordForm(true)}
+              className="block w-full text-center text-sm text-contrast-muted underline-offset-4 hover:underline"
+            >
+              Sign in with a local password
+            </button>
+          ) : null}
+          {passwordFormVisible ? (
           <form
             id="login-form"
             name="login-form"
             method="post"
-            className="mt-8 space-y-6"
+            className="space-y-6"
             onSubmit={handleSubmit}
             autoComplete="on"
           >
@@ -152,8 +213,8 @@ export default function LoginPage() {
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
-                  aria-describedby={error ? "login-error" : undefined}
-                  aria-invalid={Boolean(error)}
+                  aria-describedby={shownError ? "login-error" : undefined}
+                  aria-invalid={Boolean(shownError)}
                   required
                   className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                   placeholder="Username"
@@ -175,8 +236,8 @@ export default function LoginPage() {
                   name="password"
                   type="password"
                   autoComplete="current-password"
-                  aria-describedby={error ? "login-error" : undefined}
-                  aria-invalid={Boolean(error)}
+                  aria-describedby={shownError ? "login-error" : undefined}
+                  aria-invalid={Boolean(shownError)}
                   required
                   className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                   placeholder="Password"
@@ -186,14 +247,14 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {error && (
+            {shownError && (
               <div
                 id="login-error"
                 role="alert"
                 aria-live="polite"
                 className="text-status-danger-fg text-sm text-center bg-status-danger-bg p-3 rounded-lg border border-status-danger-border"
               >
-                {error}
+                {shownError}
               </div>
             )}
 
@@ -210,6 +271,8 @@ export default function LoginPage() {
               </ButtonBase>
             </div>
           </form>
+          ) : null}
+          </div>
         )}
       </SurfaceBase>
     </div>

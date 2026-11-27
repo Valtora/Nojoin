@@ -361,14 +361,15 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     from mcp.server.mcpserver.exceptions import ToolError
 
     from backend.api.v1.endpoints.transcripts.helpers import (
-        _get_owned_recording,
         _get_recording_transcript,
     )
     from backend.core.db import async_session_maker
+    from backend.mcp_server.access import recording_for
     from backend.services.meeting_analytics import compute_recording_analytics
     from backend.services.meeting_analytics.baselines import (
         compute_delivery_baselines,
     )
+    from backend.services.recording_access import Access
     from backend.utils.canonical_pipeline import (
         ensure_canonical_backfill,
         get_canonical_transcript_revision,
@@ -376,7 +377,7 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
-        recording = await _get_owned_recording(db, recording_id, user.id)
+        recording = await recording_for(db, recording_id, user, Access.VIEW)
         transcript = await _get_recording_transcript(db, recording.id)
         if transcript is None:
             raise ToolError(
@@ -466,7 +467,8 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
 async def analyse_meeting(recording_id: str) -> dict[str, Any]:
     """Run Nojoin's AI analysis of a meeting's dynamics.
 
-    **This spends the user's AI quota.** Every other write tool in this
+    **This spends the user's AI quota.** On a meeting shared with the user it
+    runs on the user's own AI settings and quota, never the owner's. Every other write tool in this
     connector makes a free, reversible edit; this one makes a real request to
     the user's configured AI provider, and on a subscription that consumes
     usage they may need later. Call it when the user has asked for the

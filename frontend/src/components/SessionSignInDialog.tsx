@@ -1,9 +1,15 @@
 "use client";
 
-import { LogIn, Square } from "lucide-react";
+import { KeyRound, LogIn, Square } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { getCurrentUser, login } from "@/lib/api";
+import {
+  getCurrentUser,
+  getLoginMethods,
+  login,
+  ssoSignInUrl,
+  type LoginMethods,
+} from "@/lib/api";
 import { leaveForSignIn } from "@/lib/api/client";
 import { useCapture, useCaptureState } from "@/lib/capture/CaptureProvider";
 import { getErrorMessage } from "@/lib/errors";
@@ -91,6 +97,25 @@ export default function SessionSignInDialog() {
   const [error, setError] = useState<string | null>(null);
   const [passwordReset, setPasswordReset] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [methods, setMethods] = useState<LoginMethods | null>(null);
+
+  useEffect(() => {
+    if (!open || methods) {
+      return;
+    }
+    getLoginMethods()
+      .then(setMethods)
+      .catch(() => {});
+  }, [open, methods]);
+
+  const ssoEnabled = Boolean(methods?.oidc.enabled);
+  const passwordOffered = methods === null || methods.password;
+
+  // A new tab, so this one (and the capture or notes it holds) stays put. The
+  // probe above notices the new session when this tab regains focus.
+  const handleSsoSignIn = () => {
+    window.open(ssoSignInUrl("/"), "_blank", "noopener");
+  };
 
   useOnDepsChange([open], () => {
     setTypedUsername("");
@@ -193,6 +218,17 @@ export default function SessionSignInDialog() {
               Stop recording
             </Button>
           ) : null}
+          {ssoEnabled ? (
+            <Button
+              variant={passwordOffered ? "secondary" : "primary"}
+              onClick={handleSsoSignIn}
+              disabled={signingIn}
+              iconLeft={<KeyRound aria-hidden="true" className="h-4 w-4" />}
+            >
+              Sign in with {methods?.oidc.display_name ?? "SSO"}
+            </Button>
+          ) : null}
+          {passwordOffered ? (
           <Button
             type="submit"
             form={FORM_ID}
@@ -203,6 +239,7 @@ export default function SessionSignInDialog() {
           >
             Sign in
           </Button>
+          ) : null}
         </>
       }
     >
@@ -242,6 +279,8 @@ export default function SessionSignInDialog() {
           </p>
         ) : null}
 
+        {passwordOffered ? (
+        <>
         <Input
           label="Username"
           name="username"
@@ -268,10 +307,12 @@ export default function SessionSignInDialog() {
           onChange={(event) => setPassword(event.target.value)}
           error={error ?? undefined}
         />
+        </>
+        ) : null}
 
         <p className="text-xs leading-5 text-contrast-helper">
           Keep this tab open until you have signed in. Signing in from another tab
-          works too.
+          works too{ssoEnabled ? ", which is how single sign-on works here" : ""}.
         </p>
       </form>
     </Modal>

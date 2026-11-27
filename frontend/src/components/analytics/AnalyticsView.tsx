@@ -37,6 +37,8 @@ interface AnalyticsViewProps {
    * field carries one only once a user has chosen it explicitly.
    */
   speakerColors?: Record<string, string>;
+  /** False hides the measure and analyse actions; only the owner runs them. */
+  canGenerate?: boolean;
 }
 
 export default function AnalyticsView({
@@ -46,6 +48,7 @@ export default function AnalyticsView({
   speakerColors,
   initialFallback,
   onLoaded,
+  canGenerate = true,
 }: AnalyticsViewProps) {
   const [analytics, setAnalytics] = useState<RecordingAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -297,7 +300,7 @@ export default function AnalyticsView({
             talkTimeMs={talkTimeMs}
             baselines={analytics.delivery_baselines}
             colors={colors}
-            onGenerate={() => void handleGenerate()}
+            onGenerate={canGenerate ? () => void handleGenerate() : undefined}
             generating={deliveryBusy}
           />
         </Section>
@@ -311,7 +314,7 @@ export default function AnalyticsView({
         budget={analytics.ai_budget}
         speakers={analytics.speakers}
         colors={colors}
-        onGenerate={() => void handleAnalyse()}
+        onGenerate={canGenerate ? () => void handleAnalyse() : undefined}
         generating={aiBusy}
         onPlaySegment={onPlaySegment}
       />

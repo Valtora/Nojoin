@@ -337,8 +337,78 @@ def _resolve_p_tags_identity(ctx: "_RowContext") -> "RowOutcome":
     return RowOutcome.INSERT
 
 
+def _resolve_user_identities_identity(ctx: "_RowContext") -> "RowOutcome":
+    """Keep a provider identity unless the target already links it, or the user.
+
+    Either clash means the target has its own, current answer to who this
+    identity is, and a second row would break a unique constraint.
+    """
+    UserIdentity = runtime.UserIdentity
+    clash = ctx.session.exec(
+        select(UserIdentity).where(
+            (UserIdentity.user_id == ctx.item_data.get("user_id"))
+            | (
+                (UserIdentity.issuer == ctx.item_data.get("issuer"))
+                & (UserIdentity.subject == ctx.item_data.get("subject"))
+            )
+        )
+    ).first()
+    if clash is not None:
+        if ctx.old_id is not None:
+            ctx.state.id_map["user_identities"][ctx.old_id] = clash.id
+        return RowOutcome.HANDLED
+    return RowOutcome.INSERT
+
+
+def _resolve_recording_shares_identity(ctx: "_RowContext") -> "RowOutcome":
+    """Drop a direct share whose user was not restored, and duplicates."""
+    RecordingShare = runtime.RecordingShare
+    user_id = ctx.item_data.get("user_id")
+    group_name = ctx.item_data.get("group_name")
+    if user_id is None and group_name is None:
+        ctx.state.record_skip(ctx.table_name, SKIP_REASON_NO_IDENTITY)
+        return RowOutcome.HANDLED
+    grantee = (
+        RecordingShare.user_id == user_id
+        if user_id is not None
+        else RecordingShare.group_name == group_name
+    )
+    existing = ctx.session.exec(
+        select(RecordingShare)
+        .where(RecordingShare.recording_id == ctx.item_data.get("recording_id"))
+        .where(grantee)
+    ).first()
+    if existing is not None:
+        if ctx.old_id is not None:
+            ctx.state.id_map["recording_shares"][ctx.old_id] = existing.id
+        return RowOutcome.HANDLED
+    return RowOutcome.INSERT
+
+
+def _resolve_recording_restore_requests_identity(
+    ctx: "_RowContext",
+) -> "RowOutcome":
+    """Keep the ask already on this meeting for its kind; at most one exists."""
+    RecordingRestoreRequest = runtime.RecordingRestoreRequest
+    existing = ctx.session.exec(
+        select(RecordingRestoreRequest)
+        .where(
+            RecordingRestoreRequest.recording_id == ctx.item_data.get("recording_id")
+        )
+        .where(RecordingRestoreRequest.kind == ctx.item_data.get("kind"))
+    ).first()
+    if existing is not None:
+        if ctx.old_id is not None:
+            ctx.state.id_map["recording_restore_requests"][ctx.old_id] = existing.id
+        return RowOutcome.HANDLED
+    return RowOutcome.INSERT
+
+
 #: Tables whose incoming rows must be reconciled with existing records first.
 IDENTITY_RESOLVERS = {
+    "recording_restore_requests": _resolve_recording_restore_requests_identity,
+    "user_identities": _resolve_user_identities_identity,
+    "recording_shares": _resolve_recording_shares_identity,
     "users": _resolve_users_identity,
     "recordings": _resolve_recordings_identity,
     "tags": _resolve_tags_identity,

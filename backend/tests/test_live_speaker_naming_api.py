@@ -36,6 +36,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SHARING_SCHEMAS,
     SPEAKER_CORRECTION_EVENTS_SCHEMA,
     SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
@@ -73,6 +74,7 @@ async def session_maker():
             SPEAKER_NAME_EVENTS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
             RECORDING_AUDIO_CHUNKS_SCHEMA,
+            *SHARING_SCHEMAS,
         ):
             await connection.execute(text(schema))
     try:

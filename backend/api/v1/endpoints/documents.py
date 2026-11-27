@@ -23,6 +23,14 @@ from backend.models.recording import Recording
 from backend.models.recording_public import DocumentPublicRead, serialize_document
 from backend.models.user import User
 from backend.processing.documents import SUPPORTED_EXTENSIONS
+from backend.services.recording_access import (
+    INSUFFICIENT_ACCESS_DETAIL,
+    Access,
+    RecordingGrant,
+    access_level,
+    require_recording,
+    resolve_grant,
+)
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.document_storage import (
     RecordingGoneError,
@@ -69,6 +77,26 @@ async def _get_owned_recording(
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
     return recording
+
+
+async def _document_for(
+    db: AsyncSession, document_id: int, user: User, need: Access
+) -> tuple[Document, Recording]:
+    """A document and its recording, for a caller with ``need`` on the recording.
+
+    404 when the caller cannot see the recording at all, 403 when they can but
+    not at ``need`` (backend/services/recording_access.py).
+    """
+    document = await db.get(Document, document_id)
+    recording = await db.get(Recording, document.recording_id) if document else None
+    if document is None or recording is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    level = await access_level(db, recording, user)
+    if level < Access.VIEW:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if level < need:
+        raise HTTPException(status_code=403, detail=INSUFFICIENT_ACCESS_DETAIL)
+    return document, recording
 
 
 async def _insert_document(db: AsyncSession, document: Document) -> None:
@@ -121,7 +149,8 @@ async def create_text_document(
     await db.refresh(document)
 
     task = await dispatch_task(
-        "backend.worker.tasks.process_document_task", args=[document.id]
+        "backend.worker.tasks.process_document_task",
+        args=[document.id, False, user_id],
     )
     from backend.models.task import register_task_ownership
 
@@ -136,11 +165,15 @@ async def list_documents(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     List the documents attached to a recording. A note's file is listed with its note.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     # Upload order, not completion order: created_at is stamped when an upload
     # starts (see upload_document), so a batch sent two at a time lists in the
@@ -193,18 +226,14 @@ async def download_document(
     """Return the original uploaded file, always as a download.
 
     Serves the stored file under its original title rather than the UUID it is
-    saved as, so a download is recognisable. Ownership is checked through the
-    recording, exactly as delete and re-parse do. Only an image is served as
+    saved as, so a download is recognisable. Access is checked through the
+    recording: anyone the meeting is shared with may download. Only an image is served as
     its own type, for the viewer's picture; every other file, a note's ZIP or
     SVG among them, is bytes with ``nosniff``, so the browser never renders it.
     """
-    document = await db.get(Document, document_id)
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    recording = await db.get(Recording, document.recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Document not found")
+    document, _recording = await _document_for(
+        db, document_id, current_user, Access.VIEW
+    )
 
     file_path = confined_document_path(document.file_path)
     if file_path is None:
@@ -312,6 +341,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     deep_parse: FormBoolWithDefault = Form(FormBoolWithDefault(True)),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """Upload a document to be included in the meeting's context.
 
@@ -324,7 +354,10 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     # read: the client uploads a batch two at a time, and a row stamped at
     # completion would list a small file ahead of the larger one queued first.
     started_at = utc_now()
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     file_path, size_bytes = await store_upload(
         request, file, user_id=current_user.id, recording=recording
@@ -346,8 +379,10 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     await db.commit()
     await db.refresh(document)
 
+    # Visual analysis runs on the uploader's AI settings, an editor's too.
     task = await dispatch_task(
-        "backend.worker.tasks.process_document_task", args=[document.id]
+        "backend.worker.tasks.process_document_task",
+        args=[document.id, False, current_user.id],
     )
     from backend.models.task import register_task_ownership
 
@@ -368,14 +403,13 @@ async def reparse_document(
     The escape hatch for a document parsed before a vision model was configured,
     or one whose visual parse was downgraded. Always a full re-parse rather than
     a resume, since the point is to redo work the stored pages already hold.
+    It runs on the AI settings of whoever asks, an editor of a shared meeting
+    included.
     """
-    document = await db.get(Document, document_id)
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    recording = await db.get(Recording, document.recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Document not found")
+    # Editors of a shared meeting may parse again too, on their own AI settings.
+    document, recording = await _document_for(
+        db, document_id, current_user, Access.EDIT
+    )
 
     # A live parse touches the row on every page batch, so a PROCESSING
     # document that has not been written to in a long time is one whose worker
@@ -415,7 +449,7 @@ async def reparse_document(
 
     task = await dispatch_task(
         "backend.worker.tasks.process_document_task",
-        args=[document.id, True],
+        args=[document.id, True, current_user.id],
     )
     from backend.models.task import register_task_ownership
 
@@ -431,15 +465,12 @@ async def delete_document(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Delete a document and its context chunks.
+    Delete a document and its context chunks. Anyone who may edit the
+    meeting may remove its documents, as they may add them.
     """
-    document = await db.get(Document, document_id)
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    recording = await db.get(Recording, document.recording_id)
-    if not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Document not found")
+    document, _recording = await _document_for(
+        db, document_id, current_user, Access.EDIT
+    )
     if document.note_id is not None:
         # Removed through its note, which also decides the note's fate, the
         # stale notes flag and the fence against a late upload (#734).
@@ -463,10 +494,9 @@ async def preview_document(
     current_user: User = Depends(get_current_user),
 ):
     """A small JPEG of an image document, for the Captures tab and a note's line."""
-    document = await db.get(Document, document_id)
-    recording = await db.get(Recording, document.recording_id) if document else None
-    if not document or not recording or recording.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Document not found")
+    document, _recording = await _document_for(
+        db, document_id, current_user, Access.VIEW
+    )
     file_path = confined_document_path(document.file_path)
     if file_path is None or not is_image(document):
         raise HTTPException(status_code=404, detail="This document has no preview.")

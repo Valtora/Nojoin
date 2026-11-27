@@ -17,6 +17,12 @@ from backend.services.ai_analysis_budget import (
 )
 from backend.services.meeting_analytics import compute_recording_analytics
 from backend.services.meeting_analytics.live import compute_live_recording_analytics
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.analytics_preferences import is_auto_remeasure_delivery_enabled
 from backend.utils.canonical_pipeline import (
     ensure_canonical_backfill,
@@ -108,9 +114,13 @@ async def get_live_recording_analytics(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ) -> LiveRecordingAnalyticsRead:
     """Transcript estimates with no backfill, audio work or analysis budget."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     transcript = await _get_recording_transcript(db, recording.id)
     payload = await db.run_sync(
         lambda session: compute_live_recording_analytics(session, recording, transcript)
@@ -244,6 +254,7 @@ async def get_recording_analytics(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """Deterministic meeting analytics for a processed recording.
 
@@ -253,7 +264,10 @@ async def get_recording_analytics(
     merge or transcript edit is reflected on the next read with no
     invalidation path to get wrong.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     _require_final_analytics(recording)
     transcript = await _get_recording_transcript(db, recording.id)
 
@@ -286,8 +300,12 @@ async def generate_recording_analytics(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """Measure a recording's audio: delivery descriptors and overlap.
+
+    Editors of a shared meeting may ask for it: it runs on the server's own
+    models and spends no one's AI budget.
 
     Manual rather than automatic for meetings that predate the features: the
     alternative is a sweep that reads every recording's audio in every library
@@ -296,7 +314,10 @@ async def generate_recording_analytics(
     they answer the same request -- "measure this meeting's audio" -- even
     though they run on different lanes.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     _require_final_analytics(recording)
     transcript = await _get_recording_transcript(db, recording.id)
 
@@ -345,15 +366,20 @@ async def generate_recording_ai_analytics(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """Run the AI analytics pass for a recording.
 
-    Always on request. This one call spends the user's own AI quota, and the
+    Editors of a shared meeting may run it too, on their own AI settings and
+    their own daily budget. Always on request. This one call spends the user's own AI quota, and the
     questions it answers are not asked of most meetings, so running it for
     every recording at finalise would charge everyone for something few would
     read. A meeting that has never been analysed simply reports so.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     _require_final_analytics(recording)
     transcript = await _get_recording_transcript(db, recording.id)
 
@@ -378,7 +404,7 @@ async def generate_recording_ai_analytics(
     # reaches the broker, and could overwrite a run that finished first.
     dispatched = await dispatch_task_best_effort(
         "backend.worker.tasks.compute_meeting_analysis_task",
-        args=[recording.id],
+        args=[recording.id, current_user.id],
         context="meeting analysis",
     )
     if dispatched is None:

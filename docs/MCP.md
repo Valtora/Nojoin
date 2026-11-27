@@ -74,13 +74,13 @@ Some Codex Desktop builds (seen on 0.125.0-alpha.3) complete sign-in but never l
 
 ## Available Tools
 
-Thirty-two tools: thirteen read and nineteen write. Opposites share a row, so the table has fewer rows than tools. Every tool acts only on data owned by the account that authorised the connection.
+Thirty-two tools: thirteen read and nineteen write. Opposites share a row, so the table has fewer rows than tools. Every tool acts for the account that authorised the connection, with the same access it has in the web app: its own meetings, and the meetings shared with it ([USAGE.md](USAGE.md#sharing-a-meeting)). On a meeting shared to view, the read tools work and the write tools are refused. On one shared to edit, the tools that change the transcript, speakers, notes, documents or name work as well, and the actions only an owner may take are refused. Tags, People and tasks stay the account's own.
 
-Two write tools spend your AI provider quota, which undoing their result does not refund: `regenerate_notes`, and the costlier `analyse_meeting`, whose description tells an assistant to ask before running it.
+Two write tools spend your AI provider quota, which undoing their result does not refund: `regenerate_notes`, and the costlier `analyse_meeting`, whose description tells an assistant to ask before running it. On a meeting someone shared with you, both run on your own AI settings and quota, not the owner's.
 
 | Tool | Scope | Description |
 | --- | --- | --- |
-| `list_recordings` | `mcp:read` | List and search recordings by text and date, including archived and binned ones. Each result reports processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, the `transcript_revision` cursor and, for searches, a best-effort `match_field` hint. |
+| `list_recordings` | `mcp:read` | List and search recordings by text and date, including archived and binned ones and those shared with you. Each result reports `access` (`owner`, `edit` or `view`), `owner` on a shared meeting, processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, the `transcript_revision` cursor and, for searches, a best-effort `match_field` hint. |
 | `get_transcript` | `mcp:read` | The speaker-attributed transcript, formatted for reading. |
 | `get_transcript_utterances` | `mcp:read` | The transcript as structured utterances: stable ids, millisecond timestamps, edit provenance, and a revision cursor with tombstones for incremental sync. |
 | `search_context` | `mcp:read` | Semantic search across every transcript, set of AI notes and attached document, with the recording and a timestamp or page on each hit. A file on one of your notes is searched only while its **Use in notes** is on. |

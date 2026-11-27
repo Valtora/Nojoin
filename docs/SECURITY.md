@@ -60,6 +60,7 @@ These endpoints are rate limited per client address:
 | Registration | 10 per hour |
 | Invitation check | 30 per 10 minutes |
 | First-run setup | 60 per 10 minutes |
+| Single sign-on callback | 30 per 10 minutes |
 | OAuth client registration | 10 per 10 minutes |
 | OAuth token | 60 per 10 minutes |
 | Anonymous MCP requests, with `MCP_ANONYMOUS_DISCOVERY=true` | 30 per minute |
@@ -74,6 +75,34 @@ Every account except the setup account accepts the terms of use ([LEGAL.md](LEGA
 - `POST /api/v1/users/me/legal-acceptance` records the acceptance, for the signed-in account only and from a browser session only, where the terms are shown; an API token gets `403`. It stamps the time once, in UTC from the server's clock, in `users.legal_accepted_at`, and a repeat changes nothing. No other route, an administrator's included, sets or clears the time.
 - An account with a temporary password changes it first: the API refuses the acceptance until it does, so the terms are accepted under the account's own password.
 - `/users/me`, the users list and both sign-in responses carry `legal_acceptance_required`, so an API client can tell before it tries.
+
+## Single Sign-On
+
+Nojoin signs people in through an OpenID Connect provider when an administrator configures one ([ADMIN.md](ADMIN.md#single-sign-on)). It is a relying party using the authorization code flow with PKCE (`S256`).
+
+- `GET /api/v1/login/oidc/start` signs the `state`, a `nonce` and the PKCE verifier into a short-lived token (10 minutes) and sets it as the `nojoin_oidc_state` cookie: `Secure`, `HttpOnly`, `SameSite=Lax`, scoped to `/api/v1/login/oidc`. The callback refuses a `state` that does not match the cookie, and clears the cookie either way.
+- The ID token must be signed with an asymmetric algorithm under a key from the provider's JWKS. Nojoin checks `iss`, `aud`, `exp`, `iat` and the `nonce`, and `azp` when the token names several audiences or carries one. Groups missing from the ID token are read from the userinfo endpoint, whose `sub` must match.
+- An identity is matched to an account by issuer and subject alone, never by email address or username, so an account at the provider cannot take over a Nojoin account that shares its email.
+- Linking an existing account (`POST /api/v1/login/oidc/link`) needs a signed-in browser session and sends the person to the provider with `prompt=login`, so a session left open on someone else's computer cannot be linked to the wrong identity. An account links to at most one identity.
+- An account the provider created has no usable password: `PUT /api/v1/users/me/password` refuses it with `403` and the code `sso_account_has_no_password`, and an administrator cannot set one.
+- The provider creates no account while the installation has none, and the callback answers with the code `sso_setup_required`. First-run setup, behind `FIRST_RUN_PASSWORD`, runs only while no account exists, and startup promotes the first account to Owner when there is none, so an account created first would take setup's place.
+- When `NOJOIN_OIDC_ADMIN_GROUPS` changes an account's role at sign-in, its `token_version` is bumped, which ends its other sessions and tokens. An Owner's role never changes through the provider.
+- `NOJOIN_PASSWORD_LOGIN=owner_only` or `disabled` makes the password sign-in refuse the other accounts with `403` and the code `password_login_disabled`, and closes registration through invitations. With `disabled` the check runs before the password is, so the answer says nothing about whether a password was right. The api refuses to start with `disabled` and no provider configured.
+- A failed callback redirects to the sign-in page with an error code only. The reason, with the subject but no tokens, goes to the api log.
+
+## Shared Meetings
+
+An owner can share a meeting with another user or with a provider group, to view or to edit. The owner is `recordings.user_id`, and every other account gets the highest level among the shares that apply to it ([USAGE.md](USAGE.md#sharing-a-meeting)).
+
+- A route that serves a shared meeting declares the level it needs. A route that does not keeps the owner-only check, so a route added later stays closed to everyone but the owner until it opts in. `backend/tests/test_recording_access_matrix.py` calls every route that declares a level as owner, editor, viewer and stranger.
+- A stranger gets `404`, the same answer as for a meeting that does not exist, so sharing reveals nothing. An account with too low a level gets `403` with the detail `insufficient_access`. The matrix test sends each route a valid request, so the call reaches the access check rather than stopping at validation.
+- While the owner has a meeting archived or in the bin, every share of it counts as view (`shelved_cap`). Anyone it is shared with can ask for it back with `POST /api/v1/recordings/{id}/shares/me/restore-request`, which adds a task to the owner's own list. A `recording_restore_requests` row keeps it to one open ask per meeting and kind, and restoring the meeting completes the task.
+- Deleting, archiving, reprocessing, recording controls, calendar links, voiceprints, adding people to the owner's **People** and sharing stay with the owner. Note generation, AI analyses and the visual analysis of uploaded documents and note pictures are open to editors and run on the AI settings of whoever uploads or starts them, never the owner's. An analysis counts against that person's daily allowance.
+- Notes saves are checked against the revision the edited text started from, with the transcript row locked for the check, so of two saves from the same base the second is refused with `409` rather than overwriting the first.
+- An editor links a speaker only to a person already linked in that meeting (`people_in_reach` in `services/recording_access.py`), whether by name or by id. Any other name stays local to the meeting, so an editor can neither see nor add to the rest of the owner's library.
+- A person's contact details (title, company, email, phone number, notes and tags) are left out of a shared meeting's speaker data for everyone but the owner.
+- A user can share with a group only when they are in it themselves. Group membership comes from the provider at sign-in and is not checked with the provider in between.
+- MCP tools act with the caller's access: they list and search the caller's own and shared meetings, and each tool checks the level it needs, as the web app's routes do. Meeting chat and tags stay with each user, and a chat answer runs on the asker's own AI settings.
 
 ## Browser Session Request Protection
 

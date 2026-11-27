@@ -21,6 +21,7 @@ from backend.api.deps import get_db
 from backend.api.v1.api import api_router
 from backend.tests.sqlite_schemas import (
     RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA,
+    SHARING_SCHEMAS,
     TIMELINE_NOTES_SCHEMA,
 )
 
@@ -358,6 +359,8 @@ async def test_session_maker() -> sessionmaker:
 
     async with engine.begin() as connection:
         await connection.execute(text(RECORDINGS_SCHEMA))
+        for schema in SHARING_SCHEMAS:
+            await connection.execute(text(schema))
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))

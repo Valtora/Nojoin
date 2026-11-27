@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 
 import NotesView from "./NotesView";
+import type { NotesConflictChoice, NotesSaveOutcome } from "@/lib/notesSave";
 
 vi.mock("@/lib/api", () => ({
   getSettings: vi.fn().mockResolvedValue({}),
@@ -23,11 +24,13 @@ vi.mock("./RichTextEditor", () => ({
 
 const NOTES = "## Summary\n\n- First point";
 
-function renderNotes(onNotesChange: (notes: string) => void, overrides: Partial<ComponentProps<typeof NotesView>> = {}) {
+type OnNotesChange = ComponentProps<typeof NotesView>["onNotesChange"];
+
+function renderNotes(onNotesChange: OnNotesChange, overrides: Partial<ComponentProps<typeof NotesView>> = {}) {
   return render(notesView(onNotesChange, overrides));
 }
 
-function notesView(onNotesChange: (notes: string) => void, overrides: Partial<ComponentProps<typeof NotesView>> = {}) {
+function notesView(onNotesChange: OnNotesChange, overrides: Partial<ComponentProps<typeof NotesView>> = {}) {
   return (
     <NotesView
       recordingId="r1"
@@ -58,7 +61,7 @@ describe("NotesView autosave", () => {
       reportUpdate(`${NOTES}\n- Still editable`);
       vi.advanceTimersByTime(1100);
     });
-    expect(onNotesChange).toHaveBeenCalledWith(`${NOTES}\n- Still editable`);
+    expect(onNotesChange).toHaveBeenCalledWith(`${NOTES}\n- Still editable`, expect.any(Function));
   });
 
   beforeEach(() => {
@@ -90,7 +93,7 @@ describe("NotesView autosave", () => {
       vi.advanceTimersByTime(1100);
     });
 
-    expect(onNotesChange).toHaveBeenCalledWith(`${NOTES}\n- Second point`);
+    expect(onNotesChange).toHaveBeenCalledWith(`${NOTES}\n- Second point`, expect.any(Function));
   });
 
   it("drops a pending edit that is undone before it saves", () => {
@@ -119,7 +122,7 @@ describe("NotesView autosave", () => {
       reportUpdate(WITH_TABLE);
       vi.advanceTimersByTime(1100);
     });
-    expect(onNotesChange).toHaveBeenCalledWith(WITH_TABLE);
+    expect(onNotesChange).toHaveBeenCalledWith(WITH_TABLE, expect.any(Function));
     const typed = WITH_TABLE.replace("Book the room", "Book the room for Friday");
     act(() => reportUpdate(typed));
 
@@ -128,16 +131,78 @@ describe("NotesView autosave", () => {
     expect(editorContent).toBe(typed);
   });
 
-  it("still passes notes changed elsewhere to the editor", () => {
+  it("still passes notes changed elsewhere to the editor", async () => {
     const onNotesChange = vi.fn();
     const view = renderNotes(onNotesChange);
     act(() => {
       reportUpdate(WITH_TABLE);
       vi.advanceTimersByTime(1100);
     });
+    // The save has come back.
+    await act(async () => {});
 
     view.rerender(notesView(onNotesChange, { notes: `${NOTES}\n- Added in another tab` }));
 
     expect(editorContent).toBe(`${NOTES}\n- Added in another tab`);
+  });
+});
+
+describe("NotesView with someone else editing the same notes", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const OTHERS = `${NOTES}\n- Bob's line`;
+  const MINE = `${NOTES}\n- My line`;
+
+  it("saves from the revision the text was edited from, not one a poll brought in meanwhile", async () => {
+    let finishSave: (outcome: NotesSaveOutcome) => void = () => undefined;
+    const bases: (string | undefined)[] = [];
+    const onNotesChange = vi.fn((_notes: string, baseRevision: () => string | undefined) => {
+      bases.push(baseRevision());
+      return new Promise<NotesSaveOutcome>((resolve) => {
+        finishSave = resolve;
+      });
+    });
+    const view = renderNotes(onNotesChange, { notesRevision: "rev-a" });
+
+    act(() => reportUpdate(MINE));
+    // Bob's save reaches this tab's poll while the edit waits to be saved.
+    view.rerender(notesView(onNotesChange, { notes: OTHERS, notesRevision: "rev-bob" }));
+    expect(editorContent).toBe(MINE);
+
+    act(() => {
+      vi.advanceTimersByTime(1100);
+    });
+    expect(bases).toEqual(["rev-a"]);
+    await act(async () => finishSave({ status: "saved", revision: "rev-mine" }));
+  });
+
+  it("holds the refused text until the user picks their version or the other one", async () => {
+    let choose: (choice: NotesConflictChoice) => void = () => undefined;
+    const onNotesChange = vi.fn(
+      async (): Promise<NotesSaveOutcome> => ({
+        status: "conflict",
+        resolution: new Promise<NotesConflictChoice>((resolve) => {
+          choose = resolve;
+        }),
+      }),
+    );
+    const view = renderNotes(onNotesChange, { notesRevision: "rev-a" });
+
+    act(() => {
+      reportUpdate(MINE);
+      vi.advanceTimersByTime(1100);
+    });
+    await act(async () => {});
+    view.rerender(notesView(onNotesChange, { notes: OTHERS, notesRevision: "rev-bob" }));
+    expect(editorContent).toBe(MINE);
+
+    await act(async () => choose({ choice: "theirs" }));
+    expect(editorContent).toBe(OTHERS);
   });
 });

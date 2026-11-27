@@ -12,9 +12,16 @@ import { renderWithProviders } from "@/test/renderWithProviders";
 
 import SessionSignInDialog, { SESSION_PROBE_INTERVAL_MS } from "./SessionSignInDialog";
 
+const PASSWORD_ONLY = {
+  password: true,
+  password_policy: "enabled",
+  oidc: { enabled: false, display_name: null },
+};
+
 const apiMocks = vi.hoisted(() => ({
   login: vi.fn(),
   getCurrentUser: vi.fn(),
+  getLoginMethods: vi.fn(),
 }));
 
 const captureState = vi.hoisted(() => ({
@@ -27,6 +34,8 @@ const captureState = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => ({
   login: apiMocks.login,
   getCurrentUser: apiMocks.getCurrentUser,
+  getLoginMethods: apiMocks.getLoginMethods,
+  ssoSignInUrl: (next: string) => `https://nojoin.test/api/v1/login/oidc/start?next=${next}`,
 }));
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -46,6 +55,7 @@ const passwordField = () => screen.getByLabelText("Password");
 
 describe("session sign-in dialog", () => {
   beforeEach(() => {
+    apiMocks.getLoginMethods.mockResolvedValue(PASSWORD_ONLY);
     resetSessionForTests();
     noteSignedIn(alice);
     holdSignInInPlace(true);
@@ -288,5 +298,38 @@ describe("session sign-in dialog", () => {
 
     expect(apiMocks.getCurrentUser).toHaveBeenCalledTimes(2);
     expect(useSessionStore.getState().signInRequired).toBe(false);
+  });
+
+  it("offers single sign-on in a new tab when the server has it", async () => {
+    apiMocks.getLoginMethods.mockResolvedValue({
+      password: true,
+      password_policy: "owner_only",
+      oidc: { enabled: true, display_name: "Authentik" },
+    });
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    renderWithProviders(<SessionSignInDialog />);
+    endSession();
+
+    const button = await screen.findByRole("button", { name: /sign in with authentik/i });
+    fireEvent.click(button);
+    expect(open).toHaveBeenCalledWith(
+      "https://nojoin.test/api/v1/login/oidc/start?next=/",
+      "_blank",
+      "noopener",
+    );
+    open.mockRestore();
+  });
+
+  it("drops the password form when password sign-in is off", async () => {
+    apiMocks.getLoginMethods.mockResolvedValue({
+      password: false,
+      password_policy: "disabled",
+      oidc: { enabled: true, display_name: "Authentik" },
+    });
+    renderWithProviders(<SessionSignInDialog />);
+    endSession();
+
+    await screen.findByRole("button", { name: /sign in with authentik/i });
+    expect(screen.queryByLabelText("Password")).toBeNull();
   });
 });

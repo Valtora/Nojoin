@@ -171,8 +171,12 @@ def _store_ai_payload(session, recording_id: int, block: dict[str, Any]) -> None
     session.commit()
 
 
-def _resolve_backend(session, recording):
-    """The provider chain for this recording's owner, or a reason there is none."""
+def _resolve_backend(session, recording, ai_user_id: int | None = None):
+    """The provider chain for ``ai_user_id``, or a reason there is none.
+
+    ``ai_user_id`` is whoever asked for the analysis; ``None`` is the
+    recording's owner (automatic runs, older queued tasks).
+    """
     from backend.models.user import User
     from backend.processing.llm_services import get_llm_backend_with_secondary
     from backend.utils.languages import (
@@ -181,13 +185,14 @@ def _resolve_backend(session, recording):
     )
     from backend.utils.llm_config import resolve_llm_config
 
+    ai_user_id = ai_user_id or recording.user_id
     user_settings: dict[str, Any] = {}
-    if recording.user_id:
-        user = session.get(User, recording.user_id)
+    if ai_user_id:
+        user = session.get(User, ai_user_id)
         if user and user.settings:
             user_settings = user.settings
 
-    llm_config = resolve_llm_config(session, user_settings, user_id=recording.user_id)
+    llm_config = resolve_llm_config(session, user_settings, user_id=ai_user_id)
     missing = llm_config.missing_configuration_message()
     if missing:
         return None, None, missing
@@ -204,8 +209,14 @@ def _resolve_backend(session, recording):
 
 
 @celery_app.task(name="backend.worker.tasks.compute_meeting_analysis_task")
-def compute_meeting_analysis_task(recording_id: int) -> dict[str, Any]:
-    """Generate and persist the AI analytics tier for one recording."""
+def compute_meeting_analysis_task(
+    recording_id: int, requested_by_user_id: int | None = None
+) -> dict[str, Any]:
+    """Generate and persist the AI analytics tier for one recording.
+
+    ``requested_by_user_id`` runs it on that user's AI settings, as for an
+    editor of a shared meeting; the API spends that user's daily budget.
+    """
     from backend.utils.canonical_pipeline import get_canonical_transcript_revision
 
     with get_sync_session() as session:
@@ -219,7 +230,9 @@ def compute_meeting_analysis_task(recording_id: int) -> dict[str, Any]:
         if transcript is None:
             return {"status": "skipped", "reason": "transcript_not_found"}
 
-        backend, language_instruction, missing = _resolve_backend(session, recording)
+        backend, language_instruction, missing = _resolve_backend(
+            session, recording, requested_by_user_id
+        )
         if missing:
             # Not a failure. An install with no AI provider is a supported
             # configuration, and saying so is more useful than an error the

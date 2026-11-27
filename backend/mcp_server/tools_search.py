@@ -29,7 +29,8 @@ async def search_context(  # noqa: PLR0913 - each parameter is a documented tool
 ) -> dict[str, Any]:
     """Semantic search across every meeting transcript and attached document.
 
-    Embeds the query and ranks the user's indexed content by similarity,
+    Embeds the query and ranks the indexed content of every meeting the user
+    can open, their own and those shared with them, by similarity,
     so it finds passages that match in meaning, not just wording. Results
     carry provenance: the recording, timestamps for transcript passages,
     and document title and page for document passages. Results labelled
@@ -81,7 +82,7 @@ async def search_context(  # noqa: PLR0913 - each parameter is a documented tool
     async with async_session_maker() as db:
         scored = await search_context_chunks(
             db,
-            user_id=user.id,
+            user=user,
             query_embedding=query_embedding,
             limit=limit,
             sources=sources,

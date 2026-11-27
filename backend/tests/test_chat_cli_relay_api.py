@@ -188,7 +188,7 @@ def test_cli_provider_dispatches_and_relays_byte_identical(monkeypatch):
         assert frames == ['data: {"token": "Hi"}\n\n', "data: [DONE]\n\n"]
         # Dispatched exactly the chat task with (recording_id, augmented_message, history).
         assert dispatched == [
-            ("backend.worker.tasks.meeting_chat_task", [1, "Hello?", []])
+            ("backend.worker.tasks.meeting_chat_task", [1, "Hello?", [], 1])
         ]
         await engine.dispose()
 

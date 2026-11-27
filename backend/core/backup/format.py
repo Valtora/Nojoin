@@ -102,6 +102,7 @@ def _enrich(column: str, target_table: str) -> _ForeignKeySpec:
 
 RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
     "users": (_enrich("invitation_id", "invitations"),),
+    "user_identities": (_own("user_id", "users"),),
     "calendar_provider_configs": (),
     "calendar_connections": (_own("user_id", "users"),),
     "calendar_sources": (_own("connection_id", "calendar_connections"),),
@@ -119,9 +120,22 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
         _own("user_id", "users"),
         _enrich("calendar_event_id", "calendar_events"),
     ),
+    # user_id is enrichment because a group share has none by design. A direct
+    # share whose user was not restored comes out with neither grantee and is
+    # dropped by its resolver (restore/identity.py).
+    "recording_shares": (
+        _own("recording_id", "recordings"),
+        _enrich("user_id", "users"),
+        _enrich("created_by_id", "users"),
+    ),
     "user_task_recordings": (
         _own("task_id", "user_tasks"),
         _own("recording_id", "recordings"),
+    ),
+    "recording_restore_requests": (
+        _own("recording_id", "recordings"),
+        _own("task_id", "user_tasks"),
+        _enrich("requested_by_id", "users"),
     ),
     "recording_speakers": (
         _own("recording_id", "recordings"),

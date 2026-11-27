@@ -23,6 +23,8 @@ interface AnalyticsSectionProps {
   speakerColors: Record<string, string>;
   onPlaySegment?: (startMs: number) => void;
   onReviewSpeakers?: () => void;
+  /** Whether the viewer may run the analyses, which only the owner can. */
+  canGenerate?: boolean;
 }
 
 export default function AnalyticsSection({
@@ -32,6 +34,7 @@ export default function AnalyticsSection({
   speakerColors,
   onPlaySegment,
   onReviewSpeakers,
+  canGenerate = true,
 }: AnalyticsSectionProps) {
   // Keep the reader's last snapshot outside either view: completion and tab
   // switches stop its requests without discarding estimates still on screen.
@@ -65,6 +68,7 @@ export default function AnalyticsSection({
             onReviewSpeakers={onReviewSpeakers}
             initialFallback={estimates}
             onLoaded={clearAnalytics}
+            canGenerate={canGenerate}
           />}
         </Suspense>
       )}

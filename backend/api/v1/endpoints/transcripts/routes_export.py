@@ -26,6 +26,12 @@ from backend.services.exports.speaker_colors import (
     parse_client_colors,
     resolve_label_colors,
 )
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.services.timeline_note_service import (
     RecordingTimelineNotes,
     load_recording_timeline_notes_async,
@@ -104,11 +110,14 @@ def _filename(
     return f"{timestamp}_{_sanitize_filename(recording.name)}_{label}.{export_format}"
 
 
-async def _load_recording(db: AsyncSession, recording_id: str, user: User) -> Recording:
-    recording = await _get_owned_recording(
+async def _load_recording(
+    db: AsyncSession, grant: RecordingGrant, recording_id: str, user: User
+) -> Recording:
+    grant = await resolve_grant(
+        grant, db, recording_id, user, owned=_get_owned_recording
+    )
+    recording = await grant.load(
         db,
-        recording_id,
-        user.id,
         options=(
             selectinload(Recording.speakers).options(
                 selectinload(RecordingSpeaker.global_speaker)
@@ -200,6 +209,7 @@ async def export_content(
     query: Annotated[ExportQuery, Query()],
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """Export any of the notes, analytics and transcript as one file.
 
@@ -215,7 +225,7 @@ async def export_content(
         query.export_format,
         current_user.id,
     )
-    recording = await _load_recording(db, recording_id, current_user)
+    recording = await _load_recording(db, grant, recording_id, current_user)
 
     result = await db.execute(
         select(Transcript).where(Transcript.recording_id == recording.id)

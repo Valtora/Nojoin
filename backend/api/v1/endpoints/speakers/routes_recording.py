@@ -1,9 +1,10 @@
 import logging
 import re
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -12,6 +13,7 @@ from sqlmodel import select
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
 from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+from backend.models.recording import Recording
 from backend.models.recording_public import (
     RecordingPublicRead,
     RecordingSpeakerPublicRead,
@@ -25,6 +27,15 @@ from backend.processing.embedding import (
     LibraryVoiceprintUpdate,
     lock_blocks_user_link,
     offer_linked_voiceprint,
+)
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    get_recording_for,
+    people_in_reach,
+    require_recording,
+    resolve_grant,
+    viewer_owns_library,
 )
 from backend.utils.canonical_pipeline import (
     list_merged_recording_speakers,
@@ -77,27 +88,39 @@ async def update_recording_speaker(
     update: SpeakerUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """Rename a recording's speaker from the web app."""
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
     return await apply_recording_speaker_update(
         recording_id,
         update,
         db=db,
         current_user=current_user,
         source="api",
+        recording=grant.recording,
     )
 
 
-async def apply_recording_speaker_update(
+async def apply_recording_speaker_update(  # noqa: PLR0913 - one keyword per caller
     recording_id: str,
     update: SpeakerUpdate,
     *,
     db: AsyncSession,
     current_user: User,
     source: str = "api",
+    recording: Recording | None = None,
 ):
     """
     Update a speaker label in a recording with a name.
+
+    ``recording`` is the one the caller already resolved access to (the REST
+    route and name review). Without it, as from the MCP naming tool, the
+    caller must be able to edit the recording. Names link to the recording owner's people
+    library, whoever edits; for an editor only to the people already in the
+    meeting (:func:`people_in_reach`).
 
     Shared by the REST handler (source="api") and the MCP naming tool
     (source="mcp"). `source` is deliberately not a request field: exposing it
@@ -110,16 +133,22 @@ async def apply_recording_speaker_update(
     """
     logger.info(f"Updating speaker for recording {recording_id}: {update}")
 
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    if recording is None:
+        recording, level = await get_recording_for(
+            db, recording_id, current_user, Access.EDIT
+        )
+        viewer_owns_library.set(level is Access.OWNER)
     if not recording:
         logger.error(f"Recording {recording_id} not found")
         raise HTTPException(status_code=404, detail="Recording not found")
 
     await _require_recording_speaker_mutations_supported(db, recording)
 
+    # An editor's name links only to someone already in the meeting; any other
+    # name stays local to it rather than reaching into the owner's library.
     statement = select(GlobalSpeaker).where(
         GlobalSpeaker.name == update.global_speaker_name,
-        GlobalSpeaker.user_id == current_user.id,
+        people_in_reach(recording, current_user.id),
     )
     result = await db.execute(statement)
     global_speaker = result.scalar_one_or_none()
@@ -372,6 +401,41 @@ async def apply_recording_speaker_update(
     )
 
 
+class SpeakerCandidateRead(BaseModel):
+    id: int
+    name: str
+    color: Optional[str] = None
+
+
+@router.get(
+    "/recordings/{recording_id}/speaker-candidates",
+    response_model=List[SpeakerCandidateRead],
+)
+async def get_speaker_candidates(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
+):
+    """People an editor may pick for this meeting's speakers.
+
+    The meeting's speakers belong to its owner's people library. The owner
+    picks from the whole library (``GET /speakers``); anyone the meeting is
+    shared with is offered only the people already linked in this meeting, so
+    sharing a meeting never reveals the rest of the owner's contacts. Typing
+    a new name still works for them: it stays a name local to the meeting.
+    """
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
+    query = select(GlobalSpeaker).where(people_in_reach(recording, current_user.id))
+    rows = (await db.execute(query.order_by(GlobalSpeaker.name))).scalars().all()
+    return [
+        SpeakerCandidateRead(id=row.id, name=row.name, color=row.color) for row in rows
+    ]
+
+
 @router.post(
     "/recordings/{recording_id}/speakers/{diarization_label}/promote",
     response_model=RecordingSpeakerPublicRead,
@@ -381,11 +445,17 @@ async def promote_speaker_to_global(
     diarization_label: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.OWNER)),
 ):
     """
     Promote a recording speaker to the global speaker library.
+
+    The owner's only: it adds a person to the owner's People library.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(RecordingSpeaker).where(
@@ -415,7 +485,7 @@ async def promote_speaker_to_global(
         )
 
     statement = select(GlobalSpeaker).where(
-        GlobalSpeaker.name == speaker_name, GlobalSpeaker.user_id == current_user.id
+        GlobalSpeaker.name == speaker_name, GlobalSpeaker.user_id == recording.user_id
     )
     result = await db.execute(statement)
     existing_global = result.scalar_one_or_none()
@@ -424,7 +494,7 @@ async def promote_speaker_to_global(
     if existing_global:
         target_global_speaker_id = existing_global.id
     else:
-        global_speaker = GlobalSpeaker(name=speaker_name, user_id=current_user.id)
+        global_speaker = GlobalSpeaker(name=speaker_name, user_id=recording.user_id)
         if recording_speaker.embedding:
             created_library_update = offer_linked_voiceprint(
                 global_speaker, recording_speaker, alpha=0.5
@@ -527,11 +597,15 @@ async def merge_recording_speakers(
     merge_data: MergeRequestLabels,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Merge two speakers in a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     await _require_recording_speaker_mutations_supported(db, recording)
 
     if merge_data.source_speaker_label == merge_data.target_speaker_label:
@@ -598,12 +672,16 @@ async def get_merged_recording_speakers(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     List the clusters processing merged into other speakers, with how many
     lines an unmerge would give back to each.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     if not (
         _canonical_transcript_writes_enabled()
         and speakers_module.recording_ready_for_canonical_backfill(recording.status)
@@ -625,12 +703,16 @@ async def unmerge_merged_recording_speaker(
     diarization_label: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Give a merged cluster back its lines as a speaker of its own. Lines
     assigned by hand stay where they are.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     await _require_recording_speaker_mutations_supported(db, recording)
     if not (
         _canonical_transcript_writes_enabled()
@@ -667,11 +749,15 @@ async def delete_recording_speaker(
     diarization_label: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Remove a speaker from a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     await _require_recording_speaker_mutations_supported(db, recording)
 
     statement = select(Transcript).where(Transcript.recording_id == recording.id)
@@ -730,17 +816,21 @@ async def delete_recording_speaker(
 
 
 @router.put("/recordings/{recording_id}/speakers/{label}/color", response_model=dict)
-async def update_speaker_color(
+async def update_speaker_color(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     label: str,
     update: SpeakerColorUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Update the color for a speaker within a single recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     await _require_recording_speaker_mutations_supported(db, recording)
 
     stmt = select(RecordingSpeaker).where(
@@ -767,17 +857,21 @@ async def update_speaker_color(
     "/recordings/{recording_id}/speakers/{diarization_label}/split",
     response_model=List[RecordingSpeakerPublicRead],
 )
-async def split_local_speaker(
+async def split_local_speaker(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     diarization_label: str,
     request: SpeakerSplitRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Split a LOCAL speaker in a specific recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     await _require_recording_speaker_mutations_supported(db, recording)
 
     stmt = select(RecordingSpeaker).where(

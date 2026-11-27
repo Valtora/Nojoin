@@ -4,20 +4,25 @@ from typing import Optional
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.params import RowId
 from backend.core.task_dispatch import dispatch_task
-from backend.models.recording import Recording, is_live_capture
-from backend.models.speaker import RecordingSpeaker
+from backend.models.recording import is_live_capture
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.models.user import User
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.generation_claim import claim_generation, generation_active
 from backend.utils.llm_config import resolve_llm_config_async
+from backend.utils.notes_revision import NOTES_CONFLICT_CODE, notes_revision
 from backend.utils.notes_templates import resolve_notes_template_async
 from backend.utils.reprocess_publication import (
     REPROCESS_RUNNING_MESSAGE,
@@ -55,11 +60,15 @@ async def get_notes(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Get the meeting notes for a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
@@ -70,6 +79,7 @@ async def get_notes(
 
     return {
         "notes": transcript.notes,
+        "notes_revision": notes_revision(transcript.notes),
         # Provenance for the UI: which structure produced these notes. NULL means
         # they predate templates, which is the shipped built-in structure.
         "notes_template_id": transcript.notes_template_id,
@@ -121,18 +131,45 @@ async def update_notes(
     update: NotesUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Update the meeting notes for a recording.
-    """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
+    With ``base_revision``, the revision the edited text started from, a save
+    made after someone else's is refused with 409 ``notes_conflict``.
+    """
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
+
+    # Lock the row so two saves from the same base cannot both pass the
+    # revision check: the second waits, then sees the first one's notes.
+    stmt = (
+        select(Transcript)
+        .where(Transcript.recording_id == recording.id)
+        .with_for_update()
+    )
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
+
+    current_revision = notes_revision(transcript.notes)
+    if update.base_revision is not None and update.base_revision != current_revision:
+        # Someone else saved since this edit started. Hand back what is there
+        # now, so the client can show it and let its user choose.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": NOTES_CONFLICT_CODE,
+                "message": "The notes changed since you started editing.",
+                "notes": transcript.notes,
+                "notes_revision": current_revision,
+            },
+        )
 
     transcript.notes = update.notes
     db.add(transcript)
@@ -140,7 +177,11 @@ async def update_notes(
     await db.commit()
     await db.refresh(transcript)
 
-    return {"notes": transcript.notes, "status": "success"}
+    return {
+        "notes": transcript.notes,
+        "notes_revision": notes_revision(transcript.notes),
+        "status": "success",
+    }
 
 
 @router.post("/{recording_id}/notes/generate")
@@ -149,9 +190,14 @@ async def generate_notes(
     request: Optional[GenerateNotesRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Generate meeting notes using the configured LLM provider.
+
+    Editors of a shared meeting may run it too. The notes are written with the
+    caller's own AI provider, settings and templates, so it never spends the
+    owner's AI budget.
 
     An optional ``notes_template_id`` picks the structure for this run. Omitting
     it falls through to the user's default, then the install default, then the
@@ -162,16 +208,10 @@ async def generate_notes(
     its worker strands only the notes, and only until the claim expires
     (issue #828).
     """
-    recording = await _get_owned_recording(
-        db,
-        recording_id,
-        current_user.id,
-        options=(
-            selectinload(Recording.speakers).options(
-                selectinload(RecordingSpeaker.global_speaker)
-            ),
-        ),
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
     )
+    recording = grant.recording
     if is_live_capture(recording):
         raise HTTPException(status_code=409, detail=NOTES_DURING_CAPTURE_MESSAGE)
 
@@ -240,7 +280,7 @@ async def generate_notes(
 
     task = await dispatch_task(
         "backend.worker.tasks.generate_notes_task",
-        args=[recording.id, requested_template_id],
+        args=[recording.id, requested_template_id, current_user.id],
     )
     from backend.models.task import register_task_ownership
 

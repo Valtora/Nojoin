@@ -18,12 +18,14 @@ from sqlmodel import select
 
 from backend.api.params import RowId
 from backend.core.security import MCP_WRITE_SCOPE
+from backend.mcp_server.access import recording_for
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import (
     _parse_iso_datetime,
     _require_write_scope,
     mcp_tool,
 )
+from backend.services.recording_access import Access
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +33,12 @@ _ATTACH_CONTENT_CHAR_LIMIT = 200_000
 _CALENDAR_EVENTS_LIMIT_MAX = 100
 
 
-async def _transcript_revision(db: Any, recording_public_id: str, user_id: int) -> int:
+async def _transcript_revision(db: Any, recording_public_id: str) -> int:
     """The recording's canonical revision cursor, 0 when it has none.
 
     Included in mutation responses so a caller can confirm from the write
     alone that the transcript cursor was not disturbed, without a
-    follow-up read.
+    follow-up read. Callers have already checked the user's access.
     """
     from sqlalchemy import func
 
@@ -45,10 +47,7 @@ async def _transcript_revision(db: Any, recording_public_id: str, user_id: int) 
 
     internal_id = (
         await db.execute(
-            select(Recording.id).where(
-                Recording.public_id == recording_public_id,
-                Recording.user_id == user_id,
-            )
+            select(Recording.id).where(Recording.public_id == recording_public_id)
         )
     ).scalar_one_or_none()
     if internal_id is None:
@@ -95,7 +94,6 @@ async def rename_recording(
             instead of overwriting another caller's change.
     """
     from backend.api.v1.endpoints.recordings.routes_actions import update_recording
-    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.core.db import async_session_maker
     from backend.models.recording import RecordingUpdate
 
@@ -105,7 +103,7 @@ async def rename_recording(
         raise ToolError("name must not be empty.")
 
     async with async_session_maker() as db:
-        recording = await _get_owned_recording(db, recording_id, user.id)
+        recording = await recording_for(db, recording_id, user, Access.EDIT)
         if expected_name is not None and recording.name != expected_name:
             raise ToolError(
                 f"Rename conflict: the recording is currently named "
@@ -119,7 +117,7 @@ async def rename_recording(
             db=db,
             current_user=user,
         )
-        revision = await _transcript_revision(db, recording_id, user.id)
+        revision = await _transcript_revision(db, recording_id)
     return {
         "id": updated.id,
         "name": updated.name,
@@ -203,7 +201,7 @@ async def archive_recording(recording_id: str) -> dict[str, Any]:
     _require_write_scope("archiving recordings")
     async with async_session_maker() as db:
         updated = await api_archive_recording(recording_id, db=db, current_user=user)
-        revision = await _transcript_revision(db, recording_id, user.id)
+        revision = await _transcript_revision(db, recording_id)
     return _lifecycle_payload(updated, revision)
 
 
@@ -225,7 +223,7 @@ async def restore_recording(recording_id: str) -> dict[str, Any]:
     _require_write_scope("restoring recordings")
     async with async_session_maker() as db:
         updated = await api_restore_recording(recording_id, db=db, current_user=user)
-        revision = await _transcript_revision(db, recording_id, user.id)
+        revision = await _transcript_revision(db, recording_id)
     return _lifecycle_payload(updated, revision)
 
 
@@ -252,7 +250,7 @@ async def trash_recording(recording_id: str) -> dict[str, Any]:
         updated = await api_soft_delete_recording(
             recording_id, db=db, current_user=user
         )
-        revision = await _transcript_revision(db, recording_id, user.id)
+        revision = await _transcript_revision(db, recording_id)
     return _lifecycle_payload(updated, revision)
 
 
@@ -372,9 +370,6 @@ async def attach_document(
         title: A short document title.
         content: The document text (markdown or plain text).
     """
-    from backend.api.v1.endpoints.documents import (
-        _get_owned_recording as get_owned_recording_for_documents,
-    )
     from backend.api.v1.endpoints.documents import create_text_document
     from backend.core.db import async_session_maker
 
@@ -391,7 +386,7 @@ async def attach_document(
         )
 
     async with async_session_maker() as db:
-        recording = await get_owned_recording_for_documents(db, recording_id, user.id)
+        recording = await recording_for(db, recording_id, user, Access.EDIT)
         document = await create_text_document(
             db,
             recording=recording,
@@ -411,14 +406,13 @@ async def attach_document(
     }
 
 
-async def _load_recording_for_correction(db, recording_id: str, user_id: int):
+async def _load_recording_for_correction(db, recording_id: str, user: Any):
     from backend.api.v1.endpoints.transcripts.helpers import (
-        _get_owned_recording,
         _get_recording_transcript,
         _require_recording_transcript_mutations_supported,
     )
 
-    recording = await _get_owned_recording(db, recording_id, user_id)
+    recording = await recording_for(db, recording_id, user, Access.EDIT)
     transcript = await _get_recording_transcript(db, recording.id)
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
@@ -488,7 +482,7 @@ async def correct_utterance_text(
 
     async with async_session_maker() as db:
         recording, transcript = await _load_recording_for_correction(
-            db, recording_id, user.id
+            db, recording_id, user
         )
         await apply_canonical_utterance_text_update(
             db,
@@ -567,7 +561,7 @@ async def correct_utterance_speaker(
     )
     async with async_session_maker() as db:
         recording, transcript = await _load_recording_for_correction(
-            db, recording_id, user.id
+            db, recording_id, user
         )
         await apply_canonical_utterance_speaker_update(
             db,
@@ -630,7 +624,7 @@ async def unlock_utterance(
     _require_write_scope("manual-lock clearing")
     async with async_session_maker() as db:
         recording, transcript = await _load_recording_for_correction(
-            db, recording_id, user.id
+            db, recording_id, user
         )
         await apply_canonical_utterance_lock_clear(
             db,

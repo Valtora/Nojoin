@@ -27,6 +27,7 @@ from backend.models.invitation import (
     Invitation,  # noqa: F401 - register relationship target
 )
 from backend.models.user import User
+from backend.tests.sqlite_schemas import SHARING_SCHEMAS
 
 TEST_ORIGIN = "https://nojoin.example.com"
 CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
@@ -141,6 +142,8 @@ async def session_maker():
     )
     async with engine.begin() as conn:
         for stmt in SCHEMA_STATEMENTS:
+            await conn.execute(text(stmt))
+        for stmt in SHARING_SCHEMAS:
             await conn.execute(text(stmt))
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     yield factory

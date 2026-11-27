@@ -33,6 +33,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SHARING_SCHEMAS,
     TIMELINE_NOTE_TOMBSTONES_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
@@ -126,6 +127,7 @@ async def session_maker():
         for schema in (
             USERS_SCHEMA,
             RECORDINGS_SCHEMA,
+            *SHARING_SCHEMAS,
             TRANSCRIPTS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
             TIMELINE_NOTE_TOMBSTONES_SCHEMA,

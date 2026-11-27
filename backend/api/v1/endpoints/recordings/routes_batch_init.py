@@ -23,6 +23,7 @@ from backend.models.recording import (
 )
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.services.restore_requests import settle_asks
 from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
@@ -128,6 +129,7 @@ async def batch_restore_recordings(
         recording.is_deleted = False
         recording.is_archived = False
         db.add(recording)
+    await settle_asks(db, [recording.id for recording in changed if recording.id])
 
     await db.commit()
     logger.info("Batch restore: %s requested, %s restored", requested, len(changed))

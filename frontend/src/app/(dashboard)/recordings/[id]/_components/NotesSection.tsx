@@ -1,11 +1,13 @@
 "use client";
 
+import type { NotesSaveOutcome } from "@/lib/notesSave";
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { useState } from "react";
 import { FileText, RefreshCw, X } from "lucide-react";
 
 import NotesView from "@/components/NotesView";
 import RichTextEditor from "@/components/RichTextEditor";
+import { canEditRecording } from "@/lib/sharing/access";
 import type { Recording } from "@/types";
 
 interface NotesSectionProps {
@@ -17,7 +19,10 @@ interface NotesSectionProps {
   isGenerating: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  onNotesChange: (notes: string) => void;
+  onNotesChange: (
+    notes: string,
+    baseRevision: () => string | undefined,
+  ) => Promise<NotesSaveOutcome> | void;
   onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
   onFindAndReplace: (
     find: string,
@@ -48,7 +53,10 @@ export default function NotesSection({
   // Dismissal is local and deliberately not persisted: the banner is advice,
   // not a task, and it reappears on reload while the notes remain stale.
   const [dismissed, setDismissed] = useState(false);
+  // Editors generate notes too, on their own AI settings.
+  const canGenerate = canEditRecording(recording);
   const showStaleBanner =
+    canGenerate &&
     !inFlight &&
     !isGenerating &&
     !dismissed &&
@@ -94,6 +102,7 @@ export default function NotesSection({
       ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the transcript.</p> : <NotesView
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
+        notesRevision={recording.transcript?.notes_revision}
         onNotesChange={onNotesChange}
         onGenerateNotes={onGenerateNotes}
         onFindAndReplace={onFindAndReplace}
@@ -104,6 +113,8 @@ export default function NotesSection({
         isGenerating={isGenerating}
         onExport={onExport}
         disableExport={!canExport}
+        canGenerate={canGenerate}
+        readOnly={!canGenerate}
       />}
     </div>
   );

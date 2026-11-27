@@ -27,6 +27,12 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
 from backend.services.live_chat import chat_transcript_in_progress
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.chat_prompt import ChatTranscript, TranscriptExcerpts
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import render_indexed_transcript_for_llm
@@ -55,15 +61,21 @@ async def get_chat_history(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Get the chat history for a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
+    # Chat is personal: in a shared meeting each person sees their own.
     stmt = (
         select(ChatMessage)
         .where(ChatMessage.recording_id == recording.id)
+        .where(ChatMessage.user_id == current_user.id)
         .order_by(ChatMessage.created_at)
     )
     result = await db.execute(stmt)
@@ -80,13 +92,20 @@ async def clear_chat_history(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Clear the chat history for a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
-    stmt = select(ChatMessage).where(ChatMessage.recording_id == recording.id)
+    stmt = select(ChatMessage).where(
+        ChatMessage.recording_id == recording.id,
+        ChatMessage.user_id == current_user.id,
+    )
     result = await db.execute(stmt)
     messages = result.scalars().all()
 
@@ -203,11 +222,15 @@ async def chat_with_meeting(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
     """
     Chat with the meeting transcript using LLM (Streaming).
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     in_flight = recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
 
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
@@ -223,9 +246,11 @@ async def chat_with_meeting(
     meeting_notes = (transcript_obj.notes if transcript_obj else "") or ""
 
     # Full history; the LLM backend truncates it if it must.
+    # Chat is personal: in a shared meeting each person sees their own.
     stmt = (
         select(ChatMessage)
         .where(ChatMessage.recording_id == recording.id)
+        .where(ChatMessage.user_id == current_user.id)
         .order_by(ChatMessage.created_at)
     )
     result = await db.execute(stmt)
@@ -399,7 +424,7 @@ async def chat_with_meeting(
 
         task = await dispatch_task(
             "backend.worker.tasks.meeting_chat_task",
-            args=[recording.id, augmented_message, formatted_history],
+            args=[recording.id, augmented_message, formatted_history, current_user.id],
         )
         await register_task_ownership(db, task.id, current_user.id)
         return StreamingResponse(
